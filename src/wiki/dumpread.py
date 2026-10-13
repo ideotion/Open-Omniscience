@@ -34,7 +34,7 @@ from pathlib import Path
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as _safe_fromstring
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.wiki.dumps import dump_filename, validate_wiki_code
 
 _LOG = logging.getLogger(__name__)
@@ -227,7 +227,7 @@ def find_page(wiki: str, title: str, *, base_dir: Path | None = None) -> dict:
         page = _extract_page(block, hit["pageid"])
     except (OSError, ValueError, ET.ParseError, DefusedXmlException) as exc:
         log_failure(_LOG, f"dump block read failed for {wiki}:{title}", exc, level=logging.WARNING)
-        return {"found": False, "reason": "block-unreadable", "error": str(exc),
+        return {"found": False, "reason": "block-unreadable", "error": exception_text(exc, typed=False),
                 "wiki": wiki.lower()}
     if page is None:
         return {"found": False, "reason": "page-missing-from-block",

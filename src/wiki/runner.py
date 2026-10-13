@@ -49,7 +49,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.database import damage
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.versioned.adapters.base import ReadBudget
 from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
@@ -289,7 +289,7 @@ def drain_once(
         report.size_sampled = record_size_sample(lane, budget.disk_bytes)
     except Exception as exc:  # noqa: BLE001 - a missing sample must not end a drain
         log_failure(_LOG, "could not record a lane size sample", exc, level=logging.DEBUG)
-        report.errors.append(f"size sample: {type(exc).__name__}: {exc}")
+        report.errors.append(f"size sample: {exception_text(exc)}")
     admit = make_admit(adapter, hot_sets)
     policy = make_text_policy(budget)
     feeds = list(adapter.feeds())
@@ -332,7 +332,7 @@ def drain_once(
             # one is broken is the honest outcome; a drain that died on the first
             # would lose the other eleven's buffers to the next overflow.
             log_failure(_LOG, f"the {feed} feed failed this drain", exc, level=logging.WARNING)
-            report.errors.append(f"{edition_of(feed)}: {type(exc).__name__}: {exc}")
+            report.errors.append(f"{edition_of(feed)}: {exception_text(exc)}")
             continue
         report.add(feed, result)
     return report
@@ -649,7 +649,7 @@ class WikiLaneRunner:
             # transport fault the stream itself already exhausted its retries on.
             # The reason is kept on the runner (the status and the bundle carry it): an unexpected
             # end read as ``streaming: false`` with nothing to say why, in INFO logs only.
-            self.last_stream_end = f"{type(exc).__name__}: {exc}"[:300]
+            self.last_stream_end = exception_text(exc, limit=300)
             self.last_stream_end_at = datetime.now(UTC).isoformat()
             if type(exc).__name__ == "StreamStopped":
                 log_failure(_LOG, "the Wikipedia stream ended", exc, level=logging.INFO)
@@ -1042,7 +1042,7 @@ class WikiLaneRunner:
             try:
                 self.revive_stream()
             except Exception as exc:  # noqa: BLE001 - a failed restart is retried next tick
-                self.last_restart_error = f"{type(exc).__name__}: {exc}"[:300]
+                self.last_restart_error = exception_text(exc, limit=300)
                 log_failure(_LOG, "the Wikipedia stream could not be restarted", exc, level=logging.WARNING)
             try:
                 self.drain()
@@ -1055,7 +1055,7 @@ class WikiLaneRunner:
                 # lane file killed this thread and the stream kept filling a buffer
                 # nobody was draining.
                 self.consecutive_failures += 1
-                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.last_error = exception_text(exc)
                 self.last_error_at = datetime.now(UTC).isoformat()
                 log_failure(_LOG, f"the wiki lane drain failed ({self.consecutive_failures} in a row)", exc, level=logging.WARNING)
                 if self.consecutive_failures == MAX_CONSECUTIVE_FAILURES:

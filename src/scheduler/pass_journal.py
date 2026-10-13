@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ class phase:
         if self.pass_id:
             rec["pass_id"] = self.pass_id
         if exc_type is not None:
-            rec["error"] = f"{exc_type.__name__}: {exc}"
+            rec["error"] = exception_text(exc) if isinstance(exc, BaseException) else exc_type.__name__
         rec.update(_readings())
         _append(rec)
         # Returns None: a journal must never swallow the exception it records.

@@ -36,7 +36,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -333,7 +333,7 @@ class DumpIndexManager:
             log_failure(_LOG, f"dump index build failed for {wiki}", exc, level=logging.WARNING)
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
+                self._error = exception_text(exc, typed=False)
 
     def cancel(self) -> dict:
         self._stop.set()

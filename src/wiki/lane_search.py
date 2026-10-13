@@ -89,7 +89,7 @@ from src.database.fts_norm import (
     index_entry,
     query_variants,
 )
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger("wiki.lane_search")
 
@@ -811,7 +811,7 @@ class _TrackerReader:
             result = self.session.execute(stmt)
             return getattr(result, how)()
         except SQLAlchemyError as exc:
-            raise _TrackerUnavailable(f"{type(exc).__name__}: {exc}") from exc
+            raise _TrackerUnavailable(exception_text(exc)) from exc
 
     def all(self, stmt: Any) -> list[Any]:
         return self._run(stmt, "all")

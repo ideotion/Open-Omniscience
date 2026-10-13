@@ -440,7 +440,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
             log_failure(_LOG, "post-unlock startup upkeep failed", exc, level=logging.WARNING)
             # The DB is queryable (init_db ran synchronously) even if upkeep hiccuped,
             # so the corpus is usable — report ready rather than trap the user.
-            set_startup("ready", "", error=str(exc))
+            set_startup("ready", "", error=exception_text(exc, typed=False))
 
     try:
         threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
@@ -448,7 +448,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
         # The upkeep is best-effort and the store is queryable: a thread that cannot be created must not
         # return a usable app to the lock screen (the caller clears the key on any failure here).
         log_failure(_LOG, "post-unlock startup upkeep could not be started", exc, level=logging.WARNING)
-        set_startup("ready", "", error=str(exc))
+        set_startup("ready", "", error=exception_text(exc, typed=False))
 
 
 class _forensic_timer:
