@@ -157,13 +157,16 @@ MULTILINGUAL = "_multilingual"
 #: ``tests/test_stopword_batch.py`` pins them equal), kept here because a script must not import a test.
 #: A language with no entry has a Latin file, which this check cannot judge and so never splits.
 FILE_SCRIPTS: dict[str, tuple[str, ...]] = {
+    "am": ("ETHIOPIC",),
     "ar": ("ARABIC",),
     "bg": ("CYRILLIC",),
     "bn": ("BENGALI",),
     "el": ("GREEK",),
     "hi": ("DEVANAGARI",),
     "ja": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
+    "kk": ("CYRILLIC",),
     "ko": ("HANGUL",),
+    "mk": ("CYRILLIC",),
     "mr": ("DEVANAGARI",),
     "ru": ("CYRILLIC",),
     "uk": ("CYRILLIC",),
