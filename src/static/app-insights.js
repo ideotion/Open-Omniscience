@@ -499,8 +499,13 @@
             ? tf("Countries listed: {shown} of {total}", {shown: shownCountries, total: totalCountries})
             : `${totalCountries} ${t("countries")}`;
         const ariaLabel = countLine ? `${label} — ${countLine}` : label;
+        // An empty concept's caveat carries its own fixed template and the count to fill it with: the frame
+        // translates, the number stays data (tf), and the plain sentence is the fallback. It is shown in the empty
+        // state too, because "every keyword of this group is hidden" must not read as "no located sources".
+        const ringCaveat = d.caveat_i18n && tf ? tf(d.caveat_i18n, d.caveat_vars) : (d.caveat ? t(d.caveat) : "");
         if (!shownCountries) {
-          host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`;
+          host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`
+            + (ringCaveat ? `<div class="hint" style="color:var(--caveat);margin-top:4px">${esc(ringCaveat)}</div>` : "");
         } else {
           host.innerHTML = "";
           // §D: every country polygon drills into the exact corpus (this group's
@@ -511,10 +516,7 @@
             aria: ariaLabel,
             // The endpoint's method and caveat are fixed sentences, keyed x12 (row R, R5):
             // passed raw they read in English under every locale.
-            method: d.method ? t(d.method) : "",
-            // An empty concept's caveat carries its own fixed template and the count to fill it with: the frame
-            // translates, the number stays data (tf), and the plain sentence is the fallback.
-            caveat: d.caveat_i18n && tf ? tf(d.caveat_i18n, d.caveat_vars) : (d.caveat ? t(d.caveat) : ""),
+            method: d.method ? t(d.method) : "", caveat: ringCaveat,
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
         }

@@ -202,8 +202,8 @@ def test_a_ring_whose_every_member_is_hidden_reads_as_empty_not_as_unmeasured(s)
     for caveat in (split["caveat"], drill["caveat"]):
         assert "hidden by the stoplist" in caveat and "No indexed keywords" not in caveat, caveat
     # the frame is a fixed template the UI translates, and the count is data beside it (tf), never part of the key
-    for payload, noun in ((split, "ring"), (drill, "group")):
-        assert payload["caveat_i18n"] == f"Every keyword of this {noun} in your corpus ({{n}}) is hidden by the stoplist " \
+    for payload in (split, drill):
+        assert payload["caveat_i18n"] == "Every keyword of this group in your corpus ({n}) is hidden by the stoplist " \
             "or your own exclusions, so there is nothing to count."
         assert payload["caveat_vars"] == {"n": 1}
         assert payload["caveat"] == payload["caveat_i18n"].format(**payload["caveat_vars"])
@@ -213,7 +213,7 @@ def test_a_ring_the_corpus_never_indexed_still_says_so(s):
     from src.analytics.queries import ring_country_split
 
     split = ring_country_split(s, ring_id="news-media")
-    assert split["countries"] == [] and "No indexed keywords in this ring yet" in split["caveat"]
+    assert split["countries"] == [] and "No indexed keywords in this group yet" in split["caveat"]
     assert split["caveat_i18n"] == split["caveat"] and split["caveat_vars"] == {}
 
 

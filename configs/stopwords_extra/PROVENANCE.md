@@ -447,7 +447,7 @@ candidates the tool itself refused 548 (a phrase containing a listed word, alrea
 **Taken out again by the layout PR (the repeat-agreement marker, which did not exist when this batch shipped).** Korean is one of the four twice-read languages (`TWICE_READ` in `scripts/stopword_batch.py`: vi, ko, as, tl): a
 word enters only when its blind repeat agreed (`repeat_agreed`) or a reader's hand review lists it. Run over the 26 Korean entries this batch shipped, the rule keeps 25. `참석했다` ("attended") came out: the
 first reading called it a phrase fragment (`ph`), the blind repeat called it an everyday verb (`lv`, one of the two open boundaries), so the two readings did not agree on what it is and no hand review lists it. Korean now
-holds 25 entries from this batch (378 words in all). The same check run over the 37 Tagalog entries of batch 5 (`tl`) found none to remove. The ten Latin-token Korean entries in `_multilingual.yml` (batch 1) all carry the marker.
+holds 25 entries from this batch (the batch is 378 words, not 379). The same check run over the 37 Tagalog entries of batch 5 (`tl`) found none to remove. The ten Latin-token Korean entries in `_multilingual.yml` (batch 1) all carry the marker.
 
 **How these entries match, which the other groups did not need to say.** Hiding is exact: at read time the whole stored keyword must equal an entry, and at extraction a word must equal an entry (a phrase containing one
 is dropped). The stored keywords of these three languages are whole sentences or runs of text because the log's tokenizer has no spaces to cut at, so most entries hide only the stored run they name, retroactively and

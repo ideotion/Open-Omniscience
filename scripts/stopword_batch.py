@@ -43,7 +43,7 @@ than N, a confidence other than H, or a blocking flag is refused, and the batch 
 verdict file's hash. THE TWICE-READ LANGUAGES (``TWICE_READ``: vi, ko, as, tl): for these, ``--apply`` admits a word only if its rows carry ``repeat_agreed`` or
 the word is listed in the file given as ``--hand-reviewed FILE`` (``language <TAB> word``, a reader's
 second hand reading), and refuses it as ``not_twice_read`` otherwise. For every other language the flag
-is recorded, never required. The batch comment records the count of ``repeat_agreed`` rows and, for a
+is recorded, never required. The batch comment records how many of the batch's words carry ``repeat_agreed`` and, for a
 twice-read language, which words got in by hand review (all the others got in by repeat agreement).
 The model column is read for its form only and is NOT written into the batch comment:
 no model name goes into a shipped file, and the hash pins the readers.
@@ -357,6 +357,11 @@ def read_hand_reviewed(path: Path, lang: str) -> frozenset[str]:
     return frozenset(out)
 
 
+def is_twice_read(lang: str) -> bool:
+    """Whether ``lang`` is a twice-read language: the primary code decides, so ``ko-kr`` is Korean too."""
+    return re.split(r"[-_]", lang.lower(), maxsplit=1)[0] in TWICE_READ
+
+
 def twice_read_rule(word: str, lang: str, verdicts: dict[str, dict[str, Any]],
                     hand_reviewed: frozenset[str]) -> str | None:
     """Which rule lets ``word`` into a TWICE_READ language: "repeat_agreed", "hand_review", or None."""
@@ -448,7 +453,8 @@ def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]], lang: str =
                      hand_reviewed: frozenset[str] = frozenset()) -> list[str]:
     """The verdict gate: only a high-confidence, reproducible N is a stoplist candidate. In a TWICE_READ
     language it also needs a repeat agreement or a hand review, and says ``not_twice_read`` when it has
-    neither (only when nothing else refuses it, so the reason shown is the deciding one)."""
+    neither (only when nothing else refuses it, so the reason shown is the deciding one). ``lang`` is the language
+    being filed: leaving it empty skips that gate, so every caller passes it."""
     v = verdicts.get(spelling(word))
     if v is None:
         return ["no_verdict"]
@@ -462,7 +468,7 @@ def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]], lang: str =
         out.append("unstable")
     if blocked - {"unstable"}:
         out.append("unknown_flag")
-    if not out and lang in TWICE_READ and twice_read_rule(word, lang, verdicts, hand_reviewed) is None:
+    if not out and is_twice_read(lang) and twice_read_rule(word, lang, verdicts, hand_reviewed) is None:
         out.append("not_twice_read")
     return out
 
@@ -665,13 +671,13 @@ def _check_json_target(args: argparse.Namespace, root: Path) -> None:
     if (target.suffix != ".json" or args.json.is_symlink()
             or target.is_relative_to((root / "configs").resolve())):
         raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
-    inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
+    inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words, args.hand_reviewed) if p)}
     if target.exists() and not target.is_file():  # a directory, or a pipe that would block the write
         raise SystemExit("--json must name a regular file, not a directory or a pipe")
     if target in inputs or (target.exists() and (target.is_relative_to(root) or target.stat().st_nlink > 1 or any(
             # samefile: another spelling of an input on a case-insensitive file system, which the
             # resolved-path comparison above cannot equate
-            p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words) if p))):
+            p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words, args.hand_reviewed) if p))):
         raise SystemExit(
             "--json would overwrite an input file (the log, the verdicts or the words), an existing file "
             "in the checkout (a tracked file is one), or a file that has another name (a hard link: the "
@@ -715,6 +721,10 @@ def main(argv: list[str] | None = None) -> int:
     seen: Counter = Counter()
     verdicts = read_verdicts(args.verdicts, lang, seen) if args.verdicts else None
     hand = read_hand_reviewed(args.hand_reviewed, lang) if args.hand_reviewed else frozenset()
+    if args.hand_reviewed:
+        why = "" if is_twice_read(lang) else f" ({lang} is not a twice-read language, so it only adds a record)"
+        print(f"hand review: {len(hand)} words for {lang} in {args.hand_reviewed.name}{why}"
+              + ("; NOTHING listed for this language: check the language code" if not hand else "") + ".")
     if verdicts is not None:
         rows_read = seen.pop("\0read")
         others = ", ".join(f"{k} {v}" for k, v in seen.most_common(6))
@@ -775,9 +785,11 @@ def main(argv: list[str] | None = None) -> int:
         source = f"log sha256 {file_hash(args.log)}; verdicts sha256 {file_hash(args.verdicts)}"
         if single:
             source += f"; single reader: {', '.join(single)}"
+        if args.hand_reviewed:
+            source += f"; hand review file sha256 {file_hash(args.hand_reviewed)}"
         agreed = [w for w in addable if verdicts and verdicts[spelling(w)]["repeat_agreed"]]
-        source += f"; repeat_agreed rows: {len(agreed)} of {len(addable)}"
-        if lang in TWICE_READ:
+        source += f"; words with repeat_agreed: {len(agreed)} of {len(addable)}"
+        if is_twice_read(lang):
             by_hand = sorted(w for w in addable if twice_read_rule(w, lang, verdicts or {}, hand) == "hand_review")
             source += (f"; twice-read rule: {len(addable) - len(by_hand)} by repeat agreement"
                        + (f", {len(by_hand)} by hand review ({', '.join(by_hand)})" if by_hand else ""))

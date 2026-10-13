@@ -1616,22 +1616,17 @@ def article_graph(
     return graph
 
 
-# The four sentences an empty ring or group can carry. FIXED TEMPLATES, so the UI translates the frame and leaves the
-# count alone (OOI18N.tf, the same {title_i18n, title_vars} discipline as the Home cards); every one is keyed x12 in
-# src/static/locales.
-_RING_ALL_HIDDEN = {
-    "ring": "Every keyword of this ring in your corpus ({n}) is hidden by the stoplist or your own exclusions, "
-            "so there is nothing to count.",
-    "group": "Every keyword of this group in your corpus ({n}) is hidden by the stoplist or your own exclusions, "
-             "so there is nothing to count.",
-}
-_RING_NONE_INDEXED = {
-    "ring": "No indexed keywords in this ring yet for your corpus.",
-    "group": "No indexed keywords in this group yet for your corpus.",
-}
+# The two sentences an empty ring can carry. FIXED TEMPLATES, so the UI translates the frame and leaves the count
+# alone (OOI18N.tf, the same {title_i18n, title_vars} discipline as the Home cards); each is keyed x12 in
+# src/static/locales. A ring is a GROUP to the user (the naming sweep), so the sentences say group.
+_RING_ALL_HIDDEN = (
+    "Every keyword of this group in your corpus ({n}) is hidden by the stoplist or your own exclusions, "
+    "so there is nothing to count."
+)
+_RING_NONE_INDEXED = "No indexed keywords in this group yet for your corpus."
 
 
-def _empty_ring_caveat_parts(session, ring_id: str, noun: str) -> dict:
+def _empty_ring_caveat_parts(session, ring_id: str) -> dict:
     """Why a ring resolved to no keyword: the corpus has not indexed its words yet, or it has them and the stoplist
     (or the user's exclusions) hides every one. The second must not read as the first (R111 step T2).
 
@@ -1641,15 +1636,8 @@ def _empty_ring_caveat_parts(session, ring_id: str, noun: str) -> dict:
 
     n = hidden_group_keyword_count(session, ring_id)
     if n:
-        template = _RING_ALL_HIDDEN[noun]
-        return {"caveat": template.format(n=n), "caveat_i18n": template, "caveat_vars": {"n": n}}
-    template = _RING_NONE_INDEXED[noun]
-    return {"caveat": template, "caveat_i18n": template, "caveat_vars": {}}
-
-
-def _empty_ring_caveat(session, ring_id: str, noun: str) -> str:
-    """The English sentence of ``_empty_ring_caveat_parts``."""
-    return _empty_ring_caveat_parts(session, ring_id, noun)["caveat"]
+        return {"caveat": _RING_ALL_HIDDEN.format(n=n), "caveat_i18n": _RING_ALL_HIDDEN, "caveat_vars": {"n": n}}
+    return {"caveat": _RING_NONE_INDEXED, "caveat_i18n": _RING_NONE_INDEXED, "caveat_vars": {}}
 
 
 def ring_country_split(session, *, ring_id: str, days: int | None = None, limit: int = 40) -> dict:
@@ -1700,7 +1688,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         return {"ring_id": ring_id, "found": True, "countries": [], "n_keywords": 0,
                 "languages": languages, "n_countries": 0, "countries_listed": 0,
                 "truncated": False,
-                **_empty_ring_caveat_parts(session, ring_id, "ring")}
+                **_empty_ring_caveat_parts(session, ring_id)}
     q = (
         session.query(
             Source.country,
@@ -1808,7 +1796,7 @@ def ring_country_article_ids(
         return {
             "ring_id": ring_id, "found": True, "country": country,
             "article_ids": [], "returned_count": 0, "bounded": False,
-            **_empty_ring_caveat_parts(session, ring_id, "group"),
+            **_empty_ring_caveat_parts(session, ring_id),
         }
 
     # .distinct() the QUERY method (SELECT DISTINCT), never a bare func.distinct()

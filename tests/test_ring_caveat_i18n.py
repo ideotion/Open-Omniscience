@@ -15,15 +15,14 @@ from src.analytics import queries
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCALES = ROOT / "src" / "static" / "locales"
-TEMPLATES = [*queries._RING_ALL_HIDDEN.values(), *queries._RING_NONE_INDEXED.values()]
+TEMPLATES = [queries._RING_ALL_HIDDEN, queries._RING_NONE_INDEXED]
 
 
-def test_the_four_templates_exist_and_only_the_hidden_ones_carry_a_count():
-    assert len(TEMPLATES) == len(set(TEMPLATES)) == 4
-    for template in queries._RING_ALL_HIDDEN.values():
-        assert template.count("{n}") == 1
-    for template in queries._RING_NONE_INDEXED.values():
-        assert "{" not in template
+def test_the_two_templates_say_group_and_only_the_hidden_one_carries_a_count():
+    # a ring is a GROUP to the user (the naming sweep): the word "ring" never reaches the screen
+    assert len(TEMPLATES) == len(set(TEMPLATES)) == 2
+    assert queries._RING_ALL_HIDDEN.count("{n}") == 1 and "{" not in queries._RING_NONE_INDEXED
+    assert not any(re.search(r"\bring\b", t, re.I) for t in TEMPLATES)
 
 
 def test_every_template_is_keyed_in_every_locale_with_its_placeholder_intact():
@@ -35,7 +34,12 @@ def test_every_template_is_keyed_in_every_locale_with_its_placeholder_intact():
             assert have == re.findall(r"\{(\w+)\}", template), f"{path.name} changes the placeholders of {template[:50]!r}"
 
 
-def test_the_ring_map_fills_the_template_with_tf_and_keeps_the_plain_sentence_as_a_fallback():
+def test_the_ring_map_shows_the_caveat_in_its_empty_state_too():
+    """An empty ring's payload has no countries, so the branch that draws no map is the one that must carry the
+    caveat: otherwise "every keyword is hidden" reads as "no located sources" (the misreading R111 T2 exists to stop)."""
     src = (ROOT / "src" / "static" / "app-insights.js").read_text("utf-8")
-    assert "caveat_i18n" in src and "tf(d.caveat_i18n, d.caveat_vars)" in src
-    assert "d.caveat ? t(d.caveat)" in src
+    assert "d.caveat_i18n && tf ? tf(d.caveat_i18n, d.caveat_vars) : (d.caveat ? t(d.caveat) : \"\")" in src
+    start = src.index("if (!shownCountries) {")
+    empty_branch = src[start:src.index("} else {", start)]
+    assert "ringCaveat" in empty_branch, "the empty state dropped the caveat"
+    assert "caveat: ringCaveat" in src
