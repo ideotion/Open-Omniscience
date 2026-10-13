@@ -281,6 +281,9 @@ def _vitals_history_isolated():
     mod = sys.modules.get("src.monitoring.vitals_history")
     if mod is not None:
         mod.reset_for_tests()
+    runs = sys.modules.get("src.monitoring.diagnostics_runs")
+    if runs is not None:
+        runs.reset_for_tests()  # a transfer a test started and never finished is not "sending now" in the next
 
 
 @pytest.fixture(autouse=True)

@@ -24,11 +24,14 @@ labelled as such. ``measured`` never appears next to a number that was not.
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 from src.monitoring import session_history as sh
+from src.monitoring.build_marker import METHOD as CODE_MARKERS_METHOD
+from src.monitoring.build_marker import changed_between
 
 BAR_HOURS = 72.0
 ANCHORS = ("run", "install")
@@ -326,6 +329,7 @@ def _ledger_events(records: list[dict[str, Any]], sessions: list[dict[str, Any]]
     a boot for keep their raw stamps."""
     clocks = {s["session_id"]: s for s in sessions}
     ev: list[dict[str, Any]] = []
+    last_code: dict[str, Any] | None = None  # the newest boot's ``code`` block, to tell an UPDATE from a crash
     for i, r in enumerate(records):
         kind = r.get("kind")
         sid = str(r.get("session_id") or "")
@@ -339,12 +343,20 @@ def _ledger_events(records: list[dict[str, Any]], sessions: list[dict[str, Any]]
             return _iso(placed) if placed is not None else rec.get("at")
 
         if kind == "boot":
+            # Which markers of the code differ from the previous boot's: an end with no signal followed
+            # by a boot of a CHANGED build reads as an update, not as a crash (still not a cause: the
+            # list says what moved, never why). None when either boot predates the block.
+            code = r.get("code") if isinstance(r.get("code"), dict) else None
+            changed = changed_between(last_code, code)
+            if code is not None:
+                last_code = code
             ev.append({"at": sess["started_at"] if sess else r.get("at"), "kind": "boot", "label": "boot",
                        "session_id": r.get("session_id"), "_i": i,
                        "detail": {"pid": r.get("pid"), "app_version": r.get("app_version"),
                                   "previous_sentinel_state": r.get("previous_sentinel_state"),
                                   "source": r.get("source") or "ledger",
-                                  "rebased": (sess or {}).get("rebased")}})
+                                  "rebased": (sess or {}).get("rebased"),
+                                  "code": code, "code_changed_since_previous_boot": changed}})
         elif kind == "end":
             clean = r.get("clean")
             k = "end-clean" if clean else ("end-unknown" if clean is None else "end-unclean")
@@ -576,6 +588,7 @@ def _summary(sessions: list[dict[str, Any]], anchor_at: float, anchor: str, anch
         "run_note": run_note,
         "collection": collection,
         "discontinuous_total_s": round(up),
+        "code_markers_method": CODE_MARKERS_METHOD,
         "method": (
             "Sessions from the session ledger (boot/end lines; a dead session's end from "
             "its last liveness tick); every duration is read from the session's own clocks "
@@ -696,6 +709,88 @@ def chronology(*, anchor: str = "run", now: float | None = None, bar_hours: floa
         "summary": summary,
         "ledger": {"path": str(sh.ledger_path()), "records": len(records), "liveness": sh.read_liveness()},
     }
+
+
+#: The chronology MEMBER's own bound, compact JSON. What it protects: the diagnostics zip's size and its
+#: reader's time (a part's own limit, ``UPLOAD_PART_BYTES``, is the volume writer's business, and it cuts
+#: what does not fit), against the one member that grows with the ledger and not with a number someone chose
+#: (the ledger keeps 4,000 lines, about 1,300 sessions, and measured 4.27 MB of JSON on a synthetic ledger
+#: whose ends carry 1.3 KB of ``previous_peaks`` each, about 0.9 MB, and up to three times that at the 4 KB an
+#: end may carry). 1.5 MB is before compression, which these repeated records shrink several times over.
+CHRONOLOGY_MEMBER_BYTES = 1_500_000
+#: The newest unclean ends that keep their ``previous_peaks`` when the member has to be thinned: the
+#: stacks and pressure snapshots of the latest crashes are what a crash loop is read from.
+CHRONOLOGY_KEEP_PEAKS = 10
+
+
+def _doc_bytes(doc: dict[str, Any]) -> int:
+    return len(json.dumps(doc, separators=(",", ":"), default=str).encode("utf-8"))
+
+
+def _from_session(doc: dict[str, Any], first: int, thinned: int, why: str = "") -> dict[str, Any]:
+    """``doc`` without its ``first`` oldest sessions and what dates from before the first kept one: the events
+    and gaps older than its start (an event with no time stays only with a session that is kept), with the
+    ``cut`` note that says so -- ``why`` included, so what is measured is what is written."""
+    sessions = doc["sessions"][first:]
+    if first == 0:
+        return {**doc, "cut": {"sessions_dropped": 0, "stacks_omitted_for_size": thinned, "why": why}}
+    cut_at = _epoch(sessions[0].get("started_at"))
+    kept_ids = {s.get("session_id") for s in sessions}
+
+    def newer(stamp: Any, session_id: Any = None) -> bool:
+        when = _epoch(stamp)
+        return session_id in kept_ids if when is None else cut_at is None or when >= cut_at
+
+    events = [e for e in doc["events"] if newer(e.get("at"), e.get("session_id"))]
+    gaps = [g for g in doc["gaps"] if newer(g.get("to"))]
+    return {
+        **doc, "sessions": sessions, "events": events, "gaps": gaps,
+        "cut": {
+            "sessions_dropped": first, "events_dropped": len(doc["events"]) - len(events),
+            "gaps_dropped": len(doc["gaps"]) - len(gaps), "older_than": sessions[0].get("started_at"),
+            "stacks_omitted_for_size": thinned, "why": why,
+        },
+    }
+
+
+def bounded_for_member(doc: dict[str, Any], max_bytes: int = CHRONOLOGY_MEMBER_BYTES) -> dict[str, Any]:
+    """The chronology as the diagnostics zip carries it: the whole of it when it fits ``max_bytes``, else the
+    NEWEST part, said so. The ledger's own view (the route, the summary, the ``ledger`` counts) keeps the
+    whole ledger; only this copy is cut.
+
+    Two steps, the cheaper loss first. (1) The ``previous_peaks`` of every unclean end but the newest
+    ``CHRONOLOGY_KEEP_PEAKS`` are replaced by ``{"omitted_for_size": true}``: they are the largest part of
+    an end and the oldest of them are the least read. (2) Whatever is still too big loses its OLDEST
+    sessions, with the events and gaps older than the first session kept: one time cut for all three, so no
+    row is left without the session it belongs to, and the fewest sessions that bring it under the bound.
+    A bound that cannot be met (the newest session alone is over it) is said with the exact size."""
+    if _doc_bytes(doc) <= max_bytes:
+        return doc
+    why = (
+        f"this copy is held to {max_bytes} bytes; the summary and the ledger counts are of the WHOLE ledger "
+        f"({(doc.get('ledger') or {}).get('records')} records), and the oldest rows went first"
+    )
+    events = doc.get("events") or []
+    with_peaks = [i for i, e in enumerate(events) if isinstance((e.get("detail") or {}).get("previous_peaks"), dict)]
+    thin = with_peaks[: max(0, len(with_peaks) - CHRONOLOGY_KEEP_PEAKS)]
+    thinned_events = list(events)
+    for i in thin:
+        thinned_events[i] = {**events[i], "detail": {**events[i]["detail"], "previous_peaks": {"omitted_for_size": True}}}
+    base = {**doc, "events": thinned_events}
+    sessions = doc.get("sessions") or []
+    out = _from_session(base, 0, len(thin), why)
+    if _doc_bytes(out) > max_bytes and len(sessions) > 1:
+        low, high = 1, len(sessions) - 1  # the fewest oldest sessions to drop; the newest is never dropped
+        while low < high:
+            mid = (low + high) // 2
+            if _doc_bytes(_from_session(base, mid, len(thin), why)) <= max_bytes:
+                high = mid
+            else:
+                low = mid + 1
+        out = _from_session(base, low, len(thin), why)
+    if _doc_bytes(out) > max_bytes:
+        out["cut"]["over_budget_bytes"] = _doc_bytes(out)
+    return out
 
 
 _VITALS_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
