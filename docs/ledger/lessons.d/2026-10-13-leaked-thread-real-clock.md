@@ -18,3 +18,7 @@ It reproduced on demand with a scratch test that starts the recorder, leaves the
 4. **Guard the baseline with the previous tick's own pair when the answer depends on the previous tick.** Crediting a step with having made a gap is only sound when the baseline is the immediately preceding tick: across ticks
    without a usable pair that tick's bucket may already hold the step and the gap behind it is the absence's. The condition is `base_wall == _LAST_WALL`, and the held-step test is laid out so that it fails when the
    condition goes (a layout that passes without the guard is not a test of it).
+5. **Run the repo-wide ratchets, not only the files that touch the module.** The first push of this PR failed `test_source_slicing_discipline` on CI: the fixture guard sliced the conftest source with a literal anchor
+   (`text.split("def _vitals_history_isolated", 1)`), which is one more hand-rolled site against a budget of 230, and the ten test files run locally did not include the file that counts them. Read a fixture or a
+   module through the syntax tree (`ast.parse`, find the `FunctionDef`, compare the line numbers of its calls) and not by slicing text; and before a push run every test that counts a pattern across the tree
+   (`test_source_slicing_discipline`, the repo invariants, the socket-importer ratchet), because they fail on a file nobody opened.

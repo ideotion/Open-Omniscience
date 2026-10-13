@@ -11,6 +11,7 @@ classified, so the run-time coverage report and the CI ratchet both see it.
 
 from __future__ import annotations
 
+import ast
 import threading
 from pathlib import Path
 
@@ -110,12 +111,24 @@ def test_the_helper_waits_for_a_tick_in_flight_and_keeps_a_thread_that_outlives_
 
 
 def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_recorder():
-    """A source guard on the fixture itself (a fixture cannot be called from a test): the stop is there,
-    and ahead of the reset, so a tick in flight finishes before the recorder is wiped."""
-    text = (Path(__file__).parent / "conftest.py").read_text(encoding="utf-8")
-    block = text.split("def _vitals_history_isolated", 1)[1].split("@pytest.fixture", 1)[0]
-    assert "_stop_leaked_liveness_thread()" in block
-    assert block.index("_stop_leaked_liveness_thread()") < block.index("reset_for_tests()")
+    """A guard on the fixture itself (a fixture cannot be called from a test): the stop call is there, and
+    ahead of the first reset, so a tick in flight finishes before the recorder is wiped. Read from the
+    syntax tree, not sliced out of the source text."""
+    tree = ast.parse((Path(__file__).parent / "conftest.py").read_text(encoding="utf-8"))
+    fixture = next(
+        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_vitals_history_isolated"
+    )
+
+    def called_at(name: str) -> list[int]:
+        return [
+            c.lineno
+            for c in ast.walk(fixture)
+            if isinstance(c, ast.Call) and name in (getattr(c.func, "id", None), getattr(c.func, "attr", None))
+        ]
+
+    stops, resets = called_at("_stop_leaked_liveness_thread"), called_at("reset_for_tests")
+    assert stops and resets
+    assert min(stops) < min(resets)
 
 
 def test_a_tick_that_raises_does_not_stop_the_liveness_loop(monkeypatch, tmp_path):

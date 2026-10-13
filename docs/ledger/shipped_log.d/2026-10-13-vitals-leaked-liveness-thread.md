@@ -16,5 +16,5 @@ source test that the fixture calls it before `reset_for_tests`.
 missing (a step across ticks without a pair can sit inside a gap the absence opened). (3) The `_gaps` docstring names `FORWARD_STEP_FLOOR_S`. The member's `method` names the new counter, the step that is not lost and
 the one gap case that stays unmarked.
 
-  **Evidence.** One independent read (0 block, 1 should-fix, 3 low), folded; 24 mutants killed (the equivalent `_BOOT_BASE = None` in `start()` removed as unreachable); ruff advisory ratchet 417 of 417 (a Yoda
+  **Evidence.** One independent read (0 block, 1 should-fix, 3 low), folded; 30 mutants killed (the equivalent `_BOOT_BASE = None` in `start()` removed as unreachable); ruff advisory ratchet 417 of 417 (a Yoda
 comparison in a new assert would have made it 418); 693 tests in the affected files on the restarted branch.
