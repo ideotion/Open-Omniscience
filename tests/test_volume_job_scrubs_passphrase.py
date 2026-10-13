@@ -215,7 +215,9 @@ def test_a_failed_restore_writes_neither_passphrase_to_its_status_its_log_or_its
     written = _everything_written(mgr, caplog, tmp_path)
     assert PASS not in written and CORPUS not in written
     driver = isinstance(exc, sqlite3.Error)
-    if not driver:
+    if driver:
+        assert "IntegrityError (a database driver's text is withheld)" in written, "the log half names the class, not nothing"
+    else:
         assert REDACTED in written, "the texts are scrubbed, not dropped"
     if state == "error" and driver:
         assert "a database driver's text is withheld" in st["error"], "a driver's words are not recorded, scrubbed or not"

@@ -58,6 +58,7 @@ from src.monitoring.secret_scrub import (
     exception_text,
     is_driver_error,
     log_failure,
+    quotes_a_driver,
     record_text,
     scrubbed,
     unicode_note,
@@ -542,7 +543,7 @@ def classify_restore_error(action: str, exc: Exception) -> str:
     low = msg.lower()
     # The classification above reads the real text; what is WRITTEN is the class only when the failure is a database driver's, whose words
     # can quote a fragment of a statement that no scrub finds (``secret_scrub.record_text``).
-    shown = record_text(exc, typed=False) if is_driver_error(exc) else msg
+    shown = record_text(exc, typed=False) if (is_driver_error(exc) or quotes_a_driver(exc)) else msg
     # A real version/schema gap: a staged migration failed, or the corpus uses a
     # table/column this build doesn't know. "incompatible version" is accurate here.
     is_version = (
@@ -6609,8 +6610,9 @@ def _backlog_engine() -> str:
 
         return baseline_engine_id()
     except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
-        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        log_failure(_LOG, "could not compute the engine identity for the backlog", exc, level=logging.WARNING)
+        # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not compute the engine identity for the backlog: %s", said)
         return "<unknown>"
 
 
@@ -6656,8 +6658,9 @@ def pending_reindex_batches() -> list[dict]:
             for r in rows
         ]
     except Exception as exc:  # noqa: BLE001
-        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        log_failure(_LOG, "could not read the re-index backlog", exc, level=logging.WARNING)
+        # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not read the re-index backlog: %s", said)
         return []
 
 
@@ -6683,7 +6686,8 @@ def reindex_backlog() -> dict:
         # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
         # because the root error handler writes the traceback, which ends with the engine's own words
         reason = record_text(exc)
-        log_failure(_LOG, "could not read the re-index backlog", exc, level=logging.WARNING)
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not read the re-index backlog: %s", said)
         return {"available": False, "reason": reason}
     owed = [int(r[2]) - int(r[3]) - int(r[4]) for r in rows]
     certified = [int(r[3]) for r in rows]

@@ -101,6 +101,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import difflib
 import functools
 import hmac
 import json
@@ -726,7 +727,7 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
     the whole string, and engine text can quote fragments of a statement); any other exception keeps its words, scrubbed with
     every secret handed in and every passphrase the process holds (:func:`exception_text`), then cut. Never raises."""
     try:
-        if is_driver_error(exc) or _quotes_a_driver(exc):
+        if is_driver_error(exc) or quotes_a_driver(exc):
             out = _driver_line(exc) if typed else f"{type(exc).__qualname__} (a database driver's text is withheld)"
             return out if limit is None else out[:limit]
     except Exception:  # noqa: BLE001
@@ -734,7 +735,7 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
     return exception_text(exc, *secrets, limit=limit, typed=typed)
 
 
-def _quotes_a_driver(exc: BaseException) -> bool:
+def quotes_a_driver(exc: BaseException) -> bool:
     """``True`` when a database driver's exception sits in ``exc``'s chain and ``exc``'s own text repeats that driver's text
     (``raise BackupError(f"...: {driver_error}") from driver_error``): the words of the driver are then in the message, whatever
     the class of the exception that carries them."""
@@ -743,7 +744,13 @@ def _quotes_a_driver(exc: BaseException) -> bool:
         if link is exc or not is_driver_error(link):
             continue
         said = str(link)
-        if len(said) >= 4 and said in own:
+        if len(said) < 4:
+            continue
+        if said in own or said.split("\n[SQL:", 1)[0] in own:
+            return True
+        # a cut or re-quoted copy: a long run of the driver's words repeated in the message is the driver's text
+        a, b = said[:2000], own[:2000]
+        if difflib.SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b)).size >= 12:
             return True
     return False
 
@@ -784,7 +791,7 @@ def record_traceback(exc: BaseException, *secrets: str | None) -> str:
         parts: list[str] = []
         for link in _printed_links(exc):
             frames = "".join(traceback.format_tb(link.__traceback__))
-            if is_driver_error(link):
+            if is_driver_error(link) or quotes_a_driver(link):
                 last = _driver_line(link)
             else:
                 last = "".join(traceback.format_exception_only(link)).rstrip("\n")

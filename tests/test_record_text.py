@@ -114,3 +114,34 @@ def test_a_message_that_repeats_a_chained_drivers_text_is_withheld_whatever_its_
         wrapped = exc
     assert FRAGMENT not in record_text(wrapped, PASS)
     assert record_text(wrapped, PASS) == "OSError (a database driver's text is withheld)"
+
+
+def _wrapper_quoting(driver_text_cut):
+    try:
+        try:
+            raise sqlite3.OperationalError(f'near "{FRAGMENT}": syntax error\n[SQL: select {FRAGMENT} from t]')
+        except sqlite3.OperationalError as driver:
+            raise RuntimeError(f"x: {driver_text_cut(str(driver))}") from driver
+    except RuntimeError as exc:
+        return exc
+
+
+@pytest.mark.parametrize(
+    "cut",
+    [lambda t: t, lambda t: t[:24], lambda t: t.split("\n[SQL:", 1)[0], lambda t: repr(t)],
+    ids=["whole", "cut", "first line", "repr"],
+)
+def test_a_wrapper_that_quotes_a_chained_drivers_text_is_withheld_in_the_text_and_in_the_traceback(cut):
+    exc = _wrapper_quoting(cut)
+    assert FRAGMENT not in record_text(exc, PASS), record_text(exc, PASS)
+    assert FRAGMENT not in record_traceback(exc, PASS), record_traceback(exc, PASS)
+
+
+def test_a_wrapper_with_words_of_its_own_keeps_them():
+    try:
+        try:
+            raise sqlite3.OperationalError(f'near "{FRAGMENT}": syntax error')
+        except sqlite3.OperationalError as driver:
+            raise RuntimeError("the swap was refused") from driver
+    except RuntimeError as exc:
+        assert record_text(exc, PASS) == "RuntimeError: the swap was refused" or "the swap was refused" in record_text(exc, PASS)
