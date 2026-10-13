@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-13,backup/restore,Restore reads the settings before the snapshot of the live corpus,shipped,PR #1364,src/backup/merge.py;tests/test_restore_settings_before_snapshot.py;docs/ledger/OPEN_QUEUE.md,"run_restore resolves the trust-fetch-history answer before snapshot_working_copy instead of after it, so a legacy-settings migration write lands in the live file before the snapshot and is kept by the swap; two tests pin the order."

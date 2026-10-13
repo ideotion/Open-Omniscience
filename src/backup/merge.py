@@ -7235,6 +7235,18 @@ def run_restore(
     from src.database.connect import snapshot_preserving
 
     _abort_point("snapshot_working_copy")
+    # The Q701-note trust answer, resolved ONCE per restore (the per-import override
+    # if the operator made one for this import, else their first-launch answer) and
+    # recorded in `meta` so the import report says which choice produced the result.
+    # Resolved here rather than inside the merge step so a preview and its commit
+    # cannot answer differently. It is resolved BEFORE the snapshot, never after it:
+    # the settings read can migrate a legacy ``app_settings.json`` into the live
+    # ``app_state`` row (a write on the live file), and a write made after the
+    # snapshot is thrown away by the swap. Before it, the migration lands in the
+    # live file and the snapshot carries it into the working copy, so the swap keeps
+    # it. A CARRIED working copy takes no snapshot, so there a migration is still
+    # not carried (rare; the next settings read migrates it again).
+    _trust_history = resolve_trust_fetch_history(trust_fetch_history)
     with timings.stage("snapshot_working_copy"):
         if not carried:
             if working.exists():
@@ -7254,13 +7266,7 @@ def run_restore(
         # import, never a skipped one.
         "source_digest": source_digest,
     }
-    # The Q701-note trust answer, resolved ONCE per restore (the per-import override
-    # if the operator made one for this import, else their first-launch answer) and
-    # recorded in `meta` so the import report says which choice produced the result.
-    # Resolved here rather than inside the merge step so a preview and its commit
-    # cannot answer differently.
-    _trust_history = resolve_trust_fetch_history(trust_fetch_history)
-    meta["trust_fetch_history"] = _trust_history
+    meta["trust_fetch_history"] = _trust_history  # resolved above, before the snapshot
     # Wrap the caller's own progress_cb so EACH of the 14 merge steps also gets
     # its own per-step timing (into "merge_step:<name>"), with NO change to
     # merge_corpus's internals — it already wraps every progress_cb call in its
