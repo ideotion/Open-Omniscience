@@ -363,7 +363,7 @@ def _apply(tmp_path, monkeypatch, lang, words_text, verdict_rows, keywords, *ext
 
 
 def test_apply_hints_the_curly_copy_and_the_script_guard_for_a_new_file(tmp_path, monkeypatch, capsys):
-    rc = _apply(tmp_path, monkeypatch, "xx", "y'all\n", [("xx", "y'all", "N", "fn", "H", "sonnet-5.5")],
+    rc = _apply(tmp_path, monkeypatch, "xx", "y'all\n", [("xx", "y'all", "N", "fn", "H", "reader-a")],
                 [_kw("y'all", "xx", 50, sources=9)], batch_id="xx-1")
     assert rc == 0
     out = capsys.readouterr().out
@@ -393,13 +393,13 @@ def test_an_elided_contraction_is_refused_because_extraction_never_sees_it_as_on
 def test_the_verdict_gate_admits_only_a_reproducible_high_confidence_n(tmp_path):
     f = _verdict_file(
         tmp_path,
-        ("en", "permalink", "N", "bp", "H", "sonnet-5.5"),
-        ("en", "follow", "N", "lv", "L", "sonnet-5.5"),
-        ("en", "rose", "K", "", "", "sonnet-5.5"),
-        ("en", "sidebar", "N", "bp", "H", "sonnet-5.5", "unstable"),
-        ("en", "widget", "N", "bp", "H", "sonnet-5.5"),
-        ("en", "widget", "N", "bp", "L", "haiku-4.5"),  # a second, unsure reading spoils it
-        ("fr", "lundi", "N", "cal", "H", "sonnet-5.5"),
+        ("en", "permalink", "N", "bp", "H", "reader-a"),
+        ("en", "follow", "N", "lv", "L", "reader-a"),
+        ("en", "rose", "K", "", "", "reader-a"),
+        ("en", "sidebar", "N", "bp", "H", "reader-a", "unstable"),
+        ("en", "widget", "N", "bp", "H", "reader-a"),
+        ("en", "widget", "N", "bp", "L", "reader-b"),  # a second, unsure reading spoils it
+        ("fr", "lundi", "N", "cal", "H", "reader-a"),
     )
     v = sb.read_verdicts(f, "en")
     assert sb.verdict_refusals("permalink", v) == []
@@ -426,19 +426,22 @@ def test_apply_refuses_to_run_without_a_verdict_file(tmp_path, monkeypatch):
 def test_apply_writes_only_judged_words_and_records_where_the_decision_came_from(tmp_path, monkeypatch, capsys):
     rc = _apply(
         tmp_path, monkeypatch, "en", "permalink\nfollow\nwidget\n",
-        [("en", "permalink", "N", "bp", "H", "sonnet-5.5"), ("en", "follow", "K", "", "", "sonnet-5.5"),
-         ("en", "widget", "N", "bp", "H", "sonnet-5.5", "single_reader")],
+        [("en", "permalink", "N", "bp", "H", "reader-a"), ("en", "follow", "K", "", "", "reader-a"),
+         ("en", "widget", "N", "bp", "H", "reader-a", "single_reader")],
         LOG,
     )
     assert rc == 0
     text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
     assert yaml.safe_load(text)["stopwords"] == ["permalink", "widget"]  # "follow" was kept by the triage
-    assert "verdicts sha256" in text and "models sonnet-5.5" in text and "single reader: widget" in text
+    assert "verdicts sha256" in text and "single reader: widget" in text
+    # The model column is read for its form only: a label in the comment would put a model name into a
+    # shipped file (the project rule), and the verdict file's hash already pins the readers.
+    assert "models" not in text and "reader-a" not in text
     assert "REFUSED follow" in capsys.readouterr().out
 
 
 def test_the_batch_comment_is_deterministic_no_date_no_file_name(tmp_path, monkeypatch):
-    rows = [("en", "permalink", "N", "bp", "H", "sonnet-5.5")]
+    rows = [("en", "permalink", "N", "bp", "H", "reader-a")]
     _apply(tmp_path, monkeypatch, "en", "permalink\n", rows, LOG)
     text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
     assert "log.json" not in text and "v.tsv" not in text
@@ -450,8 +453,8 @@ def test_candidate_mode_with_verdicts_is_limited_to_judged_words(tmp_path, monke
     monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
-    v = _verdict_file(tmp_path, ("en", "permalink", "N", "bp", "H", "sonnet-5.5"),
-                      ("en", "follow", "N", "lv", "L", "sonnet-5.5"))
+    v = _verdict_file(tmp_path, ("en", "permalink", "N", "bp", "H", "reader-a"),
+                      ("en", "follow", "N", "lv", "L", "reader-a"))
     assert sb.main([str(log), "--language", "en", "--verdicts", str(v)]) == 0
     out = capsys.readouterr().out
     assert "permalink" in out and "follow" not in out and "1 words read" in out
@@ -585,11 +588,11 @@ def test_long_evidence_lists_say_how_many_more_there_are(tmp_path, capsys):
 
 def test_a_short_or_bom_prefixed_verdict_row_still_votes(tmp_path):
     f = tmp_path / "v.tsv"
-    f.write_text("\ufeffen\trose\tN\tbp\tH\tsonnet\n"
+    f.write_text("\ufeffen\trose\tN\tbp\tH\treader\n"
                  "en\trose\tK\t\t\t\n"  # trailing tabs: a K reading with no model
-                 "en\tpie\tN\tbp\tH\tsonnet\n"
+                 "en\tpie\tN\tbp\tH\treader\n"
                  "en\tpie\tN\tbp\n"  # a short row: no confidence, so never high
-                 "en\tcalm\tN\tfn\tH\tsonnet\n", "utf-8")
+                 "en\tcalm\tN\tfn\tH\treader\n", "utf-8")
     v = sb.read_verdicts(f, "en")
     assert sb.verdict_refusals("rose", v) != []
     assert sb.verdict_refusals("pie", v) == ["not_high_confidence"]
@@ -598,22 +601,22 @@ def test_a_short_or_bom_prefixed_verdict_row_still_votes(tmp_path):
 
 def test_a_row_with_leading_spaces_or_a_mid_file_bom_still_votes_and_a_leading_tab_stops_the_file(tmp_path):
     f = tmp_path / "v.tsv"
-    f.write_text("en\trose\tN\tbp\tH\tsonnet\n"
-                 "  en\trose\tK\t\tH\tsonnet\n"  # leading spaces are not a column
-                 "en\tpie\tN\tbp\tH\tsonnet\n"
-                 "\ufeffen\tpie\tK\t\tH\tsonnet\n", "utf-8")  # a second file's BOM, joined with cat
+    f.write_text("en\trose\tN\tbp\tH\treader\n"
+                 "  en\trose\tK\t\tH\treader\n"  # leading spaces are not a column
+                 "en\tpie\tN\tbp\tH\treader\n"
+                 "\ufeffen\tpie\tK\t\tH\treader\n", "utf-8")  # a second file's BOM, joined with cat
     v = sb.read_verdicts(f, "en")
     assert "not_junk" in sb.verdict_refusals("rose", v)
     assert "not_junk" in sb.verdict_refusals("pie", v)
     # an EMPTY first column shifts the word into the language column: "the" looks like a language code
-    f.write_text("en\tthe\tN\tfn\tH\tsonnet\n\tthe\tK\t\tH\tsonnet\n", "utf-8")
+    f.write_text("en\tthe\tN\tfn\tH\treader\n\tthe\tK\t\tH\treader\n", "utf-8")
     with pytest.raises(SystemExit):
         sb.read_verdicts(f, "en")
 
 
 # ---- fail closed on what the reader cannot read (coordinator check 2: S1-S6) -------------------
 
-PASS_ROW = "en\tzzalpha\tN\tbp\tH\tsonnet\n"
+PASS_ROW = "en\tzzalpha\tN\tbp\tH\treader\n"
 
 
 @pytest.mark.parametrize("bad", [
@@ -639,13 +642,13 @@ def test_a_verdict_row_the_reader_cannot_parse_stops_the_whole_file(tmp_path, ba
                                    "single_reader,disagree"])
 def test_any_flag_the_tool_does_not_accept_blocks_the_word(tmp_path, flags):
     f = tmp_path / "v.tsv"
-    f.write_text(f"en\tzzalpha\tN\tbp\tH\tsonnet\t{flags}\n", "utf-8")
+    f.write_text(f"en\tzzalpha\tN\tbp\tH\treader\t{flags}\n", "utf-8")
     assert sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en")) != []
 
 
 def test_single_reader_alone_passes_and_a_displaced_flags_column_blocks(tmp_path):
     f = tmp_path / "v.tsv"
-    f.write_text("en\tzzalpha\tN\tbp\tH\tsonnet\tsingle_reader\nen\tzzbeta\tN\tbp\tH\tsonnet\t\tunstable\n", "utf-8")
+    f.write_text("en\tzzalpha\tN\tbp\tH\treader\tsingle_reader\nen\tzzbeta\tN\tbp\tH\treader\t\tunstable\n", "utf-8")
     v = sb.read_verdicts(f, "en")
     assert sb.verdict_refusals("zzalpha", v) == [] and v["zzalpha"]["single_reader"] is True
     assert sb.verdict_refusals("zzbeta", v) == ["unknown_flag"]
@@ -662,10 +665,10 @@ def test_the_strictest_row_wins_in_either_order(tmp_path, rows):
 
 
 @pytest.mark.parametrize("rows,why", [
-    (["en\tzzalpha\tN\tbp\tL\tsonnet\n", PASS_ROW], "not_high_confidence"),
-    ([PASS_ROW, "en\tzzalpha\tN\tbp\tL\tsonnet\n"], "not_high_confidence"),
-    (["en\tzzalpha\tN\tbp\tH\tsonnet\tunstable\n", PASS_ROW], "unstable"),
-    ([PASS_ROW, "en\tzzalpha\tN\tbp\tH\tsonnet\tunstable\n"], "unstable"),
+    (["en\tzzalpha\tN\tbp\tL\treader\n", PASS_ROW], "not_high_confidence"),
+    ([PASS_ROW, "en\tzzalpha\tN\tbp\tL\treader\n"], "not_high_confidence"),
+    (["en\tzzalpha\tN\tbp\tH\treader\tunstable\n", PASS_ROW], "unstable"),
+    ([PASS_ROW, "en\tzzalpha\tN\tbp\tH\treader\tunstable\n"], "unstable"),
 ])
 def test_low_confidence_and_unstable_rows_win_in_either_order(tmp_path, rows, why):
     f = tmp_path / "v.tsv"
@@ -675,7 +678,7 @@ def test_low_confidence_and_unstable_rows_win_in_either_order(tmp_path, rows, wh
 
 def test_a_verdict_file_with_no_row_for_the_language_stops_the_tool(tmp_path):
     f = tmp_path / "v.tsv"
-    f.write_text("fr\tlundi\tN\tcal\tH\tsonnet\n", "utf-8")
+    f.write_text("fr\tlundi\tN\tcal\tH\treader\n", "utf-8")
     with pytest.raises(SystemExit):
         sb.read_verdicts(f, "en")
 
@@ -714,7 +717,7 @@ def test_json_report_never_overwrites_the_input_log_or_a_file_in_the_checkout(tm
 
 
 def test_the_comment_carries_the_log_hash_and_the_overrides_reach_it_through_main(tmp_path, monkeypatch):
-    rc = _apply(tmp_path, monkeypatch, "en", "pie\n", [("en", "pie", "N", "bp", "H", "sonnet-5.5")],
+    rc = _apply(tmp_path, monkeypatch, "en", "pie\n", [("en", "pie", "N", "bp", "H", "reader-a")],
                 LOG, "--allow", "pie")
     assert rc == 0
     text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
@@ -758,10 +761,10 @@ def test_a_bom_prefixed_words_file_keeps_its_first_word(tmp_path):
 
 def test_a_row_with_no_verdict_column_stops_the_file_instead_of_voting_for_another_word(tmp_path):
     f = tmp_path / "v.tsv"
-    f.write_text("en\tthe\tN\tfn\tH\tsonnet\nen\tthe K H\n", "utf-8")  # space-separated: 2 columns
+    f.write_text("en\tthe\tN\tfn\tH\treader\nen\tthe K H\n", "utf-8")  # space-separated: 2 columns
     with pytest.raises(SystemExit):
         sb.read_verdicts(f, "en")
-    f.write_text("en\tthe\tN\tfn\tH\tsonnet\nen\tthe\t\tfn\tH\n", "utf-8")  # an empty verdict
+    f.write_text("en\tthe\tN\tfn\tH\treader\nen\tthe\t\tfn\tH\n", "utf-8")  # an empty verdict
     with pytest.raises(SystemExit):
         sb.read_verdicts(f, "en")
 
@@ -804,11 +807,11 @@ def test_a_json_symlink_is_refused_on_its_own(tmp_path):
 
 def test_a_row_that_lost_its_language_column_stops_the_file(tmp_path):
     f = tmp_path / "v.tsv"
-    for lost in ("zq\tK\t\t\tsonnet\t\n", "zq\tN\tfn\tL\tsonnet\t\n", "is\tK\n"):  # the word shifts left
-        f.write_text("en\tzq\tN\tbp\tH\tsonnet\n" + lost, "utf-8")
+    for lost in ("zq\tK\t\t\treader\t\n", "zq\tN\tfn\tL\treader\t\n", "is\tK\n"):  # the word shifts left
+        f.write_text("en\tzq\tN\tbp\tH\treader\n" + lost, "utf-8")
         with pytest.raises(SystemExit):
             sb.read_verdicts(f, "en")
-    f.write_text("en\tzq\tN\tbp\tH\tsonnet\npl\tw\tN\tfn\tH\tsonnet\t\n", "utf-8")  # a one-letter Polish word is a row
+    f.write_text("en\tzq\tN\tbp\tH\treader\npl\tw\tN\tfn\tH\treader\t\n", "utf-8")  # a one-letter Polish word is a row
     assert "zq" in sb.read_verdicts(f, "en")
 
 
@@ -858,7 +861,7 @@ def test_a_hard_linked_stoplist_file_is_refused(tmp_path, monkeypatch):
 
 
 def test_the_comment_names_the_right_hash_for_each_file(tmp_path, monkeypatch):
-    _apply(tmp_path, monkeypatch, "en", "permalink\n", [("en", "permalink", "N", "bp", "H", "sonnet-5.5")], LOG)
+    _apply(tmp_path, monkeypatch, "en", "permalink\n", [("en", "permalink", "N", "bp", "H", "reader-a")], LOG)
     text = (tmp_path / "extra" / "en.yml").read_text("utf-8")
     assert f"log sha256 {sb.file_hash(tmp_path / 'log.json')}" in text
     assert f"verdicts sha256 {sb.file_hash(tmp_path / 'v.tsv')}" in text
@@ -919,8 +922,8 @@ def test_a_row_that_names_no_model_is_not_high_confidence(tmp_path):
 def test_the_summary_line_shows_how_many_rows_of_other_languages_were_skipped(tmp_path, capsys):
     log = tmp_path / "log.json"
     log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
-    v = _verdict_file(tmp_path, ("en", "permalink", "N", "bp", "H", "sonnet"), ("fr", "lundi", "N", "cal", "H", "sonnet"),
-                      ("en-US", "color", "N", "bp", "H", "sonnet"))
+    v = _verdict_file(tmp_path, ("en", "permalink", "N", "bp", "H", "reader"), ("fr", "lundi", "N", "cal", "H", "reader"),
+                      ("en-US", "color", "N", "bp", "H", "reader"))
     assert sb.main([str(log), "--language", "en", "--verdicts", str(v)]) == 0
     out = capsys.readouterr().out
     assert "read 1 rows for en; skipped 2 rows for 2 other languages" in out and "en-us 1" in out
@@ -942,7 +945,7 @@ def test_a_flag_shifted_into_the_model_column_blocks_in_any_spelling(tmp_path, s
     assert v["zzalpha"]["models"] == set()
 
 
-@pytest.mark.parametrize("model", ["claude-sonnet-5-5", "sonnet-5.5", "sonnet", "haiku-4.5"])
+@pytest.mark.parametrize("model", ["reader-a-5-5", "reader-a", "reader", "reader-b"])
 def test_a_real_model_id_in_the_model_column_is_a_model(tmp_path, model):
     f = tmp_path / "v.tsv"
     f.write_text(f"en\tzzalpha\tN\tfn\tH\t{model}\t\n", "utf-8")
@@ -955,26 +958,26 @@ def test_a_real_model_id_in_the_model_column_is_a_model(tmp_path, model):
 @pytest.mark.parametrize("verdict", ["K", "k", "W", "U", "N", "junk", "JUNK"])
 def test_a_row_of_another_language_with_any_known_verdict_is_skipped(tmp_path, verdict):
     f = tmp_path / "v.tsv"
-    f.write_text(PASS_ROW + f"fr\tlundi\t{verdict}\tcal\tH\tsonnet\t\n", "utf-8")
+    f.write_text(PASS_ROW + f"fr\tlundi\t{verdict}\tcal\tH\treader\t\n", "utf-8")
     assert "zzalpha" in sb.read_verdicts(f, "en")
 
 
 @pytest.mark.parametrize("verdict", ["X", "", "?", "NA", "Y"])
 def test_a_row_of_another_language_with_an_unknown_verdict_stops_the_file(tmp_path, verdict):
     f = tmp_path / "v.tsv"
-    f.write_text(PASS_ROW + f"fr\tlundi\t{verdict}\tcal\tH\tsonnet\t\n", "utf-8")
+    f.write_text(PASS_ROW + f"fr\tlundi\t{verdict}\tcal\tH\treader\t\n", "utf-8")
     with pytest.raises(SystemExit):
         sb.read_verdicts(f, "en")
 
 
 def test_a_dissenting_row_written_with_a_capital_language_is_still_a_row_for_that_language(tmp_path):
     f = tmp_path / "v.tsv"
-    f.write_text(PASS_ROW + "EN\tzzalpha\tK\t\t\tsonnet\t\n", "utf-8")
+    f.write_text(PASS_ROW + "EN\tzzalpha\tK\t\t\treader\t\n", "utf-8")
     assert "not_junk" in sb.verdict_refusals("zzalpha", sb.read_verdicts(f, "en"))
 
 
 @pytest.mark.parametrize("shifted", ["Unstable", "UNSTABLE", "unstable,x", "unstable x", "unstable.", "unstable-1", "un.stable",
-                                     "not-repeated", "notrepeated", "claude-sonnet-5-5unstable"])
+                                     "not-repeated", "notrepeated", "reader-a-5-5unstable"])
 def test_a_flag_in_the_model_column_blocks_in_more_spellings(tmp_path, shifted):
     f = tmp_path / "v.tsv"
     f.write_text(f"en\tzzalpha\tN\tfn\tH\t{shifted}\n", "utf-8")
@@ -1070,8 +1073,8 @@ def test_json_under_a_folder_that_cannot_be_searched_is_a_message_not_a_tracebac
 
 @pytest.mark.parametrize(
     "shifted",
-    ["flaky,disputed", "disputed flaky", "claude sonnet", "sonnet,", "status:disputed", "-", ".x",
-     "un1stable", "singlereader", "single-reader", "claude-sonnet-5-5singlereader"],
+    ["flaky,disputed", "disputed flaky", "reader a", "reader,", "status:disputed", "-", ".x",
+     "un1stable", "singlereader", "single-reader", "reader-a-5-5singlereader"],
 )
 def test_a_model_column_that_is_not_a_model_id_is_read_as_flags_and_blocks(tmp_path, shifted):
     """Each spelling gets past ``FLAG_STEMS`` or the underscore alone only if ``MODEL_ID`` or the
