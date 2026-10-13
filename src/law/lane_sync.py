@@ -42,6 +42,7 @@ from src.law.model import (
     register_document,
     store_provisions,
 )
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.store import create_lane, lane_session
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -166,9 +167,9 @@ def record_document(
     except LawModelError as exc:
         # A closed-vocabulary refusal is a REFUSAL, not a crash: it means this document
         # states something the model will not record, and the operator should see which.
-        _LOG.warning("law document %s refused by the model: %s", doc.id, exc)
+        log_failure(_LOG, f"law document {doc.id} refused by the model", exc, level=logging.WARNING)
         return "refused"
     except Exception as exc:  # noqa: BLE001 - the lane is optional; tracking is not
-        _LOG.warning("law document %s: lane write failed (%s: %s)", doc.id, type(exc).__name__, exc)
+        log_failure(_LOG, f"law document {doc.id}: lane write failed", exc, level=logging.WARNING)
         return "failed"
     return "recorded"

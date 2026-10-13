@@ -86,6 +86,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.analytics.extract import ExtractedTerm
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -264,8 +265,8 @@ def _probe_context(method: str) -> Any:
             probe.shutdown(wait=True)
             probe = None
             return ctx
-    except Exception:  # noqa: BLE001 - an unusable method is a fact to record, not an error
-        _LOG.debug("start method %r is unusable here", method, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unusable method is a fact to record, not an error
+        log_failure(_LOG, f"start method {method!r} is unusable here", exc, level=logging.DEBUG)
     finally:
         if probe is not None:
             _abandon_pool(probe)
@@ -363,12 +364,12 @@ def terminate_live_pools() -> int:
                 if worker.is_alive():
                     worker.terminate()
                     killed += 1
-            except Exception:  # noqa: BLE001 - best effort, per pool worker
-                _LOG.debug("could not terminate a pool worker at shutdown", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - best effort, per pool worker
+                log_failure(_LOG, "could not terminate a pool worker at shutdown", exc, level=logging.DEBUG)
         try:
             pool.shutdown(wait=False, cancel_futures=True)
-        except Exception:  # noqa: BLE001 - teardown must never block a shutdown
-            _LOG.debug("pool shutdown raised at app shutdown", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - teardown must never block a shutdown
+            log_failure(_LOG, "pool shutdown raised at app shutdown", exc, level=logging.DEBUG)
     if killed:
         _LOG.warning("shutdown: terminated %d live precompute worker(s)", killed)
     return killed
@@ -386,8 +387,8 @@ def _abandon_pool(pool: ProcessPoolExecutor) -> None:
     _unregister_pool(pool)
     try:
         pool.shutdown(wait=False, cancel_futures=True)
-    except Exception:  # noqa: BLE001 - teardown must never mask the original failure
-        _LOG.debug("pool shutdown raised while abandoning", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - teardown must never mask the original failure
+        log_failure(_LOG, "pool shutdown raised while abandoning", exc, level=logging.DEBUG)
     # Private attribute by necessity: there is no public API for "stop waiting
     # and kill", and leaving a deadlocked worker alive would keep its share of
     # the memory that most likely caused the deadlock in the first place.
@@ -395,8 +396,8 @@ def _abandon_pool(pool: ProcessPoolExecutor) -> None:
         try:
             if worker.is_alive():
                 worker.terminate()
-        except Exception:  # noqa: BLE001 - best effort
-            _LOG.debug("could not terminate a pool worker", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - best effort
+            log_failure(_LOG, "could not terminate a pool worker", exc, level=logging.DEBUG)
 
 
 # --------------------------------------------------------------------------- #
@@ -469,7 +470,7 @@ def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
             "entities": extract_entities(content or ""),
         }
     except Exception as exc:  # noqa: BLE001 - degrades to inline, never to "none found"
-        _LOG.warning("pooled when/where/who extraction failed", exc_info=True)
+        log_failure(_LOG, "pooled when/where/who extraction failed", exc, level=logging.WARNING)
         return {"__www_error__": str(exc)}
 
 
@@ -520,7 +521,7 @@ def _compute_one(
         # also keeps this function the byte-identical reference the fallback needs.
         return ArticleDerivatives(article_id, terms, score, label)
     except Exception as exc:  # noqa: BLE001 - one bad article's precompute must not abort the batch
-        _LOG.warning("precompute failed for article %s", article_id, exc_info=True)
+        log_failure(_LOG, f"precompute failed for article {article_id}", exc, level=logging.WARNING)
         return ArticleDerivatives(article_id, [], None, None, error=str(exc))
 
 
@@ -757,11 +758,11 @@ def precompute_batch(
         pool = None
         _note("pool", time.monotonic() - _t0)
         return out
-    except Exception:  # noqa: BLE001 - a multiprocessing hiccup must NEVER cost a re-index its result
+    except Exception as exc:  # noqa: BLE001 - a multiprocessing hiccup must NEVER cost a re-index its result
         # Covers a TIMEOUT too (pool.map raises TimeoutError from the iterator),
         # which is the only thing standing between a deadlocked worker and an
         # import that never finishes.
-        _LOG.warning("parallel precompute failed; falling back to serial", exc_info=True)
+        log_failure(_LOG, "parallel precompute failed; falling back to serial", exc, level=logging.WARNING)
         if pool is not None:
             _abandon_pool(pool)
             pool = None

@@ -40,6 +40,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 #: The spelled-out token (Q212 = c). One constant so the rename the ledger still
@@ -185,8 +187,8 @@ def write_export_request(
     try:
         tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
         os.replace(tmp, p)
-    except OSError:
-        _LOG.warning("export folder: could not record the request in %s", d, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"export folder: could not record the request in {d}", exc, level=logging.WARNING)
         return None
     return p
 

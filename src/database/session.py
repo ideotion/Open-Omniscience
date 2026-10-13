@@ -55,6 +55,7 @@ from src.database import fts_norm as _fts_norm  # noqa: F401
 from src.database import library_generation as _library_generation
 from src.database.pool_reserve import ReservingQueuePool
 from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir, default_sqlite_url
 
 DATA_DIR = data_dir()
@@ -576,8 +577,8 @@ def close_session(session: SASession) -> None:
     """
     try:
         session.close()
-    except Exception:
-        _LOG.debug("close_session: error during session.close()", exc_info=True)
+    except Exception as exc:
+        log_failure(_LOG, "close_session: error during session.close()", exc, level=logging.DEBUG)
 
 
 # "This transaction has written." Tracked on the Session CLASS, so it holds for
@@ -693,8 +694,8 @@ def release_idle_connection(session: SASession) -> bool:
             return False
         session.rollback()
         return True
-    except Exception:  # noqa: BLE001 - releasing early is never worth an error
-        _LOG.debug("release_idle_connection: could not end the transaction", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - releasing early is never worth an error
+        log_failure(_LOG, "release_idle_connection: could not end the transaction", exc, level=logging.DEBUG)
         return False
 
 
@@ -739,8 +740,8 @@ def _release_write_gate(session: SASession) -> None:
         from src.database.writer import release_if_held
 
         release_if_held(session)
-    except Exception:  # noqa: BLE001 - cleanup must never raise
-        _LOG.debug("write-gate safety release failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - cleanup must never raise
+        log_failure(_LOG, "write-gate safety release failed", exc, level=logging.DEBUG)
 
 
 def dispose_engine() -> None:

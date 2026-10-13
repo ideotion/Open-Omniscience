@@ -87,6 +87,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.monitoring.secret_scrub import log_failure
+
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
     from src.backup.artifact import StagedArtifact
 
@@ -205,8 +207,8 @@ def _write_owner_marker(staging: Path) -> None:
             ),
             encoding="utf-8",
         )
-    except Exception:  # noqa: BLE001 - the age rule still covers a dir with no marker
-        _LOG.debug("backup: could not write the staging owner marker", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the age rule still covers a dir with no marker
+        log_failure(_LOG, "backup: could not write the staging owner marker", exc, level=logging.DEBUG)
 
 
 def _owner_state(staging: Path) -> str:
@@ -258,8 +260,8 @@ def remember_snapshot_destination(dest: Path | str) -> None:
             known = [d] + [x for x in known if x != d]
             _DESTS_SEQ[d] = _DESTS_SEQ.get(d, 0) + 1
             _write_json_atomic(path, known[:_DESTS_KEEP])
-    except Exception:  # noqa: BLE001 - a missed entry costs only the next-export sweep
-        _LOG.debug("backup: could not remember the snapshot destination", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a missed entry costs only the next-export sweep
+        log_failure(_LOG, "backup: could not remember the snapshot destination", exc, level=logging.DEBUG)
 
 
 def sweep_remembered_destinations() -> int:
@@ -302,8 +304,8 @@ def sweep_remembered_destinations() -> int:
                 keep = [x for x in now if x not in done or _DESTS_SEQ.get(x, 0) != done[x]]
                 if keep != now:
                     _write_json_atomic(path, keep)
-        except Exception:  # noqa: BLE001
-            _LOG.debug("backup: could not update the remembered destinations", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "backup: could not update the remembered destinations", exc, level=logging.DEBUG)
     return removed
 
 
@@ -330,8 +332,8 @@ def sweep_remembered_destinations_in_background() -> threading.Thread | None:
                 n = sweep_remembered_destinations()
                 if n:
                     _LOG.info("backup: removed %d leftover temporary copy dir(s) from a backup drive", n)
-            except Exception:  # noqa: BLE001 - a janitor never takes anything down
-                _LOG.warning("backup: the remembered-destination sweep failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a janitor never takes anything down
+                log_failure(_LOG, "backup: the remembered-destination sweep failed", exc, level=logging.WARNING)
 
         t = threading.Thread(target=run, name="oo-backup-remembered-sweep", daemon=True)
         _REMEMBERED_SWEEP = t
@@ -616,8 +618,8 @@ def _wal_row(mode: str) -> tuple[int, int, int] | None:
         if row is None or len(row) < 3:
             return None
         return int(row[0]), int(row[1]), int(row[2])
-    except Exception:  # noqa: BLE001 - checkpoint is best-effort; the caller treats None as unknown
-        _LOG.warning("backup: WAL checkpoint (%s) failed", mode, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - checkpoint is best-effort; the caller treats None as unknown
+        log_failure(_LOG, f"backup: WAL checkpoint ({mode}) failed", exc, level=logging.WARNING)
         return None
 
 
@@ -720,8 +722,8 @@ def _collection_paused(notes: list[str]) -> Iterator[None]:
             from src.scheduler.runner import exclusive_window
 
             was_paused = stack.enter_context(exclusive_window())
-        except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-            _LOG.warning("backup: pausing background collection failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+            log_failure(_LOG, "backup: pausing background collection failed", exc, level=logging.WARNING)
             notes.append(
                 "background collection could not be paused for the corpus copy; the "
                 "copy is still consistent (the write gate holds), but the app may be "
@@ -968,8 +970,8 @@ def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], s
     rev: str | None = None
     try:
         conn = connect(path, key=key, check_same_thread=False)
-    except Exception:  # noqa: BLE001 - stats are descriptive; bytes are still protected
-        _LOG.warning("backup: could not open the corpus for stats", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - stats are descriptive; bytes are still protected
+        log_failure(_LOG, "backup: could not open the corpus for stats", exc, key, level=logging.WARNING)
         return {"tables": counts, "articles_commitment": None}, None
     try:
         cur = conn.cursor()
@@ -1016,8 +1018,8 @@ def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], s
                 rev = None
         finally:
             cur.close()
-    except Exception:  # noqa: BLE001 - stats stay descriptive, never fail the backup
-        _LOG.warning("backup: corpus stats failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - stats stay descriptive, never fail the backup
+        log_failure(_LOG, "backup: corpus stats failed", exc, key, level=logging.WARNING)
     finally:
         conn.close()
     return {"tables": counts, "articles_commitment": commitment}, rev

@@ -46,6 +46,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -538,8 +540,8 @@ def settings_for(name: str) -> dict:
         from src.config.app_settings import load_settings
 
         stored = (load_settings().card_settings or {}).get(name)
-    except Exception:  # noqa: BLE001 - settings must never take down the briefing
-        _LOG.debug("card settings unavailable for %r; using defaults", name, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - settings must never take down the briefing
+        log_failure(_LOG, f"card settings unavailable for {name!r}; using defaults", exc, level=logging.DEBUG)
         return values
     if isinstance(stored, dict):
         clamped, _notes = clamp_settings(name, stored)

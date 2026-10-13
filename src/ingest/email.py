@@ -35,8 +35,9 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
 from src.database.stand_in import is_a_stand_in_source
-from src.ingest.newsletter_source import parse_list_id
 from src.database.write import is_locked_error, run_write_with_retry
+from src.ingest.newsletter_source import parse_list_id
+from src.monitoring.secret_scrub import log_failure
 from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
 from src.utils.url_utils import generate_content_hash
 
@@ -591,9 +592,9 @@ def _maybe_index_email_links(session: Session, article_id: int, links: list[Sani
                 session.commit()
 
         run_write_with_retry(_work, session=session, label=f"index_email_links[{article_id}]")
-    except Exception:  # noqa: BLE001 - link indexing is auxiliary; never fail ingestion
+    except Exception as exc:  # noqa: BLE001 - link indexing is auxiliary; never fail ingestion
         session.rollback()
-        _LOG.warning("newsletter link indexing failed", exc_info=True)
+        log_failure(_LOG, "newsletter link indexing failed", exc, level=logging.WARNING)
 
 
 def _is_integrity_error(exc: BaseException) -> bool:
@@ -610,8 +611,9 @@ def _is_integrity_error(exc: BaseException) -> bool:
     same-hash duplicate) collision escape as an unhandled exception that aborts
     the WHOLE import batch instead of being counted as a duplicate.
     """
-    import sqlalchemy.exc
     import sqlite3
+
+    import sqlalchemy.exc
 
     types: list[type] = [sqlalchemy.exc.IntegrityError, sqlite3.IntegrityError]
     try:

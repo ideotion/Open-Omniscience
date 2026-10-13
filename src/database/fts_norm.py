@@ -57,6 +57,8 @@ import threading
 from collections.abc import Callable
 from functools import lru_cache
 
+from src.monitoring.secret_scrub import log_failure
+
 logger = logging.getLogger(__name__)
 
 #: The SQL function names the triggers call. Kept here so the DDL and the registration
@@ -387,11 +389,13 @@ def _normalize_sql(text: str | None, mask: int) -> str | None:
     try:
         return normalize(text, mask)
     except SegmenterMissing as exc:
-        logger.error(
-            "search index: a document was indexed with the %s segmenter, which this install "
+        # The name is one of the two fixed literals raised above; anything else is not repeated.
+        named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "segmentation"
+        log_failure(
+            logger,
+            f"search index: a document was indexed with the {named} segmenter, which this install "
             "no longer has, so the write that changes it is refused rather than risk the "
-            "index. Install %s again (sudachipy comes with the [segmentation] extra).",
-            exc,
+            f"index. Install {named} again (sudachipy comes with the [segmentation] extra).",
             exc,
         )
         raise

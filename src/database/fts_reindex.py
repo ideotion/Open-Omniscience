@@ -49,6 +49,7 @@ from src.database.fts_norm import (
     index_entry,
     indexed_values,
 )
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -377,8 +378,8 @@ class SearchReindexJobManager:
                 else:
                     self._state = "paused"
                     self._save()
-        except Exception:  # noqa: BLE001 - surface the failure, never crash the thread
-            _LOG.exception("search re-index job failed")
+        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+            log_failure(_LOG, "search re-index job failed", exc)
             with contextlib.suppress(Exception):
                 session.rollback()
             with self._lock:
@@ -418,8 +419,8 @@ class SearchReindexJobManager:
             tmp = p.with_suffix(".tmp")
             tmp.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(p)
-        except OSError:
-            _LOG.warning("could not write the search re-index report", exc_info=True)
+        except OSError as exc:
+            log_failure(_LOG, "could not write the search re-index report", exc, level=logging.WARNING)
 
     def status(self) -> dict:
         with self._lock:

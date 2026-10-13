@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # Poll the open hazard feeds at most this often from the background pass (a snapshot
@@ -75,7 +77,7 @@ def auto_snapshot_due(
 
             records, failures = fetch_hazards(source="all", fetcher=fetcher)
     except Exception as exc:  # noqa: BLE001 - a bad relay must not break the collect pass
-        _LOG.warning("hazard snapshot fetch failed", exc_info=True)
+        log_failure(_LOG, "hazard snapshot fetch failed", exc, level=logging.WARNING)
         return {"error": f"{type(exc).__name__}: {exc}"}
 
     if not records:
@@ -91,6 +93,6 @@ def auto_snapshot_due(
             from src.hazards.ingest import ingest_hazard_records
 
             out["ingested"] = ingest_hazard_records(session, saved["records"])
-        except Exception:  # noqa: BLE001 - ingest must never break the collect pass
-            _LOG.warning("hazard corpus ingest failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - ingest must never break the collect pass
+            log_failure(_LOG, "hazard corpus ingest failed", exc, level=logging.WARNING)
     return out

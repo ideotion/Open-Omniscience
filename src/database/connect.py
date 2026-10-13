@@ -857,11 +857,11 @@ def snapshot_preserving(
         try:
             if _quiesced_file_copy(src_p, dest_p):
                 return dest_p
-        except Exception:  # noqa: BLE001 - the codec path below is always correct
-            _LOG.warning(
-                "the quiesced file-copy snapshot failed; falling back to sqlcipher_export",
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001 - the codec path below is always correct
+            # Imported here: this module must import without it (the env-take child in test_env_passphrase_taken).
+            from src.monitoring.secret_scrub import log_failure
+
+            log_failure(_LOG, "the quiesced file-copy snapshot failed; falling back to sqlcipher_export", exc, key, level=logging.WARNING)
         dest_p.unlink(missing_ok=True)  # never let a partial copy be mistaken for one
     conn = connect(src_p, check_same_thread=False)
     try:

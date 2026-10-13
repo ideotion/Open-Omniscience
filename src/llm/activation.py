@@ -65,6 +65,8 @@ import threading
 import time
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("llm.activation")
 
 #: Backends this module knows how to bring up, in the order a payload lists them.
@@ -218,7 +220,7 @@ def _last_start_failure() -> dict | None:
 
         outcome = start_outcome()
     except Exception as exc:  # noqa: BLE001 - a probe must never break the plan
-        _LOG.info("vLLM start-outcome probe failed: %s", exc)
+        log_failure(_LOG, "vLLM start-outcome probe failed", exc, level=logging.INFO)
         return None
     if outcome.get("state") != "exited":
         return None
@@ -285,7 +287,7 @@ def _plan_for(
 
             state = model_cache_state(model) or {}
         except Exception as exc:  # noqa: BLE001 - an unreadable cache is not a "no"
-            _LOG.info("vLLM model cache probe failed: %s", exc)
+            log_failure(_LOG, "vLLM model cache probe failed", exc, level=logging.INFO)
         cached = state.get("cached")
         if cached and state.get("location") == "legacy":
             # PRESENT, but not where the server will look. Starting now would make vLLM
@@ -386,7 +388,7 @@ def _server_log_head(limit: int = _LOG_EXCERPT_CHARS) -> tuple[str, str]:
             return "", ""
         return str(log.get("excerpt") or "").strip(), str(log.get("advice") or "")
     except Exception as exc:  # noqa: BLE001 - an unreadable log must not mask the exit
-        _LOG.info("could not read the vLLM server log: %s", exc)
+        log_failure(_LOG, "could not read the vLLM server log", exc, level=logging.INFO)
         return "", ""
 
 
@@ -460,7 +462,7 @@ def ensure_running(
         out["ready"] = False
         out["detail"] = str(exc)
         out["error"] = True
-        _LOG.info("activation of %s failed: %s", backend, exc)
+        log_failure(_LOG, f"activation of {backend} failed", exc, level=logging.INFO)
     return out
 
 
@@ -524,7 +526,7 @@ def _crash_loop() -> dict | None:
 
         loop = recent_start_failures()
     except Exception as exc:  # noqa: BLE001 - a journal read must never break a start
-        _LOG.info("could not read the vLLM start journal: %s", exc)
+        log_failure(_LOG, "could not read the vLLM start journal", exc, level=logging.INFO)
         return None
     return loop if int(loop.get("exits") or 0) >= _CRASH_LOOP_MIN_EXITS else None
 
@@ -609,7 +611,7 @@ def recover_backend(reason: str | None) -> dict:
     try:
         act = ensure_running()
     except Exception as exc:  # noqa: BLE001 - a recovery attempt must never break a run
-        _LOG.info("background recovery of the AI backend failed: %s", exc)
+        log_failure(_LOG, "background recovery of the AI backend failed", exc, level=logging.INFO)
         failed: dict = {"attempted": True, "started": False, "ready": False, "detail": None}
         _recovery_last = failed
         return failed

@@ -36,6 +36,7 @@ import hashlib
 import logging
 from urllib.parse import parse_qs, urlparse, urlunparse
 
+from src.monitoring.secret_scrub import log_failure
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -200,7 +201,7 @@ def canonicalize_url(url: str) -> str:
         return canonical_url
 
     except Exception as e:
-        logger.error(f"Error canonicalizing URL {url}: {e}")
+        log_failure(logger, f"Error canonicalizing URL {url}", e)
         return url
 
 
@@ -263,7 +264,7 @@ def get_domain_from_url(url: str) -> str | None:
             return normalize_domain(parsed.netloc)
         return None
     except Exception as e:
-        logger.error(f"Error extracting domain from {url}: {e}")
+        log_failure(logger, f"Error extracting domain from {url}", e)
         return None
 
 
@@ -283,5 +284,5 @@ def get_base_url(url: str) -> str | None:
             return f"{parsed.scheme}://{normalize_domain(parsed.netloc)}"
         return None
     except Exception as e:
-        logger.error(f"Error getting base URL from {url}: {e}")
+        log_failure(logger, f"Error getting base URL from {url}", e)
         return None

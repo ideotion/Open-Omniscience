@@ -30,6 +30,8 @@ from pathlib import Path
 
 import yaml
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _CONF = Path(__file__).resolve().parents[2] / "configs"
@@ -96,9 +98,9 @@ def _load_file(p: Path) -> list[City]:
         return []
     try:
         data = yaml.safe_load(p.read_text("utf-8")) or {}
-    except (yaml.YAMLError, UnicodeDecodeError, OSError):
+    except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
         if p == PLACES_GAZETTEER_PATH:  # a damaged artifact must not take the world file's coverage with it
-            _LOG.warning("%s is unreadable; reading the world gazetteer alone", p.name, exc_info=True)
+            log_failure(_LOG, f"{p.name} is unreadable; reading the world gazetteer alone", exc, level=logging.WARNING)
             return []
         raise
     if not isinstance(data, dict):

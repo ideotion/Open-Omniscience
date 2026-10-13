@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from src.jobs.progress_state import load_progress_state, save_progress_state
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("ai_layer.translation_sweep")
 
@@ -358,8 +359,8 @@ def _record_coverage(session, tgt: str, head: int, state: dict) -> None:
         cov["prompt_version"] = state.get("prompt_version")
         cov["pass_complete"] = bool(state.get("pass_completed_at"))
         record_sweep_coverage(cov)
-    except Exception:  # noqa: BLE001 - a coverage side-record never ends a sweep
-        _LOG.warning("translation sweep could not record its coverage", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a coverage side-record never ends a sweep
+        log_failure(_LOG, "translation sweep could not record its coverage", exc, level=logging.WARNING)
 
 
 # --------------------------------------------------------------------------- #

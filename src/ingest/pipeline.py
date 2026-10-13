@@ -23,6 +23,8 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, FeedFetchState, Source
 from src.ingest.dedup_front import mark_stored, seen_canonical_url, seen_content_hash
+from src.monitoring.secret_scrub import log_failure
+
 
 # --------------------------------------------------------------------------- #
 # Per-feed de-churn backoff (field log finding F, 2026-06-13)
@@ -292,11 +294,11 @@ def _maybe_index_keywords(session: Session, article: Article, source: Source) ->
             session=session,
             label=f"index_article[{article.id}]",
         )
-    except Exception:  # noqa: BLE001 - analytics is auxiliary; never fail ingestion
+    except Exception as exc:  # noqa: BLE001 - analytics is auxiliary; never fail ingestion
         session.rollback()
         import logging
 
-        logging.getLogger(__name__).warning("keyword indexing on ingest failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "keyword indexing on ingest failed", exc, level=logging.WARNING)
 
 
 def _maybe_index_links(session: Session, article: Article, html: str | None, base_url: str) -> None:
@@ -358,11 +360,11 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
         # log). A lock fails the commit atomically (nothing persisted), so a
         # rollback + rebuild is collision-free.
         run_write_with_retry(_work, session=session, label=f"index_links[{article.id}]")
-    except Exception:  # noqa: BLE001 - link analysis is auxiliary; never fail ingestion
+    except Exception as exc:  # noqa: BLE001 - link analysis is auxiliary; never fail ingestion
         session.rollback()
         import logging
 
-        logging.getLogger(__name__).warning("link indexing on ingest failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "link indexing on ingest failed", exc, level=logging.WARNING)
 
 
 def _maybe_record_custody(article: Article) -> None:
@@ -411,7 +413,7 @@ def _maybe_record_custody(article: Article) -> None:
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
         import logging
 
-        logging.getLogger(__name__).warning("custody logging on ingest failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "custody logging on ingest failed", exc, level=logging.WARNING)
         # ...but the entry is OWED, not forgotten: queued in a file (no database), and
         # written later, marked late, at the end of the next collection pass or from the
         # Chain of custody tab. NEVER repaid here: the read a repayment needs competes for
@@ -542,11 +544,11 @@ def _commit_feed_bookkeeping(session: Session) -> None:
     """
     try:
         session.commit()
-    except Exception:  # noqa: BLE001 - bookkeeping is auxiliary, never fatal
+    except Exception as exc:  # noqa: BLE001 - bookkeeping is auxiliary, never fatal
         session.rollback()
         import logging
 
-        logging.getLogger(__name__).debug("feed bookkeeping commit failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "feed bookkeeping commit failed", exc, level=logging.DEBUG)
 
 
 def _feed_conditional_headers(session: Session, source_id: int) -> dict[str, str]:
@@ -563,10 +565,10 @@ def _feed_conditional_headers(session: Session, source_id: int) -> dict[str, str
                 headers["If-None-Match"] = state.etag
             if state.last_modified:
                 headers["If-Modified-Since"] = state.last_modified
-    except Exception:  # noqa: BLE001 - conditional GET is an optimisation, never required
+    except Exception as exc:  # noqa: BLE001 - conditional GET is an optimisation, never required
         import logging
 
-        logging.getLogger(__name__).debug("feed conditional-GET lookup failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "feed conditional-GET lookup failed", exc, level=logging.DEBUG)
     return headers
 
 
@@ -590,10 +592,10 @@ def _record_feed_state(session: Session, source_id: int, resp) -> None:
             state.last_modified = resp.last_modified
         state.last_status = resp.status_code
         state.last_checked_at = datetime.now(UTC)
-    except Exception:  # noqa: BLE001 - never let feed bookkeeping break ingestion
+    except Exception as exc:  # noqa: BLE001 - never let feed bookkeeping break ingestion
         import logging
 
-        logging.getLogger(__name__).debug("recording feed fetch state failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "recording feed fetch state failed", exc, level=logging.DEBUG)
 
 
 def _update_feed_backoff(session: Session, source_id: int, *, reset: bool) -> None:
@@ -632,10 +634,10 @@ def _update_feed_backoff(session: Session, source_id: int, *, reset: bool) -> No
             state.skip_until = datetime.now(UTC) + timedelta(seconds=delay_s)
         else:
             state.skip_until = None
-    except Exception:  # noqa: BLE001 - backoff is an optimisation, never required
+    except Exception as exc:  # noqa: BLE001 - backoff is an optimisation, never required
         import logging
 
-        logging.getLogger(__name__).debug("feed backoff update failed", exc_info=True)
+        log_failure(logging.getLogger(__name__), "feed backoff update failed", exc, level=logging.DEBUG)
 
 
 def feed_is_due(state: FeedFetchState | None, *, now: datetime | None = None) -> bool:

@@ -41,6 +41,8 @@ import sys
 import threading
 import time
 
+from src.monitoring.secret_scrub import log_failure
+
 try:
     import resource  # Unix-only: getrusage peak-RSS cross-check
 except ModuleNotFoundError:  # pragma: no cover - Windows has no `resource` module
@@ -807,7 +809,7 @@ def _guard(fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     try:
         return fn()
     except Exception as exc:  # noqa: BLE001 - degrade loudly, don't abort the report
-        _LOG.warning("scale-bench phase failed", exc_info=True)
+        log_failure(_LOG, "scale-bench phase failed", exc, level=logging.WARNING)
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 

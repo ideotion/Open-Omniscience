@@ -36,6 +36,8 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
+from src.monitoring.secret_scrub import log_failure
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -173,21 +175,21 @@ class LinkExtractor:
                         element, base_url, article_id, current_position
                     )
                 except Exception as e:  # noqa: BLE001 - one bad link never breaks the rest
-                    logger.debug("skipping a link element (%s)", e)
+                    log_failure(logger, "skipping a link element", e, level=logging.DEBUG)
                     continue
 
                 if link_info:
                     extracted_links.append(link_info)
 
         except Exception as e:
-            logger.error(f"Error extracting links from HTML: {e}")
+            log_failure(logger, "Error extracting links from HTML", e)
             # Fallback to regex-based extraction. The fallback must be MORE resilient than
             # the primary, never less: a malformed URL here must degrade to "no links",
             # never crash the caller's link indexing (field 2026-07-01).
             try:
                 extracted_links = self._extract_links_with_regex(html_content, base_url, article_id)
             except Exception as e2:  # noqa: BLE001 - link extraction is best-effort, never fatal
-                logger.debug("regex link fallback failed (%s)", e2)
+                log_failure(logger, "regex link fallback failed", e2, level=logging.DEBUG)
                 extracted_links = []
 
         return extracted_links
@@ -241,7 +243,7 @@ class LinkExtractor:
             try:
                 link_url = urljoin(base_url, link_url)
             except Exception as e:
-                logger.warning(f"Error resolving relative URL {link_url} with base {base_url}: {e}")
+                log_failure(logger, f"Error resolving relative URL {link_url} with base {base_url}", e, level=logging.WARNING)
 
         # Normalize URL
         normalized_url = self.normalize_url(link_url)
@@ -311,7 +313,7 @@ class LinkExtractor:
                         try:
                             url = urljoin(base_url, url)
                         except (ValueError, TypeError) as e:
-                            logger.debug(f"Failed to resolve relative URL: {e}")
+                            log_failure(logger, "Failed to resolve relative URL", e, level=logging.DEBUG)
 
                     # A malformed URL (e.g. an invalid IPv6 literal like ``http://[::1``)
                     # raises ValueError "Invalid IPv6 URL" inside urlparse; SKIP that ONE
@@ -323,7 +325,7 @@ class LinkExtractor:
                         parsed_url = urlparse(url)
                         base_netloc = urlparse(base_url).netloc if base_url else ""
                     except (ValueError, TypeError) as e:
-                        logger.debug(f"Skipping malformed link URL {url!r}: {e}")
+                        log_failure(logger, f"Skipping malformed link URL {url!r}", e, level=logging.DEBUG)
                         continue
 
                     link_info: dict[str, Any] = {
@@ -424,7 +426,7 @@ class LinkExtractor:
             # A URL we cannot normalise is not a usable outbound link; drop it
             # quietly (debug, not warning — these are malformed hrefs in scraped
             # HTML, not an app fault) instead of storing the raw garbage.
-            logger.debug(f"Could not normalise URL {url!r}: {e}")
+            log_failure(logger, f"Could not normalise URL {url!r}", e, level=logging.DEBUG)
             return ""
 
     def _determine_link_type(

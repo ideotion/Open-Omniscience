@@ -29,6 +29,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 _WORD_RE = re.compile(r"[a-z]+")
 
@@ -141,10 +143,8 @@ def load_lexicon() -> tuple[dict[str, frozenset[str]], str]:
             if lex:
                 return lex, f"custom:{path}"
             _LOG.warning("OO_EMOTION_LEXICON at %s is empty; using the sample lexicon", path)
-        except Exception:  # noqa: BLE001 - a bad lexicon must not crash; fall back loudly
-            _LOG.warning(
-                "OO_EMOTION_LEXICON at %s unreadable; using the sample lexicon", path, exc_info=True
-            )
+        except Exception as exc:  # noqa: BLE001 - a bad lexicon must not crash; fall back loudly
+            log_failure(_LOG, f"OO_EMOTION_LEXICON at {path} unreadable; using the sample lexicon", exc, level=logging.WARNING)
     return {k: frozenset(v) for k, v in _SAMPLE_LEXICON.items()}, "sample"
 
 

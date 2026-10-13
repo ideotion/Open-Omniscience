@@ -39,6 +39,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy import text
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 #: SymSpell's maximum edit distance. Two catches the common slips (one wrong, one
@@ -190,8 +192,8 @@ def build(ctx=None, *, session_factory=None) -> dict:
     }
     try:
         kv_set_json(_KV_KEY, meta)
-    except Exception:  # noqa: BLE001 - the table is built; the note about it is best-effort
-        _LOG.warning("could not record the did-you-mean build note", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the table is built; the note about it is best-effort
+        log_failure(_LOG, "could not record the did-you-mean build note", exc, level=logging.WARNING)
     return {"state": "done", **meta}
 
 

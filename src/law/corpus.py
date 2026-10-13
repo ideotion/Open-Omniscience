@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, LawDocument, Source
 from src.database.write import is_integrity_error
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -212,9 +213,9 @@ def sync_watched_laws(session: Session, *, extractor=None, limit: int = 500) -> 
     for doc in docs:
         try:
             res = sync_law_to_corpus(session, doc, extractor=extractor)
-        except Exception:  # noqa: BLE001 - one bad document must not abort the batch
+        except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
             session.rollback()
-            _LOG.warning("law corpus sync failed for doc %s", doc.id, exc_info=True)
+            log_failure(_LOG, f"law corpus sync failed for doc {doc.id}", exc, level=logging.WARNING)
             out["skipped"] += 1
             continue
         out["documents"] += 1

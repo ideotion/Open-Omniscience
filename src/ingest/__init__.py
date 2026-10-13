@@ -45,6 +45,7 @@ from src.ingest.ssrf_guard import (
     is_blocked_ip,
 )
 from src.monitoring.activity import activity_monitor
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -368,8 +369,8 @@ def _persist_robots_entry(
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
-    except Exception:  # noqa: BLE001 - persistence is an optimisation, never required
-        _LOG.debug("robots cache persistence failed for %s", host_key, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
+        log_failure(_LOG, f"robots cache persistence failed for {host_key}", exc, level=logging.DEBUG)
 
 
 # --------------------------------------------------------------------------- #
@@ -526,8 +527,8 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
-    except Exception:  # noqa: BLE001 - persistence is an optimisation, never required
-        _LOG.debug("host schedule persistence failed for %s", netloc, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
+        log_failure(_LOG, f"host schedule persistence failed for {netloc}", exc, level=logging.DEBUG)
 
 
 def _env_cap(name: str, default: int, *, floor: int) -> int:
@@ -1511,8 +1512,8 @@ class EthicalFetcher:
         if getattr(self.session, "trust_env", False):
             try:
                 merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
-            except Exception:  # noqa: BLE001 - an unreadable environment is not a fetch error
-                _LOG.debug("could not read environment proxies for %r", url, exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
+                log_failure(_LOG, f"could not read environment proxies for {url!r}", exc, level=logging.DEBUG)
         merged.update(explicit or {})
         return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 

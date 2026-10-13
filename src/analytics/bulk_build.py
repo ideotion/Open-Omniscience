@@ -62,6 +62,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateIndex, DropIndex
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # The ``derived_meta`` key. Its value is the ISO instant the window opened plus the
@@ -139,8 +141,8 @@ def read_state(session: Session) -> dict | None:
 
     try:
         row = session.get(DerivedMeta, BULK_BUILD_KEY)
-    except Exception:  # noqa: BLE001 - an unreadable marker cannot prove the store is whole
-        _LOG.warning("bulk-build marker unreadable; treating as OPEN", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable marker cannot prove the store is whole
+        log_failure(_LOG, "bulk-build marker unreadable; treating as OPEN", exc, level=logging.WARNING)
         return {"since": "unknown", "planned": []}
     if row is None:
         return None
@@ -298,8 +300,8 @@ def bulk_index_window(
                 close_state(session)
             else:
                 _LOG.warning("bulk build left index(es) missing; the boot heal will finish them")
-        except Exception:  # noqa: BLE001 - the marker outliving us is the recovery path
-            _LOG.warning("bulk build rebuild failed; marker left open for the heal", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the marker outliving us is the recovery path
+            log_failure(_LOG, "bulk build rebuild failed; marker left open for the heal", exc, level=logging.WARNING)
 
 
 # --- the boot self-heal ----------------------------------------------------- #

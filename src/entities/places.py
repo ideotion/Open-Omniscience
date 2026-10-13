@@ -45,6 +45,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.entities.items import cached_item, item_payload
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -279,7 +280,7 @@ def _notable_pass(session, should_stop) -> dict:
         got = materialise_notable(session, should_stop=should_stop)
         return {**got, "indexed": sorted(indexed)}
     except Exception as exc:  # noqa: BLE001 - reported in the job's result, never silent
-        _LOG.warning("places: the OSM lane's pass failed", exc_info=True)
+        log_failure(_LOG, "places: the OSM lane's pass failed", exc, level=logging.WARNING)
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -545,8 +546,8 @@ def _osm_facts(place) -> dict | None:
         from src.osm.places import object_card
 
         card = object_card(place.geometry_ref.split(":", 1)[1])
-    except Exception:  # noqa: BLE001 - a locked or missing lane: the card still opens
-        _LOG.debug("place card: the OSM lane could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a locked or missing lane: the card still opens
+        log_failure(_LOG, "place card: the OSM lane could not be read", exc, level=logging.DEBUG)
         return {"held": None}
     if card is None:
         return {"held": False}

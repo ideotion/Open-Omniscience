@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.database.models import AiCustomPrompt, Article
 from src.llm.ollama import DEFAULT_MODEL, OllamaClient
+from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:
     from src.llm.backend import LlmBackend
@@ -104,8 +105,8 @@ def run_auto_on_ingest(
     out: dict = {"prompts": 0, "ran": False, "stored": 0, "skipped": 0, "failed": 0}
     try:
         prompts = due_auto_prompts(session)
-    except Exception:  # noqa: BLE001
-        logger.warning("auto-on-ingest: could not list prompts", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(logger, "auto-on-ingest: could not list prompts", exc, level=logging.WARNING)
         return out
     out["prompts"] = len(prompts)
     if not prompts:
@@ -139,6 +140,6 @@ def run_auto_on_ingest(
                     st = event.get("status")
                     if st in ("stored", "skipped", "failed"):
                         out[st] += 1
-        except Exception:  # noqa: BLE001 - one bad prompt never breaks the others
-            logger.warning("auto-on-ingest: prompt %s failed", p.id, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad prompt never breaks the others
+            log_failure(logger, f"auto-on-ingest: prompt {p.id} failed", exc, level=logging.WARNING)
     return out

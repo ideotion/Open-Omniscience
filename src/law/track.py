@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from src.database.models import LawDocument, LawRevision
 from src.database.write import is_integrity_error
 from src.law.model import mint_lane_key
+from src.monitoring.secret_scrub import log_failure
 from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
 from src.wiki.flagging import flag_revision
 
@@ -132,8 +133,8 @@ def _document_text(result, *, retrieved_on: str | None = None) -> tuple[str | No
             parsed = parse_clml(body, retrieved_on=retrieved_on)
         except AdapterRefusal:
             pass  # not CLML (or not enough of it) — the HTML path below is correct
-        except Exception:  # noqa: BLE001 - an adapter must never break tracking
-            _LOG.warning("law: CLML adapter raised; falling back to HTML", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an adapter must never break tracking
+            log_failure(_LOG, "law: CLML adapter raised; falling back to HTML", exc, level=logging.WARNING)
         else:
             return parsed.text, "clml", parsed
 
@@ -263,9 +264,9 @@ def _ingest_to_corpus(session, doc: LawDocument, extractor) -> None:
         from src.law.corpus import sync_law_to_corpus
 
         sync_law_to_corpus(session, doc, extractor=extractor)
-    except Exception:  # noqa: BLE001 - corpus ingest is best-effort, never blocks tracking
+    except Exception as exc:  # noqa: BLE001 - corpus ingest is best-effort, never blocks tracking
         session.rollback()
-        _LOG.warning("law corpus ingest failed for doc %s", doc.id, exc_info=True)
+        log_failure(_LOG, f"law corpus ingest failed for doc {doc.id}", exc, level=logging.WARNING)
 
 
 def _record_lane(doc: LawDocument, revision: LawRevision | None, parsed: object | None) -> str:
@@ -596,8 +597,8 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
     for doc in docs:
         try:
             res = track_document(session, fetcher, doc, extractor=extractor)
-        except Exception:  # noqa: BLE001 - one bad document must not abort the batch
-            _LOG.warning("law tracking: document %s failed", doc.id, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
+            log_failure(_LOG, f"law tracking: document {doc.id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned transaction so it can't roll back the batch
             tally["errors"] += 1
             continue
@@ -675,8 +676,8 @@ def auto_track_due(
     for doc in docs:
         try:
             res = track_document(session, fetcher, doc, extractor=extractor)
-        except Exception:  # noqa: BLE001 - one bad document must not abort the batch
-            _LOG.warning("law auto-track: document %s failed", doc.id, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
+            log_failure(_LOG, f"law auto-track: document {doc.id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned txn so one dup can't roll back the WHOLE pass
             tally["errors"] += 1
             continue

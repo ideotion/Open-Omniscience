@@ -27,6 +27,8 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 SNAPSHOT_VERSION = "oo-hazards-snapshot-1"
@@ -103,8 +105,8 @@ def load_snapshot(
         return empty
     try:
         data = json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a corrupt cache must not break the feed
-        _LOG.warning("hazards_snapshot.json unreadable; treating as empty", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a corrupt cache must not break the feed
+        log_failure(_LOG, "hazards_snapshot.json unreadable; treating as empty", exc, level=logging.WARNING)
         return empty
     if not isinstance(data, dict) or data.get("version") != SNAPSHOT_VERSION:
         return empty

@@ -102,8 +102,8 @@ def hand_off_reindex(report: dict) -> None:
         from src.backup.merge import reindex_backlog
 
         bk = reindex_backlog()
-    except Exception:  # noqa: BLE001 - a committed import must never fail on its own epilogue
-        _LOG.warning("could not read the re-index backlog after import", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a committed import must never fail on its own epilogue
+        log_failure(_LOG, "could not read the re-index backlog after import", exc, level=logging.WARNING)
         bk = {"available": False, "reason": "see server log"}
 
     report["reindex_deferred"] = {
@@ -170,8 +170,8 @@ def start_reindex_drain() -> tuple[bool, str | None]:
         _REINDEX_RESUME_JOB.start()
         return True, None
     except Exception as exc:  # noqa: BLE001 - already-running is normal in a queue
-        _LOG.info("re-index drain not started now (%s); the backlog stays visible", exc)
-        return False, str(exc)
+        log_failure(_LOG, "re-index drain not started now; the backlog stays visible", exc, level=logging.INFO)
+        return False, exception_text(exc, typed=False)
 
 
 def _stage_phase_name(stage_name: str) -> str:
@@ -969,7 +969,7 @@ class VolumeBackupManager:
             # a bare "cancelled".
             said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
-            runlog.end("refused", detail=said[:500])
+            runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             with self._lock:
                 self._state = "error"
                 self._error = said
@@ -980,7 +980,7 @@ class VolumeBackupManager:
             # cleaned by the finally above.
             said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.info("volume restore stopped by the operator: %s", said)
-            runlog.end("stopped-by-operator", detail=said[:500])
+            runlog.end("stopped-by-operator", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             with self._lock:
                 self._state = "cancelled"
                 self._error = None

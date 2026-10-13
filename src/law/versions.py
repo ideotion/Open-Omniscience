@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.compare import Part, compare_parts, part_text, side_by_side
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -248,8 +249,8 @@ def _lane_facts(db: Session, doc: LawDocument) -> dict:
             }
             for k, (language, title, kind) in keys.items()
         ]
-    except Exception:  # noqa: BLE001 - the lane is an addition; the text is the document
-        _LOG.debug("law versions: lane facts unavailable for %s", doc.id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the lane is an addition; the text is the document
+        log_failure(_LOG, f"law versions: lane facts unavailable for {doc.id}", exc, level=logging.DEBUG)
     return out
 
 
@@ -335,8 +336,8 @@ def _provision_parts(revision_lane_key: str | None) -> list[Part] | None:
                 )
                 for p in rows
             ]
-    except Exception:  # noqa: BLE001 - a navigation aid, never a reason to refuse the diff
-        _LOG.debug("law versions: provisions unavailable for %s", revision_lane_key, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a navigation aid, never a reason to refuse the diff
+        log_failure(_LOG, f"law versions: provisions unavailable for {revision_lane_key}", exc, level=logging.DEBUG)
         return None
     return parts or None
 
