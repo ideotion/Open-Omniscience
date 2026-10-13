@@ -264,6 +264,46 @@ def test_an_interrupt_during_the_drain_does_not_leave_the_hold_set(store):
     kv_store.kv_set_json("settings.after", {"v": 1})  # and a save is not made to wait
 
 
+def test_an_interrupt_as_the_hold_is_set_does_not_leave_it_set(store, monkeypatch):
+    """The hold is set inside the ``try``: a BaseException landing as the block that sets it ends (before the old code's ``try`` began)."""
+
+    class Interrupted(BaseException):
+        pass
+
+    real = kv_store._hold
+
+    class Proxy:
+        def __init__(self):
+            self.exits = 0
+
+        def __enter__(self):
+            return real.__enter__()
+
+        def __exit__(self, *exc):
+            real.__exit__(*exc)
+            self.exits += 1
+            if self.exits == 1:
+                raise Interrupted
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+    monkeypatch.setattr(kv_store, "_hold", Proxy())
+    with pytest.raises(Interrupted), kv_store.hold_writes(5):
+        pass
+    monkeypatch.setattr(kv_store, "_hold", real)
+    assert kv_store._hold_by is None
+    kv_store.kv_set_json("settings.after", {"v": 1})  # and a save is not made to wait
+
+
+def test_a_refused_second_hold_does_not_clear_the_first(store):
+    with kv_store.hold_writes(5):
+        with pytest.raises(RuntimeError), kv_store.hold_writes(5):
+            pass
+        assert kv_store._hold_by == threading.get_ident()
+    assert kv_store._hold_by is None
+
+
 def test_both_writers_go_through_the_write_slot():
     import inspect
 
