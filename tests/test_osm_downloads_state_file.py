@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 
-
 from src.geo.osm_downloads import OsmDownloadManager
 from src.monitoring import secret_scrub
 
