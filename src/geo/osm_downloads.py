@@ -239,7 +239,7 @@ class OsmDownloadManager:
             except Exception as save_exc:  # noqa: BLE001 - startup must not fail on its own bookkeeping
                 log_failure(_LOG, "OSM downloads state could not be rewritten after a scrub", save_exc, level=logging.WARNING)
 
-    def _scrub_stored(self) -> bool:
+    def _scrub_stored(self, *, mark: bool = True) -> bool:
         """Take the passphrases this process holds out of every text the state file keeps beyond what this build writes fresh: each
         entry's ``error`` (an older build stored it unscrubbed) and the keys a newer build added (``_extra``, ``_extra_state``:
         values, nested values and key names). Returns whether anything changed.
@@ -247,20 +247,26 @@ class OsmDownloadManager:
         When what the process holds could not be read the texts cannot be checked AT ALL: they stay as they are (they were already
         in the file and go nowhere new; ``to_dict`` serves the marker for an error) and the next save checks them again. Only that
         case: a text that WAS checked and has to be withheld whole (it holds a secret under the floor, or none can be taken out
-        cleanly) is written as the marker, so no readable passphrase stays in the file. An extra that cannot be walked is dropped."""
+        cleanly) is written as the marker, so no readable passphrase stays in the file. An extra that cannot be walked is dropped.
+
+        ``mark`` is True only at load, where the texts are the ones read from disk: a save that finds the holdings unreadable again
+        must not mask an error stored since (the class-only text of a failed download is already clean)."""
         if secret_scrub.held_passphrases() is None:
             self._unchecked_pending = True
-            for e in self._entries.values():
-                if e.error:
-                    e._unchecked_error = e.error
+            if mark:
+                for e in self._entries.values():
+                    if e.error:
+                        e._unchecked_error = e.error
             return False
         changed = False
         for e in self._entries.values():
-            e._unchecked_error = None
             if e.error:
                 clean = scrubbed(e.error)
                 changed = changed or clean != e.error
                 e.error = clean
+            # The mask comes off AFTER the clean text is in: a reader (``list`` holds another lock than a save) that looks in
+            # between would otherwise be served the words as they were.
+            e._unchecked_error = None
             try:
                 extra = _clean_extra(e._extra)
             except Exception:  # noqa: BLE001 - an extra that cannot be walked cannot be checked: dropped, never kept
@@ -281,7 +287,7 @@ class OsmDownloadManager:
         # consistent (the worker thread and the API thread both write it).
         with self._save_lock:
             if self._unchecked_pending:
-                self._scrub_stored()  # what could not be read at load may be readable now
+                self._scrub_stored(mark=False)  # what could not be read at load may be readable now
             tmp = self.state_path.with_suffix(".json.tmp")
             tmp.write_text(
                 json.dumps(

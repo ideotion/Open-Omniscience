@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+from src.geo import osm_downloads
 from src.geo.osm_downloads import OsmDownloadManager
 from src.monitoring import secret_scrub
 
@@ -185,23 +186,32 @@ def test_the_keys_a_newer_build_wrote_are_scrubbed_in_values_nested_values_and_k
     assert after["mirror_health"] == {"geofabrik": "ok"} and "note" in after
 
 
-def test_extras_that_could_not_be_checked_at_load_are_checked_again_at_the_next_save(
+def _edit_state(tmp_path, edit) -> None:
+    """Edit the state file WITHOUT loading it through a manager (a load would already scrub what is in it)."""
+    path = tmp_path / "downloads.json"
+    state = json.loads(path.read_text("utf-8"))
+    edit(state)
+    path.write_text(json.dumps(state), "utf-8")
+
+
+def test_extras_and_errors_that_could_not_be_checked_at_load_are_checked_again_at_the_next_save(
     tmp_path, monkeypatch
 ):
     # MUTATION TARGET: the re-check at the top of `_save` (the gate used to run once, at load).
     monkeypatch.setenv("OO_DB_PASSPHRASE", LONG)
     _store_extras(tmp_path)
-    state = _state(OsmDownloadManager(base_dir=tmp_path, http_get=None))
-    state["entries"]["europe"]["status"] = "error"
-    state["entries"]["europe"]["error"] = f"the transfer said {LONG}"
-    OsmDownloadManager(base_dir=tmp_path, http_get=None).state_path.write_text(
-        json.dumps(state), "utf-8"
+    _edit_state(
+        tmp_path,
+        lambda st: st["entries"]["europe"].update(
+            {"status": "error", "error": f"the transfer said {LONG}"}
+        ),
     )
     with monkeypatch.context() as unreadable:
         unreadable.setattr(secret_scrub, "held_passphrases", lambda: None)
         m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
-        assert LONG in m.state_path.read_text("utf-8"), (
-            "nothing can be checked: the words stay as they were"
+        on_disk = m.state_path.read_text("utf-8")
+        assert on_disk.count(LONG) >= 5, (
+            "nothing can be checked: the extras and the error stay as they were"
         )
         assert (
             next(e for e in m.list() if e["key"] == "europe")["error"]
@@ -212,3 +222,84 @@ def test_extras_that_could_not_be_checked_at_load_are_checked_again_at_the_next_
     assert (
         next(e for e in m.list() if e["key"] == "europe")["error"] != secret_scrub.UNREADABLE_TEXT
     )
+
+
+def test_a_reader_during_the_recheck_is_never_served_the_words_as_they_were(tmp_path, monkeypatch):
+    # MUTATION TARGET: the order in `_scrub_stored` (the clean text lands BEFORE the mask comes off).
+    monkeypatch.setenv("OO_DB_PASSPHRASE", LONG)
+    _seed(tmp_path)
+    _edit_state(
+        tmp_path,
+        lambda st: st["entries"]["europe"].update(
+            {"status": "error", "error": f"the transfer said {LONG}"}
+        ),
+    )
+    with monkeypatch.context() as unreadable:
+        unreadable.setattr(secret_scrub, "held_passphrases", lambda: None)
+        m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    seen: list[str] = []
+    real = osm_downloads.scrubbed
+
+    def watching(text, *a, **k):
+        seen.append(
+            next(e for e in m.list() if e["key"] == "europe")["error"]
+        )  # a request thread reading mid-scrub
+        return real(text, *a, **k)
+
+    monkeypatch.setattr(osm_downloads, "scrubbed", watching)
+    m._save()
+    assert seen, "the re-check must have scrubbed the stored error"
+    assert all(LONG not in text for text in seen), seen
+
+
+def test_a_save_while_the_holdings_are_unreadable_does_not_mask_a_fresh_class_only_error(
+    tmp_path, monkeypatch
+):
+    # MUTATION TARGET: `mark` (only a load marks; a save that finds the holdings unreadable again must not).
+    monkeypatch.setattr(secret_scrub, "held_passphrases", lambda: None)
+
+    def failing_get(*_a, **_k):
+        raise RuntimeError("connection reset by peer")
+
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=failing_get)
+    entry = m._entry_for("europe")
+    m._download(entry, stop_event=None)  # stores 'RuntimeError: its text is withheld', then saves
+    shown = next(e for e in m.list() if e["key"] == "europe")
+    assert shown["error"] == "RuntimeError: its text is withheld"
+
+
+def test_a_short_held_secret_in_an_extra_withholds_the_value_and_drops_the_key(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OO_DB_PASSPHRASE", LONG)
+    monkeypatch.setenv("OO_KEY_PASSPHRASE", "xyz")
+    _seed(tmp_path)
+    _edit_state(
+        tmp_path,
+        lambda st: st["entries"]["europe"].update(
+            {"both": f"{LONG} xyz", "short_only": "xyz only", "xyz-key": 1, "fine": "kept"}
+        ),
+    )
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    saved = _state(m)["entries"]["europe"]
+    assert LONG not in m.state_path.read_text("utf-8")
+    assert (
+        saved["both"] == secret_scrub.UNREADABLE_TEXT
+        and saved["short_only"] == secret_scrub.UNREADABLE_TEXT
+    )
+    assert "xyz-key" not in saved and saved["fine"] == "kept"
+
+
+def test_an_extra_that_cannot_be_walked_is_dropped_never_kept(tmp_path, monkeypatch):
+    # MUTATION TARGET: the `except Exception` branches around `_clean_extra` (an unwalkable extra must fail closed).
+    monkeypatch.setenv("OO_DB_PASSPHRASE", LONG)
+    _store_extras(tmp_path)
+
+    def cannot_walk(_value):
+        raise RecursionError("nested past what the interpreter can read")
+
+    monkeypatch.setattr(osm_downloads, "_clean_extra", cannot_walk)
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    after = _state(m)
+    assert LONG not in m.state_path.read_text("utf-8")
+    assert "plain" not in after["entries"]["europe"] and "mirror_health" not in after
