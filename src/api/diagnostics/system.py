@@ -176,11 +176,10 @@ def session_forensics_report(download: bool = Query(False)) -> dict | Response:
     Local diagnostics only — sizes and app-owned names, never file contents.
 
     ``download=1`` returns the same facts as a dated PLAIN-TEXT attachment (2026-08-23
-    field ask). This is a deliberate exception to the 2026-07-20 button-consolidation
-    ruling, whose rationale was that the ratchet guarantees the bundle carries every
-    report: it does (session-forensics.json; the text is not written a second time, R119) —
-    but this is the one file that explains a crash, and making an operator sit through a
-    full bundle run to send it is the wrong cost for that question."""
+    field ask), for a caller of the API: the Diagnostics panel no longer links it (R119, one
+    button), and the zip carries ``session-forensics.json`` without writing the text a second
+    time. It stays because it is the one report that explains a crash, and an operator who
+    cannot sit through a full bundle run can still fetch it alone."""
     from src.monitoring.forensics import render_text as _render
     from src.monitoring.forensics import session_forensics as _sf
 

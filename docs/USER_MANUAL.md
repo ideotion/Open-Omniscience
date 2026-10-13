@@ -1610,7 +1610,7 @@ Official **figures** are not here at all — they are data, so they live under
   handed to your browser by the page itself when the build ends (the click that started it is long past); "Save the last Diagnostics again" sends the same files again. The page can only *ask your browser* to save
   a file, so it says "Asked your browser to save 5 of 13 files", never that they are saved: look in your downloads folder (a browser that refused the
   several-downloads question saves nothing and does not tell the page). While files are on their way the buttons are greyed, and a second click does
-  nothing. Every file is at most 4,000,000 bytes (the size an upload message accepts) and opens on its own, so you can send some now and
+  nothing. Every file is at most 4,000,000 bytes (the size this app splits at) and opens on its own, so you can send some now and
   the rest later. To send again only some files, type a part number in "Start at part number" and press "Save from this part": it hands over five files
   from that part (the manifest is not saved again), and a number past the last part starts at the last one and says so. A number you type in the same box also tells the two
   "again" buttons where to start, for the same kind of set (a number the page wrote there itself is ignored, so "again" with the box untouched

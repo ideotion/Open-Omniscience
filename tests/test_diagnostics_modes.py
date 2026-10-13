@@ -333,6 +333,7 @@ def test_thorough_gives_every_scan_its_own_deadline_and_no_budget(monkeypatch):
     assert all(r["outcome"] == "ok" and "budget_cut" not in r for r in results)
     assert man["mode"] == "thorough" and man["scan_budget_s"] is None
     assert man["scans"]["skipped"] == [] and man["scans"]["scan_budget_s"] is None
+    assert man["scans"]["cut_by_budget"] == [], "Thorough has no budget to cut by"
     assert man["profile"]["complete_profile"] is True
 
 
@@ -357,11 +358,14 @@ def test_a_scan_over_the_database_gets_the_smaller_deadline_too(monkeypatch):
             return {"db": db is not None}
         return run
 
-    results, _, names, _ = _build([("s-tiny.json", make()), ("s-fast.json", make())], mode="quick", scan_window=window, db=db)
+    results, man, names, _ = _build([("s-tiny.json", make()), ("s-fast.json", make())], mode="quick", scan_window=window, db=db)
     assert got[:2] == [100.0, 75.0]  # (a later call is the manifest's own corpus counters)
     assert [r["outcome"] for r in results] == ["partial-deadline", "partial-deadline"]
     assert [r.get("budget_cut") for r in results] == [True, True]
     assert "s-tiny.json" in names, "a cut scan keeps what it gathered"
+    # ``ran`` counts both; the budget's effect on them is its own list, so a reader sees it without opening each entry.
+    assert man["scans"]["cut_by_budget"] == ["s-tiny.json", "s-fast.json"]
+    assert man["scans"]["partial"] == ["s-tiny.json", "s-fast.json"]
 
 
 def test_a_non_database_scan_abandoned_at_the_budget_names_the_budget_in_its_marker(monkeypatch):
@@ -373,6 +377,64 @@ def test_a_non_database_scan_abandoned_at_the_budget_names_the_budget_in_its_mar
     assert results[0]["outcome"] == "skipped-deadline" and results[0]["budget_cut"] is True
     text = read("s-tiny.json.skipped-deadline.txt").decode()
     assert "100s" in text and "Quick scan budget" in text
+    # the thread that was reading it is not stopped (a thread cannot be): the marker and the entry both say so
+    assert "can still be running" in text and results[0]["abandoned_running"] is True
+
+
+def _db_scan_raising(clock, seconds, exc):
+    def run():
+        clock.now += seconds
+        raise exc
+    return run
+
+
+@pytest.mark.parametrize("mode, says", [("quick", True), ("thorough", False)])
+def test_a_database_scan_stopped_at_the_budget_says_the_budget_set_its_time(monkeypatch, mode, says):
+    """The deadline marker of a scan the statement deadline stopped names the budget as the source of its time
+    when the budget, not the scan's own deadline, set it; a Thorough build never says so."""
+    clock, window = _Clock(), _Window()
+    monkeypatch.setattr(B, "_mono", clock)
+
+    @contextlib.contextmanager
+    def deadline(db, seconds):
+        yield
+
+    monkeypatch.setattr(B, "statement_deadline", deadline)
+    monkeypatch.setattr(B, "_all_diag_db_member_deadline_s", lambda: 300.0)
+    stop = B.StatementTimeout("read exceeded its deadline")
+    results, _, names, read = _build(
+        [("s-tiny.json", _db_scan_raising(clock, 10.0, stop))], mode=mode, scan_window=window, db=object()
+    )
+    assert results[0]["outcome"] == "skipped-deadline"
+    text = read("s-tiny.json.skipped-deadline.txt").decode()
+    assert "read exceeded its deadline" in text
+    assert ("Quick scan budget" in text) is says
+    if says:
+        assert "the 100 s deadline" in text
+    assert "abandoned_running" not in results[0], "a statement deadline stops the read itself: nothing was left running"
+
+
+def test_a_scan_that_chained_the_timeout_into_a_503_gets_the_same_budget_note(monkeypatch):
+    clock, window = _Clock(), _Window()
+    monkeypatch.setattr(B, "_mono", clock)
+
+    @contextlib.contextmanager
+    def deadline(db, seconds):
+        yield
+
+    monkeypatch.setattr(B, "statement_deadline", deadline)
+    monkeypatch.setattr(B, "_all_diag_db_member_deadline_s", lambda: 300.0)
+
+    def run():
+        clock.now += 5.0
+        try:
+            raise B.StatementTimeout("read exceeded its deadline")
+        except B.StatementTimeout as cause:
+            raise B.HTTPException(status_code=503, detail="deadline") from cause
+
+    results, _, _, read = _build([("s-tiny.json", run)], mode="quick", scan_window=window, db=object())
+    assert results[0]["outcome"] == "skipped-deadline"
+    assert "Quick scan budget" in read("s-tiny.json.skipped-deadline.txt").decode()
 
 
 def test_a_refusal_by_the_machine_is_reported_as_the_machine_s_even_when_the_budget_is_spent(monkeypatch):

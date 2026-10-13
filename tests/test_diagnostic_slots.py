@@ -80,6 +80,19 @@ def fat_member(max_bytes: int) -> dict:
     return {"blob": "x" * (2 * max_bytes), "asked": max_bytes}
 
 
+SECRET = "correct horse battery staple 42"
+
+
+def leaky_member(max_bytes: int) -> dict:
+    """A producer that catches its own failure and returns the engine's words, which quote the key statement: the shape
+    two producers had (cut raw, never scrubbed) before the slot wrapper put a net under every answer."""
+    return {
+        "error": f"RuntimeError: near '{SECRET}': syntax error [SQL: PRAGMA key = '{SECRET}']",
+        "rows": [{"note": f"tail {SECRET}"}, 3],
+        "asked": max_bytes,
+    }
+
+
 def giant_member(max_bytes: int) -> dict:
     """A producer far over what it was asked to keep: about 9 MB of records that do not compress."""
     rnd = random.Random(17)
@@ -128,9 +141,11 @@ def test_every_slot_is_a_member_of_this_build_or_named_absent_and_never_both():
     assert not present & absent
     assert present | absent == {s.name for s in slots.SLOTS}
     assert all(row["state"] == "not-in-build" and row["target"] and row["owner"] for row in slots.not_in_build())
-    # the three built producers are in this build, and are members of the real list
-    for built in ("vitals.json", "runs.json", "pressure-light.json"):
+    # the five built producers are in this build, and are members of the real list: a misspelled module path reads
+    # as "not in build", so the built slots are NAMED here and the one absent slot is the one not written yet
+    for built in ("vitals.json", "runs.json", "pressure-light.json", "boots.json", "database-damage.json"):
         assert built in present and built in _member_names()
+    assert absent == {"keyword-pipeline.json"}, "a slot built since: add it to the tuple above and drop it from this set"
 
 
 def test_a_slot_whose_module_is_here_has_the_function_it_names():
@@ -214,6 +229,25 @@ def test_the_manifest_says_what_a_slot_was_asked_and_names_one_that_wrote_more(m
     assert "budget_bytes" not in plain[0] and "over_budget" not in plain[0]
 
 
+def test_a_secret_a_producer_wrote_into_its_answer_does_not_reach_the_archive(monkeypatch):
+    """The net under every slot: the passphrase the process holds is taken out of the answer's strings, wherever it sits
+    (an error line, a list inside a dict), and the structure and numbers of the answer are kept."""
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", SECRET)
+    slot = _slot("leaky.json", "tests.test_diagnostic_slots:leaky_member", 5000)
+    monkeypatch.setattr(slots, "SLOTS", (slot,))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        b._write_all_diagnostics_zip(slots.members(), z)
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as z:
+        everything = b"".join(z.read(n) for n in z.namelist()).decode("utf-8", "replace")
+        member = json.loads(z.read("leaky.json"))
+    assert SECRET not in everything and SECRET.replace(" ", "\\u0020") not in everything
+    assert member["rows"][1] == 3 and member["asked"] == 5000 and "RuntimeError" in member["error"]
+    assert "redacted" in member["error"].lower()
+
+
 def test_the_built_slot_producers_hold_the_numbers_the_table_states():
     """vitals and runs are held to their budget by their own code; the pressure tail is measured: the
     16 snapshots it can hold (8 per session, two sessions) fit with room, with none dropped."""
@@ -267,11 +301,28 @@ def test_the_guard_finds_a_duplicate_and_ignores_two_copies_inside_one_member():
     assert identical_subtrees({"a.json": {"x": {"small": 1}}, "b.json": {"x": {"small": 1}}}) == []
 
 
-def test_no_two_record_members_of_the_archive_carry_the_same_300_bytes(db):
-    """Run for real, on a young install (the archive's own records, not the scans). The old archive
+def _record_one_damage_incident(tmp_path):
+    """One incident in the damage registry (the autouse fixture of conftest resets it after the test)."""
+    import sqlite3
+
+    from src.database import damage
+
+    damage.registry._reset_for_tests(path_fn=lambda: tmp_path / "database-damage.json")
+    damage.registry.note(
+        damage.FILE_CORPUS, sqlite3.DatabaseError("database disk image is malformed"), statement="SELECT a FROM articles"
+    )
+
+
+@pytest.mark.parametrize("incident", [False, True], ids=["young install", "one recorded damage incident"])
+def test_no_two_record_members_of_the_archive_carry_the_same_300_bytes(db, tmp_path, incident):
+    """Run for real (the archive's own records, not the scans). The old archive
     failed this in four places: the storage footprint and the persistence check (session-forensics and
     the storage reads), the rolling log's counts (the debug bundle and frontend-errors), and the eight
-    sections the debug bundle embedded of members that stand alone."""
+    sections the debug bundle embedded of members that stand alone. The second case is the one a young
+    install hides: the storage guard's state carries the damage record, which ``database-damage.json`` is
+    in its own right (found at 454 to 598 bytes, four times, in the debug bundle and the storage member)."""
+    if incident:
+        _record_one_damage_incident(tmp_path)
     ran: dict[str, object] = {}
     failed: dict[str, str] = {}
     for name, fn in d._all_diagnostics_members(db):
@@ -285,6 +336,67 @@ def test_no_two_record_members_of_the_archive_carry_the_same_300_bytes(db):
     assert len(ran) >= 30, (sorted(ran), failed)
     found = identical_subtrees(ran)
     assert not found, [(n, locs[:3]) for n, locs in found[:5]]
+
+
+def test_the_storage_guard_s_copy_of_the_damage_record_keeps_the_headline_and_names_the_member(db, tmp_path):
+    _record_one_damage_incident(tmp_path)
+    from src.scheduler.storage_guard import storage_guard
+
+    full = json.loads(json.dumps(storage_guard.state(detail=True), default=str))
+    record = full["database_damage"]
+    assert record["incidents"], "the fixture records an incident"
+    named = b._damage_named_not_copied(full)
+    assert named is not full and full["database_damage"] is record, "a copy: the guard's own state is not touched"
+    pointer = named["database_damage"]
+    assert pointer["see"] == "database-damage.json" and pointer["slim"] is True
+    for key in ("enabled", "latched", "recorded_only", "incident_count"):  # named here, not read from the code under test
+        assert pointer[key] == record[key], key
+    assert "incidents" not in pointer and "notes" not in pointer and "last_incident" not in pointer
+    assert {k: v for k, v in named.items() if k != "database_damage"} == {k: v for k, v in full.items() if k != "database_damage"}
+
+
+def test_the_pointer_is_written_only_where_the_member_is_and_only_for_the_shape_it_knows(db, tmp_path, monkeypatch):
+    guard = {"a": 1, "database_damage": {"incidents": [1], "latched": ["corpus"]}}
+    monkeypatch.setattr(slots, "in_build", lambda name: False)
+    assert b._damage_named_not_copied(guard) is guard, "without the member in the build the record stays where it is"
+    monkeypatch.undo()
+    for other in (None, [], {"a": 1}, {"database_damage": "text"}):
+        assert b._damage_named_not_copied(other) is other
+
+
+def test_the_archive_s_storage_member_and_slim_scheduler_name_the_damage_member_and_the_routes_stay_whole(db, tmp_path):
+    _record_one_damage_incident(tmp_path)
+    storage = dict(d._all_diagnostics_members(db))["storage.json"]()
+    guard = storage["sections"]["storage-composition"]["data"]["storage_guard"]
+    assert guard["database_damage"]["see"] == "database-damage.json", sorted(guard)
+    assert "incidents" not in guard["database_damage"]
+    slim = _bundle(db, True)["scheduler"]["status"]["storage_guard"]["database_damage"]
+    assert slim["see"] == "database-damage.json" and "incidents" not in slim and "notes" not in slim
+    whole = _bundle(db, False)["scheduler"]["status"]["storage_guard"]["database_damage"]
+    assert "see" not in whole and whole["last_incident"] and whole["notes"], "the route on its own is whole"
+
+
+def test_the_damage_budget_holds_a_full_record_twice_over(tmp_path):
+    """The budget of ``database-damage.json`` was a first estimate; it is now held to a measurement: the record at its
+    full retention (``INCIDENTS_KEEP`` incidents of distinct shapes, no table lists) was 16,187 bytes when it was measured."""
+    import sqlite3
+
+    from src.database import damage
+
+    damage.registry._reset_for_tests(path_fn=lambda: tmp_path / "database-damage.json")
+    for n in range(damage.INCIDENTS_KEEP + 5):
+        damage.registry.note(
+            damage.FILE_CORPUS, sqlite3.DatabaseError("database disk image is malformed"),
+            statement=f"SELECT a FROM t{n} WHERE b IN (SELECT c FROM u{n})",
+        )
+    budget = slots.budget_of("database-damage.json")
+    whole = damage.diagnostics_member(10**9)
+    size = len(json.dumps(whole, separators=(",", ":"), default=str))
+    assert len(whole["incidents"]) == damage.INCIDENTS_KEEP and whole["dropped_oldest_to_fit"] == 0
+    assert size * 2 <= budget, (size, budget)
+    # at its budget the full record still fits, so nothing is dropped from it
+    fitted = damage.diagnostics_member(budget)
+    assert fitted["dropped_oldest_to_fit"] == 0 and len(fitted["incidents"]) == damage.INCIDENTS_KEEP
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -496,10 +608,24 @@ def test_a_section_the_deadline_ended_is_not_swallowed_and_the_rest_say_they_wer
         ({"something": "else"}, "unknown"),
         ("not an object", "unknown"),
         ({"passed": 1, "total": 3}, "unknown"),  # a number is not a flag
+        # the third shape, checks listed one by one: counted from them, never read as a bare pass
+        ({"passed": True, "checks": {}}, "unknown"),  # a pass over no check proves nothing
+        ({"passed": True, "checks": {"a": False}}, "fail"),  # the flag says pass, a check failed
+        ({"passed": True, "checks": {"a": True, "b": True}}, "pass"),
+        ({"passed": True, "checks": [{"check": "a", "ok": True}, {"check": "b", "ok": False}]}, "fail"),
+        ({"passed": True, "checks": [{"check": "a", "passed": True}]}, "pass"),
     ],
 )
 def test_a_selftest_is_a_pass_only_when_it_says_so_and_ran_a_check(answer, verdict):
     assert b._selftest_verdict(answer)["verdict"] == verdict
+
+
+def test_a_pass_read_from_listed_checks_keeps_the_count_of_them():
+    """67 checks of seven self-tests were counted by the tests and lost from the record: a pass says how many it was over."""
+    got = b._selftest_verdict({"passed": True, "checks": {"a": True, "b": True, "c": True}})
+    assert got == {"total": 3, "passed": 3, "failed": 0, "verdict": "pass"}
+    got = b._selftest_verdict({"passed": True, "checks": [{"check": "a", "ok": True}, {"check": "b", "ok": True}]})
+    assert got == {"total": 2, "passed": 2, "failed": 0, "verdict": "pass"}
 
 
 def test_selftests_keep_the_full_output_only_for_one_that_did_not_pass(monkeypatch):

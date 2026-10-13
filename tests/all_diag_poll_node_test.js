@@ -55,11 +55,12 @@ assert.ok(clickMatch, "_PARTS_PER_CLICK must be declared in app.js");
 
 // --- the harness ------------------------------------------------------------------ //
 
-let clock, statusText, opened, apiCalls, respond, readyListings, shownFor, savedCounts;
+let clock, statusText, statusLog, opened, apiCalls, respond, readyListings, shownFor, savedCounts;
 
 function install() {
   clock = 1_000_000;           // any epoch; only differences matter
   statusText = null;
+  statusLog = [];              // every line the status showed, in order (the last one is what the person is left reading)
   opened = [];
   apiCalls = [];
   Date.now = () => clock;
@@ -69,7 +70,7 @@ function install() {
   // so the real pacing is exercised rather than bypassed.
   global.setTimeout = (fn, ms) => { clock += (ms || 0); fn(); };
   global.window = { open: (u) => opened.push(u) };
-  global.$ = () => ({ set textContent(v) { statusText = v; }, get textContent() { return statusText; } });
+  global.$ = () => ({ set textContent(v) { statusText = v; statusLog.push(v); }, get textContent() { return statusText; } });
   global._fmtBytes = (n) => n + " B";
   readyListings = [];
   global._partsReady = (m) => readyListings.push(m);   // the numbered-files bar, defined elsewhere
@@ -203,7 +204,77 @@ async function errorStillReportsFailure() {
   );
 }
 
+// --- 4. a build that was already running is followed, and the page says so ------------------ //
+// ``started: false`` is the POST's answer when a build is in flight (another tab, the API, this page before a reload).
+// The Thorough box applies to a build the person STARTS, so a ticked box answered by someone else's Quick build must not
+// read as honoured; and the twin: a build this page started says nothing of the kind.
+
+async function aBuildThatWasAlreadyRunningIsFollowedAndSaid() {
+  install();
+  let polls = 0;
+  respond = (url) => {
+    if (!url.endsWith("/status")) return { started: false, job: { state: "running" } };
+    polls++;
+    return polls < 3 ? { state: "running", done: 4, total: 55, detail: "runs.json", started_at: 0 }
+                     : { state: "error", error: "stopped" };
+  };
+  await runAllDiagnostics(null);
+  const progress = statusLog.filter((l) => /Building in the background/.test(l));
+  assert.ok(progress.length >= 2, "the build was polled while it ran: " + JSON.stringify(statusLog));
+  for (const line of progress) {
+    assert.ok(/already running/.test(line) && /Thorough/.test(line),
+      "every progress line of a followed build says so, with what the box applies to. Got: " + JSON.stringify(line));
+  }
+}
+
+async function aBuildThisPageStartedSaysNothingOfTheKind() {
+  install();
+  let polls = 0;
+  respond = (url) => {
+    if (!url.endsWith("/status")) return { started: true, job: { state: "running" } };
+    polls++;
+    return polls < 3 ? { state: "running", done: 4, total: 55, detail: "runs.json", started_at: 0 }
+                     : { state: "error", error: "stopped" };
+  };
+  await runAllDiagnostics(null);
+  assert.ok(statusLog.some((l) => /Building in the background/.test(l)), JSON.stringify(statusLog));
+  assert.ok(!statusLog.some((l) => /already running/.test(l)), "a build this page started is not described as followed: " + JSON.stringify(statusLog));
+  // and a start that failed in transit (the poll still finds the job) is not described as followed either
+  install();
+  polls = 0;
+  global.api = async (url) => {
+    apiCalls.push(url);
+    if (!url.endsWith("/status")) throw new Error("offline blip");
+    polls++;
+    return polls < 2 ? { state: "running", done: 1, total: 55, detail: "runs.json", started_at: 0 }
+                     : { state: "error", error: "stopped" };
+  };
+  await runAllDiagnostics(null);
+  assert.ok(!statusLog.some((l) => /already running/.test(l)), JSON.stringify(statusLog));
+}
+
+// --- 5. the line while the listing is fetched does not promise numbered files ---------------- //
+// The common archive is ONE file (it fits 4 MB); "numbered files" was true only of the larger sets.
+
+async function theReadyLineDoesNotPromiseNumberedFiles() {
+  install();
+  let polls = 0;
+  respond = (url) => {
+    if (url.endsWith("/all-job/volumes")) return { set: "x", files: [{ name: "oo-diagnostics-x.zip", kind: "archive" }] };
+    if (!url.endsWith("/status")) return { started: true };
+    polls++;
+    return polls < 2 ? { state: "running", done: 1, total: 55, detail: "runs.json", started_at: 0 } : { state: "done", ready: true };
+  };
+  await runAllDiagnostics(null);
+  const ready = statusLog.filter((l) => /^Ready/.test(l));
+  assert.deepStrictEqual(ready, ["Ready — preparing the download…"], JSON.stringify(statusLog));
+  assert.ok(!statusLog.some((l) => /numbered/.test(l)), "a one-file archive is not announced as numbered files: " + JSON.stringify(statusLog));
+}
+
 (async () => {
+  await aBuildThatWasAlreadyRunningIsFollowedAndSaid();
+  await aBuildThisPageStartedSaysNothingOfTheKind();
+  await theReadyLineDoesNotPromiseNumberedFiles();
   await ceilingReportsInsteadOfFreezing();
   await readyStillOffersTheFiles();
   await aLargeSetWaitsForTheButton();

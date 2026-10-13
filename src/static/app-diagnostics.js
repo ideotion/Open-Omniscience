@@ -1131,7 +1131,14 @@
         // panel opens (R124). The profile is not sent: the panel has no light bundle since R122.
         const thoroughEl = $("diag-thorough");
         const mode = (thoroughEl && thoroughEl.checked) ? "thorough" : "quick";
-        try { await api("/api/diagnostics/all-job?mode=" + mode, { method: "POST" }); }
+        // ``started: false`` is a build that was ALREADY running (another tab, the API, or this page before a reload):
+        // this page follows it, and its status line says so, because the Thorough box applies to a build the person
+        // starts, and a ticked box answered by a Quick build must not read as having been honoured.
+        let followed = false;
+        try {
+          const began = await api("/api/diagnostics/all-job?mode=" + mode, { method: "POST" });
+          followed = !!began && began.started === false;
+        }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }
         let miss = 0;
         // `settled` is the honesty latch: it is set by EVERY terminal branch, and whatever
@@ -1156,7 +1163,7 @@
             // archive itself when it fits one file, else numbered files, five to a click) and never
             // opens /all-job/download, which stays for API callers.
             settled = true;
-            set(t("Ready — preparing the numbered files…"));
+            set(t("Ready — preparing the download…"));
             let handOver = 0;   // files to hand over once the bar is set; the hand-over is outside the try
             let handSet = null;   // the set the bar was given for it, to tell whether it still holds it afterwards
             try {
@@ -1222,13 +1229,13 @@
               _partsShow(btn);
               // A set that fits one click (the five files a click saves; no split set in the
               // 2026-10-06 reports was larger than two: the manifest and one part) is handed to
-              // the browser now, because the person pressed «All diagnostics» to GET these files
+              // the browser now, because the person pressed «Diagnostics» to GET these files
               // and a finished build that only offers a second button is the failure that was
               // reported (the maintainer's words, 2026-10-06: the full run «did not work», «again»
               // had to be pressed; our reading of them, not a numbered ruling). The build spent
               // the click that started it, so a browser may ask once to allow several downloads,
               // or refuse without telling the page: the line says «Asked your browser», never
-              // «saved», and «All diagnostics, again» beside it sends the same files again. A
+              // «saved», and the «Save the last Diagnostics again» link under it sends the same files again. A
               // larger set still waits for the button, five to a click.
               if (handOver <= _PARTS_PER_CLICK) {
                 await _partsSave(_PARTS_PER_CLICK);
@@ -1261,7 +1268,8 @@
           const elapsedS = s.started_at ? Math.max(0, Math.round(Date.now() / 1000 - s.started_at)) : null;
           const elapsed = elapsedS != null ? " · " + elapsedS + "s" : "";
           const pct = (s.progress && s.progress.percent != null) ? " " + s.progress.percent + "%" : "";
-          set(t("Building in the background…") + pct + (member ? " · " + member : "") + elapsed);
+          set((followed ? t("A build was already running, so this page follows it. The Thorough box applies to a build you start.") + " " : "")
+            + t("Building in the background…") + pct + (member ? " · " + member : "") + elapsed);
           // 2 s keeps a short build feeling immediate; past the first two minutes this is a
           // long haul and a 2 s poll for hours is the polling storm the 2026-06-13 field log
           // already complained about, for a line that changes every few minutes at most.

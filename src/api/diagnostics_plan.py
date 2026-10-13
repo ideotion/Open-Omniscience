@@ -32,10 +32,12 @@ the median over all 17 only because eleven builds declined them (the Light profi
 did; their figures here are the cost where they ran (300, 300 and 167 s). An estimate only ORDERS the
 scans (shortest first, so that a Quick build runs as many as fit); it never decides that a scan is
 too long: a scan starts if :data:`SCAN_FLOOR_S` are left, whatever it is expected to cost, and is
-cut by the time that is left, which is a hard bound on the pause.
+asked to stop at the time that is left. That bounds the pause, not to the second: a database scan stops at its next
+progress check, Python work after its last query is not interrupted, and a scan that is not a database read is abandoned on
+its thread, which runs on, so a scan can hold the window past the budget by that overrun (its ``wall_s`` against its ``deadline_s`` says by how much).
 
-A scan an owner adds states its own ``est_s`` in the slot table; one that states none counts as
-:data:`DEFAULT_SCAN_S`. This module is a table and four small functions. It reads nothing, opens no
+A scan an owner adds states its estimate by one line in :data:`SCAN_EST_S` (the slot table has no
+estimate field); one that states none counts as :data:`DEFAULT_SCAN_S`. This module is a table and four small functions. It reads nothing, opens no
 file and imports nothing heavy, so the tests can pin it.
 """
 
@@ -48,8 +50,8 @@ MODES = ("quick", "thorough")
 
 #: The time Quick spends on all the scans together, in seconds. It protects the collection pause and
 #: the user's wait before there is a file (see the module docstring), and a scan that does not fit
-#: is named in the manifest. A hard bound: a scan's own deadline is the smaller of its 300 s and the
-#: time left here.
+#: is named in the manifest. A bound on what a scan is ASKED for, not a promise to the second: a scan's own deadline is the
+#: smaller of its 300 s and the time left here, and one that does not stop on request can pass it (see the module docstring).
 SCAN_BUDGET_S = 600.0
 
 #: A scan is started only while at least this much of the budget is left.
@@ -191,8 +193,8 @@ def scan_deadline_s(cap_s: float, elapsed_s: float, budget_s: float | None) -> t
     ``cap_s`` is the scan's own deadline (300 s by default), ``elapsed_s`` the time the scans have
     taken so far, ``budget_s`` the shared budget (``None`` in Thorough: no budget). Returns
     ``(None, False)`` when the scan must not start: fewer than :data:`SCAN_FLOOR_S` of the budget are
-    left. Otherwise the smaller of the cap and the time left, so the budget is a bound on the pause
-    and not a hope."""
+    left. Otherwise the smaller of the cap and the time left: what the scan is asked to stop at, so the budget bounds the
+    pause up to the overrun of a scan that does not stop on request."""
     if budget_s is None:
         return cap_s, False
     left = budget_s - elapsed_s
@@ -224,6 +226,9 @@ def scans_block(
         for r in scans if r.get("outcome") == "skipped-budget"
     ]
     declined = [r["file"] for r in scans if r.get("outcome") in ("declined-ram", "declined-light")]
+    # ``ran`` counts a scan that began, whatever the budget left it: the ones whose deadline was the time the budget had
+    # left (a cut to nothing is ``skipped-deadline``, not ``partial``) are named here, so the budget's effect is one list.
+    cut_by_budget = [r["file"] for r in scans if r.get("budget_cut")]
     return {
         "mode": mode,
         "scan_budget_s": budget_s,
@@ -232,6 +237,7 @@ def scans_block(
         "planned": planned,
         "ran": ran,
         "partial": partial,
+        "cut_by_budget": cut_by_budget,
         "skipped": skipped,
         "declined": declined,
         "scan_seconds": round(sum(float(r.get("wall_s") or 0.0) for r in scans), 1),

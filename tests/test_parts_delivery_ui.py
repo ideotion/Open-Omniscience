@@ -26,7 +26,7 @@ _STRINGS = [
     "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.",
     "Looking for the last keyword files…",
     "No keyword files are kept on this machine yet — build them with one of the keyword buttons.",
-    "Ready — preparing the numbered files…",
+    "Ready — preparing the download…",
     "Save all the rest",
     "Save the next 5",
     "Start at part number",
@@ -55,6 +55,7 @@ _STRINGS = [
     "Asked your browser to save the Diagnostics file. Check that it arrived, then send it.",
     "The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it.",
     "Nothing is built yet — press the Diagnostics button first.",
+    "A build was already running, so this page follows it. The Thorough box applies to a build you start.",
 ]
 
 
@@ -191,7 +192,14 @@ def test_the_panel_has_one_diagnostics_button_a_thorough_box_and_two_text_links(
         assert "localStorage" not in body and "sessionStorage" not in body
     assert run.count("diag-thorough") == 1, "the box is read once, at press time"
     # emptied each time the Diagnostics section opens, by the same listener that watches its jobs
-    assert "diagnosticsPanelOpened()" in boot
+    # the CALL stands in the toggle listener as code (a commented-out line still contains the text, so the
+    # line is matched whole, from its start): "Thorough off at each open" is true only if the panel calls it
+    toggle = boot[boot.index('diag.addEventListener("toggle"'):]
+    assert re.search(
+        r'^\s*if \(diag\.open && typeof diagnosticsPanelOpened === "function"\) diagnosticsPanelOpened\(\);$',
+        toggle[:toggle.index("});")],
+        re.M,
+    )
     opened = js[js.index("async function diagnosticsPanelOpened("):js.index("function watchDiagnosticsJobs(")]
     assert 'box.checked = false' in opened
     # «again» is a text link (never a second filled button), hidden until the server names an archive

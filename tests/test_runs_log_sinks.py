@@ -544,31 +544,51 @@ _WITNESS_MODULES = (
 _EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"}}
 #: The bundle writer is read whole, like the witnesses, with its own two scrubbing helpers added: ``_all_diag_err_str`` is
 #: ``exception_text(limit=300)`` and ``_err_str`` its older spelling. What the guard still reports there is each LINE below, with the
-#: reason it stands. A line is allowed by its text, so a second copy of the same line elsewhere is allowed with it (a reviewer sees it
-#: in the diff); an allowance that no longer matches a hit fails, so the table cannot outlive the code it excuses.
+#: reason it stands. A line is allowed in the FUNCTION it stands in and as many times as the table counts: the same text copied into
+#: another function (a raw use dressed as an allowed line), or a second hit in the same one, is reported; an allowance that no longer
+#: matches a hit, or matches fewer than it counts, fails, so the table cannot outlive the code it excuses.
 _BUNDLE_SCRUBS = {"_all_diag_err_str", "_err_str"}
-_BUNDLE_ALLOWED = {
-    ") from exc": (
+#: Keyed by (the function the line stands in, the line's text) with the NUMBER of hits the guard reports on it: the same line
+#: copied into another function, or a second use in the same one, is a hit the table does not excuse.
+_BUNDLE_ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
+    ("all_diagnostics_volumes", ") from exc"): (
+        2,
         "the closing line of a raise whose own detail is a fixed sentence: the cause chain rides the HTTPException the route answers "
-        "with, and nothing logs an HTTPException's chain (the member handlers write it through _all_diag_err_str)"
+        "with, and nothing logs an HTTPException's chain (the member handlers write it through _all_diag_err_str)",
     ),
-    "raise HTTPException(status_code=507, detail=str(exc)) from exc": (
-        "a VolumeRoomError, whose text diagnostics_volumes composes from sizes and the drive; the answer goes to the local page"
+    ("all_diagnostics_volume_download", ") from exc"): (
+        1,
+        "the same closing line, in the download route of one volume",
     ),
-    "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc": (
+    ("all_diagnostics_volumes", "raise HTTPException(status_code=507, detail=str(exc)) from exc"): (
+        2,
+        "a VolumeRoomError, whose text diagnostics_volumes composes from sizes and the drive; the answer goes to the local page",
+    ),
+    ("all_diagnostics_volumes", "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc"): (
+        4,
         "the error of splitting a FINISHED zip on disk, answered to the local page, which puts its own translated sentence before it: "
         "no engine and no passphrase in the path (_ensure_volume_set reads a zip and writes volumes). If an engine ever enters it, "
-        "this allowance is wrong"
+        "this allowance is wrong",
     ),
-    'if no_room_refusal(exc, "splitting the archive") is None:': "no_room_refusal reads errno and nothing else (keyword_log_scan)",
-    'f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "': (
-        "the operating system's own reason (\"No space left on device\"), never the message, which carries the path"
+    ("all_diagnostics_volumes", 'if no_room_refusal(exc, "splitting the archive") is None:'): (
+        1,
+        "no_room_refusal reads errno and nothing else (keyword_log_scan)",
     ),
-    'box["error"] = exc': (
-        "stored for the caller's side to re-raise, where the per-member handler writes it through _all_diag_err_str"
+    ("all_diagnostics_volumes", 'f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "'): (
+        1,
+        "the operating system's own reason (\"No space left on device\"), never the message, which carries the path",
     ),
-    "cause = exc.__cause__ if isinstance(exc, HTTPException) else None": (
-        "the cause is asked its type (isinstance) or handed to _all_diag_err_str, and the HTTPException itself is not read"
+    ("_run_nondb_member_bounded._run", 'box["error"] = exc'): (
+        1,
+        "stored for the caller's side to re-raise, where the per-member handler writes it through _all_diag_err_str",
+    ),
+    ("_merged_member", "cause = exc.__cause__ if isinstance(exc, HTTPException) else None"): (
+        1,
+        "the cause is asked its type (isinstance) or handed to _all_diag_err_str, and the HTTPException itself is not read",
+    ),
+    ("_write_all_diagnostics_zip", "cause = exc.__cause__ if isinstance(exc, HTTPException) else None"): (
+        1,
+        "the same, in the build's per-member handler",
     ),
 }
 _LOG_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "exception", "log", "fatal"}
@@ -672,31 +692,75 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
     assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
 
 
-def _bundle_hits(source: str) -> dict[str, list[str]]:
-    """The hits of the full guard on the bundle writer, grouped by the text of the line they stand on."""
+def _qualified_names(tree: ast.AST) -> dict[int, str]:
+    """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``)."""
+    owner: dict[int, str] = {}
+
+    def walk(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                name = f"{prefix}.{child.name}" if prefix else child.name
+                for line in range(child.lineno, (child.end_lineno or child.lineno) + 1):
+                    owner[line] = name
+                walk(child, name)
+            else:
+                walk(child, prefix)
+
+    walk(tree, "")
+    return owner
+
+
+def _bundle_hits(source: str) -> dict[tuple[str, str], list[str]]:
+    """The hits of the full guard on the bundle writer, grouped by (the function they stand in, the text of their line)."""
     lines = source.splitlines()
-    out: dict[str, list[str]] = {}
+    owner = _qualified_names(ast.parse(source))
+    out: dict[tuple[str, str], list[str]] = {}
     for hit in _leaks(source, also_scrubbing=_BUNDLE_SCRUBS):
-        out.setdefault(lines[int(hit.split(":", 1)[0]) - 1].strip(), []).append(hit)
+        number = int(hit.split(":", 1)[0])
+        out.setdefault((owner.get(number, "<module>"), lines[number - 1].strip()), []).append(hit)
     return out
+
+
+def _not_excused(got: dict[tuple[str, str], list[str]]) -> dict[tuple[str, str], list[str]]:
+    """The hits the table does not excuse: a line it does not name in that function, or more hits than it counts."""
+    return {k: v for k, v in got.items() if k not in _BUNDLE_ALLOWED or len(v) > _BUNDLE_ALLOWED[k][0]}
 
 
 def test_the_bundle_writer_logs_no_traceback_and_prints_no_caught_exception_raw_but_the_lines_it_states():
     got = _bundle_hits((ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8"))
-    assert sorted(set(got) - set(_BUNDLE_ALLOWED)) == [], {k: v for k, v in got.items() if k not in _BUNDLE_ALLOWED}
+    assert _not_excused(got) == {}
 
 
-def test_every_line_the_bundle_writer_is_allowed_still_stands_there():
+def test_every_line_the_bundle_writer_is_allowed_still_stands_there_as_often_as_it_is_counted():
     got = _bundle_hits((ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8"))
-    assert sorted(set(_BUNDLE_ALLOWED) - set(got)) == [], "an allowance that no longer matches a line of the code"
+    stale = {k: (n, len(got.get(k, []))) for k, (n, _why) in _BUNDLE_ALLOWED.items() if len(got.get(k, [])) != n}
+    assert stale == {}, "an allowance that no longer matches the code: (counted, found)"
 
 
 def test_a_raw_use_planted_in_the_bundle_writer_is_not_one_of_the_lines_it_is_allowed():
     source = (ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
     planted = source + "\n\ndef _planted():\n    try:\n        go()\n    except OSError as exc:\n        _LOG.warning('x %s', exc)\n"
-    assert set(_bundle_hits(planted)) - set(_BUNDLE_ALLOWED), "the full guard does not see a raw use added to the bundle writer"
+    assert _not_excused(_bundle_hits(planted)), "the full guard does not see a raw use added to the bundle writer"
     planted = source + "\n\ndef _planted():\n    _LOG.warning('x', exc_info=True)\n"
-    assert set(_bundle_hits(planted)) - set(_BUNDLE_ALLOWED)
+    assert _not_excused(_bundle_hits(planted))
+
+
+def test_an_allowed_line_copied_into_another_handler_is_still_reported():
+    """The table excuses a line where it stands, not wherever its text appears (the allowed 500 detail copied into a member
+    handler survived a guard keyed by text alone)."""
+    source = (ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
+    for line in (
+        "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc",
+        "box['error'] = exc",
+        "cause = exc.__cause__ if isinstance(exc, HTTPException) else None",
+    ):
+        planted = source + f"\n\ndef _planted():\n    try:\n        go()\n    except OSError as exc:\n        {line}\n"
+        assert _not_excused(_bundle_hits(planted)), line
+    # and a second use in the function that is allowed one
+    anchor = "re-raised on the caller's side below\n            box[\"error\"] = exc\n"
+    assert source.count(anchor) == 1
+    doubled = source.replace(anchor, anchor + "            box[\"again\"] = exc\n")
+    assert _not_excused(_bundle_hits(doubled)) and not _not_excused(_bundle_hits(source))
 
 
 def test_the_traceback_only_reading_ignores_how_a_handler_uses_its_exception():

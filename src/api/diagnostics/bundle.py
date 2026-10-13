@@ -160,6 +160,45 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: ``vitals.json``'s, so what the bundle keeps is the last minutes of the collector itself.
 _DEBUG_BUNDLE_SLIM_PERF_TICKS = 20
 
+#: The storage guard's state carries the damage record whole (``database_damage``: incidents, notes, the last
+#: incident), and ``database-damage.json`` is that same record as a member of the archive in its own right. Where
+#: the guard's state rides the archive (the storage member's composition section, the scheduler status of the slim
+#: debug bundle) it keeps the headline (is the pause on, which files are latched, how many incidents) and names
+#: the member (R119: no two members carry the same bytes). Only when the member is written in this build; the
+#: routes on their own stay whole.
+_DAMAGE_MEMBER = "database-damage.json"
+_DAMAGE_HEADLINE = ("enabled", "latched", "recorded_only", "incident_count")
+
+
+def _damage_named_not_copied(guard: Any) -> Any:
+    """A copy of a storage-guard state with its ``database_damage`` replaced by the headline and the member that
+    carries the record. Anything of another shape, or a build without the member, comes back as it came."""
+    if not isinstance(guard, dict) or not isinstance(guard.get("database_damage"), dict):
+        return guard
+    if not _slots.in_build(_DAMAGE_MEMBER):
+        return guard
+    record = guard["database_damage"]
+    return {
+        **guard,
+        "database_damage": {
+            **{k: record[k] for k in _DAMAGE_HEADLINE if k in record},
+            "see": _DAMAGE_MEMBER,
+            "slim": True,
+        },
+    }
+
+
+def _scheduler_section(slim: bool) -> dict:
+    """The debug bundle's scheduler block; under ``slim`` (the copy inside the archive) the storage guard's damage record is
+    named, not repeated."""
+    from src.scheduler.runlog import recent_runs
+    from src.scheduler.runner import get_scheduler
+
+    status = get_scheduler().status()
+    if slim and isinstance(status, dict):
+        status = {**status, "storage_guard": _damage_named_not_copied(status.get("storage_guard"))}
+    return {"status": status, "recent_runs": recent_runs(30)}
+
 
 @router.get("/debug-bundle")
 def debug_bundle(
@@ -210,8 +249,6 @@ def debug_bundle(
     from src.monitoring.slowquery import summary as _slowquery_summary
     from src.monitoring.storage import storage_composition as _storage_composition
     from src.paths import data_dir as _data_dir
-    from src.scheduler.runlog import recent_runs
-    from src.scheduler.runner import get_scheduler
 
     budget = _debug_bundle_member_budget_s()
 
@@ -385,10 +422,7 @@ def debug_bundle(
     payload = {
         "runtime": _member("runtime", _runtime),
         "corpus": _member("corpus", lambda: _bounded(_corpus), threaded=False),
-        "scheduler": _member(
-            "scheduler",
-            lambda: {"status": get_scheduler().status(), "recent_runs": recent_runs(30)},
-        ),
+        "scheduler": _member("scheduler", lambda: _scheduler_section(slim)),
         "network": _member(
             "network",
             lambda: {
@@ -1856,8 +1890,9 @@ def _session_forensics_member() -> dict:
 
 
 def _storage_member(db) -> dict:
-    """Where the bytes are and whether the drive is there: the four storage reads in one member."""
-    return _merged_member(
+    """Where the bytes are and whether the drive is there: the four storage reads in one member. The storage guard's
+    state inside the composition section names ``database-damage.json`` instead of repeating the record."""
+    out = _merged_member(
         {
             "storage-footprint": lambda: storage_footprint_report(download=False),
             "storage-composition": lambda: storage_composition_report(download=False, db=db),
@@ -1870,6 +1905,14 @@ def _storage_member(db) -> dict:
         ],
         why="one subject: where the bytes are and whether the drive is there",
     )
+    composition = out["sections"].get("storage-composition")
+    data = composition.get("data") if isinstance(composition, dict) else None
+    if isinstance(data, dict) and "storage_guard" in data:
+        out["sections"]["storage-composition"] = {
+            **composition,
+            "data": {**data, "storage_guard": _damage_named_not_copied(data["storage_guard"])},
+        }
+    return out
 
 
 def _contention_member() -> dict:
@@ -1952,6 +1995,36 @@ def _selftest_calls() -> list[tuple[str, Callable[[], Any]]]:
     ]
 
 
+def _checks_counts(checks: Any) -> tuple[int, int, int] | None:
+    """``(total, passed, failed)`` of a ``checks`` field whose every entry is a plain verdict: a dict of name -> bool, or a list
+    of rows each with a boolean ``ok`` (else ``passed``). ``None`` for anything else (a shape this reader does not know is not
+    counted from a guess)."""
+    flags: list[Any] = []
+    if isinstance(checks, dict):
+        flags = list(checks.values())
+    elif isinstance(checks, list):
+        for row in checks:
+            if not isinstance(row, dict):
+                return None
+            flag = row.get("ok") if isinstance(row.get("ok"), bool) else row.get("passed")
+            flags.append(flag)  # a non-bool is caught just below
+    else:
+        return None
+    if not all(isinstance(f, bool) for f in flags):
+        return None
+    ok = sum(1 for f in flags if f)
+    return len(flags), ok, len(flags) - ok
+
+
+def _budget_marker_note(budget_cut: bool, deadline_used: float | None) -> str:
+    """The line a deadline marker gains when the Quick scan budget, not the scan's own deadline, set the time it had: without it
+    a marker reads as if the scan had been given its whole deadline."""
+    if not budget_cut:
+        return ""
+    seconds = f"{deadline_used:.0f} s " if deadline_used is not None else ""
+    return f"\n(the {seconds}deadline was the time the Quick scan budget had left, not the scan's own)"
+
+
 def _selftest_verdict(value: Any) -> dict:
     """One self-test's verdict, read from the shape of its own answer: ``pass`` only when the test
     SAYS it passed and ran at least one check, ``fail`` when it says it did not, ``unknown`` for a
@@ -1973,6 +2046,12 @@ def _selftest_verdict(value: Any) -> dict:
         passed = _count(value.get("passed_count"))
     if failed is None:
         failed = _count(value.get("failed_count"))
+    if total is None and passed is None and failed is None:
+        # A third shape carries its checks one by one (a dict of name -> bool, or a list of rows with a boolean ``ok`` /
+        # ``passed``): its counts are the counts of those, so a pass over none, or over a failed one, is not read as a pass.
+        derived = _checks_counts(value.get("checks"))
+        if derived is not None:
+            total, passed, failed = derived
     flag = value.get("passed")
     if isinstance(flag, bool):
         says_pass: bool | None = flag
@@ -2540,8 +2619,10 @@ def _write_all_diagnostics_zip(
     manager that yields the claim; the job passes ``_bundle_exclusive_window``; a caller that
     already holds the machine passes ``exclusive`` instead and gets one window over everything,
     as before). ``"quick"`` gives the scans one shared budget (``SCAN_BUDGET_S``): a scan starts only
-    while at least ``SCAN_FLOOR_S`` of it are left and gets the smaller of its own deadline and the
-    time left, so the budget is a hard bound on the pause; a scan that never starts is
+    while at least ``SCAN_FLOOR_S`` of it are left and is ASKED to stop at the smaller of its own
+    deadline and the time left (a database scan at its next progress check; Python work after its last
+    query is not interrupted, and a scan that is not a database read is abandoned on its thread, which
+    runs on: the pause can pass the budget by that much, and the entry's ``wall_s`` against its ``deadline_s`` says by how much); a scan that never starts is
     ``skipped-budget`` with its estimate and the reason, one that is cut keeps what it gathered
     (``partial-deadline``). ``"thorough"`` (the default HERE, so a direct caller still gets every
     member) has no shared budget: every scan runs under its own deadline, as before.
@@ -2611,7 +2692,7 @@ def _write_all_diagnostics_zip(
                 scans_began_iso = datetime.now().isoformat(timespec="seconds")
             if progress is not None:
                 progress(i, total, name)
-            started_t = _time.time()
+            started_t = _mono()  # a duration is measured on the monotonic clock: a clock step is not a member's time
             started_iso = datetime.now().isoformat(timespec="seconds")
             if journal_fp is not None:
                 try:
@@ -2670,6 +2751,7 @@ def _write_all_diagnostics_zip(
                     f"{_plan.scan_est_s(name):.0f} s. Run the Thorough build to collect it"
                 )
             budget_cut = False
+            abandoned = False
             deadline_used: float | None = None
             try:
                 if skipped_reason is not None:
@@ -2725,6 +2807,7 @@ def _write_all_diagnostics_zip(
                     value = _run_nondb_member_bounded(fn, deadline_used)
                     if value is _ALL_DIAG_DEADLINE_SENTINEL:
                         outcome = "skipped-deadline"
+                        abandoned = True
                 if outcome in ("ok", "partial-deadline"):
                     # Streamed straight into the archive rather than materialised
                     # (field diagnostics 2026-09-11, B2 second half) -- see
@@ -2742,12 +2825,12 @@ def _write_all_diagnostics_zip(
                         f"member exceeded its {deadline_used or _all_diag_nondb_member_deadline_s():.0f}s "
                         "wall-clock deadline"
                         + (" (the time the Quick scan budget had left)" if budget_cut else "")
-                        + " and was abandoned (non-DB member)"
+                        + " and was abandoned (non-DB member): the thread reading it was not stopped and can still be running"
                     ).encode()
                     zf.writestr(name + ".skipped-deadline.txt", marker)
             except StatementTimeout as exc:
                 outcome = "skipped-deadline"
-                zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(exc))
+                zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(exc) + _budget_marker_note(budget_cut, deadline_used))
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
                 # A member that calls its route function answers a deadline or a memory stop as
                 # an HTTPException(503) CHAINED to the typed abort: that is the same "skipped"
@@ -2755,13 +2838,13 @@ def _write_all_diagnostics_zip(
                 cause = exc.__cause__ if isinstance(exc, HTTPException) else None
                 if isinstance(cause, StatementTimeout):
                     outcome = "skipped-deadline"
-                    zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(cause))
+                    zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(cause) + _budget_marker_note(budget_cut, deadline_used))
                 else:
                     outcome = "error"
                     err = _all_diag_err_str(exc)
                     zf.writestr(name + ".error.txt", err)
 
-            wall_s = round(_time.time() - started_t, 3)
+            wall_s = round(_mono() - started_t, 3)
             rss_after = _rss.kb()
             peak_after = _rss_peak_kb()
             entry: dict = {
@@ -2794,6 +2877,10 @@ def _write_all_diagnostics_zip(
                     entry["budget_cut"] = True
                 if skipped_reason is not None and outcome == "skipped-budget":
                     entry["skipped_reason"] = skipped_reason
+                if abandoned:
+                    # A thread cannot be stopped from outside: the scan left it running, after the window
+                    # closed, and a reader of the machine's load must be able to tell.
+                    entry["abandoned_running"] = True
             if err is not None:
                 entry["error"] = err
             if gate_reading:

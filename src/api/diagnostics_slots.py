@@ -30,13 +30,23 @@ guess about a typical size: the plan's table states each number and what it was 
 budgets add to :data:`TOTAL_BUDGET_BYTES` at most; the zip carries what the producers write, which on
 a young install is a small part of it. A producer that returns more than its budget is NOT cut here
 (a cut that is not the producer's own would break its structure): the manifest entry says
-``over_budget``, and the test of each producer holds it to its number.
+``over_budget`` and the member is written whole (one file; the volume splitter cuts a file on record
+boundaries only when the archive does not fit 4,000,000 bytes), and the test of each producer holds it
+to its number.
+
+WHAT A SLOT'S ANSWER PASSES THROUGH. :func:`thunk` hands every string of the producer's answer through
+``scrubbed_value`` (the passphrases the process holds taken out, in every shape), so a producer that
+catches its own failure and returns the engine's words is not a way for a held secret to reach the
+zip. The producer still writes the class and a fixed label, not the words (the scrub is the net, not the
+rule), and ``tests/test_diagnostic_slots.py`` plants a secret through a slot.
 
 A SLOT WHOSE MODULE IS NOT IN THIS BUILD is listed in the manifest as ``not-in-build`` and writes no file,
 so an owner can have a row here before their code lands, and a reader of an old archive is told the
 member did not exist yet rather than that it came back empty. A slot whose module IS here but whose
 function is missing or wrong is a failure, not an absence: ``tests/test_diagnostic_slots.py`` fails on
-it, and at run time it is an ``error`` member with the reason (a typo cannot hide as "not yet built").
+it, and at run time it is an ``error`` member with the reason. A MISSPELLED MODULE PATH, though, reads as
+``not-in-build`` (the module is not found): for a slot built at this head ``test_every_slot_is_a_member_of_this_build_or_named_absent_and_never_both``
+fails on it, and for a row not built yet only the owner's own PR shows the typo.
 """
 
 from __future__ import annotations
@@ -46,6 +56,8 @@ import importlib.util
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from src.monitoring.secret_scrub import scrubbed_value
 
 
 @dataclass(frozen=True)
@@ -68,8 +80,8 @@ class Slot:
 #: THEY PROTECT: the budget is the raw JSON the producer is ASKED to keep, so one history cannot take the
 #: room the other members' newest records need in a typical zip. It is NOT what keeps a file under the
 #: 4,000,000 bytes of R119: the splitter keeps every part within that whatever a member holds (a member
-#: above its budget is named ``over_budget`` in the manifest and then cut on record boundaries into
-#: numbered pieces, none dropped), and ``test_the_budgets_and_the_fixed_members_fit_one_part`` holds the
+#: above its budget is named ``over_budget`` in the manifest and written whole; the splitter cuts a file on
+#: record boundaries only when the archive does not fit one part, and drops none), and ``test_the_budgets_and_the_fixed_members_fit_one_part`` holds the
 #: budgets to the room they must leave. HOW EACH WAS GOT:
 #:   * ``vitals`` 260,000: MEASURED on the producer's own fixture (25 loggers): 140 KB for the full
 #:     retention, 189 KB with the three previous sessions' tails, 246 KB with 58-character logger names;
@@ -86,9 +98,13 @@ class Slot:
 #:   * ``boots`` 30,720: RC's own ``DEFAULT_MAX_BYTES`` (30 KiB), the argument is in ``boots.py`` (ten boots,
 #:     each end record up to about 5 KiB; the member drops the OLDEST boots until it fits and says how
 #:     many), and a test holds the two numbers together.
-#:   * ``database-damage`` 40,000 and the one not built yet (``keyword-pipeline`` 60,000) are the owners'
-#:     FIRST ESTIMATES, to be replaced by a measurement when each lands (the budget is one line here,
-#:     never in ``bundle.py``).
+#:   * ``database-damage`` 40,000: MEASURED at the record's full retention, ``INCIDENTS_KEEP`` (20) incidents of
+#:     distinct shapes and no table lists: 16,187 bytes (about 590 each, plus 4.4 KB of counters, notes and
+#:     method); the per-table lists of a real check come on top, so 40,000 is about 2.5 times the measured part
+#:     and ``test_the_damage_budget_holds_a_full_record_twice_over`` holds the two together. Over it the oldest
+#:     incidents go first and then the check's table lists, and the member says each.
+#:   * ``keyword-pipeline`` 60,000, the one not built yet, is its owner's FIRST ESTIMATE, to be replaced by a
+#:     measurement when it lands (the budget is one line here, never in ``bundle.py``).
 SLOTS: tuple[Slot, ...] = (
     Slot("vitals.json", "src.monitoring.vitals_history:diagnostics_member", "export", 260_000, "memory"),
     Slot("runs.json", "src.monitoring.diagnostics_runs:diagnostics_member", "export", 40_000, "runs"),
@@ -155,7 +171,11 @@ def thunk(slot: Slot) -> Callable[[], Any]:
 
     def run() -> Any:
         fn = resolve(slot)
-        return fn(max_bytes=slot.budget_bytes) if slot.takes_budget else fn(**slot.kwargs)
+        value = fn(max_bytes=slot.budget_bytes) if slot.takes_budget else fn(**slot.kwargs)
+        # The net under every producer: whatever it caught and wrote into its answer reaches the zip with the
+        # passphrases the process holds taken out (scrub first; the producer's own cuts came before, so it also
+        # writes a class and a fixed label, never the engine's words).
+        return scrubbed_value(value)
 
     run.__name__ = "slot_" + slot.name.replace(".", "_").replace("-", "_")
     return run
@@ -173,6 +193,12 @@ def not_in_build() -> list[dict[str, Any]]:
         for s in SLOTS
         if not module_in_build(s)
     ]
+
+
+def in_build(name: str) -> bool:
+    """Whether the slot named ``name`` writes a member in this build (the bundle's pointers name a member only
+    when it is one)."""
+    return any(s.name == name and module_in_build(s) for s in SLOTS)
 
 
 def budget_of(name: str) -> int | None:
