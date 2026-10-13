@@ -397,20 +397,27 @@ class WriterGate:
                 # S2.6: the name, not just the number. ``holder``/``held_for_s``
                 # are None when the gate is free -- absent state, never a 0 that
                 # would read as "held for no time".
-                "holder": self._holder,
+                "holder": _scrubbed_name(self._holder),
                 "held_for_s": held_for,
                 "max_hold_s": round(self._max_hold_s, 4),
-                "max_hold_holder": self._max_hold_holder,
+                "max_hold_holder": _scrubbed_name(self._max_hold_holder),
                 "queued": len(self._queue),
                 "timeouts": self._timeouts,
                 # Who used the window, most seconds first: holds finished, seconds held and the longest hold, by thread name.
                 # Cumulative like ``total_held_s``; a name past the table's bound is summed under "(others)". Seconds OTHERS waited
                 # are not attributed to a holder: under FIFO handoff a wait spans several holders, and ``total_wait_s`` stays the
-                # one honest figure for it.
-                "by_holder": {
-                    name: {"holds": int(r[0]), "held_s": round(r[1], 3), "longest_s": round(r[2], 3)}
+                # one honest figure for it. ROWS, not a dict keyed by name: a thread name is the one string here a caller chooses
+                # (``oo-osm-{code}``), and a dict KEY is not scrubbed by the bundle's net, where a row's VALUE is, so the name is
+                # scrubbed here, at the source, before it is anywhere.
+                "by_holder": [
+                    {
+                        "holder": _scrubbed_name(name),
+                        "holds": int(r[0]),
+                        "held_s": round(r[1], 3),
+                        "longest_s": round(r[2], 3),
+                    }
                     for name, r in sorted(self._by_holder.items(), key=lambda kv: kv[1][1], reverse=True)
-                },
+                ],
             }
 
     def _holder_snapshot(self) -> tuple[str | None, float | None, int | None]:
@@ -579,6 +586,19 @@ def _log_long_release(holder: str | None, held: float) -> None:
             _LOG.warning("write gate released after %.1fs by %r", held, holder)
 
 
+def _scrubbed_name(name: str | None) -> str | None:
+    """A thread name as the diagnostics may show it: the passphrases the process holds taken out. A name is a code constant or a
+    catalogue/request key, so none is expected to carry one; this keeps it true if one ever does. Never raises."""
+    if name is None:
+        return None
+    try:
+        from src.monitoring.secret_scrub import scrubbed
+
+        return scrubbed(name)
+    except Exception:  # noqa: BLE001 - a name that cannot be checked is not shown
+        return "(name withheld)"
+
+
 #: The start (monotonic) of the hold the journal was last opened for, so a sample updates the open entry and never opens a second one.
 _JOURNALED_HOLD: float | None = None
 
@@ -628,7 +648,7 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
             "waiters": s.get("waiters"),
             "queued": s.get("queued"),
         }
-        if _JOURNALED_HOLD == started and storage_events.update("gate_hold", ("hold", started), fields):
+        if started == _JOURNALED_HOLD and storage_events.update("gate_hold", ("hold", started), fields):
             return
         storage_events.record(
             "gate_hold",
@@ -648,8 +668,13 @@ def _note_hold_end(holder: str | None, held: float, started: float | None) -> No
         from src.database import pool_watch
         from src.monitoring import storage_events
 
-        fields = {"holder": holder, "seconds": round(held, 1), "route": pool_watch.endpoint_template()}
-        if not storage_events.end("gate_hold", ("hold", started), fields):
+        fields: dict[str, object] = {"holder": holder, "seconds": round(held, 1)}
+        route = pool_watch.endpoint_template()
+        if route is not None:  # no template found: the label the watchdog sampled stays, it is not overwritten with nothing
+            fields["route"] = route
+        # ``tombstone``: a watchdog sample that was already computing when this hold ended must not open a SECOND entry for it
+        # (it would stay open for ever, which reads as a kill in the middle of a hold).
+        if not storage_events.end("gate_hold", ("hold", started), fields, tombstone=True):
             storage_events.record("gate_hold", {**fields, "sampled_while_held": False})
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "write gate hold could not be journaled", exc, level=logging.DEBUG)

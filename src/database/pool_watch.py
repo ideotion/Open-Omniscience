@@ -188,6 +188,17 @@ def _pool_label(proxy: Any) -> str:
     return "corpus"
 
 
+def label_of_pool(pool: Any) -> str:
+    """The label :func:`register` gave this pool ("corpus" when it was never labelled): which rows of :func:`checked_out` are its own."""
+    try:
+        ent = _POOL_LABELS.get(id(pool))
+        if ent is not None and ent[0]() is pool:
+            return ent[1]
+    except Exception:  # noqa: BLE001 - an instrument must never break its caller
+        pass
+    return "corpus"
+
+
 def _on_checkout(dbapi_connection, connection_record, _connection_proxy) -> None:
     # On the pool's hot path: an instrument must never be the reason a checkout fails.
     try:

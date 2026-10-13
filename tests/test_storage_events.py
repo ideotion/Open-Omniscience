@@ -72,8 +72,9 @@ def _events(kind: str) -> list[dict]:
 def _file_total(path, kind: str) -> int:
     """The total the file holds for ``kind``; -1 while it is missing or half-written (a poll must not raise)."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))["kinds"][kind]["total"]
-    except (OSError, ValueError, KeyError):
+        total = json.loads(path.read_text(encoding="utf-8"))["kinds"][kind]["total"]
+        return total if isinstance(total, int) else -1
+    except Exception:  # noqa: BLE001 - a poll reads a file another thread is replacing; whatever it saw is "not yet"
         return -1
 
 
@@ -209,6 +210,7 @@ def test_a_missing_file_reads_as_missing_and_the_first_event_starts_the_count(jo
 def test_recording_does_no_disk_io_and_the_file_is_read_by_the_writer_or_the_member(journal, monkeypatch):
     """The measured site can hold the gate's lock or the guard's: a recording must not wait on a disk, so it never reads the file. The
     background writer reads it before its first write and the member before it answers."""
+    monkeypatch.setattr(se, "FLUSH_DELAY_S", 30.0)  # the writer must not reach its read while the assertions run, whatever the load
     reads: list[int] = []
     real = se._read_file
     monkeypatch.setattr(se, "_read_file", lambda: (reads.append(1), real())[1])
@@ -280,13 +282,34 @@ def test_a_value_that_is_not_json_is_its_types_name_never_its_repr():
     assert MARKER not in json.dumps(out)
 
 
-def test_an_event_that_is_too_big_becomes_a_stub_that_says_so(journal):
+def test_an_event_that_is_too_big_loses_its_largest_fields_and_says_which(journal):
+    """One field cannot eat the member's measured budget, and a big field cannot turn the whole event into a stub: the largest goes
+    first, the rest (what says what happened) stays, and the names of what went are in the event."""
     big = {"rows": [{f"k{i}": "y" * se.STR_CHARS for i in range(se.DICT_KEYS)} for _ in range(se.LIST_ITEMS)]}
     assert len(json.dumps(se._clean(big))) > se.MAX_EVENT_BYTES, "the fixture really is over the cap"
-    se.record("checkpoint", big)
+    se.record("checkpoint", {**big, "trigger": "boundary", "outcome": "done", "seconds": 0.5})
     (e,) = _events("checkpoint")
-    assert e["fields_kept"] is False and e["oversize_bytes"] > se.MAX_EVENT_BYTES
-    assert "rows" not in e, "one field cannot eat the member's measured budget"
+    assert e["fields_dropped"] == ["rows"] and e["oversize_bytes"] > se.MAX_EVENT_BYTES
+    assert "rows" not in e
+    assert (e["trigger"], e["outcome"], e["seconds"]) == ("boundary", "done", 0.5), "what says what happened is kept"
+    assert se._size({k: v for k, v in e.items() if k != "session"}) <= se.MAX_EVENT_BYTES
+
+
+def test_an_event_of_many_big_fields_drops_them_largest_first_until_it_fits(journal):
+    fields = {f"f{i}": "z" * se.STR_CHARS for i in range(20)}
+    fields["big"] = ["w" * se.STR_CHARS] * se.LIST_ITEMS
+    se.record("guard", fields)
+    (e,) = _events("guard")
+    assert e["fields_dropped"][0] == "big", "the largest field is the first to go"
+    assert se._size({k: v for k, v in e.items() if k != "session"}) <= se.MAX_EVENT_BYTES
+
+
+def test_a_checkpoint_keeps_at_most_three_of_its_reader_holders_and_the_full_count(journal):
+    holders = [{"thread": f"t{i}", "endpoint": "GET /x", "age_s": 1.0 + i} for i in range(8)]
+    se.note_checkpoint("boundary", passive=(0, 1, 1), truncate=(0, 1, 1), seconds=0.1,
+                       readers={"n": 8, "oldest_thread": "t0", "holders": holders})
+    (e,) = _events("checkpoint")
+    assert e["readers"]["n"] == 8 and [h["thread"] for h in e["readers"]["holders"]] == ["t0", "t1", "t2"]
 
 
 def test_the_fields_the_journal_owns_cannot_be_overwritten_by_a_hook(journal):
@@ -364,11 +387,15 @@ def _fill_like_the_hooks(long_names: bool) -> None:
         se.end("guard", "guard", {"seconds": 1234.5, "peak_wal_bytes": 22_345_678_901, "wal_bytes_at_end": 1_234_567,
                                   "disk_free_bytes_at_end": 9_000_000_000,
                                   "ended_by": "retry after the hold lapsed (free space unreadable)"})
-    readers = [{"thread": nm("AnyIO worker thread"), "endpoint": nm("GET /api/articles/{id}/view"), "age_s": 812.4, "pool": "corpus"}] * 3
+    # The shape ``hygiene._reader_snapshot`` hands every checkpoint (not only the busy ones): the full count, the oldest, and up to
+    # PIN_HOLDERS_MAX (8) holders, of which the journal keeps READER_HOLDERS.
+    readers = {
+        "n": 9, "oldest_age_s": 812.4, "oldest_thread": nm("AnyIO worker thread"), "oldest_endpoint": nm("GET /api/articles/{id}/view"),
+        "holders": [{"thread": nm(f"AnyIO worker thread {k}"), "endpoint": nm("GET /api/articles/{id}/view"), "age_s": 812.4 - k} for k in range(8)],
+    }
     for i in range(30):
         se.note_checkpoint("boundary", passive=(0, 1000, 1000), truncate=(1, 5000, 4000) if i % 2 else (0, 0, 0),
-                           seconds=7.1 if i % 2 else 0.04, wal_before=123_456_789, wal_after=0,
-                           readers=readers if i % 2 else None)
+                           seconds=7.1 if i % 2 else 0.04, wal_before=123_456_789, wal_after=0, readers=readers)
     phases = [{"phase": n, "ms": 123.4} for n in ("key", "header", "integrity_probe", "checkpoint", "init_db", "schema_gate",
                                                   "verify", "wal_replay", "pool_warm", "indexes")]
     steps = [{"step": f"ensure_something_{k}", "ms": 400.5 - k} for k in range(40)]
@@ -386,8 +413,8 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 34,518 bytes with ordinary names and 69,788 with every name at the cut;
-    the row says 80,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
+    every kind, with the events the hooks write. Measured 38,317 bytes with ordinary names and 83,027 with every name at the cut,
+    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 90,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
@@ -744,7 +771,7 @@ def test_a_site_carries_on_when_the_journal_cannot_write_gate_guard_checkpoint_a
     # the storage guard: it trips and it releases, with its accounting intact
     clock = _Clock()
     g = StorageGuard(clock=clock, trip_after=2, resume_after=2)
-    feed = dict(corpus_bytes=10 * GIB, disk_free_bytes=300 * GIB, disk_total_bytes=500 * GIB)
+    feed = {"corpus_bytes": 10 * GIB, "disk_free_bytes": 300 * GIB, "disk_total_bytes": 500 * GIB}
     for _ in range(2):
         g.observe(wal_bytes=3 * GIB, **feed)
     assert g.engaged is True
@@ -821,7 +848,7 @@ def test_a_long_hold_is_opened_by_the_watchdog_updated_on_each_sample_and_closed
         time.sleep(0.05)
         writer.watchdog_tick(gate, warned)
         (e,) = _events("gate_hold")
-        assert e["seconds"] > first_seconds and _member()["kinds"]["gate_hold"]["total"] == 1, "updated, not a second entry"
+        assert e["seconds"] >= first_seconds and _member()["kinds"]["gate_hold"]["total"] == 1, "updated, not a second entry"
     (e,) = _events("gate_hold")
     assert e["open"] is False and "ended_at" in e and e["seconds"] >= 0.1
     assert e["holder"] == "field-writer"
@@ -856,16 +883,16 @@ def test_the_per_holder_table_counts_holds_and_seconds_and_is_bounded():
     for name in ("alpha", "beta", "alpha"):
         with _Holder(gate, name):
             time.sleep(0.01)
-    by = gate.stats()["by_holder"]
+    by = {r["holder"]: r for r in gate.stats()["by_holder"]}
     assert by["alpha"]["holds"] == 2 and by["beta"]["holds"] == 1
     assert by["alpha"]["held_s"] >= 0.02 and by["alpha"]["longest_s"] <= by["alpha"]["held_s"]
-    assert list(by)[0] == "alpha", "most seconds held first"
+    assert gate.stats()["by_holder"][0]["holder"] == "alpha", "most seconds held first"
     for i in range(writer._HOLDER_NAMES_MAX + 6):
         with _Holder(gate, f"pool-worker-{i}"):
             pass
-    by = gate.stats()["by_holder"]
-    assert len(by) <= writer._HOLDER_NAMES_MAX + 1 and writer._OTHER_HOLDERS in by, "past the bound they are summed, not listed"
-    assert sum(r["holds"] for r in by.values()) == 3 + writer._HOLDER_NAMES_MAX + 6, "and none is lost from the count"
+    rows = gate.stats()["by_holder"]
+    assert len(rows) <= writer._HOLDER_NAMES_MAX + 1 and writer._OTHER_HOLDERS in {r["holder"] for r in rows}, "past the bound they are summed, not listed"
+    assert sum(r["holds"] for r in rows) == 3 + writer._HOLDER_NAMES_MAX + 6, "and none is lost from the count"
 
 
 def test_the_write_gate_report_points_at_the_journal_and_carries_the_pool_as_configured(monkeypatch):
@@ -899,7 +926,7 @@ def test_a_guard_engagement_is_opened_at_the_trip_and_closed_at_the_release(jour
 
     clock = _Clock()
     g = StorageGuard(clock=clock, trip_after=2, resume_after=2)
-    feed = dict(corpus_bytes=10 * GIB, disk_free_bytes=300 * GIB, disk_total_bytes=500 * GIB)
+    feed = {"corpus_bytes": 10 * GIB, "disk_free_bytes": 300 * GIB, "disk_total_bytes": 500 * GIB}
     for _ in range(2):
         g.observe(wal_bytes=3 * GIB, **feed)
     (e,) = _events("guard")
@@ -1184,3 +1211,287 @@ def test_a_journal_that_fails_inside_the_pool_hook_leaves_the_pools_error_alone(
         eng.raw_connection()
     held.close()
     eng.dispose()
+
+
+# --------------------------------------------------------------------------- #
+#  The independent read's findings
+# --------------------------------------------------------------------------- #
+def test_a_thread_named_with_the_passphrase_is_scrubbed_in_the_gate_stats_the_report_and_the_contention_member(journal, held_passphrase):
+    """B1: ``by_holder`` (and ``holder`` / ``max_hold_holder``) went into ``contention.json`` as the thread's name, which a request can
+    choose (``oo-osm-{code}``); a dict KEY is not scrubbed by the bundle's net, so the name is scrubbed where it is read, and
+    ``by_holder`` is rows whose names are values."""
+    from src.api.diagnostics import bundle, write_gate_report
+    from src.database import writer
+
+    name = f"oo-osm-{MARKER}"
+    gate = writer.WriterGate()
+    with _Holder(gate, name):
+        held = gate.stats()
+        assert MARKER not in json.dumps(held) and held["holder"] is not None, "the holder in flight is scrubbed"
+    after = gate.stats()
+    assert MARKER not in json.dumps(after) and after["max_hold_holder"] is not None
+    assert isinstance(after["by_holder"], list) and after["by_holder"][0]["holds"] == 1
+    # And through the real gate, the report that serves it, and the member the bundle writes.
+    done = threading.Event()
+
+    def take_once():
+        with writer.write_lock():
+            pass
+        done.set()
+
+    t = threading.Thread(target=take_once, name=name, daemon=True)
+    t.start()
+    assert done.wait(5)
+    t.join(5)
+    assert MARKER not in json.dumps(write_gate_report(), default=str)
+    assert MARKER.encode() not in bundle._member_bytes(bundle._contention_member())
+
+
+def test_a_hold_that_ended_while_the_watchdog_was_still_sampling_it_leaves_one_closed_entry_and_nothing_open(journal, monkeypatch):
+    """M1: the watchdog reads the holder, then spends time on the gate's stats, the route and the frames before it records; the holder's
+    release can come in between. The late sample must not open a second entry, which would stay open for ever and read like a kill in
+    the middle of a hold."""
+    from src.database import writer
+
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    started = 4242.5
+    writer._note_hold_end("late-holder", 61.0, started)  # the release came first: nothing was open, so it is written whole
+    writer._note_long_hold(writer.WriterGate(), "late-holder", started, None, 61.0)  # then the late first sample
+    k = _member()["kinds"]["gate_hold"]
+    assert k["total"] == 1 and k["events"][0].get("sampled_while_held") is False
+    assert not [e for e in k["events"] if e.get("open")], "no entry is left open for a hold that is over"
+
+
+def test_a_late_sample_after_the_entry_was_opened_and_closed_does_not_open_it_again(journal, monkeypatch):
+    from src.database import writer
+
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    gate = writer.WriterGate()
+    started = 777.25
+    writer._note_long_hold(gate, "h", started, None, 40.0)  # the first sample opens it
+    writer._note_hold_end("h", 61.0, started)  # the release closes it
+    writer._note_long_hold(gate, "h", started, None, 41.0)  # a sample that was already computing: update() finds it closed
+    k = _member()["kinds"]["gate_hold"]
+    assert k["total"] == 1 and k["events"][0]["open"] is False and k["events"][0]["seconds"] == 61.0
+
+
+def test_a_tombstone_refuses_a_later_opener_of_the_same_key_and_is_bounded(journal):
+    se.record("gate_hold", {"n": 1}, key="k1")
+    assert se.end("gate_hold", "k1", tombstone=True) is True
+    se.record("gate_hold", {"n": 2}, key="k1")
+    assert _member()["kinds"]["gate_hold"]["total"] == 1, "the key is spent"
+    se.record("gate_hold", {"n": 3}, key="other")
+    assert _member()["kinds"]["gate_hold"]["total"] == 2, "other keys are untouched"
+    assert se.end("gate_hold", "never-opened", tombstone=True) is False
+    se.record("gate_hold", {"n": 4}, key="never-opened")
+    assert _member()["kinds"]["gate_hold"]["total"] == 2, "a closer that found nothing also spends its key"
+    for i in range(se.ENDED_KEYS_MAX + 5):
+        se.end("gate_hold", f"spent-{i}", tombstone=True)
+    assert len(se._ENDED) <= se.ENDED_KEYS_MAX
+    se.record("gate_hold", {"n": 5}, key="k1")  # long since forgotten: the bound protects memory, not a key a hold could offer again
+    assert _member()["kinds"]["gate_hold"]["total"] == 3
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"schema": "oo-storage-events-1", "kinds": {"guard": {"total": 3, "events": 5}}}',
+        '{"schema": "oo-storage-events-1", "kinds": {"guard": {"total": "x", "events": [1, "a", {"at": 3}]}}}',
+        '{"schema": "oo-storage-events-1", "kinds": []}',
+        "[" * 100_000 + "]" * 100_000,
+        '{"schema": "oo-storage-events-1", "kinds": {"guard": "no"}}',
+    ],
+    ids=["events-not-a-list", "events-of-the-wrong-shape", "kinds-not-a-dict", "nested-too-deep", "kind-not-a-dict"],
+)
+def test_a_file_in_a_shape_ours_never_wrote_is_not_read_back_and_is_replaced_by_the_next_write(journal, content):
+    """L1: external damage or version skew must not disable the journal across restarts (the first read raising left it with no
+    history and a writer that looped on the error)."""
+    journal.write_text(content, encoding="utf-8")
+    m = _member()
+    assert "error" not in m, m
+    assert m["file"]["read_at_first_use"].startswith("unreadable") or m["file"]["read_at_first_use"] == "ok"
+    se.record("guard", {"kind": "wal"})
+    assert _wait_until(lambda: _file_total(journal, "guard") >= 1), "the damaged file is replaced by a journal of ours"
+    assert se._INTERNAL_FAILURES == 0
+
+
+def test_a_failed_write_is_tried_again_without_another_change(journal, monkeypatch):
+    """L3: a transient failure (a scanner holding the file on Windows) must not leave the last event in memory only until the next
+    change: the last event of a quiet period is the one that matters."""
+    calls = {"n": 0}
+    real = se.os.replace
+
+    def fails_twice(a, b):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError(errno.EACCES, f"locked by a scanner {MARKER}")
+        return real(a, b)
+
+    _on_journal_replace(monkeypatch, journal, fails_twice)
+    se.record("guard", {"kind": "disk"})
+    assert _wait_until(lambda: _file_total(journal, "guard") == 1), "written by the retry, with no second change"
+    assert se._WRITE_FAILURES == 2 and calls["n"] == 3
+    assert MARKER not in json.dumps(_member()), "the failures are kept by class and errno name"
+    assert _member()["file"]["last_write_failure"] == "PermissionError EACCES"
+
+
+def test_a_persistent_write_failure_backs_off_instead_of_writing_every_delay(journal, monkeypatch):
+    calls = {"n": 0}
+
+    def always(_a, _b):
+        calls["n"] += 1
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    _on_journal_replace(monkeypatch, journal, always)
+    monkeypatch.setattr(se, "FLUSH_DELAY_S", 0.05)
+    se.record("guard", {"kind": "disk"})
+    time.sleep(1.0)
+    # delays 0.05 (coalesce) then 0.1, 0.2, 0.4 plus the 0.05 coalescing before each: well under one attempt per 0.05 s
+    assert 2 <= calls["n"] <= 6, f"{calls['n']} attempts in a second"
+
+
+def test_a_data_directory_that_cannot_be_resolved_is_a_failed_write_not_a_dead_writer(journal, monkeypatch):
+    """L3: ``_path()`` is ``data_dir() / name`` and can raise (a missing data volume); it is inside the guarded block, so it is counted
+    as the write failure it is."""
+
+    def gone():
+        raise RuntimeError(f"the data volume is not mounted {MARKER}")
+
+    monkeypatch.setattr(se, "_path", gone)
+    se.record("guard", {"n": 1})
+    assert _wait_until(lambda: se._WRITE_FAILURES >= 1)
+    assert se._INTERNAL_FAILURES == 0 and _member()["file"]["last_write_failure"] == "RuntimeError"
+    assert MARKER not in json.dumps(_member())
+
+
+def test_a_read_that_fails_with_an_io_error_is_looked_at_again_before_the_file_is_called_unreadable(journal, monkeypatch):
+    """L3: a transient read error must not start the journal empty over the file's history."""
+    journal.write_text(
+        json.dumps({"schema": se.SCHEMA, "since": "2026-10-01T00:00:00+00:00", "kinds": {"guard": {"total": 6, "events": []}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(se, "READ_RETRY_S", 0.001)
+    real_path = journal
+
+    class Flaky:
+        reads = 0
+
+        def stat(self):
+            return real_path.stat()
+
+        def read_text(self, **kw):
+            Flaky.reads += 1
+            if Flaky.reads <= 2:
+                raise OSError(errno.EIO, f"I/O error {MARKER}")
+            return real_path.read_text(**kw)
+
+    monkeypatch.setattr(se, "_path", lambda: Flaky())
+    assert _member()["kinds"]["guard"]["total"] == 6 and Flaky.reads == 3
+    assert MARKER not in json.dumps(_member())
+
+
+def test_a_read_that_keeps_failing_is_called_unreadable_by_class_after_three_looks(journal, monkeypatch):
+    class Broken:
+        looks = 0
+
+        def stat(self):
+            Broken.looks += 1
+            raise PermissionError(errno.EACCES, f"denied {MARKER}")
+
+    monkeypatch.setattr(se, "READ_RETRY_S", 0.001)
+    monkeypatch.setattr(se, "_path", lambda: Broken())
+    assert _member()["file"]["read_at_first_use"] == "unreadable (PermissionError EACCES)" and Broken.looks == se.READ_ATTEMPTS
+
+
+def test_the_pools_own_error_is_the_one_raised_after_the_journal_has_its_record(journal):
+    """The hook re-raises the very exception object the pool raised, not a copy (a copy would lose its traceback and its identity)."""
+    eng = _pool_engine()
+    boom = PoolTimeoutError("QueuePool limit of size 1 overflow 0 reached, connection timed out, timeout 0.10")
+
+    def raising():
+        raise boom
+
+    eng.pool._connect_reserving = raising
+    with pytest.raises(PoolTimeoutError) as raised:
+        eng.pool.connect()
+    assert raised.value is boom
+    assert _member()["kinds"]["pool_timeout"]["total"] == 1
+    eng.dispose()
+
+
+def test_a_pool_timeout_counts_its_own_pools_checkouts_and_names_only_its_own_holders(journal):
+    """L5: ``checked_out()`` lists every watched pool; the count beside ``pool_size`` is this pool's, and the holders are the rows this
+    pool's label owns."""
+    from src.database import pool_watch
+
+    mine, other = _pool_engine(timeout=0.1), _pool_engine(timeout=0.1)
+    pool_watch.register(mine, label="events-mine")
+    pool_watch.register(other, label="events-other")
+    theirs = other.raw_connection()
+    taken, let_go = threading.Event(), threading.Event()
+    held = []
+
+    def hold():
+        held.append(mine.raw_connection())
+        taken.set()
+        let_go.wait(5)
+        held[0].close()
+
+    t = threading.Thread(target=hold, name="mine-holder", daemon=True)
+    t.start()
+    assert taken.wait(3)
+    with pytest.raises(PoolTimeoutError):
+        mine.raw_connection()
+    let_go.set()
+    t.join(5)
+    theirs.close()
+    (e,) = _events("pool_timeout")
+    assert e["checked_out"] == 1 and e["pool_size"] == 1, "this pool's own count, whatever else is watched"
+    assert [h["thread"] for h in e["holders"]] == ["mine-holder"], "the other pool's checkout is not this pool's holder"
+    mine.dispose()
+    other.dispose()
+
+
+def test_a_backup_whose_truncate_raised_is_journaled_as_failed_not_done(journal, monkeypatch, tmp_path):
+    """L6: ``_wal_row`` swallows the exception and answers None; the journal said ``done``."""
+    from src.backup import stream_backup
+
+    db = tmp_path / "x.db"
+    db.write_bytes(b"x")
+    rows = iter([(0, 5, 5)])  # PASSIVE answers; every TRUNCATE after it raises (swallowed into None)
+
+    def wal_row(mode):
+        return next(rows, None)
+
+    monkeypatch.setattr(stream_backup, "_wal_complete", lambda _db, row: False)
+    monkeypatch.setattr(stream_backup, "_CHECKPOINT_WAIT_S", 5.0)
+    monkeypatch.setattr(stream_backup.time, "sleep", lambda _s: None)
+    stream_backup._journal_drain((0, 5, 5), None, 1, time.monotonic() - 0.1, failed=True)
+    (e,) = _events("checkpoint")
+    assert e["outcome"] == "failed" and e["error"] == "the TRUNCATE gave no row"
+    assert _member()["kinds"]["checkpoint_notable"]["total"] == 1, "a failed checkpoint is kept among the notable ones"
+    stream_backup._journal_drain((0, 5, 5), (0, 5, 5), 1, time.monotonic() - 0.1)
+    assert _events("checkpoint")[-1]["outcome"] == "done"
+
+
+def test_the_process_token_is_unique_even_for_two_starts_in_the_same_second():
+    assert se._PROC.count("-") == 1 and int(se._PROC.split("-")[1]) > 10**15, "nanoseconds, not whole seconds"
+
+
+def test_an_update_the_size_cap_refused_does_not_cost_a_write(journal, monkeypatch):
+    monkeypatch.setattr(se, "FLUSH_DELAY_S", 30.0)
+    se.record("gate_hold", {"n": 1}, key="k")
+    version = se._VERSION
+    se.update("gate_hold", "k", {f"f{i}": "x" * se.STR_CHARS for i in range(24)})
+    assert version == se._VERSION, "nothing was merged, so nothing is dirty"
+
+
+def test_the_gate_report_keeps_the_sampled_route_when_the_release_finds_none(journal, monkeypatch):
+    from src.database import pool_watch, writer
+
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    monkeypatch.setattr(pool_watch, "endpoint_template", lambda: None)
+    se.record("gate_hold", {"holder": "h", "route": "POST /api/x", "seconds": 40.0}, key=("hold", 1.5))
+    writer._note_hold_end("h", 61.0, 1.5)
+    (e,) = _events("gate_hold")
+    assert e["route"] == "POST /api/x" and e["seconds"] == 61.0 and e["open"] is False

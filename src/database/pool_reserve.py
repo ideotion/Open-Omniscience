@@ -164,7 +164,14 @@ def _journal_timeout(pool: Any, waited_s: float) -> None:
         from src.database import pool_watch
         from src.monitoring import storage_events
 
-        rows = pool_watch.checked_out()
+        # THIS pool's checkouts: ``checked_out()`` lists every watched pool (the read-snapshot engines too), and a count that can exceed
+        # the pool size written beside it would not be a count of this pool.
+        label = pool_watch.label_of_pool(pool)
+        rows = [r for r in pool_watch.checked_out() if r.get("pool", "corpus") == label]
+        try:
+            out_now = int(pool.checkedout())
+        except Exception:  # noqa: BLE001 - fall back to the watched rows
+            out_now = len(rows)
         storage_events.note_pool_timeout(
             waited_s=waited_s,
             thread=threading.current_thread().name,
@@ -173,7 +180,7 @@ def _journal_timeout(pool: Any, waited_s: float) -> None:
             pool_size=pool.size(),
             overflow=getattr(pool, "_max_overflow", None),
             timeout_s=getattr(pool, "_timeout", None),
-            checked_out=len(rows),
+            checked_out=out_now,
             holders=[
                 {k: r.get(k) for k in ("thread", "endpoint", "age_s", "collector", "pool")} for r in rows[:TIMEOUT_HOLDERS]
             ],

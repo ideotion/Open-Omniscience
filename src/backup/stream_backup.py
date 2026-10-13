@@ -680,17 +680,23 @@ def _drain_wal(db_path: Path) -> Path | None:
             _LOG.info(
                 "backup: the main file is not a complete image (checkpoint row %s)", row
             )
-            _journal_drain(passive, row, tries, started)
+            _journal_drain(passive, row, tries, started, failed=row is None)
             return wal
         time.sleep(0.5)
 
 
-def _journal_drain(passive: Any, truncate: Any, tries: int, started: float) -> None:
+def _journal_drain(passive: Any, truncate: Any, tries: int, started: float, *, failed: bool = False) -> None:
     """Keep the backup's checkpoint in the storage-events journal as ONE event (the PASSIVE row, the last TRUNCATE row, how many
     TRUNCATE tries and the seconds), not one per retry: a backup that waits for a reader would otherwise fill the journal's ten places
     by itself. Never raises."""
     storage_events.note_checkpoint(
-        "backup", passive=passive, truncate=truncate, seconds=time.monotonic() - started, extra={"truncate_tries": tries}
+        "backup",
+        passive=passive,
+        truncate=truncate,
+        seconds=time.monotonic() - started,
+        outcome="failed" if failed else "done",  # ``failed``: the TRUNCATE itself raised (``_wal_row`` swallowed it and answered None)
+        error="the TRUNCATE gave no row" if failed else None,
+        extra={"truncate_tries": tries},
     )
 
 

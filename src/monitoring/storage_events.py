@@ -35,10 +35,13 @@ HOW IT STAYS OUT OF THE WAY (the measured sites are the app's hottest paths and 
 - A recording is a dict update under one small lock and does NO disk I/O: the file is read by the background writer before its
   first write (so it extends the history and never replaces it) or by the member before it answers, never by the site that measured.
   The FILE is written by that thread, at most once a second, atomically (temp file and ``os.replace``, no fsync): a disk that hangs
-  or fills (the moment the guard engages) delays only that thread, never the site that measured. A kill loses at most the last
-  second, and the member says when the file was last written and how many writes failed.
+  or fills (the moment the guard engages) delays only that thread, never the site that measured. A failed write is tried again,
+  doubling from the delay to a minute. A process kill loses at most the last second while writes succeed; a clean stop flushes; a
+  power loss can lose more (no fsync). The member says when the file was last written, how many writes failed and how many times
+  the writer thread died (the next change starts a new one).
 - Every public function catches everything: a journal that cannot write must never raise into the gate, the guard, a checkpoint or an
-  unlock. A failure is counted (``write_failures``) and logged at DEBUG by class, and the in-memory record still serves the live zip.
+  unlock. A failure is counted (``write_failures``, with the class and errno name) and logged at DEBUG through ``log_failure`` (its scrubbed
+  text; the traceback goes to the log file, never into the journal or the zip), and the in-memory record still serves the live zip.
 - Every value is normalised on the way in (:func:`_clean`): strings are scrubbed of the passphrases the process holds and cut, lists
   and dicts are bounded, anything that is not JSON is its type name. The journal therefore cannot grow past ``KEEP`` times
   :data:`MAX_EVENT_BYTES` whatever a hook hands it.
@@ -57,7 +60,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -104,13 +107,30 @@ MAX_EVENT_BYTES = 3_000
 #: A file larger than this is not read back (it is not one of ours, or it is damaged): the journal starts empty and the member says so.
 MAX_FILE_BYTES = 1_000_000
 
+#: The longest a failed background write waits before it is tried again (it doubles from ``FLUSH_DELAY_S``). WHAT IT PROTECTS: a full or
+#: failing drive, which is exactly when the storage guard engages, from a write every second; and the last event of a quiet period,
+#: which a failed write would otherwise leave in memory until the NEXT change, from being lost to a kill that comes before it.
+RETRY_MAX_S = 60.0
+#: A read that fails with an I/O error (a scanner or an indexer holding the file, a transient ``EIO``) is looked at again this many
+#: times, this far apart, before the file is called unreadable. WHAT IT PROTECTS: the history in the file, which a journal that gave up
+#: at the first look would start empty over and the next write would replace.
+READ_ATTEMPTS = 3
+READ_RETRY_S = 0.05
+#: How many of a checkpoint's oldest reader checkouts one event keeps (``readers.n`` stays the full count). WHAT IT PROTECTS:
+#: ``MAX_EVENT_BYTES``: the full list of eight with long thread names and routes alone would take an event past it, and the checkpoint is
+#: the kind recorded on every pass boundary.
+READER_HOLDERS = 3
+#: How many closed holds' keys are remembered (see :func:`end`). WHAT IT PROTECTS: memory only; a hold's key is its start time, so a key
+#: more than a few holds old cannot be offered again.
+ENDED_KEYS_MAX = 64
+
 _LOCK = threading.RLock()
 _COND = threading.Condition(_LOCK)
 _WRITE_LOCK = threading.Lock()
 _LOAD_LOCK = threading.Lock()  # one reader of the file at a time; never held while recording
 
 #: A token for THIS process, stamped on every event, so an entry that was open when an earlier process ended is recognised as such.
-_PROC = f"{os.getpid()}-{int(time.time())}"
+_PROC = f"{os.getpid()}-{time.time_ns()}"  # nanoseconds: an exec restart keeps the pid and can come within the same second
 
 _LOADED = False
 _STATE: dict[str, dict[str, Any]] = {}  # kind -> {"total": int, "events": [event, ...]}: THIS process's events only
@@ -119,6 +139,7 @@ _SINCE: str | None = None  # the first event of this process
 _SINCE_FILE: str | None = None  # the first event ever, as the file held it
 _READ_STATE = "not read yet"
 _OPEN: dict[tuple[str, Any], dict[str, Any]] = {}  # (kind, key) -> the event dict still open in this process
+_ENDED: dict[tuple[str, Any], None] = {}  # (kind, key) of events closed with tombstone=True, oldest first: never opened again
 _VERSION = 0  # bumped on every change; a write of an older snapshot than the last written is skipped
 _WRITTEN_VERSION = 0
 _GENERATION = 0  # bumped by reset_for_tests: a snapshot taken before it is never written
@@ -201,32 +222,19 @@ def _empty_kind() -> dict[str, Any]:
     return {"total": 0, "events": []}
 
 
-def _read_file() -> tuple[dict[str, dict[str, Any]], str | None, str]:
-    """Read the file once: ``(kinds, since, how it read)``. No lock is held (it is disk), and every entry an earlier process left open
-    is closed as "not recorded". Never raises: an unreadable file reads as empty and says why."""
-    earlier: dict[str, dict[str, Any]] = {}
-    path = _path()
-    try:
-        size = path.stat().st_size
-    except FileNotFoundError:
-        return earlier, None, "missing"
-    except OSError as exc:
-        return earlier, None, f"unreadable ({_label(exc)})"
-    if size > MAX_FILE_BYTES:
-        return earlier, None, f"unreadable (larger than {MAX_FILE_BYTES} bytes)"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:  # a UnicodeDecodeError is a ValueError: the class only is kept
-        return earlier, None, f"unreadable ({_label(exc)})"
+def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
+    """The kinds of a parsed journal file, each kept to its cap, every entry an earlier process left open closed as "not recorded".
+    Raises on a file that is not ours (the caller names the class)."""
     kinds = data.get("kinds") if isinstance(data, dict) else None
     if not isinstance(kinds, dict) or data.get("schema") != SCHEMA:
-        return earlier, None, "unreadable (not this journal)"
-    since = data.get("since")
+        raise ValueError("not this journal")
+    earlier: dict[str, dict[str, Any]] = {}
     for kind, cap in KEEP.items():
         entry = kinds.get(kind)
         if not isinstance(entry, dict):
             continue
-        events = [e for e in (entry.get("events") or []) if isinstance(e, dict) and isinstance(e.get("at"), str)]
+        raw = entry.get("events")
+        events = [e for e in raw if isinstance(e, dict) and isinstance(e.get("at"), str)] if isinstance(raw, list) else []
         total = entry.get("total")
         total = total if isinstance(total, int) and not isinstance(total, bool) and total >= len(events) else len(events)
         for e in events:
@@ -234,7 +242,37 @@ def _read_file() -> tuple[dict[str, dict[str, Any]], str | None, str]:
                 e["open"] = False
                 e["ended"] = "the process ended while this was open; its end was not recorded"
         earlier[kind] = {"total": total, "events": events[-cap:]}
-    return earlier, since if isinstance(since, str) else None, "ok"
+    since = data.get("since")
+    return earlier, since if isinstance(since, str) else None
+
+
+def _read_file() -> tuple[dict[str, dict[str, Any]], str | None, str]:
+    """Read the file once: ``(kinds, since, how it read)``. No lock is held (it is disk), and every entry an earlier process left open
+    is closed as "not recorded". Never raises: an unreadable file reads as empty and says why (the class of the failure, never its
+    text). An I/O error is looked at again :data:`READ_ATTEMPTS` times before the file is called unreadable."""
+    last = "missing"
+    for attempt in range(READ_ATTEMPTS):
+        try:
+            path = _path()
+            size = path.stat().st_size
+            if size > MAX_FILE_BYTES:
+                return {}, None, f"unreadable (larger than {MAX_FILE_BYTES} bytes)"
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}, None, "missing"
+        except OSError as exc:
+            last = f"unreadable ({_label(exc)})"
+            if attempt + 1 < READ_ATTEMPTS:
+                time.sleep(READ_RETRY_S)
+            continue
+        except Exception as exc:  # noqa: BLE001 - bad JSON or UTF-8 (ValueError), nesting too deep (RecursionError), a missing data volume
+            return {}, None, f"unreadable ({_label(exc)})"
+        try:
+            earlier, since = _parse_kinds(data)
+        except Exception as exc:  # noqa: BLE001 - a file of ours in a shape ours never wrote (skew or damage): not read back, never fatal
+            return {}, None, "unreadable (not this journal)" if isinstance(exc, ValueError) else f"unreadable ({_label(exc)})"
+        return earlier, since, "ok"
+    return {}, None, last
 
 
 def _ensure_loaded(generation: int | None = None) -> None:
@@ -276,15 +314,18 @@ def _snapshot_locked() -> tuple[str, int, int]:
     return text, _VERSION, _GENERATION
 
 
-def _write(text: str, version: int, generation: int) -> None:
-    """Write one snapshot atomically (temp file and replace; no fsync: a journal, not a ledger). Never raises."""
+def _write(text: str, version: int, generation: int) -> bool:
+    """Write one snapshot atomically (temp file and replace; no fsync: a journal, not a ledger, so a power loss can leave the old file
+    or an empty one, which the next read reports as unreadable). Never raises. False when the write FAILED (the caller tries again);
+    True when it was written or was not due (a newer snapshot was written first, or the state was reset since this one was taken)."""
     global _WRITTEN_VERSION, _WRITE_FAILURES, _LAST_WRITE_FAILURE, _LAST_WRITE_OK_AT
     with _WRITE_LOCK:
         if generation != _GENERATION or version <= _WRITTEN_VERSION:
-            return  # a newer snapshot was written first, or the state was reset since this one was taken
-        path = _path()
-        tmp = path.with_name(path.name + ".tmp")
+            return True
+        tmp = None
         try:
+            path = _path()
+            tmp = path.with_name(path.name + ".tmp")
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp.write_text(text, encoding="utf-8")
             os.replace(tmp, path)
@@ -292,36 +333,51 @@ def _write(text: str, version: int, generation: int) -> None:
             _WRITE_FAILURES += 1
             _LAST_WRITE_FAILURE = _label(exc)
             log_failure(_LOG, "storage events: could not write the journal", exc, level=logging.DEBUG)
-            try:
-                tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
-            return
+            if tmp is not None:
+                with suppress(OSError):
+                    tmp.unlink(missing_ok=True)
+            return False
         _WRITTEN_VERSION = version
         _LAST_WRITE_OK_AT = _now()
+        return True
+
+
+def _wait_out(generation: int, seconds: float) -> None:
+    """Wait ``seconds`` on the condition, to the deadline whatever wakes it (every change does), or until a reset."""
+    deadline = time.monotonic() + seconds
+    with _COND:
+        while generation == _GENERATION and (left := deadline - time.monotonic()) > 0:
+            _COND.wait(left)
 
 
 def _flusher_loop() -> None:
+    failures = 0  # consecutive failed writes: the retry waits longer each time, to RETRY_MAX_S
     while True:
         try:
             with _COND:
                 while not _DIRTY:
                     _COND.wait()
                 generation = _GENERATION
-                # Let a burst of changes become one write: every change wakes this wait, so it runs to the deadline, not to the next wake.
-                # A reset ends the wait too (it wakes it): what was waiting to be written is gone.
-                deadline = time.monotonic() + FLUSH_DELAY_S
-                while generation == _GENERATION and (left := deadline - time.monotonic()) > 0:
-                    _COND.wait(left)
-                if generation != _GENERATION:
-                    continue
+            # Let a burst of changes become one write: every change wakes the wait, so it runs to the deadline, not to the next wake.
+            # A reset ends the wait too (it wakes it): what was waiting to be written is gone.
+            _wait_out(generation, FLUSH_DELAY_S)
+            if generation != _GENERATION:
+                continue
             _ensure_loaded(generation)  # the file's history first, so the write below extends it and never replaces it
             with _LOCK:
                 if generation != _GENERATION or not _LOADED or not _DIRTY:
                     continue  # reset, or written by a flush(), while this waited: nothing is left to write
                 snap = _snapshot_locked()  # a copy: the lock is dropped before any disk is touched
                 _clear_dirty_locked()
-            _write(*snap)
+            if _write(*snap):
+                failures = 0
+                continue
+            # The write failed (counted in _write): the change is still not in the file, so it is wanted again, later.
+            failures += 1
+            with _LOCK:
+                if generation == _GENERATION:
+                    _mark_wanted_locked()
+            _wait_out(generation, min(RETRY_MAX_S, FLUSH_DELAY_S * 2 ** min(failures, 10)))
         except Exception as exc:  # noqa: BLE001 - the thread must outlive anything
             _internal_failure("flusher", exc)
             time.sleep(FLUSH_DELAY_S)  # a failure that repeats must not spin
@@ -342,6 +398,12 @@ def _flusher() -> None:
 def _clear_dirty_locked() -> None:
     global _DIRTY
     _DIRTY = False
+
+
+def _mark_wanted_locked() -> None:
+    """The snapshot just taken was not written: ask for another, without a new version (nothing changed). Caller holds the lock."""
+    global _DIRTY
+    _DIRTY = True
 
 
 def _mark_dirty_locked() -> None:
@@ -389,8 +451,20 @@ def _build(fields: dict[str, Any]) -> dict[str, Any]:
         for k, v in cleaned.items():
             if k not in _OWNED:
                 event[k] = v
-    if _size(event) > MAX_EVENT_BYTES:
-        event = {"at": event["at"], "proc": _PROC, "oversize_bytes": _size(event), "fields_kept": False}
+    total = _size(event)
+    if total > MAX_EVENT_BYTES:
+        # The largest field goes first, until the event fits: what is left (the trigger, the outcome, the rows, the seconds) still says
+        # what happened, and the names of what went are kept. Dropping every field would turn the most informative events into stubs.
+        gone: list[str] = []
+        event["oversize_bytes"] = total
+        while _size(event) > MAX_EVENT_BYTES:
+            candidates = [k for k in event if k not in ("at", "proc", "oversize_bytes", "fields_dropped")]
+            if not candidates:
+                break
+            biggest = max(candidates, key=lambda k: _size(event[k]))
+            gone.append(biggest)
+            del event[biggest]
+            event["fields_dropped"] = gone
     return event
 
 
@@ -406,6 +480,8 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
         if key is not None:
             event["open"] = True
         with _LOCK:
+            if key is not None and (kind, key) in _ENDED:
+                return  # its closer ran first (see end): the entry that closer wrote is the record of this event
             if _SINCE is None:
                 _SINCE = event["at"]
             entry = _STATE.setdefault(kind, _empty_kind())
@@ -435,17 +511,26 @@ def update(kind: str, key: Any, fields: dict[str, Any]) -> bool:
                 merged = {**event, **{k: v for k, v in cleaned.items() if k not in _OWNED}}
                 if _size(merged) <= MAX_EVENT_BYTES:
                     event.update(merged)
-            _mark_dirty_locked()
+                    _mark_dirty_locked()  # a merge refused for size changed nothing: no write for it
             return True
     except Exception as exc:  # noqa: BLE001
         _internal_failure("update", exc)
         return False
 
 
-def end(kind: str, key: Any, fields: dict[str, Any] | None = None) -> bool:
-    """Merge ``fields`` into the open event ``(kind, key)`` and close it. Returns False when there is none to close. Never raises."""
+def end(kind: str, key: Any, fields: dict[str, Any] | None = None, *, tombstone: bool = False) -> bool:
+    """Merge ``fields`` into the open event ``(kind, key)`` and close it. Returns False when there is none to close. Never raises.
+
+    ``tombstone=True`` also remembers the key as closed, found or not: a later :func:`record` with that key is then refused. That is
+    for an event whose opener can run AFTER its closer (the write gate's watchdog computes a sample for seconds, and the holder's
+    release can come in between): without it the late opener would add a second entry for the same hold, open for ever, which reads
+    exactly like a kill in the middle of a hold. :data:`ENDED_KEYS_MAX` bounds the memory."""
     try:
         with _LOCK:
+            if tombstone:
+                _ENDED[(kind, key)] = None
+                while len(_ENDED) > ENDED_KEYS_MAX:
+                    _ENDED.pop(next(iter(_ENDED)), None)
             event = _OPEN.get((kind, key))
             if event is None:
                 return False
@@ -498,6 +583,13 @@ def _row(row: Any) -> list[int | None] | None:
         return None
 
 
+def _compact_readers(readers: Any) -> Any:
+    """A checkpoint's reader snapshot with at most :data:`READER_HOLDERS` of its holders (``n`` is the full count of checkouts)."""
+    if isinstance(readers, dict) and isinstance(readers.get("holders"), list):
+        return {**readers, "holders": readers["holders"][:READER_HOLDERS]}
+    return readers
+
+
 def note_checkpoint(
     trigger: str,
     *,
@@ -525,7 +617,7 @@ def note_checkpoint(
             "seconds": seconds,
             "wal_bytes_before": wal_before,
             "wal_bytes_after": wal_after,
-            "readers": readers,
+            "readers": _compact_readers(readers),
             "error": error,
             **(extra or {}),
         }
@@ -616,11 +708,14 @@ _METHOD = (
     "Events recorded at the sites that already measure them (the write gate's release and its 15-second watchdog, the storage "
     "guard's transitions, the checkpoint sites, the unlock and the boot, the pool's timeout) and kept in a small file written by a "
     "background thread at most once a second. 'total' counts every event since 'since', across restarts; 'kept' is what the file "
-    "holds (the newest, the cap is 'keep'); 'dropped' is total minus kept. An event 'open' was still going when this member was "
-    "built; one whose process ended first says so ('ended')."
+    "holds (the newest, the cap is 'keep'); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
+    "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
+    "shown. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
+    "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been."
 )
 _CAVEAT = (
-    "A kill loses the last second of events. An event is a count, a duration or a name; a hold is attributed to the thread that held "
+    "A process kill loses the last second of events when writes succeed (a failed write is tried again, doubling to a minute), and a "
+    "power loss can lose more or leave an unreadable file (no fsync). An event is a count, a duration or a name; a hold is attributed to the thread that held "
     "the gate, not to the code that was running (the frames are the watchdog's sample and are absent for a hold it never saw "
     "while it lasted). The file is read once at the first use after a start: events of earlier processes are marked 'earlier'."
 )
@@ -696,6 +791,7 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
         _SINCE_FILE = None
         _READ_STATE = "not read yet"
         _OPEN = {}
+        _ENDED.clear()
         _DIRTY = False
         _VERSION = 0
         _GENERATION += 1
@@ -708,8 +804,8 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
         _WRITE_FAILURES = 0
         _LAST_WRITE_FAILURE = _LAST_WRITE_OK_AT = None
         if not keep_file:
-            for path in (_path(), _path().with_name(_path().name + ".tmp")):
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            with suppress(Exception):  # a test that broke the path must still be able to reset
+                path = _path()
+                for victim in (path, path.with_name(path.name + ".tmp")):
+                    with suppress(OSError):
+                        victim.unlink(missing_ok=True)
