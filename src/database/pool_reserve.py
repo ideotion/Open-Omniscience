@@ -150,6 +150,38 @@ def collector_ceiling(pool_total: int, api_margin: int) -> int:
     return max(1, int(pool_total) - int(api_margin))
 
 
+#: How many of the oldest checkouts a timeout record names. WHAT IT PROTECTS: the record's size (one event is bounded at 3,000 bytes by
+#: the journal) while still naming the likely pinners: a pool that timed out has every connection checked out, and the oldest few are
+#: the ones that never came back.
+TIMEOUT_HOLDERS = 3
+
+
+def _journal_timeout(pool: Any, waited_s: float) -> None:
+    """Put one pool checkout timeout in the storage-events journal: how long it waited, for which route and thread, the pool as
+    configured and who held it. Counts, names and route templates only. Never raises (a failed instrument must not replace the
+    pool's own error with another)."""
+    try:
+        from src.database import pool_watch
+        from src.monitoring import storage_events
+
+        rows = pool_watch.checked_out()
+        storage_events.note_pool_timeout(
+            waited_s=waited_s,
+            thread=threading.current_thread().name,
+            route=pool_watch.endpoint_template(),
+            collector=in_collector_role(),
+            pool_size=pool.size(),
+            overflow=getattr(pool, "_max_overflow", None),
+            timeout_s=getattr(pool, "_timeout", None),
+            checked_out=len(rows),
+            holders=[
+                {k: r.get(k) for k in ("thread", "endpoint", "age_s", "collector", "pool")} for r in rows[:TIMEOUT_HOLDERS]
+            ],
+        )
+    except Exception:  # noqa: BLE001 - best effort by contract
+        pass
+
+
 class ReservingQueuePool(QueuePool):
     """``QueuePool`` whose collector-role checkouts leave ``api_margin`` connections free."""
 
@@ -170,6 +202,16 @@ class ReservingQueuePool(QueuePool):
 
     # -- the public checkout entry -------------------------------------------------
     def connect(self):  # type: ignore[override]
+        began = time.monotonic()
+        try:
+            return self._connect_reserving()
+        except PoolTimeoutError:
+            # SQLAlchemy raises this without firing ``handle_error``, so this is the one place every timeout (the pool's own and the
+            # collector's reservation) passes: the journal records who held the pool, by thread and route, then the error goes on.
+            _journal_timeout(self, time.monotonic() - began)
+            raise
+
+    def _connect_reserving(self):
         if not in_collector_role():
             return super().connect()
         if self._reserve.holds(threading.current_thread()) or _owns_write_gate():

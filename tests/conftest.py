@@ -341,6 +341,20 @@ def _vitals_history_isolated():
 
 
 @pytest.fixture(autouse=True)
+def _storage_events_isolated():
+    """The storage-events journal (``src.monitoring.storage_events``) is process-global: its sites (the write gate, the storage guard,
+    every checkpoint, the unlock) record into memory and a background thread writes ``storage_events.json`` in whatever ``data_dir()``
+    is current, so one test's holds and checkpoints would be read back as an earlier process's by the next. Reset it, and remove its
+    file, on the way out. Looked up in ``sys.modules`` so a test that never imported it pays nothing."""
+    yield
+    import sys
+
+    mod = sys.modules.get("src.monitoring.storage_events")
+    if mod is not None:
+        mod.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _dedup_front_isolated():
     """C12 (2026-07-24 throughput brief, A2): the in-memory dedup front
     (``src.ingest.dedup_front``) is a process-global cache by design (dedup

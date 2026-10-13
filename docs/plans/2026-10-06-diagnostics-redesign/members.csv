@@ -12,9 +12,9 @@ columnar.json,1844,keep,columnar.json,,,record,0.2
 freshness.json,7143,keep,freshness.json,,,record,0.2
 elections-floor.json,3570,drop,(build id),export,identical on all 17 instances (a table shipped in the code); the build id in the manifest's machine block identifies it,record,0.0
 request-latency.json,69569,keep,request-latency.json,,,record,0.0
-write-gate.json,1091,merge,contention.json,WAL,"one subject (who waited for whom); gains the holds, checkpoint, guard and pool-timeout histories (WAL needs file, sections 2-3)",record,0.0
+write-gate.json,1091,merge,contention.json,WAL,"one subject (who waited for whom); gains the pool as configured and a pointer to the histories of holds, checkpoints, guard engagements and pool timeouts, which live in storage-events.json (WAL needs file, sections 2-3)",record,0.0
 data-volume.json,458,merge,storage.json,WAL,"one subject (where the bytes are and whether the drive is there); free_bytes renamed freelist_bytes, drive_free_bytes added beside it (WAL needs file, section 1)",record,0.0
-stall-forensics.json,131109,merge,contention.json,WAL,"one subject (who waited for whom); gains the holds, checkpoint, guard and pool-timeout histories (WAL needs file, sections 2-3)",record,0.0
+stall-forensics.json,131109,merge,contention.json,WAL,"one subject (who waited for whom); gains the pool as configured and a pointer to the histories of holds, checkpoints, guard engagements and pool timeouts, which live in storage-events.json (WAL needs file, sections 2-3)",record,0.0
 slow-queries.json,31228,keep,slow-queries.json,,,record,0.0
 schema-drift.json,517,keep,schema-drift.json,,,record,0.2
 corpus-integrity.json,2546,keep,corpus-integrity.json,,,record,75.9
@@ -79,6 +79,7 @@ runs.json,,new,runs.json,export,"every Diagnostics run, including a failed, kill
 vitals.json,,new,vitals.json,export,"process RSS, available memory, swap, drive free, database size, threads and log-line counts by logger and level: 5-minute buckets for 48 h and hourly for 14 days, plus the last 60 minutes; the memory-growth curve and the minutes before a kill",record,
 selftests.json,,new,selftests.json,export,one verdict per self-test (13 of them),record,
 database-damage.json,,new,database-damage.json,WAL,"incident records, per-table quick_check verdicts, file pages against the header's page count at every boot, salvage counts (WAL needs 4)",record,
+storage-events.json,,new,storage-events.json,WAL,"the durable journal behind the instant: write-gate holds of 30 s or more, storage-guard engagements, every checkpoint of the live store (and the notable ones), unlocks and boots with their phases and init_db steps, pool checkout timeouts; per kind a running total, the events kept and the count dropped (a cap limits what is kept, never what is counted); data/storage_events.json survives the restart (WAL needs 2a-2d and 3; measured at full retention, budget 80,000 bytes)",record,
 transfers.json,,new,transfers.json,WAL,"last 10 runs of each kind of backup, export and restore, with outcome, seconds, bytes and the destination's free space; staging swept at boot (WAL needs 5); WITHDRAWN 2026-10-06, WAL builds no such record",record,
 boots.json,,new,boots.json,RC + WAL,"last 10 unlocks: synchronous total and phases, log bytes at open, whether the previous end was clean, time to first query, the tier and allocator RC stamps on every boot record (WAL needs 2; RC needs 1 and 2)",record,
 wiki-lane-history.json,,new (on PR 1314),wiki-lane-history.json,plan,"the lane's own hourly history, already added to bundle.py by the plan thread on PR 1314 as the one exception to the sole-pusher rule: per edition per hour (requests, pages, bytes, busy seconds, bookmark), replies by kind, stream gaps, tick time split, drain holds; its lane_history() call in src/wiki/service.py stays; transport setting and answer-time percentiles ride the manifest's machine block",record,

@@ -391,6 +391,11 @@ def write_gate_report() -> dict:
       statement or its parameters), and the total since start: the
       open question behind a pool that loses connections under disk trouble.
 
+    * ``pool_config`` -- the pool as configured and as resolved (size, overflow, timeout, and which
+      of them an ``OO_DB_*`` variable set), beside the checkouts, because "all the connections were
+      out" means different things at 6+6 and at 8+64. The history of the holds of 30 s or more
+      and of the checkouts that timed out is in ``storage-events.json`` (``history_in``).
+
     An empty ``pool`` list means nothing is checked out RIGHT NOW -- a returned
     connection is deliberately not listed, so no innocent thread is named.
     Read-only, in-memory, no statement text. A row carries no stack unless the
@@ -405,10 +410,13 @@ def write_gate_report() -> dict:
     return {
         "gate": write_gate_stats(),
         "pool": pool_watch.checked_out(),
+        "pool_config": pool_watch.pool_config(),
         "invalidations": pool_watch.invalidations(),
+        "history_in": "storage-events.json",
         "method": (
             "gate counters read under the gate's own lock; pool rows recorded by "
-            "SQLAlchemy checkout/checkin listeners and forgotten on checkin"
+            "SQLAlchemy checkout/checkin listeners and forgotten on checkin; the pool's "
+            "configuration read from the engine's own pool and the memory budget that sized it"
         ),
         "caveat": (
             "A point-in-time reading. An empty pool list means nothing is checked "

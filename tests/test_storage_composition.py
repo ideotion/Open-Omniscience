@@ -355,3 +355,45 @@ def test_an_overshooting_share_is_flagged_never_clamped(db):
     est = storage_mod.content_share_estimate(db, 1000)  # file smaller than the text
     assert est["article_text_share"] > 1
     assert "exceeds_file" in est and "remainder_bytes" not in est
+
+
+# --------------------------------------------------------------------------- #
+#  The freelist is not the drive (2026-10-13, WAL's needs 1)
+# --------------------------------------------------------------------------- #
+def test_the_freelist_and_the_drive_are_named_apart(db):
+    """The 2026-10 bundle called the freelist ``free_bytes`` (0 on a drive with room) and two readers took it for the drive. The
+    freelist is ``freelist_bytes`` (inside the database file) and the volume's own figures sit beside ``db_bytes``."""
+    from src.scheduler.storage_guard import disk_reserve_bytes
+
+    out = storage_composition(db)
+    assert "free_bytes" not in out and "free_bytes_note" not in out, "the ambiguous name is gone"
+    assert out["freelist_bytes"] == out["page_size"] * out["freelist_pages"]
+    assert out["auto_vacuum"] == "none" and "auto_vacuum=none" in out["freelist_bytes_note"]
+    assert isinstance(out["drive_free_bytes"], int) and out["drive_free_bytes"] > 0
+    assert out["drive_total_bytes"] >= out["drive_free_bytes"]
+    assert out["reserve_bytes"] == disk_reserve_bytes(out["drive_total_bytes"]), "the reserve the storage guard pauses collection below"
+    assert isinstance(out["filesystem"], str) and out["filesystem"]
+
+
+def test_an_unreadable_drive_is_unmeasured_never_zero(db, monkeypatch):
+    import src.config.hardware_reading as hw
+    import src.monitoring.forensics as forensics
+
+    monkeypatch.setattr(hw, "disk_bytes", lambda _p=None: (None, None))
+    monkeypatch.setattr(forensics, "_filesystem_type", lambda _p: None)
+    out = storage_composition(db)
+    assert out["drive_free_bytes"] is None and out["drive_total_bytes"] is None, "could not tell is not the same as full"
+    assert out["filesystem"] == "unknown"
+    assert out["db_bytes"] > 0, "the rest of the block stands"
+
+
+def test_a_drive_reading_that_raises_leaves_the_block_standing(db, monkeypatch):
+    import src.config.hardware_reading as hw
+
+    def boom(_p=None):
+        raise RuntimeError("statvfs hung up")
+
+    monkeypatch.setattr(hw, "disk_bytes", boom)
+    out = storage_composition(db)
+    assert out["drive_free_bytes"] is None and out["db_bytes"] > 0
+    assert "statvfs" not in str(out), "the class and a fixed label, never the exception's words"

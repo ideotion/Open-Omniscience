@@ -148,6 +148,29 @@ def _wal_history(session: Session) -> dict[str, Any] | None:
         return None
 
 
+def _drive_facts(folder: Path) -> dict[str, Any]:
+    """The volume holding the database file: free and total bytes, the free-space reserve the storage guard pauses collection below
+    (sized from this drive, or ``OO_DISK_RESERVE_MB``) and the filesystem type. A fact that cannot be read is ``None`` (the type:
+    ``"unknown"``), never a fabricated 0: "could not tell" and "the drive is full" are opposite findings. Never raises."""
+    out: dict[str, Any] = {"drive_free_bytes": None, "drive_total_bytes": None, "reserve_bytes": None, "filesystem": "unknown"}
+    try:
+        from src.config.hardware_reading import disk_bytes
+        from src.scheduler.storage_guard import disk_reserve_bytes
+
+        free, total = disk_bytes(folder)
+        out["drive_free_bytes"], out["drive_total_bytes"] = free, total
+        out["reserve_bytes"] = disk_reserve_bytes(total)
+    except Exception as exc:  # noqa: BLE001 - visibility is best-effort; never break the diagnostic
+        log_failure(_LOG, "storage composition: could not read the drive", exc, level=logging.DEBUG)
+    try:
+        from src.monitoring.forensics import _filesystem_type
+
+        out["filesystem"] = _filesystem_type(folder) or "unknown"
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "storage composition: could not read the filesystem type", exc, level=logging.DEBUG)
+    return out
+
+
 def storage_composition(session: Session) -> dict[str, Any]:
     """Per-table / per-index byte composition of the live SQLite store.
 
@@ -198,8 +221,8 @@ def storage_composition(session: Session) -> dict[str, Any]:
                 "automatic checkpointing is DISABLED on this connection — the -wal grows "
                 "until an explicit checkpoint runs (the scheduler's inter-pass TRUNCATE)."
             )
+    main_db = None
     try:
-        main_db = None
         for row in _rows(session, "PRAGMA database_list"):
             if len(row) >= 3 and str(row[1]) == "main" and row[2]:
                 main_db = str(row[2])
@@ -241,10 +264,15 @@ def storage_composition(session: Session) -> dict[str, Any]:
         pass
     if page_size and page_count is not None:
         out["db_bytes"] = page_size * page_count
+    # The DRIVE beside the file, under its own names. This block used to call the freelist ``free_bytes`` and two readers of the 2026-10
+    # bundle took it for the drive (it said 0 on a drive with room): the freelist is ``freelist_bytes`` now and these four say what the
+    # volume that holds the file has.
+    if main_db:
+        out.update(_drive_facts(Path(main_db).parent))
     if page_size and freelist is not None:
-        out["free_bytes"] = page_size * freelist  # reclaimable only via (in)cremental vacuum
+        out["freelist_bytes"] = page_size * freelist  # inside the database file; reclaimable only via (in)cremental vacuum
         if out.get("auto_vacuum") == "none":
-            out["free_bytes_note"] = (
+            out["freelist_bytes_note"] = (
                 "auto_vacuum=none: these freelist bytes are reclaimable ONLY by a full VACUUM "
                 "(rewrites the whole file, ~2x disk, exclusive writer) — infeasible at scale. See "
                 "docs/design/DB10_RETENTION_VACUUM_MEMO.md (the irreversible CREATE-time seam ruling)."

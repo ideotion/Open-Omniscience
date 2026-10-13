@@ -184,6 +184,7 @@ from pathlib import Path
 from typing import Any
 
 from src.database import damage
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("scheduler.storage_guard")
@@ -633,11 +634,12 @@ def _default_drain() -> dict | None:
 
     t = _ckpt_gate_timeout_s()
     errors: list[str] = []
-    rec = checkpoint_wal(
-        force=True,
-        gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S,
-        errors=errors,
-    )
+    with storage_events.checkpoint_trigger("guard"):
+        rec = checkpoint_wal(
+            force=True,
+            gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S,
+            errors=errors,
+        )
     if rec is None and errors:
         return {"error": errors[0]}
     return rec
@@ -960,7 +962,12 @@ class StorageGuard:
                     self._hold_until = None
                     self._disk_by_error = False
                     released.append("disk-retry")
-            self._account_locked(was, now_mono)
+            self._account_locked(
+                was,
+                now_mono,
+                ended_by=(("retry after the hold lapsed (free space unreadable)" if released == ["disk-retry"] else "measurement")
+                          if released else None),
+            )
             engaged = self._wal or self._disk
             override_event = self._update_override_locked(engaged, disk_free_bytes)
         self._log_transitions(tripped, released)
@@ -1039,8 +1046,11 @@ class StorageGuard:
             return "withdrawn"
         return None
 
-    def _account_locked(self, was: bool, now_mono: float) -> None:
-        """Episode bookkeeping. Caller holds the lock."""
+    def _account_locked(self, was: bool, now_mono: float, ended_by: str | None = None) -> None:
+        """Episode bookkeeping. Caller holds the lock. The engagement is also kept in the storage-events journal (``storage_events``,
+        the Diagnostics zip's ``storage-events.json``): opened here at the trip with the figures that tripped it, closed here at the
+        release with how long it lasted, the peak log size and what ended it (``ended_by``; None is a path that does not say). The
+        journal only updates a dict (a background thread writes its file) and never raises, so it cannot hold this lock."""
         now = self._wal or self._disk
         if now and not was:
             self._engagements += 1
@@ -1058,8 +1068,32 @@ class StorageGuard:
                 "corpus_at_trip": self._last.get("corpus_bytes"),
                 "measured": False,
             }
+            storage_events.record(
+                "guard",
+                {
+                    "kind": self._episode["kind"],
+                    "since": self._since,
+                    "wal_bytes_at_trip": self._episode["wal_at_trip"],
+                    "disk_free_bytes_at_trip": self._episode["free_at_trip"],
+                    "corpus_bytes_at_trip": self._episode["corpus_at_trip"],
+                    "wal_high_bytes": self._thresholds.get("wal_high_bytes"),
+                    "disk_reserve_bytes": self._thresholds.get("disk_reserve_bytes"),
+                },
+                key="guard",
+            )
         elif was and not now and self._since_mono is not None:
             self._total_engaged_s += now_mono - self._since_mono
+            storage_events.end(
+                "guard",
+                "guard",
+                {
+                    "seconds": round(now_mono - self._since_mono, 1),
+                    "peak_wal_bytes": self._peak_wal_while_engaged,
+                    "wal_bytes_at_end": self._last.get("wal_bytes"),
+                    "disk_free_bytes_at_end": self._last.get("disk_free_bytes"),
+                    "ended_by": ended_by or "not stated",
+                },
+            )
             self._since, self._since_mono = None, None
             self._report_key = None  # the next episode's first report is a WARNING again
             self._episode = None
@@ -1249,7 +1283,7 @@ class StorageGuard:
             self._override = self._withdrawn = None
             self._override_blind = 0
             self._disk_by_error = False
-            self._account_locked(was, now_mono)
+            self._account_locked(was, now_mono, ended_by="explicit start or run-now (a retry)")
         if was:
             _LOG.warning("storage guard released (%s) -- collection resumes", reason)
         if had_override:

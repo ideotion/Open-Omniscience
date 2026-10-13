@@ -419,6 +419,38 @@ def stacks_for(idents: list[int], *, depth: int = STACK_DEPTH) -> dict[int, list
     return out
 
 
+def pool_config() -> dict:
+    """The corpus pool as built: its size and overflow, its checkout timeout, the figures now, and which of them an operator's
+    ``OO_DB_POOL_SIZE`` / ``OO_DB_MAX_OVERFLOW`` / ``OO_DB_POOL_TIMEOUT`` set (the rest are the memory budget's tier). Counts and
+    names only. Never raises."""
+    try:
+        from src.config.memory_budget import budget
+        from src.database.session import engine
+
+        pool: Any = engine.pool  # the queue pool's size() / checkedout() are not on the base class
+        b = budget()
+        raw_overrides = b.get("overrides")
+        overrides = raw_overrides if isinstance(raw_overrides, dict) else {}
+        out: dict = {
+            "pool_class": type(pool).__name__,
+            "pool_size": int(pool.size()) if callable(getattr(pool, "size", None)) else None,
+            "max_overflow": getattr(pool, "_max_overflow", None),
+            "timeout_s": getattr(pool, "_timeout", None),
+            "checked_out_now": int(pool.checkedout()) if callable(getattr(pool, "checkedout", None)) else None,
+            "tier": b.get("tier"),
+            "set_by_the_operator": sorted(
+                [k for k in ("db_pool_size", "db_max_overflow") if k in overrides]
+                + (["pool_timeout"] if os.getenv("OO_DB_POOL_TIMEOUT") not in (None, "") else [])
+            ),
+        }
+        reservation = getattr(pool, "reservation", None)
+        if callable(reservation):
+            out["collector_reservation"] = reservation()
+        return out
+    except Exception as exc:  # noqa: BLE001 - a diagnostic member never raises
+        return {"available": False, "reason": type(exc).__name__}
+
+
 def is_registered() -> bool:
     """Whether the listeners are attached.
 

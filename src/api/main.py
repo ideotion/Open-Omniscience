@@ -103,11 +103,16 @@ def _note_boot_init_db() -> None:
     """
     try:
         from src.database.init_steps import first_record, last_record
+        from src.monitoring import storage_events
         from src.monitoring.forensics import record_init_db
 
         record = first_record() or last_record()
         if record is not None:
             record_init_db(record)
+            if record.get("complete"):
+                # A start with no passphrase opened the store here; an unlock keeps its own line (``api/unlock.py``). A call that
+                # raised (a locked store, at the launcher's first ``init_db``) opened nothing and keeps none.
+                storage_events.note_open("boot", total_ms=record.get("total_ms"), init_db=record)
     except Exception as exc:  # noqa: BLE001 - forensics never blocks a boot
         log_failure(logger, "could not keep the init_db step record", exc, level=logging.DEBUG)
 
@@ -129,7 +134,10 @@ def run_deferred_startup() -> None:
     try:
         init_db()
     finally:
-        _note_boot_init_db()  # also when init_db raised: that record names the step and the class
+        # Also when init_db raised: with no earlier call completed, the failed call's record is the one kept and it names the step and
+        # the class; when an earlier call DID complete (``serve``'s, before the server came up), that one is kept instead
+        # (``first_record`` wins, as the function's docstring says).
+        _note_boot_init_db()
     _run_startup_upkeep()
     set_startup("ready", "")
 
@@ -687,6 +695,12 @@ async def lifespan(app: FastAPI):
         _flush_hwm()  # persist this session's peaks past the write throttle
     except Exception as exc:  # noqa: BLE001 - best-effort
         log_failure(logger, "could not flush the session high-water marks", exc, level=logging.DEBUG)
+    try:
+        from src.monitoring import storage_events as _storage_events
+
+        _storage_events.flush()  # the storage journal's last write; a hard kill is covered by the entries still open in the file
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not flush the storage journal", exc, level=logging.DEBUG)
     try:
         from src.monitoring.forensics import record_clean_shutdown
 

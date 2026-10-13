@@ -146,6 +146,10 @@ class WriterGate:
         # for the max, and this is one float add on that same line, inside a lock it
         # already holds (the 2026-08-06 rule about instruments on hot paths).
         self._total_held_s = 0.0
+        # WHO used the window, by thread name: [holds, held_s, longest_s]. At most ``_HOLDER_NAMES_MAX`` names (a thread pool names
+        # its workers, and a restart names a new set), the rest summed under ``_OTHER_HOLDERS``, so the table is bounded whatever the
+        # app does; one dict lookup and three adds inside the lock the release already holds.
+        self._by_holder: dict[str, list[float]] = {}
         self._timeouts = 0  # bounded acquires that gave up (S2.5)
         # WATCHED HOLDERS (2026-10-06): the holds of ONE thread, accumulated until it reads them.
         # ``_total_held_s`` is the whole process's, so no per-drain share can be taken from it:
@@ -252,8 +256,8 @@ class WriterGate:
 
     def release(self) -> None:
         me = threading.get_ident()
-        # (holder name, seconds) of the hold that ended on THIS call, for the line written after the lock is dropped.
-        released: tuple[str | None, float] | None = None
+        # (holder name, seconds, start) of the hold that ended on THIS call, for the line written after the lock is dropped.
+        released: tuple[str | None, float, float | None] | None = None
         with self._cond:
             if self._owner != me:
                 # Defensive: only the owner releases. A non-owner call is a
@@ -263,6 +267,7 @@ class WriterGate:
             if self._depth == 0:
                 held = None
                 holder = self._holder
+                started = self._held_since
                 if self._held_since is not None:
                     held = time.monotonic() - self._held_since
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
@@ -273,6 +278,7 @@ class WriterGate:
                         # Retained AFTER release on purpose: the peak hold is
                         # useless without the name of what held it.
                         self._max_hold_holder = self._holder
+                    self._account_holder_locked(holder, held)
                 self._owner = None
                 self._holder = None
                 self._held_since = None
@@ -280,7 +286,7 @@ class WriterGate:
                 # AFTER the gate is free and the next waiter woken: this bookkeeping can never
                 # leave the gate held, whatever it does.
                 if held is not None:
-                    released = (holder, held)
+                    released = (holder, held, started)
                     watched = self._watched.get(me)
                     if watched is not None:
                         watched["held_s"] += held
@@ -288,8 +294,26 @@ class WriterGate:
                             watched["longest_s"] = held
         # OUTSIDE the lock: a log handler that blocks (a full pipe, a slow terminal) must not hold the gate's lock, and the gate is
         # already free and its next waiter woken. The cheap comparison first, so a normal hold (milliseconds) never reads the environment.
-        if released is not None and released[1] >= _RELEASE_LINE_FLOOR_S:
-            _log_long_release(*released)
+        if released is not None:
+            if released[1] >= _RELEASE_LINE_FLOOR_S:
+                _log_long_release(released[0], released[1])
+            if released[1] >= HOLD_RECORD_S:  # a separate comparison: the journal's threshold is its own, not the log line's
+                _note_hold_end(*released)
+
+    def _account_holder_locked(self, name: str | None, held: float) -> None:
+        """Add one finished hold to the per-holder table. Caller holds the lock."""
+        key = name if isinstance(name, str) and name else "(unnamed)"
+        row = self._by_holder.get(key)
+        if row is None:
+            if len(self._by_holder) >= _HOLDER_NAMES_MAX:
+                key = _OTHER_HOLDERS
+                row = self._by_holder.get(key)
+            if row is None:
+                row = self._by_holder[key] = [0.0, 0.0, 0.0]
+        row[0] += 1
+        row[1] += held
+        if held > row[2]:
+            row[2] = held
 
     def _wake_head(self) -> None:
         """Wake EXACTLY the queue head. Caller holds the lock.
@@ -379,6 +403,14 @@ class WriterGate:
                 "max_hold_holder": self._max_hold_holder,
                 "queued": len(self._queue),
                 "timeouts": self._timeouts,
+                # Who used the window, most seconds first: holds finished, seconds held and the longest hold, by thread name.
+                # Cumulative like ``total_held_s``; a name past the table's bound is summed under "(others)". Seconds OTHERS waited
+                # are not attributed to a holder: under FIFO handoff a wait spans several holders, and ``total_wait_s`` stays the
+                # one honest figure for it.
+                "by_holder": {
+                    name: {"holds": int(r[0]), "held_s": round(r[1], 3), "longest_s": round(r[2], 3)}
+                    for name, r in sorted(self._by_holder.items(), key=lambda kv: kv[1][1], reverse=True)
+                },
             }
 
     def _holder_snapshot(self) -> tuple[str | None, float | None, int | None]:
@@ -514,6 +546,18 @@ def _watchdog_threshold_s() -> float:
         return 60.0
 
 
+#: A hold of this many seconds is kept in the storage-events journal (``monitoring/storage_events.py``, the Diagnostics zip's
+#: ``storage-events.json``): opened by the watchdog when it first samples the hold at or past it, updated on every sample, closed at the
+#: release. WHAT IT PROTECTS: the journal's twenty places and the zip's byte budget. A hold under thirty seconds is a slow batch (the
+#: re-index's write window is bounded by ``OO_REINDEX_HOLD_TARGET_S``, 10 s), a hold past it is the shape of the stalls the 30 Sep crash
+#: read found (60 to 175 s), and the watchdog's own 15-second sample means a hold is first seen between 30 and 45 s.
+HOLD_RECORD_S = 30.0
+
+#: The per-holder table's bound: thread names past it are summed under ``(others)``. WHAT IT PROTECTS: the gate's memory and the size
+#: of ``write-gate``'s ``by_holder`` in the zip (a worker pool and every restart name new threads).
+_HOLDER_NAMES_MAX = 16
+_OTHER_HOLDERS = "(others)"
+
 #: Holds shorter than this never reach the release line's threshold check (which reads the environment): the line is for holds of
 #: the watchdog threshold, 60 s by default, and a hold of milliseconds is the normal case on a path every writer takes.
 _RELEASE_LINE_FLOOR_S = 1.0
@@ -533,6 +577,82 @@ def _log_long_release(holder: str | None, held: float) -> None:
     with suppress(Exception):
         if held >= _watchdog_threshold_s():
             _LOG.warning("write gate released after %.1fs by %r", held, holder)
+
+
+#: The start (monotonic) of the hold the journal was last opened for, so a sample updates the open entry and never opens a second one.
+_JOURNALED_HOLD: float | None = None
+
+
+def _app_frames(ident: int | None, limit: int = 3) -> list[str]:
+    """The innermost ``limit`` frames of app code (``src.*``, this module excluded) of the thread with this ident, as
+    ``module:function:line``: names and numbers, no argument and no source text. Best-effort, [] when the thread is gone."""
+    out: list[str] = []
+    try:
+        import sys
+
+        frame = sys._current_frames().get(ident) if ident is not None else None
+        while frame is not None and len(out) < limit:
+            module = str(frame.f_globals.get("__name__", ""))
+            if module.startswith("src.") and module != __name__:
+                out.append(f"{module}:{frame.f_code.co_name}:{frame.f_lineno}")
+            frame = frame.f_back
+    except Exception:  # noqa: BLE001 - a diagnostic must never raise
+        return out
+    return out
+
+
+def _route_of_thread(ident: int | None) -> str | None:
+    """The route the thread with this ident was serving when it took its connection (the pool watch's checkout record), else None."""
+    try:
+        from src.database import pool_watch
+
+        for row in pool_watch.checked_out():
+            if row.get("ident") == ident:
+                return row.get("endpoint")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident: int | None, held_for: float) -> None:
+    """The watchdog's sample of a hold at or past :data:`HOLD_RECORD_S`: open the journal entry on the first sample, update it on
+    the rest. Never raises; the journal itself never blocks (it updates a dict and a background thread writes the file)."""
+    global _JOURNALED_HOLD
+    try:
+        from src.monitoring import storage_events
+
+        s = gate.stats()
+        fields = {
+            "holder": holder,
+            "seconds": round(held_for, 1),
+            "waiters": s.get("waiters"),
+            "queued": s.get("queued"),
+        }
+        if _JOURNALED_HOLD == started and storage_events.update("gate_hold", ("hold", started), fields):
+            return
+        storage_events.record(
+            "gate_hold",
+            {**fields, "route": _route_of_thread(ident), "frames": _app_frames(ident)},
+            key=("hold", started),
+        )
+        _JOURNALED_HOLD = started
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "write gate hold could not be journaled", exc, level=logging.DEBUG)
+
+
+def _note_hold_end(holder: str | None, held: float, started: float | None) -> None:
+    """A hold of :data:`HOLD_RECORD_S` or more ended, on the holder's own thread: close its journal entry with the final length and
+    the route (read from the request's context, which this thread still has), or write it whole when the watchdog never sampled it
+    while it lasted. Never raises."""
+    try:
+        from src.database import pool_watch
+        from src.monitoring import storage_events
+
+        fields = {"holder": holder, "seconds": round(held, 1), "route": pool_watch.endpoint_template()}
+        if not storage_events.end("gate_hold", ("hold", started), fields):
+            storage_events.record("gate_hold", {**fields, "sampled_while_held": False})
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "write gate hold could not be journaled", exc, level=logging.DEBUG)
 
 
 def _watchdog_interval_s() -> float:
@@ -570,6 +690,8 @@ def watchdog_tick(gate: WriterGate, warned_since: float | None) -> float | None:
     if started is None or holder is None:
         return None  # gate free: the next long hold warns again
     held_for = time.monotonic() - started
+    if held_for >= HOLD_RECORD_S:
+        _note_long_hold(gate, holder, started, ident, held_for)
     if held_for < _watchdog_threshold_s() or warned_since == started:
         return warned_since
     s = gate.stats()

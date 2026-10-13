@@ -728,6 +728,17 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
     return dest_p
 
 
+def _note_snapshot_checkpoint(row, seconds: float) -> None:
+    """Put the snapshot's TRUNCATE in the storage-events journal (a lazy import: this module sits under everything else, and the
+    journal must never be the reason a snapshot fails). Never raises."""
+    try:
+        from src.monitoring import storage_events
+
+        storage_events.note_checkpoint("snapshot", truncate=row, seconds=seconds)
+    except Exception:  # noqa: BLE001 - best effort by contract
+        pass
+
+
 def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
     """Try to snapshot an encrypted store by COPYING ITS BYTES. Returns whether it ran.
 
@@ -770,7 +781,9 @@ def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
     with write_lock():
         conn = connect(src_p, check_same_thread=False)
         try:
+            began = time.monotonic()
             row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            _note_snapshot_checkpoint(row, time.monotonic() - began)
         finally:
             conn.close()
         if not row or int(row[0]) != 0:
