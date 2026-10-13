@@ -88,6 +88,19 @@ def test_a_key_only_the_copy_has_is_kept_never_deleted(tmp_path, live_at):
     assert _rows(working) == {"settings.gone": "1", "settings.app": "a"}
 
 
+def test_a_key_that_describes_corpus_tables_is_left_as_the_snapshot_has_it_and_named(tmp_path, live_at):
+    """The spell-index note and the repair records are about tables the swap takes from the snapshot: carrying the note over
+    the snapshot's table would make the record disagree with the data."""
+    working = _file(tmp_path / "working.db", {"search.spell_index": "snap", "settings.app": "a"})
+    live_at(_file(tmp_path / "live.db", {
+        "search.spell_index": "live-build", "qualification.repairs": "r", "settings.app": "a2"}))
+
+    out = merge._carry_live_settings(working)
+
+    assert out == {"carried": 1, "of": 1, "left_as_snapshot": ["qualification.repairs", "search.spell_index"]}
+    assert _rows(working) == {"search.spell_index": "snap", "settings.app": "a2"}
+
+
 def test_a_copy_that_lacks_the_table_gets_it(tmp_path, live_at):
     working = _file(tmp_path / "working.db", None)
     live_at(_file(tmp_path / "live.db", {"settings.app": "a"}))
@@ -112,7 +125,38 @@ def test_a_missing_live_file_is_reported_and_changes_nothing(tmp_path, live_at):
     assert _rows(working) == {"settings.app": "a"}
 
 
-def test_a_failure_is_reported_by_class_only_and_changes_nothing(tmp_path, live_at):
+def test_the_live_file_and_its_leftover_log_are_read_and_never_touched(tmp_path, live_at):
+    """The read is read-only: a leftover ``-wal`` with no connection open is read from, and neither it nor the file is changed
+    (a read-write open would fold and delete it). Fails if ``read_only=True`` is dropped from the live open."""
+    import shutil
+
+    work = tmp_path / "w"
+    work.mkdir()
+    orig = work / "orig.db"
+    con = sqlite3.connect(orig)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    con.execute("CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)")
+    con.commit()
+    con.execute("INSERT INTO app_state VALUES ('settings.only_in_wal', 'w', '2026-10-13 00:00:00')")
+    con.commit()
+    live = tmp_path / "live.db"
+    shutil.copy(orig, live)
+    shutil.copy(str(orig) + "-wal", str(live) + "-wal")
+    con.close()
+    wal = Path(str(live) + "-wal")
+    assert wal.exists() and wal.stat().st_size > 0, "precondition: a leftover log with the row in it"
+    before = (live.read_bytes(), wal.read_bytes())
+    working = _file(tmp_path / "working.db", {"settings.app": "a"})
+    live_at(live)
+
+    out = merge._carry_live_settings(working)
+
+    assert out == {"carried": 1, "of": 1}, "the row that only the log holds is read"
+    assert (live.read_bytes(), wal.read_bytes()) == before, "the live file and its log are byte-identical"
+
+
+def test_a_failure_is_reported_by_class_only_and_changes_nothing(tmp_path, live_at, caplog):
     marker = "SECRET-PASSPHRASE-MARKER"
     working = _file(tmp_path / "working.db", {"settings.app": "a"})
     live = tmp_path / "live.db"
@@ -123,6 +167,8 @@ def test_a_failure_is_reported_by_class_only_and_changes_nothing(tmp_path, live_
 
     assert out["carried"] == 0 and set(out) == {"carried", "skipped"}
     assert marker not in repr(out) and out["skipped"].isidentifier()
+    assert any("settings carry skipped" in r.getMessage() for r in caplog.records), "a skip is never silent"
+    assert marker not in caplog.text
     assert _rows(working) == {"settings.app": "a"}
 
 
@@ -140,15 +186,16 @@ def _lines(node: ast.AST, name: str) -> list[int]:
     )
 
 
-def test_the_carry_runs_once_after_the_writers_quiesce_and_before_the_swap():
+def test_the_carry_runs_once_after_the_checkpoint_and_right_before_the_swap():
     node = _run_restore_node()
-    carry, quiet, swap = (
+    carry, quiet, ckpt, swap = (
         _lines(node, "_carry_live_settings"),
         _lines(node, "wait_for_quiescence"),
+        _lines(node, "_checkpoint_before_swap"),
         _lines(node, "swap_in_corpus"),
     )
-    assert len(carry) == len(quiet) == len(swap) == 1
-    assert quiet[0] < carry[0] < swap[0]
+    assert len(carry) == len(quiet) == len(ckpt) == len(swap) == 1
+    assert quiet[0] < ckpt[0] < carry[0] < swap[0], "as late as the swap allows: the checkpoint can take a minute"
     # and it is reported, never silent
     assert 'report["settings_carry"] = _carry_live_settings(working)' in _MERGE_PY.read_text(encoding="utf-8")
 

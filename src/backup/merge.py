@@ -5435,21 +5435,33 @@ def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
         con.close()
 
 
+#: The ``app_state`` keys that ARE settings, carried by ``_carry_live_settings``: the ``settings.*`` namespaces, the agenda
+#: preferences, the interface language and the search history. Every other key is a RECORD ABOUT CORPUS TABLES (the spell-index
+#: build note, the qualification repair records and the recheck marker) and goes the way those tables go: with the snapshot, so
+#: the note and the table it describes stay together.
+_CARRIED_SETTINGS_KEYS = ("settings.", "agenda.", "ui.", "search.history")
+
+
 def _carry_live_settings(working: Path) -> dict:
-    """Bring the LIVE corpus's ``app_state`` rows (the settings) into the working copy, just before the swap.
+    """Bring the LIVE corpus's settings (``app_state`` rows named in ``_CARRIED_SETTINGS_KEYS``) into the working copy, as late as
+    the swap allows.
 
     The swap makes the working copy the live corpus, and ``app_state`` is not merged (local wins entirely, ``_MERGE_IGNORED``),
-    so the live settings of a restore were whatever the SNAPSHOT held. Anything written to the live file after the snapshot was
-    thrown away by the swap: a legacy ``app_settings.json`` migrated into the row by a settings read, a setting saved from the
-    Settings page during a long import, and in a checkpoint group (a CARRIED working copy that takes no snapshot of its own)
-    all of it since the first item's snapshot. Local data never gives way on import (R100), so the rows are read from the live
-    file now, after the writers have quiesced, and written over the working copy's.
+    so the settings that came out of a restore were whatever the SNAPSHOT held. Anything written to the live file after the
+    snapshot was thrown away by the swap: a legacy ``app_settings.json`` migrated into the row by a settings read, a setting
+    saved from the Settings page during a long import, and in a checkpoint group (a CARRIED working copy that takes no snapshot
+    of its own) all of it since the first item's snapshot. Local data never gives way on import (R100), so the rows are read
+    from the live file now and written over the working copy's.
 
-    UPSERT ONLY, never a delete: a key the live file no longer has stays as the snapshot had it (the status quo), because a
-    failed or partial read must never wipe a setting. A failure is reported by CLASS ONLY and changes nothing (the swap goes on
-    exactly as it did before this existed), and the report says what was carried or why not, so the carry is never silent.
-    A save made in the instants between this read and the swap is still lost; ``swap_in_corpus`` refuses connections made
-    inside its own window, so such a save fails loudly rather than vanishing."""
+    UPSERT ONLY: a key the live file no longer has stays as the snapshot had it (nothing deletes a key today). The keys that are
+    not settings are left as the snapshot has them and named in ``left_as_snapshot`` when they differ. A failure changes nothing,
+    is reported by CLASS ONLY (and logged as a warning), and the swap goes on exactly as it did before this existed.
+
+    WHAT IT CANNOT COVER, stated plainly: a settings save that commits after this read and before the file is replaced is lost.
+    Settings writers hold neither the corpus lease (so the quiescence wait does not wait for them) nor a guard of the swap
+    window (so such a save is not refused either): it returns success, the in-process cache serves it, and the value reverts at
+    the next start. The gap is the swap itself, since the carry now follows the checkpoint, and closing it needs the write gate
+    held from here to the replace (recorded in OPEN_QUEUE)."""
     from src.backup.sqlite_backup import live_db_path
     from src.database.connect import connect as db_connect
 
@@ -5469,6 +5481,8 @@ def _carry_live_settings(working: Path) -> dict:
             )
         finally:
             src_con.close()
+        settings = [r for r in rows if str(r[0]).startswith(_CARRIED_SETTINGS_KEYS)]
+        others = [r for r in rows if r not in settings]
         if not rows:
             return {"carried": 0, "of": 0}
         dst = db_connect(working, check_same_thread=False)
@@ -5478,7 +5492,7 @@ def _carry_live_settings(working: Path) -> dict:
                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)"
             )
             have = {r[0]: r[1] for r in dst.execute("SELECT key, value FROM app_state")}
-            changed = [r for r in rows if have.get(r[0]) != r[1]]
+            changed = [r for r in settings if have.get(r[0]) != r[1]]
             for key, value, updated_at in changed:
                 dst.execute(
                     "INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?) "
@@ -5488,8 +5502,13 @@ def _carry_live_settings(working: Path) -> dict:
             dst.commit()
         finally:
             dst.close()
-        return {"carried": len(changed), "of": len(rows)}
+        out: dict = {"carried": len(changed), "of": len(settings)}
+        left = sorted(str(r[0]) for r in others if have.get(r[0]) != r[1])
+        if left:
+            out["left_as_snapshot"] = left
+        return out
     except Exception as exc:  # noqa: BLE001 - the swap must go on as before; the class says why, the engine's words stay out
+        _LOG.warning("settings carry skipped before the swap (%s)", type(exc).__name__)
         return {"carried": 0, "skipped": type(exc).__name__}
 
 
@@ -7615,9 +7634,6 @@ def run_restore(
                     + f") after waiting {_SWAP_QUIESCE_S:.0f}s — nothing was written to "
                     "your corpus. Stop that job, or let it finish, and import again."
                 )
-            # The writers have quiesced: carry the settings the live file holds NOW into the copy that is about to become
-            # it (see _carry_live_settings; a failure there changes nothing and is reported).
-            report["settings_carry"] = _carry_live_settings(working)
             target = live_db_path()
             # Empty the live WAL BEFORE letting go of the engine. Two reasons, and
             # the second is the data-safety one:
@@ -7637,6 +7653,9 @@ def run_restore(
             why: list[str] = []
             if not _checkpoint_before_swap(why=why):
                 raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
+            # Carry the settings the live file holds NOW into the copy that is about to become it, as late as the swap allows
+            # (after the checkpoint, which can take a minute) -- see _carry_live_settings for what it covers and what it cannot.
+            report["settings_carry"] = _carry_live_settings(working)
             try:
                 # The engine is disposed, the live log names cleared and the file replaced inside ONE window (swap_in_corpus), in
                 # which no connection is being opened and every connection made before it is refused: a save that waited out the
