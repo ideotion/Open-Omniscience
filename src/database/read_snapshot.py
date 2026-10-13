@@ -47,6 +47,7 @@ from sqlalchemy.pool import NullPool
 from src.database import library_generation as _library_generation
 from src.database import pool_watch as _pool_watch
 from src.database.session import get_db
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -193,7 +194,7 @@ def dispose_read_engines() -> None:
     for eng in _engines.values():
         try:
             eng.dispose()
-        except Exception:  # noqa: BLE001 - cleanup must never raise
-            _LOG.debug("read engine dispose failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - cleanup must never raise
+            log_failure(_LOG, "read engine dispose failed", exc, level=logging.DEBUG)
     _engines.clear()
     _factories.clear()

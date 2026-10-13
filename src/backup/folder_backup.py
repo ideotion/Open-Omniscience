@@ -43,6 +43,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from src.monitoring.secret_scrub import log_failure
+
 MANIFEST_NAME = "oo-folder-backup.json"
 BACKUP_SCHEMA = "oo-folder-backup-1"
 _CATEGORIES = ("wiki_dumps", "osm_regions", "models", "hf_models")
@@ -1006,12 +1008,10 @@ def _write_export_summary(destp: Path) -> None:
         write_summary_for_export_job(
             destp, volume_status=get_volume_manager().backup_status_for(destp)
         )
-    except Exception:  # noqa: BLE001 - a summary is never worth failing a finished copy
+    except Exception as exc:  # noqa: BLE001 - a summary is never worth failing a finished copy
         import logging
 
-        logging.getLogger(__name__).warning(
-            "export summary: not rewritten after the copy into %s", destp, exc_info=True
-        )
+        log_failure(logging.getLogger(__name__), f"export summary: not rewritten after the copy into {destp}", exc, level=logging.WARNING)
 
 
 class FolderBackupManager:

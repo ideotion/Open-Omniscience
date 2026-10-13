@@ -17,6 +17,8 @@ from typing import Any
 
 import yaml
 
+from src.monitoring.secret_scrub import log_failure
+
 
 def _package_version() -> str:
     """Single source of truth for the app version (finding BUG-03).
@@ -216,7 +218,7 @@ class Config:
                     settings = yaml.safe_load(f)
                     self._apply_yaml_config(settings)
             except Exception as e:
-                logger.warning(f"Failed to load settings.yaml: {e}")
+                log_failure(logger, "Failed to load settings.yaml", e, level=logging.WARNING)
 
         # Load sources.yml (store in extra for use by other modules)
         sources_file = configs_dir / "sources.yml"
@@ -226,7 +228,7 @@ class Config:
                     sources_config = yaml.safe_load(f)
                     self.extra["sources"] = sources_config.get("sources", [])
             except Exception as e:
-                logger.warning(f"Failed to load sources.yml: {e}")
+                log_failure(logger, "Failed to load sources.yml", e, level=logging.WARNING)
 
     def _apply_yaml_config(self, config: dict[str, Any]):
         """Apply configuration from a YAML dictionary."""

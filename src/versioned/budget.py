@@ -53,6 +53,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.lanes import KINDS, lane
 
 _LOG = logging.getLogger("versioned.budget")
@@ -354,8 +355,8 @@ def lane_growth(session, kind: str, *, size_state: str) -> dict[str, Any]:
 
     try:
         history = metric_history(session, metric=gauge_metric(kind), days=GROWTH_WINDOW_DAYS)
-    except Exception:  # noqa: BLE001 - a storage panel must not fail on a history read
-        _LOG.warning("lane growth read failed for %s", kind, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a storage panel must not fail on a history read
+        log_failure(_LOG, f"lane growth read failed for {kind}", exc, level=logging.WARNING)
         return {
             "window_days": GROWTH_WINDOW_DAYS,
             "min_span_days": GROWTH_MIN_SPAN_DAYS,
@@ -455,8 +456,8 @@ def storage_report(session) -> dict[str, Any]:
 
     try:
         settings = load_settings()
-    except Exception:  # noqa: BLE001 - the published rows still render without it
-        _LOG.warning("storage report could not read the scheduler settings", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the published rows still render without it
+        log_failure(_LOG, "storage report could not read the scheduler settings", exc, level=logging.WARNING)
         settings = None
 
     reading = boot_reading()

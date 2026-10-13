@@ -44,6 +44,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # The ``derived_meta`` key. Its VALUE is the ISO timestamp the deferral opened at, so a
@@ -94,8 +96,8 @@ def deferral_open_since(session: Session) -> str | None:
 
     try:
         row = session.get(DerivedMeta, COUNTER_DEFERRAL_KEY)
-    except Exception:  # noqa: BLE001 - an unreadable marker cannot support `exact`
-        _LOG.warning("counter deferral marker unreadable; disclosing as deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable marker cannot support `exact`
+        log_failure(_LOG, "counter deferral marker unreadable; disclosing as deferred", exc, level=logging.WARNING)
         return "unknown"
     return row.value if row is not None else None
 

@@ -29,6 +29,7 @@ from src.ingest import (
 )
 from src.ingest.pipeline import IngestResult, store_fetched
 from src.markets.extract import extract_price
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ def run_rules(
         try:
             outcome = run_rule(session, rule, fetcher=fetcher)
         except Exception as exc:  # noqa: BLE001 - one bad rule must not abort the batch
-            _LOG.warning("market rule %s failed", rule.id, exc_info=True)
+            log_failure(_LOG, f"market rule {rule.id} failed", exc, level=logging.WARNING)
             session.rollback()
             outcome = RuleOutcome(rule.id, rule.symbol, "error", reason=str(exc))
         tally[outcome.status] = tally.get(outcome.status, 0) + 1
@@ -208,8 +209,8 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
                 source=f"feed:{feed.key}",
             )
             tally["imported" if getattr(result, "status", "") == "imported" else "failed"] += 1
-        except Exception:  # noqa: BLE001 - one feed must not abort the markets pass
-            _LOG.warning("market feed %s import failed", feed.key, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one feed must not abort the markets pass
+            log_failure(_LOG, f"market feed {feed.key} import failed", exc, level=logging.WARNING)
             session.rollback()
             tally["failed"] += 1
     return tally

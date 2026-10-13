@@ -45,6 +45,8 @@ import logging
 import os
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _STATE_FILENAME = "archive_backfill.json"
@@ -169,9 +171,8 @@ def advance_backfill(
             return {"enabled": True, "source_id": sid, "skipped": "source no longer exists"}
         try:
             urls = discover(fetcher, source, full_history=bool(entry.get("full_history")))
-        except Exception:  # noqa: BLE001 - one source's enumeration failure must not abort the queue
-            _LOG.warning("archive backfill: sitemap enumeration failed for %r", source.domain,
-                         exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one source's enumeration failure must not abort the queue
+            log_failure(_LOG, f"archive backfill: sitemap enumeration failed for {source.domain!r}", exc, level=logging.WARNING)
             urls = []
         if not urls:
             done.append(sid)
@@ -206,9 +207,9 @@ def advance_backfill(
         try:
             outcome = ingest(session, source, url, fetcher=fetcher)
             key = outcome.result.value if hasattr(outcome.result, "value") else str(outcome.result)
-        except Exception:  # noqa: BLE001 - one URL's failure must not abort the tick
+        except Exception as exc:  # noqa: BLE001 - one URL's failure must not abort the tick
             key = "error"
-            _LOG.warning("archive backfill: fetching %r failed", url, exc_info=True)
+            log_failure(_LOG, f"archive backfill: fetching {url!r} failed", exc, level=logging.WARNING)
             # A failure that reached here can include an uncommitted/failed
             # transaction (store_fetched only catches IntegrityError itself --
             # e.g. an OperationalError from a concurrent writer propagates

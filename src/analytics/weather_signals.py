@@ -37,6 +37,8 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 SIGNALS_VERSION = "oo-weather-signals-1"
@@ -159,8 +161,8 @@ def load_signals() -> dict:
         return empty
     try:
         data = json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break the read
-        _LOG.warning("weather_signals.json unreadable; treating as empty", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break the read
+        log_failure(_LOG, "weather_signals.json unreadable; treating as empty", exc, level=logging.WARNING)
         return empty
     if not isinstance(data, dict) or data.get("version") != SIGNALS_VERSION:
         return empty

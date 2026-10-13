@@ -636,7 +636,7 @@ def test_an_attempt_on_an_app_that_is_already_open_only_asks_the_file_read_only(
     connect_mod.set_passphrase(_KEY)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
     monkeypatch.setattr(connect_mod, "connect", read)
-    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn: calls.append("checkpoint"))
+    monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase: calls.append("checkpoint"))
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: calls.append("finish"))
     assert unlock(PassphraseBody(passphrase=_KEY)) == {"unlocked": True, "state": "unlocked-encrypted"}
     assert calls == [("connect", _KEY, True), "close"], calls

@@ -67,6 +67,7 @@ from src.catalog.qualification import (
     log_inherited_stamps,
     record_admission,
 )
+from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -112,8 +113,8 @@ def load_overlay(path: Path | None = None) -> dict[str, dict]:
         return {}
     try:
         raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001 - a broken overlay must never block boot
-        _LOG.warning("could not read the qualification overlay at %s", p, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a broken overlay must never block boot
+        log_failure(_LOG, f"could not read the qualification overlay at {p}", exc, level=logging.WARNING)
         return {}
     rows = raw.get("verdicts") if isinstance(raw, dict) else None
     if not isinstance(rows, list):
@@ -273,8 +274,8 @@ def adoption_enabled() -> bool:
         from src.config.app_settings import load_settings
 
         return bool(load_settings().adopt_shipped_verdicts)
-    except Exception:  # noqa: BLE001 - never block boot on a preference read
-        _LOG.debug("could not read the overlay-adoption preference; adopting", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never block boot on a preference read
+        log_failure(_LOG, "could not read the overlay-adoption preference; adopting", exc, level=logging.DEBUG)
         return True
 
 
@@ -529,8 +530,8 @@ def revert_overlay(
         from src.config.app_settings import save_settings
 
         save_settings({"adopt_shipped_verdicts": False})
-    except Exception:  # noqa: BLE001 - reported, never swallowed into a clean result
-        _LOG.warning("reverted the overlay but could not persist the preference", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed into a clean result
+        log_failure(_LOG, "reverted the overlay but could not persist the preference", exc, level=logging.WARNING)
         preference_held = False
     else:
         preference_held = True

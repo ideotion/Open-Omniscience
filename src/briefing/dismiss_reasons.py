@@ -22,6 +22,8 @@ import logging
 from collections import Counter
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 REASONS_VERSION = "oo-dismiss-reasons-1"
@@ -48,8 +50,8 @@ def _load() -> dict:
         if not isinstance(data.get("reasons"), list):
             data["reasons"] = []
         return data
-    except Exception:  # noqa: BLE001 - a bad file must not break the capture
-        _LOG.warning("briefing_dismiss_reasons.json unreadable; starting fresh", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break the capture
+        log_failure(_LOG, "briefing_dismiss_reasons.json unreadable; starting fresh", exc, level=logging.WARNING)
         return {"version": REASONS_VERSION, "reasons": []}
 
 

@@ -29,6 +29,7 @@ import logging
 from typing import Any
 
 from src.integrity.actors import corpus_actors
+from src.monitoring.secret_scrub import log_failure
 from src.signals.near_dup import near_duplicate_clusters
 
 _LOG = logging.getLogger(__name__)
@@ -47,8 +48,8 @@ def applied_signatures() -> set[str]:
         return set()
     try:
         return set(json.loads(path.read_text("utf-8")).get("applied", []))
-    except Exception:  # noqa: BLE001 - a bad file must not break the feed
-        _LOG.warning("integrity_collapse.json unreadable; treating as empty", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break the feed
+        log_failure(_LOG, "integrity_collapse.json unreadable; treating as empty", exc, level=logging.WARNING)
         return set()
 
 

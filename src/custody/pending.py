@@ -45,6 +45,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 PENDING_FILE = "custody_pending.jsonl"
@@ -85,8 +87,8 @@ def _append(records: list[dict[str, Any]]) -> bool:
             with open(p, "a", encoding="utf-8", newline="\n") as fh:
                 fh.write("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in records))
         return True
-    except OSError:
-        _LOG.warning("custody: could not queue %d late entr(ies)", len(records), exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"custody: could not queue {len(records)} late entr(ies)", exc, level=logging.WARNING)
         return False
 
 
@@ -137,8 +139,8 @@ def _rewrite(items: list[dict[str, Any]]) -> None:
     if not items:
         try:
             p.unlink(missing_ok=True)
-        except OSError:
-            _LOG.debug("custody: could not remove the empty pending file", exc_info=True)
+        except OSError as exc:
+            log_failure(_LOG, "custody: could not remove the empty pending file", exc, level=logging.DEBUG)
         return
     tmp = p.with_suffix(".jsonl.tmp")
     tmp.write_text("".join(json.dumps(i, separators=(",", ":")) + "\n" for i in items),
@@ -222,7 +224,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 read = _columns_for(need, session_factory)
             except Exception as exc:  # noqa: BLE001 - those entries wait for the next drain
                 read, read_error = None, f"{type(exc).__name__}: {exc}"[:200]
-                _LOG.debug("custody: owed entries' columns could not be read yet", exc_info=True)
+                log_failure(_LOG, "custody: owed entries' columns could not be read yet", exc, level=logging.DEBUG)
         if prefs is None:
             # Only the actor name comes from here, so an unreadable setting (the settings
             # live in the same database whose pool may be the problem) costs the name,
@@ -231,8 +233,8 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 from src.custody.settings import load_settings
 
                 prefs = load_settings()
-            except Exception:  # noqa: BLE001 - fall back to the pipeline's own actor name
-                _LOG.debug("custody: settings unreadable during a drain", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - fall back to the pipeline's own actor name
+                log_failure(_LOG, "custody: settings unreadable during a drain", exc, level=logging.DEBUG)
         actor = getattr(prefs, "default_actor", None) or "ingest-pipeline"
         if log_factory is None:
             from src.custody.log import CustodyLog as log_factory
@@ -271,8 +273,8 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                     )
                     recorded += 1
                     settled.append(it)
-                except Exception:  # noqa: BLE001 - this one waits for the next drain
-                    _LOG.debug("custody: late entry for article %s still pending", aid, exc_info=True)
+                except Exception as exc:  # noqa: BLE001 - this one waits for the next drain
+                    log_failure(_LOG, f"custody: late entry for article {aid} still pending", exc, level=logging.DEBUG)
         finally:
             with contextlib.suppress(Exception):
                 log.close()
@@ -281,8 +283,8 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             remaining = [it for it in read_pending() if _key(it) not in done]
             try:
                 _rewrite(remaining)
-            except OSError:
-                _LOG.warning("custody: could not rewrite the pending file", exc_info=True)
+            except OSError as exc:
+                log_failure(_LOG, "custody: could not rewrite the pending file", exc, level=logging.WARNING)
     out: dict[str, Any] = {"recorded": recorded, "already_present": already, "article_gone": gone,
                            "still_pending": len(remaining)}
     if read_error:

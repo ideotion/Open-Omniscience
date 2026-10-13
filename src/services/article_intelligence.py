@@ -25,9 +25,11 @@ Article Intelligence Analysis for Open Omniscience
 Author: Open Omniscience Team
 """
 
+import logging
 import math
 from collections import Counter, defaultdict
 
+from src.monitoring.secret_scrub import log_failure
 from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor
 from src.utils.logging_config import setup_logging
@@ -127,7 +129,7 @@ class ArticleIntelligenceAnalyzer:
                     similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
                     return float(similarity)
                 except Exception as e:
-                    logger.debug(f"TF-IDF with IDF failed, trying without: {e}")
+                    log_failure(logger, "TF-IDF with IDF failed, trying without", e, level=logging.DEBUG)
                     vectorizer = TfidfVectorizer(
                         tokenizer=lambda x: x.split(), lowercase=False, use_idf=False
                     )

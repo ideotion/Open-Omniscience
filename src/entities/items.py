@@ -32,7 +32,15 @@ from datetime import UTC, datetime
 
 from src.analytics.ring_loader import RateGate
 from src.analytics.wikidata_rings import POLITE_SLEEP_S
-from src.entities.wikidata_items import BATCH_MAX, CLAIMS, batches, entities_url, is_qid, parse_entities
+from src.entities.wikidata_items import (
+    BATCH_MAX,
+    CLAIMS,
+    batches,
+    entities_url,
+    is_qid,
+    parse_entities,
+)
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -255,7 +263,7 @@ def fetch_items(
         except Exception as exc:  # noqa: BLE001 - one failed batch is counted, never fatal
             refused += len(batch)
             done += len(batch)
-            _LOG.info("wikidata item batch of %d failed: %s", len(batch), exc)
+            log_failure(_LOG, f"wikidata item batch of {len(batch)} failed", exc, level=logging.INFO)
             continue
         with session_factory() as s:
             store_items(s, parsed)

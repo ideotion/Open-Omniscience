@@ -40,6 +40,8 @@ import threading
 import time
 from pathlib import Path, PurePath, PureWindowsPath
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("database.connect")
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -857,11 +859,8 @@ def snapshot_preserving(
         try:
             if _quiesced_file_copy(src_p, dest_p):
                 return dest_p
-        except Exception:  # noqa: BLE001 - the codec path below is always correct
-            _LOG.warning(
-                "the quiesced file-copy snapshot failed; falling back to sqlcipher_export",
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001 - the codec path below is always correct
+            log_failure(_LOG, "the quiesced file-copy snapshot failed; falling back to sqlcipher_export", exc, level=logging.WARNING)
         dest_p.unlink(missing_ok=True)  # never let a partial copy be mistaken for one
     conn = connect(src_p, check_same_thread=False)
     try:

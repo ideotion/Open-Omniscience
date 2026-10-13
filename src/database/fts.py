@@ -41,6 +41,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from src.database.fts_norm import SEGMENTERS as _SEGMENTERS
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -1057,9 +1058,9 @@ def optimize_after_bulk(session: Session) -> dict:
             session.execute(text("INSERT INTO article_fts(article_fts) VALUES ('optimize')"))
             session.commit()
         out["fts"] = True
-    except Exception:  # noqa: BLE001 - a tuning step must never break the caller
+    except Exception as exc:  # noqa: BLE001 - a tuning step must never break the caller
         session.rollback()
-        _LOG.warning("FTS5 optimize failed", exc_info=True)
+        log_failure(_LOG, "FTS5 optimize failed", exc, level=logging.WARNING)
     try:
         from src.config.power_profiles import fts_analysis_limit
 
@@ -1071,9 +1072,9 @@ def optimize_after_bulk(session: Session) -> dict:
             session.execute(text("PRAGMA optimize"))
             session.commit()
         out["planner"] = True
-    except Exception:  # noqa: BLE001 - a tuning step must never break the caller
+    except Exception as exc:  # noqa: BLE001 - a tuning step must never break the caller
         session.rollback()
-        _LOG.warning("planner optimize failed", exc_info=True)
+        log_failure(_LOG, "planner optimize failed", exc, level=logging.WARNING)
     return out
 
 

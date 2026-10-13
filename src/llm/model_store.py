@@ -44,7 +44,7 @@ import os
 import shutil
 from pathlib import Path
 
-from src.monitoring.secret_scrub import HELD_ENV_VARS
+from src.monitoring.secret_scrub import HELD_ENV_VARS, log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger("llm.model_store")
@@ -177,7 +177,7 @@ def launch_env(base: dict | None = None) -> dict:
         # Falling back to the backend's own default is strictly better than refusing to
         # start. It is logged rather than silent, because the operator's models will
         # then land somewhere they did not choose either.
-        _LOG.warning("could not prepare the app model store (%s); using backend defaults", exc)
+        log_failure(_LOG, "could not prepare the app model store; using backend defaults", exc, level=logging.WARNING)
     return env
 
 

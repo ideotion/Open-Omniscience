@@ -57,6 +57,7 @@ from src.backup.attribution import (
     signals_from_tables,
 )
 from src.backup.export_folder import REQUEST_NAME, read_export_request
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -131,8 +132,8 @@ def _folder_manifest(dest: Path) -> dict[str, Any] | None:
         return None
     try:
         m = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        _LOG.warning("export summary: unreadable %s", FOLDER_MANIFEST, exc_info=True)
+    except (OSError, ValueError) as exc:
+        log_failure(_LOG, f"export summary: unreadable {FOLDER_MANIFEST}", exc, level=logging.WARNING)
         return None
     return m if isinstance(m, dict) else None
 
@@ -608,6 +609,6 @@ def write_summary_for_export_job(
         return None
     try:
         return write_backup_summary(d, export_facts(d, volume_status=volume_status))
-    except Exception:  # noqa: BLE001 - see the docstring: never fail the backup over this
-        _LOG.warning("export summary: could not write %s in %s", SUMMARY_NAME, d, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - see the docstring: never fail the backup over this
+        log_failure(_LOG, f"export summary: could not write {SUMMARY_NAME} in {d}", exc, level=logging.WARNING)
         return None

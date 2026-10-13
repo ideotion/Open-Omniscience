@@ -34,6 +34,7 @@ from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 from src.database.stand_in import not_a_stand_in_article_id
 from src.monitoring.engine_text import engine_text
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -470,8 +471,8 @@ def _stamp_index_engine(
         from src.analytics.engine_identity import engine_id
 
         current = engine_id(extractor)
-    except Exception:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
-        _LOG.warning("could not compute the engine identity; clearing the stamp", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
+        log_failure(_LOG, "could not compute the engine identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleIndexStamp).where(ArticleIndexStamp.article_id == article.id))
         return
     if certified:
@@ -832,7 +833,7 @@ def index_article(
 
         if is_locked_error(exc):
             raise
-        _LOG.warning("when/where/who persistence failed for %s", article_id, exc_info=True)
+        log_failure(_LOG, f"when/where/who persistence failed for {article_id}", exc, level=logging.WARNING)
         www_rewritten = False
     from src.analytics.engine_identity import date_part, index_inputs_digest
 
@@ -891,9 +892,9 @@ def _mark_index_attempt(session: Session, article_id: int) -> None:
             {Article.keyword_indexed_at: datetime.now(UTC)}, synchronize_session=False
         )
         session.commit()
-    except Exception:  # noqa: BLE001 - the marker is bookkeeping, never the work
+    except Exception as exc:  # noqa: BLE001 - the marker is bookkeeping, never the work
         session.rollback()
-        _LOG.warning("could not record the index attempt for %s", article_id, exc_info=True)
+        log_failure(_LOG, f"could not record the index attempt for {article_id}", exc, level=logging.WARNING)
 
 
 def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> dict:
@@ -949,11 +950,11 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> 
                 newly_indexed += 1
             else:
                 no_terms += 1
-        except Exception:  # noqa: BLE001 - one bad article must not abort the batch
+        except Exception as exc:  # noqa: BLE001 - one bad article must not abort the batch
             session.rollback()
             attempted += 1
             failed += 1
-            _LOG.warning("indexing article %s failed", art_id, exc_info=True)
+            log_failure(_LOG, f"indexing article {art_id} failed", exc, level=logging.WARNING)
             _mark_index_attempt(session, art_id)
     unindexed = _unindexed_query(session)
     remaining = unindexed.count()
@@ -1144,11 +1145,8 @@ def reindex_articles(
             else:
                 open_deferral(session, reason=f"reindex_articles({len(article_ids)} articles)")
                 _deferring = _owns_deferral = True
-        except Exception:  # noqa: BLE001 - no marker, no deferral; the run still runs
-            _LOG.warning(
-                "could not open the counter-deferral marker; maintaining counters inline",
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001 - no marker, no deferral; the run still runs
+            log_failure(_LOG, "could not open the counter-deferral marker; maintaining counters inline", exc, level=logging.WARNING)
 
     # Re-index rewrites an article's mentions (the difference only, see _write_mention_diff:
     # changed rows are updated in place, gone ones deleted, new ones inserted), so the
@@ -1231,12 +1229,10 @@ def reindex_articles(
             try:
                 _reindex_one_committed_with_retry(article, deriv)
                 reindexed += 1
-            except Exception:  # noqa: BLE001 - isolate one bad/locked article
+            except Exception as exc:  # noqa: BLE001 - isolate one bad/locked article
                 session.rollback()
                 failed += 1
-                _LOG.warning(
-                    "re-index of imported article %s failed (redo)", article.id, exc_info=True
-                )
+                log_failure(_LOG, f"re-index of imported article {article.id} failed (redo)", exc, level=logging.WARNING)
             _report()
 
     def _apply_window(
@@ -1252,10 +1248,10 @@ def reindex_articles(
                 try:
                     _reindex_one_committed_with_retry(art, derivs.get(art.id), content_by_id.get(art.id))
                     reindexed += 1
-                except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
+                except Exception as exc:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
                     session.rollback()
                     failed += 1
-                    _LOG.warning("re-index of imported article %s failed", art.id, exc_info=True)
+                    log_failure(_LOG, f"re-index of imported article {art.id} failed", exc, level=logging.WARNING)
                 _report()
             return
 
@@ -1352,7 +1348,7 @@ def reindex_articles(
                 for _k in staged_diff:
                     staged_diff[_k] += int((_res or {}).get(f"mentions_{_k}", 0) or 0)
                 _apply_index_s += time.monotonic() - _t_i
-            except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
+            except Exception as exc:  # noqa: BLE001 - this article corrupted the in-flight batch
                 # A rollback here drops THIS article's partial work AND every
                 # already-staged-but-uncommitted batch-mate in ``pending`` (they were
                 # never flushed to a savepoint of their own) -- so redo the accumulated
@@ -1366,7 +1362,7 @@ def reindex_articles(
                 pending.clear()
                 _redo_committed(redo)
                 failed += 1
-                _LOG.warning("re-index of imported article %s failed (batch)", art.id, exc_info=True)
+                log_failure(_LOG, f"re-index of imported article {art.id} failed (batch)", exc, level=logging.WARNING)
                 _report()
                 continue
             if len(pending) >= commit_batch:
@@ -1570,8 +1566,8 @@ def finish_deferral(session: Session, *, should_stop: Callable[[], bool] | None 
         rec = reconcile_keyword_counters(
             session, budget_s=0, restart=True, should_stop=should_stop
         )
-    except Exception:  # noqa: BLE001 - a failed reconcile must not fail the re-index
-        _LOG.warning("deferred-counter reconcile failed; staying estimated", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a failed reconcile must not fail the re-index
+        log_failure(_LOG, "deferred-counter reconcile failed; staying estimated", exc, level=logging.WARNING)
         return {"reconciled": False, "closed": False, "complete": False}
     if not rec.get("complete"):
         _LOG.warning("deferred-counter reconcile did not complete; staying estimated")
@@ -1726,8 +1722,8 @@ def _cursor_set(session: Session, key: str, value: int) -> None:
         else:
             row.value = str(int(value))
             row.updated_at = datetime.now(UTC)
-    except Exception:  # noqa: BLE001 - a coordination write must never break the pass
-        _LOG.warning("maintenance cursor write failed (%s)", key, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a coordination write must never break the pass
+        log_failure(_LOG, f"maintenance cursor write failed ({key})", exc, level=logging.WARNING)
 
 
 def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float | None = None) -> dict:
@@ -1835,9 +1831,9 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
                             or 0
                         )
                         session.commit()
-                    except Exception:  # noqa: BLE001 - one bad chunk must not abort the GC
+                    except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort the GC
                         session.rollback()
-                        _LOG.warning("orphan-keyword prune chunk failed", exc_info=True)
+                        log_failure(_LOG, "orphan-keyword prune chunk failed", exc, level=logging.WARNING)
         scanned += len(ids)
         after_id = hi
         # Persist the watermark WITH the slice (the resume point survives a restart).
@@ -2811,9 +2807,9 @@ def maybe_reconcile_counters(session: Session) -> dict:
         return {"skipped": "fresh"}
     try:
         return reconcile_keyword_counters(session)
-    except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+    except Exception as exc:  # noqa: BLE001 - a background safety net must never break the pass
         session.rollback()
-        _LOG.warning("background keyword-counter reconcile failed", exc_info=True)
+        log_failure(_LOG, "background keyword-counter reconcile failed", exc, level=logging.WARNING)
         return {"skipped": "error"}
 
 

@@ -27,6 +27,8 @@ import os
 import re
 from contextlib import suppress
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _PDF_MAGIC = b"%PDF-"
@@ -128,7 +130,7 @@ def extract_pdf_text(
             except Exception:  # noqa: BLE001 - one bad page must not lose the rest
                 continue
     except Exception as exc:  # noqa: BLE001 - corrupt / unsupported → honest gap, never a crash
-        _LOG.debug("pdf extraction failed: %s", exc)
+        log_failure(_LOG, "pdf extraction failed", exc, level=logging.DEBUG)
         return None, f"pdf extraction failed: {type(exc).__name__}"
 
     text = _WS_RE.sub(" ", "\n".join(parts))
@@ -266,7 +268,7 @@ def ocr_pdf(
     try:
         pdf = pdfium.PdfDocument(io.BytesIO(data))
     except Exception as exc:  # noqa: BLE001 - corrupt/unsupported → honest gap
-        _LOG.debug("ocr render open failed: %s", exc)
+        log_failure(_LOG, "ocr render open failed", exc, level=logging.DEBUG)
         return None, f"ocr failed to open pdf: {type(exc).__name__}"
     try:
         pages = min(len(pdf), max(1, max_pages))
