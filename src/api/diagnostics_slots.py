@@ -34,8 +34,9 @@ a young install is a small part of it. A producer that returns more than its bud
 boundaries only when the archive does not fit 4,000,000 bytes), and the test of each producer holds it
 to its number.
 
-WHAT A SLOT'S ANSWER PASSES THROUGH. :func:`thunk` hands every string of the producer's answer through
-``scrubbed_value`` (the passphrases the process holds taken out, in every shape), so a producer that
+WHAT A SLOT'S ANSWER PASSES THROUGH. :func:`thunk` hands the producer's answer through the bundle's member net
+(``_scrubbed_member_value``: a leaf JSON cannot hold becomes the stated marker, then every string goes through
+``scrubbed_value``, the passphrases the process holds taken out in every shape), so a producer that
 catches its own failure and returns the engine's words is not a way for a held secret to reach the
 zip. The producer still writes the class and a fixed label, not the words (the scrub is the net, not the
 rule), and ``tests/test_diagnostic_slots.py`` plants a secret through a slot.
@@ -56,8 +57,6 @@ import importlib.util
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-
-from src.monitoring.secret_scrub import scrubbed_value
 
 
 @dataclass(frozen=True)
@@ -174,8 +173,13 @@ def thunk(slot: Slot) -> Callable[[], Any]:
         value = fn(max_bytes=slot.budget_bytes) if slot.takes_budget else fn(**slot.kwargs)
         # The net under every producer: whatever it caught and wrote into its answer reaches the zip with the
         # passphrases the process holds taken out (scrub first; the producer's own cuts came before, so it also
-        # writes a class and a fixed label, never the engine's words).
-        return scrubbed_value(value)
+        # writes a class and a fixed label, never the engine's words). The net is the bundle's own
+        # (``_scrubbed_member_value``, shared with ``selftests.json``): it round-trips the answer through the
+        # member encoder first, so a leaf JSON cannot hold is the stated marker, not ``str(leaf)``. Imported here
+        # because the bundle imports this module.
+        from src.api.diagnostics.bundle import _scrubbed_member_value
+
+        return _scrubbed_member_value(value)
 
     run.__name__ = "slot_" + slot.name.replace(".", "_").replace("-", "_")
     return run

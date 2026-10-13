@@ -381,6 +381,61 @@ def test_a_non_database_scan_abandoned_at_the_budget_names_the_budget_in_its_mar
     assert "can still be running" in text and results[0]["abandoned_running"] is True
 
 
+def test_a_scan_that_finished_with_less_than_its_own_deadline_left_is_not_listed_as_cut_by_the_budget(monkeypatch):
+    """``budget_cut`` on an entry says the budget SET the deadline; ``cut_by_budget`` lists the scans the budget STOPPED."""
+    rows = [
+        {"file": "s-tiny.json", "outcome": "partial-deadline", "budget_cut": True},   # stopped with what it had
+        {"file": "s-fast.json", "outcome": "skipped-deadline", "budget_cut": True},   # stopped with nothing
+        {"file": "s-mid.json", "outcome": "ok", "budget_cut": True, "wall_s": 3.0, "deadline_s": 40.0},  # finished
+        {"file": "s-slow.json", "outcome": "partial-deadline"},                       # its own 300 s, not the budget's
+    ]
+    block = plan.scans_block(rows, mode="quick", budget_s=100.0)
+    assert block["cut_by_budget"] == ["s-tiny.json", "s-fast.json"]
+    assert block["partial"] == ["s-tiny.json", "s-slow.json"] and "s-mid.json" in block["ran"]
+
+
+def test_a_scan_that_finishes_inside_a_shortened_deadline_keeps_the_note_on_its_entry_and_is_not_listed(monkeypatch):
+    clock, window = _Clock(), _Window()
+    monkeypatch.setattr(B, "_mono", clock)
+    monkeypatch.setattr(B, "_all_diag_nondb_member_deadline_s", lambda: 300.0)
+    members = [("s-tiny.json", lambda: (clock.__setattr__("now", clock.now + 70.0), {})[1]), ("s-fast.json", lambda: {})]
+    results, man, _, _ = _build(members, mode="quick", scan_window=window)
+    by = {r["file"]: r for r in results}
+    # 100 s budget, 70 s spent by the first: the second ran under the 30 s left (the budget set it) and finished at once
+    assert by["s-fast.json"]["outcome"] == "ok" and by["s-fast.json"]["budget_cut"] is True and by["s-fast.json"]["deadline_s"] == 30.0
+    assert man["scans"]["cut_by_budget"] == [] and "s-fast.json" in man["scans"]["ran"]
+
+
+def test_a_record_member_abandoned_at_its_deadline_says_so_in_the_manifest_not_only_in_the_marker(monkeypatch):
+    clock, window = _Clock(), _Window()
+    monkeypatch.setattr(B, "_mono", clock)
+    monkeypatch.setattr(B, "_run_nondb_member_bounded", lambda fn, budget: B._ALL_DIAG_DEADLINE_SENTINEL)
+    monkeypatch.setattr(B, "_all_diag_nondb_member_deadline_s", lambda: 300.0)
+    results, _, _, read = _build([("r-one.json", lambda: {})], mode="quick", scan_window=window)
+    assert results[0]["kind"] == "record" and results[0]["outcome"] == "skipped-deadline"
+    assert "can still be running" in read("r-one.json.skipped-deadline.txt").decode()
+    assert results[0]["abandoned_running"] is True
+
+
+def test_the_runs_length_is_two_readings_of_the_monotonic_clock_not_two_wall_stamps(monkeypatch):
+    """A wall clock stepped back an hour during the build made the run's ``total_wall_s`` negative (members and scans were
+    already measured on the monotonic clock)."""
+    import time
+
+    clock = _Clock()
+    monkeypatch.setattr(B, "_mono", clock)
+    wall = {"now": 1_800_000_000.0}
+
+    def stepping_wall() -> float:
+        wall["now"] -= 3600.0  # every reading is an hour earlier than the one before
+        return wall["now"]
+
+    monkeypatch.setattr(time, "time", stepping_wall)
+    results, man, _, _ = _build([("r-one.json", lambda: (clock.__setattr__("now", clock.now + 12.5), {})[1])], mode="thorough")
+    assert man["run"]["total_wall_s"] == 12.5
+    assert results[0]["wall_s"] == 12.5
+
+
 def _db_scan_raising(clock, seconds, exc):
     def run():
         clock.now += seconds

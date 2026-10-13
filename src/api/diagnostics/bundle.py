@@ -41,6 +41,7 @@ from src.jobs.background import BackgroundJob, register_job
 from src.monitoring import diagnostics_runs as _diag_runs
 from src.monitoring.secret_scrub import exception_text as _exception_text
 from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import scrubbed_value as _scrubbed_value
 from src.utils.export_envelope import app_version, envelope
 
 from ._base import _LOG, _MAX_KEYWORDS_PER_LANG, api_dir, package_source, router
@@ -563,6 +564,19 @@ def _member_default(obj: object) -> object:
             "surrounding keys locate the field that produced it"
         ),
     }
+
+
+def _scrubbed_member_value(value: Any) -> Any:
+    """``value`` as the archive will carry it, with the passphrases the process holds taken out of every string.
+
+    The net under a producer that answers with an engine's own words (a self-test that fails with the
+    exception's text, a slot that catches its own failure). Two steps, in this order: the value is
+    round-tripped through the member encoder FIRST, so a leaf JSON cannot hold becomes the stated
+    :func:`_member_default` marker (``scrubbed_value`` alone writes ``str(leaf)``, the "<Query object at 0x7f..>" the encoder's
+    own rule forbids), and the result is then scrubbed (``secret_scrub.scrubbed_value``, which withholds a string it cannot
+    check). A value the encoder cannot read at all (a cycle, a key that is not a plain scalar) RAISES, so the member ends
+    ``error`` with the class named, and nothing of it is written."""
+    return _scrubbed_value(json.loads(json.dumps(value, ensure_ascii=False, default=_member_default)))
 
 
 def _member_bytes(value) -> bytes:
@@ -2027,8 +2041,9 @@ def _budget_marker_note(budget_cut: bool, deadline_used: float | None) -> str:
 
 def _selftest_verdict(value: Any) -> dict:
     """One self-test's verdict, read from the shape of its own answer: ``pass`` only when the test
-    SAYS it passed and ran at least one check, ``fail`` when it says it did not, ``unknown`` for a
-    shape this reader does not know (never a pass by default, and the full output is kept)."""
+    SAYS it passed and its answer counts at least one check, ``fail`` when it says it did not,
+    ``unknown`` for a shape this reader does not know, and for a pass it carries no count behind
+    (never a pass by default, and the full output is kept)."""
     if not isinstance(value, dict):
         return {"verdict": "unknown", "why": "the answer was not an object"}
 
@@ -2076,6 +2091,11 @@ def _selftest_verdict(value: Any) -> dict:
         # A flag and a count that disagree are read against the flag: the finding is the disagreement.
         out["verdict"] = "fail"
         out["why"] = "the test says it passed but reports failed checks"
+    elif says_pass and total is None and passed is None:
+        # A flag with no count of checks behind it (an answer whose ``checks`` has a shape this reader does not know, or none):
+        # the test says it passed and nothing here can say over how many.
+        out["verdict"] = "unknown"
+        out["why"] = "the test says it passed but its answer carries no count of the checks it ran"
     else:
         out["verdict"] = "pass" if says_pass else "fail"
     return out
@@ -2090,7 +2110,10 @@ def _selftests_member() -> dict:
     for name, call in _selftest_calls():
         names.append(name + ".json")
         try:
-            value = _section_value(call())
+            # A failing self-test answers with its own words (``recursive-loop`` puts the exception's text in a row), and the full
+            # answer of one that did not pass is written below: it goes through the net first, like a slot's, and the verdict is
+            # read from what the archive will carry. A value the net cannot encode ends the test ``error`` with the class named.
+            value = _scrubbed_member_value(_section_value(call()))
         except Exception as exc:  # noqa: BLE001 - a self-test that cannot run is a finding, never a blank
             tests[name] = {"verdict": "error", "error": _all_diag_err_str(exc)}
             continue
@@ -2364,6 +2387,7 @@ def _all_diagnostics_manifest(
     db=None,
     run_started_at: float | None = None,
     run_ended_at: float | None = None,
+    run_wall_s: float | None = None,
     exclusive: dict | None = None,
     profile: str = "full",
     previous_runs: dict | None = None,
@@ -2383,8 +2407,11 @@ def _all_diagnostics_manifest(
         datetime.fromtimestamp(run_ended_at).isoformat(timespec="seconds")
         if run_ended_at else None
     )
+    # The run's length is two readings of the MONOTONIC clock when the writer took them (a clock step during an hour-long
+    # build must not make it negative or an hour long); a caller that hands only the two wall-clock stamps gets their difference.
     total_wall_s = (
-        round(run_ended_at - run_started_at, 3)
+        round(run_wall_s, 3) if run_wall_s is not None
+        else round(run_ended_at - run_started_at, 3)
         if (run_started_at is not None and run_ended_at is not None) else None
     )
     slowest_members = sorted(
@@ -2650,6 +2677,7 @@ def _write_all_diagnostics_zip(
     scan_names = {m[0] for m in scans}
     total = len(ordered)
     run_started_at = _time.time()
+    run_started_mono = _mono()
     machine = _machine_record_block()
     # THE SCANS' WINDOW: opened at the first scan, closed the moment the last one is over (or the
     # build is stopped), so collection runs again before the manifest is made.
@@ -2877,10 +2905,11 @@ def _write_all_diagnostics_zip(
                     entry["budget_cut"] = True
                 if skipped_reason is not None and outcome == "skipped-budget":
                     entry["skipped_reason"] = skipped_reason
-                if abandoned:
-                    # A thread cannot be stopped from outside: the scan left it running, after the window
-                    # closed, and a reader of the machine's load must be able to tell.
-                    entry["abandoned_running"] = True
+            if abandoned:
+                # A thread cannot be stopped from outside: the member left it running (a scan after the window
+                # closed, a record beside collection), and a reader of the machine's load must be able to tell,
+                # from the manifest as well as from the marker file, whatever the member is.
+                entry["abandoned_running"] = True
             if err is not None:
                 entry["error"] = err
             if gate_reading:
@@ -2961,6 +2990,7 @@ def _write_all_diagnostics_zip(
         window.close()  # the machine is the collector's again, whatever ended the scans
 
     run_ended_at = _time.time()
+    run_wall_s = _mono() - run_started_mono
     scans_ended_iso = datetime.now().isoformat(timespec="seconds")
     phases = {
         "records": {
@@ -2995,7 +3025,7 @@ def _write_all_diagnostics_zip(
                 "error": fold_error,
             }
     manifest = _all_diagnostics_manifest(
-        results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
+        results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at, run_wall_s=run_wall_s,
         exclusive=exclusive if exclusive is not None else scan_claim, profile=profile,
         previous_runs=previous_block, read_release=read_release if db is not None else None,
         mode=mode, phases=phases, machine=machine,

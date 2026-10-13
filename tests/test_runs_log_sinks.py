@@ -692,6 +692,75 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
     assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
 
 
+#: The modules whose ``diagnostics_member`` a slot runs and that no other list above reads (the vitals and runs producers are in
+#: :data:`_WITNESS_MODULES`). The slot net scrubs what reaches the ZIP; this reads what the producer does with a caught failure on
+#: the way (a log line, a traceback, the exception's words handed on), which the net does not see.
+_SLOT_PRODUCER_MODULES = (
+    "src/monitoring/session_hwm.py",
+    "src/database/damage.py",
+    "src/monitoring/boots.py",
+)
+#: What each may hand a caught exception to: ``failure_label`` is the class and the errno name, never the message; ``_error_text`` is
+#: ``exception_text`` with the paths tokenised and then cut; ``note_raw_driver_error`` hands the exception to the damage registry, which
+#: keeps ``corruption_of``'s fixed label or ``failure_label`` (the registry's own tests hold that).
+_SLOT_PRODUCER_SCRUBS = {
+    "src/database/damage.py": {"failure_label", "note_raw_driver_error"},
+    "src/monitoring/boots.py": {"_error_text"},
+}
+#: A line the guard reports in these modules that is not a leak, with why. A table entry that no longer matches a hit fails below.
+_SLOT_PRODUCER_ALLOWED = {
+    ("src/monitoring/session_hwm.py", "read = getattr(pool, name, None)"): (
+        "reads a counter off the connection pool by a name from the module's own tuple of counter names, not a log method"
+    ),
+}
+
+
+def _slot_producer_hits(rel: str, source: str) -> list[tuple[str, str]]:
+    lines = source.splitlines()
+    got = []
+    for hit in _leaks(source, also_scrubbing=_SLOT_PRODUCER_SCRUBS.get(rel, set())):
+        text = lines[int(hit.split(":", 1)[0]) - 1].strip()
+        if (rel, text) not in _SLOT_PRODUCER_ALLOWED:
+            got.append((text, hit))
+    return got
+
+
+@pytest.mark.parametrize("rel", _SLOT_PRODUCER_MODULES)
+def test_the_slot_producers_log_no_traceback_and_print_no_caught_exception_raw(rel):
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    assert _slot_producer_hits(rel, source) == [], rel
+
+
+@pytest.mark.parametrize("rel", _SLOT_PRODUCER_MODULES)
+def test_a_raw_use_planted_in_a_slot_producer_is_reported(rel):
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    for planted in (
+        "\n\ndef _planted():\n    try:\n        go()\n    except OSError as exc:\n        return {'error': str(exc)}\n",
+        "\n\ndef _planted():\n    _LOG.debug('x', exc_info=True)\n",
+    ):
+        assert _slot_producer_hits(rel, source + planted), rel
+
+
+def test_every_allowance_for_a_slot_producer_still_stands_where_it_is_written():
+    stale = []
+    for (rel, text), _why in _SLOT_PRODUCER_ALLOWED.items():
+        source = (ROOT / rel).read_text(encoding="utf-8")
+        lines = source.splitlines()
+        hits = [lines[int(h.split(":", 1)[0]) - 1].strip() for h in _leaks(source, also_scrubbing=_SLOT_PRODUCER_SCRUBS.get(rel, set()))]
+        if text not in hits:
+            stale.append((rel, text))
+    assert stale == [], "an allowance that matches no hit any more"
+
+
+def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
+    """A slot added later is guarded without anyone remembering to list it: its module must be in one of the two lists."""
+    from src.api import diagnostics_slots as slots
+
+    built = {s.target.split(":", 1)[0].replace(".", "/") + ".py" for s in slots.SLOTS if slots.module_in_build(s)}
+    unguarded = built - set(_WITNESS_MODULES) - set(_SLOT_PRODUCER_MODULES)
+    assert unguarded == set(), f"a built slot's module the log guard does not read: {sorted(unguarded)}"
+
+
 def _qualified_names(tree: ast.AST) -> dict[int, str]:
     """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``)."""
     owner: dict[int, str] = {}
@@ -751,16 +820,21 @@ def test_an_allowed_line_copied_into_another_handler_is_still_reported():
     source = (ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
     for line in (
         "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc",
-        "box['error'] = exc",
+        'box["error"] = exc',
         "cause = exc.__cause__ if isinstance(exc, HTTPException) else None",
     ):
+        # The planted text must BE an allowed text (else the case passes because the text is unknown, whatever the function is).
+        assert any(text == line for (_fn, text) in _BUNDLE_ALLOWED), f"not an allowed line: {line}"
         planted = source + f"\n\ndef _planted():\n    try:\n        go()\n    except OSError as exc:\n        {line}\n"
-        assert _not_excused(_bundle_hits(planted)), line
-    # and a second use in the function that is allowed one
+        got = _bundle_hits(planted)
+        assert ("_planted", line) in got and _not_excused(got) == {("_planted", line): got[("_planted", line)]}, line
+    # and a second use, the SAME text, in the function that is allowed one: the count, not the text, reports it
     anchor = "re-raised on the caller's side below\n            box[\"error\"] = exc\n"
     assert source.count(anchor) == 1
-    doubled = source.replace(anchor, anchor + "            box[\"again\"] = exc\n")
-    assert _not_excused(_bundle_hits(doubled)) and not _not_excused(_bundle_hits(source))
+    doubled = source.replace(anchor, anchor + "            box[\"error\"] = exc\n")
+    key = ("_run_nondb_member_bounded._run", 'box["error"] = exc')
+    assert _not_excused(_bundle_hits(doubled)) == {key: _bundle_hits(doubled)[key]} and len(_bundle_hits(doubled)[key]) == 2
+    assert not _not_excused(_bundle_hits(source))
 
 
 def test_the_traceback_only_reading_ignores_how_a_handler_uses_its_exception():

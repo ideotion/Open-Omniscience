@@ -226,9 +226,14 @@ def scans_block(
         for r in scans if r.get("outcome") == "skipped-budget"
     ]
     declined = [r["file"] for r in scans if r.get("outcome") in ("declined-ram", "declined-light")]
-    # ``ran`` counts a scan that began, whatever the budget left it: the ones whose deadline was the time the budget had
-    # left (a cut to nothing is ``skipped-deadline``, not ``partial``) are named here, so the budget's effect is one list.
-    cut_by_budget = [r["file"] for r in scans if r.get("budget_cut")]
+    # ``ran`` counts a scan that began, whatever the budget left it: the ones the budget STOPPED are named here (a scan
+    # whose deadline was the time the budget had left AND that ended on a deadline: partial with what it had, or cut to
+    # nothing, which is ``skipped-deadline``), so the budget's effect is one list. A scan that had less than its own
+    # 300 s left and finished anyway carries ``budget_cut`` on its entry (that was its deadline) and is not listed.
+    cut_by_budget = [
+        r["file"] for r in scans
+        if r.get("budget_cut") and r.get("outcome") in ("partial-deadline", "skipped-deadline")
+    ]
     return {
         "mode": mode,
         "scan_budget_s": budget_s,

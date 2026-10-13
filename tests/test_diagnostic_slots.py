@@ -93,6 +93,22 @@ def leaky_member(max_bytes: int) -> dict:
     }
 
 
+class _LeafQuotingTheSecret:
+    """An object a producer left in its answer, whose own text quotes a held secret (as an ORM object or an exception does)."""
+
+    def __str__(self) -> str:
+        return f"leaf: {SECRET}"
+
+    __repr__ = __str__
+
+
+def leafy_member(max_bytes: int) -> dict:
+    """A producer whose answer holds leaves JSON cannot: a datetime, a set, an object whose text is the secret."""
+    from datetime import datetime
+
+    return {"when": datetime(2026, 10, 13, 1, 2, 3), "set": {3}, "leaf": _LeafQuotingTheSecret(), "n": 1, "tail": [1, "x"]}
+
+
 def giant_member(max_bytes: int) -> dict:
     """A producer far over what it was asked to keep: about 9 MB of records that do not compress."""
     rnd = random.Random(17)
@@ -248,6 +264,58 @@ def test_a_secret_a_producer_wrote_into_its_answer_does_not_reach_the_archive(mo
     assert "redacted" in member["error"].lower()
 
 
+def test_a_leaf_json_cannot_hold_is_the_stated_marker_and_never_its_text(monkeypatch):
+    """The net round-trips the answer through the member encoder BEFORE it scrubs: ``scrubbed_value`` alone would write
+    ``str(leaf)`` (a memory address for an object, an unmarked string for a datetime), which the encoder's own rule forbids.
+    The object's text, which quotes the held secret, is not carried at all."""
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", SECRET)
+    out = slots.thunk(_slot("leafy.json", "tests.test_diagnostic_slots:leafy_member", 5000))()
+    text = json.dumps(out)
+    assert SECRET not in text and "0x" not in text and "leaf:" not in text
+    for key, kind in (("when", "datetime"), ("set", "set"), ("leaf", "_LeafQuotingTheSecret")):
+        assert out[key][b._UNSERIALISABLE] is True and out[key]["type"] == kind, key
+    assert out["n"] == 1 and out["tail"] == [1, "x"]
+
+
+def test_a_failing_selftest_s_own_words_do_not_carry_a_held_passphrase_into_the_archive(monkeypatch):
+    """``selftests.json`` is not a slot, and a failing self-test writes its whole answer (the ``recursive-loop`` row quotes the
+    exception's text): the answer goes through the same net, and the verdict and the counts are read from what is written."""
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", SECRET)
+
+    def failing():
+        return {
+            "summary": {"total": 2, "passed": 1, "failed": 1},
+            "rows": [{"gate": "g", "error": f"RuntimeError: near '{SECRET}': syntax error [SQL: PRAGMA key = '{SECRET}']"}],
+        }
+
+    loop: list = []
+    loop.append(loop)
+    calls = [
+        ("failing", failing),
+        ("good", lambda: {"passed": True, "total": 2, "failed_count": 0}),
+        ("cyclic", lambda: {"summary": {"total": 1, "passed": 0, "failed": 1}, "again": loop}),
+    ]
+    monkeypatch.setattr(b, "_selftest_calls", lambda: calls)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        b._write_all_diagnostics_zip([("selftests.json", b._selftests_member)], z)
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as z:
+        everything = b"".join(z.read(n) for n in z.namelist()).decode("utf-8", "replace")
+        member = json.loads(z.read("selftests.json"))
+    assert SECRET not in everything and SECRET.replace(" ", "\\u0020") not in everything
+    bad = member["tests"]["failing"]
+    assert bad["verdict"] == "fail" and (bad["total"], bad["failed"]) == (2, 1), "the counts survive the scrub"
+    assert "RuntimeError" in bad["output"]["rows"][0]["error"] and "redacted" in bad["output"]["rows"][0]["error"].lower()
+    assert "output" not in member["tests"]["good"]
+    # an answer the encoder cannot read at all (a cycle) is an `error` with the class named, and none of it is written
+    assert member["tests"]["cyclic"]["verdict"] == "error" and "output" not in member["tests"]["cyclic"]
+    assert member["summary"]["error"] == 1 and member["summary"]["fail"] == 1 and member["summary"]["all_pass"] is False
+
+
 def test_the_built_slot_producers_hold_the_numbers_the_table_states():
     """vitals and runs are held to their budget by their own code; the pressure tail is measured: the
     16 snapshots it can hold (8 per session, two sessions) fit with room, with none dropped."""
@@ -256,6 +324,14 @@ def test_the_built_slot_producers_hold_the_numbers_the_table_states():
     for name in ("vitals.json", "runs.json"):
         value = dict(slots.members())[name]()
         assert len(json.dumps(value, default=str).encode()) <= slots.budget_of(name), name
+    # the other two built producers answer within the number the table states (a young install writes a small part of it; the
+    # damage budget and the boots budget at full retention have their own tests), and the table's boots number IS the producer's
+    from src.monitoring import boots
+
+    assert slots.budget_of("boots.json") == boots.DEFAULT_MAX_BYTES
+    for name in ("boots.json", "database-damage.json"):
+        value = dict(slots.members())[name]()
+        assert len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()) <= slots.budget_of(name), name
     readings = {"avail_mb": 900.0, "total_mb": 3900.0, "rss_mb": 800.0, "swap_used_mb": 100.0}
     ring = [hwm._light_snapshot(readings, f"t{i}", None) for i in range(hwm._LIGHT_KEEP)]
     state = {"pressure_light": ring, "pressure_light_taken": len(ring), "started_at": "2026-10-06T00:00:00",
@@ -614,6 +690,13 @@ def test_a_section_the_deadline_ended_is_not_swallowed_and_the_rest_say_they_wer
         ({"passed": True, "checks": {"a": True, "b": True}}, "pass"),
         ({"passed": True, "checks": [{"check": "a", "ok": True}, {"check": "b", "ok": False}]}, "fail"),
         ({"passed": True, "checks": [{"check": "a", "passed": True}]}, "pass"),
+        # a pass with no count of checks behind it is not a bare pass (a shape this reader does not know)
+        ({"passed": True}, "unknown"),
+        ({"passed": True, "checks": {"a": {"ok": True}}}, "unknown"),
+        ({"passed": True, "checks": {"a": 1}}, "unknown"),
+        ({"passed": True, "checks": "all of them"}, "unknown"),
+        ({"passed": True, "failed_count": 2}, "fail"),  # a failed count still outranks the missing total
+        ({"passed": True, "passed_count": 3, "failed_count": 0}, "pass"),  # a count of passes is a count
     ],
 )
 def test_a_selftest_is_a_pass_only_when_it_says_so_and_ran_a_check(answer, verdict):
