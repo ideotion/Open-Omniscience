@@ -322,7 +322,8 @@ def test_the_gate_record_keeps_no_word_of_a_probe_that_failed_inside_the_capabil
     monkeypatch.setattr("src.llm.backend.detect_gpu", _raise)
     monkeypatch.setattr("src.llm.backend.platform.system", _raise)
     out = bulletin_available()
-    warned = " ".join(out["warnings"])
+    # Where the probe text lands depends on the host: a machine under the CPU/RAM floor says it in ``reason``, one over it in ``warnings``.
+    warned = json.dumps(out, default=str)
     assert f"GPU probe failed ({CLASS})" in warned and f"platform probe failed ({CLASS})" in warned, warned
     _class_only(out)
     for fragment in ("the GPU probe failed", "the platform probe failed"):
@@ -335,7 +336,8 @@ def test_an_apple_silicon_probe_that_raises_keeps_the_class_in_the_capability(mo
     monkeypatch.setattr(backend, "detect_gpu", lambda: {"available": False, "reason": "no nvidia-smi on this machine"})
     monkeypatch.setattr(backend, "detect_apple_silicon", _raise)
     cap = backend.inference_capability()
-    assert f"Apple Silicon probe failed ({CLASS})" in " ".join(cap["warnings"]), cap["warnings"]
+    # ``reason`` on a machine under the CPU/RAM floor, ``warnings`` on one over it: the whole capability is searched, so the test reads the same on any host.
+    assert f"Apple Silicon probe failed ({CLASS})" in json.dumps(cap, default=str), cap
     _class_only(cap)
     _scrubbed(_logged(caplog, "src.llm.backend", "the Apple Silicon probe failed"))
 
