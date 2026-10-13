@@ -969,7 +969,7 @@ class VolumeBackupManager:
             # a bare "cancelled".
             said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
-            runlog.end("refused", detail=said[:500])
+            runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             with self._lock:
                 self._state = "error"
                 self._error = said
@@ -980,7 +980,7 @@ class VolumeBackupManager:
             # cleaned by the finally above.
             said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.info("volume restore stopped by the operator: %s", said)
-            runlog.end("stopped-by-operator", detail=said[:500])
+            runlog.end("stopped-by-operator", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             with self._lock:
                 self._state = "cancelled"
                 self._error = None
