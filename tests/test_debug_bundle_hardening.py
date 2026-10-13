@@ -171,4 +171,5 @@ def test_a_member_exception_with_a_broken_str_still_records_error(monkeypatch):
         r = c.get("/api/diagnostics/debug-bundle")
     assert r.status_code == 200
     rl = r.json()["data"]["request_latency"]
-    assert isinstance(rl, dict) and "error" in rl and "unrenderable" in rl["error"]
+    # the one exception text (``secret_scrub.exception_text``): the class, and none of the words that could not be rendered
+    assert isinstance(rl, dict) and rl.get("error") == "_Evil: its text is withheld"

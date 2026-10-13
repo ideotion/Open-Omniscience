@@ -20,6 +20,7 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
 from src.analytics.keyword_log_export import PARTS_DIR_PREFIX
+from src.monitoring import diagnostics_runs as _diag_runs
 
 from ._base import router
 from .keywords import _PARTS_SET_RE, _SET_LISTING, _parts_root
@@ -78,4 +79,4 @@ def keyword_part_download(set_id: str, name: str) -> FileResponse:
     # sweep read, so a person still saving files an hour in is never cut off by either.
     with contextlib.suppress(OSError):
         os.utime(d)
-    return FileResponse(str(path), media_type="application/zip", filename=name)
+    return _diag_runs.served_file_response(path, name)

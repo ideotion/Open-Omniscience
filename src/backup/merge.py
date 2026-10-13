@@ -6513,7 +6513,7 @@ def _backlog_engine() -> str:
         return baseline_engine_id()
     except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
         # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        _LOG.warning("could not compute the engine identity for the backlog: %s", engine_text(exc))
+        _LOG.warning("could not compute the engine identity for the backlog: %s", engine_text(exc, typed=True))
         return "<unknown>"
 
 
@@ -6560,7 +6560,7 @@ def pending_reindex_batches() -> list[dict]:
         ]
     except Exception as exc:  # noqa: BLE001
         # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc))
+        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
         return []
 
 
@@ -6586,7 +6586,7 @@ def reindex_backlog() -> dict:
         # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
         # because the root error handler writes the traceback, which ends with the engine's own words
         reason = engine_text(exc)
-        _LOG.warning("could not read the re-index backlog: %s", reason)
+        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
         return {"available": False, "reason": reason}
     owed = [int(r[2]) - int(r[3]) - int(r[4]) for r in rows]
     certified = [int(r[3]) for r in rows]

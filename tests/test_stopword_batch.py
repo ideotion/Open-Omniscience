@@ -1058,3 +1058,214 @@ def test_the_summary_line_for_a_one_language_file_names_no_skipped_rows(tmp_path
     out = capsys.readouterr().out
     assert "verdicts: read 1 rows for en." in out
     assert "skipped" not in out.split("verdicts:")[1].splitlines()[0]
+
+
+# ---- a word outside the script of the language's file goes to _multilingual.yml ----------------
+
+
+def _script_test_module():
+    spec = importlib.util.spec_from_file_location(
+        "stopword_file_scripts_test", ROOT / "tests" / "test_stopword_file_scripts.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_the_tools_script_map_is_the_guards_map():
+    """The tool splits by the same table the guard test enforces; two tables would drift."""
+    guard = {name.removesuffix(".yml"): scripts for name, scripts in _script_test_module()._NON_LATIN_FILES.items()}
+    assert guard == sb.FILE_SCRIPTS
+
+
+def test_the_split_sends_a_foreign_letter_to_the_multilingual_file():
+    own, foreign = sb.split_by_script("ko", ["사이트", "iPhone", "아이폰x", "2026", "g-7"])
+    assert own == ["사이트", "2026"]  # digits carry no script: they stay
+    assert foreign == ["iPhone", "아이폰x", "g-7"]
+    assert sb.split_by_script("ru", ["сайт", "site"]) == (["сайт"], ["site"])
+    # a Latin-script language splits nothing, whatever its words hold
+    assert sb.split_by_script("en", ["site", "сайт"]) == (["site", "сайт"], [])
+
+
+_KO_ROWS = [("ko", "사이트", "N", "bp", "H", "reader-a"), ("ko", "sidebar", "N", "bp", "H", "reader-a")]
+_KO_LOG = [_kw("사이트", "ko", 500, sources=50), _kw("sidebar", "ko", 400, sources=50)]
+_KO_FILE = "stopwords:\n  - 기사\n"
+_MULTI_FILE = "stopwords:\n  - abril\n"
+
+
+def _ko_dir(tmp_path, multi=_MULTI_FILE):
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    (extra / "ko.yml").write_text(_KO_FILE, "utf-8")
+    (extra / "_multilingual.yml").write_text(multi, "utf-8")
+    return extra
+
+
+def _ko_apply(tmp_path, monkeypatch):
+    return _apply(tmp_path, monkeypatch, "ko", "사이트\nsidebar\n", _KO_ROWS, _KO_LOG, batch_id="ko-1")
+
+
+def _untouched(extra, multi=_MULTI_FILE):
+    assert (extra / "ko.yml").read_text("utf-8") == _KO_FILE, "the language file changed"
+    assert (extra / "_multilingual.yml").read_text("utf-8") == multi, "the multilingual file changed"
+    assert not list(extra.glob("*.tmp")), "a temporary file was left behind"
+
+
+def test_apply_files_the_latin_words_of_a_korean_log_in_the_multilingual_file(tmp_path, monkeypatch, capsys):
+    extra = _ko_dir(tmp_path)
+    assert _ko_apply(tmp_path, monkeypatch) == 0
+    ko = yaml.safe_load((extra / "ko.yml").read_text("utf-8"))["stopwords"]
+    multi = yaml.safe_load((extra / "_multilingual.yml").read_text("utf-8"))["stopwords"]
+    assert ko == ["기사", "사이트"] and multi == ["abril", "sidebar"]
+    guard = _script_test_module()
+    assert not [w for w in ko if guard._scripts(w) - {"HANGUL"}], "the file the guard checks holds its own script"
+    out = capsys.readouterr().out
+    assert "would be filed in _multilingual.yml" in out and "appended 1 words to" in out
+    assert not list(extra.glob("*.tmp"))
+
+
+def test_the_batch_goes_through_temporary_files_that_are_renamed_over_the_targets(tmp_path, monkeypatch):
+    """Reverting to a direct write of each target would leave a refusal or an I/O error half-applied."""
+    extra = _ko_dir(tmp_path)
+    renames: list[tuple[str, str]] = []
+    real = Path.replace
+
+    def _record(self, target):
+        renames.append((self.name, Path(target).name))
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", _record)
+    assert _ko_apply(tmp_path, monkeypatch) == 0
+    assert renames == [("ko.yml.tmp", "ko.yml"), ("_multilingual.yml.tmp", "_multilingual.yml")]
+    assert not list(extra.glob("*.tmp"))
+
+
+def test_a_refusal_in_the_second_file_leaves_the_first_unwritten(tmp_path, monkeypatch):
+    extra = _ko_dir(tmp_path, multi="other: 1\n")  # no list: the append is refused
+    with pytest.raises(SystemExit):
+        _ko_apply(tmp_path, monkeypatch)
+    _untouched(extra, multi="other: 1\n")
+
+
+@NEEDS_LINKS
+@pytest.mark.parametrize("planted", ["symlink", "file"])
+def test_a_planted_temporary_path_is_refused_and_never_written_through(tmp_path, monkeypatch, planted):
+    extra = _ko_dir(tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me", "utf-8")
+    if planted == "symlink":
+        (extra / "ko.yml.tmp").symlink_to(victim)
+    else:
+        (extra / "ko.yml.tmp").write_text("someone's file", "utf-8")
+    with pytest.raises(SystemExit, match="exists or is a link"):
+        _ko_apply(tmp_path, monkeypatch)
+    assert victim.read_text("utf-8") == "keep me", "the link was written through"
+    assert (extra / "ko.yml.tmp").exists(), "a path this run did not make was removed"
+    assert (extra / "ko.yml").read_text("utf-8") == _KO_FILE
+    assert (extra / "_multilingual.yml").read_text("utf-8") == _MULTI_FILE
+    (extra / "ko.yml.tmp").unlink()
+    assert not list(extra.glob("*.tmp"))
+
+
+def test_a_planted_temporary_path_for_the_second_file_removes_the_first_temporary(tmp_path, monkeypatch):
+    extra = _ko_dir(tmp_path)
+    (extra / "_multilingual.yml.tmp").write_text("someone's file", "utf-8")
+    with pytest.raises(SystemExit, match="exists or is a link"):
+        _ko_apply(tmp_path, monkeypatch)
+    assert not (extra / "ko.yml.tmp").exists(), "the temporary file this run made was left behind"
+    assert (extra / "_multilingual.yml.tmp").read_text("utf-8") == "someone's file"
+    assert (extra / "ko.yml").read_text("utf-8") == _KO_FILE
+
+
+def test_a_write_error_in_the_second_temporary_file_changes_nothing(tmp_path, monkeypatch):
+    extra = _ko_dir(tmp_path)
+    real_open = open
+    made = []
+
+    class _Failing:
+        def __init__(self, handle):
+            self._h = handle
+
+        def __enter__(self):
+            self._h.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self._h.__exit__(*a)
+
+        def write(self, text):
+            self._h.write(text[: len(text) // 2])  # a partial file is on disk when the error comes
+            raise OSError(28, "No space left on device")
+
+    def _open(path, mode="r", *a, **k):
+        handle = real_open(path, mode, *a, **k)
+        if mode == "x":
+            made.append(path)
+            if len(made) == 2:
+                return _Failing(handle)
+        return handle
+
+    monkeypatch.setattr(sb, "open", _open, raising=False)
+    with pytest.raises(SystemExit, match=r"could not write the batch \(No space left on device\); nothing was changed"):
+        _ko_apply(tmp_path, monkeypatch)
+    assert len(made) == 2
+    _untouched(extra)
+
+
+def test_a_path_planted_between_the_check_and_the_open_is_not_removed_and_the_first_temporary_is(tmp_path, monkeypatch):
+    """The pre-check passes, then a stranger's file appears: ``open(..., "x")`` refuses it, and that file is
+    not one this run made, so it is left alone (tracking the path before the open would delete it)."""
+    extra = _ko_dir(tmp_path)
+    real_open = open
+    seen = []
+
+    def _open(path, mode="r", *a, **k):
+        if mode == "x":
+            seen.append(Path(path).name)
+            if len(seen) == 2:
+                real_open(path, "w", encoding="utf-8").write("a stranger's file")  # appears after the pre-check
+        return real_open(path, mode, *a, **k)
+
+    monkeypatch.setattr(sb, "open", _open, raising=False)
+    with pytest.raises(SystemExit, match="could not write the batch"):
+        _ko_apply(tmp_path, monkeypatch)
+    assert (extra / "_multilingual.yml.tmp").read_text("utf-8") == "a stranger's file"
+    assert not (extra / "ko.yml.tmp").exists(), "the temporary file this run made was left behind"
+    assert (extra / "ko.yml").read_text("utf-8") == _KO_FILE
+
+
+def test_an_interrupt_during_the_renames_leaves_no_temporary_file(tmp_path, monkeypatch):
+    extra = _ko_dir(tmp_path)
+
+    def _interrupt(self, target):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Path, "replace", _interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        _ko_apply(tmp_path, monkeypatch)
+    _untouched(extra)
+
+
+def test_a_rename_that_fails_after_the_first_landed_names_the_file_that_did(tmp_path, monkeypatch):
+    extra = _ko_dir(tmp_path)
+    real = Path.replace
+    calls = []
+
+    def _replace(self, target):
+        calls.append(self.name)
+        if len(calls) == 2:
+            raise OSError(13, "Permission denied")
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", _replace)
+    with pytest.raises(SystemExit, match=r"could not replace _multilingual\.yml \(Permission denied\); already written: ko\.yml"):
+        _ko_apply(tmp_path, monkeypatch)
+    assert yaml.safe_load((extra / "ko.yml").read_text("utf-8"))["stopwords"] == ["기사", "사이트"]
+    assert (extra / "_multilingual.yml").read_text("utf-8") == _MULTI_FILE
+    assert not list(extra.glob("*.tmp")), "a temporary file was left behind"
+
+
+def test_the_multilingual_file_cannot_be_named_on_the_command_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(sb, "EXTRA_DIR", tmp_path)
+    with pytest.raises(SystemExit, match="not a language code"):
+        sb.main([str(tmp_path / "none.json"), "--language", "_multilingual"])

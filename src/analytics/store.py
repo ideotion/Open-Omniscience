@@ -2781,7 +2781,7 @@ def _skip_error(exc: BaseException) -> dict:
     exception string this module records into a report dict."""
     # The engine's words can carry the statement it failed on, and this record reaches the
     # diagnostics bundle: the passphrase is taken out of the whole text before it is cut.
-    return {"skipped": f"{type(exc).__name__}: {engine_text(exc)}"[:200]}
+    return {"skipped": engine_text(exc, 200, typed=True)}
 
 
 def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:

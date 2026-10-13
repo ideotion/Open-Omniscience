@@ -682,6 +682,7 @@ def test_the_persisted_rollup_is_still_off_so_a_lost_end_bump_is_still_bounded()
         "WHAT TO DO: before the persisted serve goes live, add the persisted \"bump owed\" marker that "
         "'THE REMAINING BOUND' (in _reindex_resume_worker, src/api/backup_v2.py) names, then retire "
         "this test by deleting it with that comment's second half. FILLING THE PINS ALSO WAKES "
-        "columnar.py's persisted open: a failed open is logged there with exc_info=True, and its "
+        "columnar.py's persisted open (src/analytics/columnar.py, the \"persisted open failed; in-memory\" "
+        "warning): a failed open is logged there with exc_info=True, and its "
         "ATTACH statement carries the derived key, so route that log through the scrubber first."
     )

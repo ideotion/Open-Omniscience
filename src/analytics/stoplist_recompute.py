@@ -480,7 +480,7 @@ def maybe_recompute_top_keywords(
         # of the text before it is cut or recorded, and no traceback is logged. The LOG carries only
         # the class (the words are in the skip record the caller keeps): a log line is a sink the
         # code scanner follows the passphrase into, and a class name needs no scrub.
-        text = f"{type(exc).__name__}: {engine_text(exc)}"[:200]
+        text = engine_text(exc, 200, typed=True)
         _LOG.warning("stoplist recompute failed (%s); the reason is in its skip record", type(exc).__name__)
         return {"skipped": text, "complete": False}
 
