@@ -162,7 +162,7 @@ def test_log_failure_writes_a_driver_link_as_its_class_in_the_message_and_in_the
     log.addHandler(_Keep())
     log.setLevel(logging.DEBUG)
     log_failure(log, "the step failed", _driver_under_oserror(), PASS)
-    text = records[0].getMessage() + getattr(records[0], TRACEBACK_ATTRIBUTE)
+    text = records[0].getMessage() + getattr(records[0], TRACEBACK_ATTRIBUTE, "")
     assert FRAGMENT not in text, text
     assert "OperationalError: its text is withheld" in text
     assert "the disk said no to /data/corpus.db" in text, "the other link keeps its words"
@@ -209,3 +209,37 @@ def test_quotes_a_driver_never_raises_and_fails_closed():
             raise RuntimeError("fine") from driver
     except RuntimeError as exc:
         assert quotes_a_driver(exc) is True
+
+
+def test_a_wrapper_built_in_the_handler_and_chained_under_the_root_is_withheld():
+    try:
+        try:
+            raise sqlite3.OperationalError(f'near "{FRAGMENT}": syntax error')
+        except sqlite3.OperationalError as d:
+            w = ValueError(f"step failed: {d}")
+            raise RuntimeError("x") from w
+    except RuntimeError as exc:
+        assert FRAGMENT not in record_traceback(exc, PASS)
+
+
+def test_an_exception_group_member_built_in_the_handler_is_withheld():
+    try:
+        try:
+            raise sqlite3.OperationalError(f'near "{FRAGMENT}": syntax error')
+        except sqlite3.OperationalError as d:
+            raise ExceptionGroup("g", [ValueError(f"{d}")]) from d
+    except ExceptionGroup as exc:
+        assert FRAGMENT not in record_traceback(exc, PASS)
+
+
+def test_a_text_over_the_read_limit_counts_as_quoting():
+    from src.monitoring import secret_scrub
+    from src.monitoring.secret_scrub import quotes_a_driver
+
+    try:
+        try:
+            raise sqlite3.OperationalError("a driver said something else entirely")
+        except sqlite3.OperationalError as d:
+            raise RuntimeError("y" * (secret_scrub._QUOTE_READ_LIMIT + 1)) from d
+    except RuntimeError as exc:
+        assert quotes_a_driver(exc)

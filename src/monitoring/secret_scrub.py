@@ -109,7 +109,7 @@ import os
 import shutil
 import sys
 import traceback
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Literal, TypeGuard
 
@@ -745,15 +745,17 @@ def _text_and_notes(exc: BaseException) -> str:
     return str(exc) + ("\n" + extra if extra else "")
 
 
-def quotes_a_driver(exc: BaseException) -> bool:
+def quotes_a_driver(exc: BaseException, chain: Iterable[BaseException] | None = None) -> bool:
     """``True`` when a database driver's exception sits in ``exc``'s chain and ``exc``'s own text (or its notes) repeats a run of
     that driver's text (``raise BackupError(f"...: {driver_error}") from driver_error``, or a cut or re-quoted copy of it, a run of
     :data:`_QUOTE_RUN` characters): the words of the driver are then in the message, whatever the class of the exception that
-    carries them. Fails closed: anything that cannot be read, or is too long to read, answers ``True``. Never raises."""
+    carries them. ``chain`` is the exceptions to look for drivers among (default: what ``exc`` reaches); a caller printing a whole chain
+    hands in everything the ROOT reaches, because a wrapper built in a handler and chained under the root does not reach the driver
+    itself. Fails closed: anything that cannot be read, or is too long to read, answers ``True``. Never raises."""
     try:
         own = _text_and_notes(exc)
         grams: set[str] | None = None
-        for link in _reachable(exc):
+        for link in _reachable(exc) if chain is None else chain:
             if link is exc or not is_driver_error(link):
                 continue
             said = _text_and_notes(link)
@@ -795,9 +797,9 @@ def _printed_links(exc: BaseException) -> list[BaseException]:
     return order
 
 
-def _last_line(link: BaseException) -> str:
+def _last_line(link: BaseException, chain: Iterable[BaseException] | None = None) -> str:
     """The line a link's print ends with, as a RECORD keeps it: a driver's (or one that quotes a driver's) as its class only."""
-    if is_driver_error(link) or quotes_a_driver(link):
+    if is_driver_error(link) or quotes_a_driver(link, chain):
         return _driver_line(link)
     return "".join(traceback.format_exception_only(link)).rstrip("\n")
 
@@ -805,9 +807,11 @@ def _last_line(link: BaseException) -> str:
 def _links_text(exc: BaseException) -> str:
     """The traceback of every link of the chain as its frames, each link's last line per :func:`_last_line`. Not scrubbed."""
     parts: list[str] = []
-    for link in _printed_links(exc):
+    links = _printed_links(exc)
+    chain = list({id(c): c for link in [exc, *links] for c in _reachable(link)}.values())
+    for link in links:
         frames = "".join(traceback.format_tb(link.__traceback__))
-        parts.append("Traceback (most recent call last):\n" + frames + _last_line(link) + "\n")
+        parts.append("Traceback (most recent call last):\n" + frames + _last_line(link, chain) + "\n")
     return "\n".join(parts)
 
 
@@ -851,7 +855,7 @@ def log_failure(
             head, tb = fixed, _withheld_traceback(exc, fixed)
         else:
             # a log is a record too (the error log rides the bundle): a database driver's link is its class only, as in a record
-            head = _checked(_last_line(exc).strip(), secrets)
+            head = _checked(_last_line(exc, list(_reachable(exc))).strip(), secrets)
             tb = _checked(_links_text(exc), secrets)
     except Exception:  # noqa: BLE001 - the text could not be made: the class says what failed
         head = tb = None
