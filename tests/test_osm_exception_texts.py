@@ -165,5 +165,38 @@ def test_an_error_stored_by_an_older_build_is_scrubbed_on_load_and_when_served(t
     shown = next(e for e in m.list() if e["key"] == entry.key)
     assert "the transfer said" in shown["error"] and HELD not in shown["error"]
     assert HELD not in json.dumps(shown)
-    m._save()  # what the next save writes back
-    assert HELD not in m.state_path.read_text("utf-8")
+    assert HELD not in m.state_path.read_text("utf-8"), "the load alone must rewrite the file"
+    assert next(e for e in json.loads(m.state_path.read_text("utf-8"))["entries"].values())["key"] == entry.key
+
+
+def test_a_load_that_cannot_be_read_whole_never_rewrites_the_file(tmp_path, monkeypatch):
+    # MUTATION TARGET: the `parsed` condition on the write-back (a partial read would replace the file with fewer entries).
+    monkeypatch.setenv("OO_DB_PASSPHRASE", HELD)
+    probe = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    probe._entry_for("europe")
+    probe._entry_for("africa")
+    state = json.loads(probe.state_path.read_text("utf-8"))
+    state["entries"]["europe"]["error"] = f"the transfer said {HELD}"
+    state["entries"]["africa"] = "not an entry"  # the read stops here, after europe was read
+    original = json.dumps(state)
+    probe.state_path.write_text(original, "utf-8")
+    OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    assert probe.state_path.read_text("utf-8") == original
+
+
+def test_a_rewrite_after_a_scrub_that_fails_does_not_stop_startup(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("OO_DB_PASSPHRASE", HELD)
+    caplog.set_level(logging.WARNING)
+    probe = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    probe._entry_for("europe")
+    state = json.loads(probe.state_path.read_text("utf-8"))
+    state["entries"]["europe"]["error"] = f"the transfer said {HELD}"
+    probe.state_path.write_text(json.dumps(state), "utf-8")
+
+    def _full_disk(self):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(OsmDownloadManager, "_save", _full_disk)
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)  # raises nothing
+    assert "could not be rewritten" in caplog.text and HELD not in caplog.text
+    assert HELD not in json.dumps(m.list())
