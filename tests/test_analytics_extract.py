@@ -433,7 +433,7 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         "速報メールや週間ランキングメールもお届け", "都歡迎你熱烈投稿", "金曜日", "錄用與否將不另行通知", "閉じる", "関連記事", "閱讀所有文章",
         "電子書籍やスクラップなど全機能が使えます", "音声に関するご注意", "音声に関するご注意本文の音声は", "音声読み上げは", "首次上稿", "點我訂閱自由財經youtube頻道",
         "點這裡", "그에게", "금요일", "금합니다", "누군가", "당신의", "대표자명", "대표전화", "등록번호", "등록일", "무엇을", "무엇이", "사업자등록번호",
-        "않겠다", "않았고", "어디에", "예정이다", "우리의", "이것은", "일까지", "일부터", "자신을", "자신의", "주요뉴스", "지적했다", "참석했다",
+        "않겠다", "않았고", "어디에", "예정이다", "우리의", "이것은", "일까지", "일부터", "자신을", "자신의", "주요뉴스", "지적했다",
         "청소년보호책임자",
         # stoplist batch 7 (2026-10-13, R131, language group 6: am eu fo gl ha kk mk rw sw): function words, number
         # words and month and weekday names the triage called noise, read a second time by hand because every word of

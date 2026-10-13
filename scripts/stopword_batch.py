@@ -28,15 +28,24 @@ thread's decision rows as tab-separated text, one per line, ``#`` comments allow
 
 with ``verdict`` N (or ``junk``), ``confidence`` H, and ``flags`` a comma list that may hold
 ``unstable`` (the triage converter sets it on a verdict that did not reproduce between runs or that
-sits on an open rubric boundary), ``not_repeated`` (no repeat run read the row) or
-``single_reader``; the layout is the triage thread's decision-file format. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool trusts the ``unstable`` and
+sits on an open rubric boundary), ``not_repeated`` (no repeat run read the row),
+``single_reader`` or ``repeat_agreed`` (a blind repeat read the row and returned the same N at high
+confidence; the converter never writes it beside ``unstable`` or ``not_repeated``); the layout is the
+triage thread's decision-file format. REPRODUCIBILITY IS THE DECISION FILE'S JOB: the tool trusts the ``unstable`` and
 ``not_repeated`` flags the converter sets and counts no runs itself. Only
-``single_reader`` is an accepted flag; ANY OTHER flag blocks the word (an unknown flag is a
+``single_reader`` and ``repeat_agreed`` are accepted flags, and neither unblocks anything: a word that
+carries ``repeat_agreed`` beside ``unstable``, ``not_repeated`` or any unknown flag is still refused, and
+several rows for one word count it only when EVERY row carries it. ANY OTHER flag blocks the word (an unknown flag is a
 reading this tool does not understand, and it must not pass), and a line the reader cannot parse
 (no tab, a language column that is not a code, a row of another language with no verdict in its
 third column) stops the whole file. A word with no verdict row for the language, a verdict other
 than N, a confidence other than H, or a blocking flag is refused, and the batch comment records the
-verdict file's hash. The model column is read for its form only and is NOT written into the batch comment:
+verdict file's hash. THE TWICE-READ LANGUAGES (``TWICE_READ``: vi, ko, as, tl): for these, ``--apply`` admits a word only if its rows carry ``repeat_agreed`` or
+the word is listed in the file given as ``--hand-reviewed FILE`` (``language <TAB> word``, a reader's
+second hand reading), and refuses it as ``not_twice_read`` otherwise. For every other language the flag
+is recorded, never required. The batch comment records how many of the batch's words carry ``repeat_agreed`` and, for a
+twice-read language, which words got in by hand review (all the others got in by repeat agreement).
+The model column is read for its form only and is NOT written into the batch comment:
 no model name goes into a shipped file, and the hash pins the readers.
 Without ``--verdicts`` the tool only REPORTS, says so, and its table is not a decision.
 
@@ -48,7 +57,7 @@ word is refused, with the reason, when adding it would hide signal:
 * ``platform_name``    facebook, twitter and kin COUNT as keywords (R104); the keep-file MUST load, and
                        empty or missing it stops the tool (a guard that fails open is not one);
 * ``not_in_log``       the log holds no article for it in this language: nothing was weighed;
-* ``no_verdict`` / ``not_junk`` / ``not_high_confidence`` / ``unstable`` / ``unknown_flag``   the verdict gate above;
+* ``no_verdict`` / ``not_junk`` / ``not_high_confidence`` / ``unstable`` / ``unknown_flag`` / ``not_twice_read``   the verdict gate above;
 * ``de_elided``        extraction strips ``d'`` / ``l'`` / ``qu'`` before the stop check, so an entry
                        for ``d'una`` could never match;
 * ``content_elsewhere`` another language stores it as a live keyword (evidence from THIS log);
@@ -134,15 +143,18 @@ VERDICT_LANGUAGE = re.compile(r"[a-z]{2,3}(?:[-_][a-z0-9]{2,8})?|\?|unknown")
 # A model id as the converter writes it (claude-sonnet-5-5, sonnet-5.5): ASCII letters, digits, dot and
 # hyphen only (the converter refuses any other --model), so anything else in that column is read as flags.
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
-# The converter's three flags as bare letters: a model column whose letters spell one of them is a flag
+# The converter's four flags as bare letters: a model column whose letters spell one of them is a flag
 # that lost its tab (``unstable.``, ``claude-sonnet-5-5unstable``), never a model id.
-FLAG_STEMS = ("unstable", "notrepeated", "singlereader")
+FLAG_STEMS = ("unstable", "notrepeated", "singlereader", "repeatagreed")
 # What the third column of any row must hold (the triage converter writes K, N, W or U).
 VERDICT_TOKENS = frozenset({"N", "K", "W", "U", "JUNK"})
 # The only verdict flag that does not block a word. Anything else, spelt however, is a reading
 # the tool does not understand, so it blocks: a flag list that lets unknown flags through would
 # batch the very rows the triage ruled out.
-ACCEPTED_FLAGS = frozenset({"single_reader"})
+ACCEPTED_FLAGS = frozenset({"single_reader", "repeat_agreed"})
+# The languages whose single triage reading is not trusted alone (the maintainer's marker ruling, R131):
+# a word is admitted only when a blind repeat agreed (``repeat_agreed``) or a reader's hand review lists it.
+TWICE_READ = frozenset({"vi", "ko", "as", "tl"})
 # A batch id lands in a YAML comment; it must never be able to open a new line.
 BATCH_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # How many other-language / entity rows the table prints before saying "and N more": two lines of
@@ -302,7 +314,7 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
         if any(c for c in cols[7:]):  # a displaced flags column: unreadable, so blocking
             flags.add("extra_columns")
         row = out.setdefault(word, {"junk": True, "high": True, "flags": set(), "single_reader": False,
-                                    "models": set()})
+                                    "repeat_agreed": True, "models": set()})
         row["junk"] &= verdict in ("N", "JUNK")
         # A flag in the MODEL column (that column omitted, the flags shifted left) is still a flag, in
         # whatever spelling: a model id is ASCII letters, digits, dot and hyphen, so anything else there is
@@ -316,6 +328,9 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
         row["high"] &= cols[4].upper() == HIGH and bool(model) and not flag_shift
         row["flags"] |= flags
         row["single_reader"] |= "single_reader" in flags
+        # The marker counts only when EVERY row of the word carries it, and never beside the two flags it
+        # answers: a row that says both is contradicting itself, and the strictest reading wins.
+        row["repeat_agreed"] &= "repeat_agreed" in flags and not (flags & {"unstable", "not_repeated"})
         if model and not flag_shift:
             row["models"].add(model)
         if skipped is not None:
@@ -323,6 +338,39 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
     if not out:
         raise SystemExit(f"{path} holds no verdict rows for language {lang!r}")
     return out
+
+
+def read_hand_reviewed(path: Path, lang: str) -> frozenset[str]:
+    """The words a reader hand-reviewed for ``lang``: ``language <TAB> word`` rows, ``#`` comments allowed.
+    Rows of other languages are skipped; a line that is not a row stops the file, because a row skipped in
+    silence is a word that stays out for no stated reason."""
+    out: set[str] = set()
+    for number, line in enumerate(re.split(r"\r\n|\r|\n", path.read_text("utf-8")), 1):
+        line = line.replace("\ufeff", "").strip(" ")
+        if not line or line.startswith("#"):
+            continue
+        cols = [c.strip() for c in line.split("\t")]
+        if len(cols) != 2 or not VERDICT_LANGUAGE.fullmatch(cols[0].lower()) or not cols[1]:
+            raise SystemExit(f"{path}:{number}: not a hand-review row (language <TAB> word): {line[:60]!r}")
+        if cols[0].lower() == lang:
+            out.add(spelling(cols[1]))
+    return frozenset(out)
+
+
+def is_twice_read(lang: str) -> bool:
+    """Whether ``lang`` is a twice-read language: the primary code decides, so ``ko-kr`` is Korean too."""
+    return re.split(r"[-_]", lang.lower(), maxsplit=1)[0] in TWICE_READ
+
+
+def twice_read_rule(word: str, lang: str, verdicts: dict[str, dict[str, Any]],
+                    hand_reviewed: frozenset[str]) -> str | None:
+    """Which rule lets ``word`` into a TWICE_READ language: "repeat_agreed", "hand_review", or None."""
+    v = verdicts.get(spelling(word))
+    if v is not None and v["repeat_agreed"]:
+        return "repeat_agreed"
+    if spelling(word) in hand_reviewed:
+        return "hand_review"
+    return None
 
 
 def blocking_flags(v: dict[str, Any]) -> set[str]:
@@ -401,8 +449,12 @@ def evidence(word: str, lang: str, rows: list[dict], hidden_in_lang: frozenset[s
     }
 
 
-def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]]) -> list[str]:
-    """The verdict gate: only a high-confidence, reproducible N is a stoplist candidate."""
+def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]], lang: str = "",
+                     hand_reviewed: frozenset[str] = frozenset()) -> list[str]:
+    """The verdict gate: only a high-confidence, reproducible N is a stoplist candidate. In a TWICE_READ
+    language it also needs a repeat agreement or a hand review, and says ``not_twice_read`` when it has
+    neither (only when nothing else refuses it, so the reason shown is the deciding one). ``lang`` is the language
+    being filed: leaving it empty skips that gate, so every caller passes it."""
     v = verdicts.get(spelling(word))
     if v is None:
         return ["no_verdict"]
@@ -416,12 +468,15 @@ def verdict_refusals(word: str, verdicts: dict[str, dict[str, Any]]) -> list[str
         out.append("unstable")
     if blocked - {"unstable"}:
         out.append("unknown_flag")
+    if not out and is_twice_read(lang) and twice_read_rule(word, lang, verdicts, hand_reviewed) is None:
+        out.append("not_twice_read")
     return out
 
 
 def refusals(word: str, ev: dict[str, Any], *, ring_words: frozenset[str], platforms: frozenset[str],
              allow: frozenset[str], ambiguous: frozenset[str] = frozenset(),
-             verdicts: dict[str, dict[str, Any]] | None = None) -> list[str]:
+             verdicts: dict[str, dict[str, Any]] | None = None, lang: str = "",
+             hand_reviewed: frozenset[str] = frozenset()) -> list[str]:
     """Why a word may not be added, as stable keys. Empty = addable. ``verdicts`` None means no
     verdict file was given (report mode); ``--apply`` never runs without one."""
     out: list[str] = []
@@ -447,7 +502,7 @@ def refusals(word: str, ev: dict[str, Any], *, ring_words: frozenset[str], platf
     if ev["top_source_share"] is not None and ev["top_source_share"] >= SINGLE_SOURCE_SHARE:
         out.append("single_source")
     if verdicts is not None:
-        out.extend(verdict_refusals(word, verdicts))
+        out.extend(verdict_refusals(word, verdicts, lang, hand_reviewed))
     return out
 
 
@@ -616,13 +671,13 @@ def _check_json_target(args: argparse.Namespace, root: Path) -> None:
     if (target.suffix != ".json" or args.json.is_symlink()
             or target.is_relative_to((root / "configs").resolve())):
         raise SystemExit("--json must name a .json file outside configs/ and not through a symlink")
-    inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words) if p)}
+    inputs = {args.log.resolve(), *(p.resolve() for p in (args.verdicts, args.words, args.hand_reviewed) if p)}
     if target.exists() and not target.is_file():  # a directory, or a pipe that would block the write
         raise SystemExit("--json must name a regular file, not a directory or a pipe")
     if target in inputs or (target.exists() and (target.is_relative_to(root) or target.stat().st_nlink > 1 or any(
             # samefile: another spelling of an input on a case-insensitive file system, which the
             # resolved-path comparison above cannot equate
-            p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words) if p))):
+            p.exists() and target.samefile(p) for p in (args.log, args.verdicts, args.words, args.hand_reviewed) if p))):
         raise SystemExit(
             "--json would overwrite an input file (the log, the verdicts or the words), an existing file "
             "in the checkout (a tracked file is one), or a file that has another name (a hard link: the "
@@ -635,6 +690,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--language", required=True, help="the language whose list the words go into (e.g. en)")
     ap.add_argument("--words", type=Path, help="the decided words, one per line")
     ap.add_argument("--verdicts", type=Path, help="the triage decision rows (required with --apply)")
+    ap.add_argument("--hand-reviewed", type=Path,
+                    help="a reader's second hand reading (language <TAB> word rows): admits a word of a "
+                         "twice-read language (vi, ko, as, tl) that has no repeat_agreed marker")
     ap.add_argument("--allow", action="append", default=[],
                     help="override content_elsewhere / also_an_entity / an ambiguous platform name for a word")
     ap.add_argument("--apply", action="store_true", help="append the addable words to the language's file")
@@ -662,6 +720,11 @@ def main(argv: list[str] | None = None) -> int:
     firm, ambiguous = _read_keep()
     seen: Counter = Counter()
     verdicts = read_verdicts(args.verdicts, lang, seen) if args.verdicts else None
+    hand = read_hand_reviewed(args.hand_reviewed, lang) if args.hand_reviewed else frozenset()
+    if args.hand_reviewed:
+        why = "" if is_twice_read(lang) else f" ({lang} is not a twice-read language, so it only adds a record)"
+        print(f"hand review: {len(hand)} words for {lang} in {args.hand_reviewed.name}{why}"
+              + ("; NOTHING listed for this language: check the language code" if not hand else "") + ".")
     if verdicts is not None:
         rows_read = seen.pop("\0read")
         others = ", ".join(f"{k} {v}" for k, v in seen.most_common(6))
@@ -685,7 +748,7 @@ def main(argv: list[str] | None = None) -> int:
     for w in words:
         ev = evidence(w, lang, index.get(norm(w), []), hidden)
         ev["refused"] = refusals(w, ev, ring_words=ring, platforms=firm, allow=allow,
-                                 ambiguous=ambiguous, verdicts=verdicts)
+                                 ambiguous=ambiguous, verdicts=verdicts, lang=lang, hand_reviewed=hand)
         rows.append(ev)
 
     addable = [r["term"] for r in rows if not r["refused"]]
@@ -722,6 +785,14 @@ def main(argv: list[str] | None = None) -> int:
         source = f"log sha256 {file_hash(args.log)}; verdicts sha256 {file_hash(args.verdicts)}"
         if single:
             source += f"; single reader: {', '.join(single)}"
+        if args.hand_reviewed:
+            source += f"; hand review file sha256 {file_hash(args.hand_reviewed)}"
+        agreed = [w for w in addable if verdicts and verdicts[spelling(w)]["repeat_agreed"]]
+        source += f"; words with repeat_agreed: {len(agreed)} of {len(addable)}"
+        if is_twice_read(lang):
+            by_hand = sorted(w for w in addable if twice_read_rule(w, lang, verdicts or {}, hand) == "hand_review")
+            source += (f"; twice-read rule: {len(addable) - len(by_hand)} by repeat agreement"
+                       + (f", {len(by_hand)} by hand review ({', '.join(by_hand)})" if by_hand else ""))
         existed = (EXTRA_DIR / f"{lang}.yml").exists()
         own, foreign = split_by_script(lang, addable)
         plans = []
