@@ -64,3 +64,32 @@ def test_preflight_robots_error_is_scrubbed():
     rec = preflight._check_one(fetcher, SimpleNamespace(id=1, domain="example.org"))
     assert rec["robots_error"] and _PW not in rec["robots_error"]
     assert not any(_PW in str(v) for v in rec.values())
+
+
+def test_a_selftest_row_that_failed_carries_no_passphrase_and_no_home_path(monkeypatch, tmp_path):
+    """``recursive_loop_report`` rows ride ``selftests.json`` in the bundle: the failure's words pass the scrub, and a path in them
+    is tokenised. Covers the raising self-test and the gate that cannot be imported."""
+    import sys
+    import types
+
+    from src.monitoring import recursive_loop
+
+    home = "/home/someone/secret-project"
+    mod = types.ModuleType("fake_selftest_gate")
+
+    def raising():
+        raise RuntimeError(f"driver said: {_PW} at {home}/data/db.sqlite")
+
+    mod.run_it = raising
+    monkeypatch.setitem(sys.modules, "fake_selftest_gate", mod)
+    report = recursive_loop.recursive_loop_report(
+        (
+            ("ok-gate", "fake_selftest_gate", "run_it"),
+            ("missing", "no_such_module_for_the_test", "run"),
+        )
+    )
+    text = str(report)
+    assert _PW not in text and home not in text
+    rows = {r["name"]: r for r in report["instruments"]}
+    assert rows["ok-gate"]["passed"] is False and "RuntimeError" in rows["ok-gate"]["error"]
+    assert "ModuleNotFoundError" in rows["missing"]["error"]

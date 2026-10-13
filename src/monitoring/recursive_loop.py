@@ -70,6 +70,16 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+
+def _failure_text(exc: BaseException) -> str:
+    """What a self-test row says of a failure: ``Name: its words`` with every held passphrase out of the whole text (the scrub
+    fails closed to the class) and the paths in it tokenised, cut at 300. The row rides ``selftests.json`` in the bundle."""
+    from src.monitoring.path_tokens import tokenise_paths
+    from src.monitoring.secret_scrub import exception_text
+
+    return tokenise_paths(exception_text(exc, limit=300))
+
+
 def _selftest_passed(log) -> bool | None:
     """Normalize the pass verdict across the self-test log shapes: a top-level ``passed`` bool
     (ir/perception/triage) or a ``summary.failed == 0`` (keyword). None = shape not recognized
@@ -100,7 +110,7 @@ def recursive_loop_report(
             fn = getattr(mod, fn_name)
             row["importable"] = True
         except Exception as exc:  # noqa: BLE001 - an un-importable gate degrades, never raises
-            row["error"] = f"{type(exc).__name__}: {exc}"
+            row["error"] = _failure_text(exc)
             instruments.append(row)
             continue
         if run:
@@ -109,7 +119,7 @@ def recursive_loop_report(
                 row["schema"] = log.get("schema") if isinstance(log, dict) else None
                 row["passed"] = _selftest_passed(log)
             except Exception as exc:  # noqa: BLE001 - a raising self-test degrades, never raises
-                row["error"] = f"{type(exc).__name__}: {exc}"
+                row["error"] = _failure_text(exc)
                 row["passed"] = False
         instruments.append(row)
 
