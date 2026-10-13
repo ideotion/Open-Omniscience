@@ -363,7 +363,9 @@ def test_a_history_that_cannot_be_written_never_raises_into_the_lane():
 # What a bundle reads.
 # --------------------------------------------------------------------------- #
 def test_the_snapshot_is_whole_ordered_and_says_its_method(lane):
-    buf = H.HistoryBuffer(now=lambda: NOW)
+    # ``lane_history()`` reads the seven-day window from the REAL clock, so this buffer must write at the real
+    # time: the fixed NOW above aged out of that window on 2026-10-13 04:00 UTC.
+    buf = H.HistoryBuffer(now=lambda: datetime.now(UTC))
     buf.note("walk", edition="en", kind="ok", ms=10, pages=3)
     buf.note("tick", kind="sleep", ms=100)
     with lane_session("wiki") as db:
