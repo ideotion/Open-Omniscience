@@ -435,10 +435,6 @@
   "count": 1,
   "owner": "rc-sweep"
  },
- "src/monitoring/session_history.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
  "src/monitoring/soak_window.py": {
   "count": 8,
   "owner": "rc-sweep"
