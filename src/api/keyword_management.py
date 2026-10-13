@@ -45,6 +45,7 @@ router = APIRouter(prefix="/api/keywords", tags=["Keywords"])
 
 # Rate limiter
 from src.api.ratelimit import limiter
+from src.monitoring.secret_scrub import log_failure
 
 
 @router.get("/extract", response_model=dict)
@@ -68,7 +69,7 @@ def extract_keywords(
 
         return {"success": True, "result": result}
     except Exception as e:
-        logger.error(f"Error extracting keywords: {e}")
+        log_failure(logger, "Error extracting keywords", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -88,7 +89,7 @@ def extract_article_keywords(
         )
         return {"success": True, "result": result}
     except Exception as e:
-        logger.error(f"Error extracting article keywords: {e}")
+        log_failure(logger, "Error extracting article keywords", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -100,7 +101,7 @@ def get_keyword_categories(request: Request):
         categories = list(keyword_extractor.keyword_categories.keys())
         return {"success": True, "categories": categories}
     except Exception as e:
-        logger.error(f"Error getting categories: {e}")
+        log_failure(logger, "Error getting categories", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -114,7 +115,7 @@ def categorize_keywords(
         categories = keyword_extractor.categorize_keywords(keywords)
         return {"success": True, "categories": categories}
     except Exception as e:
-        logger.error(f"Error categorizing keywords: {e}")
+        log_failure(logger, "Error categorizing keywords", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -134,7 +135,7 @@ def get_top_keywords(
         )
         return {"success": True, "top_keywords": top_keywords}
     except Exception as e:
-        logger.error(f"Error getting top keywords: {e}")
+        log_failure(logger, "Error getting top keywords", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -159,7 +160,7 @@ def extract_key_phrases(
         )
         return {"success": True, "phrases": phrases}
     except Exception as e:
-        logger.error(f"Error extracting key phrases: {e}")
+        log_failure(logger, "Error extracting key phrases", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -175,7 +176,7 @@ def get_keyword_statistics(
         stats = keyword_extractor.get_keyword_statistics(text, language=language)
         return {"success": True, "statistics": stats}
     except Exception as e:
-        logger.error(f"Error getting keyword statistics: {e}")
+        log_failure(logger, "Error getting keyword statistics", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -191,7 +192,7 @@ def process_text(
         result = text_processor.process_text(text, language=language)
         return {"success": True, "result": result}
     except Exception as e:
-        logger.error(f"Error processing text: {e}")
+        log_failure(logger, "Error processing text", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -207,5 +208,5 @@ def get_word_frequencies(
         frequencies = text_processor.get_word_frequency(text, language=language)
         return {"success": True, "frequencies": frequencies}
     except Exception as e:
-        logger.error(f"Error getting word frequencies: {e}")
+        log_failure(logger, "Error getting word frequencies", e)
         raise HTTPException(status_code=500, detail=str(e)) from e

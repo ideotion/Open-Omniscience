@@ -982,8 +982,8 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         if key in updates and updates[key] is not None:
             try:
                 v = int(updates[key])
-            except (TypeError, ValueError) as exc:
-                raise SchedulerSettingsError(f"{label} must be an integer") from exc
+            except (TypeError, ValueError):
+                raise SchedulerSettingsError(f"{label} must be an integer") from None
             if not (lo <= v <= hi):
                 raise SchedulerSettingsError(f"{label} must be between {lo} and {hi}")
             setattr(current, key, v)
@@ -1029,8 +1029,8 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
     if "equilibrium_floor" in updates and updates["equilibrium_floor"] is not None:
         try:
             f = float(updates["equilibrium_floor"])
-        except (TypeError, ValueError) as exc:
-            raise SchedulerSettingsError("equilibrium_floor must be a number") from exc
+        except (TypeError, ValueError):
+            raise SchedulerSettingsError("equilibrium_floor must be a number") from None
         if not (0.0 <= f <= 1.0):
             raise SchedulerSettingsError("equilibrium_floor must be between 0 and 1")
         current.equilibrium_floor = f

@@ -29,6 +29,7 @@ from src.database.fts import MAX_CANDIDATES, SearchQueryError, search_ids, searc
 from src.database.models import Article, Keyword, LawDocument, Source, WikiPage
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_source
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -262,8 +263,8 @@ def _dump_hits(q: str) -> tuple[list[dict], bool, bool]:
         # exactly as the corpus path (search_ids) does above — never a mid-typing 400.
         if res.get("reason") == "search-error":
             res = dump_search('"' + q.replace('"', " ") + '"', limit=_PER_GROUP + 1)
-    except Exception:  # noqa: BLE001 - a dump-index hiccup must never break the omnibar
-        _LOG.warning("omni dump search failed for %r", q, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a dump-index hiccup must never break the omnibar
+        log_failure(_LOG, f"omni dump search failed for {q!r}", exc, level=logging.WARNING)
         return [], False, False
     if res.get("reason") in ("no-index", "search-error"):
         # no-index: nothing indexed yet. search-error: even the phrase retry failed
@@ -302,8 +303,8 @@ def _lane_hits(q: str) -> dict:
 
     try:
         out = search_lane(q, limit=_PER_GROUP, snippets=False, queue=False)
-    except Exception:  # noqa: BLE001 - the lane must never blank the omnibar
-        _LOG.warning("omni lane search failed for %r", q, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the lane must never blank the omnibar
+        log_failure(_LOG, f"omni lane search failed for {q!r}", exc, level=logging.WARNING)
         return {"available": False, "reason": "lane-unreadable", "items": [], "total": None}
     keep = ("available", "reason", "items", "total", "caveat", "error")
     return {k: out[k] for k in keep if k in out}
@@ -459,8 +460,8 @@ def _places_group(db: Session, q: str) -> dict:
             "note": "name match over the places, places with metadata and administrative areas of the "
                     "OpenStreetMap countries you read",
         }
-    except Exception:  # noqa: BLE001 - a locked lane leaves the corpus's Places in place
-        _LOG.warning("omni: the OSM name index could not be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a locked lane leaves the corpus's Places in place
+        log_failure(_LOG, "omni: the OSM name index could not be read", exc, level=logging.WARNING)
     return out
 
 
@@ -642,8 +643,8 @@ def omni(
         # handled exactly like a per-group failure: the omnibar must never blank.
         try:
             hits = _fts_hits(db, q, expander)
-        except Exception:  # noqa: BLE001 - the FTS layer must never blank the omnibar
-            _LOG.warning("omni fts search failed for %r", q, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the FTS layer must never blank the omnibar
+            log_failure(_LOG, f"omni fts search failed for {q!r}", exc, level=logging.WARNING)
             hits = ([], q, False)
         for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group,
                    _places_group, _law_group, _events_group, _docs_group):
@@ -658,8 +659,8 @@ def omni(
                     groups.append(fn(db, q, expander))
                 else:
                     groups.append(fn(db, q))
-            except Exception:  # noqa: BLE001 - one group must never blank the omnibar
-                _LOG.warning("omni group %s failed", fn.__name__, exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - one group must never blank the omnibar
+                log_failure(_LOG, f"omni group {fn.__name__} failed", exc, level=logging.WARNING)
         out = {"q": q, "per_group": _PER_GROUP, "groups": groups, "method": _method}
         # R1: stated on the surface, never silent -- expansion changed which articles
         # matched. Absent when no typed term touched a ring.

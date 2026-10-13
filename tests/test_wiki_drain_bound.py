@@ -300,7 +300,7 @@ def test_a_failed_drain_leaves_the_stage_idle_and_the_reason_in_the_status(lane)
     status = runner.drain_status()
     assert status["stage"] == "idle", "a failure must not leave the lane claiming to be mid-drain"
     assert status["consecutive_failures"] == runner_mod.MAX_CONSECUTIVE_FAILURES
-    assert "keyword read timed out" in (status["last_error"] or "")
+    assert status["last_error"] == "RuntimeError"  # the class only; the words go to the log line
     assert status["degraded"] is True, "past the limit the status says so; the loop no longer ends there"
 
 
@@ -519,7 +519,7 @@ def test_a_store_that_fails_in_the_LINK_leaves_no_half_stored_page(lane, monkeyp
     monkeypatch.setattr(pipeline_mod, "_link_ingested", link_fails)
     with lane_session("wiki") as db:
         report = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
-    assert any("link failed" in e for p in report.passes.values() for e in p.get("errors", []))
+    assert any(e.endswith(": store: RuntimeError") for p in report.passes.values() for e in p.get("errors", []))  # the class; the words are in the log line
     with lane_session("wiki") as db:
         assert db.execute(select(VersionedBaseline)).scalars().first() is None, (
             "the baseline the store wrote was rolled back with the failed link"
@@ -567,7 +567,11 @@ def test_a_savepoint_that_CANNOT_be_rolled_back_fails_the_drain_loudly(lane, mon
             raise OperationalError("ROLLBACK TO SAVEPOINT", {}, Exception("no such savepoint"))
 
     monkeypatch.setattr(pipeline_mod, "store_version", boom)
-    with pytest.raises(pipeline_mod.LaneTransactionLost), lane_session("wiki") as db:
+    with pytest.raises(pipeline_mod.LaneTransactionLost) as lost, lane_session("wiki") as db:
         real_begin = db.begin_nested
         monkeypatch.setattr(db, "begin_nested", lambda: Savepoint(real_begin()))
         drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    # The message names the two failures by CLASS (their words are in the log lines) and the raise is `from None`, so no traceback
+    # chain prints the engine's text.
+    assert str(lost.value).endswith(": RuntimeError; then the savepoint rollback failed: OperationalError"), str(lost.value)
+    assert lost.value.__cause__ is None and lost.value.__suppress_context__

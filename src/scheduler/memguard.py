@@ -45,6 +45,8 @@ import threading
 import time
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("scheduler.memguard")
 
 
@@ -307,8 +309,8 @@ class MemoryGuard:
             from src.scheduler.release import release_residents as fn  # noqa: PLC0415
         try:
             rec = fn()
-        except Exception:  # noqa: BLE001 - a failed release is not a failed pause
-            _LOG.debug("memory guard: release ladder failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a failed release is not a failed pause
+            log_failure(_LOG, "memory guard: release ladder failed", exc, level=logging.DEBUG)
             return
         with self._lock:
             stamp = self._engagements if engagement is None else engagement

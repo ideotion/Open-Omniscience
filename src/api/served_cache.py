@@ -74,6 +74,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
@@ -220,8 +222,8 @@ def refresh(key: str, compute, *, probe: int | None = None) -> dict | None:
             fresh = compute(s)
             _store(key, fresh, _bind_of(s), change_probe() if probe is None else probe)
             return fresh
-    except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
-        _LOG.warning("served-cache background refresh failed for %s", key, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
+        log_failure(_LOG, f"served-cache background refresh failed for {key}", exc, level=logging.WARNING)
         return None
 
 

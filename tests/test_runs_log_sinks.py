@@ -644,6 +644,10 @@ def _enclosing_function(node: ast.AST, parent: dict) -> str:
     return "<module>"
 
 
+#: Parameter names read as a caught exception when ``params`` is on.
+_EXC_PARAMS = frozenset({"exc", "exception", "error", "err", "exc_value", "e", "ex", "cause"})
+
+
 def _leaks(
     source: str,
     *,
@@ -651,6 +655,7 @@ def _leaks(
     also_scrubbing: frozenset[str] | set[str] = frozenset(),
     only_scrubbing: frozenset[str] | set[str] | None = None,
     words_kept: dict[tuple[str, str], int] | None = None,
+    params: bool = False,
 ) -> list[str]:
     """The ways a module of the witnesses could print a failure raw: a log call asked for the traceback (``exc_info`` that is not
     the constant False/None, ``.exception()``, the ``traceback`` module however it is imported, ``exc_info()`` however it is
@@ -660,6 +665,10 @@ def _leaks(
     ``only_scrubbing`` is the STRICT reading the bulletin sweep uses: the calls named there are the only ones that may be handed the
     exception (``_SCRUBBING_CALLS`` and ``also_scrubbing`` are not consulted), and ``log_failure`` takes it as its THIRD argument, where
     the exception goes, never as the first words (``log_failure(_LOG, exc, exc)`` writes the unscrubbed words into the line).
+
+    ``params`` (default False) reads a function's PARAMETER named like an exception (:data:`_EXC_PARAMS`: ``exc``, ``exception``, ``error``,
+    ``err``, ``exc_value``) as bound for the whole function, like a handler's name, so ``__exit__(self, exc_type, exc, tb)`` building a
+    record from ``exc`` is read.
 
     ``words_kept`` (only with ``only_scrubbing``) names the few sites where the person who just asked is told the failure's words: keyed by
     (the function the call stands in, the call's line text) with the NUMBER of uses it excuses, like :data:`_BUNDLE_ALLOWED`. The same text
@@ -705,10 +714,16 @@ def _leaks(
             (node.module or "").split(".")[0] == "traceback" or any(a.name in _TRACEBACK_CALLS for a in node.names)
         ):
             out.append(f"{node.lineno}: a traceback function is imported by name")
+        bound: list[tuple[str, list[ast.stmt]]] = []
         if handlers and isinstance(node, ast.ExceptHandler) and node.name:
-            for stmt in node.body:
+            bound.append((node.name, node.body))
+        if params and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = node.args
+            bound.extend((a.arg, node.body) for a in [*args.posonlyargs, *args.args, *args.kwonlyargs] if a.arg in _EXC_PARAMS)
+        for bound_name, bound_body in bound:
+            for stmt in bound_body:
                 for use in ast.walk(stmt):
-                    if not (isinstance(use, ast.Name) and use.id == node.name and isinstance(use.ctx, ast.Load)):
+                    if not (isinstance(use, ast.Name) and use.id == bound_name and isinstance(use.ctx, ast.Load)):
                         continue
                     call = parent.get(use)
                     if (
@@ -725,11 +740,11 @@ def _leaks(
                     allowed = (_SCRUBBING_CALLS | also_scrubbing) if only_scrubbing is None else only_scrubbing
                     if isinstance(call, ast.Call) and _call_name(call) in allowed and use in call.args:
                         if only_scrubbing is not None and _call_name(call) == "log_failure" and call.args.index(use) != 2:
-                            out.append(f"{use.lineno}: the caught exception {node.name!r} is handed to log_failure as its words, not as the failure")
+                            out.append(f"{use.lineno}: the caught exception {bound_name!r} is handed to log_failure as its words, not as the failure")
                         continue
                     if _is_not_the_text_of_the_failure(use, parent):
                         continue
-                    out.append(f"{use.lineno}: the caught exception {node.name!r} is used outside a scrubbing call")
+                    out.append(f"{use.lineno}: the caught exception {bound_name!r} is used outside a scrubbing call")
     if words_kept is not None:
         for key in sorted(kept_hits.keys() | words_kept.keys()):
             got, excused = kept_hits.get(key, 0), words_kept.get(key, 0)

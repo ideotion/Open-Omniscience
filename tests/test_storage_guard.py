@@ -898,7 +898,7 @@ def test_a_pass_that_dies_of_a_full_drive_latches_the_guard():
     )
     sched._do_run()
     assert g.kind() == "disk"
-    assert "disk is full" in (sched.status()["last_error"] or "")
+    assert sched.status()["last_error"] == "OperationalError"  # the class only; the words are in the guard's log line
 
 
 def test_off_peak_maintenance_yields_while_the_guard_is_engaged(monkeypatch):
@@ -2859,6 +2859,11 @@ def test_the_stop_check_and_the_publishing_of_the_drain_thread_are_one_step_unde
 
 
 
+def _what(record) -> str:
+    """The code's own words of a ``log_failure`` line (``what: Class: its words`` and then the traceback)."""
+    return ": ".join(record.getMessage().split(": ")[:2])
+
+
 def test_a_failure_of_the_unsupervised_path_is_a_warning_and_a_repeat_is_not(monkeypatch, caplog):
     """The coordinator's check of #1287 (nit 9) and the Opus read of #1289: the unsupervised twin
     of the background drain logged at DEBUG, so an exception escaping it stayed silent; and a
@@ -2879,7 +2884,7 @@ def test_a_failure_of_the_unsupervised_path_is_a_warning_and_a_repeat_is_not(mon
         g.poll_and_drain_unsupervised()
     warns = [r for r in caplog.records if r.levelno == logging.WARNING and "unsupervised poll failed" in r.getMessage()]
     assert len(warns) == 1, "the first failure is loud, the repeats are not"
-    assert warns[0].exc_info is not None, "the first carries its traceback"
+    assert getattr(warns[0], "scrubbed_traceback", None), "the first carries its traceback"
     assert sum("failed again" in r.getMessage() for r in caplog.records) == 2
     # a DIFFERENT failure is news again
     monkeypatch.setattr(g, "drain_if_due", lambda: (_ for _ in ()).throw(ValueError("something else")))
@@ -2902,7 +2907,7 @@ def test_two_failing_paths_in_turn_are_each_news_once_not_every_time(caplog):
             g.log_failure_once("the drain", drain)
             g.log_failure_once("the unsupervised poll", poll)
     warned = [r for r in caplog.records if r.levelno == logging.WARNING and "failed" in r.getMessage()]
-    assert [r.getMessage() for r in warned] == [
+    assert [_what(r) for r in warned] == [
         "storage guard: the drain failed",
         "storage guard: the unsupervised poll failed",
     ], "each path is news once; the repeats are DEBUG"
@@ -2936,7 +2941,7 @@ def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch
         for _ in range(3):
             g.drain_if_due()
             g._last_drain_mono = None  # the cadence is not under test
-    assert [r.getMessage() for r in warnings()] == ["storage guard: the drain failed"] * 2
+    assert [_what(r) for r in warnings()] == ["storage guard: the drain failed"] * 2
 
     # the unsupervised poll: fails, works, fails the same way
     g2 = _guard()
@@ -2955,7 +2960,7 @@ def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch
     with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
         for _ in range(3):
             g2.poll_and_drain_unsupervised()
-    assert [r.getMessage() for r in warnings()] == ["storage guard: the unsupervised poll failed"] * 2
+    assert [_what(r) for r in warnings()] == ["storage guard: the unsupervised poll failed"] * 2
 
     # the background drain, the same
     g3 = _guard()
@@ -2972,7 +2977,7 @@ def test_a_path_that_works_again_makes_its_next_failure_news(caplog, monkeypatch
     with caplog.at_level(logging.DEBUG, logger="scheduler.storage_guard"):
         for _ in range(3):
             storage_guard._drain_in_background(g3, threading.Event())
-    assert [r.getMessage() for r in warnings()] == ["storage guard: the background drain failed"] * 2
+    assert [_what(r) for r in warnings()] == ["storage guard: the background drain failed"] * 2
 
 
 def test_a_tick_where_no_drain_was_due_does_not_clear_the_drain_paths_failure(caplog, monkeypatch):

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from src.catalog.countries import country_payload_iso3, country_query_forms
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
+from src.monitoring.secret_scrub import log_failure
 
 router = APIRouter(prefix="/api/law", tags=["law"])
 
@@ -539,8 +540,8 @@ def _lane_meta(doc) -> _LaneMeta | None:
                 identity=identity,
                 siblings=tuple(siblings),
             )
-    except Exception:  # noqa: BLE001 - the lane is an addition; the text is the document
-        _LOG.debug("law reader: lane metadata unavailable for document %s", doc.id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the lane is an addition; the text is the document
+        log_failure(_LOG, f"law reader: lane metadata unavailable for document {doc.id}", exc, level=logging.DEBUG)
         return None
 
 
@@ -732,8 +733,8 @@ def law_provision_timeline(document_id: int, db: Session = Depends(get_db)) -> d
 
         with lane_session("law") as lane:
             payload = provision_timeline(lane, lane_key, revision_order=order)
-    except Exception:  # noqa: BLE001 - the lane is an addition; a GET must not 500 on it
-        _LOG.debug("law provision timeline unavailable for %s", document_id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the lane is an addition; a GET must not 500 on it
+        log_failure(_LOG, f"law provision timeline unavailable for {document_id}", exc, level=logging.DEBUG)
         return {"available": False, "reason": "the law lane could not be read on this install"}
     payload["available"] = True
     return payload

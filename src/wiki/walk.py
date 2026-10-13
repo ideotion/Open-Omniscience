@@ -56,6 +56,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from src.monitoring.secret_scrub import log_failure
 from src.safety.fetcher import NetworkBlocked, TransportUnavailable
 from src.wiki import history
 from src.wiki.history import retry_after_of
@@ -76,8 +77,8 @@ def _record(lane: Any, metric: str, **fields: Any) -> None:
     try:
         with lane.begin_nested():
             history.record(lane, metric, **fields)
-    except Exception:  # noqa: BLE001 - the record is not the work
-        _LOG.warning("could not record the walk's history row", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the record is not the work
+        log_failure(_LOG, "could not record the walk's history row", exc, level=logging.WARNING)
 
 #: The whole walk waits: the operator's airplane switch is on. Same token the lane's
 #: other surfaces use for it, so one translation says it everywhere.
@@ -330,8 +331,8 @@ class WikiWalker:
         report = WindowReport()
         try:
             on = bool(self._enabled())
-        except Exception:  # noqa: BLE001 - an unreadable switch is an OFF switch
-            _LOG.warning("could not read the walk switch; not walking", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an unreadable switch is an OFF switch
+            log_failure(_LOG, "could not read the walk switch; not walking", exc, level=logging.WARNING)
             on = False
         if not on:
             self._set(STATE_OFF, None)

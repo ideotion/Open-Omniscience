@@ -159,8 +159,8 @@ def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: boo
 
     try:
         _drop_newsletter_articles(staged.corpus_path)
-    except Exception:  # noqa: BLE001 - never block a restore on the optional filter
-        _LOG.warning("restore: newsletter filter on the staged corpus failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never block a restore on the optional filter
+        log_failure(_LOG, "restore: newsletter filter on the staged corpus failed", exc, level=logging.WARNING)
 
 
 class LegacyRestoreBody(BaseModel):
@@ -1114,8 +1114,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         try:
             with session_scope() as _s:
                 bump_corpus_epoch(_s, reason=reason)
-        except Exception:  # noqa: BLE001 - never let the epoch bump break the drain
-            _LOG.warning("corpus-epoch bump failed (%s)", reason, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never let the epoch bump break the drain
+            log_failure(_LOG, f"corpus-epoch bump failed ({reason})", exc, level=logging.WARNING)
 
     # R22 -- the counters stop being maintained per article while the machine is ours,
     # and the disclosure says so until the drain's own reconcile lands.
@@ -1136,11 +1136,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             with session_scope() as _s:
                 open_deferral(_s, reason="reindex-resume")
             deferring = True
-        except Exception:  # noqa: BLE001 - no marker, no deferral; the drain still runs
-            _LOG.warning(
-                "could not open the counter-deferral marker; counters stay maintained",
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001 - no marker, no deferral; the drain still runs
+            log_failure(_LOG, "could not open the counter-deferral marker; counters stay maintained", exc, level=logging.WARNING)
         return deferring
 
     if batches:
@@ -1292,8 +1289,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             try:
                 with session_scope() as _s:
                     leftover = is_deferral_open(_s)
-            except Exception:  # noqa: BLE001 - unreadable: the next run looks again
-                _LOG.warning("could not read the counter-deferral marker", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - unreadable: the next run looks again
+                log_failure(_LOG, "could not read the counter-deferral marker", exc, level=logging.WARNING)
         if (deferring or leftover) and window:
             out["counter_reconcile"] = {
                 "reconciled": False, "closed": False, "complete": False,
@@ -1309,8 +1306,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     out["counter_reconcile"] = finish_deferral(_s, should_stop=_yield_to_import)
                 if leftover:
                     out["counter_reconcile"]["left_by_an_earlier_run"] = True
-            except Exception:  # noqa: BLE001 - never let it mask what ended the run
-                _LOG.warning("deferred-counter reconcile failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never let it mask what ended the run
+                log_failure(_LOG, "deferred-counter reconcile failed", exc, level=logging.WARNING)
         # Every run that reconciled counters bumps again here, with or without a batch of its
         # own: a resumed run with nothing pending can still close a sweep an earlier run left
         # open (killed inside it, or stopped for an import), and a rollup built since keeps the

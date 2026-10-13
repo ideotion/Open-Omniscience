@@ -306,7 +306,7 @@ class HistoryBuffer:
                     del self._rows[k]
                 self.dropped_rows += len(stale)
             self.flush_failures += 1
-            self.last_flush_error = f"{type(exc).__name__}: {exc}"[:200]
+            self.last_flush_error = type(exc).__name__
             raise
         return len(taken)
 

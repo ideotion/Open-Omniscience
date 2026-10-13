@@ -99,10 +99,10 @@ class _CheckpointConn:
         self.closed = True
 
 
-def _checkpoint_warning(caplog, conn, **kwargs) -> logging.LogRecord:
+def _checkpoint_warning(caplog, conn, passphrase=None) -> logging.LogRecord:
     caplog.clear()
     with caplog.at_level(logging.DEBUG, logger="api.unlock"):
-        unlock_mod._close_after_checkpoint(conn, **kwargs)
+        unlock_mod._close_after_checkpoint(conn, passphrase)
     (record,) = [r for r in caplog.records if "could not be written back" in r.getMessage()]
     assert conn.closed, "the connection is closed whatever the write-back said"
     return record

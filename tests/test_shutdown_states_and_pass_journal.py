@@ -284,7 +284,7 @@ def test_an_exception_inside_a_phase_is_recorded_and_re_raised(dd):
             raise ValueError("boom")
     recs = pass_journal.read()
     end = [r for r in recs if r.get("event") == "phase_end"][-1]
-    assert "ValueError: boom" in end["error"]
+    assert end["error"] == "ValueError"
     assert pass_journal.report()["died_during"] is None  # it ended, badly but it ended
 
 

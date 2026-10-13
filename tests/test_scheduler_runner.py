@@ -130,7 +130,7 @@ def test_failing_pass_is_recorded_not_fatal():
             if last_error:
                 break
             threading.Event().wait(0.01)
-        assert last_error and "blew up" in last_error
+        assert last_error == "RuntimeError"
         assert sch.is_running() is True
     finally:
         assert sch.stop() is True

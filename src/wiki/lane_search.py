@@ -89,6 +89,7 @@ from src.database.fts_norm import (
     index_entry,
     query_variants,
 )
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger("wiki.lane_search")
 
@@ -743,10 +744,12 @@ def index_batch(
             # markup, or a segmenter on a text it cannot take -- each this unit's alone.
             failed[source].extend(refs)
             result.failed += len(refs)
-            _LOG.warning(
-                "lane search: could not index %s %s (%s: %s); set aside, and tried again when "
+            log_failure(
+                _LOG,
+                f"lane search: could not index {source} {owner}; set aside, and tried again when "
                 "the lane next starts or the page next changes",
-                source, owner, type(exc).__name__, exc,
+                exc,
+                level=logging.WARNING,
             )
             continue
         tally.add(_apply(lane, plan))
@@ -808,7 +811,7 @@ class _TrackerReader:
             result = self.session.execute(stmt)
             return getattr(result, how)()
         except SQLAlchemyError as exc:
-            raise _TrackerUnavailable(f"{type(exc).__name__}: {exc}") from exc
+            raise _TrackerUnavailable(exception_text(exc)) from None
 
     def all(self, stmt: Any) -> list[Any]:
         return self._run(stmt, "all")
@@ -823,8 +826,8 @@ class _TrackerReader:
         """End the read transaction, so the tracker's writer is never kept waiting on it."""
         try:
             self.session.rollback()
-        except SQLAlchemyError:  # pragma: no cover - nothing to release
-            _LOG.debug("lane search: could not release the tracker session", exc_info=True)
+        except SQLAlchemyError as exc:  # pragma: no cover - nothing to release
+            log_failure(_LOG, "lane search: could not release the tracker session", exc, level=logging.DEBUG)
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -1166,7 +1169,7 @@ def index_tracked_batch(
         try:
             plan = _plan_tracked(lane, reader, ref, caps)
         except _TrackerUnavailable as exc:
-            _LOG.info("lane search: the page tracker could not be read now (%s); it waits", exc)
+            log_failure(_LOG, "lane search: the page tracker could not be read now; it waits", exc, level=logging.INFO)
             result.deferred = True
             break
         except (SQLAlchemyError, MemoryError):
@@ -1174,10 +1177,12 @@ def index_tracked_batch(
         except Exception as exc:  # noqa: BLE001 - one unreadable text must not stop the index
             failed.append(ref)
             result.failed += 1
-            _LOG.warning(
-                "lane search: could not index tracked page %s (%s: %s); set aside, and tried "
+            log_failure(
+                _LOG,
+                f"lane search: could not index tracked page {ref}; set aside, and tried "
                 "again when the lane next starts",
-                ref, type(exc).__name__, exc,
+                exc,
+                level=logging.WARNING,
             )
             continue
         tally.add(_apply_tracked(lane, plan))
@@ -1516,8 +1521,8 @@ class LaneIndexer:
         assert self._tracker_session is not None
         try:
             session = self._tracker_session()
-        except Exception:  # noqa: BLE001 - no tracker to read is not a failure of the index
-            _LOG.debug("lane search: no tracker session", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - no tracker to read is not a failure of the index
+            log_failure(_LOG, "lane search: no tracker session", exc, level=logging.DEBUG)
             return True
         reader = _TrackerReader(session)
         try:
@@ -1544,13 +1549,13 @@ class LaneIndexer:
                     if out.settled < TRACKED_BATCH and not out.stopped_early:
                         return True
             except _TrackerUnavailable as exc:
-                _LOG.info("lane search: the page tracker could not be read now (%s); it waits", exc)
+                log_failure(_LOG, "lane search: the page tracker could not be read now; it waits", exc, level=logging.INFO)
             return False
         finally:
             try:
                 session.close()
-            except Exception:  # noqa: BLE001 - closing must never fail a window
-                _LOG.debug("lane search: could not close the tracker session", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - closing must never fail a window
+                log_failure(_LOG, "lane search: could not close the tracker session", exc, level=logging.DEBUG)
 
     def status(self) -> dict[str, Any]:
         """This process's indexer state. No row read; the counts are :func:`index_status`'s."""
@@ -1928,7 +1933,7 @@ def search(
         parsed = parse_query(q, grammar=True)
         match = build_match(q, variants=query_variants, grammar=True, near_default=near_default)
     except SearchQueryError as exc:
-        return {**base, "total": None, "items": [], "error": "query_invalid", "detail": str(exc)}
+        return {**base, "total": None, "items": [], "error": "query_invalid", "detail": exception_text(exc, typed=False)}
     if parsed.fields:
         base["fields_not_applied"] = sorted(
             {f.field + ("=" if f.mode == "exact" else "") for f in parsed.fields}
@@ -1969,8 +1974,8 @@ def search(
                     )
                 )
             }
-        except _TrackerUnavailable:
-            _LOG.debug("lane search: the page tracker could not be read for titles", exc_info=True)
+        except _TrackerUnavailable as exc:
+            log_failure(_LOG, "lane search: the page tracker could not be read for titles", exc, level=logging.DEBUG)
     warm_rows = {
         r[0]: r[1:]
         for r in lane.execute(
@@ -2024,10 +2029,10 @@ def search(
                     body = _indexed_body(lane, doc, corpus)
                 except MemoryError:
                     raise
-                except Exception:  # noqa: BLE001 - a snippet must never fail the search
+                except Exception as exc:  # noqa: BLE001 - a snippet must never fail the search
                     # The hit stands without one: the list and the total are the index's
                     # answer, and a text that cannot be read back is the indexer's to report.
-                    _LOG.debug("lane search: no snippet for entry %s", doc.id, exc_info=True)
+                    log_failure(_LOG, f"lane search: no snippet for entry {doc.id}", exc, level=logging.DEBUG)
                     body = None
                 if body is not None:
                     item["snippet"] = snippet(body, literals)

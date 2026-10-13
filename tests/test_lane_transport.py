@@ -154,7 +154,7 @@ def test_the_stream_records_WHY_it_is_failing_and_forgets_it_on_the_next_event()
     stream.run(lambda _c: None, max_connections=2)
     c = stream.counters.as_dict()
     assert c["consecutive_failures"] == 2
-    assert c["last_failure"].startswith("TransportUnavailable: protected fetch mode is on"), (
+    assert c["last_failure"] == "TransportUnavailable", (
         "the reason is the LATEST failure, named by its type"
     )
 
@@ -168,13 +168,13 @@ def test_the_stream_records_WHY_it_is_failing_and_forgets_it_on_the_next_event()
     assert stream.counters.last_failure is None, "a wait that ended still reports its reason"
 
 
-def test_the_reason_is_bounded() -> None:
+def test_the_reason_is_the_class_alone_whatever_the_message_holds() -> None:
     from tests.test_wiki_stream import _Response, _Session, _stream
 
     session = _Session([_Response([], raises=OSError("x" * 5000))])
     stream = _stream(session, sleep=lambda _s: None)
     stream.run(lambda _c: None, max_connections=1)
-    assert len(stream.counters.last_failure) == 300
+    assert stream.counters.last_failure == "OSError"  # the class only: nothing to bound
 
 
 def test_the_runner_hands_the_counters_through() -> None:
@@ -186,7 +186,7 @@ def test_the_runner_hands_the_counters_through() -> None:
     runner = object.__new__(WikiLaneRunner)  # only the stream is read
     runner._stream = stream
     out = runner.stream_counters()
-    assert out["consecutive_failures"] == 1 and out["last_failure"] == "OSError: reset"
+    assert out["consecutive_failures"] == 1 and out["last_failure"] == "OSError"
     runner._stream = object()  # a stream that keeps no counters
     assert runner.stream_counters() is None
 

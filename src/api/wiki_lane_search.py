@@ -26,6 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.store import LaneAbsentError, lane_path, lane_session
 
 _LOG = logging.getLogger("api.wiki.lane_search")
@@ -45,8 +46,8 @@ def _indexer_status() -> dict[str, Any] | None:
         from src.wiki.service import lane_service_status
 
         return lane_service_status().get("index")
-    except Exception:  # noqa: BLE001 - a status read must never fail a search
-        _LOG.debug("could not read the lane indexer status", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a status read must never fail a search
+        log_failure(_LOG, "could not read the lane indexer status", exc, level=logging.DEBUG)
         return None
 
 
@@ -56,8 +57,8 @@ def _warm_enabled() -> bool | None:
         from src.wiki.service import _warm_enabled as enabled
 
         return bool(enabled())
-    except Exception:  # noqa: BLE001 - a settings read must never fail a search
-        _LOG.debug("could not read WARM's switch", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a settings read must never fail a search
+        log_failure(_LOG, "could not read WARM's switch", exc, level=logging.DEBUG)
         return None
 
 
@@ -100,8 +101,8 @@ def search_lane(
         return _absent(_NEVER_RUN, q)
     except DatabaseLockedError:
         return _absent(_LOCKED, q)
-    except SQLAlchemyError:
-        _LOG.warning("lane search: the Wikipedia lane could not be read", exc_info=True)
+    except SQLAlchemyError as exc:
+        log_failure(_LOG, "lane search: the Wikipedia lane could not be read", exc, level=logging.WARNING)
         return _absent(_UNREADABLE, q)
 
 
@@ -139,7 +140,7 @@ def _held(source: str, owner_id: int, revid: int, corpus: Session):
     except DatabaseLockedError as exc:
         raise HTTPException(status_code=423, detail=_LOCKED) from exc
     except SQLAlchemyError as exc:
-        _LOG.warning("lane version: the Wikipedia lane could not be read", exc_info=True)
+        log_failure(_LOG, "lane version: the Wikipedia lane could not be read", exc, level=logging.WARNING)
         raise HTTPException(status_code=503, detail=_UNREADABLE) from exc
 
 

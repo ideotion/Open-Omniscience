@@ -39,6 +39,7 @@ from src.database.stand_in import (
     stand_in_article_ids,
 )
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import log_failure
 from src.utils.cache import SimpleCache
 
 _LOG = logging.getLogger("api.insights")
@@ -1167,8 +1168,8 @@ def insights_corpus_www(
             from src.entities.spine import annotate_www
 
             annotate_www(db, out, ui_lang)
-        except Exception:  # noqa: BLE001 - the facets stand without the spine
-            _LOG.warning("entity spine annotation failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the facets stand without the spine
+            log_failure(_LOG, "entity spine annotation failed", exc, level=logging.WARNING)
         return out
 
     return _deadlined(db, key, _compute)
@@ -2554,8 +2555,8 @@ def _safe_rollback(db: Session) -> None:
     """
     try:
         db.rollback()
-    except Exception:  # noqa: BLE001 - rollback itself must never break the caller
-        _LOG.warning("warm_cache: rollback after a failed step also failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - rollback itself must never break the caller
+        log_failure(_LOG, "warm_cache: rollback after a failed step also failed", exc, level=logging.WARNING)
 
 
 def _warm_deadline_seconds() -> float | None:
@@ -2622,8 +2623,8 @@ def warm_cache(db: Session) -> dict:
         # pass tail. A commit failure (e.g. a bogus non-Session `db` in a unit
         # test) is swallowed by the SAME except below — never fatal.
         db.commit()
-    except Exception:  # noqa: BLE001 - never fatal to a pass
-        _LOG.warning("columnar read-model refresh failed during warm_cache", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never fatal to a pass
+        log_failure(_LOG, "columnar read-model refresh failed during warm_cache", exc, level=logging.WARNING)
         # PR-D / W1 fix-forward: a failed db.commit() above leaves the session's
         # transaction poisoned -- roll it back so the NEXT step doesn't cascade-fail.
         _safe_rollback(db)
@@ -2636,8 +2637,8 @@ def warm_cache(db: Session) -> dict:
         rollup_serve.refresh(db)
         map_serve.refresh(db)  # D4 map serve (auto-on with duckdb, P1.11); no-op when off
         db.commit()  # PR-D / W1: release the transaction between steps (see above)
-    except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
-        _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background accelerator must never break a pass
+        log_failure(_LOG, "rollup serve refresh failed during warm_cache", exc, level=logging.WARNING)
         _safe_rollback(db)  # PR-D / W1 fix-forward: never cascade a poisoned session
 
     # Background-refresh the POLLED alert strip (field test 2026-07-08, Item 8): the
@@ -2651,8 +2652,8 @@ def warm_cache(db: Session) -> dict:
 
         poll_cache.refresh(db)
         db.commit()  # PR-D / W1: release the transaction between steps (see above)
-    except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
-        _LOG.warning("alert poll-cache refresh failed during warm_cache", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background accelerator must never break a pass
+        log_failure(_LOG, "alert poll-cache refresh failed during warm_cache", exc, level=logging.WARNING)
         _safe_rollback(db)  # PR-D / W1 fix-forward: never cascade a poisoned session
 
     warmed: list[str] = []
@@ -2721,11 +2722,11 @@ def warm_cache(db: Session) -> dict:
                 _read_cache.set(key, out)
                 warmed.append(key)
         except StatementTimeout as exc:
-            _LOG.warning("insights cache warm stopped for %s: %s", key, exc)
+            log_failure(_LOG, f"insights cache warm stopped for {key}", exc, level=logging.WARNING)
             _safe_rollback(db)
             continue
-        except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to a pass
-            _LOG.warning("insights cache warm failed for %s", key, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - warming is best-effort, never fatal to a pass
+            log_failure(_LOG, f"insights cache warm failed for {key}", exc, level=logging.WARNING)
             continue
         # PR-D / W1: release the transaction compute()'s DB reads opened before the
         # next spec starts — otherwise the WHOLE specs loop (one shared `db` session,
@@ -2736,8 +2737,8 @@ def warm_cache(db: Session) -> dict:
         # unit test) must never undo the warmed value already recorded.
         try:
             db.commit()
-        except Exception:  # noqa: BLE001 - a commit failure must not break warming
-            _LOG.warning("warm_cache: commit after warming %s failed", key, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a commit failure must not break warming
+            log_failure(_LOG, f"warm_cache: commit after warming {key} failed", exc, level=logging.WARNING)
             # PR-D / W1 fix-forward: without this, a poisoned session would make
             # EVERY remaining spec in this loop fail too (PendingRollbackError),
             # each misreported as its own independent warming failure.

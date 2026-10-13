@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from src.database.models import WikiPage, WikiRevision
+from src.monitoring.secret_scrub import log_failure
 from src.wiki.flagging import flag_revision
 from src.wiki.mediawiki import diff_summary
 
@@ -95,8 +96,8 @@ def update_page(
                 cats = client.fetch_categories(page.wiki, page.title)
                 if cats:
                     page.wiki_categories = json.dumps(cats[:50], ensure_ascii=False)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("category fetch failed for %s", page.title, exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, f"category fetch failed for {page.title}", exc, level=logging.WARNING)
         page.last_checked_at = now
         session.commit()
         return {"page": page.title, "new": 0, "flagged": 0, "baseline": True}
@@ -116,8 +117,8 @@ def update_page(
             texts_by_revid = client.fetch_revision_texts(
                 page.wiki, [r["revid"] for r in new]
             )
-        except Exception:  # noqa: BLE001 - text enrichment must not drop revisions
-            _LOG.warning("revision-text fetch failed for %s", page.title, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - text enrichment must not drop revisions
+            log_failure(_LOG, f"revision-text fetch failed for {page.title}", exc, level=logging.WARNING)
 
     stored = flagged = 0
     for r in new:
@@ -136,17 +137,15 @@ def update_page(
                 diff_text = diff_summary(d.get("added", ""), d.get("removed", ""))
                 if delta is None:
                     delta = d.get("added_bytes", 0) - d.get("removed_bytes", 0)
-            except Exception:  # noqa: BLE001 - a missing diff must not drop the revision
-                _LOG.warning("compare failed for %s rev %s", page.title, r["revid"], exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a missing diff must not drop the revision
+                log_failure(_LOG, f"compare failed for {page.title} rev {r['revid']}", exc, level=logging.WARNING)
 
         ores_d = ores_g = ores_prov = None
         if ores_client:
             try:
                 sc = ores_client.score(page.wiki, [r["revid"]]).get(r["revid"])
-            except Exception:  # noqa: BLE001 - ORES is optional and MUST fail-open (it's often down/deprecated)
-                _LOG.warning(
-                    "ORES scoring failed for %s rev %s", page.title, r["revid"], exc_info=True
-                )
+            except Exception as exc:  # noqa: BLE001 - ORES is optional and MUST fail-open (it's often down/deprecated)
+                log_failure(_LOG, f"ORES scoring failed for {page.title} rev {r['revid']}", exc, level=logging.WARNING)
                 sc = None
             if sc:
                 ores_d, ores_g, ores_prov = (
@@ -205,8 +204,8 @@ def update_page(
                 if cur.get("revid") and cur.get("text"):
                     page.latest_text = cur["text"]
                     page.latest_text_revid = cur["revid"]
-            except Exception:  # noqa: BLE001 - latest-text refresh must not drop the revisions
-                _LOG.warning("latest-text refresh failed for %s", page.title, exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - latest-text refresh must not drop the revisions
+                log_failure(_LOG, f"latest-text refresh failed for {page.title}", exc, level=logging.WARNING)
 
     page.last_checked_at = now
     session.commit()
@@ -240,10 +239,10 @@ def track_watched(
                     from src.wiki.corpus import sync_page_to_corpus
 
                     sync_page_to_corpus(session, page)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
                     session.rollback()
-                    _LOG.warning("corpus sync failed for %s", page.title, exc_info=True)
-        except Exception:  # noqa: BLE001 - one bad page must not abort the batch
+                    log_failure(_LOG, f"corpus sync failed for {page.title}", exc, level=logging.WARNING)
+        except Exception as exc:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
-            _LOG.warning("wiki tracking failed for %s:%s", page.wiki, page.title, exc_info=True)
+            log_failure(_LOG, f"wiki tracking failed for {page.wiki}:{page.title}", exc, level=logging.WARNING)
     return {"pages": pages_done, "new_revisions": total_new, "flagged": total_flagged}

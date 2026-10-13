@@ -46,6 +46,8 @@ import logging
 import os
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 STATE_FILENAME = "collect_capacity.json"
@@ -442,7 +444,7 @@ def concurrency_report(w_max: int, state_path: Path | None = None) -> dict:
         if capped < configured:
             floor_cap, floor_reason = capped, verdict.get("reason")
     except Exception as exc:  # noqa: BLE001 - a panel reading never breaks a poll
-        _LOG.debug("collect capacity: machine-floor cap unreadable: %s", exc)
+        log_failure(_LOG, "collect capacity: machine-floor cap unreadable", exc, level=logging.DEBUG)
         out["floor_read"] = False
     ceiling = out.get("ramp_capped_at") or configured
     out.update(

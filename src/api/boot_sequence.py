@@ -46,6 +46,8 @@ import threading
 import time
 from collections.abc import Callable
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # Seconds after which a step is worth a warning in the error log: long enough that the warm-up
@@ -249,8 +251,8 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
         state = "done"
     except _Skipped as skipped:
         state = skipped.state
-    except Exception:  # noqa: BLE001 - a start-up step must never take the others down
-        _LOG.warning("boot step %s failed; the next step still runs", name, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a start-up step must never take the others down
+        log_failure(_LOG, f"boot step {name} failed; the next step still runs", exc, level=logging.WARNING)
     finally:
         slow.cancel()
         took = time.monotonic() - mono

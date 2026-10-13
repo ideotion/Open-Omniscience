@@ -1356,9 +1356,11 @@ def test_the_boot_block_is_exercised_and_never_raises(monkeypatch, caplog) -> No
     def boom():
         raise RuntimeError("store locked")
 
+    from src.monitoring.secret_scrub import log_failure
+
     monkeypatch.setattr(qi, "auto_repair_inversions", boom)
     with caplog.at_level(logging.INFO, logger="test.boot"):
-        exec(compile(block, "<boot-block>", "exec"), {"logger": log})   # must not raise
+        exec(compile(block, "<boot-block>", "exec"), {"logger": log, "logging": logging, "log_failure": log_failure})   # must not raise
     assert any("could not reconcile" in r.getMessage() for r in caplog.records)
 
     caplog.clear()

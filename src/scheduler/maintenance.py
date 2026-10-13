@@ -28,6 +28,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("scheduler.maintenance")
 
 
@@ -67,8 +69,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
         from src.backup.merge import prune_pre_restore_snapshots_by_age
 
         out["pre_restore_snapshot_sweep"] = {"removed": prune_pre_restore_snapshots_by_age()}
-    except Exception:  # noqa: BLE001 - a background safety net must never break
-        _LOG.warning("off-peak pre-restore snapshot sweep failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background safety net must never break
+        log_failure(_LOG, "off-peak pre-restore snapshot sweep failed", exc, level=logging.WARNING)
         out["pre_restore_snapshot_sweep"] = {"skipped": "error"}
     # ...and the ORPHANED STAGING dirs beside them, for the same reason. The janitor
     # (cleanup_stale_staging) runs at BOOT only, so on a long-lived instance -- which is
@@ -86,8 +88,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
         from src.backup.artifact import cleanup_stale_staging
 
         out["stale_staging_sweep"] = {"removed": cleanup_stale_staging()}
-    except Exception:  # noqa: BLE001 - a background safety net must never break
-        _LOG.warning("off-peak stale-staging sweep failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background safety net must never break
+        log_failure(_LOG, "off-peak stale-staging sweep failed", exc, level=logging.WARNING)
         out["stale_staging_sweep"] = {"skipped": "error"}
     from src.database.session import session_scope
 
@@ -100,8 +102,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
 
             try:
                 out["reconcile"] = maybe_reconcile_counters(session)
-            except Exception:  # noqa: BLE001 - a background safety net must never break
-                _LOG.warning("off-peak counter reconcile failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a background safety net must never break
+                log_failure(_LOG, "off-peak counter reconcile failed", exc, level=logging.WARNING)
                 out["reconcile"] = {"skipped": "error"}
             # S6: the per-source article counter (cheap whole-table GROUP BY; keeps
             # source_io/sources + the reader off a live per-source COUNT).
@@ -109,8 +111,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
                 from src.analytics.store import reconcile_source_counters
 
                 out["source_counters"] = reconcile_source_counters(session)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("off-peak source counter reconcile failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak source counter reconcile failed", exc, level=logging.WARNING)
                 out["source_counters"] = {"skipped": "error"}
             # 2026-07-26 hardware diagnostics W2: refresh the /api/database/countries
             # in-memory rollup (mirrors source_counters above -- sources are few, a
@@ -121,8 +123,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
 
                 source_country_rollup.refresh(session)
                 out["country_rollup"] = {"refreshed": True}
-            except Exception:  # noqa: BLE001
-                _LOG.warning("off-peak country rollup refresh failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak country rollup refresh failed", exc, level=logging.WARNING)
                 out["country_rollup"] = {"skipped": "error"}
             # D3 (2026-09-11): the /api/insights/source-types rollup, on the same
             # off-peak cadence -- but unlike country_rollup above, its own refresh()
@@ -132,16 +134,16 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
                 from src.analytics import source_type_rollup
 
                 out["source_type_rollup"] = source_type_rollup.refresh(session)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("off-peak source-type rollup refresh failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak source-type rollup refresh failed", exc, level=logging.WARNING)
                 out["source_type_rollup"] = {"skipped": "error"}
             if stop():
                 out["cleanup"] = {"skipped": "stopping"}
                 return out
             try:
                 out["cleanup"] = maybe_cleanup_keywords(session)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("off-peak keyword cleanup failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak keyword cleanup failed", exc, level=logging.WARNING)
                 out["cleanup"] = {"skipped": "error"}
             if stop():
                 out["incremental_vacuum"] = {"skipped": "stopping"}
@@ -154,8 +156,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
                 from src.database.session import engine as _engine
 
                 out["incremental_vacuum"] = maybe_incremental_vacuum(_engine)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak incremental vacuum failed", exc, level=logging.WARNING)
                 out["incremental_vacuum"] = {"skipped": "error"}
             if stop():
                 out["stat_snapshot"] = {"skipped": "stopping"}
@@ -168,8 +170,8 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
                 from src.database.snapshots import maybe_snapshot_library_stats
 
                 out["stat_snapshot"] = maybe_snapshot_library_stats(session)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("off-peak stat snapshot failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak stat snapshot failed", exc, level=logging.WARNING)
                 out["stat_snapshot"] = {"skipped": "error"}
             # 2026-08-12 unattended-run ask: refresh the expedition digest right AFTER
             # the snapshot it reads back from, so the operator's copy-paste log is
@@ -182,11 +184,11 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
                 if (expedition.digest() or {}).get("armed"):
                     expedition.refresh(session)
                     out["expedition"] = {"refreshed": True}
-            except Exception:  # noqa: BLE001 - a log must never break the run it describes
-                _LOG.warning("expedition refresh failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a log must never break the run it describes
+                log_failure(_LOG, "expedition refresh failed", exc, level=logging.WARNING)
                 out["expedition"] = {"skipped": "error"}
-    except Exception:  # noqa: BLE001 - even opening the session must never break the loop
-        _LOG.warning("off-peak maintenance could not open a session", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - even opening the session must never break the loop
+        log_failure(_LOG, "off-peak maintenance could not open a session", exc, level=logging.WARNING)
         return {"skipped": "error"}
     if not stop():
         # After the session above has closed: the recompute takes its own short transaction per
@@ -228,8 +230,8 @@ def run_cleanup_continuation(*, should_stop: Callable[[], bool] | None = None) -
             from src.analytics.store import maybe_cleanup_keywords
 
             out["cleanup"] = maybe_cleanup_keywords(session)
-    except Exception:  # noqa: BLE001 - even opening the session must never break the loop
-        _LOG.warning("keyword cleanup continuation failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - even opening the session must never break the loop
+        log_failure(_LOG, "keyword cleanup continuation failed", exc, level=logging.WARNING)
         return {"skipped": "error"}
     if not stop():
         out["stoplist_recompute"] = _stoplist_recompute(stop)

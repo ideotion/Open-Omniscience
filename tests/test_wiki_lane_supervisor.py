@@ -256,7 +256,7 @@ def test_the_status_says_the_lane_is_degraded_and_what_the_ceiling_protects():
     assert status["retry_ceiling_s"] == FAILING_RETRY_CEILING_S
     assert "sit idle" in status["retry_ceiling_protects"]
     assert "writer" in status["retry_ceiling_protects"]
-    assert "busy" in (status["last_error"] or "")
+    assert status["last_error"] == "RuntimeError"
 
 
 def test_a_success_clears_the_degraded_state():

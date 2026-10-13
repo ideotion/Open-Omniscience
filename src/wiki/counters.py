@@ -37,6 +37,8 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("wiki.counters")
 
 #: The window the operator's run is read over. 7 days, so a ≥ 72 h run fits inside
@@ -432,7 +434,7 @@ def run_clock_or_absent(lane: Any, **kwargs: Any) -> dict[str, Any]:
     try:
         return run_clock(lane, **kwargs)
     except Exception as exc:  # noqa: BLE001 - a read degrades, never raises
-        _LOG.warning("the lane run clock could not be read", exc_info=True)
+        log_failure(_LOG, "the lane run clock could not be read", exc, level=logging.WARNING)
         return {
             "measured": False,
             "reason": f"the run clock could not be read: {type(exc).__name__}",

@@ -91,74 +91,6 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/api/backup_v2.py": {
-  "count": 5,
-  "owner": "rc-sweep"
- },
- "src/api/boot_sequence.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/governments.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/insights.py": {
-  "count": 8,
-  "owner": "rc-sweep"
- },
- "src/api/keyword_management.py": {
-  "count": 9,
-  "owner": "rc-sweep"
- },
- "src/api/law.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/api/living.py": {
-  "count": 9,
-  "owner": "rc-sweep"
- },
- "src/api/main.py": {
-  "count": 43,
-  "owner": "rc-sweep"
- },
- "src/api/scheduler.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/api/search_omni.py": {
-  "count": 5,
-  "owner": "rc-sweep"
- },
- "src/api/served_cache.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/source_management.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/system.py": {
-  "count": 6,
-  "owner": "rc-sweep"
- },
- "src/api/unlock.py": {
-  "count": 6,
-  "owner": "rc-sweep"
- },
- "src/api/wiki.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/wiki_lane.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/wiki_lane_search.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
  "src/awareness/emotion.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -411,46 +343,6 @@
   "count": 1,
   "owner": "rc-sweep"
  },
- "src/scheduler/capacity.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/scheduler/hygiene.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
- "src/scheduler/maintenance.py": {
-  "count": 12,
-  "owner": "rc-sweep"
- },
- "src/scheduler/memguard.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/scheduler/offline_maintenance.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/scheduler/pass_journal.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/scheduler/plan_cache.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/scheduler/runlog.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/scheduler/runner.py": {
-  "count": 27,
-  "owner": "rc-sweep"
- },
- "src/scheduler/storage_guard.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
  "src/services/article_intelligence.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -483,67 +375,11 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/versioned/pipeline.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
  "src/versioned/store.py": {
   "count": 1,
   "owner": "rc-sweep"
  },
  "src/weather/openmeteo.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/wiki/corpus.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/wiki/counters.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/wiki/dump_index.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/wiki/dumpread.py": {
-  "count": 3,
-  "owner": "rc-sweep"
- },
- "src/wiki/dumps.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/wiki/lane_search.py": {
-  "count": 9,
-  "owner": "rc-sweep"
- },
- "src/wiki/ores.py": {
-  "count": 3,
-  "owner": "rc-sweep"
- },
- "src/wiki/runner.py": {
-  "count": 27,
-  "owner": "rc-sweep"
- },
- "src/wiki/service.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
- "src/wiki/stream.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/wiki/track.py": {
-  "count": 7,
-  "owner": "rc-sweep"
- },
- "src/wiki/walk.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/wiki/warm.py": {
   "count": 1,
   "owner": "rc-sweep"
  }

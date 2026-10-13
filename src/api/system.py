@@ -29,6 +29,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.monitoring.activity import activity_monitor
+from src.monitoring.secret_scrub import log_failure
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 _LOG = logging.getLogger(__name__)
@@ -147,8 +148,8 @@ def system_vitals() -> dict:
         from src.monitoring.chronology import for_vitals
 
         out["session"] = for_vitals()
-    except Exception:  # noqa: BLE001 - the vitals never fail on a ledger read
-        _LOG.debug("vitals: chronology summary unavailable", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the vitals never fail on a ledger read
+        log_failure(_LOG, "vitals: chronology summary unavailable", exc, level=logging.DEBUG)
     return out
 
 
@@ -248,10 +249,8 @@ def set_network_mode(payload: dict) -> dict:
                 scheduler.start()  # idempotent: no-op if already running
             else:
                 scheduler.stop()  # idempotent: no-op if not running
-        except Exception:  # noqa: BLE001 - a scheduler hiccup must never fail the toggle
-            _LOG.warning(
-                "network toggle: scheduler %s failed", "start" if online else "stop", exc_info=True
-            )
+        except Exception as exc:  # noqa: BLE001 - a scheduler hiccup must never fail the toggle
+            log_failure(_LOG, f"network toggle: scheduler {'start' if online else 'stop'} failed", exc, level=logging.WARNING)
         # THE WIKIPEDIA LANE RIDES THE SAME SEAM (S04-09, Q702's NOTE). Its default is
         # ON, which is a statement about what happens when the operator goes online --
         # never a reason to go online for them. So it starts HERE, behind the same one
@@ -268,18 +267,16 @@ def set_network_mode(payload: dict) -> dict:
                 start_wiki_lane()
             else:
                 stop_wiki_lane()
-        except Exception:  # noqa: BLE001 - see above
-            _LOG.warning(
-                "network toggle: wiki lane %s failed", "start" if online else "stop", exc_info=True
-            )
+        except Exception as exc:  # noqa: BLE001 - see above
+            log_failure(_LOG, f"network toggle: wiki lane {'start' if online else 'stop'} failed", exc, level=logging.WARNING)
     # The chronology (2026-09-18): every online/offline crossing is a timeline event,
     # recorded by the seam that does it. Best-effort; the ledger never fails a toggle.
     try:
         from src.monitoring.session_history import record_event
 
         record_event("network", online=not kill_switch_active())
-    except Exception:  # noqa: BLE001
-        _LOG.debug("session ledger: network event failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "session ledger: network event failed", exc, level=logging.DEBUG)
     return {"online": not kill_switch_active()}
 
 
@@ -386,8 +383,8 @@ def unattended_start(payload: dict | None = None) -> dict:
             damage.retry_for_collection_start("the unattended start")  # the operator trying again
             get_scheduler().start()
             collecting = get_scheduler().is_running()
-        except Exception:  # noqa: BLE001 - a scheduler hiccup must not lose the arming
-            _LOG.warning("unattended start: scheduler start failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a scheduler hiccup must not lose the arming
+            log_failure(_LOG, "unattended start: scheduler start failed", exc, level=logging.WARNING)
             collecting = False
 
     # 3. The measured safety decision, then the backlog drain.
@@ -408,7 +405,7 @@ def unattended_start(payload: dict | None = None) -> dict:
         except RuntimeError:
             qualification = {"started": False, "reason": "already running"}
         except Exception as exc:  # noqa: BLE001 - never lose the arming over the drain
-            _LOG.warning("unattended start: bulk qualification failed to start", exc_info=True)
+            log_failure(_LOG, "unattended start: bulk qualification failed to start", exc, level=logging.WARNING)
             qualification = {"started": False, "reason": f"could not start: {type(exc).__name__}"}
 
     state = expedition.arm(

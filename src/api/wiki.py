@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import WikiPage, WikiRevision
 from src.database.session import get_db
+from src.monitoring.secret_scrub import log_failure
 from src.wiki.client import WikiClient
 from src.wiki.ores import OresClient
 
@@ -231,8 +232,8 @@ def _pin_to_hot(wiki: str, title: str, page_id: int | None) -> dict:
             "reason": "lane_absent",
             "detail": "the Wikipedia lane has not been started on this machine yet",
         }
-    except Exception:  # noqa: BLE001 - a watched page must still be added
-        _LOG.warning("could not pin %s to the HOT tier", external_id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a watched page must still be added
+        log_failure(_LOG, f"could not pin {external_id} to the HOT tier", exc, level=logging.WARNING)
         return {
             "ok": False,
             "reason": "pin_failed",
