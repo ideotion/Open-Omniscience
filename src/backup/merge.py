@@ -7045,11 +7045,18 @@ def import_reindex_commit_batch() -> int:
 #: are the first sample past its 60 s threshold, not the lengths). Ten seconds is what a person waits for a save to land before
 #: they try it again. The question is asked between articles, so a hold is the target plus the article in flight plus the commit,
 #: and it is a ceiling on the wait, not a rate target: wherever batches finish under it and nobody queues, the drain keeps the wide
-#: width. Where a writer queues OFTEN (a continuous one the idle test does not see, the Wikipedia drain), the queued-writer rule
-#: commits at the next article each time and the idle drain degrades toward one commit per article: slower, never wrong (the gate is
-#: first in first out and a grant always stages one article). ``OO_REINDEX_HOLD_TARGET_S`` overrides; 0 is the count-only rule this
-#: replaced.
+#: width. A writer that is queued ends the batch sooner, once it has held the gate for ``REINDEX_QUEUED_WRITER_MIN_HOLD_S``; the
+#: gate is first in first out and a grant always stages one article, so both sides make progress. ``OO_REINDEX_HOLD_TARGET_S``
+#: overrides; 0 is the count-only rule this replaced.
 REINDEX_HOLD_TARGET_S = 10.0
+
+#: The least a batch holds the gate before a QUEUED WRITER may end it. It protects the drain's apply cost under a writer that is
+#: always queued and that the idle test does not see (the Wikipedia drain): without it every article that finds someone waiting
+#: commits alone, and a commit is about 0.1 s on the measured machine, so width 10 already cost 17 to 39 % more apply time and one
+#: commit per article would cost far more. A second is long enough to batch tens of articles at the measured 27 articles/s (a few
+#: at the field's 5.5) and short enough that a person's save waits about a second, not ten. The age target above is not affected:
+#: a batch that has held the gate for the target commits whatever the queue says.
+REINDEX_QUEUED_WRITER_MIN_HOLD_S = 1.0
 
 
 def reindex_hold_target_s() -> float:
@@ -7071,9 +7078,10 @@ def reindex_hold_target_s() -> float:
 def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float], bool] | None:
     """The drain's early-commit policy for :func:`~src.analytics.store.reindex_articles`' ``should_flush``.
 
-    A batch commits at the next article after it has held the gate for ``target_s`` seconds OR another writer is queued behind it,
-    whichever comes first; ``commit_batch`` stays the ceiling on its size. The question is only asked of a batch holding at least
-    one article, so the floor is one article and a pass always makes progress however slow a single article is.
+    A batch commits at the next article after it has held the gate for ``target_s`` seconds, OR once it has held it for at least
+    :data:`REINDEX_QUEUED_WRITER_MIN_HOLD_S` and another writer is queued behind it, whichever comes first; ``commit_batch`` stays
+    the ceiling on its size. The question is only asked of a batch holding at least one article, so the floor is one article and a
+    pass always makes progress however slow a single article is.
 
     ``None`` when the target is 0 (the operator's way back to the count-only rule): the caller then passes no policy at all."""
     target = reindex_hold_target_s() if target_s is None else target_s
@@ -7082,7 +7090,9 @@ def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float]
     from src.database.writer import write_gate_waiters
 
     def _should_flush(staged: int, held_s: float) -> bool:
-        return held_s >= target or write_gate_waiters() > 0
+        if held_s >= target:
+            return True
+        return held_s >= REINDEX_QUEUED_WRITER_MIN_HOLD_S and write_gate_waiters() > 0
 
     return _should_flush
 

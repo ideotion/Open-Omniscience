@@ -116,9 +116,24 @@ def test_the_policy_ends_a_batch_on_age_or_on_a_queued_writer_and_on_neither_alo
     assert policy(5, 10.0) is True, "the target is reached"
     assert policy(1, 600.0) is True, "far past it"
     queued["n"] = 1
-    assert policy(1, 0.0) is True, "a writer is queued: let it in at the next article, however young the batch"
+    assert policy(1, 1.0) is True, "a writer is queued and the batch has held the gate for the minimum: let it in at the next article"
+    assert policy(1, 5.0) is True
     queued["n"] = 0
-    assert policy(1, 0.0) is False, "and once nobody waits, back to age alone"
+    assert policy(1, 5.0) is False, "and once nobody waits, back to age alone"
+
+
+def test_a_queued_writer_cannot_end_a_batch_younger_than_the_minimum_hold(monkeypatch):
+    """The bound that keeps a writer that is ALWAYS queued (the Wikipedia drain) from turning the drain into a commit per article."""
+    monkeypatch.setattr("src.database.writer.write_gate_waiters", lambda: 3)
+    assert merge_mod.REINDEX_QUEUED_WRITER_MIN_HOLD_S == 1.0
+    policy = merge_mod.reindex_flush_policy(10.0)
+    assert policy is not None
+    assert policy(1, 0.0) is False, "an article was just staged: the gate is hardly held"
+    assert policy(7, 0.999) is False, "seven articles, still under the minimum"
+    assert policy(1, 1.0) is True, "the minimum reached with a writer waiting"
+    # the minimum is for the QUEUE rule only; the age target stands alone, so a target under a second still commits at the target
+    short = merge_mod.reindex_flush_policy(0.5)
+    assert short is not None and short(1, 0.5) is True
 
 
 # --------------------------------------------------------------------------- #
@@ -245,6 +260,21 @@ def test_the_width_stays_the_ceiling_when_the_policy_would_wait_longer(corpus, f
     _, stats = _run(db, ids, commit_batch=2, should_flush=lambda staged, held_s: held_s >= 1000.0)
     assert stats["batch_commits"] == 4, "2 + 2 + 2 + 1: a policy can end a batch earlier, never later"
     assert stats["early_batch_commits"] == 0
+
+
+def test_a_writer_that_is_always_queued_batches_the_drain_by_the_minimum_hold_not_one_article_a_commit(corpus, fake_clock, monkeypatch):
+    """The pass with the real policy and a writer that never goes away: without the minimum this is seven commits for seven articles."""
+    db, ids = corpus
+    monkeypatch.setattr("src.database.writer.write_gate_waiters", lambda: 1)
+    monkeypatch.setattr(merge_mod, "REINDEX_QUEUED_WRITER_MIN_HOLD_S", 12.0)  # the clock moves 5 s an article: 3 articles reach it
+    policy = merge_mod.reindex_flush_policy(1000.0)
+
+    out, stats = _run(db, ids, commit_batch=100, should_flush=policy)
+
+    assert out == {"reindexed": 7, "failed": 0}
+    assert stats["batch_commits"] == 3, "3 + 3 + 1, not 1 x 7"
+    assert stats["early_batch_commits"] == 2
+    assert stats["longest_batch_s"] == 15.0
 
 
 def test_a_policy_that_raises_is_dropped_once_and_the_pass_finishes_at_the_width(corpus, fake_clock, caplog):
