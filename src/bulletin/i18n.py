@@ -48,6 +48,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text
+
 #: Where a catalog lives. One flat JSON object per locale: English → translation.
 CATALOG_DIR = Path(__file__).resolve().parents[2] / "configs" / "bulletin_i18n"
 
@@ -235,7 +237,8 @@ class Translator:
         try:
             return frame.format_map(_Missing(values))
         except (IndexError, ValueError) as exc:  # a malformed frame, e.g. a lone "{"
-            self._rejected.setdefault(template, f"{type(exc).__name__}: {exc}")
+            # The words of a format error in a template this app ships ("Single '}' encountered"): kept, through the one scrub.
+            self._rejected.setdefault(template, exception_text(exc, limit=300))
             self._unresolved.setdefault(template, None)
             return template
 

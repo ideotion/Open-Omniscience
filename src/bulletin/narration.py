@@ -35,6 +35,8 @@ import logging
 import re
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 NARRATION_PROMPT_VERSION = "bulletin-narration-v1"
@@ -168,12 +170,12 @@ def narrate_story(
         )
         raw = (getattr(result, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001 - a model failure degrades to the template
-        _LOG.warning("bulletin: narration call failed", exc_info=True)
+        log_failure(_LOG, "bulletin: narration call failed", exc, level=logging.WARNING)
         return {
             **base,
             "text": deterministic_paragraph(story),
             "narrated": False,
-            "fallback_reason": f"the model call failed: {type(exc).__name__}: {exc}",
+            "fallback_reason": f"the model call failed ({type(exc).__name__})",
             "sentences": [],
         }
 
@@ -262,10 +264,8 @@ def narrate(
             backend_name, client = get_client_with_name(backend=backend)
             model = model or active_model()
         except Exception as exc:  # noqa: BLE001 - no backend is a degrade, not a failure
-            _LOG.warning("bulletin: no LLM backend for narration", exc_info=True)
-            return _all_deterministic(
-                stories, f"no local model is available: {type(exc).__name__}: {exc}"
-            )
+            log_failure(_LOG, "bulletin: no LLM backend for narration", exc, level=logging.WARNING)
+            return _all_deterministic(stories, f"no local model is available ({type(exc).__name__})")
     else:
         backend_name = backend or "injected"
         model = model or "injected"
@@ -276,14 +276,14 @@ def narrate(
         try:
             ev = evidence_of(story)
         except Exception as exc:  # noqa: BLE001
-            _LOG.warning("bulletin: evidence unavailable for a story", exc_info=True)
+            log_failure(_LOG, "bulletin: evidence unavailable for a story", exc, level=logging.WARNING)
             paragraphs.append(
                 {
                     "article_ids": list(story.get("article_ids") or []),
                     "grounded_in_article_ids": [],  # nothing was shown to a model
                     "text": deterministic_paragraph(story),
                     "narrated": False,
-                    "fallback_reason": f"evidence unavailable: {exc}",
+                    "fallback_reason": f"evidence unavailable ({type(exc).__name__})",
                     "sentences": [],
                 }
             )

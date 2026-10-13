@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any
 
 from src.jobs import progress_state as _progress_state
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("bulletin.narration_job")
 
@@ -331,7 +332,8 @@ def run_bulletin_narration_job(
             backend_name = str(resolved_backend)
             model_name = str(params.get("model") or active_model())
         except Exception as exc:  # noqa: BLE001 - no backend at all is a refusal, not a crash
-            reason = f"no local model is available: {type(exc).__name__}: {exc}"
+            log_failure(_LOG, "bulletin: no local model for the narration job", exc, level=logging.WARNING)
+            reason = f"no local model is available ({type(exc).__name__})"
             ctx.set_progress(detail=reason)
             return {
                 "state": "refused",
@@ -440,7 +442,7 @@ def run_bulletin_narration_job(
                     language=run_language,
                 )
         except Exception as exc:  # noqa: BLE001 - an evidence read can fail too
-            _LOG.warning("bulletin: narration unit %s failed", cursor, exc_info=True)
+            log_failure(_LOG, f"bulletin: narration unit {cursor} failed", exc, level=logging.WARNING)
             block = {
                 "article_ids": list((stories[cursor].get("article_ids") or []))
                 if unit_key != _INTRO_UNIT
@@ -448,9 +450,9 @@ def run_bulletin_narration_job(
                 "grounded_in_article_ids": [],
                 "text": deterministic_paragraph(stories[cursor])
                 if unit_key != _INTRO_UNIT
-                else deterministic_block(edition, str(exc))["text"],
+                else deterministic_block(edition, f"evidence unavailable ({type(exc).__name__})")["text"],
                 "narrated": False,
-                "fallback_reason": f"evidence unavailable: {type(exc).__name__}: {exc}",
+                "fallback_reason": f"evidence unavailable ({type(exc).__name__})",
                 "sentences": [],
             }
 

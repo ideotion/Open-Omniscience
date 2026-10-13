@@ -205,8 +205,8 @@ def test_a_probe_that_raises_degrades_instead_of_taking_the_surface_down(monkeyp
     out = bulletin_available()
     assert out["available"] is False
     assert out["narration_available"] is False
-    assert "probe exploded" in out["reason"], "a probe failure must never read as a pass"
-    assert "probe exploded" in out["narration_reason"]
+    assert "the hardware capability probe failed (RuntimeError)" in out["reason"], "a probe failure must never read as a pass"
+    assert "the hardware capability probe failed (RuntimeError)" in out["narration_reason"]
 
 
 def test_an_unreadable_probe_reports_unmeasured_never_below_the_bar(monkeypatch):

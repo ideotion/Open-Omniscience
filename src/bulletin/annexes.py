@@ -43,6 +43,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from src.bulletin.i18n import Translator
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -885,13 +886,13 @@ def build_annexes(
     if ids:
         try:
             analyses = article_analyses(session, ids)
-        except Exception:  # noqa: BLE001 - the bundle survives a missing analysis layer
-            _LOG.warning("bulletin: annex analyses unreadable", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the bundle survives a missing analysis layer
+            log_failure(_LOG, "bulletin: annex analyses unreadable", exc, level=logging.WARNING)
         if full_text:
             try:
                 bodies = article_bodies(session, ids)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("bulletin: annex bodies unreadable", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "bulletin: annex bodies unreadable", exc, level=logging.WARNING)
 
     # The rows themselves come from the RECORD, which already holds every fact the
     # edition computed over them. Re-deriving them here would let the annex and the
@@ -978,11 +979,11 @@ def build_annexes(
             )
             written.append("WHAT-A-READER-CAN-SEE.md")
         except Exception as exc:  # noqa: BLE001 - never lose the bundle to its own note
-            _LOG.warning("bulletin: could not write the annex privacy note", exc_info=True)
+            log_failure(_LOG, "bulletin: could not write the annex privacy note", exc, level=logging.WARNING)
             zf.writestr(
                 f"{stem}/WHAT-A-READER-CAN-SEE.md",
                 "# What a reader of this file can see\n\n"
-                f"This list could not be computed: {type(exc).__name__}: {exc}.\n"
+                f"This list could not be computed ({type(exc).__name__}).\n"
                 "That is an unanswered question, not an all-clear.\n",
             )
             written.append("WHAT-A-READER-CAN-SEE.md")
@@ -995,11 +996,11 @@ def build_annexes(
             zf.writestr(f"{stem}/{CONCEPTS_FILENAME}", concepts_markdown(edition, tr=T))
             written.append(CONCEPTS_FILENAME)
         except Exception as exc:  # noqa: BLE001 - never lose the bundle to one member
-            _LOG.warning("bulletin: could not write the concepts annexe", exc_info=True)
+            log_failure(_LOG, "bulletin: could not write the concepts annexe", exc, level=logging.WARNING)
             zf.writestr(
                 f"{stem}/{CONCEPTS_FILENAME}",
                 f"# {CONCEPTS_TITLE}\n\n"
-                f"This table could not be computed: {type(exc).__name__}: {exc}.\n"
+                f"This table could not be computed ({type(exc).__name__}).\n"
                 "That is an unanswered question, not a statement that no concept "
                 "crossed languages.\n",
             )

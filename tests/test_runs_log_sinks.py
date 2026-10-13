@@ -541,7 +541,11 @@ _WITNESS_MODULES = (
 #: recorder's ``_reason`` is the exception's class and the operating system's own reason, never its message ("Never its message,
 #: which can name a path or carry text a user typed"), ``_note_error`` writes only that, and ``_debug_failure`` is ``log_failure`` behind a
 #: check that DEBUG is on (tested below).
-_EXTRA_SCRUBBING_CALLS = {"src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"}}
+_EXTRA_SCRUBBING_CALLS = {
+    "src/monitoring/vitals_history.py": {"_reason", "_note_error", "_debug_failure"},
+    # ``exception_text`` on the refusal's words, then the run's own state dict (no exception text).
+    "src/api/bulletin.py": {"_scope_mismatch_detail"},
+}
 #: The bundle writer is read whole, like the witnesses, with its own two scrubbing helpers added: ``_all_diag_err_str`` is
 #: ``exception_text(limit=300)`` and ``_err_str`` its older spelling. What the guard still reports there is each LINE below, with the
 #: reason it stands. A line is allowed in the FUNCTION it stands in and as many times as the table counts: the same text copied into
@@ -692,18 +696,26 @@ def test_the_modules_of_the_crash_witnesses_log_no_traceback_and_print_no_caught
     assert _leaks(source, also_scrubbing=extra) == [], f"{rel}: {_leaks(source, also_scrubbing=extra)}"
 
 
-#: The bulletin's facts and sections and the card audit, which ride the diagnostics bundle: no log call asks for a traceback and no
-#: record carries a caught exception's words (``tests/test_bulletin_sink_sites.py`` drives each site with a held passphrase).
+#: Every module of the bulletin, its routes and the card audit, which ride the diagnostics bundle or answer the operator: no log call
+#: asks for a traceback and no record carries a caught exception's words (``tests/test_bulletin_sink_sites.py`` drives each site with a
+#: held passphrase). The bulletin directory is READ, not listed, so a module added to it is held to the rule from its first commit.
 _SWEEP_MODULES = (
     "src/briefing/card_audit.py",
-    "src/bulletin/facts.py",
-    "src/bulletin/sections.py",
+    "src/api/bulletin.py",
+    *sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src" / "bulletin").glob("*.py")),
 )
 
 
+def test_the_sweep_reads_the_whole_bulletin_directory():
+    names = {rel for rel in _SWEEP_MODULES if rel.startswith("src/bulletin/")}
+    assert {"src/bulletin/facts.py", "src/bulletin/sections.py", "src/bulletin/narration_job.py", "src/bulletin/gate.py"} <= names, names
+    assert {"src/api/bulletin.py", "src/briefing/card_audit.py"} <= set(_SWEEP_MODULES), "the routes and the card audit are read too"
+
+
 @pytest.mark.parametrize("rel", _SWEEP_MODULES)
-def test_the_bulletin_facts_and_sections_and_the_card_audit_log_no_traceback_and_keep_no_caught_exception_raw(rel):
-    found = _leaks((ROOT / rel).read_text(encoding="utf-8"))
+def test_the_bulletin_its_routes_and_the_card_audit_log_no_traceback_and_keep_no_caught_exception_raw(rel):
+    extra = _EXTRA_SCRUBBING_CALLS.get(rel, set())
+    found = _leaks((ROOT / rel).read_text(encoding="utf-8"), also_scrubbing=extra)
     assert found == [], f"{rel}: {found}"
 
 

@@ -203,50 +203,6 @@
   "count": 9,
   "owner": "rc-sweep"
  },
- "src/bulletin/annexes.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
- "src/bulletin/articles.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/bulletin/cards.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/bulletin/edition.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
- "src/bulletin/evidence.py": {
-  "count": 3,
-  "owner": "rc-sweep"
- },
- "src/bulletin/introduction.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/bulletin/narration.py": {
-  "count": 3,
-  "owner": "rc-sweep"
- },
- "src/bulletin/narration_job.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/bulletin/privacy.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/bulletin/store.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/bulletin/stories.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
  "src/catalog/cities.py": {
   "count": 1,
   "owner": "rc-sweep"
