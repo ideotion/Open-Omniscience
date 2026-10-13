@@ -368,18 +368,18 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         "своята", "септември", "спрямо", "сряда", "събота", "такова", "трима", "февруари", "четири",
         "чиито", "чиято", "щеше", "юли", "юни", "януари",
         # stoplist batch 5 (2026-10-13, R131, language group 4: id ms tl): function words, number words, month
-        # and weekday names and apostrophe debris the triage called noise twice, kept only where the log shows no
+        # and weekday names, "tomorrow" and apostrophe debris the triage called noise twice, kept only where the log shows no
         # other-language content sense; evidence in configs/stopwords_extra/PROVENANCE.md.
         "adakah", "agustus", "ahad", "alas-11", "alas-12", "alas-5", "alas-6", "alas-7", "alas-8", "alas-9",
         "anumang", "apabila", "apat", "ataupun", "bagaimanapun", "bahawa", "bawat", "beliau", "berapa",
         "berkata", "besok", "bilion", "biyernes", "boleh", "bukan", "comel'", "comel’", "dahil", "daripada",
-        "delapan", "empat", "enam", "guru'", "guru’", "habang", "halo'", "halo’", "hanggang", "hingga",
+        "delapan", "enam", "guru'", "guru’", "habang", "halo'", "halo’", "hanggang", "hingga",
         "hinggil", "iaitu", "ika-166", "ika-24", "ilang", "isang", "isnin", "julai", "juta", "kahit",
         "kalau", "kanilang", "kanyang", "kapag", "kaysa", "ke-10", "ke-11", "ke-12", "ke-14", "ke-15",
-        "ke-16", "ke-18", "ke-19", "ke-20", "ke-34", "ke-47", "ke-51", "ke-65", "ke-7", "ke-73", "ke-80",
-        "ke-81", "ke-90", "kelapan", "kemudian", "kepada", "kerana", "ketika", "lamang", "lantaran",
+        "ke-16", "ke-18", "ke-19", "ke-20", "ke-34", "ke-47", "ke-51", "ke-65", "ke-7", "ke-73",
+        "ke-90", "kelapan", "kemudian", "kepada", "kerana", "ketika", "lamang", "lantaran",
         "manakala", "maret", "memandangkan", "menerusi", "mengenai", "menurut", "mga", "miliar", "namun",
-        "nang", "ngunit", "nitong", "niya", "niyang", "noong", "ogos", "puluh", "ribu", "rm11", "rm23",
+        "ngunit", "nitong", "niya", "niyang", "noong", "ogos", "puluh", "ribu", "rm11", "rm23",
         "rm28", "rm32", "rm39", "rm400", "rm600", "rm610", "rp10", "rp100", "rp12", "rp15", "rp17", "rp18",
         "rp2", "rp22", "rp23", "rp231", "rp25", "rp3", "rp314", "rp5", "rp500", "rp56", "rp6", "rp62",
         "rp7", "sahaja", "samantala", "sebelum", "sebuah", "seeding'", "seeding’", "sehingga", "sejak",
