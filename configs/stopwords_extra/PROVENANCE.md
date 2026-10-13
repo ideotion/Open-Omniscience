@@ -361,24 +361,27 @@ words above (none is a word of the app's shipped rings or a platform name; the t
 
 ## Stoplist batch 2: function words, number and month words, site chrome in ten languages (2026-10-13, R131, language group 1)
 
-313 words from the same triage (two blind reads of a language's high-confidence "noise" rows; every word passed the verdict gate with no `unstable` or `not_repeated`
-flag, and `scripts/stopword_batch.py` refused none of them): de 40, fr 43, es 7, it 16, pt 25, nl 56, sv 36, da 35, ca 44, nb 11. By the triage's codes: about 160 function
-words (`laut` excepted, below: `trotz`, `obwohl`, `malgré`, `lorsque`, `trods`, `waarin`), about 40 month and weekday names and 30 number words (`maand`, `dilluns`, `söndagen`, `dertien`), 25
-site chrome (`abo`, `anmelden`, `leestijd`, `klicka`, `prenumerant`), 25 stems glued to a suffix, and the rest apostrophe debris (`nu'`, `dell'`, `site'`). A word with an apostrophe
-is declared in the test beside its curly spelling, which the module adds on load.
+309 words from the same triage (two blind reads of a language's high-confidence "noise" rows; every word passed the verdict gate with no `unstable` or `not_repeated`
+flag, and `scripts/stopword_batch.py` refused none of them): de 40, fr 42, es 6, it 16, pt 24, nl 56, sv 36, da 35, ca 43, nb 11. By the triage's codes: 160 function
+words (`trotz`, `obwohl`, `malgré`, `lorsque`, `trods`, `waarin`), 38 calendar words (30 month and weekday names, `dilluns`, `söndagen`, `setembro`, and 8 generic time words: `monat`, `woche`,
+`mois`, `semaine`, `mese`, `maand`, `vecka`, `ahir`), 29 number words (`dertien`, `nueve`, `tausend`), 25 site chrome (`abo`, `anmelden`, `leestijd`, `klicka`, `prenumerant`), 21 `fr` rows
+(a stem glued to a suffix, or an apostrophe left on a word), 2 others, and 34 that a count by code could not place (all apostrophe debris whose spelling the tool normalises: `nu'`, `dell'`, `site'`). 46 words carry
+an apostrophe; each is declared in the test beside its curly spelling, which the module adds on load, and each hides only the debris token, never the bare word.
 
 The evidence is ONE log, `combine_logs.py` over the 79 shards of 09-30 (`log sha256 6467504ab8ab`; script and per-language tool output in
 `/mnt/project-files/keyword-session/t5-group1-2026-10-13/`), because the tool's `content_elsewhere` check can only see the rows it is given: one shard holds a language's top 5,000, so a
 combined log is the stronger cross-language test. It is still a sample, and a log row carries ONE language (the dominant one), so a word that is content in a language with no row of
 its own never shows there. The tool now prints, per word, the other languages whose articles the word was read in (`language_signature`), as evidence for the reader and a decision for
-no one (an English-tagged article quoting a French word is in that list too), and it refuses the four words of the standing ruling above (`sea` `tom` `fin` `laut`) with no override:
-before this batch it ACCEPTED `laut` (934 articles in German, and 71 Indonesian articles read it as "sea").
+no one (an English-tagged article quoting a French word is in that list too, and a Norwegian article under `no` or `nn` is listed beside `nb`), and it refuses the four words of the standing
+ruling above (`sea` `tom` `fin` `laut`) with no override: before this batch it ACCEPTED `laut` (934 articles in German, and 71 Indonesian articles read it as "sea").
 
-**Left out after reading each word's other languages (the words files in the pool folder omit them):** de `falls` (the English verb and noun), fr `moi` (a surname, 53 English-tagged
-articles), sv `borde` (Spanish "edge", 88 articles) and `medan` (the Indonesian city), ca `gener` (Swedish "genes"), `sis` (the SIS acronym) and `dues` (English "dues"); nl `results`,
-`readers`, `donating`, `femmes` (foreign words in the Dutch log: the `lng` group stays out by the batch 1 ruling); ca `instal`, `ligència`, `lacions`, `lícula` (a middle dot splitting
-`intel·ligència` and `pel·lícula`: the cause is upstream, and a stoplist word per fragment hides the symptom one spelling at a time).
+**Left out after reading each word's other languages (the words files in the pool folder omit them, and every language file was written by `--apply` from them):** de `falls` (the English
+verb and noun); fr `moi` (a surname, 53 English-tagged articles) and `durant` (Kevin Durant); es `diez` (a surname); pt `maio` (Luigi Di Maio); ca `hagi` (Gheorghe and Ianis Hagi, in Romanian
+articles), `gener` (Swedish "genes"), `sis` (the SIS acronym) and `dues` (English "dues"); sv `borde` (Spanish "edge", 88 articles) and `medan` (the Indonesian city); nl `results`, `readers`,
+`donating`, `femmes` (foreign words in the Dutch log: the `lng` group stays out by the batch 1 ruling); ca `instal`, `ligència`, `lacions`, `lícula` (a middle dot splitting
+`intel·ligència` and `pel·lícula`: the cause is upstream, and a stoplist word per fragment hides the symptom one spelling at a time). The names matter beyond the keyword itself: a stopword also
+drops every phrase that contains it, so `hagi` would take "gheorghe hagi" with it. Read and KEPT, as the stronger case for noise: `mil` (a Scandinavian mile, but also the top number word
+of es), `fut`, `vore`, `abo`.
 
-**What a reader of the lists will see change.** The 39 month and weekday names and 30 number words are no longer keywords in any language; `hos` and `samt` style words that two Nordic
-languages share are hidden in both, which is where they are function words (a Norwegian article reading `hos` loses it too). Hiding is retroactive with no re-index (`hidden_set()` unions the list at query time); extraction also drops
-them from now on.
+**What a reader of the lists will see change.** The 30 month and weekday names and 29 number words are no longer keywords in any language; words two Nordic languages share (`hos`, `samt`) are
+hidden in both, which is where they are function words. Hiding is retroactive with no re-index (`hidden_set()` unions the list at query time); extraction also drops them from now on.

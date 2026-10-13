@@ -123,9 +123,11 @@ def test_a_standing_cross_language_refusal_has_no_override(ctx):
 
 
 def test_the_standing_refusals_are_the_four_the_provenance_file_records():
+    import re
+
     text = (ROOT / "configs" / "stopwords_extra" / "PROVENANCE.md").read_text("utf-8")
     heading = next(ln for ln in text.splitlines() if ln.startswith("### The four standing cross-language refusals"))
-    assert all(f"`{w}`" in heading for w in sb.STANDING_REFUSALS)
+    assert set(re.findall(r"`([^`]+)`", heading)) == set(sb.STANDING_REFUSALS)  # equal sets, both directions
     assert len(sb.STANDING_REFUSALS) == 4
 
 

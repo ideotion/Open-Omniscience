@@ -119,7 +119,6 @@ stopwords:
   # batch es-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5)
   - ciento
   - cuya
-  - diez
   - mil
   - millón
   - nueve
