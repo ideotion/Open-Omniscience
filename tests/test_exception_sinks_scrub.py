@@ -55,7 +55,8 @@ def test_the_fatal_exception_is_written_without_the_passphrase(trace):
         ee.note_fatal_exception(exc)
     text = trace.read_text(encoding="utf-8")
     assert PASS not in text and PASS.replace("'", "''") not in text
-    assert text.startswith("Uncaught exception ended the server at ") and f"RuntimeError: near 'PRAGMA key = ''{S.REDACTED}''" in text
+    assert text.startswith("Uncaught exception ended the server at ") and "RuntimeError: near 'PRAGMA key = " in text
+    assert S.REDACTED in text
 
 
 def test_the_fatal_exception_is_scrubbed_before_it_is_cut(trace):
@@ -91,7 +92,7 @@ def test_a_fatal_exception_that_cannot_be_checked_writes_its_class_and_none_of_i
     except RuntimeError as exc:
         ee.note_fatal_exception(exc)
     text = trace.read_text(encoding="utf-8")
-    assert "RuntimeError: its text is withheld" in text and PASS not in text
+    assert "RuntimeError: <text withheld" in text and PASS not in text
 
 
 # --------------------------------------------------------------------------- #

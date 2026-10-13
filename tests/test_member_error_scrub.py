@@ -6,14 +6,16 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 A member that fails writes the engine's own words into ``<name>.error.txt``, into the manifest's
 ``error`` and (for a deadline abort) into ``<name>.skipped-deadline.txt``, and those words can carry
 the statement the engine failed on. Nothing builds a statement from the passphrase today; these tests
-pin the net beneath that, at the one place the text is made (``_all_diag_err_str``):
+pin the net beneath that, at the one place the text is made (``_all_diag_err_str``, which is
+``secret_scrub.exception_text`` with the class named by the caller and the cut to 300 characters last):
 
   * the passphrase the process holds is gone from every place a member's error text enters the zip;
   * the cut to 300 characters happens AFTER the scrub, so a passphrase that straddles the cut is not
     left half-visible (a scrub of the cut text could not see it);
   * the environment's copy is scrubbed too, because an unlock that came by the API and a scripted
     start hold it in different places;
-  * a scrub that cannot run withholds the text instead of keeping it (fail closed);
+  * a scrub that cannot run withholds the text instead of keeping it (fail closed), and an exception with a
+    ``UnicodeError`` anywhere in its chain is written as fixed words (its message names a character);
   * an install with no passphrase loses nothing;
   * the passphrase is taken out in every FORM the code and its drivers write it in, not only as typed:
     ``PRAGMA key`` and ``ATTACH ... KEY`` carry it with its single quotes doubled, SQLAlchemy's
@@ -38,6 +40,7 @@ from fastapi import HTTPException
 
 from src.api.diagnostics import bundle as _bundle
 from src.database import connect as _connect
+from src.monitoring import secret_scrub as _scrub
 
 SECRET = "correct horse battery staple 42"
 
@@ -105,17 +108,13 @@ def test_the_cut_comes_after_the_scrub_so_a_passphrase_across_the_cut_is_not_lef
 
 
 def test_a_scrub_that_cannot_run_withholds_the_text_instead_of_keeping_it(monkeypatch):
-    import src.monitoring.secret_scrub as scrub
-
+    """What the process holds cannot be read: no part of the text can be ruled out as the key, so the member
+    says what failed (the class) and none of its words."""
     monkeypatch.setattr(_connect, "_passphrase", SECRET)
-
-    def _fails(text, needle):
-        raise RuntimeError("scrub broke")
-
-    monkeypatch.setattr(scrub, "scrub_text", _fails)
+    monkeypatch.setattr(_scrub, "held_passphrases", lambda: None)
     out = _bundle._all_diag_err_str(RuntimeError(f"context {SECRET}"))
-    assert SECRET not in out and "withheld" in out and "RuntimeError" in out
-    assert "could not be made free of the passphrase" in out, "true when the scrub could not run, and when a form was left"
+    assert SECRET not in out and "context" not in out
+    assert out == "RuntimeError: its text is withheld"
 
 
 def test_an_install_with_no_passphrase_keeps_its_error_text_whole():
@@ -129,7 +128,58 @@ def test_an_exception_that_cannot_render_still_yields_a_marker(monkeypatch):
         def __str__(self):
             raise ValueError("no")
 
-    assert _bundle._all_diag_err_str(Unrenderable()) == "<Unrenderable: unrenderable>"
+    assert _bundle._all_diag_err_str(Unrenderable()) == "Unrenderable: its text is withheld"
+
+
+def test_an_exception_with_a_unicode_error_in_its_chain_is_written_as_fixed_words(monkeypatch):
+    """A ``UnicodeError``'s message names a character and its offset, a piece of a key that no scrub of the text can
+    know: the member carries the class and fixed words, whether the error is the exception or its cause."""
+    monkeypatch.setattr(_connect, "_passphrase", SECRET)
+    bad = UnicodeEncodeError("ascii", "caf\u00e9 " + SECRET, 3, 4, "ordinal not in range(128)")
+    assert "\\xe9" in str(bad) and "position 3" in str(bad), "the message names the character and its offset"
+    direct = _bundle._all_diag_err_str(bad)
+    assert _scrub.UNICODE_WITHHELD in direct and "xe9" not in direct and "position" not in direct
+    try:
+        try:
+            raise bad
+        except UnicodeError as cause:
+            raise RuntimeError("could not write the key") from cause
+    except RuntimeError as chained:
+        out = _bundle._all_diag_err_str(chained)
+    assert _scrub.UNICODE_WITHHELD in out and "could not write the key" not in out and "xe9" not in out
+
+
+def test_the_class_is_named_by_the_caller_and_the_cut_is_the_documented_one(monkeypatch):
+    """``typed=False``: the callers write ``Type: <this>`` themselves, so the text must not start with the class."""
+    out = _bundle._all_diag_err_str(RuntimeError("no such table: foo"))
+    assert out == "no such table: foo"
+    assert len(_bundle._all_diag_err_str(RuntimeError("z" * 1000))) == _bundle._ERR_STR_CHARS == 300
+
+
+def test_a_caller_that_does_not_name_the_class_gets_it_once_even_for_a_unicode_error(monkeypatch):
+    """``typed=True`` is ``Type: text``; a ``UnicodeError`` and a ``__str__`` that raises already carry their class in the text
+    they are written as, so a caller that wrote ``f"{type(exc).__name__}: {text}"`` named the class twice
+    ("UnicodeEncodeError: UnicodeEncodeError: ...")."""
+    monkeypatch.setattr(_connect, "_passphrase", SECRET)
+    bad = UnicodeEncodeError("ascii", "caf\u00e9", 3, 4, "ordinal not in range(128)")
+    assert _bundle._all_diag_err_str(bad, typed=True) == f"UnicodeEncodeError: {_scrub.UNICODE_WITHHELD}"
+    assert _bundle._all_diag_err_str(RuntimeError("no such table: foo"), typed=True) == "RuntimeError: no such table: foo"
+
+    class Unrenderable(Exception):
+        def __str__(self):
+            raise ValueError("no")
+
+    assert _bundle._all_diag_err_str(Unrenderable(), typed=True) == "Unrenderable: its text is withheld"
+
+
+def test_no_place_in_the_bundle_names_the_class_in_front_of_a_text_that_names_it():
+    """Every caller that wants the class asks for it (``typed=True``); the f-string that put it in front of the untyped text is
+    how the class came to be written twice for a ``UnicodeError``."""
+    from pathlib import Path
+
+    source = Path(_bundle.__file__).read_text(encoding="utf-8")
+    assert "{type(exc).__name__}: {_all_diag_err_str(" not in source
+    assert source.count("_all_diag_err_str(exc, typed=True)") >= 6, "the six sites that name the class ask for it"
 
 
 # --------------------------------------------------------------------------- #
@@ -224,39 +274,21 @@ def test_an_empty_environment_value_is_ignored_not_replaced_between_every_charac
     assert _bundle._all_diag_err_str(RuntimeError("no such table: foo")) == "no such table: foo"
 
 
-def test_a_form_that_a_marker_rebuilds_withholds_the_text(monkeypatch):
-    """The scrub is checked once more over every form: if a replacement left one in (the helper is
-    forced to), the text is withheld, never kept."""
-    import src.monitoring.secret_scrub as scrub
-
-    monkeypatch.setattr(_connect, "_passphrase", SECRET)
-    monkeypatch.setattr(scrub, "scrub_text", lambda text, needle: text)  # removes nothing
-    out = _bundle._all_diag_err_str(RuntimeError(f"context {SECRET}"))
-    assert SECRET not in out and "withheld" in out
-    assert "could not be made free of the passphrase" in out, "a form that was found again is not 'could not be checked'"
-
-
 def test_the_forms_are_listed_without_duplicates_or_empties_and_a_plain_key_has_one():
-    forms = _bundle._passphrase_forms("it's")
-    assert len(forms) == len(set(forms)) and "" not in forms
-    assert {"it's", "it''s", "it\\'s", "it\\'\\'s"} <= set(forms), "raw, doubled, and each as repr writes it with both quote kinds in the text"
-    assert _bundle._passphrase_forms("plain") == ["plain"], "a passphrase with nothing to escape has one form"
-    assert _bundle._passphrase_forms("") == []
+    shapes = _scrub._shapes("it's")
+    assert len(shapes) == len(set(shapes)) and "" not in shapes
+    assert {"it's", "it''s", "it\\'s", "it\\'\\'s"} <= set(shapes), "raw, doubled, and each as repr writes it with both quote kinds in the text"
+    assert _scrub._shapes("plain") == ("plain",), "a passphrase with nothing to escape has one form"
+    assert _scrub._shapes("") == ()
 
 
-def test_every_form_is_scrubbed_longest_first_over_both_secrets(monkeypatch):
-    """One ordering for the held passphrase and the environment's: a form that is a piece of another
-    must not go first, or it leaves the other's tail behind."""
-    import src.monitoring.secret_scrub as scrub
-
-    seen: list[str] = []
-    real = scrub.scrub_text
-    monkeypatch.setattr(scrub, "scrub_text", lambda text, needle: seen.append(needle) or real(text, needle))
+def test_the_two_secrets_are_taken_out_in_one_read_so_a_piece_of_the_other_leaves_no_tail(monkeypatch):
+    """A held passphrase that is a piece of the environment's: the text is read once and every stretch that is part of
+    an occurrence of either goes, so nothing of the longer one is left behind (the held one is not taken out first)."""
     monkeypatch.setattr(_connect, "_passphrase", "it's")
     monkeypatch.setenv("OO_DB_PASSPHRASE", "it's 2")
-    assert _bundle._without_the_passphrase("nothing here") == "nothing here"
-    lengths = [len(n) for n in seen]
-    assert len(seen) > 8 and lengths == sorted(lengths, reverse=True), seen
+    out = _bundle._all_diag_err_str(RuntimeError("held it's and environment it's 2 end"))
+    assert out == "held ***redacted*** and environment ***redacted*** end"
 
 
 #: The carriers an engine's words pass through before they reach a record: the exception's own text, its
@@ -345,12 +377,12 @@ def test_the_key_is_taken_out_through_every_carrier_that_holds_both_kinds_of_quo
         f"near '{doubled}': syntax error [SQL: PRAGMA key = '{doubled}'] raw {secret} "
         "and a \"quoted\" word and it's here"
     )
-    if levels <= _bundle._PASSPHRASE_CARRIER_DEPTH - 1:
+    if levels <= _scrub.CARRIER_DEPTH - 1:
         # a parameter list is itself a ``repr`` over the key: it counts as one level, so the deepest
         # carrier cannot also carry it without being a fourth (which is not claimed)
         text += f" [parameters: {(secret,)!r}] [parameters: {(doubled,)!r}]"
-    out = _bundle._without_the_passphrase(wrap(text))
-    assert out is not None, "the scrub ran: the text is changed, not withheld"
+    out = _scrub.scrubbed(wrap(text))
+    assert out != _scrub.UNREADABLE_TEXT, "the scrub ran: the text is changed, not withheld"
     decoded = unwrap(out)
     assert "syntax error" in decoded, "the text itself is kept"
     for form in _forms_of(secret):
@@ -360,18 +392,18 @@ def test_the_key_is_taken_out_through_every_carrier_that_holds_both_kinds_of_quo
 def test_the_carriers_the_net_covers_include_the_deepest_one_the_tests_build():
     """The deepest carrier above has as many levels as the net applies carriers, so a third level is
     tested and a fourth is not claimed."""
-    assert max(levels for _w, _u, levels in CARRIERS.values()) == _bundle._PASSPHRASE_CARRIER_DEPTH
+    assert max(levels for _w, _u, levels in CARRIERS.values()) == _scrub.CARRIER_DEPTH
 
 
 def test_one_secret_writes_the_json_not_as_ascii_form_unlike_every_other_so_deleting_that_carrier_shows():
     """A net with the JSON-not-as-ASCII carrier deleted leaves this form of ``DIFFERENT`` in the text,
     and the oracle above finds it: the tests can tell the carriers apart, which they could not while every
     secret wrote that form the way another carrier does (the mutation the coordinator's check ran)."""
-    forms = set(_bundle._passphrase_forms(DIFFERENT))
+    forms = set(_scrub._shapes(DIFFERENT))
     for text in (DIFFERENT, _connect._sql_literal_escape(DIFFERENT)):
         assert json.dumps(text, ensure_ascii=False)[1:-1] in forms
         assert json.dumps(text, ensure_ascii=False)[1:-1] not in {
-            repr(text)[1:-1], json.dumps(text)[1:-1], _bundle._python_inner(text), text,
+            repr(text)[1:-1], json.dumps(text)[1:-1], _scrub._python_inner(text), text,
         }, "this form differs from every other, so no other carrier writes it for the net"
 
 

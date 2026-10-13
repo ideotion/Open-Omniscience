@@ -540,6 +540,15 @@ def _short_path(filename: str) -> str:
     f = filename.replace("\\", "/")
     if f.startswith(_APP_SRC + "/"):
         return "src/" + f[len(_APP_SRC) + 1:]
+    if f.startswith(("<home>/", "<data>/")):
+        # A path the crash-trace scrub has already named (the person's folder is ``<home>``): the app's own
+        # code under it is recognised by its real directory named the same way, so a checkout inside the
+        # home folder (a developer's clone, a CI runner's) still reads ``src/...``.
+        from src.monitoring.diagnostics_runs import tokenise_paths
+
+        named = tokenise_paths(_APP_SRC)
+        if named != _APP_SRC and f.startswith(named + "/"):
+            return "src/" + f[len(named) + 1:]
     for marker in ("/site-packages/", "/dist-packages/"):
         if marker in f:
             return f.rsplit(marker, 1)[1]

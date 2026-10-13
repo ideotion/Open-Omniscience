@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -35,6 +36,9 @@ from src.database.models import Article, Keyword, Source
 from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring import diagnostics_runs as _diag_runs
+from src.monitoring.secret_scrub import exception_text as _exception_text
+from src.monitoring.secret_scrub import log_failure
 from src.utils.export_envelope import app_version, envelope
 
 from ._base import _LOG, _MAX_KEYWORDS_PER_LANG, api_dir, package_source, router
@@ -205,6 +209,11 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
         internal deadline), so they can never hang the bundle and never leave a stray
         progress handler on the connection for the next member."""
         if not threaded:
+            # A section before this one may have met a damaged page, whether it raised or caught its own error and
+            # went on: the shared session is then rolled back before this one reads, so every DB section starts on a
+            # connection that works (see ``_roll_back_a_failed_read``). Every DB read of this function goes through
+            # here, so this is the one place it is needed.
+            _roll_back_a_failed_read(db)
             try:
                 return thunk()
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
@@ -783,7 +792,7 @@ def ram_declined_reason(
                 need = float(got)
             estimated = True
         except Exception as exc:  # noqa: BLE001 - a count that cannot be read falls back to the measured constant
-            estimate_error = f"{type(exc).__name__}: {_all_diag_err_str(exc)[:160]}"
+            estimate_error = _all_diag_err_str(exc, typed=True)[:160]
             # The scrubbed text, not the traceback: an engine's words can carry the statement it
             # failed on, and the log's tail rides the same zip.
             _LOG.debug("need estimate for %s failed; using the measured constant (%s)", name, estimate_error)
@@ -1023,6 +1032,8 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # over days, the shape of a climb that no per-tick series of five minutes can show. A
         # LAZY import inside the function, so the route slice registers at its pinned position.
         ("vitals.json", lambda: _vitals_history_member()),
+        # 2026-10-06 (R119): which runs began, how each ended, and which files were sent.
+        ("runs.json", lambda: _runs_member()),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
         # The 0.4 release acceptance run's last report (2026-09-18; read-only, never runs
@@ -1397,6 +1408,39 @@ def _release_read_between_members(db) -> str:
         return "declined"
 
 
+def _roll_back_a_failed_read(db) -> bool:
+    """Roll ``db`` back when a read on it met a damaged page of an encrypted store and the session cannot be used until
+    it is; say whether it did. Never raises.
+
+    WHY. A statement that reads a page failing its check leaves the SQLCipher connection answering an empty ``MemoryError``
+    to everything after it, so the damage observer (``src/database/damage.py``) invalidates that ONE connection: it is closed, the
+    session that was reading on it keeps a transaction on a connection that is gone, and EVERY later statement of that session
+    raises ``PendingRollbackError`` until it is rolled back (``tests/test_poisoned_connection.py``). The debug bundle runs its
+    DB sections one after the other on ONE shared snapshot session, and a section that catches its own error and goes on
+    (``_read_schema_rev`` does) hands the next section the same dead transaction, so a single damaged page would turn every
+    section after it into ``PendingRollbackError`` and the bundle would say nothing about the healthy tables, the very place the
+    operator needs it to look.
+
+    WHAT. The session is asked whether the connection under its transaction was invalidated (``Connection.invalidated``: a
+    public attribute, set exactly when the pool discarded it), and only then rolled back: a rollback ends the READ transaction
+    and the next statement opens a new one, which for the snapshot session is a snapshot of a LATER moment, so a member that
+    failed for another reason (a Python error, a statement deadline) leaves the snapshot it had. A session that holds no
+    transaction, or whose connection is healthy, is left alone. The rollback loses nothing: these sessions only read."""
+    try:
+        if db is None or not db.in_transaction():
+            return False
+        try:
+            invalidated = bool(db.connection().invalidated)
+        except Exception:  # noqa: BLE001 - a connection that cannot even be asked about is not one to keep using
+            invalidated = True
+        if not invalidated:
+            return False
+        db.rollback()
+        return True
+    except Exception:  # noqa: BLE001 - the bundle is the evidence channel; a recovery never costs it
+        return False
+
+
 _ALL_DIAG_DEADLINE_SENTINEL = object()
 
 
@@ -1428,106 +1472,25 @@ def _run_nondb_member_bounded(fn, budget_s: float):
     return box.get("value")
 
 
-def _python_inner(text: str) -> str:
-    """``text`` as ``repr`` writes it between single quotes: the backslash doubled, the controls escaped,
-    and each apostrophe as a backslash and an apostrophe.
-
-    ``repr`` picks its quote by what the text holds (double quotes when there is an apostrophe and no
-    double quote, and then the apostrophes are plain), so the same key reads two ways depending on the
-    text around it: a carrier that is itself repr'd (an exception's ``repr``, the ``str`` of a
-    multi-argument exception, a dict or a list holding the message) writes a text that holds BOTH kinds
-    of quote single-quoted, with every apostrophe escaped. ``repr`` of the key alone shows the plain form,
-    which is the raw string or the quote-doubled one; this is the other."""
-    return repr(text + "'\"")[1:-4]  # both kinds present: single-quoted, the apostrophes escaped
+#: A member's error text as the envelope, the marker files and the manifest carry it, cut AFTER the scrub. What
+#: it protects: the type and the first sentences of the engine's text say what failed, and the manifest and
+#: the ``.error.txt`` markers stay a few hundred bytes a member over the 76 members of a build.
+_ERR_STR_CHARS = 300
 
 
-#: How many times the carriers are applied to the passphrase's two bases. What it protects: the text this
-#: code makes passes through at most two carriers (an engine's words held in an exception's arguments, which
-#: the exception's ``repr``, a dict or a JSON body then carries again), and a third is one more than anything
-#: found; the cost of the margin is at most 170 forms for one passphrase, each a substring scan of a text of a
-#: few hundred characters to a few KB. A fourth level is not covered.
-_PASSPHRASE_CARRIER_DEPTH = 3
-
-
-def _passphrase_forms(secret: str) -> list[str]:
-    """Every form ``secret`` is written in where this code or its drivers put it into text.
-
-    TWO BASES: the raw string, and the string with its single quotes doubled, which is how
-    ``PRAGMA key`` and ``ATTACH ... KEY`` carry it (``src/database/connect.py``:
-    ``_sql_literal_escape``) and so how an engine's "near ..." text and SQLAlchemy's ``[SQL: ...]``
-    show it. FOUR CARRIERS of a base: Python's ``repr`` as it writes the key alone (apostrophes
-    plain, controls as ``\\x07``), ``repr`` with the apostrophes escaped (what ``[parameters: ...]`` and
-    an exception's ``repr`` show when the text around the key holds both kinds of quote), and the
-    two inner forms JSON writes it in (escaped ASCII or not). The carriers are applied up to THREE
-    times (``_PASSPHRASE_CARRIER_DEPTH``): the text this code makes passes through two at most, an
-    engine's words held in an exception's arguments (one carrier) which the exception's ``repr``, a
-    dict or a JSON body then carries again (the second), and the third is the margin. A passphrase
-    with no quote, no backslash, no control and no character outside ASCII has one form. Four deep
-    is not covered, and none was found that makes one."""
-
-    def carried(text: str) -> list[str]:
-        return [
-            repr(text)[1:-1], _python_inner(text),
-            json.dumps(text)[1:-1], json.dumps(text, ensure_ascii=False)[1:-1],
-        ]
-
-    layer = [secret, secret.replace("'", "''")]
-    forms = list(layer)
-    for _ in range(_PASSPHRASE_CARRIER_DEPTH):
-        layer = [form for text in layer for form in carried(text)]
-        forms += layer
-    return list(dict.fromkeys(f for f in forms if f))
-
-
-def _without_the_passphrase(text: str) -> str | None:
-    """``text`` with the database passphrase this process holds, and the one in its environment, taken
-    out in every form :func:`_passphrase_forms` lists; ``None`` when that could not be done (the caller
-    then withholds the text rather than keeping it).
-
-    WHERE IT RUNS: a member's error text enters the bundle here (``.error.txt``, the manifest's
-    ``error``, ``.skipped-deadline.txt``, a ``reason``, the debug bundle's section errors, the gate's
-    ``estimate_error``, the chronology's ``error``), and the engine's own words can carry the
-    statement it failed on (SQLAlchemy puts ``[SQL: ...]`` and ``[parameters: ...]`` in an exception's
-    text, SQLite quotes the token it stopped at). No member builds a statement from the passphrase
-    today, and the key is applied through the driver, not through SQLAlchemy; this is the net beneath
-    that, at the place the text is made. THE LONGEST FORM GOES FIRST: a held passphrase that is a
-    piece of the environment's (``pass`` and ``pass2``) would otherwise leave the tail of the longer
-    one behind, and the result is checked once more for every form, so a marker that rebuilt one out
-    of the text beside it withholds the text instead of keeping it.
-
-    WHAT IT DOES NOT CATCH: an exact match of the forms above only. A key that was re-encoded, split
-    over two lines, or written in some other form by a statement added later is not recognised, so
-    this is a net and not a guarantee; the guarantee is that nothing builds such a statement. An
-    install with no passphrase has nothing to scrub."""
-    try:
-        from src.database.connect import get_passphrase
-        from src.monitoring.secret_scrub import env_secret, scrub_text
-
-        secrets = dict.fromkeys(filter(None, (get_passphrase(), env_secret("OO_DB_PASSPHRASE"))))
-        needles = sorted({form for secret in secrets for form in _passphrase_forms(secret)}, key=lambda f: (-len(f), f))
-        for needle in needles:
-            text = scrub_text(text, needle)
-        if any(needle in text for needle in needles):
-            return None
-    except Exception:  # noqa: BLE001 - failing CLOSED: the caller withholds what it could not scrub
-        return None
-    return text
-
-
-def _all_diag_err_str(exc: Exception) -> str:
+def _all_diag_err_str(exc: BaseException, *, typed: bool = False) -> str:
     """Render a member's exception for the envelope/error-file -- even a broken ``__str__``
     must still yield a marker (S8 lesson: a failed member must never be silently lost).
 
-    The passphrase is taken out of the WHOLE text and the text is cut afterwards: a cut that fell
-    inside the passphrase would leave the part it kept, which a scrub of the cut text cannot see."""
-    try:
-        text = str(exc)
-    except Exception:  # noqa: BLE001
-        return f"<{type(exc).__name__}: unrenderable>"
-    clean = _without_the_passphrase(text)
-    if clean is None:
-        return f"<{type(exc).__name__}: text withheld, it could not be made free of the passphrase>"
-    return clean[:300]
+    Written by ``secret_scrub.exception_text``, the one call every handler of this program writes a caught
+    exception through: the passphrases the process holds are taken out of the WHOLE text and the text is cut
+    afterwards (a cut that fell inside the passphrase would leave the part it kept, which a scrub of the cut
+    text cannot see); an exception with a ``UnicodeError`` anywhere in its chain is the class and fixed words
+    (its message names a character and its offset); a text that cannot be checked, or whose ``__str__`` raises,
+    is the class and none of its words. A caller that does not name the class itself passes ``typed=True`` (``Name: text``): a
+    ``UnicodeError``'s fixed words and a ``__str__`` that raises already carry their class in either form, so prefixing the
+    class again in the caller would write it twice."""
+    return _exception_text(exc, typed=typed, limit=_ERR_STR_CHARS)
 
 
 # RATCHET (2026-07-17) + RUNTIME COVERAGE (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the
@@ -1583,6 +1546,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/wiki-lane-history": "wiki-lane-history.json",  # 2026-10-06: the lane's own hourly history
     "/soak-window": "soak-window.json",  # S4 (2026-09-07): the multi-day soak reading
     "/vitals-history": "vitals.json",  # 2026-10-06 (R119): memory, drive, database and logs over days
+    "/runs": "runs.json",  # 2026-10-06 (R119): the runs and the files served
     "/write-gate": "write-gate.json",  # S2.6 (2026-09-02): who holds the gate / a connection
     "/stall-forensics": "stall-forensics.json",
     "/slow-queries": "slow-queries.json",
@@ -1733,6 +1697,11 @@ def _wiki_lane_history_member() -> dict:
     return lane_history()
 
 
+def _runs_member() -> dict:
+    """The all-diagnostics runs and the files served as a bundle member (read-only; never raises)."""
+    return _diag_runs.diagnostics_member()
+
+
 def _vitals_history_member() -> dict:
     """The vitals history as a bundle member (read-only; never raises; held to its budget)."""
     from src.monitoring.vitals_history import diagnostics_member
@@ -1744,11 +1713,12 @@ def _chronology_member() -> dict:
     """The install's chronology as a bundle member (read-only): the session ledger's
     sessions, gaps and suspends, the release run's phases and stretches, the summary."""
     try:
-        from src.monitoring.chronology import chronology
+        from src.monitoring.chronology import bounded_for_member, chronology
 
-        return chronology(anchor="run")
+        # The member is held to its own bound (the route, ``/chronology``, returns the whole ledger).
+        return bounded_for_member(chronology(anchor="run"))
     except Exception as exc:  # noqa: BLE001 - a member that fails says so, never blanks
-        return {"available": False, "error": f"{type(exc).__name__}: {_all_diag_err_str(exc)}"[:300]}
+        return {"available": False, "error": _all_diag_err_str(exc, typed=True)}
 
 
 def _release_run_last() -> dict:
@@ -2244,13 +2214,15 @@ def _write_all_diagnostics_zip(
                     journal_fp.flush()
                     with contextlib.suppress(OSError):
                         os.fsync(journal_fp.fileno())
-                except OSError:
+                except OSError as journal_err:
                     # The journal is a diagnostic aid, not the bundle itself -- a write
                     # failure (e.g. ENOSPC on the sidecar's disk) must degrade the run to
-                    # unjournaled rather than abort a hard-won hour-long bundle.
-                    _LOG.warning(
-                        "all-diagnostics journal write failed; disabling journal for the "
-                        "rest of this run", exc_info=True
+                    # unjournaled rather than abort a hard-won hour-long bundle. Logged through
+                    # the one scrub: this handler may run inside another failure's, which a
+                    # logged traceback would print through its context.
+                    log_failure(
+                        _LOG, "all-diagnostics journal write failed; disabling journal for the rest of this run",
+                        journal_err, level=logging.WARNING,
                     )
                     with contextlib.suppress(OSError):
                         journal_fp.close()
@@ -2423,10 +2395,10 @@ def _write_all_diagnostics_zip(
                     journal_fp.flush()
                     with contextlib.suppress(OSError):
                         os.fsync(journal_fp.fileno())
-                except OSError:
-                    _LOG.warning(
-                        "all-diagnostics journal write failed; disabling journal for the "
-                        "rest of this run", exc_info=True
+                except OSError as journal_err:
+                    log_failure(
+                        _LOG, "all-diagnostics journal write failed; disabling journal for the rest of this run",
+                        journal_err, level=logging.WARNING,
                     )
                     with contextlib.suppress(OSError):
                         journal_fp.close()
@@ -2441,7 +2413,7 @@ def _write_all_diagnostics_zip(
         try:
             previous_text, previous_block = _fold_previous_run_journals(previous_runs)
         except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
-            fold_error = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            fold_error = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
             # The scrubbed text, not the traceback: the log's tail rides the same zip, and an
             # engine's words can carry the statement it failed on.
             _LOG.warning("could not fold the previous runs' journals (%s)", fold_error)
@@ -2558,8 +2530,8 @@ def _bundle_exclusive_window():
         stack = contextlib.ExitStack()
         try:
             was_paused = stack.enter_context(exclusive_window())
-        except Exception:  # noqa: BLE001 - the bundle is the evidence channel; never lose it
-            _LOG.warning("all-diagnostics could not claim the machine", exc_info=True)
+        except Exception as err:  # noqa: BLE001 - the bundle is the evidence channel; never lose it
+            log_failure(_LOG, "all-diagnostics could not claim the machine", err, level=logging.WARNING)
             claim: dict[str, Any] = {"held": False, "reason": "could not claim the machine"}
         else:
             claim = {"held": True, "paused_collection": bool(was_paused), "nested": nested}
@@ -2644,7 +2616,7 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
         try:
             st = path.stat()
         except OSError as exc:
-            why = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            why = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
             not_carried.append({"journal": name, "reason": f"could not stat it: {why}"})
             continue
         if len(carried) >= _PREVIOUS_JOURNAL_MAX_RUNS:
@@ -2665,7 +2637,7 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
                     entry["truncated"] = True
                 raw = fp.read(_PREVIOUS_JOURNAL_MAX_BYTES)
         except OSError as exc:
-            entry["read_error"] = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+            entry["read_error"] = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
             carried.append(entry)
             continue
         if entry["truncated"]:
@@ -2785,6 +2757,38 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
 
 
 def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
+    """Build the all-diagnostics archive to a server-side file (D2), and record that it began
+    and how it ended in ``data/diagnostics/runs.jsonl`` (R119): a run that fails by an
+    exception or is killed left nothing that any later bundle carried, and the operator pressed
+    the button again without anyone knowing why. The record never raises and never fails the
+    run. A ``begin`` with no ``end`` from a process that is gone reads as killed."""
+    import time as _time
+
+    fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    started = _time.monotonic()
+    run = _diag_runs.begin_run(fname, profile=profile)
+    try:
+        result = _all_diagnostics_build(ctx, profile, fname)
+    except BaseException as exc:
+        # The failure's words enter a record that ships in the zip and answers GET /runs. ``exc_line`` writes
+        # them through ``secret_scrub.exception_text`` (the passphrase out of the whole text, fixed words for a
+        # ``UnicodeError``), UNCUT; the record then takes a key statement's literal and the person's folders out
+        # of the whole of the text and cuts it last, because a text cut here first could end inside the passphrase
+        # or the literal and leave a part that no later scrub can see.
+        _diag_runs.end_run(
+            run, outcome="failed", seconds=_time.monotonic() - started,
+            error=_diag_runs.exc_line(exc),
+        )
+        raise
+    _diag_runs.end_run(
+        run, outcome="cancelled" if result.get("cancelled") else "done",
+        seconds=_time.monotonic() - started, size=result.get("bytes"),
+        members=_diag_runs.summarise_members(result.get("members")),
+    )
+    return result
+
+
+def _all_diagnostics_build(ctx, profile: str, fname: str) -> dict:
     """Build the all-diagnostics archive to a server-side file (D2). Read-only; opens its own
     session so it never borrows the request's. Writes to a ``.part`` file and atomically
     renames on success, so a cancelled/failed run never leaves a half-written archive that
@@ -2795,7 +2799,6 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     from src.database.session import session_scope
 
     out_dir = _all_diagnostics_dir()
-    fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     final_path = out_dir / fname
     part_path = out_dir / (fname + ".part")
     # DURABLE JOURNAL sidecar (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): begin/end lines
@@ -2810,7 +2813,7 @@ def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     try:
         previous_runs = _read_previous_run_journals(out_dir, journal_path)
     except Exception as exc:  # noqa: BLE001 - the bundle is the evidence channel; a left-over file never costs it
-        read_error = _ascii_clip(f"{type(exc).__name__}: {_all_diag_err_str(exc)}", 160)
+        read_error = _ascii_clip(_all_diag_err_str(exc, typed=True), 160)
         # The scrubbed text, not the traceback (see the fold below).
         _LOG.warning("could not read the previous runs' journals (%s)", read_error)
         previous_runs = {"carried": [], "not_carried": [], "error": read_error}
@@ -2943,16 +2946,13 @@ def all_diagnostics_job_download() -> FileResponse:
     res = st.get("result") or {}
     path = res.get("path")
     if st.get("state") == "done" and path and os.path.exists(path):
-        return FileResponse(
-            path, media_type="application/zip",
-            filename=res.get("filename") or "oo-all-diagnostics.zip",
+        return _diag_runs.served_file_response(
+            path, res.get("filename") or "oo-all-diagnostics.zip"
         )
     if st.get("state") != "running":
         on_disk = _newest_all_diagnostics_archive()
         if on_disk is not None:
-            return FileResponse(
-                str(on_disk), media_type="application/zip", filename=on_disk.name,
-            )
+            return _diag_runs.served_file_response(str(on_disk), on_disk.name)
     raise HTTPException(
         status_code=404,
         detail="no all-diagnostics archive is ready — start one with POST /api/diagnostics/all-job",
@@ -3246,4 +3246,4 @@ def all_diagnostics_volume_download(name: str) -> FileResponse:
     path = out / name
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"{name!r} is missing from the volume set")
-    return FileResponse(str(path), media_type="application/zip", filename=name)
+    return _diag_runs.served_file_response(path, name)

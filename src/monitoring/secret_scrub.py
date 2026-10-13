@@ -371,6 +371,21 @@ def _forms_now(secrets: tuple[str | None, ...]) -> tuple[tuple[str, ...], tuple[
     )
 
 
+def held_shapes() -> tuple[str, ...] | None:
+    """Every shape (:func:`_shapes`) of every passphrase the process holds (:func:`held_passphrases`), WHATEVER THE SECRET'S LENGTH,
+    longest first; ``None`` when what the process holds could not be read (a caller that needs the shapes then fails closed).
+
+    WHO NEEDS IT: a reader of a log an OLDER writer made, which cut an exception's text from the FRONT before it took the secret
+    out, so a block can begin with the tail of a shape that no scrub of the whole shape sees (``diagnostics_runs.without_a_torn_start``).
+    It needs the shapes themselves, which :func:`scrubbed` never hands out. Built when asked and kept nowhere (the one cache entry,
+    :data:`_HELD_FORMS`, is the nets'), so :func:`forget_held` has nothing more to empty; the cost is the one the nets pay on a
+    cache miss, at most 518 strings per secret."""
+    held = held_passphrases()
+    if held is None:
+        return None
+    return tuple(sorted({form for secret in held for form in _shapes(secret)}, key=lambda f: (-len(f), f)))
+
+
 def _redact(text: str, forms: tuple[str, ...], marker: str) -> str:
     """``text`` with every stretch that is part of an occurrence of any of ``forms`` replaced by ``marker``: one marker for a
     run of occurrences that overlap or hold one another (``pass`` inside ``pass2``, two shapes of one secret). The text is

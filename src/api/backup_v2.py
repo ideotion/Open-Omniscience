@@ -1251,8 +1251,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         # (``rollup_serve._BACKSTOP_S`` and ``map_serve._BACKSTOP_S``, one hour each), which
         # rebuild regardless of the token. THAT HOLDS ONLY FOR THE IN-MEMORY SERVE: with the
         # persisted store active, ``_refresh_persisted_build`` merges only the tail while the
-        # epoch is unchanged, so a lost bump would be UNBOUNDED there. The persisted store is off today
-        # only because the httpfs pins in ``configs/external_artifacts.yml`` are blank
+        # epoch is unchanged, so a lost bump would be UNBOUNDED there. The persisted store is off
+        # today only because the httpfs pins in ``configs/external_artifacts.yml`` are blank
         # (``tests/test_reindex_drain_settings.py`` fails the day they are filled, pointing
         # here). A persisted "bump owed" marker is the fix that day, not before: it would add a
         # second place that says whether the corpus changed, which is the thing the epoch is.
