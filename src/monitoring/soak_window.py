@@ -42,6 +42,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import exception_text, log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # The bar the gate names. Reported as a property of the WINDOW ("is this window long
@@ -123,7 +125,7 @@ def _memory_budget() -> dict[str, Any]:
 
         return reading_vs_now()
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
-        _LOG.debug("memory-budget reading unavailable", exc_info=True)
+        log_failure(_LOG, "memory-budget reading unavailable", exc, level=logging.DEBUG)
         return {"error": type(exc).__name__}
 
 
@@ -154,10 +156,10 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
 
         state = memguard.memory_guard.state()
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
-        _LOG.debug("memory-guard state unavailable", exc_info=True)
+        log_failure(_LOG, "memory-guard state unavailable", exc, level=logging.DEBUG)
         return {
             "measured": False,
-            "reason": f"memory-guard state unavailable: {exc}",
+            "reason": f"memory-guard state unavailable: {exception_text(exc, typed=False)}",
             "allocator": allocator_setting(),
             "memory_budget": _memory_budget(),
         }
@@ -221,8 +223,8 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
 
         hist = metric_history(session, metric="wal_bytes", days=days)
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
-        _LOG.debug("wal_bytes history unavailable", exc_info=True)
-        return {"measured": False, "reason": f"wal_bytes history unavailable: {exc}"}
+        log_failure(_LOG, "wal_bytes history unavailable", exc, level=logging.DEBUG)
+        return {"measured": False, "reason": f"wal_bytes history unavailable: {exception_text(exc, typed=False)}"}
     if hist.get("error"):
         return {"measured": False, "reason": str(hist["error"])}
 
@@ -317,8 +319,8 @@ def _write_gate(window: dict[str, Any]) -> dict[str, Any]:
 
         stats = write_gate.stats()
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
-        _LOG.debug("write-gate stats unavailable", exc_info=True)
-        return {"measured": False, "reason": f"write-gate stats unavailable: {exc}"}
+        log_failure(_LOG, "write-gate stats unavailable", exc, level=logging.DEBUG)
+        return {"measured": False, "reason": f"write-gate stats unavailable: {exception_text(exc, typed=False)}"}
 
     out: dict[str, Any] = {
         "grants": stats.get("grants"),
@@ -371,8 +373,8 @@ def _db_stats_latency() -> dict[str, Any]:
         rows = summ.get("routes") or []
         dropped = int((summ.get("route_keyspace") or {}).get("dropped_requests") or 0)
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
-        _LOG.debug("latency summary unavailable", exc_info=True)
-        return {"measured": False, "reason": f"latency summary unavailable: {exc}"}
+        log_failure(_LOG, "latency summary unavailable", exc, level=logging.DEBUG)
+        return {"measured": False, "reason": f"latency summary unavailable: {exception_text(exc, typed=False)}"}
 
     row = next((r for r in rows if r.get("route") == _DB_STATS_ROUTE), None)
     base: dict[str, Any] = {
@@ -422,8 +424,8 @@ def _interrupted() -> dict[str, Any]:
 
         summ = _errsummary() or {}
     except Exception as exc:  # noqa: BLE001 - a diagnostic read degrades, never raises
-        _LOG.debug("error-log summary unavailable", exc_info=True)
-        return {"measured": False, "reason": f"error-log summary unavailable: {exc}"}
+        log_failure(_LOG, "error-log summary unavailable", exc, level=logging.DEBUG)
+        return {"measured": False, "reason": f"error-log summary unavailable: {exception_text(exc, typed=False)}"}
 
     records = summ.get("records")
     cap = summ.get("records_cap")
@@ -551,7 +553,7 @@ def _wiki_service() -> dict[str, Any]:
         status["online"] = not kill_switch_active()
         return status
     except Exception as exc:  # noqa: BLE001 - the service state is a reading, not the block's work
-        _LOG.debug("wiki lane service state unreadable", exc_info=True)
+        log_failure(_LOG, "wiki lane service state unreadable", exc, level=logging.DEBUG)
         return {"measured": False, "reason": f"unreadable: {type(exc).__name__}"}
 
 
@@ -566,10 +568,10 @@ def _block(name: str, fn: Any) -> dict[str, Any]:
     try:
         return fn()
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never 500s
-        _LOG.debug("soak-window block %s failed", name, exc_info=True)
+        log_failure(_LOG, f"soak-window block {name} failed", exc, level=logging.DEBUG)
         return {
             "measured": False,
-            "block_error": f"{type(exc).__name__}: {exc}",
+            "block_error": exception_text(exc),
             "reason": f"the {name} block could not be computed -- this is not a reading of zero",
         }
 

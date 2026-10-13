@@ -49,6 +49,7 @@ import logging
 from typing import Any
 
 from src.jobs.background import BackgroundJob, JobContext, register_job
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("monitoring.preflight_job")
 
@@ -146,6 +147,6 @@ def kick(fetcher: Any = None) -> dict | None:
         return PREFLIGHT_JOB.start(fetcher=fetcher)
     except RuntimeError:
         return None  # already running (the previous pass's kick is still going)
-    except Exception:  # noqa: BLE001 - a preflight must never break a pass
-        _LOG.warning("first-run preflight: could not start", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a preflight must never break a pass
+        log_failure(_LOG, "first-run preflight: could not start", exc, level=logging.WARNING)
         return None

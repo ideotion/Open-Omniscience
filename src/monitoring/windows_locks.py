@@ -37,6 +37,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text
+
 __all__ = ["windows_lock_report"]
 
 # Windows CreateFileW constants. Named here rather than imported so this module
@@ -148,7 +150,7 @@ def _exclusive_open_probe(path: Path) -> dict[str, Any]:
             "meaning": "nothing else holds this file — the swap would succeed right now",
         }
     except Exception as exc:  # noqa: BLE001 - a diagnostic never replaces the failure
-        return {"probed": False, "reason": f"probe unavailable: {exc}"}
+        return {"probed": False, "reason": f"probe unavailable: {exception_text(exc, typed=False)}"}
 
 
 def _our_own_handles(paths: list[Path]) -> dict[str, Any]:
@@ -171,7 +173,7 @@ def _our_own_handles(paths: list[Path]) -> dict[str, Any]:
             }
         )
     except Exception as exc:  # noqa: BLE001
-        return {"available": False, "reason": f"could not read our own handles: {exc}"}
+        return {"available": False, "reason": f"could not read our own handles: {exception_text(exc, typed=False)}"}
     return {"available": True, "held_by_this_process": held, "n": len(held)}
 
 
@@ -217,7 +219,7 @@ def _other_holders(paths: list[Path]) -> dict[str, Any]:
             except Exception:  # noqa: BLE001 - one bad process never aborts the sweep
                 refused += 1
     except Exception as exc:  # noqa: BLE001
-        return {"available": False, "reason": f"could not enumerate processes: {exc}"}
+        return {"available": False, "reason": f"could not enumerate processes: {exception_text(exc, typed=False)}"}
     return {
         "available": True,
         "holders": holders,
@@ -251,7 +253,7 @@ def _powershell(script: str) -> tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, f"powershell did not answer within {_PS_TIMEOUT_S:.0f}s"
     except Exception as exc:  # noqa: BLE001
-        return False, f"powershell failed: {exc}"
+        return False, f"powershell failed: {exception_text(exc, typed=False)}"
     if out.returncode != 0:
         return False, (out.stderr or out.stdout or "powershell returned an error").strip()[:400]
     return True, out.stdout.strip()
@@ -393,7 +395,7 @@ def windows_lock_report() -> dict[str, Any]:
 
         report["swap_wait_budget_s"] = _SWAP_HANDLE_WAIT_S
     except Exception as exc:  # noqa: BLE001
-        report["swap_wait_budget_s_unavailable"] = str(exc)
+        report["swap_wait_budget_s_unavailable"] = exception_text(exc, typed=False)
 
     report["reading"] = _reading(report, files)
     report["elapsed_s"] = round(time.monotonic() - started, 3)

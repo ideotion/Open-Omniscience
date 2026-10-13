@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
+
+from src.monitoring.secret_scrub import exception_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -75,9 +78,9 @@ def _check_one(fetcher, source) -> dict:
         fetcher._guard_target(urlparse(base).hostname)
     except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
         rec["robots"] = "unreachable"
-        rec["robots_error"] = str(exc)[:200]
+        rec["robots_error"] = exception_text(exc, limit=200, typed=False)
         rec["reachable"] = False
-        rec["homepage_error"] = str(exc)[:200]
+        rec["homepage_error"] = exception_text(exc, limit=200, typed=False)
         rec["verdict"] = "unreachable"
         return rec
 
@@ -103,7 +106,7 @@ def _check_one(fetcher, source) -> dict:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - per-source problems must not stop the sweep
         rec["robots"] = "unreachable"
-        rec["robots_error"] = str(exc)[:200]
+        rec["robots_error"] = exception_text(exc, limit=200, typed=False)
 
     if crawl_delay:
         rec["crawl_delay_s"] = float(crawl_delay)
@@ -115,7 +118,7 @@ def _check_one(fetcher, source) -> dict:
         rec["reachable"] = 200 <= resp.status_code < 400
     except Exception as exc:  # noqa: BLE001
         rec["reachable"] = False
-        rec["homepage_error"] = str(exc)[:200]
+        rec["homepage_error"] = exception_text(exc, limit=200, typed=False)
 
     rec["verdict"] = (
         "ok" if rec.get("reachable") and rec["robots"] in ("allowed", "missing")

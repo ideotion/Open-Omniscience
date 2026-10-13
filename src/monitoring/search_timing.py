@@ -37,6 +37,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.monitoring import unlock_marker
+from src.monitoring.secret_scrub import exception_text, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -402,8 +403,8 @@ def _trim_jsonl(kind: str = KIND_TEXT) -> None:
                 if part is not None:
                     with contextlib.suppress(OSError):
                         part.unlink()
-    except Exception:  # noqa: BLE001 - logging must never break a search
-        _LOG.debug("search_timing trim failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - logging must never break a search
+        log_failure(_LOG, "search_timing trim failed", exc, level=logging.DEBUG)
 
 
 def _trim_if_due(kind: str) -> None:
@@ -565,8 +566,8 @@ def append_search_timing(record: dict) -> None:
         with _FILE_LOCKS[kind], open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(line, separators=(",", ":")) + "\n")
         _trim_if_due(kind)
-    except Exception:  # noqa: BLE001
-        _LOG.debug("search_timing append failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "search_timing append failed", exc, level=logging.DEBUG)
 
 
 def instrument_search(fn: Callable[[SearchPhaseTimer], Any]) -> Any:
@@ -582,8 +583,8 @@ def instrument_search(fn: Callable[[SearchPhaseTimer], Any]) -> Any:
     finally:
         try:
             append_search_timing(timer.finish())
-        except Exception:  # noqa: BLE001
-            _LOG.debug("instrument_search record failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "instrument_search record failed", exc, level=logging.DEBUG)
     return result
 
 
@@ -751,7 +752,7 @@ def run_search_timing_selftest() -> dict:
         _walk_no_score(rep)
     except AssertionError as exc:
         no_score = False
-        check("no_score_field", False, str(exc))
+        check("no_score_field", False, exception_text(exc, typed=False))
     if no_score:
         check("no_score_field", True)
 

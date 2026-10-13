@@ -70,6 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -508,8 +509,8 @@ def record(action: str, result: Any = None, settings: Any = None) -> dict[str, A
         if _WRITES % _COMPACT_EVERY == 0:
             compact_if_needed()
         return rec
-    except Exception:  # noqa: BLE001 - an instrument never breaks the thing it measures
-        _LOG.debug("activity ledger: could not record %s", action, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an instrument never breaks the thing it measures
+        log_failure(_LOG, f"activity ledger: could not record {action}", exc, level=logging.DEBUG)
         return None
 
 

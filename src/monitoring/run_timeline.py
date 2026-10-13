@@ -37,6 +37,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text
+
 #: A run is only interesting as a stall if it sat still for at least this long.
 #: Well above a slow batch: the field freeze was 8,395 s, and a healthy 500-article
 #: precompute window on the same hardware was ~140 s.
@@ -235,12 +237,12 @@ def latest_run_timeline(*, max_runs: int = 4) -> dict:
     try:
         from src.backup.runlog import raw_runs, summarise
     except Exception as exc:  # noqa: BLE001
-        return {"available": False, "reason": f"run journal unavailable: {exc}"}
+        return {"available": False, "reason": f"run journal unavailable: {exception_text(exc, typed=False)}"}
 
     try:
         raw = raw_runs(max_runs=max_runs)
     except Exception as exc:  # noqa: BLE001
-        return {"available": False, "reason": f"could not read the run journal: {exc}"}
+        return {"available": False, "reason": f"could not read the run journal: {exception_text(exc, typed=False)}"}
 
     runs: list[dict] = []
     for run_id, payload in (raw or {}).items():
@@ -248,7 +250,7 @@ def latest_run_timeline(*, max_runs: int = 4) -> dict:
             beats = (payload or {}).get("beats") or []
             runs.append(analyse_run(summarise(run_id), beats))
         except Exception as exc:  # noqa: BLE001 - one bad run must not hide the others
-            runs.append({"run_id": run_id, "error": str(exc)})
+            runs.append({"run_id": run_id, "error": exception_text(exc, typed=False)})
     return {
         "available": True,
         "schema": "oo-run-timeline-1",

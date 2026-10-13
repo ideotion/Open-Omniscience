@@ -63,7 +63,42 @@ _BAD = [
     ("import sys\nlogging.info('x', exc_info=sys.exc_info())", "exc_info"),
     ("log.warning('x', **{'exc_info': True})", "kwargs-unpack"),
     ("log.warning('x', **extra)", "kwargs-unpack"),
+    ("log.exception(msg='x')", "exception"),
+    ("import traceback\ntraceback.TracebackException.from_exception(e)", "TracebackException"),
+    ("import traceback as tb\ntb.TracebackException.from_exception(e)", "TracebackException"),
     ("kw = {'exc_info': True}", "exc_info-key"),
+    ("try: pass\nexcept Exception as exc:\n    log.warning('x: %s', exc)", "exc-arg"),
+    ("try: pass\nexcept Exception as e:\n    _LOG.debug('x: %s', str(e))", "exc-arg"),
+    ("try: pass\nexcept Exception as e:\n    self.logger.error('x', repr(e))", "exc-arg"),
+    ("try: pass\nexcept Exception as exc:\n    log.warning(f'x: {exc}')", "exc-arg"),
+    ("try: pass\nexcept Exception as exc:\n    log.warning(f'x: {str(exc)}')", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log_failure(log, f'failed: {x}', x)", "exc-arg"),
+    (
+        "try: pass\nexcept Exception as x:\n    secret_scrub.log_failure(log, 'failed: ' + str(x), x)",
+        "exc-arg",
+    ),
+    (
+        "try: pass\nexcept Exception as x:\n    log_failure(log, what=f'failed: {x.args}', exc=x)",
+        "exc-arg",
+    ),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s', str(x)[:200])", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s' % x)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a {}'.format(x))", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a ' + str(x))", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s', x.args)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s', x.__cause__)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s', x.__context__)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s', x.orig)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a %s', (x,))", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a', extra={'e': x})", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    log.warning('a', args=x)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    lg.warning('a %s', x)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    logger2.warning('a %s', x)", "exc-arg"),
+    ("try: pass\nexcept Exception as x:\n    self.out.warning('a %s', x)", "exc-arg"),
+    (
+        "import logging\ntry: pass\nexcept Exception as x:\n    logging.getLogger('a').warning('a %s', x)",
+        "exc-arg",
+    ),
     ("kw['exc_info'] = True", "exc_info-key"),
     ("self.logger.exception('x')", "exception"),
     ("import logging\nlogging.getLogger('a').exception('x')", "exception"),
@@ -113,6 +148,14 @@ def test_the_named_text_makers_are_exactly_these():
     } == scan.SYS_ATTRIBUTES
 
 
+@pytest.mark.parametrize("helper", sorted(scan.SCRUB_HELPERS))
+def test_every_scrub_helper_is_a_clean_spelling(helper):
+    """MUTATION TARGET: a helper dropped from ``SCRUB_HELPERS`` makes its calls look like raw uses of the exception."""
+    snippet = f"try: pass\nexcept Exception as exc:\n    log.warning('x: %s', {helper}(exc))"
+    assert scan.scan_source(snippet) == []
+    assert scan.scan_source(snippet.replace(f"{helper}(exc)", "str(exc)")) != []
+
+
 def test_two_sinks_on_one_line_are_two():
     assert (
         len(scan.scan_source("log.warning('a', exc_info=True); log.error('b', exc_info=True)")) == 2
@@ -136,6 +179,16 @@ def test_an_unparseable_file_is_named():
         "fut.exception()",
         "task.exception(timeout=1)",
         "backlog.warning('x')",
+        "try: pass\nexcept Exception as exc:\n    log.warning('x: %s', type(exc).__name__)",
+        "try: pass\nexcept Exception as exc:\n    log.warning(f'x: {type(exc).__name__}')",
+        "try: pass\nexcept Exception as exc:\n    log_failure(log, 'x', exc)",
+        "try: pass\nexcept Exception as exc:\n    log.warning('x: %s', exc.__class__.__name__)",
+        "try: pass\nexcept Exception as exc:\n    log.warning('x: %s', exception_text(exc))",
+        "try: pass\nexcept Exception as exc:\n    log.warning('x: %s', secret_scrub.exception_text(exc, limit=9))",
+        "try: pass\nexcept Exception as exc:\n    print(exc)",
+        "try: pass\nexcept Exception as exc:\n    log_failure(log, f'failed {name}', exc)",
+        "try: pass\nexcept Exception as exc:\n    log_failure(log, f'failed {type(exc).__name__}', exc)",
+        "try: pass\nexcept Exception as exc:\n    log.warning('x: %s', other)",
         "secret_scrub.log_failure(log, 'x', exc)",
         "log.warning('x: %s', type(exc).__name__)",
         "import traceback\ntraceback.extract_stack()",
