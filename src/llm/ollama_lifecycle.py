@@ -47,6 +47,8 @@ import shutil
 import subprocess
 import time
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("llm.ollama_lifecycle")
 
 # How long ``start`` waits for the daemon to answer before reporting back. A cold
@@ -242,7 +244,7 @@ def release_vram(*, timeout: float = 8.0) -> dict:
             "reason": None if released else "Ollama declined to unload",
         }
     except Exception as exc:  # noqa: BLE001 - a courtesy release must never block a start
-        _LOG.info("could not ask Ollama to release VRAM: %s", exc)
+        log_failure(_LOG, "could not ask Ollama to release VRAM", exc, level=logging.INFO)
         return {"released": [], "reason": str(exc), "attempted": True}
 
 

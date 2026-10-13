@@ -42,6 +42,7 @@ from sqlalchemy import text as sql
 
 from src.database.models import LawDocument, LawRevision
 from src.law.versions import effective_versions, in_force_on
+from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import CursorResult
@@ -182,8 +183,8 @@ def _siblings(db: Session, doc: LawDocument, cache: dict) -> list[dict]:
             for d in db.query(LawDocument).filter(LawDocument.lane_key.in_(others)).all()
         } if others else {}
         out = [{"language": lang, "id": ids.get(k)} for k, lang in members if k != key]
-    except Exception:  # noqa: BLE001 - the group is an addition to a hit, never its gate
-        _LOG.debug("pit search: identity group unavailable for %s", doc.id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the group is an addition to a hit, never its gate
+        log_failure(_LOG, f"pit search: identity group unavailable for {doc.id}", exc, level=logging.DEBUG)
     cache[key] = out
     return out
 

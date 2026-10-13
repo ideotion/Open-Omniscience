@@ -39,6 +39,8 @@ import time
 import uuid
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _FILENAME = "rollup_build.json"
@@ -114,8 +116,8 @@ def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | Non
             "written_at": time.time(),
         })
         _last_write = time.monotonic()
-    except Exception:  # noqa: BLE001 - a marker that cannot be written must not stop the build
-        _LOG.warning("rollup marker: could not write the in-progress record", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a marker that cannot be written must not stop the build
+        log_failure(_LOG, "rollup marker: could not write the in-progress record", exc, level=logging.WARNING)
 
 
 def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: float | None) -> None:
@@ -141,8 +143,8 @@ def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: floa
         })
         _write(rec)
         _last_write = time.monotonic()
-    except Exception:  # noqa: BLE001
-        _LOG.debug("rollup marker: progress write failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "rollup marker: progress write failed", exc, level=logging.DEBUG)
 
 
 def clear() -> None:
@@ -152,8 +154,8 @@ def clear() -> None:
         if rec is not None and rec.get("process") != _PROCESS_ID:
             return  # a record of another process's build is not ours to remove
         _path().unlink(missing_ok=True)
-    except Exception:  # noqa: BLE001
-        _LOG.debug("rollup marker: clear failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "rollup marker: clear failed", exc, level=logging.DEBUG)
 
 
 def read() -> dict | None:

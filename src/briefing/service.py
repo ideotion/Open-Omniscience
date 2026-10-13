@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from src.briefing.card import BUCKET_LABELS, BUCKETS
 from src.briefing.producers import register_default_producers
 from src.briefing.registry import run_all_bounded
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -72,8 +73,8 @@ def _bg_refresh() -> None:
     try:
         with session_scope() as session:
             refresh_briefing(session, on_progress=_progress)
-    except Exception:  # noqa: BLE001 - a background refresh must never crash the app
-        _LOG.warning("background briefing refresh failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the app
+        log_failure(_LOG, "background briefing refresh failed", exc, level=logging.WARNING)
     finally:
         with _refresh_lock:
             _refresh_state["refreshing"] = False
@@ -297,11 +298,11 @@ def _sorted(cards: list[dict]) -> list[dict]:
                 # existed still has the English line.
                 c["order_explain_i18n"] = explain_order_frames(_wrap(c), now=now)
                 c["order_explain"] = frames_text(c["order_explain_i18n"])
-        except Exception:  # noqa: BLE001 - an explanation is additive, never load-bearing
-            _LOG.warning("Leads-2.0 order explanation failed; cards keep their order", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an explanation is additive, never load-bearing
+            log_failure(_LOG, "Leads-2.0 order explanation failed; cards keep their order", exc, level=logging.WARNING)
         return out
-    except Exception:  # noqa: BLE001 - a reorder problem must never break Home
-        _LOG.warning("Leads-2.0 order_key sort failed; using the raw-magnitude fallback", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a reorder problem must never break Home
+        log_failure(_LOG, "Leads-2.0 order_key sort failed; using the raw-magnitude fallback", exc, level=logging.WARNING)
         return sorted(cards, key=lambda c: (_bucket_rank(c["bucket"]), -_magnitude(c)))
 
 
@@ -311,8 +312,8 @@ def dismissed_ids() -> set[str]:
         return set()
     try:
         return set(json.loads(path.read_text("utf-8")).get("ids", []))
-    except Exception:  # noqa: BLE001 - a bad file must not break the feed
-        _LOG.warning("briefing_dismissed.json unreadable; treating as empty", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break the feed
+        log_failure(_LOG, "briefing_dismissed.json unreadable; treating as empty", exc, level=logging.WARNING)
         return set()
 
 
@@ -367,8 +368,8 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         from src.analytics.watches import evaluate_watches
 
         evaluate_watches(session)
-    except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
-        _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
+        log_failure(_LOG, "watch evaluation failed; briefing continues", exc, level=logging.WARNING)
     # Which feed was on disk when this run STARTED: a refresh that lands while this one runs
     # must not be overwritten with the feed it just replaced, and only a read taken before the
     # run can tell (two reads taken after it cannot).
@@ -426,8 +427,8 @@ def _refresh_briefing(session, on_progress=None) -> dict:
                 return kept
             try:
                 _write_cache(kept)
-            except OSError:
-                _LOG.warning("could not record that the briefing refresh kept the cache", exc_info=True)
+            except OSError as exc:
+                log_failure(_LOG, "could not record that the briefing refresh kept the cache", exc, level=logging.WARNING)
             return kept
 
     payload = {
@@ -461,8 +462,8 @@ def _refresh_briefing(session, on_progress=None) -> dict:
             from src.api.insights import warm_cache
 
             warm_cache(session)
-        except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
-            _LOG.warning("insights cache warm failed; briefing continues", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
+            log_failure(_LOG, "insights cache warm failed; briefing continues", exc, level=logging.WARNING)
     return payload
 
 
@@ -482,8 +483,8 @@ def _read_cache() -> dict | None:
         if data.get("version") != CACHE_VERSION and data.get("version") not in _SERVABLE_PRIOR_VERSIONS:
             return None
         return data
-    except Exception:  # noqa: BLE001 - a corrupt cache just triggers a recompute
-        _LOG.warning("briefing_cache.json unreadable; will recompute", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a corrupt cache just triggers a recompute
+        log_failure(_LOG, "briefing_cache.json unreadable; will recompute", exc, level=logging.WARNING)
         return None
 
 
@@ -599,6 +600,6 @@ def get_briefing(
 
     try:
         view["corpus_tier"] = corpus_tier(session, article_count=_count_once())
-    except Exception:  # noqa: BLE001 - the tier must never break the feed
-        _LOG.warning("corpus_tier failed; omitting from briefing", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the tier must never break the feed
+        log_failure(_LOG, "corpus_tier failed; omitting from briefing", exc, level=logging.WARNING)
     return view

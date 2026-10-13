@@ -40,15 +40,20 @@ _DIR = Path(__file__).resolve().parents[1] / "configs" / "stopwords_extra"
 #: checked -- a Latin-script file is unguardable by this mechanism (see the module
 #: docstring), and listing one here would claim a coverage the check does not have.
 _NON_LATIN_FILES = {
+    "am.yml": ("ETHIOPIC",),
     "ar.yml": ("ARABIC",),
     "bg.yml": ("CYRILLIC",),
     "bn.yml": ("BENGALI",),
     "el.yml": ("GREEK",),
     "hi.yml": ("DEVANAGARI",),
+    "ja.yml": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
+    "kk.yml": ("CYRILLIC",),
     "ko.yml": ("HANGUL",),
+    "mk.yml": ("CYRILLIC",),
     "mr.yml": ("DEVANAGARI",),
     "ru.yml": ("CYRILLIC",),
     "uk.yml": ("CYRILLIC",),
+    "zh.yml": ("CJK",),
 }
 
 #: Deliberately unchecked, with the reason. ``_multilingual.yml`` is the ONE file whose

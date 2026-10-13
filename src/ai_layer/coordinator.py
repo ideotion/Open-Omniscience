@@ -55,6 +55,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from src.jobs.background import Framed
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -270,7 +271,7 @@ def release_after_lane(backend: str) -> dict:
 
         return release_backend(backend)
     except Exception as exc:  # noqa: BLE001 - a release must never fail the run
-        _LOG.warning("coordinator could not release %s", backend, exc_info=True)
+        log_failure(_LOG, f"coordinator could not release {backend}", exc, level=logging.WARNING)
         return {"released": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
 
@@ -354,7 +355,7 @@ def run_coordinator(
                     kw = {"max_workers": _budget} if m.per_item_concurrency else {}
                     out = m.run(ctx, model=model, **kw) or {}
                 except Exception as exc:  # noqa: BLE001 - one member must never end the lane
-                    _LOG.warning("coordinator member %s failed", m.key, exc_info=True)
+                    log_failure(_LOG, f"coordinator member {m.key} failed", exc, level=logging.WARNING)
                     return m.key, {"error": f"{type(exc).__name__}: {exc}"[:200]}
                 return m.key, out
 

@@ -50,6 +50,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # Guards the tiny in-memory cache dict (never held across the heavy compute).
@@ -292,8 +294,8 @@ def _kick_background_refresh(
                     hazard_max_age_hours=hazard_max_age_hours,
                     convergence_lookback_days=convergence_lookback_days,
                 )
-        except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
-            _LOG.warning("alert poll-cache background refresh failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
+            log_failure(_LOG, "alert poll-cache background refresh failed", exc, level=logging.WARNING)
         finally:
             _BUILD_LOCK.release()
 

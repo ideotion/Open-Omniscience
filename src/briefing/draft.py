@@ -17,6 +17,8 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 DRAFT_VERSION = "oo-briefing-draft-1"
@@ -38,8 +40,8 @@ def load_draft() -> dict:
         data.setdefault("title", _DEFAULT_TITLE)
         data.setdefault("items", [])
         return data
-    except Exception:  # noqa: BLE001 - a bad file must not break the draft surface
-        _LOG.warning("briefing_draft.json unreadable; starting a fresh draft", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break the draft surface
+        log_failure(_LOG, "briefing_draft.json unreadable; starting a fresh draft", exc, level=logging.WARNING)
         return {"version": DRAFT_VERSION, "title": _DEFAULT_TITLE, "items": []}
 
 

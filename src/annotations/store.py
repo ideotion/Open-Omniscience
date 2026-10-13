@@ -25,6 +25,7 @@ from src.annotations.bundle import (
     build_signed_bundle,
     verify_bundle,
 )
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 STORE_VERSION = "oo-annotations-store-1"
@@ -59,8 +60,8 @@ def load_mine() -> dict:
         d.setdefault("author_name", _MINE_AUTHOR)
         d.setdefault("annotations", [])
         return d
-    except Exception:  # noqa: BLE001 - a bad file must not break the surface
-        _LOG.warning("annotations/mine.json unreadable; starting fresh", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break the surface
+        log_failure(_LOG, "annotations/mine.json unreadable; starting fresh", exc, level=logging.WARNING)
         return {"author_name": _MINE_AUTHOR, "annotations": []}
 
 
@@ -212,8 +213,8 @@ def _imported_records() -> list[dict]:
     for p in sorted(_imported_dir().glob("*.json")):
         try:
             out.append(json.loads(p.read_text("utf-8")))
-        except Exception:  # noqa: BLE001 - skip a corrupt record, never crash
-            _LOG.warning("imported annotation file %s unreadable; skipping", p, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - skip a corrupt record, never crash
+            log_failure(_LOG, f"imported annotation file {p} unreadable; skipping", exc, level=logging.WARNING)
     return out
 
 

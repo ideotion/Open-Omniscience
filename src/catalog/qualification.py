@@ -58,6 +58,7 @@ from sqlalchemy import func
 from src.config.machine_floor import scan_budget
 from src.database.models import Article
 from src.database.stand_in import not_a_stand_in_source
+from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -674,8 +675,8 @@ def record_forced_tries(ids: set[int], *, now: datetime | None = None, odd_budge
         if odd_budget:
             raw["turn"] = "ordinary" if raw.get("turn") == "list" else "list"
         kv_set_json(RECHECK_FIRST_KEY, raw)
-    except Exception:  # noqa: BLE001 - bookkeeping for an ORDER hint never fails a pass
-        _LOG.warning("could not record the forced re-check tries", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping for an ORDER hint never fails a pass
+        log_failure(_LOG, "could not record the forced re-check tries", exc, level=logging.WARNING)
 
 
 def pending_forced(session: Session, limit: int | None = None) -> tuple[list[Source], list[int]]:
@@ -1689,12 +1690,9 @@ def run_qualification_pass(
             attempted.append(source)
             try:
                 trial_fetch(session, source, fetcher)
-            except Exception:  # noqa: BLE001 - one bad candidate must not abort the pass
+            except Exception as exc:  # noqa: BLE001 - one bad candidate must not abort the pass
                 trial_errors += 1
-                _LOG.warning(
-                    "qualification trial fetch failed for %r",
-                    getattr(source, "domain", "?"), exc_info=True,
-                )
+                log_failure(_LOG, f"qualification trial fetch failed for {getattr(source, 'domain', '?')!r}", exc, level=logging.WARNING)
         deferred = len(candidates) - len(attempted)
         if deferred:
             done = {int(x.id) for x in attempted}
@@ -1722,7 +1720,7 @@ def run_qualification_pass(
         # The FREEZE is itself a whole-corpus scan, so it can pause too -- and it is the
         # bigger of the two. Catching only the scoped read would have let the larger one
         # escape as an unhandled exception, which the job would report as a crash.
-        _LOG.info("qualification pass paused during the cohort freeze: %s", exc)
+        log_failure(_LOG, "qualification pass paused during the cohort freeze", exc, level=logging.INFO)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
             "trial_fetch_errors": trial_errors, "deferred": deferred,
@@ -1747,7 +1745,7 @@ def run_qualification_pass(
         # S5.2: nothing is stamped from a paused scan. The candidates keep whatever status
         # they already had -- for a never-judged one that is ``unqualified``, which is the
         # truth, and the queue's least-recently-attempted ordering brings them back.
-        _LOG.info("qualification pass paused: %s", exc)
+        log_failure(_LOG, "qualification pass paused", exc, level=logging.INFO)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
             "trial_fetch_errors": trial_errors, "deferred": deferred,
@@ -1794,8 +1792,8 @@ def run_qualification_pass(
             from src.ingest.archive_backfill import enqueue_source
 
             enqueue_source(sid, full_history=False)
-        except Exception:  # noqa: BLE001 - never fail qualification over a queueing hiccup
-            _LOG.warning("archive backfill enqueue failed for source %s", sid, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never fail qualification over a queueing hiccup
+            log_failure(_LOG, f"archive backfill enqueue failed for source {sid}", exc, level=logging.WARNING)
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,

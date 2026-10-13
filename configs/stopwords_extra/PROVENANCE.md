@@ -437,3 +437,55 @@ Vietnamese list waits for a reader of Vietnamese. The Japanese, Korean and Chine
 Hiding is retroactive with no re-index; extraction also drops them from now on. The two Arabic-script words the triage accepted for id are not here, so nothing is filed in `_multilingual.yml` by this batch. Batch 4 flagged Serbian `kad` as also the Malay "kad" (card, as in "kad merah", red card): the Malay list here does not contain it, and the Serbian entry stays; whether the Malay card sense matters is for a reader of Malay to weigh when the next Malay batch is read.
 
 **Kept on purpose after the independent read:** tl `mga` (also the Malta Gaming Authority acronym), id `sih` (also the Smart India Hackathon acronym), id `ahad` (Sunday; also the given name Ahad), and the marginal collisions `siyam`, `isang`, `maret`, `juta`, `serta`, `niya`, `ilang`, `lamang`, `boleh`, `dahil`. The apostrophe forms are junk left by closing quotes (the tokenizer keeps "'s", so "guru's" is never cut to `guru'`).
+
+## Stoplist batch 6: chrome lines, function words and number debris in Japanese, Korean and Chinese (2026-10-13, R131, language group 5)
+
+379 words from the same triage and the same method as batches 2 to 5 (read batch 2 first): ja 215, ko 26, zh 138, ja and zh in two NEW files (the loader unions every file in the directory) and eight entries that carry
+Latin letters inside Japanese or Chinese text in `_multilingual.yml`, because `ja.yml` and `zh.yml` may hold their own scripts only (`test_stopword_file_scripts`; the tool's script map knows both now). Of the 1,333
+candidates the tool itself refused 548 (a phrase containing a listed word, already hidden, or also an entity), the thread left out 404 by hand and kept 381; the independent read then removed two more.
+
+**Taken out again by the layout PR (the repeat-agreement marker, which did not exist when this batch shipped).** Korean is one of the four twice-read languages (`TWICE_READ` in `scripts/stopword_batch.py`: vi, ko, as, tl): a
+word enters only when its blind repeat agreed (`repeat_agreed`) or a reader's hand review lists it. Run over the 26 Korean entries this batch shipped, the rule keeps 25. `참석했다` ("attended") came out: the
+first reading called it a phrase fragment (`ph`), the blind repeat called it an everyday verb (`lv`, one of the two open boundaries), so the two readings did not agree on what it is and no hand review lists it. Korean now
+holds 25 entries from this batch (the batch is 378 words, not 379). The same check run over the 37 Tagalog entries of batch 5 (`tl`) found none to remove. The ten Latin-token Korean entries in `_multilingual.yml` (batch 1) all carry the marker.
+
+**How these entries match, which the other groups did not need to say.** Hiding is exact: at read time the whole stored keyword must equal an entry, and at extraction a word must equal an entry (a phrase containing one
+is dropped). The stored keywords of these three languages are whole sentences or runs of text because the log's tokenizer has no spaces to cut at, so most entries hide only the stored run they name, retroactively and
+with no re-index. New Chinese keywords are split into words by jieba (a core dependency since 2026-09-25) and new Japanese ones by janome when the optional `[segmentation]` extra is installed (measured for Chinese,
+reasoned for Japanese: janome was not installed to test). The independent read ran jieba over every entry: 13 come out as a single word (`上周五`, `亿美元`, `值得一提的是`, `八萬五`, `据介绍`, `责任编辑`, `點這裡` and the
+seven Japanese weekday names), none of which means anything else in Chinese. So the page chrome is mostly about the stored runs, and the short function words and weekday names act on new extraction too.
+
+The accepted candidates are mostly page chrome read as one keyword (ja 132 `bp` lines such as `この記事は有料会員限定です` "this article is for paying members" and `閉じる` "close", zh 97 such as `保證天天中獎`, `更新時間` and the
+photo credits `記者…攝`), plus ja 19 and ko 12 function words (`一方で`, `つまり`, `자신의`), 15 weekday and date words (`月曜日` … `日曜日`, ko `금요일`, `일까지`, `일부터`), 23 number-and-clock fragments (`午後6`,
+`口座番号4097270`, zh `億美元`) and the stock reporting phrases (ja `と述べた`, `と語った`, `警察によりますと`, zh `他表示`, `據了解`, `值得一提的是`).
+
+**Left out on purpose:** (1) the fragments the triage coded `fr`: ko 225 (and 7 apostrophe forms), ja 60, zh 25 — a Korean word is a noun with its particle (`기자회견을`, `한국이`), a real word cut at the particle, and a
+stopword drops every phrase that contains it, so hiding it hides the name or topic built on it; the same holds for a Japanese or Chinese cut. (2) Sentences that name a person, an organisation or an event, however
+generic the rest: ja `第十一菅区海上保安本部によると` (sic: the agency is 第十一管区, quoted as the log spelled it), `代表荒木が参加`, zh `习近平指出`, `盧秀燕表示`, `翁曉玲說`, `教育局表示`, `關務署表示`, and the clauses that are the story itself
+(ja `いずれも機関砲を搭載している`, zh `海基會也在搞統戰`, `近日已補發差額`, and the other headline fragments). (3) The mojibake runs (zh 19, ja 1) and the English words, by the batch 1 ruling: `reserved`, `aired`, `20s`, `48mm`,
+`00utc`; the mojibake filter also caught `β版音声読み上げは` (page chrome, a Greek letter inside Japanese), and 5 ja rows had no triage verdict under their spelling. (4) ja `フォロー` and `万円の修理代` (content senses),
+ja `ついに登場` and `登場の裏で` (headline hype), `完成したムービーを圧縮してファイルサイズを小さくする` (a how-to). (5) After the independent read: zh `徐欣瑩競辦提供` (a credit that names a political candidate and
+her campaign office, not a journalist) and ja `ホーム` (once Japanese is split into words it is the station platform and the home game, and every phrase containing it would be dropped). The triage labelled its
+reading of these three languages "partial", and no word kept carries the `single_reader` flag.
+
+**Kept on purpose:** the photo credits that name the source rather than a person (`記者林正堃攝`, `警方提供`, `法新社檔案照`, `路透資料照`, `翻攝自微博`) are bylines, not subjects; the credits that name a government body
+(`台南市政府提供`, `屏東縣政府提供`, `觀光局提供`) have the shape of the statement lines left out above (`教育局表示`), but a credit line says who supplied a picture and never what that body did or said, so hiding it
+loses no statement. The suicide-prevention footer lines (`生命線專線`, `自殺不能解決問題`) are a fixed block of Taiwanese newsrooms. ja `ログイン` is kept for its volume (76 articles) although, once Japanese is split,
+it would also drop a phrase such as `不正 ログイン` (unauthorised login); `お知らせ`, `購読料`, `オススメ`, `閉じる` and ko `등록번호` are marginal labels that can also be words, hidden at read time and so reversible. Not done
+and for a later batch: the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious; `々` (as in 人々) is not yet allowed in
+`ja.yml` by the script guard. Hiding is retroactive with no re-index; extraction also drops them from now on.
+
+## Stoplist batch 7: function words, number words and calendar words in Amharic, Basque, Faroese, Galician, Hausa, Kazakh, Macedonian, Kinyarwanda and Swahili (2026-10-13, R131, language group 6)
+
+344 words from the same triage and the same method as batches 2 to 6 (read batch 2 first): am 29, eu 56, fo 15, gl 10, ha 25, kk 76, mk 58, rw 14, sw 61, in eight NEW files (the loader unions every file in the directory;
+`sw.yml` existed). By the triage's codes: 258 function words (Basque `baina`, `zein`, Kazakh `және`, `үшін`, Macedonian `што`, `дека`, Swahili `kuhusu`, `ambapo`, Amharic `ውስጥ`, Faroese `frá`), 40 number words (`ehun`, `мың`,
+`dubu`, Swahili shilling amounts `sh50`), 38 weekday and month names (`astelehena`, `сенбі`, `мај`, `satumba`, `jumamosi`) and 8 attribution verbs and button labels (Kazakh `деді`, `айтты`, `бөлісу`, `көшіру`, Swahili
+`ilisema`, Amharic `ብሏል`). Every word of these nine languages has ONE reader in the triage (the `single_reader` flag, 100 % of their candidates), so the batch was read a second time by hand, word by word, the way the
+earlier groups read the "also read in" notes; the 344 are the words both readings accepted and the independent read of the PR diff kept, which is the third.
+
+**Left out:** the triage's fragments (am `ኛውን` and `ከፉልሃም` "from Fulham"; the closing-quote forms eu `ilargia'`, `katana'`, `plague'`, gl `pasar'`, `xerión'`, sw `samantha'`, `uzungu'`); eu `hamar` (ten, but also the Norwegian
+town, read in Norwegian articles) and `elkar` (each other, but also the Basque publisher Elkar); ha `kuma` (and, but read in 5 English articles) and `inda` (read in 3 Spanish
+articles); kk `бес` (five, but also the Russian "demon", a content word). The independent read took eight more out of the first 352, each with a sense in another language that a global stoplist would hide there: kk `сол` (Bulgarian and Macedonian "salt", Russian Saul) and `осы` (Russian "wasps"), mk `кон` (Bulgarian "horse", Russian "stake"), eu `baita` (Italian "mountain hut", Brazilian Portuguese "huge"), sw `tisa` (the river Tisza in Serbian and Croatian), `hawa` (Indonesian and Malay "air"), `kabla` (the genitive of "cable" in Polish, Serbian and Slovene) and `kumi` (the Ugandan district, a Japanese given name). The tool refused most of the triage's other candidates of these languages (gl 139 of 151, mk 159 of 218, eu 122 of 184), but almost all of those refusals are multi-word phrases, which it never adds (gl 135, mk 159, eu 118); only a handful were refused for a content sense in another language, so the weighing of senses was the readers' work, not the tool's.
+
+**Kept on purpose:** the Kazakh, Basque and Macedonian words the notes show in Russian-, Spanish- and English-tagged articles are those languages' function words quoted or mis-tagged, not a second sense. The same holds for `zao` (read in Serbian-tagged articles, where it is also "bad", mostly in "zao mi je"; kept, a known small cost), `huu`, `што`, `кои` (Belarusian- and Bulgarian-tagged articles) and `duen` (Catalan-tagged articles), whose notes name a language the word is quoted in, not a content use of it. The script guard
+and the tool's script map gain Ethiopic (am) and Cyrillic (kk, mk). Hiding is retroactive with no re-index; extraction also drops them from now on.

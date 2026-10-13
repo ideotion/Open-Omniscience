@@ -92,6 +92,27 @@ except PackageNotFoundError:  # pragma: no cover - only when not pip-installed
     APP_VERSION = "0.0.0+local"
 
 
+def _note_boot_init_db() -> None:
+    """Keep the per-step time of this process's cold ``init_db`` in the sentinel (STORE-02).
+
+    On the default start that is the first call to complete, which ``serve`` made before the server came up,
+    not the warm one the lifespan just made, which is why it asks for the first completed record and not the
+    last. When no call has completed (the lifespan's own just raised) the latest record is kept instead: a
+    call that failed is the one whose record names the step and the class. The unlock path carries its own
+    record inside ``last_unlock``; a start with no unlock has nowhere else to keep one.
+    Never raises: a record that cannot be kept must not fail a boot.
+    """
+    try:
+        from src.database.init_steps import first_record, last_record
+        from src.monitoring.forensics import record_init_db
+
+        record = first_record() or last_record()
+        if record is not None:
+            record_init_db(record)
+    except Exception as exc:  # noqa: BLE001 - forensics never blocks a boot
+        log_failure(logger, "could not keep the init_db step record", exc, level=logging.DEBUG)
+
+
 def run_deferred_startup() -> None:
     """Everything that needs an OPEN database: schema/FTS, error log, janitor,
     seeds, metrics, scheduler. Runs at every unlocked lifespan (each step is
@@ -106,7 +127,10 @@ def run_deferred_startup() -> None:
     from src.api.startup_status import set_startup
 
     set_startup("running", "opening the database")
-    init_db()
+    try:
+        init_db()
+    finally:
+        _note_boot_init_db()  # also when init_db raised: that record names the step and the class
     _run_startup_upkeep()
     set_startup("ready", "")
 

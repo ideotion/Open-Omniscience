@@ -654,6 +654,159 @@ def test_single_reader_alone_passes_and_a_displaced_flags_column_blocks(tmp_path
     assert sb.verdict_refusals("zzbeta", v) == ["unknown_flag"]
 
 
+# ---- the repeat_agreed marker and the twice-read languages (R131) ----
+
+def _marker_verdicts(tmp_path, lang, *rows):
+    f = tmp_path / "v.tsv"
+    f.write_text("".join(f"{lang}\t{r}\n" for r in rows), "utf-8")
+    return sb.read_verdicts(f, lang)
+
+
+def test_the_marker_is_an_accepted_flag_that_unblocks_nothing(tmp_path):
+    v = _marker_verdicts(tmp_path, "en", "zzalpha\tN\tbp\tH\treader\trepeat_agreed",
+                         "zzbeta\tN\tbp\tH\treader\trepeat_agreed,unstable",
+                         "zzgamma\tN\tbp\tH\treader\trepeat_agreed,not_repeated",
+                         "zzdelta\tN\tbp\tH\treader\trepeat_agreed,whatever")
+    assert sb.verdict_refusals("zzalpha", v) == [] and v["zzalpha"]["repeat_agreed"] is True
+    assert "unstable" in sb.verdict_refusals("zzbeta", v) and v["zzbeta"]["repeat_agreed"] is False
+    assert sb.verdict_refusals("zzgamma", v) == ["unknown_flag"] and v["zzgamma"]["repeat_agreed"] is False
+    assert sb.verdict_refusals("zzdelta", v) == ["unknown_flag"]
+
+
+def test_the_marker_counts_only_when_every_row_of_the_word_carries_it(tmp_path):
+    a = "zzalpha\tN\tbp\tH\treader\trepeat_agreed"
+    b = "zzalpha\tN\tbp\tH\treader\t"
+    for rows in ((a, b), (b, a)):
+        v = _marker_verdicts(tmp_path, "vi", *rows)
+        assert v["zzalpha"]["repeat_agreed"] is False
+        assert sb.verdict_refusals("zzalpha", v, "vi") == ["not_twice_read"]
+
+
+def test_twice_read_languages_are_exactly_the_four_and_the_marker_is_required_there(tmp_path):
+    assert set(sb.TWICE_READ) == {"vi", "ko", "as", "tl"}
+    for lang in sorted(sb.TWICE_READ):
+        v = _marker_verdicts(tmp_path, lang, "zzalpha\tN\tbp\tH\treader\t",
+                             "zzbeta\tN\tbp\tH\treader\trepeat_agreed")
+        assert sb.verdict_refusals("zzalpha", v, lang) == ["not_twice_read"], lang
+        assert sb.verdict_refusals("zzbeta", v, lang) == [], lang
+
+
+def test_a_hand_review_admits_a_twice_read_word_without_the_marker_and_nothing_else(tmp_path):
+    v = _marker_verdicts(tmp_path, "ko", "zzalpha\tN\tbp\tH\treader\t", "zzbeta\tN\tbp\tH\treader\tunstable",
+                         "zzgamma\tK\t\tH\treader\t")
+    hand = frozenset({"zzalpha", "zzbeta", "zzgamma"})
+    assert sb.verdict_refusals("zzalpha", v, "ko", hand) == []
+    assert sb.twice_read_rule("zzalpha", "ko", v, hand) == "hand_review"
+    assert sb.verdict_refusals("zzbeta", v, "ko", hand) == ["unstable"]  # a hand review never unblocks
+    assert "not_junk" in sb.verdict_refusals("zzgamma", v, "ko", hand)
+
+
+def test_other_languages_record_the_marker_and_never_require_it(tmp_path):
+    v = _marker_verdicts(tmp_path, "en", "zzalpha\tN\tbp\tH\treader\t")
+    assert sb.verdict_refusals("zzalpha", v, "en") == []
+    assert sb.twice_read_rule("zzalpha", "en", v, frozenset()) is None
+
+
+def test_a_marker_fused_into_the_model_column_does_not_pass(tmp_path):
+    # a flag that lost its tab is never a model id, in a language that needs the marker or in one that does not
+    for lang in ("en", "ko"):
+        v = _marker_verdicts(tmp_path, lang, "zzalpha\tN\tbp\tH\tmodel-1repeatagreed\t")
+        assert sb.verdict_refusals("zzalpha", v, lang) != [], lang
+        assert v["zzalpha"]["repeat_agreed"] is False
+
+
+def test_the_hand_review_file_is_read_strictly_and_per_language(tmp_path):
+    f = tmp_path / "h.tsv"
+    f.write_text("# a reader's second reading\nko\t사이트\nvi\tđây\n", "utf-8")
+    assert sb.read_hand_reviewed(f, "ko") == {"사이트"}
+    assert sb.read_hand_reviewed(f, "tl") == frozenset()
+    f.write_text("ko\t사이트\textra\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.read_hand_reviewed(f, "ko")
+    f.write_text("사이트\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.read_hand_reviewed(f, "ko")
+
+
+def test_apply_refuses_a_twice_read_word_without_the_marker_and_writes_the_rule_into_the_batch(
+        tmp_path, monkeypatch, capsys):
+    rows = [("ko", "사이트", "N", "bp", "H", "reader-a", "repeat_agreed"), ("ko", "광고", "N", "bp", "H", "reader-a", ""),
+            ("ko", "배너", "N", "bp", "H", "reader-a", "")]
+    log = [_kw("사이트", "ko", 500, sources=50), _kw("광고", "ko", 400, sources=50), _kw("배너", "ko", 300, sources=50)]
+    hand = tmp_path / "hand.tsv"
+    hand.write_text("ko\t광고\n", "utf-8")
+    rc = _apply(tmp_path, monkeypatch, "ko", "사이트\n광고\n배너\n", rows, log, "--hand-reviewed", str(hand),
+                batch_id="ko-1")
+    out = capsys.readouterr().out
+    assert rc == 0 and "not_twice_read" in out
+    text = (tmp_path / "extra" / "ko.yml").read_text("utf-8")
+    assert "사이트" in text and "광고" in text and "배너" not in text.split("stopwords:")[-1]
+    assert "words with repeat_agreed: 1 of 2" in text
+    assert "1 by repeat agreement, 1 by hand review" in text  # the batch comment is sanitised
+
+
+def test_the_batch_comment_names_the_hand_reviewed_words_and_the_review_file(tmp_path, monkeypatch, capsys):
+    rows = [("tl", "zzuno", "N", "fn", "H", "reader-a", "repeat_agreed"), ("tl", "zzdos", "N", "fn", "H", "reader-a", ""),
+            ("tl", "zztres", "N", "fn", "H", "reader-a", "")]
+    log = [_kw("zzuno", "tl", 500, sources=50), _kw("zzdos", "tl", 400, sources=50), _kw("zztres", "tl", 300, sources=50)]
+    hand = tmp_path / "hand.tsv"
+    hand.write_text("tl\tzzdos\n", "utf-8")
+    assert _apply(tmp_path, monkeypatch, "tl", "zzuno\nzzdos\nzztres\n", rows, log, "--hand-reviewed", str(hand),
+                  batch_id="tl-1") == 0
+    out = capsys.readouterr().out
+    assert "hand review: 1 words for tl in hand.tsv." in out
+    comment = [ln for ln in (tmp_path / "extra" / "tl.yml").read_text("utf-8").splitlines() if "# batch" in ln][0]
+    assert "1 by repeat agreement, 1 by hand review _zzdos_" in comment
+    assert f"hand review file sha256 {sb.file_hash(hand)}" in comment
+    assert "zzuno" not in comment and "zztres" not in comment
+
+
+def test_a_hand_review_never_admits_a_word_another_rule_refuses(tmp_path, monkeypatch, capsys):
+    # zzgone is hand-reviewed and has a clean verdict, but the log holds no article for it
+    rows = [("ko", "zzgone", "N", "fn", "H", "reader-a", ""), ("ko", "zzhere", "N", "fn", "H", "reader-a", "")]
+    log = [_kw("zzhere", "ko", 500, sources=50)]
+    hand = tmp_path / "hand.tsv"
+    hand.write_text("ko\tzzgone\nko\tzzhere\n", "utf-8")
+    assert _apply(tmp_path, monkeypatch, "ko", "zzgone\nzzhere\n", rows, log, "--hand-reviewed", str(hand),
+                  batch_id="ko-1") == 0
+    out = capsys.readouterr().out
+    assert "REFUSED zzgone" in out and "not_in_log" in out
+    written = "".join(f.read_text("utf-8") for f in (tmp_path / "extra").glob("*.yml"))
+    assert "zzhere" in written and "zzgone" not in written  # the Latin word is filed in _multilingual.yml
+
+
+def test_a_hand_review_file_that_says_nothing_for_the_language_is_called_out(tmp_path, monkeypatch, capsys):
+    rows = [("ko", "zzhere", "N", "fn", "H", "reader-a", "")]
+    hand = tmp_path / "hand.tsv"
+    hand.write_text("kr\tzzhere\n", "utf-8")  # a mistyped language code
+    _apply(tmp_path, monkeypatch, "ko", "zzhere\n", rows, [_kw("zzhere", "ko", 500, sources=50)], "--hand-reviewed",
+           str(hand), batch_id="ko-1")
+    out = capsys.readouterr().out
+    assert "NOTHING listed for this language" in out and "REFUSED zzhere" in out and "not_twice_read" in out
+    en = tmp_path / "en-hand.tsv"
+    en.write_text("en\tpermalink\n", "utf-8")
+    sb.main([str(tmp_path / "log.json"), "--language", "en", "--words", str(tmp_path / "w.txt"),
+             "--hand-reviewed", str(en)])
+    assert "is not a twice-read language" in capsys.readouterr().out
+
+
+def test_the_primary_code_decides_whether_a_language_is_twice_read(tmp_path):
+    assert all(sb.is_twice_read(c) for c in ("ko", "KO", "ko-kr", "vi_VN", "tl", "as"))
+    assert not any(sb.is_twice_read(c) for c in ("en", "kok", "ja", "", "fil"))
+    v = _marker_verdicts(tmp_path, "ko-kr", "zzalpha\tN\tbp\tH\treader\t")
+    assert sb.verdict_refusals("zzalpha", v, "ko-kr") == ["not_twice_read"]
+
+
+def test_the_hand_review_file_is_never_overwritten_by_the_json_report(tmp_path):
+    log = tmp_path / "log.json"
+    log.write_text(json.dumps({"data": {"keywords": LOG}}), "utf-8")
+    hand = tmp_path / "hand.json"
+    hand.write_text("en\tpermalink\n", "utf-8")
+    with pytest.raises(SystemExit):
+        sb.main([str(log), "--language", "en", "--hand-reviewed", str(hand), "--json", str(hand)])
+    assert hand.read_text("utf-8") == "en\tpermalink\n"
+
+
 @pytest.mark.parametrize("rows", [
     ["en\tzzalpha\tK\t\t\t\n", PASS_ROW],  # the dissent FIRST
     [PASS_ROW, "en\tzzalpha\tK\t\t\t\n"],  # and last
@@ -1123,7 +1276,9 @@ def test_the_split_sends_a_foreign_letter_to_the_multilingual_file():
     assert sb.split_by_script("en", ["site", "сайт"]) == (["site", "сайт"], [])
 
 
-_KO_ROWS = [("ko", "사이트", "N", "bp", "H", "reader-a"), ("ko", "sidebar", "N", "bp", "H", "reader-a")]
+# ko is a TWICE_READ language: its rows carry the marker a blind repeat's agreement earns.
+_KO_ROWS = [("ko", "사이트", "N", "bp", "H", "reader-a", "repeat_agreed"),
+            ("ko", "sidebar", "N", "bp", "H", "reader-a", "repeat_agreed")]
 _KO_LOG = [_kw("사이트", "ko", 500, sources=50), _kw("sidebar", "ko", 400, sources=50)]
 _KO_FILE = "stopwords:\n  - 기사\n"
 _MULTI_FILE = "stopwords:\n  - abril\n"

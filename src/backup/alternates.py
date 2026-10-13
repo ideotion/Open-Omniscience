@@ -37,6 +37,7 @@ from src.backup.provenance import (
     producer_extra_columns,
     provenance_tag,
 )
+from src.monitoring.secret_scrub import record_text
 
 
 class AlternateError(Exception):
@@ -414,5 +415,5 @@ def swap(session: Any, alt_id: int) -> dict:
         raise
     except Exception as exc:  # driver-agnostic: sqlite3 and sqlcipher3 raise different classes
         session.rollback()
-        raise AlternateError(f"could not apply that swap: {exc}", 409) from exc
+        raise AlternateError(f"could not apply that swap: {record_text(exc)}", 409) from None
     return {"id": alt_id, "status": alt.status, "shown": "restore" if alt.status == "swapped" else "machine"}

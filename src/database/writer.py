@@ -91,6 +91,8 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("database.writer")
 
 # Per-session marker (stored in SQLAlchemy's ``Session.info``) recording that
@@ -588,8 +590,8 @@ def _watchdog_loop(stop: threading.Event) -> None:
     while not stop.wait(interval):
         try:
             warned_since = watchdog_tick(write_gate, warned_since)
-        except Exception:  # noqa: BLE001 - the watchdog must never take the app down
-            _LOG.debug("write gate watchdog tick failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the watchdog must never take the app down
+            log_failure(_LOG, "write gate watchdog tick failed", exc, level=logging.DEBUG)
 
 
 def start_write_gate_watchdog() -> bool:

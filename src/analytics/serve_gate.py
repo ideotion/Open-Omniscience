@@ -37,6 +37,8 @@ import time
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -75,8 +77,8 @@ def change_token(
         if sources:
             token.append(int(session.query(func.max(Source.id)).scalar() or 0))
         return tuple(token)
-    except Exception:  # noqa: BLE001 - a coordination read must never break its caller
-        _LOG.debug("serve gate: change-token read failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a coordination read must never break its caller
+        log_failure(_LOG, "serve gate: change-token read failed", exc, level=logging.DEBUG)
         return None
 
 
@@ -125,6 +127,6 @@ def exclusive_verdict() -> dict | None:
             # exclusive window is OPEN, never that nothing else is mid-flight.
             "detail": "an exclusive operation owns the machine (restore/import/diagnostics)",
         }
-    except Exception:  # noqa: BLE001 - an unreadable scheduler must not block the build
-        _LOG.debug("serve gate: exclusive-hold read failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an unreadable scheduler must not block the build
+        log_failure(_LOG, "serve gate: exclusive-hold read failed", exc, level=logging.DEBUG)
         return None

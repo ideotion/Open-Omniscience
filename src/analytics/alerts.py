@@ -29,6 +29,8 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # Display / precedence order (least → most severe). "urgent" is the highest, and it is
@@ -321,8 +323,8 @@ def compute_alerts(
             from src.hazards.store import load_snapshot
 
             snapshot = load_snapshot(max_age_hours=hazard_max_age_hours, now=now)
-        except Exception:  # noqa: BLE001 - a snapshot problem must never break the alert
-            _LOG.warning("hazards snapshot load failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a snapshot problem must never break the alert
+            log_failure(_LOG, "hazards snapshot load failed", exc, level=logging.WARNING)
             snapshot = {"records": [], "saved_at": None, "age_hours": None, "stale": True, "available": False}
     # Batch-resolve the internal Article id per hazard event (one query, never
     # N+1) — 2026-07-24 field-feedback A6: hazards ingested as corpus Articles
@@ -395,8 +397,8 @@ def compute_alerts(
         from src.analytics.watches import recent_fired_watches
 
         fired = recent_fired_watches(session, within_hours=within_hours)
-    except Exception:  # noqa: BLE001 - a watch problem must never break the alert
-        _LOG.warning("alert layer: fired-watches read failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a watch problem must never break the alert
+        log_failure(_LOG, "alert layer: fired-watches read failed", exc, level=logging.WARNING)
         fired = []
     for w in fired:
         tiers["watch"]["watches"].append(
@@ -429,8 +431,8 @@ def compute_alerts(
             limit=convergence_limit,
         )
         convergences = found.get("clusters", []) or []
-    except Exception:  # noqa: BLE001 - a scan problem must never break the alert
-        _LOG.warning("alert layer: convergence read failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never break the alert
+        log_failure(_LOG, "alert layer: convergence read failed", exc, level=logging.WARNING)
         convergences = []
     for c in convergences:
         tiers["info"]["convergences"].append(

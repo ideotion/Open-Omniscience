@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import StatSnapshot as StatSnapshotRow
 from src.database.session import engine
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("database.snapshots")
 
@@ -304,8 +305,8 @@ def maybe_snapshot_library_stats(session: Session, *, now: datetime | None = Non
             continue
         try:
             value = _count(session, table_name)
-        except Exception:  # noqa: BLE001 - one bad count must not lose the rest
-            _LOG.warning("snapshot count failed for %s", metric, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad count must not lose the rest
+            log_failure(_LOG, f"snapshot count failed for {metric}", exc, level=logging.WARNING)
             continue
         try:
             # A SAVEPOINT (not the whole transaction) around each insert: a
@@ -328,8 +329,8 @@ def maybe_snapshot_library_stats(session: Session, *, now: datetime | None = Non
         for metric, fn in _FILTERED_METRICS.items():
             try:
                 value = fn(session)
-            except Exception:  # noqa: BLE001 - one bad count must not lose the rest
-                _LOG.warning("snapshot count failed for %s", metric, exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - one bad count must not lose the rest
+                log_failure(_LOG, f"snapshot count failed for {metric}", exc, level=logging.WARNING)
                 continue
             try:
                 with session.begin_nested():
@@ -344,8 +345,8 @@ def maybe_snapshot_library_stats(session: Session, *, now: datetime | None = Non
     for metric, gauge in _GAUGE_METRICS.items():
         try:
             measured = gauge(session)
-        except Exception:  # noqa: BLE001 - one bad gauge must not lose the rest
-            _LOG.warning("snapshot gauge failed for %s", metric, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad gauge must not lose the rest
+            log_failure(_LOG, f"snapshot gauge failed for {metric}", exc, level=logging.WARNING)
             continue
         if measured is None:
             continue

@@ -35,6 +35,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # The one key held in ``derived_meta`` today (the table is a general key->value store).
@@ -105,14 +107,10 @@ def bump_corpus_epoch(session: Session, *, reason: str = "") -> int:
             session.commit()
         _LOG.info("corpus epoch -> %d (%s)", new_val, reason or "mutation")
         return new_val
-    except Exception:  # noqa: BLE001 - a coordination bump must never break its mutator
+    except Exception as exc:  # noqa: BLE001 - a coordination bump must never break its mutator
         try:
             session.rollback()
         except Exception:  # noqa: BLE001
             pass
-        _LOG.warning(
-            "corpus-epoch bump failed (%s); the rollup may lag until the next bump",
-            reason or "mutation",
-            exc_info=True,
-        )
+        log_failure(_LOG, f"corpus-epoch bump failed ({reason or 'mutation'}); the rollup may lag until the next bump", exc, level=logging.WARNING)
         return get_corpus_epoch(session)

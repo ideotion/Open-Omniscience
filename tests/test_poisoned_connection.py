@@ -763,9 +763,13 @@ def test_the_incremental_vacuum_goes_through_the_guard(tmp_path, registry, monke
         # The error the pass reports is the corruption error. The cursor is closed while its connection is still
         # open and only then does the guard invalidate it; the other order closes the cursor on a closed
         # connection, and that ProgrammingError replaces the real error.
-        failed = [r for r in caplog.records if r.getMessage() == "off-peak incremental vacuum failed"]
-        assert len(failed) == 1 and failed[0].exc_info is not None, [r.getMessage() for r in caplog.records]
-        assert damage.is_corruption(failed[0].exc_info[1]), repr(failed[0].exc_info[1])
+        failed = [r for r in caplog.records if r.getMessage().startswith("off-peak incremental vacuum failed")]
+        text = failed[0].getMessage() if failed else ""
+        assert len(failed) == 1, [r.getMessage() for r in caplog.records]
+        # The line is written through the scrub (the traceback rides the message): it must name the corruption error and not the
+        # ProgrammingError of a cursor closed on a closed connection.
+        first = text.split("\n", 1)[0]
+        assert "database disk image is malformed" in first and "ProgrammingError" not in first, text
         assert registry.latched(FILE_CORPUS), "the incremental vacuum named no file for a damaged page"
         assert _healthy_read(eng) == 3, "the incremental vacuum left a poisoned connection in the pool"
         assert len(opened) == 2

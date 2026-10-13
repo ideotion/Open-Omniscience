@@ -26,6 +26,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -161,6 +162,6 @@ def fetch_daily_slice(
     }
     try:
         cpath.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    except OSError:
-        _LOG.warning("could not cache weather slice to %s", cpath, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"could not cache weather slice to {cpath}", exc, level=logging.WARNING)
     return payload

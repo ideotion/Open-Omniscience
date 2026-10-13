@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, HazardEventDetail, Source
 from src.database.write import is_integrity_error
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -283,9 +284,9 @@ def ingest_hazard_records(session: Session, records: list[dict], *, extractor=No
         out["total"] += 1
         try:
             res = ingest_hazard_record(session, rec, extractor=extractor)
-        except Exception:  # noqa: BLE001 - one bad record must not abort the batch
+        except Exception as exc:  # noqa: BLE001 - one bad record must not abort the batch
             session.rollback()
-            _LOG.warning("hazard ingest failed for a record", exc_info=True)
+            log_failure(_LOG, "hazard ingest failed for a record", exc, level=logging.WARNING)
             out["skipped"] += 1
             continue
         status = res.get("status", "")

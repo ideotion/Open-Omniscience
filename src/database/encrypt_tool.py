@@ -26,7 +26,7 @@ from src.database.connect import (
     reencrypt_plain_to,
     snapshot_to_plaintext,
 )
-from src.monitoring.secret_scrub import passphrase_bytes
+from src.monitoring.secret_scrub import log_failure, passphrase_bytes
 
 _LOG = logging.getLogger("database.encrypt_tool")
 
@@ -164,8 +164,8 @@ def encrypt_all(key: str) -> dict:
             from src.versioned.store import dispose_all as _dispose_lanes
 
             _dispose_lanes()
-        except Exception:  # noqa: BLE001 - never let bookkeeping block the encryption
-            _LOG.warning("could not dispose the lane engines before encrypting", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never let bookkeeping block the encryption
+            log_failure(_LOG, "could not dispose the lane engines before encrypting", exc, level=logging.WARNING)
         # BESIDE THE CORPUS means beside THE CORPUS THIS CALL IS ENCRYPTING — so the
         # lane directory is taken from ``main.parent``, not independently from
         # ``data_dir()``. The two resolvers do not always agree: ``main_db_path()``

@@ -28,6 +28,8 @@ from contextlib import contextmanager
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("database.maintenance")
 
 # The keyword analytics aggregate SUM(count)/COUNT(DISTINCT article_id)/
@@ -1985,8 +1987,8 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             session.info[_DEADLINE_KEY] = prev_deadline
         try:
             event.remove(session, "after_begin", _rearm)
-        except Exception:  # noqa: BLE001 - teardown must never replace the block's outcome
-            _LOG.debug("statement_deadline: listener removal failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - teardown must never replace the block's outcome
+            log_failure(_LOG, "statement_deadline: listener removal failed", exc, level=logging.DEBUG)
         # S2.1: disarm ONLY the connection this session still holds. The old code
         # walked a historical list of every connection it had ever armed -- and after
         # a checkin those objects can belong to ANOTHER session with its own live
@@ -2006,8 +2008,8 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
         if held is not None:
             try:
                 held.set_progress_handler(None, 0)
-            except Exception:  # noqa: BLE001 - a closed/replaced connection needs no disarm
-                _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a closed/replaced connection needs no disarm
+                log_failure(_LOG, "statement_deadline: disarm skipped", exc, level=logging.DEBUG)
 
 
 #: SQLite's VACUUM rebuilds the database into a second copy of its LIVE pages (the pages in use, not the free ones) and only
@@ -2487,14 +2489,14 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
                         "footnote. It stays the operator's button in Settings."
                     ),
                 }
-    except Exception:  # noqa: BLE001 - a background safety net must never break the pass
-        _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background safety net must never break the pass
+        log_failure(_LOG, "off-peak incremental vacuum failed", exc, level=logging.WARNING)
         return {"skipped": "error"}
 
     try:
         p = _vacuum_marker_path()
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps({"last_run": report["at"], "last_tally": report}), encoding="utf-8")
-    except Exception:  # noqa: BLE001
-        _LOG.warning("could not persist the incremental-vacuum marker", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "could not persist the incremental-vacuum marker", exc, level=logging.WARNING)
     return report

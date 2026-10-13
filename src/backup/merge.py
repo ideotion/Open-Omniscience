@@ -54,8 +54,15 @@ from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
 from src.database.stand_in import ARTICLE_HASH_END, ARTICLE_HASH_PREFIX
-from src.monitoring.engine_text import engine_text
-from src.monitoring.secret_scrub import exception_text, scrubbed, unicode_note
+from src.monitoring.secret_scrub import (
+    exception_text,
+    is_driver_error,
+    log_failure,
+    quotes_a_driver,
+    record_text,
+    scrubbed,
+    unicode_note,
+)
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -282,8 +289,8 @@ def _retry_while_locked(
                 # ourselves. Re-disposing costs nothing when nothing reopened.
                 try:
                     on_retry()
-                except Exception:  # noqa: BLE001 - a courtesy, never load-bearing
-                    _LOG.debug("re-dispose during a locked-file retry failed", exc_info=True)
+                except Exception as exc:  # noqa: BLE001 - a courtesy, never load-bearing
+                    log_failure(_LOG, "re-dispose during a locked-file retry failed", exc, level=logging.DEBUG)
             time.sleep(0.25)
 
 
@@ -539,6 +546,9 @@ def classify_restore_error(action: str, exc: Exception) -> str:
         return f"could not {action} this backup: {note}"
     msg = str(exc)
     low = msg.lower()
+    # The classification above reads the real text; what is WRITTEN is the class only when the failure is a database driver's, whose words
+    # can quote a fragment of a statement that no scrub finds (``secret_scrub.record_text``).
+    shown = record_text(exc, typed=False) if (is_driver_error(exc) or quotes_a_driver(exc)) else msg
     # A real version/schema gap: a staged migration failed, or the corpus uses a
     # table/column this build doesn't know. "incompatible version" is accurate here.
     is_version = (
@@ -561,17 +571,17 @@ def classify_restore_error(action: str, exc: Exception) -> str:
             f"your corpus is exactly as it was. Close any other window or copy of the "
             f"app (and anything reading data/open_omniscience.db), then import again."
             f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "
-            f"released: {msg}"
+            f"released: {shown}"
         )
     if isinstance(exc, _db_integrity_error_types()):
         return (
             f"the backup's data conflicts with your corpus on a database constraint "
             f"(e.g. a duplicate row) while merging — this is a data-merge issue, not a "
-            f"version mismatch: {msg}"
+            f"version mismatch: {shown}"
         )
     if is_version:
-        return f"could not {action} this backup (it may be from an incompatible version): {msg}"
-    return f"could not {action} this backup: {msg}"
+        return f"could not {action} this backup (it may be from an incompatible version): {shown}"
+    return f"could not {action} this backup: {shown}"
 
 
 def restore_failure_text(action: str, failure: Exception, *secrets: str | None) -> str:
@@ -767,7 +777,7 @@ def prepare_staged_corpus(
         with _sub("prepare_staged:validate"):
             validate_sqlite_file(staged.corpus_path)
     except BackupError as exc:
-        raise MergeError(str(exc)) from exc
+        raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
 
     original_rev = file_revision(staged.corpus_path)
     if original_rev is None:
@@ -1168,9 +1178,8 @@ def _fts_insert_suspended(con: sqlite3.Connection):
             try:
                 if not _fts_insert_trigger_ddl(con):
                     con.execute(ddl)
-            except Exception:  # noqa: BLE001 - the exception already in flight is the one to report
-                _LOG.warning("could not restore the FTS insert trigger while a merge was failing",
-                             exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - the exception already in flight is the one to report
+                log_failure(_LOG, "could not restore the FTS insert trigger while a merge was failing", exc, level=logging.WARNING)
 
 
 def _fts_insert_trigger_ddl(con) -> str | None:
@@ -1222,9 +1231,8 @@ def _restore_fts_insert_trigger(con, ddl: str | None) -> bool:
             return False  # the rollback restored it; nothing committed the DROP
         con.execute(ddl)
         return True
-    except Exception:  # noqa: BLE001 - never outrank the failure that brought us here
-        _LOG.warning("could not restore the FTS insert trigger after a failed merge",
-                     exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never outrank the failure that brought us here
+        log_failure(_LOG, "could not restore the FTS insert trigger after a failed merge", exc, level=logging.WARNING)
         return False
 
 
@@ -1815,7 +1823,7 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
         traced = False
     try:
         yield
-    except Exception as exc:
+    except Exception:
         # Deliberately NOT `except sqlite3.OperationalError`. The merge connection
         # comes from the raw connect() factory, so on an encrypted store it is a
         # SQLCIPHER3 connection, and sqlcipher3 raises its OWN exception classes --
@@ -1831,7 +1839,7 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
             raise MergeStepStopped(
                 f"stopped during the merge (inside the '{name}' step) — "
                 "nothing was written to your corpus"
-            ) from exc
+            ) from None  # the cause is a driver interrupt: its words are not carried
         raise
     finally:
         # Close out the statement still in flight, so the LAST one in a step is
@@ -3612,8 +3620,8 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         from src.analytics.engine_identity import baseline_engine_id
 
         local = baseline_engine_id()
-    except Exception:  # noqa: BLE001 - no identity, no carry; the re-index still runs
-        _LOG.warning("could not compute the engine identity; carrying nothing", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - no identity, no carry; the re-index still runs
+        log_failure(_LOG, "could not compute the engine identity; carrying nothing", exc, level=logging.WARNING)
         plan["reason"] = "this machine's engine identity could not be computed"
         return
     plan["engine"] = local
@@ -5554,11 +5562,11 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
     with ExitStack() as hold:
         try:
             hold.enter_context(hold_writes(_SWAP_SETTINGS_HOLD_S))
-        except KvWriteBusy as busy:
+        except KvWriteBusy:
             raise RestoreRefused(
                 f"a setting was still being saved after {_SWAP_SETTINGS_HOLD_S:.0f}s (your corpus is being written to) — nothing was "
                 "written to your corpus. Let the running job finish, and import again."
-            ) from busy
+            ) from None
         # Carry the settings the live file holds NOW into the copy that is about to become it, as late as the swap allows: under the
         # hold nothing can be saved to the live file between this read and the replace.
         report["settings_carry"] = _carry_live_settings(working)
@@ -5567,11 +5575,11 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
             # which no connection is being opened and every connection made before it is refused: a save that waited out the
             # restore fails loudly instead of committing into a file nobody reads (the deep read of E3, B1 and NEW-1).
             swap_in_corpus(working, target)
-        except LibraryBusy as busy:
+        except LibraryBusy:
             raise RestoreRefused(
                 "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
                 "switched — nothing was written to your corpus. Import again."
-            ) from busy
+            ) from None
         finally:
             kv_invalidate()  # whatever the old file held is no longer the file: the next read goes to the one that is live
 
@@ -5644,7 +5652,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 else:
                     ann["kept_local"] += 1
             except Exception as exc:  # noqa: BLE001 - each author independent, reported
-                ann["errors"].append(f"{name}: {exc}")
+                ann["errors"].append(f"{name}: {record_text(exc)}")
         else:
             local.parent.mkdir(parents=True, exist_ok=True)
             tmp = local.with_name(local.name + ".tmp")
@@ -5713,7 +5721,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 os.replace(tmp, local)
                 restored += 1
             except OSError as exc:
-                refused.append(f"{name}: {exc}")
+                refused.append(f"{name}: {exception_text(exc, typed=False)}")
         docs[role] = {"restored": restored, "kept_local": kept_local, "refused": refused}
     report["documents"] = docs
 
@@ -5795,7 +5803,7 @@ def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:
             tmp.write_bytes(path.read_bytes())
             os.replace(tmp, target)
         except OSError as exc:
-            out["refused"].append({"name": name, "reason": f"write failed: {exc}"})
+            out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})
             continue
         out["restored"].append(name)
         placed_any = True
@@ -5810,8 +5818,8 @@ def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:
 
             invalidate_ring_caches()
             out["caches_invalidated"] = True
-        except Exception:  # noqa: BLE001 - a cache clear must never undo a committed restore
-            _LOG.warning("ring cache invalidation after restore failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a cache clear must never undo a committed restore
+            log_failure(_LOG, "ring cache invalidation after restore failed", exc, level=logging.WARNING)
             out["caches_invalidated"] = False
     return out
 
@@ -5894,11 +5902,8 @@ def _touched_source_ids(session, batch_ids: int | list[int] | None) -> list[int]
         touched = {int(r[0]) for r in session.execute(gained) if r[0] is not None}
         touched |= {int(r[0]) for r in session.execute(inserted) if r[0] is not None}
         return sorted(touched)
-    except Exception:  # noqa: BLE001 - an underivable scope must widen, never narrow
-        _LOG.warning(
-            "could not derive the batch's touched sources; reconciling ALL source counters",
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 - an underivable scope must widen, never narrow
+        log_failure(_LOG, "could not derive the batch's touched sources; reconciling ALL source counters", exc, level=logging.WARNING)
         return None
 
 
@@ -5947,11 +5952,8 @@ def _swap_group(working: Path, batch_id: int) -> list[int] | None:
             )
             return None
         return group
-    except Exception:  # noqa: BLE001 - an underivable group must widen, never narrow
-        _LOG.warning(
-            "could not derive the batches this swap brings in; the post-swap stages widen",
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 - an underivable group must widen, never narrow
+        log_failure(_LOG, "could not derive the batches this swap brings in; the post-swap stages widen", exc, level=logging.WARNING)
         return None
 
 
@@ -5995,8 +5997,8 @@ def _group_merged_calendar(swap_batches: list[int] | None, batch_id: int) -> boo
             except (TypeError, ValueError, AttributeError):
                 return True
         return len(rows) != len(others)  # a held batch without its report: refresh
-    except Exception:  # noqa: BLE001 - a doubt refreshes, it never skips
-        _LOG.warning("could not read the group's reports; refreshing the event mirror", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a doubt refreshes, it never skips
+        log_failure(_LOG, "could not read the group's reports; refreshing the event mirror", exc, level=logging.WARNING)
         return True
 
 
@@ -6032,12 +6034,9 @@ def _refresh_event_mirror(side_files: dict, *, force: bool = False) -> dict | No
             # DELETE them (the JSON stays authoritative; the mirror re-syncs on next write).
             return {"synced": False, "reason": "empty read guarded"}
         return sync_imports(merged)
-    except Exception:  # noqa: BLE001 - the mirror refresh must never undo a committed restore
-        _LOG.warning(
-            "event_imports mirror refresh after restore failed; the JSON side-file is "
-            "authoritative and the mirror re-syncs on the next calendar write",
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 - the mirror refresh must never undo a committed restore
+        log_failure(_LOG, "event_imports mirror refresh after restore failed; the JSON side-file is "
+            "authoritative and the mirror re-syncs on the next calendar write", exc, level=logging.WARNING)
         return {"synced": False, "reason": "refresh error"}
 
 
@@ -6511,8 +6510,8 @@ def find_completed_import(digest: str | None) -> dict | None:
                 ),
                 {"d": digest},
             ).fetchone()
-    except Exception:  # noqa: BLE001 - a store we cannot read must not veto an import
-        _LOG.warning("could not check whether this artifact was already merged", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a store we cannot read must not veto an import
+        log_failure(_LOG, "could not check whether this artifact was already merged", exc, level=logging.WARNING)
         return None
     if row is None:
         return None
@@ -6544,8 +6543,8 @@ def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) 
             encoding="utf-8",
         )
         os.replace(tmp, path)  # atomic: a torn read can never yield a bogus watermark
-    except Exception:  # noqa: BLE001 - the watermark is an optimisation, never a guarantee
-        _LOG.debug("could not persist the re-index watermark", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the watermark is an optimisation, never a guarantee
+        log_failure(_LOG, "could not persist the re-index watermark", exc, level=logging.DEBUG)
 
 
 def peek_reindex_cursor() -> dict | None:
@@ -6581,8 +6580,8 @@ def _load_reindex_cursor(batch_id: int) -> int | None:
 def clear_reindex_cursor() -> None:
     try:
         _reindex_state_path().unlink(missing_ok=True)
-    except Exception:  # noqa: BLE001
-        _LOG.debug("could not clear the re-index watermark", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "could not clear the re-index watermark", exc, level=logging.DEBUG)
 
 
 def mark_reindex_complete(batch_id: int) -> None:
@@ -6603,8 +6602,8 @@ def mark_reindex_complete(batch_id: int) -> None:
                 {"s": _STATUS_REINDEXED, "b": int(batch_id)},
             )
         clear_reindex_cursor()
-    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-        _LOG.warning("could not stamp batch %s as re-indexed", batch_id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+        log_failure(_LOG, f"could not stamp batch {batch_id} as re-indexed", exc, level=logging.WARNING)
 
 
 #: The backlog read, shared by :func:`pending_reindex_batches` and
@@ -6667,8 +6666,9 @@ def _backlog_engine() -> str:
 
         return baseline_engine_id()
     except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
-        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        _LOG.warning("could not compute the engine identity for the backlog: %s", engine_text(exc, typed=True))
+        # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not compute the engine identity for the backlog: %s", said)
         return "<unknown>"
 
 
@@ -6714,8 +6714,9 @@ def pending_reindex_batches() -> list[dict]:
             for r in rows
         ]
     except Exception as exc:  # noqa: BLE001
-        # no exc_info: the root error handler writes the traceback, which ends with the engine's own words
-        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
+        # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not read the re-index backlog: %s", said)
         return []
 
 
@@ -6740,8 +6741,9 @@ def reindex_backlog() -> dict:
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         # the reason is copied into a drain's result and from there into diagnostics; no exc_info,
         # because the root error handler writes the traceback, which ends with the engine's own words
-        reason = engine_text(exc)
-        _LOG.warning("could not read the re-index backlog: %s", engine_text(exc, typed=True))
+        reason = record_text(exc)
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not read the re-index backlog: %s", said)
         return {"available": False, "reason": reason}
     owed = [int(r[2]) - int(r[3]) - int(r[4]) for r in rows]
     certified = [int(r[3]) for r in rows]
@@ -7212,7 +7214,7 @@ def reindex_hold_target_s() -> float:
         except ValueError:
             return REINDEX_HOLD_TARGET_S
         if math.isfinite(value) and value >= 0:
-            return value
+            return value if value > 0 else 0.0  # "-0" parses to -0.0, which the drain would publish as the target in force
     return REINDEX_HOLD_TARGET_S
 
 
@@ -7647,8 +7649,8 @@ def run_restore(
 
             with session_scope() as _before_sess:
                 report["corpus_delta"] = {"before": _corpus_snapshot(_before_sess)}
-        except Exception:  # noqa: BLE001 - a snapshot failure must never block a commit
-            _LOG.warning("pre-restore corpus snapshot failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - a snapshot failure must never block a commit
+            log_failure(_LOG, "pre-restore corpus snapshot failed", exc, level=logging.WARNING)
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
@@ -7796,8 +7798,8 @@ def run_restore(
 
                     with _session_scope_after() as _after_sess:
                         report["corpus_delta"]["after"] = _corpus_snapshot(_after_sess)
-                except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                    _LOG.warning("post-restore corpus snapshot failed", exc_info=True)
+                except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                    log_failure(_LOG, "post-restore corpus snapshot failed", exc, level=logging.WARNING)
                     report.pop("corpus_delta", None)
 
         # DB-7 (corpus-epoch → restore-merge): a committed merge is a bulk mutation of the live
@@ -7842,8 +7844,8 @@ def run_restore(
                         _epoch_sess,
                         source_ids=_touched_source_ids(_epoch_sess, swap_batches),
                     )
-            except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
-                _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a coordination bump must never undo a committed restore
+                log_failure(_LOG, "corpus-epoch bump after restore-merge failed", exc, level=logging.WARNING)
 
         # DB-reliability D1 follow-up (Wave 5 L): refresh the durable ``event_imports`` mirror
         # from the merged side-file now that the live DB IS the restored corpus. merge_side_files
@@ -7896,8 +7898,8 @@ def run_restore(
                     _rx_stats["owned_the_machine"] = _owned
                     _rx_stats["workers"] = reindex_workers
                     _rx_stats["merge_cache_mb"] = merge_cache_mb
-                except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                    _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
+                except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                    log_failure(_LOG, "post-restore re-index of imported articles failed", exc, level=logging.WARNING)
                     # The whole batch failed before touching a single article, so NONE of the
                     # imported articles got re-indexed -- "failed" must be the true imported
                     # count (from the already-known plan), not 0. Reporting 0 here would read
@@ -7955,8 +7957,8 @@ def run_restore(
 
                 with session_scope() as _cnt_sess:
                     report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
-            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                _LOG.warning("keyword-counter reconcile after restore-merge failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                log_failure(_LOG, "keyword-counter reconcile after restore-merge failed", exc, level=logging.WARNING)
                 report["keyword_counters"] = {"reconciled": False, "error": "see server log"}
 
         # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
@@ -8002,8 +8004,8 @@ def run_restore(
                             _q_sess, article_ids=new_article_ids, write=True
                         )
                         report["quarantine_summary"]["batches"] = q_batches
-            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                _LOG.warning("post-restore quarantine scan failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                log_failure(_LOG, "post-restore quarantine scan failed", exc, level=logging.WARNING)
 
         # S3.5 (field-feedback A1): the "work induced" queue -- corpus-wide totals (not
         # scoped to just this import; no cheap before/after delta exists for these
@@ -8030,8 +8032,8 @@ def run_restore(
                             or 0
                         ),
                     }
-            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                _LOG.warning("post-restore work-induced tally failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                log_failure(_LOG, "post-restore work-induced tally failed", exc, level=logging.WARNING)
 
         # S3.5 (field-feedback A1): persist a standalone, downloadable JSON report (the
         # restore-merge report ALSO already lives inside merge_batches.report_json, but
@@ -8053,8 +8055,8 @@ def run_restore(
         with timings.stage("prune_snapshots"):
             try:
                 report["pruned_snapshots"] = _prune_snapshots()
-            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                _LOG.warning("post-restore snapshot pruning failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                log_failure(_LOG, "post-restore snapshot pruning failed", exc, level=logging.WARNING)
     finally:
         # W5 + skeptic fix: release the active-staging guard on EVERY exit
         # path (success or exception) -- from this point on, THIS commit's
@@ -8069,8 +8071,8 @@ def run_restore(
         report["persisted_report_path"] = str(
             persist_import_report("restore", report, run_id=str(batch_id))
         )
-    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-        _LOG.warning("persisting the standalone import report failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+        log_failure(_LOG, "persisting the standalone import report failed", exc, level=logging.WARNING)
 
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report

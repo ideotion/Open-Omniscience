@@ -66,6 +66,7 @@ from src.catalog.qualification import (
     STATUS_UNQUALIFIED,
 )
 from src.database.stand_in import not_a_stand_in_source
+from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -817,8 +818,8 @@ def auto_repair_inversions(*, now: datetime | None = None) -> dict[str, Any]:
     # no longer be reverted) and every hold a maintainer set.
     try:
         idx = _read_repair_index(strict=True)
-    except Exception:  # noqa: BLE001 - reported, never raised: a repair that cannot run is skipped
-        _LOG.warning("qualification repair skipped: its revert index cannot be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - reported, never raised: a repair that cannot run is skipped
+        log_failure(_LOG, "qualification repair skipped: its revert index cannot be read", exc, level=logging.WARNING)
         return {"repaired": 0, "skipped": "the revert index cannot be read"}
     skip = set(idx["reverted_domains"])
     _confirm_applied_runs(idx)
@@ -937,8 +938,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
         stored = raw.get("flagged") or {}
         if not isinstance(stored, dict):          # a shape this step did not write: leave it as it is
             raise TypeError(f"flagged is a {type(stored).__name__}, not a mapping")
-    except Exception:  # noqa: BLE001 - reported, never raised
-        _LOG.warning("recheck-first list skipped: it cannot be read", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - reported, never raised
+        log_failure(_LOG, "recheck-first list skipped: it cannot be read", exc, level=logging.WARNING)
         return {"flagged": 0, "skipped": "the list cannot be read"}
     with session_scope() as session:
         plan = repair_inversions(session, dry_run=True, name_cap=None)
