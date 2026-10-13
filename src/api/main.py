@@ -1515,11 +1515,37 @@ def _fts_id_sort_key(sort_by: str):
 
 def _load_articles_in_order(session, ids: list[int]) -> list:
     """Load ONLY these article ids as full rows, returned in the given order. Content is
-    decrypted for these (<= page-size) rows only — the S2.5 over-fetch bound's phase 3."""
+    decrypted for these (<= page-size) rows only — the S2.5 over-fetch bound's phase 3.
+    Chunked under SQLite's bound-variable ceiling (``_FTS_ID_CHUNK``) so a caller that asks
+    for a thousand rows or more never hits "too many SQL variables"."""
     if not ids:
         return []
-    by_id = {a.id: a for a in session.query(Article).filter(Article.id.in_(ids)).all()}
+    by_id: dict = {}
+    for i in range(0, len(ids), _FTS_ID_CHUNK):
+        chunk = ids[i : i + _FTS_ID_CHUNK]
+        by_id.update({a.id: a for a in session.query(Article).filter(Article.id.in_(chunk)).all()})
     return [by_id[i] for i in ids if i in by_id]
+
+
+def _not_quarantined_by_index():
+    """``articles.id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)``: the browse's
+    quarantine exclusion, written so that no ARTICLE ROW is read to apply it.
+
+    The old form, ``quarantined IS NOT 1``, cannot use an index, so the planner read each
+    candidate row to test it, and ``quarantined`` sits AFTER ``content`` in the record: reading it
+    walks the whole overflow chain of a ~35 KB body, for every row the scan steps over, including
+    every row an OFFSET skips. The subquery is answered by the covering ``idx_article_quarantined``
+    (usually a handful of ids, built once as a list), after which the outer test is an id lookup.
+    The meaning is unchanged: a row is excluded only when its flag is true, so a pre-migration
+    NULL (never judged) is kept, exactly as ``.isnot(True)`` kept it.
+
+    Measured on a 40,000-article, 2 GB synthetic store (cold cache, plaintext): the first page
+    107 -> 3 ms and a page 20,000 rows deep 715 -> 15 ms (the old form read every skipped row's
+    body); the plan went from ``SCAN ... USING INDEX idx_article_published_at`` to ``SCAN ...
+    USING COVERING INDEX idx_article_published_at``."""
+    from sqlalchemy import select
+
+    return Article.id.notin_(select(Article.id).where(Article.quarantined.is_(True)))
 
 
 def _browse_total_cached(session) -> int:
@@ -1812,7 +1838,23 @@ def _query_articles(
     # gated on `if filters:` (so the common no-filter browse still excludes them),
     # and `_browse_total_cached` is itself quarantine-aware so the S2.3 cached-total
     # optimisation is preserved rather than forced onto the live-count path below.
-    q = session.query(Article).filter(*_q_gate)
+    #
+    # A PAGED browse asks for ids first (``Article.id`` alone, ordered and cut by the database) and
+    # loads full rows for the page only, exactly as the text path has since S2.5. Selecting
+    # ``Article`` here carried every row's ``content`` into the sorter of any ordering an index
+    # does not give (a language filter, a title sort: all matching rows' bodies sorted, and spilled
+    # to temp files when they did not fit) and read the whole body of every row an OFFSET skipped.
+    # ``limit=None`` (the export: every match, bodies included) keeps the single full-row query.
+    paged = limit is not None
+    if paged:
+        # The quarantine gate with the exclusion answered by the index: a stand-in row is quarantined, so the
+        # default view leaves it out through the same list, and a reader that opts in to quarantined items
+        # still gets the stand-in condition (``_quarantine_gate``'s second form).
+        q = session.query(Article.id).filter(
+            *(_quarantine_gate(True) if adv.include_quarantined else [_not_quarantined_by_index()])
+        )
+    else:
+        q = session.query(Article).filter(*_q_gate)
     count_phase = "count_live"
     if filters or adv.include_quarantined:
         if filters:
@@ -1851,7 +1893,7 @@ def _query_articles(
     q = q.order_by(order_col.desc() if descending else order_col.asc(), Article.id.desc())
     if limit is not None:
         q = q.offset(offset).limit(limit)
-    rows = q.all()
+    rows = _load_articles_in_order(session, [r[0] for r in q.all()]) if paged else q.all()
     if _timer is not None:
         _timer.phase("rows")
     _record_search_timing(_timer)
