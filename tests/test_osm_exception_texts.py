@@ -132,3 +132,38 @@ def test_an_unreadable_state_file_is_logged_without_the_held_passphrase(tmp_path
     monkeypatch.setattr(downloads.json, "loads", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError(f"state said {HELD}")))
     OsmDownloadManager(base_dir=tmp_path, http_get=None)
     assert "state unreadable" in caplog.text and "RuntimeError" in caplog.text and HELD not in caplog.text
+
+
+def test_a_state_save_that_fails_after_a_download_failure_leaves_nothing_to_chain(tmp_path, monkeypatch, caplog):
+    # A full disk is the likely reason a download just failed, and it fails the save too: raised inside the handler, that
+    # error carries the original one as its context, which a thread's excepthook prints unscrubbed.
+    # MUTATION TARGET: the `_save()` back inside the `except` block.
+    monkeypatch.setenv("OO_DB_PASSPHRASE", HELD)
+    caplog.set_level(logging.WARNING)
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _Resp())
+    entry = m._entry_for("europe")
+
+    def _full_disk():
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(m, "_save", _full_disk)
+    res = m._download(entry)  # raises nothing: there is no exception left to print
+    assert res.status == "error" and HELD not in res.error
+    assert "could not be saved" in caplog.text and "OSM region download failed for europe" in caplog.text
+    assert HELD not in caplog.text
+
+
+def test_an_error_stored_by_an_older_build_is_scrubbed_on_load_and_when_served(tmp_path, monkeypatch):
+    # MUTATION TARGET: drop the scrub in `_load`.
+    monkeypatch.setenv("OO_DB_PASSPHRASE", HELD)
+    probe = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    entry = probe._entry_for("europe")
+    state = json.loads(probe.state_path.read_text("utf-8"))
+    state["entries"]["europe"]["error"] = f"the transfer said {HELD}"
+    probe.state_path.write_text(json.dumps(state), "utf-8")
+    m = OsmDownloadManager(base_dir=tmp_path, http_get=None)
+    shown = next(e for e in m.list() if e["key"] == entry.key)
+    assert "the transfer said" in shown["error"] and HELD not in shown["error"]
+    assert HELD not in json.dumps(shown)
+    m._save()  # what the next save writes back
+    assert HELD not in m.state_path.read_text("utf-8")
