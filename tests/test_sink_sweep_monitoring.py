@@ -102,7 +102,7 @@ def test_a_soak_block_that_crashed_names_no_passphrase():
     assert out["measured"] is False and _PW not in out["block_error"] and _PW not in str(out)
 
 
-@pytest.mark.parametrize("pad", range(250, 300, 7))
+@pytest.mark.parametrize("pad", range(250, 300))
 def test_a_selftest_row_is_cut_after_the_paths_are_tokenised(monkeypatch, pad):
     """A cut at 300 inside a path would leave a fragment (``/opt/accounts/alice.mar``) that no tokenising recognises, whatever the
     home directory is called and wherever the path falls across the cut."""
