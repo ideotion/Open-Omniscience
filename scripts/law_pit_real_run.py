@@ -27,7 +27,9 @@ The verdict is one word from a closed vocabulary, with its reason; there is no s
   fetch-refused         a capture was refused or empty (the refusal is kept verbatim, whether it is the
                         site's, the robots rules' or this environment's network policy)
 
-It asks ONE host and says which before it asks (the fetcher follows only public redirects). It refuses
+It asks ONE host, www.legislation.gov.uk over https, and says so before it asks: the URLs it builds are checked
+before any request, every redirect hop to another host is refused before it is followed, and so is an answer whose
+final URL is anywhere else. It refuses
 without --online (the operator's consent for this run; the app's own airplane state lives in the app's
 process and is not visible from here, so run it with the app stopped), and writes only into a NEW, EMPTY
 scratch data directory (never a store someone uses):
@@ -60,8 +62,21 @@ DEFAULT_DAY = "2019-06-01"
 # exactly as they are to the index, and a number inside a phrase stays inside it.
 _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 _PHRASE_WORDS = 5
-#: The publisher's host, compared whole (never as a substring of a URL).
-_HOSTS = {"legislation.gov.uk", "www.legislation.gov.uk"}
+#: The ONE host this script may ask, compared as the whole network location (never as a substring).
+HOST = "www.legislation.gov.uk"
+
+
+def allowed_url(url: str) -> bool:
+    """True only for ``https://www.legislation.gov.uk/...``: https, exactly that network location (so no port, no
+    userinfo, no apex or lookalike host), and no backslash anywhere (a browser reads ``https://evil.test\\@host``
+    as host ``evil.test`` where a lenient parser reads ``host``)."""
+    if not isinstance(url, str) or "\\" in url or any(c.isspace() or ord(c) < 32 for c in url):
+        return False
+    try:
+        p = urlparse(url)
+    except ValueError:
+        return False
+    return p.scheme == "https" and p.netloc == HOST and p.username is None and p.password is None
 
 
 def capture_urls(official_url: str, day: str) -> tuple[str, str]:
@@ -97,7 +112,10 @@ def _capture(session, fetcher, doc, url: str) -> dict:
     return {"url": url, "status": out.get("status"), "detail": out.get("detail"), "size": out.get("size")}
 
 
-def run(session, fetcher, doc_row: dict, *, day: str = DEFAULT_DAY, phrase: str | None = None, today: str | None = None) -> dict:
+def run(
+    session, fetcher, doc_row: dict, *, day: str = DEFAULT_DAY, phrase: str | None = None, today: str | None = None,
+    url_ok=allowed_url,
+) -> dict:
     """Capture the two versions through the app's tracker and ask the app's search. ``session`` is the
     corpus session; the law lane must exist. Returns the report (JSON-able)."""
     from src.database.models import LawDocument, LawRevision
@@ -106,13 +124,18 @@ def run(session, fetcher, doc_row: dict, *, day: str = DEFAULT_DAY, phrase: str 
 
     today = today or datetime.now(UTC).date().isoformat()
     pit_url, current_url = capture_urls(doc_row["official_url"], day)
-    doc = LawDocument(**{**doc_row, "url": pit_url})
-    session.add(doc)
-    session.commit()
     report: dict = {
         "act": doc_row["title"], "host": urlparse(pit_url).hostname, "asked_for_day": day, "today": today,
         "captures": [], "verdict": None, "why": None,
     }
+    for url in (pit_url, current_url):  # the URLs actually fetched, checked before anything is written or asked
+        if not url_ok(url):
+            report["verdict"] = "fetch-refused"
+            report["why"] = f"refused before any request: {url!r} is not an https URL on {HOST}"
+            return report
+    doc = LawDocument(**{**doc_row, "url": pit_url})
+    session.add(doc)
+    session.commit()
     for url in (pit_url, current_url):
         cap = _capture(session, fetcher, doc, url)
         report["captures"].append(cap)
@@ -168,12 +191,36 @@ def run(session, fetcher, doc_row: dict, *, day: str = DEFAULT_DAY, phrase: str 
     return report
 
 
+def make_fetcher(timeout: float = 45.0):
+    """The app's ethical fetcher, held to :data:`HOST` on EVERY hop: a redirect to any other host is refused
+    before it is followed (the redirect path re-runs ``_guard_target`` on each target), and a result whose final
+    URL is not an allowed one is refused after."""
+    from src.ingest import BlockedTarget, EthicalFetcher, FetchError
+
+    class _Pinned(EthicalFetcher):
+        def _guard_target(self, host):  # called for the request and for every redirect target
+            if host != HOST:
+                raise BlockedTarget(f"refused: {host!r} is not {HOST}")
+            super()._guard_target(host)
+
+        def fetch(self, url, *args, **kwargs):
+            result = super().fetch(url, *args, **kwargs)
+            if not allowed_url(getattr(result, "final_url", "") or ""):
+                raise FetchError(f"refused: the answer came from {getattr(result, 'final_url', None)!r}, not {HOST}")
+            return result
+
+    return _Pinned(timeout=timeout)
+
+
 def _catalogue_row(title: str) -> dict | None:
     from src.law.catalog import load_legal_catalog
 
     for d in load_legal_catalog().get("documents") or []:
-        host = (urlparse(str((d or {}).get("url") or "")).hostname or "").lower()
-        if host in _HOSTS and title.lower() in str(d.get("title") or "").lower():
+        if (
+            allowed_url(str((d or {}).get("url") or ""))
+            and allowed_url(str(d.get("official_url") or d.get("url") or ""))
+            and title.lower() in str(d.get("title") or "").lower()
+        ):
             return {
                 "jurisdiction": d.get("jurisdiction") or "uk", "title": d["title"], "url": d["url"],
                 "official_url": d.get("official_url") or d["url"], "category": d.get("category") or "legislation",
@@ -199,12 +246,10 @@ def main(argv: list[str] | None = None) -> int:
     row = _catalogue_row(args.title)
     if row is None:
         sys.exit(f"refusing: no entry on the publisher's host titled like {args.title!r} in configs/legal_sources.yml")
-    host = urlparse(row["official_url"]).hostname
+    host = HOST
     if not args.online:
         sys.exit(f"refusing: this contacts {host} (two GETs of the Act's CLML, through the ethical fetcher); say --online to allow it")
-    from src.ingest import EthicalFetcher
-
-    fetcher = EthicalFetcher(timeout=45.0)  # before any write: nothing is created if this cannot be built
+    fetcher = make_fetcher()  # before any write: nothing is created if this cannot be built
 
     from src.database.session import SessionLocal, init_db
     from src.versioned.store import create_lane

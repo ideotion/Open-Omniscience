@@ -38,6 +38,10 @@ _ROW = {
     "official_url": "https://gazette.zzz.test/act/2019/7", "category": "legislation", "consolidated": True,
     "language": "zxx",
 }
+def _OK(url):
+    return url.startswith("https://gazette.zzz.test/")
+
+
 _PIT, _NOW = R.capture_urls(_ROW["official_url"], "2019-06-01")
 
 
@@ -101,7 +105,7 @@ def test_a_phrase_is_picked_only_from_words_the_old_text_has_and_the_new_one_lac
 def test_the_2019_text_is_found_on_the_2019_day_and_not_today(corpus):
     f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")})
     with corpus() as s:
-        report = R.run(s, f, _ROW, day="2019-06-01", today="2025-01-01")
+        report = R.run(s, f, _ROW, day="2019-06-01", today="2025-01-01", url_ok=_OK)
     assert report["verdict"] == "found", report
     assert f.asked == [_PIT, _NOW]  # exactly two GETs, both composed from the row
     assert report["search_on_2019_day"]["matched"] == 1 and report["search_on_today"]["matched"] == 0
@@ -112,7 +116,7 @@ def test_the_2019_text_is_found_on_the_2019_day_and_not_today(corpus):
 def test_a_source_that_states_no_date_cannot_answer_a_past_day(corpus):
     f = _Fetcher({_PIT: _v("act.v1", undated=True), _NOW: _v("act.v2", undated=True)})
     with corpus() as s:
-        report = R.run(s, f, _ROW, day="2019-06-01", today="2099-01-01")
+        report = R.run(s, f, _ROW, day="2019-06-01", today="2099-01-01", url_ok=_OK)
     assert report["verdict"] == "not-found", report
     assert "observation" in report["why"]
     assert {v["dating"] for v in report["versions"]} == {"observed"}
@@ -121,7 +125,7 @@ def test_a_source_that_states_no_date_cannot_answer_a_past_day(corpus):
 def test_two_identical_captures_show_nothing(corpus):
     f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v1")})
     with corpus() as s:
-        report = R.run(s, f, _ROW, today="2025-01-01")
+        report = R.run(s, f, _ROW, today="2025-01-01", url_ok=_OK)
     assert report["verdict"] == "not-decisive", report
     assert "phrase" not in report
 
@@ -129,7 +133,7 @@ def test_two_identical_captures_show_nothing(corpus):
 def test_a_refused_capture_is_kept_verbatim_and_nothing_is_searched(corpus):
     f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")}, refuse=(_PIT,))
     with corpus() as s:
-        report = R.run(s, f, _ROW, today="2025-01-01")
+        report = R.run(s, f, _ROW, today="2025-01-01", url_ok=_OK)
     assert report["verdict"] == "fetch-refused" and _PIT in report["why"]
     assert len(report["captures"]) == 1 and "search_on_2019_day" not in report
 
@@ -156,7 +160,7 @@ def _main(monkeypatch, tmp_path, *args: str, data_dir: Path | None):
 def test_it_refuses_without_online_and_names_the_host(monkeypatch, tmp_path):
     said = _main(monkeypatch, tmp_path, data_dir=tmp_path / "fresh")
     named = re.search(r"contacts (\S+) \(", said)
-    assert "--online" in said and named and named.group(1) in R._HOSTS
+    assert "--online" in said and named and named.group(1) == R.HOST
     fresh = tmp_path / "fresh"
     assert not fresh.exists() or not any(fresh.iterdir())  # no database, no setting: nothing was written
 
@@ -174,7 +178,7 @@ def test_it_refuses_without_a_scratch_directory_at_all(monkeypatch, tmp_path):
 def test_a_phrase_given_that_the_current_text_also_holds_is_not_decisive(corpus):
     f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")})
     with corpus() as s:
-        report = R.run(s, f, _ROW, phrase="This Act establishes the standards", today="2025-01-01")
+        report = R.run(s, f, _ROW, phrase="This Act establishes the standards", today="2025-01-01", url_ok=_OK)
     assert report["verdict"] == "not-decisive", report
 
 
@@ -201,13 +205,92 @@ def test_found_needs_today_to_find_nothing(corpus, monkeypatch):
     monkeypatch.setattr(pit, "search", _everywhere)
     f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")})
     with corpus() as s:
-        report = R.run(s, f, _ROW, day="2019-06-01", today="2025-01-01")
+        report = R.run(s, f, _ROW, day="2019-06-01", today="2025-01-01", url_ok=_OK)
     assert report["verdict"] == "not-found", report
 
 
 def test_the_default_act_is_in_the_catalogue_on_the_publishers_host():
-    from urllib.parse import urlparse
-
     row = R._catalogue_row(R.DEFAULT_TITLE)
-    assert row and urlparse(row["official_url"]).hostname in R._HOSTS
+    assert row and R.allowed_url(row["official_url"]) and R.allowed_url(row["url"])
     assert R._catalogue_row("no such act anywhere") is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.legislation.gov.uk.evil.test/ukpga/2018/12/data.xml",   # lookalike by suffix
+        "https://evil.test/www.legislation.gov.uk/ukpga/2018/12/data.xml",   # the host in the path
+        "https://evil.test/?u=https://www.legislation.gov.uk/",              # the host in the query
+        "https://www.legislation.gov.uk@evil.test/ukpga/2018/12/data.xml",   # the host as userinfo
+        "https://user:pw@www.legislation.gov.uk/ukpga/2018/12/data.xml",     # userinfo
+        "https://www.legislation.gov.uk:8443/ukpga/2018/12/data.xml",        # a port
+        "http://www.legislation.gov.uk/ukpga/2018/12/data.xml",              # not https
+        "https://legislation.gov.uk/ukpga/2018/12/data.xml",                 # the apex
+        "https://evil.test\\@www.legislation.gov.uk/ukpga/2018/12/data.xml",  # backslash: a browser reads evil.test
+        "https://www.legislation.gov.uk /ukpga/2018/12/data.xml",            # whitespace
+        "ftp://www.legislation.gov.uk/ukpga/2018/12/data.xml",
+        "",
+    ],
+)
+def test_only_https_on_exactly_the_publishers_host_is_allowed(url):
+    assert R.allowed_url(url) is False
+
+
+def test_the_publishers_own_urls_are_allowed():
+    assert R.allowed_url("https://www.legislation.gov.uk/ukpga/2018/12/2019-06-01/data.xml") is True
+    assert all(R.allowed_url(u) for u in R.capture_urls("https://www.legislation.gov.uk/ukpga/2018/12", "2019-06-01"))
+
+
+def test_the_default_refuses_any_other_host_before_a_request_or_a_write(corpus):
+    """run()'s default rule is the real one: the fixture host is refused, the fetcher is never asked, and no
+    document row is written."""
+    from src.database.models import LawDocument
+
+    f = _Fetcher({_PIT: _v("act.v1"), _NOW: _v("act.v2")})
+    with corpus() as s:
+        report = R.run(s, f, _ROW, today="2025-01-01")
+        assert s.query(LawDocument).count() == 0
+    assert report["verdict"] == "fetch-refused" and "refused before any request" in report["why"]
+    assert f.asked == []
+
+
+def test_the_url_fetched_is_the_one_checked_not_the_row_url(corpus):
+    """A row whose `url` is on the publisher but whose `official_url` is elsewhere fetches from official_url, so
+    it is official_url's host that is judged."""
+    row = {**_ROW, "url": "https://www.legislation.gov.uk/ukpga/2018/12/data.xml", "official_url": "https://evil.test/act"}
+    f = _Fetcher({})
+    with corpus() as s:
+        report = R.run(s, f, row)
+    assert report["verdict"] == "fetch-refused" and f.asked == []
+
+
+def test_the_catalogue_row_must_be_on_the_publisher_for_both_urls(monkeypatch):
+    import src.law.catalog as catalog
+
+    good = {"title": "An Act", "url": "https://www.legislation.gov.uk/ukpga/1/contents", "official_url": "https://www.legislation.gov.uk/ukpga/1"}
+    for bad in (
+        {**good, "official_url": "https://evil.test/ukpga/1"},
+        {**good, "url": "http://www.legislation.gov.uk/ukpga/1/contents"},
+        {**good, "official_url": "https://legislation.gov.uk/ukpga/1"},
+    ):
+        monkeypatch.setattr(catalog, "load_legal_catalog", lambda bad=bad: {"documents": [bad]})
+        assert R._catalogue_row("An Act") is None
+    monkeypatch.setattr(catalog, "load_legal_catalog", lambda: {"documents": [good]})
+    assert R._catalogue_row("An Act")["official_url"] == good["official_url"]
+
+
+def test_the_fetcher_refuses_a_redirect_hop_to_another_host_and_an_answer_from_one(monkeypatch):
+    import src.ingest as ingest
+
+    fetcher = R.make_fetcher()
+    with pytest.raises(ingest.BlockedTarget):
+        fetcher._guard_target("evil.test")  # what the redirect path calls on every hop's target
+    with pytest.raises(ingest.BlockedTarget):
+        fetcher._guard_target("legislation.gov.uk")
+
+    class _Answer:
+        final_url = "https://evil.test/elsewhere"
+
+    monkeypatch.setattr(ingest.EthicalFetcher, "fetch", lambda self, url, *a, **k: _Answer())
+    with pytest.raises(ingest.FetchError, match="refused"):
+        R.make_fetcher().fetch("https://www.legislation.gov.uk/ukpga/2018/12/data.xml")
