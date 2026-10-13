@@ -5436,10 +5436,11 @@ def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
 
 
 #: The ``app_state`` keys that ARE settings, carried by ``_carry_live_settings``: the ``settings.*`` namespaces, the agenda
-#: preferences, the interface language and the search history. Every other key is a RECORD ABOUT CORPUS TABLES (the spell-index
-#: build note, the qualification repair records and the recheck marker) and goes the way those tables go: with the snapshot, so
-#: the note and the table it describes stay together.
-_CARRIED_SETTINGS_KEYS = ("settings.", "agenda.", "ui.", "search.history")
+#: preferences and the interface language. Every other key stays as the snapshot has it: the records ABOUT CORPUS TABLES (the
+#: spell-index build note, the qualification repair records and the recheck marker) go the way those tables go, so a note and its
+#: table stay together; and the search history is the user's private record, read by its own module only (a structural test
+#: holds that, and the history is not a setting), so a restore does not reach into it either way.
+_CARRIED_SETTINGS_KEYS = ("settings.", "agenda.", "ui.")
 
 
 def _carry_live_settings(working: Path) -> dict:

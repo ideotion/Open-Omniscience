@@ -101,6 +101,19 @@ def test_a_key_that_describes_corpus_tables_is_left_as_the_snapshot_has_it_and_n
     assert _rows(working) == {"search.spell_index": "snap", "settings.app": "a2"}
 
 
+def test_the_search_history_is_never_carried(tmp_path, live_at):
+    """The history is the user's private record, read by its own module only (tests/test_search_advanced_api.py holds that
+    structurally): a restore neither reads its entries nor writes them, and it names only the key."""
+    working = _file(tmp_path / "working.db", {"search.history": "snap"})
+    live_at(_file(tmp_path / "live.db", {"search.history": "SECRET-QUERY"}))
+
+    out = merge._carry_live_settings(working)
+
+    assert out == {"carried": 0, "of": 0, "left_as_snapshot": ["search.history"]}
+    assert "SECRET-QUERY" not in repr(out)
+    assert _rows(working) == {"search.history": "snap"}
+
+
 def test_a_copy_that_lacks_the_table_gets_it(tmp_path, live_at):
     working = _file(tmp_path / "working.db", None)
     live_at(_file(tmp_path / "live.db", {"settings.app": "a"}))
