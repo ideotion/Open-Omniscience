@@ -224,10 +224,13 @@ def test_the_built_slot_producers_hold_the_numbers_the_table_states():
         assert len(json.dumps(value, default=str).encode()) <= slots.budget_of(name), name
     readings = {"avail_mb": 900.0, "total_mb": 3900.0, "rss_mb": 800.0, "swap_used_mb": 100.0}
     ring = [hwm._light_snapshot(readings, f"t{i}", None) for i in range(hwm._LIGHT_KEEP)]
-    state = {"pressure_light": ring, "pressure_light_taken": len(ring), "started_at": "2026-10-06T00:00:00"}
+    state = {"pressure_light": ring, "pressure_light_taken": len(ring), "started_at": "2026-10-06T00:00:00",
+             "session_id": "the-previous-session"}
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(hwm, "current", lambda: state)
         mp.setattr(hwm, "previous", lambda: state)
+        # the previous session's marks are copied only under the ledger's id for that session
+        mp.setattr("src.monitoring.session_history.previous_session_id", lambda: "the-previous-session")
         out = hwm.diagnostics_member(max_bytes=slots.budget_of("pressure-light.json"))
     assert len(out["this_session"]["snapshots"]) == len(out["previous_session"]["snapshots"]) == hwm._LIGHT_KEEP
     assert out["this_session"]["dropped_oldest_to_fit"] == out["previous_session"]["dropped_oldest_to_fit"] == 0

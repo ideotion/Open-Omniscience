@@ -39,7 +39,7 @@ they were written to catch; they now start it 20 to 30 characters before. The `A
 statement through unredacted.
 (9) **A marker unreadable on ONE of two boots is unknown, not unchanged**: `[]` for it put a crash after an unreadable boot under "nothing moved", the mirror of the "updated" error; and a dead session's peaks go on its
 end only when pid, machine boot AND start agree (a pid is reused). (10) **A member that grows with a ledger needs its own bound, stated against the part it ships in**: the chronology of a full ledger (4,000 lines)
-measured 4.27 MB of JSON on a synthetic ledger, about 0.9 MB of it the peaks of unclean ends at 1.3 KB each (an end may carry 4 KB), so the member thins the stacks of all but the newest ten ends, then drops the oldest
+measured 4.27 MB of JSON on a synthetic ledger whose ends carried their stacks inside `previous_peaks`, about 0.9 MB of it at 1.3 KB an end (an end now carries the marks there, and its memory makeup and newest snapshot ride the ledger and `boots.json` as `previous_at_peak` and `previous_pressure`, which the chronology does not copy), so the member thins the peaks of all but the newest ten ends, then drops the oldest
 sessions by ONE time cut for sessions, events and gaps, and what it measures is what it writes (the cut note is inside the measure: the first version came out 72 bytes over its own bound).
 
 (11) **A SHARED SESSION OUTLIVES THE CONNECTION A DAMAGED PAGE KILLED** (after #1333 made the observer invalidate that one connection). The debug bundle runs ten database sections one after the other on ONE shared snapshot

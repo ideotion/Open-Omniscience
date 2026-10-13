@@ -61,7 +61,7 @@ class Slot:
     kwargs: dict[str, Any] = field(default_factory=dict)  # fixed arguments for a producer without a budget
 
 
-#: The table. Order is the order the members are written. The first three are built; the rest are the
+#: The table. Order is the order the members are written. The first five are built; the rest are the
 #: owners' records announced in the plan (section 6), each a proposal of where the owner's
 #: ``diagnostics_member`` lives: an owner whose module has another path changes ONE line here.
 #: THE NUMBERS, what each protects and how it was got (the plan's section 4 states the same ones). WHAT
@@ -83,21 +83,26 @@ class Slot:
 #:     of a test stack is 664 bytes, so the 16 the member can hold (8 per session, two sessions) are 10.6
 #:     KB, and 40,000 leaves about four times that for the deeper stacks of a real run; a longer tail is
 #:     cut oldest first and the member says how many.
-#:   * the three not built yet are the owners' FIRST ESTIMATES, to be replaced by a measurement when each
-#:     lands (the budget is one line here, never in ``bundle.py``).
+#:   * ``boots`` 30,720: RC's own ``DEFAULT_MAX_BYTES`` (30 KiB), the argument is in ``boots.py`` (ten boots,
+#:     each end record up to about 5 KiB; the member drops the OLDEST boots until it fits and says how
+#:     many), and a test holds the two numbers together.
+#:   * ``database-damage`` 40,000 and the one not built yet (``keyword-pipeline`` 60,000) are the owners'
+#:     FIRST ESTIMATES, to be replaced by a measurement when each lands (the budget is one line here,
+#:     never in ``bundle.py``).
 SLOTS: tuple[Slot, ...] = (
     Slot("vitals.json", "src.monitoring.vitals_history:diagnostics_member", "export", 260_000, "memory"),
     Slot("runs.json", "src.monitoring.diagnostics_runs:diagnostics_member", "export", 40_000, "runs"),
     # The minutes before a kill (WAL's snapshot, every 15 s while memory is short): vitals.json holds the
     # hours and days before it and names this member for what follows (``tail_in``).
     Slot("pressure-light.json", "src.monitoring.session_hwm:diagnostics_member", "WAL", 40_000, "memory"),
-    # Owners' records not built yet: listed as ``not-in-build`` until their module exists.
+    # What each boot replayed and how the one before it ended (RC's record, built).
+    Slot("boots.json", "src.monitoring.boots:diagnostics_member", "RC", 30_720, "sessions"),
+    # WAL's damage record (built), then the owner's record not built yet, listed as ``not-in-build`` until its module exists.
     Slot("database-damage.json", "src.database.damage:diagnostics_member", "WAL", 40_000, "database"),
-    Slot("boots.json", "src.monitoring.boots:diagnostics_member", "RC", 30_000, "sessions"),
     Slot("keyword-pipeline.json", "src.analytics.keyword_pipeline:diagnostics_member", "keyword", 60_000, "keywords"),
 )
 
-#: The most the slot members can add together, in raw JSON. A cap on the budgets (their sum is 470,000 at
+#: The most the slot members can add together, in raw JSON. A cap on the budgets (their sum is 470,720 at
 #: this head), not a size of any zip: at the first measure's 4.6 to 1 it is about 130 KB zipped of a part
 #: of 4,000,000 bytes, which is what it protects (room for the members that are not slots).
 TOTAL_BUDGET_BYTES = 600_000
@@ -114,7 +119,7 @@ TOTAL_BUDGET_BYTES = 600_000
 #: when those members are measured;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 470,000 with all six rows and the free room about 1.9 MB, so a row can grow by that much before
+#: 470,720 with all six rows and the free room about 1.9 MB, so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
 OTHER_NEW_MEMBERS_BYTES = 919_000
