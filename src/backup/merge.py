@@ -7241,10 +7241,11 @@ def run_restore(
     # Resolved here rather than inside the merge step so a preview and its commit
     # cannot answer differently. It is resolved BEFORE the snapshot, never after it:
     # the settings read can migrate a legacy ``app_settings.json`` into the live
-    # ``app_state`` row (a write on the live file), and a write after the snapshot is
-    # thrown away by the swap while contradicting "nothing touches the live file
-    # between the snapshot and the swap". Before it, the migration lands in the live
-    # file and the snapshot carries it into the working copy, so the swap keeps it.
+    # ``app_state`` row (a write on the live file), and a write made after the
+    # snapshot is thrown away by the swap. Before it, the migration lands in the
+    # live file and the snapshot carries it into the working copy, so the swap keeps
+    # it. A CARRIED working copy takes no snapshot, so there a migration is still
+    # not carried (rare; the next settings read migrates it again).
     _trust_history = resolve_trust_fetch_history(trust_fetch_history)
     with timings.stage("snapshot_working_copy"):
         if not carried:
