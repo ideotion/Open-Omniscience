@@ -13,6 +13,7 @@ stored article text around the recorded first-occurrence offset.
 
 from __future__ import annotations
 
+import heapq
 import math
 import os
 import time
@@ -1426,6 +1427,61 @@ def top_terms(
     return out
 
 
+#: Articles one statement of :func:`_corpus_keyword_rows` reads. The statement for a slice finishes
+#: before the next starts, so a reader is never open for longer than ``CORPUS_KEYWORD_SLICE`` articles'
+#: mention rows (about forty each). Small enough that a pin report cannot name this read for minutes,
+#: large enough that the 800-article samples the audits pass cost eight statements, not eight hundred.
+#: The bound holds when the planner starts from the article; with a ``kind`` it can start from the keywords
+#: instead and then each slice scans every keyword of that kind (OPEN_QUEUE: read chunking, N5).
+CORPUS_KEYWORD_SLICE = 100
+
+
+def _corpus_keyword_rows(session, article_ids, kind, take: int) -> list[tuple[Any, int, int]]:
+    """``[(Keyword, mentions, articles)]`` for the top ``take`` keywords of an article set, ordered by
+    how many of the set's articles mention the keyword, then by mentions, then by keyword id.
+
+    The set is read a SLICE of articles at a time (``CORPUS_KEYWORD_SLICE``), one finished statement per
+    slice, and the slices' sums are added. That is exact, not an approximation: ``SUM(count)`` adds
+    across disjoint article sets, and so does the number of DISTINCT articles because a slice holds
+    each article once (the ids are de-duplicated first: a repeated id must count once, as ``IN`` does).
+    Memory is the keywords of the set, as ints; the ORM ``Keyword`` rows are loaded for the ``take`` that
+    survive only. Why not one statement: the same reason as ``windowed_group_counts``, a statement that
+    is running is a reader a WAL checkpoint cannot pass (the 10-06 hP bundle's pin report names
+    ``corpus_keywords``, inside ``cursor.execute``). A re-index of an article between two slices is seen
+    in whichever state the slice that reached it found; one article's rows never mix states. The session's
+    connection goes back to the pool after each slice (``release_between_pieces``: not on a snapshot session),
+    so the call holds no pool slot across slices. Ties on both counts break by keyword id, which the single statement left to the sorter."""
+    from src.database.query import release_between_pieces
+
+    ids = list(dict.fromkeys(int(a) for a in article_ids))
+    totals: dict[int, list[int]] = {}
+    for part in _chunked(ids, CORPUS_KEYWORD_SLICE):
+        q = (
+            session.query(
+                KeywordMentionRead.keyword_id,
+                func.sum(KeywordMentionRead.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
+            )
+            .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
+            .filter(KeywordMentionRead.article_id.in_(part))
+        )
+        for kid, m, a in _apply_kind(q, kind).group_by(KeywordMentionRead.keyword_id).all():
+            cur = totals.get(kid)
+            if cur is None:
+                totals[kid] = [int(m or 0), int(a or 0)]
+            else:
+                cur[0] += int(m or 0)
+                cur[1] += int(a or 0)
+        release_between_pieces(session)  # the slice is read whole: its connection goes back before the next
+    best = heapq.nsmallest(take, totals.items(), key=lambda kv: (-kv[1][1], -kv[1][0], kv[0]))
+    by_id: dict[int, Any] = {}
+    wanted = [kid for kid, _ in best]
+    for part in _chunked(wanted, 500):
+        for k in session.query(Keyword).filter(Keyword.id.in_(part)).all():
+            by_id[k.id] = k
+    return [(by_id[kid], tot[0], tot[1]) for kid, tot in best if kid in by_id]
+
+
 def corpus_keywords(
     session,
     *,
@@ -1447,25 +1503,7 @@ def corpus_keywords(
     """
     if not article_ids:
         return {"count": 0, "n_articles": 0, "terms": []}
-    q = (
-        session.query(
-            Keyword,
-            func.sum(KeywordMentionRead.count).label("m"),
-            func.count(func.distinct(KeywordMentionRead.article_id)).label("arts"),
-        )
-        .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
-        .filter(KeywordMentionRead.article_id.in_(article_ids))
-    )
-    q = _apply_kind(q, kind)
-    rows = (
-        q.group_by(Keyword.id)
-        .order_by(
-            func.count(func.distinct(KeywordMentionRead.article_id)).desc(),
-            func.sum(KeywordMentionRead.count).desc(),
-        )
-        .limit(limit * 4)
-        .all()
-    )
+    rows = _corpus_keyword_rows(session, article_ids, kind, limit * 4)
     is_hidden = _hidden_predicate()
     terms = []
     for k, m, a in rows:
@@ -2594,17 +2632,22 @@ def trending(
         ``dict(query.all())`` held every keyword of both windows at once, which grows
         with the keyword count (millions on a field corpus). Only the keywords the
         scoring loop below reads are kept, in the order the query returns them, so the
-        answer is unchanged."""
-        from sqlalchemy import select
+        answer is unchanged. It is read as many short statements, one day of one key
+        range each (``windowed_group_counts``), so no reader stays open for the minutes a
+        single GROUP BY over a field corpus took and a checkpoint can pass between them."""
+        from src.database.query import windowed_group_counts
 
-        from src.database.query import grouped_counts
-
-        stmt = select(KeywordMentionRead.keyword_id, func.sum(KeywordMentionRead.count)).where(
-            KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi
+        return windowed_group_counts(
+            session,
+            key=KeywordMentionRead.keyword_id,
+            day=KeywordMentionRead.observed_on,
+            rowid=KeywordMentionRead.id,
+            value=func.sum(KeywordMentionRead.count),
+            lo=lo,
+            hi=hi,
+            keep=keep,
+            where=(KeywordMentionRead.country == country.lower(),) if country else (),
         )
-        if country:
-            stmt = stmt.where(KeywordMentionRead.country == country.lower())
-        return grouped_counts(session, stmt.group_by(KeywordMentionRead.keyword_id), keep)
 
     # Opt-in rollup serve: sum the in-memory keyword_daily rollup for the two windows
     # instead of scanning keyword_mentions (the freeze). Time-window only — never per-country
