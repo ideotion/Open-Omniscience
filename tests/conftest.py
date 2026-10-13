@@ -321,17 +321,42 @@ def _isolated_robots_cache_path(tmp_path, monkeypatch):
     monkeypatch.setattr(_ingest_mod, "_robots_cache_path", lambda: tmp_path / "robots_cache.json")
 
 
+def _stop_leaked_liveness_thread() -> None:
+    """Stop the session ledger's liveness thread a test left running.
+
+    ``record_boot`` starts it (a daemon thread, one per process) unless ``OO_SESSION_LIVENESS=0``, and
+    only ``record_end`` stops it, so a test that boots the app and never ends the session leaves it
+    ticking every few seconds for the rest of the run. Its loop calls the vitals history's ``tick()``
+    on the REAL clock, which a LATER test that started the recorder (``hist``) then finds in its rows: a
+    sample stamped at the run's own wall time ahead of the injected ones, and the injected ones read as a
+    step back of years (seen once on a CI run: ``test_one_wrong_typed_field_costs_that_field...[minutes-None]``).
+    Stopped here WITHOUT ``stop_liveness()``, which also flushes the history into whatever data dir is
+    current at teardown. Looked up in ``sys.modules`` so a test that never imported it pays nothing."""
+    import sys
+
+    sh = sys.modules.get("src.monitoring.session_history")
+    thread = getattr(sh, "_THREAD", None)
+    if sh is None or thread is None or not thread.is_alive():
+        return
+    sh._STOP.set()  # ``start_liveness`` clears it again
+    thread.join(timeout=5.0)
+    sh._THREAD = None
+
+
 @pytest.fixture(autouse=True)
 def _vitals_history_isolated():
     """The vitals history (``src.monitoring.vitals_history``, R119) is a process-global recorder
     the session ledger's liveness thread starts at boot: it keeps its rows in memory, writes a
     file in whatever ``data_dir()`` is current and puts a counting handler on the ROOT logger --
     the same order-dependent-pollution class as the guards above. Reset it on the way out so a
-    test that boots the app does not leave a handler counting every later test's log lines.
+    test that boots the app does not leave a handler counting every later test's log lines, and
+    stop the thread that feeds it (``_stop_leaked_liveness_thread``) so it cannot tick a later
+    test's recorder with the real clock.
     Looked up in ``sys.modules`` so a test that never imported it pays nothing."""
     yield
     import sys
 
+    _stop_leaked_liveness_thread()  # first: a tick in flight must finish before the reset below
     mod = sys.modules.get("src.monitoring.vitals_history")
     if mod is not None:
         mod.reset_for_tests()

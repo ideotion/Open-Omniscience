@@ -12,6 +12,7 @@ classified, so the run-time coverage report and the CI ratchet both see it.
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 from src.api import diagnostics as d
 from src.api.diagnostics import bundle as b
@@ -45,6 +46,43 @@ def test_the_liveness_thread_starts_ticks_and_flushes_the_history(monkeypatch, t
         sh.stop_liveness()
     assert v._path().exists()  # a clean end writes the history it holds
     sh._reset_for_tests()
+
+
+def test_a_liveness_thread_a_test_left_running_is_stopped_before_it_can_tick_the_next_tests_recorder(
+    monkeypatch, tmp_path
+):
+    """Seen once on CI: a test that boots the app leaves the daemon thread ticking, and the loop's
+    ``tick()`` reads the REAL clock, so a later test that started the recorder found a sample stamped at
+    the run's own wall time ahead of its injected rows. The autouse fixture stops the thread through this
+    helper, which must leave no live thread and must not flush into the current data dir."""
+    from tests.conftest import _stop_leaked_liveness_thread
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    sh._reset_for_tests()
+    v.reset_for_tests()
+    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.01)
+    monkeypatch.setattr(session_hwm, "observe", lambda *a, **k: None)
+    ticked = threading.Event()
+    monkeypatch.setattr(v, "tick", lambda *a, **k: ticked.set())
+    try:
+        assert sh.start_liveness() is True
+        assert ticked.wait(5.0), "the liveness loop never ticked"
+        v._path().unlink(missing_ok=True)  # start() may have written nothing; the flush below must not
+        _stop_leaked_liveness_thread()
+        assert sh._THREAD is None
+        assert not any(t.name == "oo-session-liveness" and t.is_alive() for t in threading.enumerate())
+        assert not v._path().exists()  # stopped, not stop_liveness(): no flush into the current data dir
+    finally:
+        sh._reset_for_tests()
+
+
+def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_recorder():
+    """A source guard on the fixture itself (a fixture cannot be called from a test): the stop is there,
+    and ahead of the reset, so a tick in flight finishes before the recorder is wiped."""
+    text = (Path(__file__).parent / "conftest.py").read_text(encoding="utf-8")
+    block = text.split("def _vitals_history_isolated", 1)[1].split("@pytest.fixture", 1)[0]
+    assert "_stop_leaked_liveness_thread()" in block
+    assert block.index("_stop_leaked_liveness_thread()") < block.index("reset_for_tests()")
 
 
 def test_a_tick_that_raises_does_not_stop_the_liveness_loop(monkeypatch, tmp_path):
