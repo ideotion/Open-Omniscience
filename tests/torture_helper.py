@@ -463,7 +463,10 @@ def main() -> None:
             "make-old": cmd_make_old,
         }[args.cmd](args)
     finally:
-        _close_engine()
+        # Only the runs that BUILD a corpus close it. A merge run must end the way a real one can:
+        # the tests that hash the live file around it compare it with the settled file the build left.
+        if args.cmd in ("build", "build-scoped", "make-old"):
+            _close_engine()
 
 
 if __name__ == "__main__":
