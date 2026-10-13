@@ -388,15 +388,16 @@ hidden in both, which is where they are function words. Hiding is retroactive wi
 
 ## Stoplist batch 3: function words, number and month words, reporting verbs and site chrome in six Slavic languages (2026-10-13, R131, language group 2)
 
-419 words from the same triage and the same method as batch 2 (read it first: the merged log `6467504ab8ab`, the verdict gate, the tool's refusals, and the rule that each word's other languages
-are read by a person): ru 28, uk 125, pl 65, cs 89, sk 54, sl 58. By the triage's codes: 281 function words (`среди`, `щодо`, `dzięki`, `totiž`, `počas`, `kljub`), 69 number words, 49 calendar words (month
+415 words from the same triage and the same method as batch 2 (read it first: the merged log `6467504ab8ab`, the verdict gate, the tool's refusals, and the rule that each word's other languages
+are read by a person): ru 28, uk 124, pl 64, cs 87, sk 54, sl 58. By the triage's codes: 278 function words (`среди`, `щодо`, `dzięki`, `totiž`, `počas`, `kljub`), 69 number words, 48 calendar words (month
 names in the case the news writes them in, and the weekday: `июле`, `вересня`, `września`, `neděli`, `piatok`, `soboto`), 12 attribution verbs coded `ph` (`заявив`, `повідомив`, `uviedol`: "said", "reported"), 7 site
 chrome (`читайте`, `подписаться`, `czytaj`, `dodaj`, `wyślij`, `zobraziť`, `iskanja`) and 1 fragment. The attribution verbs are the one class batch 2 did not have; they carry no topic, but they are verbs the maintainers may
 want to see again if a reading finds a topical use.
 
 **Left out after reading each word's other languages:** the ten `lng` words the Russian and Ukrainian logs hold in another language (ru `noted`, `marking`, `guests`, `established`, `enabled`, `races`,
 `textbooks`; uk the Russian `сборной`, `оккупанты`, `воздушные`: a Russian word hidden here would be hidden in Russian too, where `оккупанты` is signal), the English `uploads` and the Latin fragments `secur` and
-`rippin'`, the Russian fragment `кий`, pl `maju` (Indonesian "forward", 18 articles) and `amet` (lorem ipsum, also a name), sl `glede` (Norwegian "joy", 17 articles). No other word of the
-six lists shows a content sense in another language in the log.
+`rippin'`, the Russian fragment `кий`, pl `maju` (Indonesian "forward", 18 articles) and `amet` (lorem ipsum, also a name), sl `glede` (Norwegian "joy", 17 articles). The independent read of the PR added four more: uk `ось` (the Russian noun "axis", already in 5 Russian-tagged articles), pl `jaka` (Serbian and
+Croatian "strong" and "collar"), cs `mimo` (Spanish and Italian "mime", Spanish "affection": es 11, pt 3) and cs `dubna` (the Russian science city Dubna, a place name). No other word of the six lists shows a
+content sense in another language in the log or in the reader's knowledge of those languages.
 
 Nothing is filed in `_multilingual.yml`: every word is in the script of its language's file.

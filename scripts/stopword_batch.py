@@ -594,7 +594,7 @@ def append_batch(lang: str, words: list[str], batch_id: str, allowed: list[str],
     """Append ``words`` to ``configs/stopwords_extra/<lang>.yml`` and prove the file still loads.
 
     The comment is deterministic (no date, no file name): the same decision gives the same bytes
-    on any day. ``batch_id`` carries the date, and ``source`` is hashes and model names only."""
+    on any day. ``batch_id`` carries the date, and ``source`` is hashes and any single-reader words only."""
     path, after = prepare_append(lang, words, batch_id, allowed, source)
     path.write_text(after, "utf-8")
     return path
