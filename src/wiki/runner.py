@@ -509,7 +509,7 @@ class WikiLaneRunner:
                 with self._lane_session() as lane:
                     self._history.flush(lane)
             except Exception as exc:  # noqa: BLE001 - kept in the buffer for the next tick
-                _LOG.debug("the lane history could not be written this tick: %s", exc)
+                log_failure(_LOG, "the lane history could not be written this tick", exc, level=logging.DEBUG)
 
     def drain_status(self) -> dict:
         """Where the drain loop is right now, measured on this runner. Never raises."""
@@ -652,9 +652,9 @@ class WikiLaneRunner:
             self.last_stream_end = f"{type(exc).__name__}: {exc}"[:300]
             self.last_stream_end_at = datetime.now(UTC).isoformat()
             if type(exc).__name__ == "StreamStopped":
-                _LOG.info("the Wikipedia stream ended: %s", exc)
+                log_failure(_LOG, "the Wikipedia stream ended", exc, level=logging.INFO)
             else:
-                log_failure(_LOG, f"the Wikipedia stream ended unexpectedly: {exc}", exc, level=logging.WARNING)
+                log_failure(_LOG, "the Wikipedia stream ended unexpectedly", exc, level=logging.WARNING)
 
     def start(self) -> bool:
         """Start the stream thread. ``False`` when the setting does not say ``running``."""
@@ -885,7 +885,7 @@ class WikiLaneRunner:
         try:
             return self._pageviews()
         except Exception as exc:  # noqa: BLE001 - an attention signal must not end a drain
-            log_failure(_LOG, f"the daily pageview top-up failed: {exc}", exc, level=logging.WARNING)
+            log_failure(_LOG, "the daily pageview top-up failed", exc, level=logging.WARNING)
             return None
 
     def idle(self, seconds: float) -> None:
@@ -921,7 +921,7 @@ class WikiLaneRunner:
                 )
                 self.last_index = index_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the index must not end the lane
-                log_failure(_LOG, f"the Wikipedia lane search index window failed: {exc}", exc, level=logging.WARNING)
+                log_failure(_LOG, "the Wikipedia lane search index window failed", exc, level=logging.WARNING)
                 self.last_index = {"error": f"{type(exc).__name__}"}
             self._tick_part("index", self._ms_since(index_t0))
         if self._warm is not None and not self._writing_stopped():
@@ -935,7 +935,7 @@ class WikiLaneRunner:
                 warm_report = self._warm.warm_for(warm_window, should_stop=self._writing_stopped)
                 self.last_warm = warm_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
-                log_failure(_LOG, f"the Wikipedia window for fetching other changed pages failed: {exc}", exc, level=logging.WARNING)
+                log_failure(_LOG, "the Wikipedia window for fetching other changed pages failed", exc, level=logging.WARNING)
                 self.last_warm = {"error": f"{type(exc).__name__}"}
             self._tick_part("warm", self._ms_since(warm_t0))
         if self._walker is not None and not self._writing_stopped() and left() > 0:
@@ -944,7 +944,7 @@ class WikiLaneRunner:
                 report = self._walker.walk_for(left(), should_stop=self._writing_stopped)
                 self.last_walk = report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
-                log_failure(_LOG, f"the Wikipedia walk window failed: {exc}", exc, level=logging.WARNING)
+                log_failure(_LOG, "the Wikipedia walk window failed", exc, level=logging.WARNING)
                 self.last_walk = {"error": f"{type(exc).__name__}"}
             self._tick_part("walk", self._ms_since(walk_t0))
         remaining = left()
@@ -1043,7 +1043,7 @@ class WikiLaneRunner:
                 self.revive_stream()
             except Exception as exc:  # noqa: BLE001 - a failed restart is retried next tick
                 self.last_restart_error = f"{type(exc).__name__}: {exc}"[:300]
-                log_failure(_LOG, f"the Wikipedia stream could not be restarted: {exc}", exc, level=logging.WARNING)
+                log_failure(_LOG, "the Wikipedia stream could not be restarted", exc, level=logging.WARNING)
             try:
                 self.drain()
                 self.consecutive_failures = 0
@@ -1057,7 +1057,7 @@ class WikiLaneRunner:
                 self.consecutive_failures += 1
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 self.last_error_at = datetime.now(UTC).isoformat()
-                log_failure(_LOG, f"the wiki lane drain failed ({self.consecutive_failures} in a row): {exc}", exc, level=logging.WARNING)
+                log_failure(_LOG, f"the wiki lane drain failed ({self.consecutive_failures} in a row)", exc, level=logging.WARNING)
                 if self.consecutive_failures == MAX_CONSECUTIVE_FAILURES:
                     _LOG.error(
                         "the wiki lane has failed %d drains in a row (%s); it keeps trying, "

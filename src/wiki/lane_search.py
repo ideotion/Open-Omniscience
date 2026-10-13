@@ -744,10 +744,12 @@ def index_batch(
             # markup, or a segmenter on a text it cannot take -- each this unit's alone.
             failed[source].extend(refs)
             result.failed += len(refs)
-            _LOG.warning(
-                "lane search: could not index %s %s (%s: %s); set aside, and tried again when "
+            log_failure(
+                _LOG,
+                f"lane search: could not index {source} {owner}; set aside, and tried again when "
                 "the lane next starts or the page next changes",
-                source, owner, type(exc).__name__, exc,
+                exc,
+                level=logging.WARNING,
             )
             continue
         tally.add(_apply(lane, plan))
@@ -1167,7 +1169,7 @@ def index_tracked_batch(
         try:
             plan = _plan_tracked(lane, reader, ref, caps)
         except _TrackerUnavailable as exc:
-            _LOG.info("lane search: the page tracker could not be read now (%s); it waits", exc)
+            log_failure(_LOG, "lane search: the page tracker could not be read now; it waits", exc, level=logging.INFO)
             result.deferred = True
             break
         except (SQLAlchemyError, MemoryError):
@@ -1175,10 +1177,12 @@ def index_tracked_batch(
         except Exception as exc:  # noqa: BLE001 - one unreadable text must not stop the index
             failed.append(ref)
             result.failed += 1
-            _LOG.warning(
-                "lane search: could not index tracked page %s (%s: %s); set aside, and tried "
+            log_failure(
+                _LOG,
+                f"lane search: could not index tracked page {ref}; set aside, and tried "
                 "again when the lane next starts",
-                ref, type(exc).__name__, exc,
+                exc,
+                level=logging.WARNING,
             )
             continue
         tally.add(_apply_tracked(lane, plan))
@@ -1545,7 +1549,7 @@ class LaneIndexer:
                     if out.settled < TRACKED_BATCH and not out.stopped_early:
                         return True
             except _TrackerUnavailable as exc:
-                _LOG.info("lane search: the page tracker could not be read now (%s); it waits", exc)
+                log_failure(_LOG, "lane search: the page tracker could not be read now; it waits", exc, level=logging.INFO)
             return False
         finally:
             try:

@@ -395,7 +395,7 @@ def _run_startup_upkeep() -> None:
             ARTICLES_COUNT.set(session.query(Article).count())
             SOURCES_COUNT.set(session.query(Source).count())
     except Exception as exc:  # noqa: BLE001 - never block startup on metrics
-        logger.warning(f"Could not initialise metrics at startup: {exc}")
+        log_failure(logger, "Could not initialise metrics at startup", exc, level=logging.WARNING)
 
     # Boot-cold cache warm (field test 2026-06-22, §1.3): the in-memory insights read
     # cache is empty after a restart, so the FIRST Home/Insights open pays the cold
@@ -469,7 +469,7 @@ def _run_startup_upkeep() -> None:
                     "Booted in airplane mode (offline); awaiting the online consent to collect."
                 )
         except Exception as exc:  # noqa: BLE001 - never block startup
-            logger.warning(f"Could not engage airplane mode at boot: {exc}")
+            log_failure(logger, "Could not engage airplane mode at boot", exc, level=logging.WARNING)
         # The off-peak maintenance window (orphan prune, counter reconcile, vacuum) is
         # otherwise run only by the collection loop, which an offline instance never
         # starts. Idempotent across unlocks; local only, zero network.
@@ -3532,7 +3532,7 @@ def _serve() -> None:
                     curated["stamped"],
                 )
         except Exception as exc:  # noqa: BLE001 - never block startup on seeding
-            logger.warning("Could not seed default sources: %s", exc)
+            log_failure(logger, "Could not seed default sources", exc, level=logging.WARNING)
 
     host = os.getenv("OO_HOST", "127.0.0.1")
     port = int(os.getenv("OO_PORT", "8000"))

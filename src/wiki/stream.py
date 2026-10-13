@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.ingest import kill_switch_active
+from src.monitoring.secret_scrub import exception_text, log_failure
 from src.wiki.sse import SseEvent, SseParser
 
 _LOG = logging.getLogger("wiki.stream")
@@ -442,8 +443,8 @@ class WikiEventStream:
             except Exception as exc:  # noqa: BLE001 - every transport fault is a retry
                 self.counters.transport_errors += 1
                 self.counters.consecutive_failures += 1
-                self.counters.last_failure = f"{type(exc).__name__}: {exc}"[:300]
-                _LOG.warning("wiki stream connection failed: %s: %s", type(exc).__name__, exc)
+                self.counters.last_failure = exception_text(exc, limit=300)
+                log_failure(_LOG, "wiki stream connection failed", exc, level=logging.WARNING)
                 backoff = self._next_backoff(backoff)
             if should_stop is not None and should_stop():
                 return self.counters

@@ -2722,7 +2722,7 @@ def warm_cache(db: Session) -> dict:
                 _read_cache.set(key, out)
                 warmed.append(key)
         except StatementTimeout as exc:
-            _LOG.warning("insights cache warm stopped for %s: %s", key, exc)
+            log_failure(_LOG, f"insights cache warm stopped for {key}", exc, level=logging.WARNING)
             _safe_rollback(db)
             continue
         except Exception as exc:  # noqa: BLE001 - warming is best-effort, never fatal to a pass

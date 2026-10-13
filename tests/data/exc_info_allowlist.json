@@ -91,22 +91,6 @@
   "count": 2,
   "owner": "rc-sweep"
  },
- "src/api/insights.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/api/keyword_management.py": {
-  "count": 9,
-  "owner": "rc-sweep"
- },
- "src/api/main.py": {
-  "count": 3,
-  "owner": "rc-sweep"
- },
- "src/api/wiki_lane.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
  "src/awareness/emotion.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -423,14 +407,6 @@
   "count": 1,
   "owner": "rc-sweep"
  },
- "src/scheduler/capacity.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/scheduler/hygiene.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
  "src/services/article_intelligence.py": {
   "count": 1,
   "owner": "rc-sweep"
@@ -472,18 +448,6 @@
   "owner": "rc-sweep"
  },
  "src/weather/openmeteo.py": {
-  "count": 1,
-  "owner": "rc-sweep"
- },
- "src/wiki/lane_search.py": {
-  "count": 4,
-  "owner": "rc-sweep"
- },
- "src/wiki/runner.py": {
-  "count": 2,
-  "owner": "rc-sweep"
- },
- "src/wiki/stream.py": {
   "count": 1,
   "owner": "rc-sweep"
  }

@@ -19,7 +19,6 @@ read what it stored.
 from __future__ import annotations
 
 import logging
-import sys
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
@@ -58,10 +57,8 @@ _UNREADABLE = {
 }
 
 
-def _unreadable(route: str) -> dict:
-    failure = sys.exception()  # the caller's handler: this runs inside its ``except``
-    if failure is not None:
-        log_failure(_LOG, f"lane {route}: the Wikipedia lane could not be read", failure, level=logging.WARNING)
+def _unreadable(route: str, exc: BaseException) -> dict:
+    log_failure(_LOG, f"lane {route}: the Wikipedia lane could not be read", exc, level=logging.WARNING)
     return dict(_UNREADABLE)
 
 
@@ -101,8 +98,8 @@ def lane_status() -> dict:
             changes_total = lane.execute(select(func.count(VersionedChange.id))).scalar_one()
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("status")
+    except SQLAlchemyError as exc:
+        return _unreadable("status", exc)
     return {
         "measured": True,
         "pages": int(pages),
@@ -138,8 +135,8 @@ def lane_analytics(window_days: int = Query(7, ge=1, le=90)) -> dict:
             return {"measured": True, **analytics(lane, window_days=window_days)}
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("analytics")
+    except SQLAlchemyError as exc:
+        return _unreadable("analytics", exc)
 
 
 def _followed_editions() -> tuple[str, ...]:
@@ -173,8 +170,8 @@ def lane_divergence(
             return divergence(lane, qid, editions=_followed_editions(), window_days=window_days)
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("divergence")
+    except SQLAlchemyError as exc:
+        return _unreadable("divergence", exc)
 
 
 @router.get("/attention")
@@ -194,8 +191,8 @@ def lane_attention(edition: str | None = Query(None, max_length=16)) -> dict:
     try:
         with SessionLocal() as corpus:
             return {**attention(corpus, edition=chosen), "editions": list(editions), "with_list": with_list}
-    except SQLAlchemyError:
-        return _unreadable("attention")
+    except SQLAlchemyError as exc:
+        return _unreadable("attention", exc)
 
 
 @router.get("/counters")
@@ -221,8 +218,8 @@ def lane_counters_route(window_days: int = Query(7, ge=1, le=90)) -> dict:
             }
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("counters")
+    except SQLAlchemyError as exc:
+        return _unreadable("counters", exc)
 
 
 @router.get("/places")
@@ -299,8 +296,8 @@ def lane_places(limit: int = Query(2000, ge=1, le=20000)) -> dict:
                 )
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("places")
+    except SQLAlchemyError as exc:
+        return _unreadable("places", exc)
     return {
         "measured": True,
         "points": points,
@@ -390,8 +387,8 @@ def lane_sections(external_id: str = Query(..., min_length=3, max_length=512)) -
         raise
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("sections")
+    except SQLAlchemyError as exc:
+        return _unreadable("sections", exc)
 
 
 #: The most diff text one answer carries. A stored diff is bounded when it is made
@@ -449,8 +446,8 @@ def lane_changes(
             ).all()
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("changes")
+    except SQLAlchemyError as exc:
+        return _unreadable("changes", exc)
     changes = []
     for r in rows:
         m = r._mapping
@@ -536,5 +533,5 @@ def lane_revision_diff(revision_id: int) -> dict:
         raise
     except LaneAbsentError:
         return _absent()
-    except SQLAlchemyError:
-        return _unreadable("revision")
+    except SQLAlchemyError as exc:
+        return _unreadable("revision", exc)
