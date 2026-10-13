@@ -104,8 +104,12 @@ def scan_source(text: str, name: str = "<source>") -> list[tuple[int, str]]:
                 found.append((node.lineno, "kwargs-unpack"))
         qual = _qualified(func, alias)
         mod, _, leaf = qual.rpartition(".")
-        if qual == "logging.exception" or (method == "exception" and node.args):
+        if qual == "logging.exception" or (
+            method == "exception" and (node.args or any(k.arg == "msg" for k in node.keywords))
+        ):
             found.append((node.lineno, "exception"))
+        elif qual.startswith("traceback.TracebackException."):
+            found.append((node.lineno, "TracebackException"))
         elif mod == "traceback" and leaf in TRACEBACK_MAKERS:
             found.append((node.lineno, leaf))
         elif mod == "sys" and leaf in SYS_MAKERS:

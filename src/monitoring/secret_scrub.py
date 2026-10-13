@@ -965,6 +965,50 @@ def _unhook_handler_construction() -> bool:
     return True
 
 
+#: ``logging.Handler.handleError`` as it was before :func:`_hook_handle_error` replaced it; ``None`` while it is not replaced.
+_HANDLE_ERROR: Callable[..., None] | None = None
+
+
+def _scrubbed_handle_error(self: logging.Handler, record: logging.LogRecord) -> None:
+    """What a handler does when it cannot write a record (a full disk, a closed stream): one line on ``stderr`` naming the failure's
+    class, the handler's class and the logger, and nothing of the record or the failure's words. The stock method prints the
+    handler's traceback, whose ``__context__`` chain carries the exception that was being logged when the handler failed (the
+    original, unscrubbed: the driver's own error quoting the passphrase). It honours ``logging.raiseExceptions`` (``False``: silent)
+    and never raises, never logs (a log from here would meet the same broken handler) and never recurses."""
+    try:
+        if not logging.raiseExceptions or sys.stderr is None:
+            return
+        failure = sys.exception()
+        sys.stderr.write(
+            f"--- Logging error: {type(failure).__name__ if failure is not None else 'unknown'} in {type(self).__name__} "
+            f"(logger {str(getattr(record, 'name', ''))[:80]!r}); the record was not written ---\n"
+        )
+    except Exception:  # noqa: BLE001, S110 - stderr itself failing leaves nothing to write to
+        pass
+
+
+def _hook_handle_error() -> bool:
+    """Put :func:`_scrubbed_handle_error` on ``logging.Handler`` for the life of the process (every handler class that does not
+    override it inherits it; ``tests/test_handler_error_scrub.py`` fails on one in ``src`` that does). Returns whether it replaced the
+    method (``False``: it already had)."""
+    global _HANDLE_ERROR
+    if _HANDLE_ERROR is not None:
+        return False
+    _HANDLE_ERROR = logging.Handler.handleError
+    logging.Handler.handleError = _scrubbed_handle_error  # type: ignore[method-assign]
+    return True
+
+
+def _unhook_handle_error() -> bool:
+    """Put ``logging.Handler.handleError`` back as it was, for a test that has to leave the process as it found it."""
+    global _HANDLE_ERROR
+    if _HANDLE_ERROR is None:
+        return False
+    logging.Handler.handleError = _HANDLE_ERROR  # type: ignore[method-assign]
+    _HANDLE_ERROR = None
+    return True
+
+
 def protect_new_handlers() -> None:
     """From now on every handler built in this process is built behind a :class:`SecretFilter`, wherever it is built. The net
     for what :func:`protect_handlers` cannot see because it did not exist yet: a library that adds a handler to the root logger
@@ -1108,3 +1152,8 @@ def scrub_file(path: Path, needle: str) -> bool:
         with contextlib.suppress(OSError):
             part.unlink()  # the copy of a failed replace; after a good one there is nothing to remove
     return True
+
+
+# Installed at import, not at the first handler: a handler can fail at the very first record of a boot, and the stock method
+# would print the traceback of that failure with the original exception in its context.
+_hook_handle_error()
