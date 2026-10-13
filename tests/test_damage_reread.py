@@ -33,6 +33,7 @@ from sqlalchemy import create_engine
 from src.database import damage, verify
 from src.database.damage import (
     FILE_CORPUS,
+    FILE_LAW,
     FILE_WIKI,
     REREAD_CLEAN,
     REREAD_CLEAN_HELD,
@@ -139,6 +140,15 @@ def _settled(reg, key=FILE_CORPUS, timeout=60.0):
             return st
         time.sleep(0.02)
     raise AssertionError("the re-read did not end")
+
+
+def _join_rereads(timeout=60.0):
+    """Wait for every re-read thread to end, and fail if one does not: an assertion about what a LATE answer did is only about that
+    answer once the thread that gives it has ended."""
+    end = time.monotonic() + timeout
+    for t in [t for t in threading.enumerate() if t.name == "oo-database-reread"]:
+        t.join(max(0.0, end - time.monotonic()))
+    assert not [t for t in threading.enumerate() if t.name == "oo-database-reread" and t.is_alive()], "a re-read thread did not end"
 
 
 class _Hold:
@@ -473,6 +483,7 @@ def test_a_replaced_file_ends_the_claim_and_the_late_answer_is_dropped(reg, heal
     assert reg.retry(reason="a restore swapped the file", file_replaced=True) == [FILE_CORPUS]
     assert not reg.latched(FILE_CORPUS)
     hold.release()
+    _join_rereads()
     st = _settled(reg)
     assert not reg.latched(FILE_CORPUS)
     assert "auto_released" not in st and "reread" not in st, "an answer about a file that no longer is settles nothing"
@@ -501,9 +512,7 @@ def test_a_read_that_lists_its_tables_after_the_file_was_replaced_and_latched_ag
     assert _fail(reg, healthy, None), "the replaced file fails a read of its own"
     assert reg.latched(FILE_CORPUS) and not _file(reg).get("rechecking")
     gate.set()
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline and any(t.name == "oo-database-reread" and t.is_alive() for t in threading.enumerate()):
-        time.sleep(0.02)
+    _join_rereads()
     st = _file(reg)
     assert reg.latched(FILE_CORPUS), "the late first read releases nothing about a file it never read"
     assert "check_tables" not in st and not reads, "and names no table on the new latch and reads none"
@@ -541,7 +550,7 @@ def test_a_failed_read_after_the_answer_makes_the_incident_unanswered_again(reg,
     assert _fail(reg, healthy)
     _settled(reg)
     [inc] = reg.state(detail=True)["incidents"]
-    assert inc["superseded"] is True
+    assert inc["superseded"] is True and inc["answered_by"] == REREAD_CLEAN, "the incident itself says what answered it"
     assert _fail(reg, healthy)
     [inc] = reg.state(detail=True)["incidents"]
     assert not inc.get("superseded") and inc["repeats"] == 1
@@ -589,7 +598,7 @@ def test_a_record_written_after_the_clean_release_is_born_answered(reg, healthy,
     while not reg.state(detail=True)["incidents"] and time.monotonic() < end:
         time.sleep(0.02)
     [inc] = reg.state(detail=True)["incidents"]
-    assert inc["superseded"] is True
+    assert inc["superseded"] is True and inc["answered_by"] == REREAD_CLEAN
 
 
 def test_a_full_text_table_is_read_with_its_shadow_tables(reg, tmp_path, monkeypatch):
@@ -632,8 +641,12 @@ def test_a_closed_connection_handed_to_the_raw_driver_helper_still_latches_the_f
 #  the words
 # --------------------------------------------------------------------------- #
 def test_the_two_new_sentences_say_why_and_what_a_start_does_and_are_in_twelve_locales():
-    assert "read the same table again" in damage.FRAME_REREADING and "ends by itself" in damage.FRAME_REREADING
-    assert "stays paused" in damage.FRAME_STAYED and "Starting collection again lifts the pause" in damage.FRAME_STAYED
+    assert "read the same table or tables again" in damage.FRAME_REREADING and "ends by itself" in damage.FRAME_REREADING
+    assert "stays paused" in damage.FRAME_STAYED and "The note above says how to try again" in damage.FRAME_STAYED
+    # both are shown for any paused file (the Wikipedia and law files are not released by a start of collection): neither names an action
+    # that belongs to one file's note, nor says "collection" is what is paused
+    for frame in (damage.FRAME_REREADING, damage.FRAME_STAYED):
+        assert "collection" not in frame.lower() and "starting collection" not in frame.lower()
     assert "{" not in damage.FRAME_REREADING and "{" not in damage.FRAME_STAYED
     for p in sorted((ROOT / "src/static/locales").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
@@ -641,3 +654,144 @@ def test_the_two_new_sentences_say_why_and_what_a_start_does_and_are_in_twelve_l
             assert k in d, f"{p.name} lacks {k[:50]!r}"
             if p.name != "en.json":
                 assert d[k] != k, f"{p.name}: untranslated {k[:50]!r}"
+
+
+# --------------------------------------------------------------------------- #
+#  the independent read's findings
+# --------------------------------------------------------------------------- #
+def _held_finding(reg, path, tables):
+    """A check's finding for the corpus file lands (an earlier check's, held at the attempts cap)."""
+    reg.verification_file_held(FILE_CORPUS, path=path, attempts=3, reason="the check was left unfinished", tables=tables)
+
+
+@pytest.mark.parametrize("where", ["before-the-list", "while-reading"])
+def test_a_checks_finding_that_lands_during_the_re_read_decides_the_latch_and_a_start_reads_its_table(reg, healthy, monkeypatch, where):
+    """The block of the read: the re-read overwrote (or popped) the check's table set, and the start then released a latch whose
+    measured table had never been read."""
+    monkeypatch.setattr(verify, "_path_of", lambda key: healthy)
+    if where == "before-the-list":
+        gate, entered = threading.Event(), threading.Event()
+        real = verify.inspect_confirmed
+
+        def slow(path, **k):
+            entered.set()
+            assert gate.wait(60)
+            return real(path, **k)
+
+        monkeypatch.setattr(verify, "inspect_confirmed", slow)
+        release = gate.set
+    else:
+        hold = _Hold(monkeypatch)
+        entered, release = hold.entered, hold.release
+    assert _fail(reg, healthy)
+    assert entered.wait(60)
+    _held_finding(reg, healthy, ["notes"])
+    release()
+    _join_rereads()
+    st = _file(reg)
+    assert reg.latched(FILE_CORPUS), "a clean read of the statement's table says nothing about the table the check measured"
+    assert "notes" in st["check_tables"], "the check's table set stands"
+    assert st["reread"]["why"] == "check-found" and not st.get("rechecking")
+    assert reg.retry(reason="start") == [], "a start reads the check's table first, and the pause ends only when it reads clean"
+    st = _settled(reg)
+    assert not reg.latched(FILE_CORPUS), "and it reads clean (the file is healthy), which is what releases it"
+
+
+def test_a_check_finding_replaces_the_stayed_sentence(reg, healthy):
+    assert _fail(reg, healthy)
+    _settled(reg)
+    assert _fail(reg, healthy) and damage.FRAME_STAYED in _frames(reg)
+    _held_finding(reg, healthy, ["notes"])
+    assert damage.FRAME_STAYED not in _frames(reg), "a start now reads the check's tables, which the stayed sentence does not say"
+
+
+def test_an_earlier_sessions_incident_count_is_not_a_read_that_failed_during_the_re_read(tmp_path, healthy, monkeypatch):
+    """The record of an earlier session is read lazily, after the claim stored its count: its incidents joined the live count and the
+    clean answer read as 'another read failed meanwhile', so the pause never ended by itself."""
+    record = lambda: tmp_path / "database-damage.json"  # noqa: E731
+    before = DamageRegistry(path_fn=record, rereads=False)
+    for _ in range(3):
+        assert _fail(before, healthy)
+    before.flush_durable()
+    r = DamageRegistry(path_fn=record, rereads=True)
+    monkeypatch.setattr(damage, "registry", r)
+    verify._reset_for_tests()
+    try:
+        assert _fail(r, healthy)
+        st = _settled(r)
+    finally:
+        verify._reset_for_tests()
+    assert st["reread"]["result"] == REREAD_CLEAN and not r.latched(FILE_CORPUS)
+    assert r.state()["files"][FILE_CORPUS]["incidents"] == 4, "the counts still add up"
+
+
+def test_a_table_list_that_reads_damaged_on_two_connections_is_recorded_as_damaged_not_as_no_re_read(reg, tmp_path, monkeypatch):
+    path = tmp_path / "corpus.db"
+    monkeypatch.setattr(verify, "_path_of", lambda key: path)
+    _build_store(path)
+    with open(path, "r+b") as f:
+        f.seek(100)
+        f.write(random.Random(5).randbytes(PAGE - 100))
+    assert _fail(reg, path)
+    st = _settled(reg)
+    assert reg.latched(FILE_CORPUS)
+    assert st["reread"]["result"] == REREAD_DAMAGED, "the re-read failed twice: that is a finding, not 'no re-read was made'"
+    assert st["check_tables"] == [verify.SCHEMA_ENTRY], "so a start reads every table"
+    assert reg.retry(reason="start") == [], "and does not release the latch unread"
+    _settled(reg)
+    assert reg.latched(FILE_CORPUS), "the start read the file again and the list still reads damaged"
+
+
+def test_a_restore_over_an_unlatched_file_forgets_what_the_old_file_taught(reg, healthy):
+    assert _fail(reg, healthy)
+    st = _settled(reg)
+    assert not reg.latched(FILE_CORPUS) and st["auto_released"]
+    assert reg.retry(reason="a restore swapped the file", file_replaced=True) == []
+    st = _file(reg)
+    assert "auto_released" not in st and "reread" not in st
+    assert _fail(reg, healthy)
+    st = _settled(reg)
+    assert st["reread"]["result"] == REREAD_CLEAN, "the new file's first failed read is re-read, not 'again' the old file's table"
+    assert damage.FRAME_STAYED not in _frames(reg)
+
+
+def test_the_failing_statements_own_thread_never_looks_at_the_data_file(reg, healthy, monkeypatch):
+    seen: list[str] = []
+    real = Path.stat
+
+    def stat(self, *a, **k):
+        if self == healthy:
+            seen.append(threading.current_thread().name)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    caller = threading.current_thread().name
+    assert _fail(reg, healthy)
+    _settled(reg)
+    _join_rereads()
+    assert "oo-database-reread" in seen, "the re-read looked at the file, on its own thread"
+    assert caller not in seen, "and the thread of the failing statement did not (its drive may be the failing one)"
+
+
+def test_while_the_re_read_runs_the_page_says_only_that(reg, healthy, monkeypatch):
+    hold = _Hold(monkeypatch)
+    assert _fail(reg, healthy)
+    assert hold.entered.wait(60)
+    frames = _frames(reg)
+    assert damage.FRAME_REREADING in frames
+    assert damage.FRAME_DATA not in frames, "a start during the re-read does not try again, which the damage sentence would say"
+    assert damage.FRAME_REPAIR_NEXT_START not in frames, "and nothing says the file is damaged before the re-read has"
+    hold.release()
+    _join_rereads()
+
+
+@pytest.mark.parametrize("key, lane_frame", [(FILE_WIKI, damage.FRAME_WIKI), (FILE_LAW, damage.FRAME_LAW)])
+def test_the_stayed_sentence_beside_a_lanes_note_names_no_action_that_is_not_the_lanes(reg, tmp_path, key, lane_frame):
+    path = tmp_path / f"{key}.db"
+    _build_store(path)
+    assert _fail(reg, path, key=key)
+    _settled(reg, key)
+    assert _fail(reg, path, key=key)
+    frames = [n["frame"] for n in reg.notes() if n["file"] == key]
+    assert frames == [lane_frame, damage.FRAME_STAYED]
+    assert "collection" not in damage.FRAME_STAYED.lower()

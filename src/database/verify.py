@@ -1260,26 +1260,21 @@ def reread(file_key: str, names: frozenset[str], *, token: int, path: Path | Non
     lower-cased, :func:`damage.statement_names`), on a thread of their own. ``DamageRegistry`` claimed the re-read when it latched the
     file (``token``): the writers are already stopped, so the pause is provisional, and this read decides whether it ends by itself
     (``recheck_finished``: every table read clean, twice where it read damaged, R100) or stays. ``path`` is the file the failing engine is
-    over; the key's usual file when it is not given. Never blocks and never raises. ``"started"`` when a thread is reading, else the fixed
-    reason none was made (the latch stays exactly as a first failed read leaves it; the caller records the reason):
+    over; the key's usual file when it is not given. Never blocks (it touches no file: the failing statement's own thread may hold the write
+    gate and the drive may be the failing one, so the file is looked at on the re-read's own thread) and never raises. ``"started"`` when a
+    thread is reading, else the fixed reason none was made (the latch stays exactly as a first failed read leaves it; the caller records
+    the reason):
 
     * ``switched-off``: ``OO_BOOT_VERIFY=0``, the check's own switch, which this read follows.
-    * ``no-file``: there is no file to read, or an empty one (a check must never be what makes a data file exist).
-    * ``unexaminable``: the file could not be examined (an I/O error is no answer).
     * ``check-running``: the start-up check is armed or reading; it decides.
     * ``no-thread``: the thread could not be started.
+
+    The thread ends its claim the same way, with ``no-file`` (there is no file to read, or an empty one: a check must never be what makes a
+    data file exist) or ``unexaminable`` (the file could not be examined; an I/O error is no answer).
     """
     try:
         if not switch_on():
             return "switched-off"
-        path = path if path is not None else _path_of(file_key)
-        try:
-            readable = path is not None and path.is_file() and path.stat().st_size > 0
-        except OSError as exc:
-            _LOG.warning("database check: could not examine the %s file for the re-read of a failed read (%s)", file_key, type(exc).__name__)
-            return "unexaminable"
-        if not readable or path is None:
-            return "no-file"
         if damage.registry.verifying():
             return "check-running"
         t = threading.Thread(target=_reread_main, args=(file_key, path, names, token), name="oo-database-reread", daemon=True)
@@ -1298,7 +1293,7 @@ def reread(file_key: str, names: frozenset[str], *, token: int, path: Path | Non
 _FTS_SHADOW_TAILS = ("data", "idx", "docsize", "config", "content")
 
 
-def _reread_main(file_key: str, path: Path, names: frozenset[str], token: int) -> None:
+def _reread_main(file_key: str, path: Path | None, names: frozenset[str], token: int) -> None:
     """The thread body of :func:`reread`: list the file's tables on a fresh connection, read the ones the statement named (each on its own
     read-only connection, :func:`check_table`), and give the registry the answers. A stop, a table list that cannot be read, a statement
     that names no table of the file or a failure ends the claim without an answer (``reread_ended``), so the latch stays."""
@@ -1308,10 +1303,42 @@ def _reread_main(file_key: str, path: Path, names: frozenset[str], token: int) -
         if _CANCEL.is_set():
             why = "stopped"
             return
+        path = path if path is not None else _path_of(file_key)
+        try:
+            readable = path is not None and path.is_file() and path.stat().st_size > 0
+        except OSError as exc:
+            _LOG.warning("database check: could not examine the %s file for the re-read of a failed read (%s)", file_key, type(exc).__name__)
+            why = "unexaminable"
+            return
+        if not readable or path is None:
+            why = "no-file"
+            return
         info = inspect_confirmed(path)
-        if "error" in info or info.get("second_read") == SECOND_READ_CLEAN:
-            # A schema that cannot be listed, or that two connections disagree about, is no table to read: the damage (or the doubt) is not
-            # in a table the statement named. The latch stays; the per-table check and the start decide.
+        err = info.get("error")
+        if err is not None and err[0] == VERDICT_DAMAGED:
+            # The table list itself reads as damage on two connections (``inspect_confirmed`` answers damaged only when a second read agreed):
+            # that IS the re-read's answer, filed the way the start's re-read files it, as a damaged ``(schema)``. The latch holds as the
+            # check's finding, a start reads every table, and the record says damaged, not that no re-read was made.
+            if reg.reread_tables(file_key, [SCHEMA_ENTRY], token):
+                reg.recheck_finished(
+                    file_key,
+                    [
+                        {
+                            "table": SCHEMA_ENTRY,
+                            "verdict": VERDICT_DAMAGED,
+                            "seconds": 0.0,
+                            "detail": [str(err[1])[:DETAIL_CHARS]],
+                            "second_read": SECOND_READ_AGREED,
+                        }
+                    ],
+                    path=path,
+                    token=token,
+                )
+            why = None
+            return
+        if err is not None or info.get("second_read") == SECOND_READ_CLEAN:
+            # A schema that cannot be listed for another reason, or that two connections disagree about, is no table to read: the damage
+            # (or the doubt) is not in a table the statement named. The latch stays; the per-table check and the start decide.
             why = "list-unreadable"
             return
         named = {n.lower() for n in info["names"] if n.lower() in names}
