@@ -538,3 +538,31 @@ def test_a_change_ref_DOES_use_a_real_revid_when_there_is_one():
         event_id="e1",
     )
     assert _change_ref(change) == f"{FIXTURE_EDITION}:r4242"
+
+
+# --------------------------------------------------------------------------- #
+# A stream that outlives a change of transport (core fold 11).
+# --------------------------------------------------------------------------- #
+def test_a_provider_is_read_on_every_connection_and_an_open_connection_moves_when_the_session_changes():
+    """MUTATION TARGET: ``session_of`` read per connection in ``_one_connection``, and the ``moved`` check in ``_consume``. The lane
+    holds one stream for as long as it runs; a session it kept would reconnect over the transport it was built with."""
+    first = _Session([_Response(_event_lines(_body(page_id=1), "1") + _event_lines(_body(page_id=2), "2") + _event_lines(_body(page_id=3), "3"))])
+    second = _Session([_Response(_event_lines(_body(page_id=3), "3"))])
+    current = [first]
+    stream = WikiEventStream(session_of=lambda: current[0], editions=(FIXTURE_EDITION,))
+    kept: list[StreamChange] = []
+
+    def on_change(change):
+        kept.append(change)
+        if len(kept) == 1:
+            current[0] = second  # the operator switched the transport while the connection was open
+
+    stream.run(on_change, max_connections=2)
+    assert [c.page_id for c in kept] == [1, 2, 3]
+    assert len(first.requests) == 1 and len(second.requests) == 1, "the second connection opened over the new session"
+    assert second.requests[0].get("Last-Event-ID") == "2", "nothing was skipped: the resume point is the last event handled"
+
+
+def test_a_stream_needs_a_session_or_a_provider():
+    with pytest.raises(ValueError):
+        WikiEventStream(editions=(FIXTURE_EDITION,))

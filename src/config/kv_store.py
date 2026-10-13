@@ -73,11 +73,14 @@ def _db_path() -> str | None:
     return str(data_dir() / "open_omniscience.db")
 
 
-def _open(path: str):
-    """Open the live DB through the ONE connect() factory (handles SQLCipher)."""
+def _open(path: str, *, read_only: bool = False):
+    """Open the live DB through the ONE connect() factory (handles SQLCipher). ``read_only`` opens an existing file ``mode=ro``: the
+    connection that closes last on a file checkpoints a leftover ``-wal`` into it and deletes it, and a settings read is made before
+    the boot reading of that ``-wal`` can be taken whenever something reads a setting early; a read-only open also never creates a
+    file (a missing one raises, and :func:`kv_get_json` reads that as no value)."""
     from src.database.connect import connect
 
-    conn = connect(path, check_same_thread=False, timeout=30)
+    conn = connect(path, check_same_thread=False, timeout=30, read_only=read_only)
     # A short busy-timeout so a transient checkpoint waits rather than erroring;
     # the write gate already prevents a *contended* writer, this is belt-and-braces.
     try:
@@ -100,37 +103,138 @@ def _ensure_table(conn) -> None:
     )
 
 
-def kv_get_json(key: str) -> dict | None:
-    """Return the JSON object stored under ``key`` (parsed), or ``None`` if absent.
+def _read_value(path: str, key: str, *, read_only: bool) -> str | None:
+    """The raw value stored under ``key`` (``None`` when the row is absent), through one connection opened and closed here."""
+    conn = _open(path, read_only=read_only)
+    try:
+        row = conn.execute(
+            f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+            (key,),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
 
-    Read-only: never creates the table or writes. Any error (locked/missing DB, no
-    table yet, unreadable value) degrades to ``None`` so the caller can fall back.
-    """
+
+class KvReadError(Exception):
+    """A stored value that EXISTS (or may) could not be read: the store is locked, keyed to another passphrase, damaged or
+    unreachable. Carries the class of the failure and none of the engine's words. Absent (no file, no table, no row) is not this.
+    ``damaged`` says the value IS there and cannot be parsed (as against a store that could not be opened): the one case a save
+    that supplies the whole choice may replace."""
+
+    def __init__(self, what: str, damaged: bool = False) -> None:
+        super().__init__(what)
+        self.damaged = damaged
+
+
+#: How long a failed read is remembered, so that a caller asking again and again (a stream's every event) does not open a
+#: failing store each time. It protects the store from a retry storm and nothing else: a write or an invalidation clears it.
+_FAIL_HOLD_S = 2.0
+_failed: dict[tuple[str, str], tuple[float, str]] = {}
+#: Store files read or written in this process: one of them gone later is a failure, where one never there is a first run.
+_seen: set[str] = set()
+
+#: The failures of a READ-ONLY open that a read-write open can get past (a hot rollback journal to recover, a directory the
+#: process cannot write the ``-shm`` into). Anything else (a wrong key, a lock, a busy timeout, a damaged file) is not retried:
+#: a read-write open of a keyed store with a wrong key folds and deletes a leftover ``-wal``, and a lock would stall twice.
+_RO_ONLY_FAILURES = ("unable to open database file", "readonly database")
+
+
+def _ro_only_failure(exc: BaseException) -> bool:
+    # By name: the keyed driver (sqlcipher3) raises its own ``OperationalError``, not sqlite3's.
+    return type(exc).__name__ == "OperationalError" and any(w in str(exc).lower() for w in _RO_ONLY_FAILURES)
+
+
+def kv_get_json_checked(key: str) -> dict | None:
+    """:func:`kv_get_json`, except that a read which FAILED raises :class:`KvReadError` instead of reading as absent.
+
+    ``None`` is a fact (no file, no table or no row, or a value that is not an object); an error is not, and a caller whose
+    default is the permissive answer (the transport setting) must not take one for the other. The failure is recorded by class
+    only: the driver's text can quote a statement, and the error behind a keyed open chains the driver's own."""
+    import time
+
     path = _db_path()
     if path is None:
         return None
     ck = (path, key)
     with _lock:
         if ck in _cache:
-            raw = _cache[ck]
-            return _loads(raw)
-    raw = None
+            return _parsed(_cache[ck])
+        held = _failed.get(ck)
+        if held is not None and held[0] > time.monotonic():
+            raise KvReadError(held[1])
     try:
-        conn = _open(path)
         try:
-            row = conn.execute(
-                f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
-                (key,),
-            ).fetchone()
-            raw = row[0] if row else None
-        finally:
-            conn.close()
-    except Exception:  # noqa: BLE001 - a missing table / locked DB is a normal "no value"
-        _LOG.debug("kv_get_json(%r) unavailable; caller falls back", key, exc_info=True)
-        return None
+            raw = _read_value(path, key, read_only=True)
+        except Exception as ro_exc:  # noqa: BLE001 - classified below
+            if not _ro_only_failure(ro_exc):
+                raise
+            _LOG.debug("kv_get_json(%r): read-only open failed (%s); retrying read-write", key, type(ro_exc).__name__)
+            raw = _read_value(path, key, read_only=False)
+    except Exception as exc:  # noqa: BLE001 - absent is a value; the rest is a failure
+        if isinstance(exc, FileNotFoundError) or "no such table" in str(exc).lower():
+            with _lock:
+                vanished = path in _seen
+            if not vanished:
+                return None  # a first run: nothing stored yet
+            # The store was read (or written) earlier in this process and is gone now: that is a failure, not a first run.
+        what = type(exc).__name__
+        _LOG.debug("kv_get_json(%r) unreadable (%s)", key, what)
+        with _lock:
+            _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what)
+        raise KvReadError(what) from None
     with _lock:
         _cache[ck] = raw
-    return _loads(raw)
+        _failed.pop(ck, None)
+        _seen.add(path)
+    return _parsed(raw)
+
+
+def _parsed(raw: str | None) -> dict | None:
+    """``None`` only for an absent value. A value that is there and is not a JSON object is a failed read (damaged), by class."""
+    try:
+        return _loads_strict(raw)
+    except ValueError:
+        raise KvReadError("ValueError", damaged=True) from None
+
+
+def clear_failures() -> None:
+    """Forget the failed reads held for :data:`_FAIL_HOLD_S` (the key changed: a store that was locked may read now)."""
+    with _lock:
+        _failed.clear()
+
+
+def forget_stores() -> None:
+    """Forget the stores seen: one that was erased or created is not a vanished one. Called where a passphrase is actually set,
+    a store is created, or the crypto-erase ran, never on a failed unlock's clearing of the key."""
+    with _lock:
+        _seen.clear()
+
+
+def is_damaged(exc: BaseException) -> bool:
+    """Whether a failed strict read means the value is THERE and cannot be parsed (as against a store that could not be opened)."""
+    return isinstance(exc, ValueError) or bool(getattr(exc, "damaged", False))
+
+
+def refusal_text(exc: BaseException) -> str:
+    """The class of a failed read, and the way out when the value is damaged; never the engine's words."""
+    out = f"the stored settings could not be read ({type(exc).__name__}); nothing was changed"
+    if is_damaged(exc):
+        out += " - choose the settings again and save to replace them"
+    return out
+
+
+def kv_get_json(key: str) -> dict | None:
+    """Return the JSON object stored under ``key`` (parsed), or ``None`` if absent.
+
+    Read-only: never creates the table or writes. Any error (locked/missing DB, no
+    table yet, unreadable value) degrades to ``None`` so the caller can fall back.
+    A caller for which the fallback is the permissive answer uses :func:`kv_get_json_checked`.
+    """
+    try:
+        return kv_get_json_checked(key)
+    except KvReadError:
+        return None
 
 
 def kv_get_json_strict(key: str) -> dict | None:
@@ -204,6 +308,8 @@ def kv_set_json(key: str, obj: dict) -> None:
             conn.close()
     with _lock:
         _cache[(path, key)] = value
+        _failed.pop((path, key), None)
+        _seen.add(path)
 
 
 def kv_delete(key: str) -> None:
@@ -225,10 +331,11 @@ def kv_delete(key: str) -> None:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:  # noqa: BLE001 - delete is best-effort
-            _LOG.debug("kv_delete(%r) failed", key, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - delete is best-effort; the class only (a keyed open chains the driver's error)
+            _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
     with _lock:
         _cache.pop((path, key), None)
+        _failed.pop((path, key), None)
 
 
 def kv_invalidate(key: str | None = None) -> None:
@@ -239,7 +346,11 @@ def kv_invalidate(key: str | None = None) -> None:
     with _lock:
         if key is None:
             _cache.clear()
+            _failed.clear()
+            _seen.clear()
         else:
+            for ck in [ck for ck in _failed if ck[1] == key]:
+                _failed.pop(ck, None)
             for ck in [ck for ck in _cache if ck[1] == key]:
                 _cache.pop(ck, None)
 

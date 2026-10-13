@@ -20,6 +20,8 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from src.monitoring.secret_scrub import passphrase_bytes
+
 # Self-describing container so a file can be decrypted years later without out-of-band
 # parameters:  MAGIC(8) | n(4) | r(4) | p(4) | salt(16) | nonce(12) | ciphertext+tag.
 _MAGIC = b"OOENC1\x00\x00"
@@ -41,6 +43,13 @@ def _derive(passphrase: bytes, salt: bytes, n: int, r: int, p: int) -> bytes:
     return Scrypt(salt=salt, length=32, n=n, r=r, p=p).derive(passphrase)
 
 
+def _key_bytes(passphrase: str) -> bytes:
+    """The passphrase as the bytes a key is derived from. One that cannot be written as UTF-8 (a lone surrogate) is an
+    :class:`EncryptionError` with fixed words: Python's own error names the character at fault and holds the whole
+    passphrase (``secret_scrub.passphrase_bytes``)."""
+    return passphrase_bytes(passphrase, error=EncryptionError)
+
+
 def encrypt_bytes(data: bytes, passphrase: str) -> bytes:
     """Encrypt ``data`` under ``passphrase`` into a self-describing container.
 
@@ -59,7 +68,7 @@ def encrypt_bytes(data: bytes, passphrase: str) -> bytes:
     import os
 
     salt, nonce = os.urandom(16), os.urandom(12)
-    key = _derive(passphrase.encode("utf-8"), salt, _N, _R, _P)
+    key = _derive(_key_bytes(passphrase), salt, _N, _R, _P)
     ct = AESGCM(key).encrypt(nonce, data, None)
     return _MAGIC + struct.pack(">III", _N, _R, _P) + salt + nonce + ct
 
@@ -80,7 +89,7 @@ def decrypt_bytes(blob: bytes, passphrase: str) -> bytes:
             "This container was not produced by this build's streaming path; a volume set "
             "(read_volume_backup) is the large-archive path."
         )
-    key = _derive(passphrase.encode("utf-8"), salt, n, r, p)
+    key = _derive(_key_bytes(passphrase), salt, n, r, p)
     try:
         return AESGCM(key).decrypt(nonce, ct, None)
     except InvalidTag as exc:
@@ -123,7 +132,7 @@ def _header_and_cipher(passphrase: str, chunk_size: int) -> tuple[bytes, bytes, 
     if not (_CHUNK_MIN <= chunk_size <= _CHUNK_MAX):
         raise EncryptionError("invalid chunk size")
     salt, prefix = os.urandom(16), os.urandom(7)
-    aes = AESGCM(_derive(passphrase.encode("utf-8"), salt, _N, _R, _P))
+    aes = AESGCM(_derive(_key_bytes(passphrase), salt, _N, _R, _P))
     header = (
         _MAGIC2 + struct.pack(">III", _N, _R, _P) + salt + prefix + struct.pack(">I", chunk_size)
     )
@@ -251,7 +260,7 @@ def decrypt_stream(
             raise EncryptionError("truncated or malformed encrypted header") from exc
         if not (_CHUNK_MIN <= chunk_size <= _CHUNK_MAX):
             raise EncryptionError("malformed encrypted file (bad chunk size)")
-        aes = AESGCM(_derive(passphrase.encode("utf-8"), salt, n, r, p))
+        aes = AESGCM(_derive(_key_bytes(passphrase), salt, n, r, p))
         block = chunk_size + _TAG
         counter = 0
         prev = fin.read(block)

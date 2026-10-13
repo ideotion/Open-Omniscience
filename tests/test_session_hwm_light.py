@@ -20,7 +20,8 @@ import types
 
 import pytest
 
-from src.monitoring import forensics, session_hwm
+from src.monitoring import forensics, session_history, session_hwm
+from tests import previous_identity
 
 TOTAL = 5000.0
 FLOOR, SHARE = 256.0, 85.0
@@ -503,7 +504,8 @@ def test_the_report_names_them_and_says_the_pairing_is_an_inference(rig, no_heav
 
 
 def test_the_bundles_method_text_says_what_the_light_snapshots_are(dd, monkeypatch):
-    monkeypatch.setattr(session_hwm, "previous", lambda: {"pid": 1, "pressure_light": []})
+    monkeypatch.setattr(session_hwm, "previous_why", lambda: ({"pid": 1, "session_id": "s-prev", "pressure_light": []}, None))
+    monkeypatch.setattr(session_history, "previous_session_id", lambda: "s-prev")
     out = forensics._previous_peaks()
     assert "pressure_light" in out["method"] and "inference" in out["method"]
 
@@ -511,13 +513,14 @@ def test_the_bundles_method_text_says_what_the_light_snapshots_are(dd, monkeypat
 # --- the one bundle member (the slot contract of the single Diagnostics zip) ---------------------------
 
 
-def test_the_member_carries_this_sessions_tail_and_the_previous_ones_with_the_method(rig, no_heavy, dd):
+def test_the_member_carries_this_sessions_tail_and_the_previous_ones_with_the_method(rig, no_heavy, dd, monkeypatch):
     rig.state["readings"] = dict(NEAR_AVAIL)
     rig(5.0)
     rig(15.0)
     # the next boot (a new process has loaded nothing yet): this session's file becomes the previous tail
     session_hwm._PREV_LOADED, session_hwm._PREV = False, None
     session_hwm.capture_previous()
+    previous_identity.claim(monkeypatch)
     rig.state["readings"] = dict(NEAR_AVAIL)
     rig(5.0)
     out = session_hwm.diagnostics_member(200_000)
@@ -568,6 +571,7 @@ def test_the_previous_sessions_tail_is_cut_oldest_first_too_and_the_whole_member
     # the next boot: this session's tail becomes the previous one's
     session_hwm._PREV_LOADED, session_hwm._PREV = False, None
     session_hwm.capture_previous()
+    previous_identity.claim(monkeypatch)
     one = _compact(ring[-1])
     fixed = session_hwm.diagnostics_member(10**7)
     assert fixed["previous_session"]["found"] and len(fixed["previous_session"]["snapshots"]) == 6
@@ -591,6 +595,7 @@ def test_with_both_rings_full_each_is_cut_to_its_half_and_the_whole_member_still
         rig(15.0)
     session_hwm._PREV_LOADED, session_hwm._PREV = False, None
     session_hwm.capture_previous()  # the first six are now the previous session's tail
+    previous_identity.claim(monkeypatch)
     for _ in range(6):
         rig(15.0)
     mine = session_hwm.current()["pressure_light"]
@@ -677,4 +682,4 @@ def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(mon
     assert out["previous_session"]["found"] is False and out["previous_session"]["snapshots"] == []
     assert "omitted" in session_hwm.diagnostics_member(-5), "a nonsense budget is named, not an error"
     monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError("boom\nsecond line")))
-    assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError: boom"}
+    assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError"}

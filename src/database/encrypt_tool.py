@@ -26,6 +26,7 @@ from src.database.connect import (
     reencrypt_plain_to,
     snapshot_to_plaintext,
 )
+from src.monitoring.secret_scrub import passphrase_bytes
 
 _LOG = logging.getLogger("database.encrypt_tool")
 
@@ -57,6 +58,9 @@ def encrypt_database(path: Path | str, key: str) -> dict:
         return {"path": str(p), "skipped": "already encrypted"}
     if not key or len(key) < 8:
         raise EncryptToolError("use at least 8 characters")
+    # BEFORE the plaintext snapshot below: a key that cannot be written as text (a lone surrogate) is refused with fixed words,
+    # and no file is made on the drive for it.
+    passphrase_bytes(key, error=EncryptToolError)
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = p.with_name(f"pre-encrypt-{ts}-{p.name}")
@@ -141,6 +145,9 @@ def encrypt_all(key: str) -> dict:
     from src.database.writer import write_lock
     from src.paths import data_dir
 
+    # First of all, before the gate is taken and before any store is looked at: a key that cannot be written as text is refused
+    # with fixed words (``encrypt_database`` asks again, for its own callers).
+    passphrase_bytes(key, error=EncryptToolError)
     main = main_db_path()
     if main is None:
         raise EncryptToolError("non-SQLite backend: the at-rest layer does not apply")

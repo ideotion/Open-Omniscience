@@ -53,6 +53,10 @@ class AppSettingsError(ValueError):
     """Raised when a settings update carries an invalid value."""
 
 
+class _DamagedAppSettingsError(AppSettingsError):
+    """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
+
+
 @dataclass
 class AppSettings:
     """Operator-controlled UI preferences."""
@@ -239,8 +243,8 @@ def _read_json_file() -> dict | None:
         return None
     try:
         return json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not take down the API
-        _LOG.warning("app_settings.json is unreadable; using defaults", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not take down the API
+        _LOG.warning("app_settings.json is unreadable; using defaults (%s)", type(exc).__name__)
         return None
 
 
@@ -265,8 +269,32 @@ def _read_raw() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)  # adopt into the durable store
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("app_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("app_settings migration into app_state deferred (%s)", type(exc).__name__)
+    return raw
+
+
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises AppSettingsError (the class only)
+    instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise (_DamagedAppSettingsError if is_damaged(exc) else AppSettingsError)(refusal_text(exc)) from None
+    if raw is not None:
+        return raw
+    # No DB row yet: migrate the legacy JSON file if present (best-effort, one-time).
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)  # adopt into the durable store
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("app_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 
@@ -282,9 +310,9 @@ def _write_raw(payload: dict) -> None:
     kv_set_json(_KV_KEY, payload)  # transactional, encrypted, backed up (D1)
 
 
-def load_settings() -> AppSettings:
+def load_settings(*, strict: bool = False) -> AppSettings:
     """Load preferences, falling back to defaults on a missing/corrupt store."""
-    raw = _read_raw()
+    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
         return AppSettings()
 
@@ -421,9 +449,26 @@ def load_settings() -> AppSettings:
     )
 
 
-def save_settings(updates: dict) -> AppSettings:
+def save_settings(updates: dict, *, replace_damaged: bool = False) -> AppSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
-    current = load_settings()
+    reset: list[str] = []
+    try:
+        current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    except _DamagedAppSettingsError:
+        if not replace_damaged:
+            raise
+        # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset. One uncached read first, so a
+        # value another process repaired in the meantime is kept, not overwritten.
+        from src.config.kv_store import kv_invalidate
+
+        kv_invalidate(_KV_KEY)
+        try:
+            current = load_settings(strict=True)
+        except _DamagedAppSettingsError:
+            current = AppSettings()
+            reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+    current.reset_fields = reset  # type: ignore[attr-defined]
 
     if "theme" in updates and updates["theme"] is not None:
         theme = str(updates["theme"])

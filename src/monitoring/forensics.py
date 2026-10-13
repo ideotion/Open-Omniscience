@@ -263,6 +263,9 @@ _PREV_AT_BOOT: dict[str, Any] | None = None
 _PREV_LOADED = False
 # This boot's -wal reading, taken before any connection can exist (S0.1).
 _WAL_AT_BOOT: dict[str, Any] | None = None
+# A reading taken by ``take_boot_wal_reading`` before the lifespan runs, for the start (``serve``) that opens the store itself
+# before the lifespan can: ``record_session_start`` uses it instead of probing again.
+_EARLY_WAL: dict[str, Any] | None = None
 # When THIS process stamped itself running, and the monotonic reading beside it.
 #
 # Deliberately in-process rather than read back from session_state.json: that file is
@@ -291,6 +294,19 @@ def _write_state(state: dict[str, Any]) -> None:
         log_failure(_LOG, "could not persist session_state.json", exc, level=logging.WARNING)
 
 
+def take_boot_wal_reading() -> None:
+    """Take this boot's -wal reading NOW, for ``record_session_start`` to use. ``serve`` opens the store (``init_db``, the seeding)
+    before the server's lifespan runs, and that connection makes a new -wal or deletes the leftover one, so a reading taken in the
+    lifespan describes this process; call this first thing in ``serve``, before anything that can open the store. A server started
+    by ``python -m uvicorn`` opens nothing before its lifespan and needs no call. Never raises."""
+    global _EARLY_WAL
+    try:
+        _EARLY_WAL = wal_state_before_open()
+    except Exception as exc:  # noqa: BLE001 - a reading that cannot be taken is taken again in the lifespan
+        _EARLY_WAL = None
+        _LOG.warning("the early boot -wal reading could not be taken (%s); the lifespan takes it", type(exc).__name__)
+
+
 def record_session_start() -> dict[str, Any] | None:
     """Stamp this session 'running'; returns the PREVIOUS session's state (the
     forensic input). Call once at process start; best-effort.
@@ -303,11 +319,12 @@ def record_session_start() -> dict[str, Any] | None:
     caller has to remember, and it also survives the case a reorder inside
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
-    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT
+    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL
     global _SESSION_STARTED_AT, _SESSION_STARTED_MONO
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
-    boot_reading = wal_state_before_open()
+    boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
+    _EARLY_WAL = None
     _WAL_AT_BOOT = boot_reading
     prev = _read_state()
     if not _PREV_LOADED:
@@ -755,11 +772,25 @@ def previous_session_report() -> dict[str, Any]:
 
 
 def _previous_peaks() -> dict[str, Any] | None:
-    """The previous session's own high-water marks, or a stated absence."""
+    """The previous session's own high-water marks, or a stated absence. The marks are the previous SESSION's only when they carry the
+    ledger's id for it (the way the ledger's end record decides, ``session_history._hwm_last_seen``): a sidecar of another session, or
+    one that names none, is no evidence, and what is copied has every release-ladder record rebuilt from the allow-list."""
     try:
-        from src.monitoring.session_hwm import previous
+        from src.monitoring.release_view import scrub_marks
+        from src.monitoring.session_history import previous_session_id
+        from src.monitoring.session_hwm import previous_why
 
-        got = previous()
+        got, why = previous_why()
+        if got:
+            ident, want = got.get("session_id"), previous_session_id()
+            if not isinstance(ident, str) or not ident or not want:
+                got, why = None, "no identity"
+            elif ident != want:
+                got, why = None, "another session"
+            else:
+                got, failed = scrub_marks(got)
+                if got is None:
+                    why = f"scrub failed ({failed})"
     except Exception:  # noqa: BLE001 - forensics degrades, never raises
         return None
     if not got:
@@ -768,6 +799,12 @@ def _previous_peaks() -> dict[str, Any] | None:
             "reason": (
                 "no per-session high-water record from the previous run (it predates "
                 "this instrument, or the file was removed) — unmeasured, not zero"
+                if why in (None, "absent")
+                else (
+                    f"the previous session's high-water record was read and could not be scrubbed ({why[len('scrub failed ('):-1]}) — unmeasured, not zero"
+                    if why.startswith("scrub failed (")
+                    else f"the high-water record on disk is not this run's previous session's ({why}) — unmeasured, not zero"
+                )
             ),
         }
     out = dict(got)

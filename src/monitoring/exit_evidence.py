@@ -410,7 +410,11 @@ def note_fatal_exception(exc: BaseException) -> None:
 
     A Python-level death (a MemoryError in the event loop, say) is not a signal, so
     faulthandler never sees it, and its traceback otherwise goes only to the launcher
-    window. Best-effort and bounded."""
+    window. Best-effort and bounded.
+
+    The trace file is carried by the debug bundle, and an engine's error can quote the statement that held a key, so the
+    text is scrubbed of every passphrase the process holds BEFORE the cut (a text cut first can split a passphrase and
+    keep half of it), and when it cannot be checked the class is written and none of the exception's words."""
     try:
         # The traceback is written by ``secret_scrub.traceback_text``: the passphrases the process holds taken
         # out of the WHOLE text (the cause chain included), the class and the frames and none of the words

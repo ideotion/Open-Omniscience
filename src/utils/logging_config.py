@@ -32,6 +32,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from src.monitoring.secret_scrub import protect_handler
+
 # Ensure audit directory exists
 AUDIT_DIR = Path(__file__).parent.parent.parent / "audit"
 AUDIT_DIR.mkdir(exist_ok=True, parents=True)
@@ -83,11 +85,33 @@ def setup_logging(
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
 
-    # Add handlers
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    # Add handlers. Each is behind the passphrase filter: a record any module writes through this logger (a
+    # ``logger.exception`` among them) carries what the exception said, and the audit file keeps it.
+    logger.addHandler(protect_handler(file_handler))
+    logger.addHandler(protect_handler(console_handler))
 
     return logger
+
+
+def uvicorn_log_config() -> dict:
+    """The server's own logging configuration (``uvicorn.config.LOGGING_CONFIG``) with every one of its handlers behind the
+    passphrase filter (``secret_scrub.SecretFilter``): the server writes the exception that escaped the application to the
+    console as it made its message (``Exception in ASGI application``), and the console of a launcher can be a file. A copy,
+    never the module's own dictionary: that is the server's, and a second server in the process would otherwise inherit it.
+
+    The access handler's formatter is ours (``src/utils/access_log.py``): the server's unpacks five arguments from every record,
+    and the filter hands it a record with none when it withheld the line or rewrote it as one text, which made the logging module
+    print ``--- Logging error ---`` for each such request and write no access line."""
+    import copy
+
+    from uvicorn.config import LOGGING_CONFIG
+
+    config = copy.deepcopy(LOGGING_CONFIG)
+    config.setdefault("filters", {})["oo_passphrase"] = {"()": "src.monitoring.secret_scrub.SecretFilter"}
+    for handler in config["handlers"].values():
+        handler["filters"] = [*handler.get("filters", []), "oo_passphrase"]
+    config["formatters"]["access"]["()"] = "src.utils.access_log.AccessFormatter"
+    return config
 
 
 # Example usage

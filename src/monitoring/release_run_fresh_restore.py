@@ -116,10 +116,17 @@ def _result_text(result: dict, passphrase: str) -> str:
 
 
 def main() -> int:
+    # This process is handed the passphrase in its environment, so a crash of it must leave no dump of it either. The
+    # limit it inherits from the app covers it already; the fallback (not dumpable) does not survive the ``exec`` that
+    # started this process, so it is asked for again here, before anything is imported or read.
+    from src.monitoring.core_guard import engage
+
+    engage()
     from src.monitoring.p0_validation import _RssSampler
+    from src.monitoring.secret_scrub import env_secret
 
     backup = Path(os.environ["OO_RELEASE_RUN_BACKUP"])
-    passphrase = os.environ.get("OO_DB_PASSPHRASE") or ""
+    passphrase = env_secret("OO_DB_PASSPHRASE") or ""
     out_path = Path(os.environ.get("OO_RELEASE_RUN_OUT") or (Path(os.environ["OO_DATA_DIR"]) / "result.json"))
     t0 = time.monotonic()
     result: dict = {"backup": str(backup), "data_dir": os.environ.get("OO_DATA_DIR")}

@@ -105,13 +105,10 @@ class OresClient:
     ):
         # Through the guarded factory: kill switch + protected-mode proxy apply
         # to ORES too. ``session`` stays injectable for the pure-parser tests.
-        if session is None:
-            from src.safety.fetcher import guarded_session
-
-            session = guarded_session(user_agent=user_agent)
-        else:
+        self._user_agent = user_agent
+        if session is not None:
             session.headers.update({"User-Agent": user_agent})
-        self.session = session
+        self._session = session
         self.timeout = timeout
         #: What the LAST attempt did, as one of :data:`OUTCOMES`. ``None`` before any
         #: attempt -- an absence, never "ok".
@@ -119,6 +116,22 @@ class OresClient:
         #: The detail behind a non-ok outcome, for a log or a status line. Never shown
         #: to an operator as prose in their own language; the UI composes that.
         self.last_detail: str | None = None
+
+    @property
+    def session(self):
+        """The HTTP session: the one injected, or the shared guarded session for this client's owner, asked for on every request so a
+        switch of the transport in Settings reaches it without a restart (``following_session``). Never built at import:
+        ``guarded_session`` reads the settings store, and an open there would delete the leftover ``-wal`` the boot record is about
+        to read."""
+        if self._session is not None:
+            return self._session
+        from src.safety.fetcher import following_session
+
+        return following_session("ores", self._user_agent)
+
+    @session.setter
+    def session(self, value) -> None:
+        self._session = value
 
     def _note(self, outcome: str, detail: str | None = None) -> None:
         self.last_outcome = outcome

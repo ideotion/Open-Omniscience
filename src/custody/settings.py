@@ -45,6 +45,10 @@ class CustodySettingsError(ValueError):
     """Raised when a settings update is invalid (e.g. an unknown anchoring mode)."""
 
 
+class _DamagedCustodySettingsError(CustodySettingsError):
+    """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
+
+
 @dataclass
 class CustodySettings:
     """Operator-controlled custody preferences (requests, not guarantees)."""
@@ -82,8 +86,8 @@ def _read_json_file() -> dict | None:
         return None
     try:
         return json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - never let a bad file take down custody
-        _LOG.warning("custody_settings.json is unreadable; using defaults", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - never let a bad file take down custody
+        _LOG.warning("custody_settings.json is unreadable; using defaults (%s)", type(exc).__name__)
         return None
 
 
@@ -103,8 +107,31 @@ def _read_raw() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("custody_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("custody_settings migration into app_state deferred (%s)", type(exc).__name__)
+    return raw
+
+
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises CustodySettingsError (the class only)
+    instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise (_DamagedCustodySettingsError if is_damaged(exc) else CustodySettingsError)(refusal_text(exc)) from None
+    if raw is not None:
+        return raw
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("custody_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 
@@ -138,14 +165,14 @@ def _legacy_auto_log_default() -> bool:
         return True  # matches the on-by-default dataclass default (Item-N ruling)
 
 
-def load_settings() -> CustodySettings:
+def load_settings(*, strict: bool = False) -> CustodySettings:
     """Load custody preferences, falling back to honest defaults.
 
     A missing file yields defaults (with ``auto_log_on_ingest`` seeded from the
     legacy config flag). A corrupt file is logged and treated as defaults rather
     than crashing the API.
     """
-    raw = _read_raw()
+    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
         return CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
 
@@ -163,7 +190,7 @@ def load_settings() -> CustodySettings:
     )
 
 
-def save_settings(updates: dict) -> CustodySettings:
+def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySettings:
     """Apply a partial update to the stored preferences and persist them.
 
     Only keys present in ``updates`` are changed; unknown keys are ignored.
@@ -186,7 +213,24 @@ def save_settings(updates: dict) -> CustodySettings:
     saving while it stays "local", never needs it. ``ots_consent`` itself is never
     persisted -- it is a one-shot instruction to this call, not a preference.
     """
-    current = load_settings()
+    reset: list[str] = []
+    try:
+        current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    except _DamagedCustodySettingsError:
+        if not replace_damaged:
+            raise
+        # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset. One uncached read first, so a
+        # value another process repaired in the meantime is kept, not overwritten.
+        from src.config.kv_store import kv_invalidate
+
+        kv_invalidate(_KV_KEY)
+        try:
+            current = load_settings(strict=True)
+        except _DamagedCustodySettingsError:
+            current = CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
+            reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+    current.reset_fields = reset  # type: ignore[attr-defined]
 
     if "anchoring_mode" in updates and updates["anchoring_mode"] is not None:
         mode = str(updates["anchoring_mode"])

@@ -37,13 +37,20 @@ SHA-256:
    load → stay in-memory + report loudly (never load an unverified binary).
 3. **`LOAD '<absolute in-app path>';`** — an absolute path to the verified binary, never a name
    (a name would trigger the known-extensions resolution we just disabled).
-4. **`ATTACH '<path>' AS analytics (ENCRYPTION_KEY '<derived>')`** with the **default
-   authenticated GCM cipher** — and NEVER request a CTR cipher (the disclosed DuckDB GCM→CTR
-   downgrade weakens authentication; the default GCM is the only acceptable mode).
+4. **`ATTACH '<path>' AS oo (ENCRYPTION_KEY ?)`** with the key as a BOUND PARAMETER (never written into the
+   statement: the engine quotes a window of a statement it cannot parse, and a half-quoted key is one no scrub of
+   exact matches finds) and the path's quotes doubled, under the **default authenticated GCM cipher** — and NEVER
+   request a CTR cipher (the disclosed DuckDB GCM→CTR downgrade weakens authentication; the default GCM is the only
+   acceptable mode). **The key** is `columnar._derive_key(passphrase, salt)`: PBKDF2-HMAC-SHA512 at 256,000 rounds
+   (SQLCipher 4's own count, so the cache is never cheaper to attack than the corpus the same passphrase opens), with a
+   random 16-byte salt kept per store in the sidecar `analytics.duckdb.kdf` (written atomically, readable by its owner;
+   destroyed by the crypto-erase and the uninstall with the cache). A store without a valid sidecar is removed and
+   rebuilt, never opened or migrated.
 5. **Flip `secure_crypto_available()` true ONLY after** LOAD succeeded AND the existing
-   `encryption_gate(path, passphrase)` probe empirically confirms a real OpenSSL-encrypted file
+   `encryption_gate(path)` probe empirically confirms a real OpenSSL-encrypted file
    (the sentinel-absent-from-raw-bytes / won't-open-without-key / opens-with-key triad already in
-   columnar.py). No probe pass → stay in-memory.
+   columnar.py; it takes no passphrase and keys its probe with a random key, through the same statement the store
+   uses). No probe pass → stay in-memory.
 
 All of this is **zero outbound connections** by construction (autoload off + absolute-path LOAD +
 file-only ATTACH). The `_offline_config()` already in columnar.py is the seam; extend it.

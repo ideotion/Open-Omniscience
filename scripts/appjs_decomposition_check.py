@@ -187,8 +187,8 @@ def measure_parse(url: str, *, throttle: int, loads: int) -> dict:
 
     samples: list[float] = []
     bytes_seen: list[int] = []
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=_chromium_path())
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=_chromium_path())
         for _ in range(loads):
             ctx = browser.new_context()  # a fresh context each time: no code cache carry-over
             page = ctx.new_page()
@@ -238,8 +238,8 @@ def measure_ab(url_a: str, url_b: str, *, throttle: int, loads: int) -> dict:
 
     samples: dict[str, list[float]] = {"a": [], "b": []}
     reqs: dict[str, int] = {}
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=_chromium_path())
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=_chromium_path())
         for _ in range(loads):
             for key, url in (("a", url_a), ("b", url_b)):
                 ctx = browser.new_context()   # fresh: no code cache carry-over
@@ -307,8 +307,8 @@ def walk_state(name: str, url: str, candidates: list[str], shots: Path | None) -
         "pageerrors": [],
         "console_error_sample": [],
     }
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=_chromium_path())
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=_chromium_path())
         ctx = browser.new_context(viewport={"width": 1440, "height": 950})
         page = ctx.new_page()
         boot_errs: list[str] = []

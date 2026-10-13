@@ -1,6 +1,7 @@
 """A machine that STAYS short is recorded, not only the slide into it.
 
-The 091717 instance sat at 44-60 MB available for 17 minutes with the memory guard engaged
+The 091717 instance sat at 64 MB available or less for about 17 minutes (105 of the pass's 186 samples; under 100 MB in 122; the
+recount of 2026-10-07, FINDINGS.md item B) with the memory guard engaged
 and was then killed. The slide into it had been snapshotted (one per new low); the plateau,
 where whatever held the memory could still be read, was not, by design. Two more triggers:
 the moment the memory guard engages, and a re-snapshot every ``_PLATEAU_INTERVAL_S`` while the
@@ -46,6 +47,8 @@ def rig(dd, monkeypatch):
     monkeypatch.setattr(session_hwm, "_readings", lambda: dict(state["readings"]))
     monkeypatch.setattr(session_hwm, "_guard_view", lambda: dict(state["guard"]) if state["guard"] else None)
     monkeypatch.setattr(session_hwm, "thread_snapshot", lambda: [])
+    # The process's own guard may hold a release record of an earlier test; these snapshots are of the guard the test drives.
+    monkeypatch.setattr(session_hwm, "_release_view", lambda guard=None: None)
     session_hwm.capture_previous()
 
     def tick(dt: float = 5.0, **change) -> list[str]:

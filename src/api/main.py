@@ -71,11 +71,15 @@ from src.database.session import dispose_engine, get_db, init_db, session_scope
 from src.monitoring.secret_scrub import log_failure, scrubbed, unicode_note
 
 # Configure logging using shared config
-from src.utils.logging_config import setup_logging
+from src.utils.access_log import install_access_line_filter
+from src.utils.logging_config import setup_logging, uvicorn_log_config
 
 # Import security utilities
 
 logger = setup_logging("api")
+# The server's access line names the request by its route template and a standard method, with no query: on the logger that makes
+# the record, so it holds however the server is started (``src/utils/access_log.py``).
+install_access_line_filter()
 
 # Single source of truth for the app version: the installed package metadata
 # (pyproject.toml). Falls back gracefully if running from an uninstalled tree.
@@ -439,6 +443,23 @@ async def lifespan(app: FastAPI):
     LOCKED: only the unlock flow is served; the deferred startup runs the
     moment the operator supplies THE passphrase. A plaintext store boots
     exactly as before — never a lock screen over a plaintext file."""
+    # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app``, which
+    # the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
+    # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
+    try:
+        from src.monitoring.secret_scrub import guard_process
+
+        guard_process()
+    except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
+        logger.debug("could not engage the core-dump guard", exc_info=True)
+    # The take of the passphrases out of the environment happens at the first import of ``connect``: it has to come before the boot
+    # record reads its outcome and before any child (the kernel-log read below) inherits the environment. Importing this module opens
+    # no store (a test pins it: an open here would delete the leftover ``-wal`` the boot record is about to read), so this line is the
+    # guarantee. An import opens nothing.
+    try:
+        from src.database import connect  # noqa: F401 - the take
+    except Exception:  # noqa: BLE001 - a store that cannot be imported is reported where it is opened, never here
+        logger.debug("could not import the store at start", exc_info=True)
     from src.api.unlock import app_lock_state
 
     # Clean-shutdown sentinel (session forensics, 2026-07-09): stamp 'running' now,
@@ -860,8 +881,11 @@ async def unlock_page():
 # Middleware for Prometheus metrics
 @app.middleware("http")
 async def monitor_requests(request: Request, call_next):
-    method = request.method
-    endpoint = request.url.path
+    # What the DIAGNOSTICS may name (``src/monitoring/request_label.py``): a standard method and the route's template, never the
+    # raw path (whoever calls typed it, and a locked app holds no key to scrub it with).
+    from src.monitoring.request_label import UNMATCHED_ROUTE, safe_method, safe_route
+
+    diag_method = safe_method(request.method)
 
     ACTIVE_REQUESTS.inc()
     start_time = time.time()
@@ -873,7 +897,7 @@ async def monitor_requests(request: Request, call_next):
     try:
         from src.monitoring import latency as _lat
 
-        _lat.note_start(req_id, f"{method} {endpoint}")
+        _lat.note_start(req_id, f"{diag_method} {UNMATCHED_ROUTE}", scope=request.scope, method=diag_method)
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _lat = None  # type: ignore[assignment]
 
@@ -884,7 +908,7 @@ async def monitor_requests(request: Request, call_next):
         from src.database import pool_watch as _pool_watch
 
         _ep_token = _pool_watch.set_endpoint(
-            f"{method} {endpoint}", method=method, scope=request.scope
+            f"{diag_method} {UNMATCHED_ROUTE}", method=diag_method, scope=request.scope
         )
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _pool_watch = None  # type: ignore[assignment]
@@ -900,7 +924,7 @@ async def monitor_requests(request: Request, call_next):
         ACTIVE_REQUESTS.dec()
         if _lat is not None:
             try:
-                _lat.record(req_id, f"{method} {endpoint}", 500, (time.time() - start_time) * 1000.0)
+                _lat.record(req_id, f"{diag_method} {safe_route(request.scope)}", 500, (time.time() - start_time) * 1000.0)
             except Exception:  # noqa: BLE001
                 pass
         raise e
@@ -908,18 +932,18 @@ async def monitor_requests(request: Request, call_next):
     process_time = time.time() - start_time
     status_code = response.status_code
 
-    REQUEST_COUNT.labels(method=method, endpoint=endpoint, http_status=status_code).inc()
-    REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(process_time)
+    # The route template and a standard method label the metrics too: the bundle carries the histogram (``diagnostics/performance.py``),
+    # and a raw path is whatever the caller typed (and an unbounded set of label values).
+    REQUEST_COUNT.labels(method=diag_method, endpoint=safe_route(request.scope), http_status=status_code).inc()
+    REQUEST_LATENCY.labels(method=diag_method, endpoint=safe_route(request.scope)).observe(process_time)
     ACTIVE_REQUESTS.dec()
 
     # Per-route latency percentiles (log #2). Key by the ROUTE TEMPLATE when routing
     # resolved one (so /api/articles/123/view aggregates under /api/articles/{id}/view),
-    # else the raw path. Best-effort; never affects the response.
+    # else a fixed label (never the raw path). Best-effort; never affects the response.
     if _lat is not None:
         try:
-            route_obj = request.scope.get("route")
-            tmpl = getattr(route_obj, "path", None) or endpoint
-            _lat.record(req_id, f"{method} {tmpl}", status_code, process_time * 1000.0)
+            _lat.record(req_id, f"{diag_method} {safe_route(request.scope)}", status_code, process_time * 1000.0)
         except Exception:  # noqa: BLE001
             pass
 
@@ -932,7 +956,7 @@ async def monitor_requests(request: Request, call_next):
         try:
             from src.monitoring.errorlog import note_http_error
 
-            note_http_error(method, endpoint, status_code)
+            note_http_error(diag_method, safe_route(request.scope), status_code)
         except Exception:  # noqa: BLE001 - diagnostics must never affect the response
             pass
 
@@ -960,8 +984,10 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
-    logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
-    REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, http_status=429).inc()
+    from src.monitoring.request_label import safe_client, safe_method, safe_route
+
+    logger.warning(f"Rate limit exceeded for {safe_client(get_remote_address(request))}: {safe_method(request.method)} {safe_route(request.scope)}")
+    REQUEST_COUNT.labels(method=safe_method(request.method), endpoint=safe_route(request.scope), http_status=429).inc()
     # slowapi's RateLimitExceeded does not expose a public `retry_after`, AND
     # slowapi's own auto-header-injection (`Limiter._inject_headers`, which would
     # otherwise add this) never runs on this path: SlowAPIMiddleware.dispatch returns
@@ -1029,7 +1055,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     handler has answered, and a passphrase that is typed into the request being served (the unlock screen's) is not held yet,
     so this handler does not know it: the routes that take one convert what escapes them (``secret_scrub.scrub_and_reraise``)."""
     try:
-        what = scrubbed(f"unhandled error on {request.method} {request.url.path}")
+        from src.monitoring.request_label import request_phrase
+
+        what = scrubbed(f"unhandled error on {request_phrase(request.method, request.scope)}")
         log_failure(logger, what, exc)
         note = unicode_note(exc)  # a UnicodeError names a character and its offset: the class and a fixed note instead
         detail = (
@@ -1044,8 +1072,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
         detail = "internal error (its text is withheld: the scrub could not run)"
     try:
+        from src.monitoring.request_label import safe_method, safe_route
+
         REQUEST_COUNT.labels(
-            method=request.method, endpoint=request.url.path, http_status=500
+            method=safe_method(request.method), endpoint=safe_route(request.scope), http_status=500
         ).inc()
     except Exception:  # noqa: BLE001 - metrics must never mask the original error
         pass
@@ -3311,7 +3341,10 @@ def _run_ephemeral(argv: list[str]) -> None:
     import tempfile
 
     tmp = tempfile.mkdtemp(prefix="oo-ephemeral-")
-    env = {**os.environ, "OO_DATA_DIR": tmp, "OO_EPHEMERAL": "0"}
+    from src.monitoring.secret_scrub import taken_environment
+
+    # a process that is this program again: the passphrases taken out of this environment at start are handed over by name
+    env = {**os.environ, **taken_environment(), "OO_DATA_DIR": tmp, "OO_EPHEMERAL": "0"}
     print(f"Ephemeral mode: data in {tmp} (wiped on exit). Ctrl-C to stop.")
     try:
         subprocess.run([sys.executable, "-m", "src.api.main", *(argv or ["serve"])], env=env)
@@ -3323,9 +3356,31 @@ def _run_ephemeral(argv: list[str]) -> None:
 
 
 def _serve() -> None:
+    # Hold this process's core dumps to nothing BEFORE anything else (2026-10-06): the key of an unlocked store is in this
+    # process's memory, and a native crash writes that memory out as a dump, to a file or a handler that keeps it. Not an
+    # option and not a launcher line (a shell cannot set the one value that works); ``src/monitoring/core_guard.py``
+    # says what the limit is, why, and what it does not cover. The boot record names the mechanism that held. In the same
+    # call, every log handler that exists (the last-resort one, which writes to ``stderr`` until the error journal is
+    # installed, included) is put behind the passphrase filter, and every one built afterwards.
+    try:
+        from src.monitoring.secret_scrub import guard_process
+
+        guard_process()
+    except Exception:  # noqa: BLE001 - a guard that cannot be engaged never blocks startup; the boot record says so
+        logger.debug("could not engage the core-dump guard", exc_info=True)
+
+    # The boot reading of the -wal, before ``init_db()`` below (and the seeding) open the store: that connection makes a new -wal or
+    # deletes the leftover one, so the lifespan's own reading would describe this process and not the previous end.
+    try:
+        from src.monitoring.forensics import take_boot_wal_reading
+
+        take_boot_wal_reading()
+    except Exception:  # noqa: BLE001 - the lifespan takes it instead
+        logger.debug("could not take the boot -wal reading", exc_info=True)
+
     import uvicorn
 
-    # Arm the native crash trace FIRST (2026-09-26): a SIGSEGV/SIGABRT anywhere from
+    # Arm the native crash trace next (2026-09-26): a SIGSEGV/SIGABRT anywhere from
     # here on -- the startup seeding included -- leaves every thread's stack in
     # diagnostics/crash_trace.log for the next boot to report. Best-effort by design.
     try:
@@ -3411,7 +3466,7 @@ def _serve() -> None:
     # boot. 30 s is long enough for an ordinary request and short enough to lose the
     # race with nothing.
     try:
-        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30)
+        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config(), ws="none")
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException as exc:

@@ -63,6 +63,12 @@ _SIGNATURES: tuple[tuple[str, str], ...] = (
     ("oom-kill", r"oom-kill|Out of memory: Kill(ed)? process|oom_reaper"),
     ("oom-kill", r"Killed process \d+"),
     ("native-fatal", r"segfault at |general protection fault|traps: "),
+    # A process that died of a core-dumping signal while it held its own core limit at 1 (``core_guard``): for a piped
+    # core pattern the kernel then logs that it aborted the dump, and the handler (systemd-coredump) is never run, so
+    # this line is the kernel's witness where the handler's "dumped core" line no longer is. The wording moved between
+    # kernels: "coredump: 9390(python): RLIMIT_CORE is set to 1, aborting core" (6.18), "Process 9390(python) has
+    # RLIMIT_CORE set to 1" (older).
+    ("native-fatal", r"RLIMIT_CORE is set to 1|has RLIMIT_CORE set to 1"),
     ("hung-task", r"hung_task|blocked for more than \d+ seconds"),
 )
 

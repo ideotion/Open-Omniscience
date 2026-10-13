@@ -49,6 +49,8 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
+from src.monitoring.request_label import route_template
+
 _LOG = logging.getLogger(__name__)
 
 # The route the current request is serving, set by the request middleware BEFORE it
@@ -67,12 +69,11 @@ def set_endpoint(
 ) -> contextvars.Token:
     """Name the request this context is serving; returns the token for :func:`reset_endpoint`.
 
-    ``label`` is the raw "METHOD /path" the middleware knows before routing. The route TEMPLATE
-    ("GET /api/articles/{id}/view") is only known once routing has run, which is after this set,
-    so the request's ASGI ``scope`` (the dict routing fills in, shared with the endpoint's
-    context) is kept with the ``method`` and the template is read from it at checkout. Without it
-    the label stays the raw path, which would carry an article id or an edition's file name into
-    the bundle, where the latency log keys on the template."""
+    ``label`` is a FIXED label the middleware knows before routing (``request_label``: a standard method and
+    ``UNMATCHED_ROUTE``), never the raw path: whoever calls typed it, and a passphrase typed into the address bar is a path.
+    The route TEMPLATE ("GET /api/articles/{id}/view") is only known once routing has run, which is after this set, so the
+    request's ASGI ``scope`` (the dict routing fills in, shared with the endpoint's context) is kept with the ``method`` and the
+    template is read from it at checkout (:func:`request_label.route_template`, which names a mounted app by its mount's path)."""
     return _ENDPOINT.set(None if label is None else (label, method, scope))
 
 
@@ -83,8 +84,8 @@ def _endpoint_label() -> str | None:
     label, method, scope = cur
     try:
         if scope is not None and method:
-            template = getattr(scope.get("route"), "path", None)
-            if isinstance(template, str) and template:
+            template = route_template(scope)
+            if template:
                 return f"{method} {template}"
     except Exception:  # noqa: BLE001 - an instrument must never break a checkout
         pass
@@ -92,17 +93,16 @@ def _endpoint_label() -> str | None:
 
 
 def endpoint_template() -> str | None:
-    """The route TEMPLATE the current request serves ("GET /api/articles/{id}/view"), or ``None`` when only
-    the raw path is known (it may carry an article id or a file name, so a record that outlives the request
-    does not keep it)."""
+    """The route TEMPLATE the current request serves ("GET /api/articles/{id}/view"), or ``None`` while routing has found no
+    route (the label then is the fixed one, which says nothing about the request, so a record that outlives it does not keep it)."""
     cur = _ENDPOINT.get()
     if cur is None:
         return None
     _label, method, scope = cur
     try:
         if scope is not None and method:
-            template = getattr(scope.get("route"), "path", None)
-            if isinstance(template, str) and template:
+            template = route_template(scope)
+            if template:
                 return f"{method} {template}"
     except Exception:  # noqa: BLE001 - an instrument must never break a checkout
         pass

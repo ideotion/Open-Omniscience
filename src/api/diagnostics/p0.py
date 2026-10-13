@@ -80,7 +80,7 @@ def p0_validation_start(body: P0ValidationBody) -> JSONResponse:
     try:
         validate_dest_dir(body.dest_dir)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
+        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
     try:
         job = _P0_VALIDATION_JOB.start(
             dest_dir=body.dest_dir,
