@@ -473,16 +473,17 @@ def kv_set_json(key: str, obj: dict) -> None:
             # follow that order (outside it, the earlier save could fill last and serve the older value). With OO_WRITE_GATE=0 the
             # gate does not serialise, and two saves of one key can still fill out of order: the gate is what this relies on. The
             # leaf lock below is never held while anything waits for the gate, so taking it here adds no order.
+            #
+            # The older entry is dropped FIRST: a signal that lands between the statements below then leaves no entry (the next read
+            # goes to the file), never the older one under a version that has moved.
             with _lock:
+                _cache.pop((path, key), None)
                 _wver[(path, key)] = _wver.get((path, key), 0) + 1
                 if committed and _epoch == epoch:
+                    # Not filled when an invalidation landed since the write began (a restore's, or another key's: the epoch is
+                    # global) or the commit is not known to have landed: an OLDER value must not be served over what was saved.
                     _cache[(path, key)] = value
                     _seen.add(path)
-                else:
-                    # Not committed, or an invalidation landed since the write began (a restore's, or another key's: the epoch is
-                    # global). The value is not cached, and an OLDER one must not stay: it would be served for the life of the
-                    # process over what was just saved.
-                    _cache.pop((path, key), None)
                 if committed:
                     _failed.pop((path, key), None)
 
@@ -511,8 +512,8 @@ def kv_delete(key: str) -> None:
                 _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
         finally:
             with _lock:  # inside the gate, like the save's fill, and however the delete ended (a BaseException after the commit too)
-                _wver[(path, key)] = _wver.get((path, key), 0) + 1
                 _cache.pop((path, key), None)
+                _wver[(path, key)] = _wver.get((path, key), 0) + 1
                 _failed.pop((path, key), None)
 
 

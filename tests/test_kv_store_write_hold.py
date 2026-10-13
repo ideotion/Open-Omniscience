@@ -332,7 +332,8 @@ def test_the_strict_reader_cannot_fill_the_cache_over_a_save_either(store, monke
 
 
 def test_the_cache_is_filled_inside_the_gate_so_two_saves_of_one_key_fill_in_the_order_they_committed():
-    """Deterministic pin: outside the gate the earlier save could fill LAST and serve the older value. The behavioural twin below is a stress."""
+    """Shape pin (the behavioural twin below makes the first save slow): inside the gate, in a ``finally`` (so a failure after the commit
+    still moves the version), under the leaf lock, with the older entry dropped BEFORE the version moves."""
     import ast
     import inspect
     import textwrap
@@ -344,11 +345,15 @@ def test_the_cache_is_filled_inside_the_gate_so_two_saves_of_one_key_fill_in_the
             if isinstance(n, ast.With) and any("write_lock" in ast.unparse(i.context_expr) for i in n.items)
         ]
         assert gated, f"{fn.__name__} lost its write_lock block"
-        inside = any(
-            isinstance(m, ast.With) and any(ast.unparse(i.context_expr) == "_lock" for i in m.items)
-            for g in gated for m in ast.walk(g)
-        )
-        assert inside, f"{fn.__name__} fills the cache outside the gate: two saves of one key can fill in the wrong order"
+        books = [
+            w for g in gated for t in ast.walk(g) if isinstance(t, ast.Try) for f in t.finalbody for w in ast.walk(f)
+            if isinstance(w, ast.With) and any(ast.unparse(i.context_expr) == "_lock" for i in w.items)
+        ]
+        assert books, f"{fn.__name__} keeps its bookkeeping outside the gate or outside a finally: two saves can fill in the wrong order"
+        steps = [ast.unparse(st) for st in books[0].body]
+        pop = next(i for i, st in enumerate(steps) if st.startswith("_cache.pop("))
+        bump = next(i for i, st in enumerate(steps) if st.startswith("_wver[path, key] ="))
+        assert pop < bump, f"{fn.__name__} moves the version before it drops the older entry: a signal between them keeps the older entry"
 
 
 def _make_close_fail(monkeypatch):
