@@ -1308,7 +1308,11 @@ def reindex_articles(
                     mention_diff[_k] += _v
             except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
                 session.rollback()
-                _note_hold()  # a commit that raises ends the hold too, and it is the long holds that fail
+                # A commit that raises ends the hold too, and it is the long holds that fail. Two ends are NOT noted, on purpose: a
+                # rollback that itself raises, and a commit that raises something that is not an Exception (KeyboardInterrupt,
+                # SystemExit). Both abort the whole call, so the stats this feeds are never published for it, and the gate is given
+                # back by the session's transaction end, not by this code.
+                _note_hold()
                 # The rollback un-wrote every staged mention; _redo_committed counts
                 # what it re-writes, so banking them here too would double-count.
                 _redo_committed(list(pending))
@@ -1326,9 +1330,11 @@ def reindex_articles(
                     # This article opens a batch: take the gate now (index_article would, a moment later, and finds it taken) so the
                     # clock starts when it is HELD, not when it was asked for. Inside the try because a store that fails here
                     # fails the article, like any other read.
-                    hold_write_window(session)
+                    # ``hold_open`` only when the window really is held: on a session the gate does not cover (it returns False) there
+                    # is no gate hold to time, and ``longest_batch_s`` must stay None rather than publish wall time as a hold.
+                    held_gate = hold_write_window(session)
                     batch_opened = time.monotonic()
-                    hold_open = True
+                    hold_open = bool(held_gate)
                 _res = index_article(
                     session,
                     art,

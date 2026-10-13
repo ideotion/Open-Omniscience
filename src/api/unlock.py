@@ -398,6 +398,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
     from src.api.main import _run_startup_upkeep, init_db
     from src.api.startup_status import mark_queryable, set_startup
     from src.database.session import dispose_engine
+    from src.monitoring.forensics import UNLOCK_INIT_DB_PHASE
 
     dispose_engine()  # drop any pre-unlock failed pool state
     set_startup("running", "opening the database", queryable=False)
@@ -411,7 +412,8 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
 
         _t.add_phase(UNLOCK_VERIFY_PHASE, verify_ms)
     init_db()  # schema self-heal — fast on an existing store; makes the DB queryable
-    _t.phase("init_db (schema self-heal + migrations + WAL recovery)")
+    _t.phase(UNLOCK_INIT_DB_PHASE)
+    _t.note_init_db()
     # The corpus is now fully usable — everything the background thread does below
     # (ANALYZE, catalog seed-dedup, COUNTs, cache warm) is best-effort optimization.
     # Tell the unlock page it may enter the Console NOW rather than wait out the whole
@@ -482,6 +484,18 @@ class _forensic_timer:
         self._wal = (
             self._wal_state.get("bytes") if self._wal_state.get("state") == "present" else None
         )
+        # The per-step time of the init_db call this unlock made (STORE-02), or None.
+        self._init_db: dict | None = None
+
+    def note_init_db(self) -> None:
+        """Keep the record of the ``init_db`` call THIS thread just made. A restore or a repair running
+        ``init_db`` on another thread is not this unlock's, which is why it reads the thread's own record."""
+        try:
+            from src.database.init_steps import this_thread_record
+
+            self._init_db = this_thread_record()
+        except Exception as exc:  # noqa: BLE001 - a missing record is a missing record, never a refused unlock
+            log_failure(_LOG, "could not read the init_db step record", exc, level=logging.DEBUG)
 
     def phase(self, name: str) -> None:
         now = self._time.monotonic()
@@ -507,6 +521,7 @@ class _forensic_timer:
                     "synchronous_total_ms": round(
                         (self._time.monotonic() - self._t0) * 1000 + self._caller_ms, 1
                     ),
+                    **({"init_db_steps": self._init_db} if self._init_db else {}),
                     "method": (
                         "Wall-clock over the SYNCHRONOUS unlock phases (the wait the "
                         "user actually feels), INCLUDING the caller's passphrase-verify "
