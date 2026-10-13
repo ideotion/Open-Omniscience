@@ -1417,12 +1417,12 @@ def test_the_pressure_snapshot_carries_the_time_it_is_given():
 def test_the_ledgers_end_record_carries_the_times_of_the_previous_peaks(tmp_path, monkeypatch):
     from src.monitoring import session_history as sh
 
-    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev: {
+    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev, sid=None: ({
         "rss_max_mb": 3118.9, "rss_max_at": "2026-09-29T23:21:27+00:00",
         "avail_min_mb": 138.7, "avail_min_at": "2026-09-29T23:03:10+00:00",
         "swap_used_max_mb": 1024.0, "swap_used_max_at": "2026-09-29T22:28:21+00:00",
         "phase": "import", "last_ts": "2026-09-29T23:30:00+00:00",
-    })
+    }, None))
     monkeypatch.setattr(sh, "_append", lambda rec: None)
     src = sh.__file__
     assert src  # the function under test is module-private; drive it through its public caller below

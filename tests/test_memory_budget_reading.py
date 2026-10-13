@@ -44,6 +44,7 @@ from src.monitoring import chronology as ch
 from src.monitoring import forensics, session_hwm
 from src.monitoring import session_history as sh
 from src.monitoring import soak_window as sw
+from tests import previous_identity
 
 ROOT = Path(__file__).resolve().parent.parent
 T0 = 1_700_000_000.0
@@ -500,6 +501,7 @@ def test_the_dead_sessions_tier_travels_into_the_next_boots_report(hwm, monkeypa
     prev = session_hwm.capture_previous()
     assert prev is not None and prev["memory_budget"] == small, "the previous session's, not ours"
     assert session_hwm.current()["memory_budget"] == medium
+    previous_identity.claim(monkeypatch)
     peaks = forensics._previous_peaks()
     assert peaks is not None and peaks["memory_budget"] == small
     assert "memory_budget" in peaks["method"] and "resolved once per process" in peaks["method"]

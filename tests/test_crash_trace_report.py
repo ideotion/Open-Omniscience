@@ -468,7 +468,7 @@ def test_every_boot_of_a_process_names_the_build_it_took_at_its_start_not_a_fres
 def test_peaks_that_raise_cost_the_end_its_peaks_and_never_the_boot(dd, monkeypatch):
     import os
 
-    monkeypatch.setattr(sh, "_end_peaks", lambda hwm: (_ for _ in ()).throw(RuntimeError("bad sidecar")))
+    monkeypatch.setattr(sh, "_peaks_of", lambda hwm: (_ for _ in ()).throw(RuntimeError("bad sidecar")))
     monkeypatch.setattr(sh.time, "time", lambda: 1_700_000_000.0)
     sh.record_boot(None)
     sh._reset_for_tests()
@@ -761,15 +761,15 @@ def test_a_checkout_inside_the_home_folder_is_still_named_by_its_src_path(dd, mo
 )
 def test_the_sidecars_marks_reach_an_end_only_when_it_is_the_same_process(dd, monkeypatch, state, marks):
     sh._append({"kind": "boot", "session_id": "s1", "at": "2023-11-14T22:13:20Z", "pid": 4242, "machine_boot_id": BOOT})
-    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev: {"last_ts": "2023-11-14T22:30:00Z"})
-    monkeypatch.setattr(sh, "_end_peaks", lambda hwm: {"rss_max_mb": 9.0})
+    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev, sid=None: (None, "no identity") if sid else ({"last_ts": "2023-11-14T22:30:00Z"}, None))
+    monkeypatch.setattr(sh, "_peaks_of", lambda hwm: {"rss_max_mb": 9.0})
     end = sh._close_previous({"state": "running", **state}, None)
     assert ("previous_peaks" in end) is marks, end
 
 
 def test_a_seed_whose_marks_cannot_be_read_still_writes_the_session_it_seeds(dd, monkeypatch):
-    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev: {"last_ts": "2023-11-14T22:30:00Z"})
-    monkeypatch.setattr(sh, "_end_peaks", lambda hwm: (_ for _ in ()).throw(RuntimeError("bad sidecar")))
+    monkeypatch.setattr(sh, "_hwm_last_seen", lambda prev, sid=None: ({"last_ts": "2023-11-14T22:30:00Z"}, None))
+    monkeypatch.setattr(sh, "_peaks_of", lambda hwm: (_ for _ in ()).throw(RuntimeError("bad sidecar")))
     end = sh._close_previous({"state": "running", "pid": 7, "started_at": "2023-11-14T22:13:20Z"}, None)
     kinds = [r["kind"] for r in sh.read_records()]
     assert kinds == ["boot", "end"] and end["clean"] is False and "previous_peaks" not in end

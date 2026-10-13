@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import traceback
@@ -26,7 +27,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import TRACEBACK_ATTRIBUTE, scrubbed, unicode_withheld_traceback
+from src.monitoring.request_label import (
+    OTHER_METHOD,
+    PATH_WITHHELD,
+    STANDARD_METHODS,
+    UNMATCHED_ROUTE,
+    safe_method,
+)
+from src.monitoring.secret_scrub import (
+    TRACEBACK_ATTRIBUTE,
+    protect_handlers,
+    scrubbed,
+    unicode_withheld_traceback,
+)
 from src.paths import data_dir
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
@@ -152,7 +165,13 @@ class _JsonlErrorHandler(logging.Handler):
     passphrase and keep half of it. It is the net under the per-site scrubs (``log_failure`` and the handlers the static guard
     reads), and it knows only the passphrases the process holds: one typed into a request being served, or a backup's, is the
     site's to take out. When what the process holds cannot be read the entry carries ``secret_scrub.UNREADABLE_TEXT`` where the
-    message and the traceback would be: the record is still counted, and nothing it said is kept."""
+    message and the traceback would be: the record is still counted, and nothing it said is kept.
+
+    It is the one handler that stands behind no ``SecretFilter`` (``scrubs_its_own_records``: ``protect_handlers`` leaves it
+    alone), because the counts the summary reports are read off the words AS LOGGED, and a filter in front would take a
+    passphrase that is a piece of ``database is locked`` out of them first."""
+
+    scrubs_its_own_records = True  # the name is ``secret_scrub.SCRUBS_ITS_OWN_RECORDS``
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
         try:
@@ -206,11 +225,12 @@ def note_http_error(method: str, path: str, status: int) -> None:
     Best-effort; never raises. Identical (method, path, status) is throttled to once
     per ``_HTTP_THROTTLE_S`` so a poll loop cannot flood the capped log. Level
     ``HTTP`` keeps these out of the problem/lock counts (a response code is not, by
-    itself, an app fault). It records the status, the method and the path and NEVER the
-    response's text (``tests/test_restore_paths_scrub_passphrase.py`` pins that it takes none):
-    the words of a response are the caller's own."""
+    itself, an app fault). It records the status, a standard method and the ROUTE TEMPLATE the caller names as ``path``
+    (never the raw path, which the caller typed: ``request_label``) and NEVER the response's text
+    (``tests/test_restore_paths_scrub_passphrase.py`` pins that it takes none): the words of a response are the caller's own."""
     try:
-        key = (str(method), str(path), int(status))
+        method = safe_method(method)  # a method is any token the client sends
+        key = (method, str(path), int(status))
         now = time.monotonic()
         with _LOCK:
             last = _http_last.get(key)
@@ -227,13 +247,19 @@ def note_http_error(method: str, path: str, status: int) -> None:
                 "level": _HTTP_LEVEL,
                 "logger": "http",
                 "status": status,
-                "method": str(method),
+                "method": method,
                 "path": str(path),
+                "path_kind": "route",
                 "message": msg,
             }
         )
     except Exception:  # noqa: BLE001 - diagnostics must never break the app
         return
+
+
+def _without_query(url: str | None) -> str | None:
+    """``url`` up to its first ``?`` or ``#``."""
+    return None if url is None else re.split(r"[?#]", str(url), maxsplit=1)[0]
 
 
 def note_frontend_error(
@@ -262,6 +288,10 @@ def note_frontend_error(
             split a passphrase and keep half of it (the browser sends its words whole for the same reason)."""
             return scrubbed(str(value))[:cut]
 
+        # The URL a failed fetch names, and the script a browser error came from, without the query or the fragment: what a
+        # person typed into the page's address bar travels in them, and the report is a file the debug bundle carries.
+        source = _without_query(source)
+        endpoint = _without_query(endpoint)
         k = (clean(kind, 40), clean(message, 200), clean(source or "", 200))
         now = time.monotonic()
         with _LOCK:
@@ -314,21 +344,104 @@ def install() -> None:
         _lg = logging.getLogger(_name)
         if not any(isinstance(f, _ThirdPartyCacheNoiseFilter) for f in _lg.filters):
             _lg.addFilter(_ThirdPartyCacheNoiseFilter())
+    # Every handler that exists at boot (a library's ``basicConfig`` console among them) behind the passphrase filter, as the
+    # handlers the app builds are. The handler above scrubs its own records; this is for the ones that write them as they are.
+    protect_handlers()
     _installed = True
     if not handler_present:
         note_boot()
 
 
-def recent_errors(limit: int = 300) -> list[dict]:
+#: The fields of a journal record that are structure and never the exception's words (``path_kind: "route"`` marks an HTTP entry
+#: that names the request by its route template and a standard method, which carry no query; an entry without it is an older one
+#: and is read with its path withheld): a passphrase that is a level, a logger's name or a route must not take it out of the
+#: record it labels.
+_STRUCTURAL_FIELDS = frozenset({"at", "level", "logger", "path_kind"})
+
+
+def _http_entry_without_raw_request(entry: dict) -> dict:
+    """An HTTP entry as it may be read. Since 2026-10-07 the entry names the route TEMPLATE (``path_kind`` says so) and a standard
+    method; a line written before holds the path and method exactly as the client sent them (a passphrase typed into the address
+    bar was on a 404), and a locked app holds no key to take it out, so its path is withheld and its message rebuilt from
+    what is left, whatever passphrases the process holds."""
+    out = dict(entry)
+    method = safe_method(out.get("method"))
+    out["method"] = method
+    if out.get("path_kind") != "route":
+        out["path"] = PATH_WITHHELD
+        out["message"] = f"HTTP {out.get('status')} {method} {PATH_WITHHELD}"
+    return out
+
+
+_STD = "|".join(sorted(STANDARD_METHODS)) + "|" + re.escape(OTHER_METHOD)
+#: A route template as the app writes one: ``/`` and segments with no space, and no colon outside a ``{param:converter}``.
+_TEMPLATE = rf"(?:/(?:[^\s:?{{}}]|\{{[^{{}}\s]*\}})*|{re.escape(UNMATCHED_ROUTE)})"
+#: How a rate-limit line names the request since 2026-10-07: a standard method and a route template (or the fixed label).
+_RATE_NEW = re.compile(rf"^(?:{_STD}) {_TEMPLATE}$")
+#: A client as ``safe_client`` writes it (an address, or the fixed word), and as ``get_remote_address`` wrote one before.
+_CLIENT = r"(?:[0-9A-Fa-f:.\[\]]{1,60}|\(client\)|unknown)"
+_RATE_LINE = re.compile(rf"^Rate limit exceeded for ({_CLIENT}): (.*)$", re.DOTALL)
+_RATE_PREFIX = "Rate limit exceeded for "
+_UNHANDLED = "unhandled error on "
+#: The whole head of the new unhandled-error line: ``route <standard method> <template>:``. A line that does not match it IN FULL is an
+#: older one, or one a client shaped (a method token of ``route`` is its own to send): nothing after the prefix is kept, because no
+#: split can tell a path with a space in it from the text that follows.
+_UNHANDLED_NEW = re.compile(rf"^route (?:{_STD}) {_TEMPLATE}: ")
+#: What the ``slowapi`` logger wrote and this app no longer lets it write: ``ratelimit <limit> (<key>) exceeded at endpoint: <path>``.
+_SLOWAPI_MARK = " exceeded at endpoint: "
+
+
+def _message_without_raw_request(message: str) -> str:
+    """The message of a line written before the app named a request by its route, with the path (and the query) the client typed
+    withheld; a line that names the request by its route IN FULL (a standard method, then a template or the fixed label, and nothing
+    else), and every other line, as it was. Three shapes carried it: the unhandled-error line (``unhandled error on <method>
+    <path>: ...``: the new wording says ``route``), the rate-limit line (its URL in full, query included) and the ``slowapi``
+    library's own warning (which names the path and is now dropped at the source, so any such line is an old one)."""
+    if message.startswith(_UNHANDLED) and not _UNHANDLED_NEW.match(message[len(_UNHANDLED):]):
+        return f"{_UNHANDLED}{PATH_WITHHELD}"
+    if message.startswith(_RATE_PREFIX):
+        rate = _RATE_LINE.match(message)
+        if rate is None:  # a client text that is not an address or the fixed word: the whole remainder is withheld
+            return f"{_RATE_PREFIX}(client): {PATH_WITHHELD}"
+        if not _RATE_NEW.match(rate.group(2).strip()):
+            return f"{rate.group(0).split(': ', 1)[0]}: {PATH_WITHHELD}"
+        return message
+    if message.startswith("ratelimit ") and _SLOWAPI_MARK in message:
+        return message.split(_SLOWAPI_MARK, 1)[0] + _SLOWAPI_MARK + PATH_WITHHELD
+    return message
+
+
+def _scrubbed_entry(entry: dict) -> dict:
+    """``entry`` with the passphrases the process holds taken out of every text field that is not structure."""
+    if entry.get("logger") == "http":
+        entry = _http_entry_without_raw_request(entry)
+    elif entry.get("logger") == "frontend":
+        # A report written before the query was dropped at the source: the URL of a failed fetch carried it.
+        entry = {**entry, **{k: _without_query(entry[k]) for k in ("endpoint", "source") if isinstance(entry.get(k), str)}}
+    elif isinstance(entry.get("message"), str):
+        entry = {**entry, "message": _message_without_raw_request(entry["message"])}
+    return {k: scrubbed(v) if isinstance(v, str) and k not in _STRUCTURAL_FIELDS else v for k, v in entry.items()}
+
+
+def recent_errors(limit: int = 300, *, scrub: bool = True) -> list[dict]:
+    """The newest ``limit`` records of the journal, oldest first.
+
+    The journal is a file that outlives the build that wrote it, and a record written before the scrub existed holds whatever its
+    exception said (the debug bundle carries what this returns). So what is READ has the passphrases the process holds taken out
+    again (:func:`secret_scrub.scrubbed`: free while none is held, and a text it cannot check is withheld), and the file is left as
+    it was. Only the passphrases held NOW can be taken out: a record that names one the process no longer holds is not recognised.
+    ``scrub=False`` is for the summary, which publishes counts and times and no words, and which counts a record written before
+    the flags existed by its text."""
     path = _log_path()
     if not path.exists():
         return []
     out = []
     for ln in path.read_text(encoding="utf-8").splitlines()[-limit:]:
         try:
-            out.append(json.loads(ln))
+            entry = json.loads(ln)
         except json.JSONDecodeError:
             continue
+        out.append(_scrubbed_entry(entry) if scrub and isinstance(entry, dict) else entry)
     return out
 
 
@@ -340,7 +453,7 @@ def summary() -> dict:
     and ``locked_errors_this_session`` count records SINCE the latest boot marker,
     so a clean current session reads zero even when the file still holds an old
     session's errors (which would otherwise look live)."""
-    records = recent_errors(limit=_CAP)
+    records = recent_errors(limit=_CAP, scrub=False)  # counts and times, no words: see ``recent_errors``
     if not records:
         return {
             "records": 0,

@@ -67,6 +67,14 @@ NO_PROXY_REFUSAL = (
 )
 
 
+#: The refusal when the stored transport choice could not be READ (a locked, damaged or vanished store): the user's setting is
+#: unknown, not absent, so nothing is sent until it reads again. Not "no proxy is configured": the store is the problem.
+READ_FAILED_REFUSAL = (
+    "the stored safety settings could not be read, so this request was refused instead of being sent directly "
+    "(nothing leaves until they can be read again)"
+)
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -226,6 +234,8 @@ def _protected_transport(settings: SafetySettings) -> tuple[str | None, tuple[st
     statistics, DuckDuckGo discovery, the AI installer) out directly while articles went
     through the pool.
     """
+    if getattr(settings, "read_failed", False):
+        return None, (), READ_FAILED_REFUSAL
     # ``getattr``: a stand-in settings object without the field has no pool, which is
     # the reading that cannot widen what a session reaches.
     pool = tuple(getattr(settings, "http_proxies", None) or ())
@@ -257,6 +267,8 @@ def transport_summary(settings: SafetySettings) -> dict[str, Any]:
     text: that text comes from an exception and quotes the stored entry it refused, and
     the popup draws its own translated sentence for each kind anyway.
     """
+    if getattr(settings, "read_failed", False):
+        return {"kind": "unknown", "reason": "unreadable"}  # the UI's own "settings could not be read" line
     if not settings.is_protected:
         return {"kind": "direct"}
     _single, pool, refusal = _protected_transport(settings)
@@ -294,10 +306,22 @@ def guarded_session(
     (``src.ingest.egress_window``). Omitted -- the default, and every existing
     caller -- the session refuses under the kill switch exactly as before.
     """
+    return _session_for(load_settings(), user_agent=user_agent, isolation_token=isolation_token, egress_purpose=egress_purpose)
+
+
+def _session_for(
+    settings: SafetySettings,
+    *,
+    user_agent: str = DEFAULT_USER_AGENT,
+    isolation_token: str | None = None,
+    egress_purpose: str | None = None,
+) -> GuardedSession:
+    """``guarded_session`` built from the settings ``settings`` and no other read: a caller that keys a cache on a snapshot builds the
+    session from that same snapshot, or a setting that flips between two reads caches a session of one transport under the key of
+    the other."""
     s = GuardedSession()
     s.egress_purpose = egress_purpose
     s.headers["User-Agent"] = user_agent
-    settings = load_settings()
     if not settings.is_protected:
         return s
     proxy, pool, refusal = _protected_transport(settings)
@@ -373,12 +397,12 @@ def _fetcher_for(s: SafetySettings, **overrides) -> EthicalFetcher:
 # A long-lived fetcher that follows the transport setting
 # --------------------------------------------------------------------------- #
 _FOLLOWING_LOCK = threading.Lock()
-_FOLLOWING: dict[str, tuple[tuple[Any, ...], EthicalFetcher]] = {}
+_FOLLOWING: dict[str, tuple[tuple[Any, ...], Any]] = {}
 
 
 def _transport_key(s: SafetySettings) -> tuple[Any, ...]:
     """Everything ``_fetcher_for`` reads from the settings, and nothing else."""
-    return (bool(s.is_protected), s.http_proxy, tuple(getattr(s, "http_proxies", None) or ()))
+    return (bool(s.is_protected), s.http_proxy, tuple(getattr(s, "http_proxies", None) or ()), bool(getattr(s, "read_failed", False)))
 
 
 def following_fetcher(owner: str) -> EthicalFetcher:
@@ -403,7 +427,29 @@ def following_fetcher(owner: str) -> EthicalFetcher:
     key = _transport_key(s)
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(owner)
+        if getattr(s, "read_failed", False) and held is not None:
+            return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
         if held is None or held[0] != key:
             held = (key, _fetcher_for(s))
             _FOLLOWING[owner] = held
+        return held[1]
+
+
+def following_session(owner: str, user_agent: str) -> GuardedSession:
+    """The long-lived guarded session of one API client, rebuilt whenever the transport changes (``following_fetcher``'s twin for the
+    clients that talk to a service's API and follow its own etiquette instead of ``robots.txt``: the MediaWiki and ORES clients).
+
+    ``guarded_session`` decides the transport once, when it is built, so a client that keeps its session keeps the transport it was
+    built with: a switch to protected mode in Settings would reach it only after a restart. Build it on first use (never at import:
+    it reads the settings store) and ask here for it on every request."""
+    s = load_settings()
+    key = (*_transport_key(s), user_agent)
+    name = f"session/{owner}"
+    with _FOLLOWING_LOCK:
+        held = _FOLLOWING.get(name)
+        if getattr(s, "read_failed", False) and held is not None and held[0][-1] == user_agent:
+            return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
+        if held is None or held[0] != key:
+            held = (key, _session_for(s, user_agent=user_agent))
+            _FOLLOWING[name] = held
         return held[1]

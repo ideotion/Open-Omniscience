@@ -171,3 +171,69 @@ def test_safety_settings_migrates_legacy_json(tmp_path):
     kv_store.kv_invalidate()
     assert sset.load_settings().fetch_mode == "protected"
     assert kv_store.kv_get_json("settings.safety")["fetch_mode"] == "protected"
+
+
+# --------------------------------------------------------------------------- #
+# A settings read consumes no evidence and creates no file
+# --------------------------------------------------------------------------- #
+def test_a_read_leaves_a_leftover_wal_byte_for_byte_and_still_reads_the_value(tmp_path):
+    """MUTATION TARGET: ``read_only=True`` in ``kv_get_json``. The last connection that closes on a file checkpoints a leftover ``-wal``
+    into it and deletes it: the one trace that the previous session's last connection was never closed."""
+    import hashlib
+    import subprocess
+    import sys
+
+    db = _db(tmp_path)
+    code = (
+        "import sqlite3,os,sys\n"
+        "c=sqlite3.connect(sys.argv[1])\n"
+        "c.execute('PRAGMA journal_mode=WAL')\n"
+        "c.execute('CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)')\n"
+        "c.execute(\"INSERT INTO app_state VALUES ('settings.app','{\\\"theme\\\": \\\"dark\\\"}','x')\")\n"
+        "c.commit()\n"
+        "os._exit(0)\n"
+    )
+    subprocess.run([sys.executable, "-c", code, str(db)], check=True)
+    wal = tmp_path / "open_omniscience.db-wal"
+    before = hashlib.sha256(wal.read_bytes()).hexdigest()
+    assert kv_store.kv_get_json("settings.app") == {"theme": "dark"}
+    assert wal.exists() and hashlib.sha256(wal.read_bytes()).hexdigest() == before
+
+
+def test_a_read_of_a_store_that_does_not_exist_creates_nothing(tmp_path):
+    assert kv_store.kv_get_json("settings.app") is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_hot_rollback_journal_is_recovered_by_the_fallback_and_never_reads_as_no_value(tmp_path, monkeypatch):
+    """MUTATION TARGET: the read-write retry in ``kv_get_json``. A read-only open of a store with a hot rollback journal fails
+    ("attempt to write a readonly database") where a read-write open recovers it, and a failed settings read means the defaults,
+    which mean protected mode off."""
+    import subprocess
+    import sys
+
+    work, snap = tmp_path / "work", tmp_path / "snap"
+    work.mkdir()
+    code = (
+        "import sqlite3, shutil, os, sys\n"
+        "src, dst = sys.argv[1], sys.argv[2]\n"
+        "os.makedirs(dst, exist_ok=True)\n"
+        "c = sqlite3.connect(src + '/open_omniscience.db', isolation_level=None)\n"
+        "c.execute('PRAGMA journal_mode=DELETE')\n"
+        "c.execute('CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)')\n"
+        "c.execute('CREATE TABLE junk (a TEXT)')\n"
+        "c.execute(\"INSERT INTO app_state VALUES ('settings.app','{\\\"theme\\\": \\\"dark\\\"}','x')\")\n"
+        "c.execute('BEGIN')\n"
+        "c.executemany('INSERT INTO junk VALUES (?)', [('x' * 500,) for _ in range(2000)])\n"
+        "c.execute('PRAGMA cache_size=1')\n"
+        "c.execute(\"UPDATE app_state SET value='{\\\"theme\\\": \\\"BROKEN\\\"}'\")\n"
+        "c.executemany('INSERT INTO junk VALUES (?)', [('y' * 500,) for _ in range(2000)])\n"
+        "for f in os.listdir(src):\n"
+        "    shutil.copy(os.path.join(src, f), os.path.join(dst, f))\n"
+        "os._exit(0)\n"
+    )
+    subprocess.run([sys.executable, "-c", code, str(work), str(snap)], check=True)
+    assert (snap / "open_omniscience.db-journal").exists(), "the snapshot must carry a hot journal"
+    monkeypatch.setenv("OO_DATA_DIR", str(snap))
+    kv_store.kv_invalidate()
+    assert kv_store.kv_get_json("settings.app") == {"theme": "dark"}

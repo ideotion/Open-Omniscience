@@ -13303,7 +13303,7 @@ run puts no minimum on its length) turns every verdict into the marker and a goo
 restore does not run. The four texts are scrubbed where they are made (`_exception_text`), a test runs the run with that
 passphrase, a mutation that scrubs the whole result fails it, and a static test holds each `except` handler of a function that
 holds the passphrase, in `p0_validation.py`, `release_run.py` and `release_run_fresh_restore.py` (and, since PR #1336,
-`stream_backup.py`, `volume_job.py`, `import_queue.py`, the route layer's `backup_v2.py` and the lock screen's `unlock.py`), to using the caught exception
+`stream_backup.py`, `volume_job.py`, `import_queue.py`, the route layer's `backup_v2.py` and the lock screen's `unlock.py`, and since PR #MMMM `columnar.py`), to using the caught exception
 only inside a call that scrubs it with the secret (`_exception_text`, the child's `_error_text`, `scrub_value`,
 `_log_phase_failure`, and `secret_scrub`'s `scrubbed`, `traceback_text` and `log_failure`, which must be given EVERY secret the
 function holds; a missing, empty or other secret argument does not count, read at the second place, and from the fourth for
@@ -13312,7 +13312,7 @@ function holds; a missing, empty or other secret argument does not count, read a
 two phases never hold the secret), and to asking for no traceback (a log call's `exc_info`, `.exception()`, the `traceback` module,
 `sys.exc_info()`), so another handler there cannot be added unseen by those routes. A function holds the passphrase when it takes
 a parameter, reads a local or reads an attribute named `passphrase` (the release run holds it as `run.params.passphrase`), or
-takes or reads one named `secret`, `needle` or `corpus_passphrase` (or, as an attribute, `_passphrase`, which the import queue
+takes or reads one named `secret`, `needle`, `corpus_passphrase` or `encryption_key` (the columnar store's key once it is stretched from the passphrase) (or, as an attribute, `_passphrase`, which the import queue
 keeps for the length of a run). The test reads those modules' syntax and follows no call, so this stays
 outside it: a secret held under another name or route (a parameter named `pw`, `**kwargs`, a closure or a global; the job
 worker reads `kwargs.get("passphrase")`, and its two online probes put `{exc}` of a network call into their result and are

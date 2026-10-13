@@ -57,7 +57,10 @@ _ALLOWED_PASSES = (1, 3, 8)
 _MAIN_DB = "open_omniscience.db"
 _CUSTODY_DB = "custody_log.db"
 _ANCHORS_DB = "anchors.db"
-_DUCK_FILES = ("analytics.duckdb", ".oo_columnar_probe.duckdb")
+# The cache, the sidecar that holds the salt its key is stretched with (``columnar._KDF_SIDECAR_SUFFIX``), the log the engine
+# leaves beside the cache after an unclean end (ciphertext under the same key, so with the sidecar gone it is noise, but it is
+# the store's own file) and the gate's probe.
+_DUCK_FILES = ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb")
 _KEY_FILES = ("custody_ed25519.pem", "custody_ml_dsa_65.key")
 _DB_SIDECARS = ("-wal", "-shm", "-journal")
 
@@ -220,6 +223,17 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         _dispose_lanes()
     except Exception:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
         _LOG.warning("could not dispose the lane engines before the erase", exc_info=True)
+    # The columnar serves are the same kind of thing: a PERSISTED one keeps the cache's derived key inside DuckDB for the life of
+    # the process and goes on answering from a file step 3 is about to overwrite. Closed here, before a byte is touched and
+    # without waiting (a serve in use is left open and named: an erase is not held up behind a refresh).
+    try:
+        from src.scheduler.release import close_serves_for_cleared_key
+
+        _serves = close_serves_for_cleared_key()
+        if _serves.get("busy"):
+            _LOG.warning("a columnar serve was in use during the erase and was left open: %s", _serves["busy"])
+    except Exception:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
+        _LOG.warning("could not close the columnar serves before the erase", exc_info=True)
 
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
@@ -251,8 +265,10 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         if s and overwritten:
             keys_destroyed.append(name)
 
-    # 3) DuckDB cache header (its key has no per-file salt -> defence-in-depth; the real
-    #    protection is clearing the passphrase in step 5 + the free-space scrub).
+    # 3) DuckDB cache header and its key-derivation sidecar (the cache's key is stretched from the passphrase and the
+    #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
+    #    the cache is a derived copy, so this is defence-in-depth beside step 1 and the passphrase clearing in
+    #    step 5 + the free-space scrub).
     store_dir: Path = paths["store_dir"]
     for name in _DUCK_FILES:
         _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
@@ -274,7 +290,16 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     if data_dir is None:
         from src.database.connect import set_passphrase
 
-        set_passphrase(None)
+        try:
+            set_passphrase(None)
+        finally:
+            # the store is gone by design, not vanished; this must never skip the overwrite below
+            try:
+                from src.config.kv_store import forget_stores
+
+                forget_stores()
+            except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
+                pass
         passphrase_cleared = True
 
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The

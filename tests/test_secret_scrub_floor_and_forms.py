@@ -917,3 +917,14 @@ def test_a_defang_whose_one_field_cannot_be_set_still_empties_the_others():
     err = Odd("ascii", "held-secret-text", 0, 1, "ordinal not in range(128)")
     ss._defang(err)
     assert err.start == 0 and err.end == 0 and err.reason == "withheld" and err.args == (ss.UNICODE_WITHHELD,)
+
+
+def test_a_secret_that_is_all_lowercase_hex_is_also_taken_out_in_capitals():
+    """A derived key is lowercase hex and an engine may quote it in capitals. MUTATION TARGET: the capitals base in ``_shapes``;
+    a secret with any other character is not given them (a passphrase is exact, and the capitals of a word are another word)."""
+    key = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+    assert key.upper() in ss._shapes(key) and key in ss._shapes(key)
+    assert ss.scrubbed(f"near ENCRYPTION_KEY '{key.upper()}' and '{key}'", key) == f"near ENCRYPTION_KEY '{ss.REDACTED}' and '{ss.REDACTED}'"
+    mixed = "0a1b2c3d4e5f6071g293a4b5"
+    assert mixed.upper() not in ss._shapes(mixed)
+    assert "Abc9" not in ss._shapes("abc9x-passphrase") and ss._shapes("0A1B2C3D") == ("0A1B2C3D",), "capitals alone are not lowercase hex"

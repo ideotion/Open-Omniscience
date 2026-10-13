@@ -184,6 +184,7 @@ class MemoryGuard:
         if rss_mb is not None and mem_total_mb:
             rss_frac_pct = 100.0 * rss_mb / mem_total_mb
         tripped_reason: str | None = None
+        tripped_engagement = 0
         resumed = False
         with self._lock:
             prev_swap = self._last_proc_swap
@@ -218,6 +219,7 @@ class MemoryGuard:
                         self._over = 0
                         self._under = 0
                         tripped_reason = self._reason
+                        tripped_engagement = self._engagements
                 else:
                     self._over = 0
             else:
@@ -249,7 +251,7 @@ class MemoryGuard:
                 self.avail_floor_mb,
                 self.trip_after,
             )
-            self._run_release()
+            self._run_release(tripped_engagement)
         if resumed:
             _LOG.warning("memory guard released (memory recovered) — collection resumes")
         return engaged
@@ -294,10 +296,12 @@ class MemoryGuard:
         over_avail = mem_avail_mb is not None and mem_avail_mb <= self.avail_floor_mb
         return over_rss or over_avail
 
-    def _run_release(self) -> None:
+    def _run_release(self, engagement: int | None = None) -> None:
         """Release residents on engage. Never raises — the pause must stand even
         if the release fails, and this runs when the machine is already in
-        trouble."""
+        trouble. The record is stamped with the number of the engagement it was run
+        for (``engagement``, default the current count), so a reader can tell the
+        ladder of THIS engagement from the last one's."""
         fn = self._release_fn
         if fn is None:
             from src.scheduler.release import release_residents as fn  # noqa: PLC0415
@@ -307,7 +311,8 @@ class MemoryGuard:
             _LOG.debug("memory guard: release ladder failed", exc_info=True)
             return
         with self._lock:
-            self._last_release = rec
+            stamp = self._engagements if engagement is None else engagement
+            self._last_release = {**rec, "engagement": stamp} if isinstance(rec, dict) else rec
 
     def last_release(self) -> dict | None:
         """The most recent release record (None until an engage has run one)."""

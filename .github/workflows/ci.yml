@@ -430,7 +430,8 @@ jobs:
   # Columnar derived store (DuckDB): the [columnar] extra is NOT in the main
   # test lane, so the D2/D3 rollup + D1 loader tests skip there (duckdb absent).
   # This lane installs [columnar] so they run for real (in-memory + fixture
-  # verify), then exercises the D1 persisted-ENCRYPTED round trip under a
+  # verify; the key-derivation tests too, which skip without duckdb and include the
+  # real-engine one on DuckDB's software backend), then exercises the D1 persisted-ENCRYPTED round trip under a
   # CI-ONLY trust path: it INSTALLs the real httpfs over the network, checksums
   # it IN-LANE, and NEVER promotes that checksum into external_artifacts.yml
   # (the shipped pins stay blank until the operator's audited build).
@@ -458,7 +459,8 @@ jobs:
             tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
             tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
             tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py \
-            tests/test_rollup_build_streaming.py tests/test_rollup_serve_persisted.py
+            tests/test_rollup_build_streaming.py tests/test_rollup_serve_persisted.py \
+            tests/test_columnar_key_derivation.py
 
       - name: D1 persisted-encrypted round trip (CI-only httpfs trust path)
         env:

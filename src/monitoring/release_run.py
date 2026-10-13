@@ -89,6 +89,7 @@ from typing import Any
 from src.monitoring.secret_scrub import (
     exception_text,
     log_failure,
+    passphrase_bytes,
     scrubbed,
     scrubbed_value,
 )
@@ -178,6 +179,10 @@ class RunParams:
             raise ValueError(f"profile must be one of {PROFILES}, not {self.profile!r}")
         if not self.passphrase:
             raise ValueError("a backup passphrase is required")
+        # The restore child is handed the passphrase in its environment, which Python encodes by itself: a lone surrogate fails
+        # there with the character and its place in the passphrase, and the passphrase as the error's object. Refused here,
+        # with fixed words, before a backup is made for it.
+        passphrase_bytes(self.passphrase)
         if not (0 < float(self.soak_hours) <= 24 * 60):
             raise ValueError("soak_hours must be a positive number of hours (at most 60 days)")
 
@@ -578,6 +583,8 @@ def resume_preflight(passphrase: str = "", *, check_passphrase: bool = True) -> 
     hint both come from here, and the worker re-checks the same thing before it starts.
     Only an INTERRUPTED run resumes: a state file with no outcome, written by another
     process. A finished run is finished; a run in flight belongs to its own job."""
+    if passphrase:
+        passphrase_bytes(passphrase)  # fixed words for a lone surrogate (see ``RunParams.validate``)
     state = read_state()
     if not state.get("run_id"):
         raise ValueError("no release run has been recorded on this instance")
@@ -1181,6 +1188,10 @@ def _fresh_install_restore(
     the label and the process id alone, so that second run restored into the install the first had kept
     (two journals in one directory, and a run with another passphrase could not open its database) and a
     run that did not keep its install deleted the one an earlier run had kept."""
+    # The environment is where the child is handed the passphrase, and Python encodes it there by itself: a lone surrogate fails
+    # with the character, its place in the passphrase and the passphrase as the error's object, which a phase record then keeps.
+    # The run's entries refuse one first (``RunParams.validate``, ``resume_preflight``); this is the call that cannot be left out.
+    passphrase_bytes(run.params.passphrase)
     dest = Path(run.params.dest_dir).expanduser().resolve()
     fresh = dest / f".restore-release-run-{label}-{os.getpid()}-{secrets.token_hex(4)}"
     out_json = fresh.with_suffix(".json")

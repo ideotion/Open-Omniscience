@@ -471,8 +471,10 @@
         let lang = null;
         try { lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || null; } catch (e) {}
         const body = {kind: String(kind).slice(0, 40), message: msg};
-        if (source) body.source = String(source);
-        if (endpoint) body.endpoint = String(endpoint);
+        // Without the query and the fragment: what was typed into the address bar rides in them (the server cuts them too).
+        const noQuery = (u) => String(u).split(/[?#]/)[0];
+        if (source) body.source = noQuery(source);
+        if (endpoint) body.endpoint = noQuery(endpoint);
         if (lineno != null) body.lineno = lineno | 0;
         if (lang) body.ui_lang = String(lang).slice(0, 16);
         // Use the RAW fetch so the wrapper below can't recurse on this very POST.

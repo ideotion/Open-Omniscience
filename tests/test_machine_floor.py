@@ -6,6 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -220,22 +221,55 @@ def test_the_runner_uses_the_shared_policy_and_never_rewrites_the_setting():
     )
 
 
+def _resource_limits_set(tree: ast.AST) -> list[str]:
+    """The resource each ``setrlimit`` / ``prlimit`` call in ``tree`` sets, as the source writes it."""
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+        if name == "setrlimit" and node.args:
+            found.append(ast.unparse(node.args[0]))
+        elif name == "prlimit" and len(node.args) > 1:
+            found.append(ast.unparse(node.args[1]))
+    return found
+
+
 def test_no_code_path_imposes_an_address_space_rlimit():
     """A self-imposed RLIMIT_AS is a FALSE ceiling: DuckDB and numpy reserve
     virtual space far above RSS, so it raises MemoryError in unrelated code long
     before the process is actually large. The cgroup (S1.5) is the real one.
+
+    The ONE resource limit the app sets is RLIMIT_CORE, in ``src/monitoring/core_guard.py``: a core dump of an
+    unlocked process holds the passphrase, so a crash must not write one. Every other limit, set under any name,
+    is refused here, so a cap on memory cannot arrive as ``prlimit`` or through a constant that is not spelled
+    ``RLIMIT_AS``.
     """
     offenders = []
     for path in _SRC.rglob("*.py"):
         text = path.read_text(encoding="utf-8", errors="ignore")
+        rel = path.relative_to(_SRC).as_posix()
         # comment-stripped: the explanation of why this is absent necessarily
         # names the thing it forbids.
         code = "\n".join(
             ln for ln in text.splitlines() if not ln.lstrip().startswith("#")
         )
-        if "setrlimit" in code or "RLIMIT_AS" in code:
-            offenders.append(str(path.relative_to(_SRC)))
+        if "RLIMIT_AS" in code:
+            offenders.append(f"{rel}: names RLIMIT_AS")
+        if "setrlimit" not in code and "prlimit" not in code:
+            continue
+        for resource in _resource_limits_set(ast.parse(text)):
+            if not (rel == "monitoring/core_guard.py" and resource == "resource.RLIMIT_CORE"):
+                offenders.append(f"{rel}: sets {resource}")
     assert not offenders, f"an address-space cap is a false ceiling: {offenders}"
+
+
+def test_the_core_limit_is_set_where_the_guard_sets_it_and_nowhere_else():
+    """The other half of the narrowed rule above: ``core_guard`` does set RLIMIT_CORE, so a refactor that moves the
+    call elsewhere (or drops it) is seen here and not only in the guard's own tests."""
+    text = (_SRC / "monitoring" / "core_guard.py").read_text(encoding="utf-8")
+    assert _resource_limits_set(ast.parse(text)) == ["resource.RLIMIT_CORE"]
 
 
 # --------------------------------------------------------------------------- #

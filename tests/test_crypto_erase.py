@@ -147,6 +147,70 @@ def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
     assert report["passphrase_cleared"] is False
 
 
+def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_lives(tmp_path, monkeypatch):
+    """The cache's key is stretched from the passphrase AND the salt in ``analytics.duckdb.kdf``, so the erase destroys the
+    sidecar with the cache's header: with the salt gone the key is not derivable even from the right passphrase. What is
+    pinned is the BYTES at the moment the file is about to go: the overwrite ran, over the head, and no longer holds the
+    salt. (The erase then unlinks the file and removes the directory, so nothing would be left for a later look.)"""
+    from src.analytics import columnar
+
+    salt = bytes(range(16))
+    store = tmp_path / "analytics.duckdb"
+    store.write_bytes(b"DUCK" * 2000)
+    sidecar = columnar._kdf_sidecar_path(store)
+    columnar._write_kdf_sidecar(sidecar, salt)
+    assert salt.hex() in sidecar.read_text(encoding="utf-8")  # the salt is where the test says it is
+
+    real_overwrite = crypto_erase._overwrite
+    seen: dict[str, object] = {}
+
+    def spy(path, *, head_bytes=None):
+        done = real_overwrite(path, head_bytes=head_bytes)
+        if path.name == sidecar.name:
+            seen.update(done=done, head_bytes=head_bytes, after=path.read_bytes())
+        return done
+
+    monkeypatch.setattr(crypto_erase, "_overwrite", spy)
+
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+
+    assert seen, "the sidecar was never handed to the overwrite"
+    assert seen["done"] is True and seen["head_bytes"] == crypto_erase._SQLCIPHER_PAGE1
+    assert salt.hex().encode() not in seen["after"], "the salt survived the overwrite"
+    assert not sidecar.exists() and report["removed"] is True
+
+
+def test_quick_crypto_erase_takes_every_file_of_a_cache_directory_outside_the_data_dir_and_only_those(tmp_path, monkeypatch):
+    """With ``OO_COLUMNAR_DIR`` outside the data directory the erase walks the cache's directory BY NAME (it is not ours to
+    remove, so nothing else in it is touched). An unclean end leaves ``analytics.duckdb.wal`` beside the cache: ciphertext
+    under the same key, and with the sidecar destroyed the key is not derivable, but it is the store's own file, so the
+    list that is walked names it too. The unrelated file in that directory is left alone."""
+    data = tmp_path / "data"
+    data.mkdir()
+    cache = tmp_path / "columnar-cache"
+    cache.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    for name in ("analytics.duckdb", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
+        (cache / name).write_bytes(b"D" * 8192)
+    (cache / "analytics.duckdb.kdf").write_text('{"v": 2}', encoding="utf-8")
+    (cache / "unrelated.txt").write_text("keep me", encoding="utf-8")
+    monkeypatch.setattr(
+        crypto_erase,
+        "_resolve",
+        lambda dd: {
+            "base": data,
+            "main_db": data / "open_omniscience.db",
+            "keys_dir": data / "keys",
+            "store_dir": cache,
+            "custody_db": data / "custody_log.db",
+            "anchors_db": data / "anchors.db",
+        },
+    )
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["removed"] is True and not data.exists()
+    assert sorted(p.name for p in cache.iterdir()) == ["unrelated.txt"], "every file the cache keeps went, and nothing else"
+
+
 def test_quick_crypto_erase_clears_passphrase_on_default_store(tmp_path, monkeypatch):
     """The default (data_dir=None) path clears the in-memory passphrase; an override dir
     does not (proven above). Resolvers are monkeypatched onto the temp dir so no real

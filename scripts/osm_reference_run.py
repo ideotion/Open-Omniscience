@@ -97,17 +97,18 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             print("refused: the prior report cannot be read as JSON")
             return 2
-    # An rlimit is inherited by every child. The value is 1, not 0: a core piped to a handler by core_pattern ignores
-    # RLIMIT_CORE except for exactly 1, which aborts that dump (measured on this kernel; 0 let a full dump through, and
-    # apport keeps its report whatever the limit). A crash of the runner or a child must not leave a dump holding the key.
-    # With the hard limit already 0 this cannot be set (a limit is only lowered), so the run is refused before the
-    # passphrase is read, rather than carrying on with a dump it cannot prevent.
+    # A crash of the runner or of a child must not leave a dump holding the key. The limit is set by the one shared
+    # guard (``src/monitoring/core_guard.py``: why it is 1 and not 0, what it covers). STRICT here: the children of this
+    # run are handed the passphrase in their environment from their first instruction, and only the rlimit is inherited
+    # by them (the guard's fallback, a process that asks not to be dumped, is reset by every ``exec``). With the hard
+    # limit already 0 the limit cannot be set (a limit is only lowered), so the run is refused before the passphrase is
+    # read, rather than carrying on with a dump it cannot prevent.
     if not args.plan:
-        try:
-            import resource
+        from src.monitoring.core_guard import CoreGuardError, engage
 
-            resource.setrlimit(resource.RLIMIT_CORE, (1, 1))
-        except (ImportError, ValueError, OSError):  # ImportError: no `resource` module (Windows)
+        try:
+            engage(strict=True)
+        except CoreGuardError:
             print("refused: core dumps cannot be limited here (the hard core limit is already 0, or this system has no such "
                   "limit), so a crash could leave a dump holding the store's key; start the command from a shell whose "
                   "hard core limit is unlimited (ulimit -Hc unlimited), or as another user")

@@ -175,7 +175,7 @@ def ingest_email_endpoint(
                 use_ssl=req.use_ssl,
             )
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
-            raise HTTPException(status_code=409, detail=exception_text(exc, req.password, typed=False, withheld=UNREADABLE_TEXT)) from exc
+            raise HTTPException(status_code=409, detail=exception_text(exc, req.password, typed=False, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
 

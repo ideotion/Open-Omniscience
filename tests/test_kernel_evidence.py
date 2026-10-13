@@ -62,6 +62,32 @@ def test_a_segfault_is_a_native_fatal_not_an_oom(monkeypatch):
     assert kernel_log.read_kernel_evidence(12345)["verdict"] == "native-fatal"
 
 
+# The kernel's line for a core dump it declined to hand to a piped handler because the process held its core limit at
+# exactly 1 (src/monitoring/core_guard.py): the one witness left of a native crash on a machine where systemd-coredump
+# used to say "dumped core", because the handler is never run. Its wording moved between kernels; the first is the one
+# measured (6.18.44, `dmesg`), the second an older kernel's.
+_ABORTED_CORE_NEW = "Oct 06 08:07:01 box kernel: coredump: 12345(python): RLIMIT_CORE is set to 1, aborting core"
+_ABORTED_CORE_OLD = "Oct 06 08:07:01 box kernel: Process 12345(python3) has RLIMIT_CORE set to 1"
+
+
+@pytest.mark.parametrize("line", [_ABORTED_CORE_NEW, _ABORTED_CORE_OLD])
+def test_a_core_dump_the_kernel_aborted_at_the_guards_limit_is_a_native_fatal(monkeypatch, line):
+    """MUTATION TARGET. The app holds its own core limit at 1, so a crash leaves no systemd-coredump line and this
+    kernel line is what says the process died of a core-dumping signal: classified as the native crash it is, and
+    quoted as the kernel wrote it."""
+    monkeypatch.setattr(kernel_log.subprocess, "run", _fake_run({"cur": (0, _NOISE + "\n" + line)}))
+    got = kernel_log.read_kernel_evidence(12345)
+    assert got["verdict"] == "native-fatal"
+    assert any(line.split("kernel: ", 1)[1] in ln for ln in got["lines"])
+
+
+def test_an_aborted_core_of_another_process_is_not_ours(monkeypatch):
+    """The same line about a process that is neither this pid nor this app's name is not evidence about this session."""
+    other = "Oct 06 08:07:01 box kernel: coredump: 999(nginx): RLIMIT_CORE is set to 1, aborting core"
+    monkeypatch.setattr(kernel_log.subprocess, "run", _fake_run({"cur": (0, _NOISE + "\n" + other)}))
+    assert kernel_log.read_kernel_evidence(12345)["verdict"] == "no-kernel-evidence"
+
+
 def test_the_truncated_process_name_is_what_matches(monkeypatch):
     """The kernel truncates comm to 15 chars, so the full name finds nothing on every
     machine, forever — which would read as 'no evidence' rather than as a bug."""

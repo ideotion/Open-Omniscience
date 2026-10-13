@@ -99,7 +99,7 @@ def get_settings() -> dict:
 def update_settings(update: SettingsUpdate) -> dict:
     """Apply a partial preferences update (only provided fields change)."""
     try:
-        saved = save_settings(update.model_dump(exclude_unset=True))
+        saved = save_settings(update.model_dump(exclude_unset=True), replace_damaged=True)
     except AppSettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     payload = _payload()
@@ -107,6 +107,8 @@ def update_settings(update: SettingsUpdate) -> dict:
     # REPORTED, never applied in silence (ruling 3, 2026-07-31). An empty list
     # means nothing was adjusted -- the caller can rely on that distinction.
     payload["clamped"] = list(getattr(saved, "last_clamp_notes", []) or [])
+    # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
+    payload["reset"] = list(getattr(saved, "reset_fields", []) or [])
     return payload
 
 

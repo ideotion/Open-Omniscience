@@ -346,12 +346,17 @@ def is_redirect_event(payload: str) -> bool:
 
 
 class WikiEventStream:
-    """One resumable SSE connection over an injected session."""
+    """One resumable SSE connection over an injected session.
+
+    ``session_of`` (a provider, read on EVERY connection) is for a stream that outlives a change of transport: the lane holds one
+    stream for as long as it runs, and a session it kept would reconnect over the transport it was built with, direct after a switch
+    to protected mode. ``session=`` stays for a caller that injects one (the tests)."""
 
     def __init__(
         self,
         *,
-        session: Any,
+        session: Any = None,
+        session_of: Callable[[], Any] | None = None,
         editions: tuple[str, ...],
         url: str = EVENTSTREAMS_URL,
         read_timeout_s: float = READ_TIMEOUT_S,
@@ -361,7 +366,10 @@ class WikiEventStream:
     ) -> None:
         if not editions:
             raise ValueError("a wiki event stream needs at least one edition")
+        if session is None and session_of is None:
+            raise ValueError("a wiki event stream needs a session or a provider of one")
         self._session = session
+        self._session_of = session_of
         # The stream's ``wiki`` field is a DATABASE name (``enwiki``), not a
         # language code. Built once, here, so no comparison anywhere else has to
         # remember the suffix.
@@ -476,7 +484,8 @@ class WikiEventStream:
             headers["Last-Event-ID"] = self.parser.last_event_id
         # ``stream=True`` is what makes this a stream rather than a download: the
         # body is not materialised, so a firehose never becomes a memory figure.
-        response = self._session.get(
+        session = self._current_session()
+        response = session.get(
             self._url,
             headers=headers,
             stream=True,
@@ -486,11 +495,15 @@ class WikiEventStream:
             raise_for_status = getattr(response, "raise_for_status", None)
             if callable(raise_for_status):
                 raise_for_status()
-            self._consume(response, on_change, should_stop, on_position)
+            self._consume(response, on_change, should_stop, on_position, lambda: self._current_session() is not session)
         finally:
             close = getattr(response, "close", None)
             if callable(close):
                 close()
+
+    def _current_session(self) -> Any:
+        """The session a connection opens with: the provider's, read now, else the injected one."""
+        return self._session_of() if self._session_of is not None else self._session
 
     def _consume(
         self,
@@ -498,9 +511,14 @@ class WikiEventStream:
         on_change: Callable[[StreamChange], None],
         should_stop: Callable[[], bool] | None,
         on_position: Callable[[str | None, str | None], None] | None = None,
+        moved: Callable[[], bool] | None = None,
     ) -> None:
+        """Read events until the response ends. ``moved`` says the transport changed since this connection opened: the event in hand is
+        still handled (the position the next connection resumes from is already past it), and the connection then ends, so the next
+        one opens over the new transport."""
         last_seen = self._monotonic()
         for event in self._events(response):
+            ending = moved is not None and moved()
             # THE MID-STREAM CHECK. Before this event is acted on, not after: an
             # operator who engaged airplane mode a moment ago must not have one more
             # edit stored because it was already decoded.
@@ -520,10 +538,14 @@ class WikiEventStream:
             # loop has. The type filter comes FIRST so an event that is not a
             # recentchange is never decoded at all.
             if event.event != RECENTCHANGE_EVENT:
+                if ending:
+                    break
                 continue
             change = parse_change(event.data)
             if change is None:
                 self.counters.events_malformed += 1
+                if ending:
+                    break
                 continue
             if on_position is not None:
                 # EVERY decoded event, before the edition and namespace filters. The
@@ -533,6 +555,8 @@ class WikiEventStream:
             kept = self._accept(change, event.last_event_id)
             if kept is not None:
                 on_change(kept)
+            if ending:
+                break
         _ = last_seen
 
     def _events(self, response: Any) -> Iterator[SseEvent]:

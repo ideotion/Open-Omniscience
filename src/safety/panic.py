@@ -38,4 +38,14 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
         # S3.6: the store file is gone. A cached header saying "plaintext" would
         # let the lock middleware answer requests for a corpus that no longer
         # exists -- in a `finally` because a partial wipe still removed it.
-        invalidate_header_cache()
+        from src.ingest import activate_kill_switch
+
+        # A wipe takes the app offline for good, and that comes FIRST: the next settings read is a first run (defaults, which are
+        # direct), and a process still running online must not rebuild a followed session (wiki, ORES, hazards, markets) from it.
+        try:
+            activate_kill_switch()
+        finally:
+            invalidate_header_cache()
+            from src.config.kv_store import kv_invalidate
+
+            kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one

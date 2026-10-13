@@ -65,6 +65,10 @@ class SchedulerSettingsError(ValueError):
     """Raised when a scheduler settings update carries an invalid value."""
 
 
+class _DamagedSchedulerSettingsError(SchedulerSettingsError):
+    """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
+
+
 @dataclass
 class SchedulerSettings:
     """Operator-controlled scheduling preferences."""
@@ -364,8 +368,8 @@ def _read_json_file() -> dict | None:
         return None
     try:
         return json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("scheduler_settings.json unreadable; using defaults", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break startup
+        _LOG.warning("scheduler_settings.json unreadable; using defaults (%s)", type(exc).__name__)
         return None
 
 
@@ -384,8 +388,31 @@ def _read_raw() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("scheduler_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("scheduler_settings migration into app_state deferred (%s)", type(exc).__name__)
+    return raw
+
+
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises SchedulerSettingsError (the class only)
+    instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
+
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise (_DamagedSchedulerSettingsError if is_damaged(exc) else SchedulerSettingsError)(refusal_text(exc)) from None
+    if raw is not None:
+        return raw
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("scheduler_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 
@@ -452,6 +479,21 @@ def _coerce_list(value) -> list[str]:
 #: own -- "start" and "resume" both arrive at ``running``, and conflating the verb
 #: with the state is how a UI comes to show a fourth thing the backend cannot store.
 WIKI_LANE_STATES: tuple[str, ...] = ("running", "halted", "stopped")
+
+# The fields that make a pass reach the network on their own. A replacement of a damaged value (the user's own save) writes the
+# ones the save did not supply OFF: the defaults are "on", and a repair must not start network work nobody asked for.
+_ONLINE_OFF_ON_REPLACE: tuple[str, ...] = (
+    "continuous",
+    "auto_track_signals",
+    "auto_track_law",
+    "auto_import_calendars",
+    "crawl_supplement",
+    "auto_refresh_stat_subscriptions",
+)
+# NOT in the tuple, on purpose: the per-pass counts (``discovery_per_run``, ``world_discovery_per_pass``, ``country_data_per_pass``,
+# ``archive_backfill_per_pass``) and ``qualification_budget_auto`` are sizes of the work a pass does, not switches that begin one:
+# ``continuous`` only sets the gap between passes; a pass starts only when the scheduler is started (Start, going online,
+# ``autostart``, a resume) or on run-now, and the network is gated by the airplane state besides. Zeroing them would silently switch those lanes off for good.
 
 
 def _require_wiki_lane_state(value) -> str:
@@ -697,10 +739,10 @@ def retired_settings_disclosures() -> list[str]:
     ]
 
 
-def load_settings() -> SchedulerSettings:
+def load_settings(*, strict: bool = False) -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
     d = SchedulerSettings()
-    raw = _read_raw()
+    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
         return d
     _disclose_retired(raw)
@@ -826,7 +868,7 @@ def _coerce_retired_mode(value) -> str:
     return value if isinstance(value, str) and value in _RETIRED_MODE_SENTENCES else ""
 
 
-def save_settings(updates: dict) -> SchedulerSettings:
+def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
     # A RETIRED key is REFUSED BY NAME, never accepted and dropped. Pydantic would drop an
     # undeclared field silently and this endpoint would answer 200 having changed nothing,
@@ -838,7 +880,30 @@ def save_settings(updates: dict) -> SchedulerSettings:
             raise SchedulerSettingsError(
                 f"{key} has been retired and can no longer be set. {_RETIRED_KEYS[key]}"
             )
-    current = load_settings()
+    reset: list[str] = []
+    try:
+        current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+    except _DamagedSchedulerSettingsError:
+        if not replace_damaged:
+            raise
+        # The value is there and cannot be parsed, and this is the user's own save (the route says so): it replaces it, over the
+        # defaults. Nothing readable is lost; what this save does not supply is reported as reset. One uncached read first, so a
+        # value another process repaired in the meantime is kept, not overwritten.
+        from src.config.kv_store import kv_invalidate
+
+        kv_invalidate(_KV_KEY)
+        try:
+            current = load_settings(strict=True)
+        except _DamagedSchedulerSettingsError:
+            current = SchedulerSettings()
+            reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+            # A replacement never starts network work the user's save did not ask for: what it does not supply is written OFF.
+            for off in _ONLINE_OFF_ON_REPLACE:
+                if updates.get(off) is None:
+                    setattr(current, off, False)
+            if updates.get("wiki_lane_state") is None:
+                current.wiki_lane_state = "halted"
+    current.reset_fields = reset  # type: ignore[attr-defined]
 
     # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a
     # caller still sending it would otherwise get a 200 that changed nothing.

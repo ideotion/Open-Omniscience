@@ -139,6 +139,43 @@ if _MISSING_EXTRAS:
 import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _the_test_process_is_not_held_to_a_core_limit_and_no_filter_is_put_in_front_of_what_it_captures():
+    """``src/monitoring/core_guard.py`` holds a process that holds a passphrase to a core limit of 1, for good (a limit is
+    only ever lowered), and ``connect.set_passphrase`` calls it: hundreds of tests set a throwaway passphrase, so the first
+    would lower the limit of the pytest process and of every child it starts after. A crash of the suite would then leave no
+    core to debug, and ``tests/test_core_guard.py`` could not start a child from a known limit. The real guard is exercised
+    there, in child processes and against a fake kernel; the rest of the suite runs with the function stubbed to a read.
+
+    The same for the filter. ``secret_scrub.protect_new_handlers``, which ``errorlog.install`` reaches at every app startup a
+    test makes, would put a passphrase filter in front of every handler built after it, and ``protect_handlers``, which the
+    same call makes (and ``guard_process``, which every place that holds a passphrase makes), in front of every handler that
+    exists: pytest's own capture handlers (``caplog``, the report sections, the live log and the log file) are on the root
+    logger while a test runs, and the first test to start the error journal would leave the filter on them. A test that
+    asserts a passphrase is NOT in what it captured would then pass because the filter took it out and not because the code
+    under test did, and one that makes the process's passphrases unreadable would capture the filter's fixed line in place of
+    the words it asserts on (three tests did, in a full run). So the first is stubbed, and ``protect_handler`` leaves a handler
+    of pytest's alone and marks it as one that scrubs its own records, whichever of them this version of pytest builds and
+    whenever (this version keeps its four for the session; one that builds new ones for each test phase is covered too).
+    ``tests/test_secret_filter.py`` runs the real hook, in this process and in a child, and protects handlers of its own."""
+    from src.monitoring import core_guard, secret_scrub
+
+    protect = secret_scrub.protect_handler
+
+    def protect_handler(handler):
+        if type(handler).__module__.startswith("_pytest."):
+            setattr(handler, secret_scrub.SCRUBS_ITS_OWN_RECORDS, True)
+            return handler
+        return protect(handler)
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(core_guard, "engage", lambda *, strict=False: core_guard.status())
+    patch.setattr(secret_scrub, "protect_new_handlers", lambda: None)
+    patch.setattr(secret_scrub, "protect_handler", protect_handler)
+    yield
+    patch.undo()
+
+
 @pytest.fixture(autouse=True)
 def _clear_network_kill_switch():
     """The kill switch is process-global by design (a real kill switch); tests
@@ -231,6 +268,18 @@ def _damage_registry_not_leaked():
     damage.registry._reset_for_tests()
     yield
     damage.registry._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _early_boot_wal_reading_not_leaked():
+    """``main._serve()`` takes the boot -wal reading before the store is opened (``forensics.take_boot_wal_reading``) and the next
+    ``record_session_start()`` consumes it: a test that runs ``_serve`` in-process with the server stubbed leaves it behind, and the next
+    test that records a boot would use a reading taken for another data directory."""
+    from src.monitoring import forensics
+
+    forensics._EARLY_WAL = None
+    yield
+    forensics._EARLY_WAL = None
 
 
 @pytest.fixture(autouse=True)

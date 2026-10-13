@@ -176,9 +176,9 @@ def _wait_for_server(url: str, *, timeout_s: float = 20.0) -> bool:
 # ------------------------------------------------------------------------------------------ #
 # STATE A -- virgin (first-launch lifecycle)
 # ------------------------------------------------------------------------------------------ #
-def investigate_state_a(pw, report: Report, shots: Path) -> None:
+def investigate_state_a(playwright, report: Report, shots: Path) -> None:
     _log("STATE A (virgin, first-launch lifecycle) -- " + STATE_A_URL)
-    browser = pw.chromium.launch(executable_path=_chromium_path())
+    browser = playwright.chromium.launch(executable_path=_chromium_path())
     try:
         page = browser.new_page(viewport={"width": 1280, "height": 900})
         page.goto(STATE_A_URL + "/", wait_until="domcontentloaded")
@@ -436,9 +436,9 @@ def _dismiss_guide_wizard(page, report: Report, state_label: str) -> None:
 # ------------------------------------------------------------------------------------------ #
 # STATE B -- empty (catalog-seeded, zero articles): empty-state honesty
 # ------------------------------------------------------------------------------------------ #
-def investigate_state_b(pw, report: Report, shots: Path) -> None:
+def investigate_state_b(playwright, report: Report, shots: Path) -> None:
     _log("STATE B (empty, catalog-seeded) -- " + STATE_B_URL)
-    browser = pw.chromium.launch(executable_path=_chromium_path())
+    browser = playwright.chromium.launch(executable_path=_chromium_path())
     try:
         page = browser.new_page(viewport={"width": 1280, "height": 900})
         driver = PlaywrightUiWalkDriver(page, base_url=STATE_B_URL, screenshot_dir=shots)
@@ -1864,7 +1864,7 @@ def honesty_checks(driver: PlaywrightUiWalkDriver, report: Report, shots: Path) 
 # STATE D -- the import fixture (T2): a real import through the real dialog on a FRESH
 # instance, so the post-import screen's CONTENT path renders a real run's summary.
 # ------------------------------------------------------------------------------------------ #
-def investigate_state_d_import(pw, report: Report, shots: Path) -> None:
+def investigate_state_d_import(playwright, report: Report, shots: Path) -> None:
     _log("STATE D (import fixture) -- " + STATE_D_URL)
     if not IMPORT_ARTIFACT_DIR or not IMPORT_ARTIFACT_PASS:
         report.add_coverage(
@@ -1878,7 +1878,7 @@ def investigate_state_d_import(pw, report: Report, shots: Path) -> None:
         report.add_coverage(surface="post_import_content", axis="default", result="blocked",
                             note=f"state D ({STATE_D_URL}) not answering")
         return
-    browser = pw.chromium.launch(executable_path=_chromium_path())
+    browser = playwright.chromium.launch(executable_path=_chromium_path())
     try:
         page = browser.new_page(viewport={"width": 1440, "height": 950})
         page.on("dialog", lambda d: d.accept())  # arbitrate() is a native confirm()
@@ -2154,9 +2154,9 @@ def _drill(report: Report, name: str, fn, *args):
         return None
 
 
-def investigate_state_c(pw, report: Report, shots: Path) -> None:
+def investigate_state_c(playwright, report: Report, shots: Path) -> None:
     _log("STATE C (populated) -- " + STATE_C_URL)
-    browser = pw.chromium.launch(executable_path=_chromium_path())
+    browser = playwright.chromium.launch(executable_path=_chromium_path())
     try:
         page = browser.new_page(viewport={"width": 1440, "height": 950})
         driver = PlaywrightUiWalkDriver(page, base_url=STATE_C_URL, screenshot_dir=shots)
@@ -2455,11 +2455,11 @@ def main() -> None:
             raise SystemExit(2)
         _log(f"encrypted variant satisfied by state(s): {enc}")
 
-    with sync_playwright() as pw:
-        investigate_state_a(pw, report, shots)
-        investigate_state_b(pw, report, shots)
-        investigate_state_c(pw, report, shots)
-        investigate_state_d_import(pw, report, shots)  # T2 (self-skips without the env)
+    with sync_playwright() as playwright:
+        investigate_state_a(playwright, report, shots)
+        investigate_state_b(playwright, report, shots)
+        investigate_state_c(playwright, report, shots)
+        investigate_state_d_import(playwright, report, shots)  # T2 (self-skips without the env)
 
     # The second at-rest reading (Q1149): now that the walk has unlocked whatever it
     # unlocked, `doctor` answers and reports the running engine's cipher. Taken after

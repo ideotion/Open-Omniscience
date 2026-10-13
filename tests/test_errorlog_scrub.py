@@ -125,9 +125,9 @@ def test_a_record_written_through_log_failure_keeps_the_frames_in_the_tail_and_t
     try:
         where_it_failed()
     except ValueError as exc:
-        ss.log_failure(journal, "unhandled error on GET /api/x", exc, HELD)
+        ss.log_failure(journal, "unhandled error on route GET /api/x", exc, HELD)
     (entry,) = errorlog.recent_errors()
-    assert entry["message"].startswith("unhandled error on GET /api/x: ValueError: the key ***redacted*** did not open")
+    assert entry["message"].startswith("unhandled error on route GET /api/x: ValueError: the key ***redacted*** did not open")
     tail = entry["traceback_tail"]
     assert "in where_it_failed" in tail, "the frame of the failure is in the tail"
     assert "ValueError: the key ***redacted*** did not open the header" in tail
@@ -189,7 +189,7 @@ def test_a_browser_error_has_the_passphrases_out_of_every_field_and_the_cut_come
     (entry,) = errorlog.recent_errors()
     assert entry["logger"] == "frontend" and entry["kind"] == "error"
     assert len(entry["message"]) == 500 and HELD[:5] not in entry["message"] and entry["message"].endswith("***re")
-    assert entry["source"] == "app.js?k=***redacted***" and entry["endpoint"] == "/api/unlock/***redacted***"
+    assert entry["source"] == "app.js" and entry["endpoint"] == "/api/unlock/***redacted***"
     assert entry["ui_lang"] == "***redacted***"
     raw = json.dumps(entry, ensure_ascii=False)
     for secret in (HELD, ENV):
@@ -287,6 +287,130 @@ def test_a_record_written_before_the_flags_existed_is_still_counted_by_its_text(
         encoding="utf-8",
     )
     assert errorlog.summary()["locked_errors_total"] == 1
+
+
+# --------------------------------------------------------------------------- #
+#  A journal outlives the build that wrote it
+# --------------------------------------------------------------------------- #
+def _written_by_an_older_build(tmp_path, **fields) -> None:
+    """One line of the journal as a build from before the scrub wrote it: the exception's words, as raised."""
+    entry = {"at": "2026-09-01T00:00:00+00:00", "level": "ERROR", "logger": "src.analytics.store", **fields}
+    with (tmp_path / "app_errors.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def test_a_record_an_older_build_wrote_is_read_with_the_passphrases_out_of_it_and_the_file_is_left_as_it_was(journal, tmp_path):
+    """MUTATION TARGET: ``recent_errors`` returning the file's records as they are. The debug bundle carries what it returns, and
+    the journal keeps up to 2,000 records from sessions that ran before the scrub existed."""
+    _written_by_an_older_build(
+        tmp_path,
+        message=f"the store refused {_sql(HELD)} ({ENV!r})",
+        traceback_tail=f"RuntimeError: near {_sql(HELD)}\n  args={(HELD,)!r}",
+        kind=f"error {ENV}",
+        source=f"app.js?k={ENV}",
+    )
+    (entry,) = errorlog.recent_errors()
+    raw = json.dumps(entry, ensure_ascii=False)
+    for secret in (HELD, ENV):
+        for shape in _shapes(secret):
+            assert shape not in raw, (shape, raw)
+    assert entry["message"] == "the store refused PRAGMA key = '***redacted***' ('***redacted***')"
+    assert "RuntimeError: near PRAGMA key = '***redacted***'" in entry["traceback_tail"]
+    assert entry["level"] == "ERROR" and entry["logger"] == "src.analytics.store" and entry["at"] == "2026-09-01T00:00:00+00:00"
+    assert HELD in (tmp_path / "app_errors.jsonl").read_text(encoding="utf-8"), "the file is read, never rewritten"
+
+
+@pytest.mark.parametrize("secret", ["HTTP", "http", "2026-09-01"])
+def test_the_structure_of_an_older_record_is_never_scrubbed(journal, monkeypatch, tmp_path, secret):
+    """MUTATION TARGET: a field put back into ``_STRUCTURAL_FIELDS`` that is not structure, or one taken out that is: a passphrase
+    that is a level, a logger or a date would take the label out of the record it labels and leave it unreadable as an entry of
+    the journal. (The method and the path are NOT structure any more: see the two tests below.)"""
+    monkeypatch.setattr(connect, "_passphrase", secret)
+    _written_by_an_older_build(
+        tmp_path, level="HTTP", logger="http", status=404, method="POST", path="/api/unlock", message="HTTP 404 POST /api/unlock"
+    )
+    (entry,) = errorlog.recent_errors()
+    assert (entry["status"], entry["level"], entry["logger"], entry["method"]) == (404, "HTTP", "http", "POST")
+    assert entry["at"] == "2026-09-01T00:00:00+00:00"
+
+
+def test_an_older_http_line_is_read_with_its_raw_path_withheld_whether_or_not_a_passphrase_is_held(tmp_path, monkeypatch):
+    """MUTATION TARGET: the withholding. A line written before only route templates were recorded holds the path the client sent,
+    and a passphrase typed into the address bar is on it; a LOCKED app holds no key to take it out, so the path goes whole."""
+    monkeypatch.setattr(errorlog, "_log_path", lambda: tmp_path / "app_errors.jsonl")
+    monkeypatch.setattr(connect, "_passphrase", None)
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    typed = "my-typed-secret-77"
+    _written_by_an_older_build(
+        tmp_path, level="HTTP", logger="http", status=503, method=typed, path=f"/{typed}", message=f"HTTP 503 {typed} /{typed}"
+    )
+    _written_by_an_older_build(
+        tmp_path, level="HTTP", logger="http", status=404, method="GET", path=f"/api/{typed}", message=f"HTTP 404 GET /api/{typed}"
+    )
+    entries = errorlog.recent_errors()
+    assert typed not in json.dumps(entries)
+    assert [e["method"] for e in entries] == ["(other method)", "GET"]
+    assert all(e["path"].startswith("(path withheld") and e["message"].startswith(f"HTTP {e['status']} ") for e in entries)
+    assert typed in (tmp_path / "app_errors.jsonl").read_text(encoding="utf-8"), "the file is read, never rewritten"
+
+
+def test_a_line_written_now_names_the_route_template_and_is_read_as_it_is(journal, tmp_path):
+    errorlog.note_http_error("GET", "/api/articles/{id}/view", 404)
+    (entry,) = errorlog.recent_errors()
+    assert (entry["method"], entry["path"], entry["path_kind"]) == ("GET", "/api/articles/{id}/view", "route")
+    assert entry["message"] == "HTTP 404 GET /api/articles/{id}/view"
+
+
+def test_the_method_of_an_error_response_is_written_only_when_it_is_a_standard_one(journal):
+    """MUTATION TARGET: ``safe_method`` in ``note_http_error``. An HTTP method is any token the client sends."""
+    errorlog.note_http_error("zR4#nPt-typed", "(no route matched)", 404)
+    (entry,) = errorlog.recent_errors()
+    assert entry["method"] == "(other method)" and "zR4" not in json.dumps(entry)
+
+
+def test_the_summary_still_counts_an_older_record_by_its_text_when_a_passphrase_is_a_piece_of_the_phrase(journal, monkeypatch, tmp_path):
+    """MUTATION TARGET: the summary reading the scrubbed records. It publishes counts and times and no words, and a record written
+    before the flags existed is counted by what it said."""
+    monkeypatch.setattr(connect, "_passphrase", "is locked")
+    _written_by_an_older_build(tmp_path, message="sqlite3.OperationalError: database is locked")
+    assert errorlog.summary()["locked_errors_total"] == 1
+    (entry,) = errorlog.recent_errors()
+    assert entry["message"] == "sqlite3.OperationalError: database ***redacted***"
+
+
+def test_an_older_record_is_withheld_when_what_the_process_holds_cannot_be_read(journal, monkeypatch, tmp_path):
+    _written_by_an_older_build(tmp_path, message=f"the store refused {HELD}", traceback_tail=f"RuntimeError: {HELD}")
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    (entry,) = errorlog.recent_errors()
+    assert entry["message"] == ss.UNREADABLE_TEXT and entry["traceback_tail"] == ss.UNREADABLE_TEXT
+    assert entry["level"] == "ERROR" and entry["logger"] == "src.analytics.store"
+
+
+def test_an_older_record_that_holds_a_secret_under_the_floor_is_withheld_in_the_fields_that_hold_it_and_kept_in_the_others(
+    journal, monkeypatch, tmp_path
+):
+    """MUTATION TARGET: the read-scrub passing a text that holds a secret too short to take out (``secret_scrub.MIN_SECRET_CHARS``).
+    The journal outlives the build that wrote it, and a store whose short passphrase the unlock accepted holds it for the session:
+    a field that holds it is withheld whole, one that does not is kept as it was, and the structure is never touched."""
+    monkeypatch.setattr(connect, "_passphrase", "xK7")
+    _written_by_an_older_build(
+        tmp_path, message="the store refused xK7", traceback_tail="RuntimeError: near the file", kind="error", source="app.js"
+    )
+    (entry,) = errorlog.recent_errors()
+    assert entry["message"] == ss.UNREADABLE_TEXT
+    assert entry["traceback_tail"] == "RuntimeError: near the file" and entry["kind"] == "error" and entry["source"] == "app.js"
+    assert entry["level"] == "ERROR" and entry["logger"] == "src.analytics.store" and entry["at"] == "2026-09-01T00:00:00+00:00"
+
+
+def test_the_records_a_diagnostics_bundle_reads_are_the_scrubbed_ones():
+    """The three readers of the journal (the bundle's ``errors`` member and its frontend-error report, and the summary) are the
+    whole list: a new one is a place the older records reach, and has to choose between this and ``scrub=False``."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "src"
+    readers = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py") if "recent_errors(" in p.read_text(encoding="utf-8"))
+    assert readers == ["api/diagnostics/bundle.py", "api/diagnostics/system.py", "monitoring/errorlog.py"], readers
+    assert "recent_errors(300)" in (root / "api/diagnostics/bundle.py").read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #

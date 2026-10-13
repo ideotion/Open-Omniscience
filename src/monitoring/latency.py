@@ -29,14 +29,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.monitoring import unlock_marker as _unlock
+from src.monitoring.request_label import route_template
 
 _LOCK = threading.Lock()
 _RES_CAP = 512  # recent durations kept per route (the percentile reservoir)
 _EVENTS_CAP = 100  # loop-block events kept
 # Distinct route keys kept. This is the ONE bound on the published lists, and what it protects
-# is memory (and the size of the export): route templates are few, but a request no route matched
-# is keyed by its own path, so a scan of the loopback server could otherwise mint keys without
-# limit. The lists themselves are NOT cut below it (see ``summary``); a request for a NEW key once
+# is memory (and the size of the export): the keys are route templates the code wrote, and every
+# request no route matched shares ONE fixed label (``request_label.UNMATCHED_ROUTE``), so a scan of
+# the loopback server mints no keys; the cap is the bound that would hold if a route table ever
+# did. The lists themselves are NOT cut below it (see ``summary``); a request for a NEW key once
 # the keyspace is full is counted in ``_KEYSPACE_DROPPED`` and published, never silently lost.
 _ROUTES_CAP = 2048
 _KEYSPACE_DROPPED = 0
@@ -62,7 +64,8 @@ _REFUSAL_STATUSES = frozenset({423, 429, 503})
 # "max_ms": float, "statuses": {code: n}, "first": call | None, "slowest": call | None}
 # where a ``call`` is {ms, status, ended_at, started_after_unlock_s}.
 _ROUTES: dict[str, dict[str, Any]] = {}
-# in-flight requests: id -> {"route": str, "started": float}
+# in-flight requests: id -> {"route": str (a route template or a fixed label), "started": float, "scope": the request's ASGI
+# scope (routing fills in the route template, which is read when the record is made), "method": a standard method or a fixed label}
 _INFLIGHT: dict[int, dict[str, Any]] = {}
 _EVENTS: deque[dict[str, Any]] = deque(maxlen=_EVENTS_CAP)
 
@@ -140,10 +143,18 @@ def _snappy_verdict(route: str, p95_ms: float, window_n: int, bar_ms: float) -> 
     return "pass" if p95_ms < bar_ms else "fail"
 
 
-def note_start(req_id: int, route: str) -> None:
+def note_start(req_id: int, route: str, *, scope: Any = None, method: str | None = None) -> None:
+    """Stamp a request as in flight. ``route`` is the label until routing names the route: the caller passes a fixed one, never the
+    raw path, and ``scope`` (the request's ASGI scope, which routing fills in) with ``method`` lets the stall record read the
+    route TEMPLATE when it is written."""
     with _LOCK:
         if len(_INFLIGHT) < 4096:
-            _INFLIGHT[req_id] = {"route": route, "started": time.monotonic()}
+            _INFLIGHT[req_id] = {"route": route, "started": time.monotonic(), "scope": scope, "method": method}
+
+
+def _inflight_route(v: dict[str, Any]) -> str:
+    template = route_template(v.get("scope"))
+    return f"{v['method']} {template}" if template and v.get("method") else str(v["route"])
 
 
 def _kind_of(status: int) -> str:
@@ -246,7 +257,7 @@ def _record_block(lag_ms: float) -> None:
         with _LOCK:
             now = time.monotonic()
             in_flight = [
-                {"route": v["route"], "elapsed_ms": round((now - v["started"]) * 1000.0, 1)}
+                {"route": _inflight_route(v), "elapsed_ms": round((now - v["started"]) * 1000.0, 1)}
                 for v in _INFLIGHT.values()
             ]
         # Sort so the longest-running in-flight request (the likely culprit) is first.

@@ -91,7 +91,7 @@ def _settings_payload(s: safety_settings.SafetySettings) -> dict:
     leaves, read through the fetch path's own reader (the consent popup's lane lines)."""
     from src.safety.fetcher import transport_summary
 
-    return {**s.to_dict(), "note": _PROXY_NOTE, "transport": transport_summary(s)}
+    return {**s.to_dict(), "note": _PROXY_NOTE, "transport": transport_summary(s), "read_failed": bool(s.read_failed)}
 
 
 @router.get("/settings")
@@ -105,7 +105,8 @@ def update_settings(body: SettingsUpdate) -> dict:
         s = safety_settings.save_settings(body.model_dump(exclude_unset=True))
     except safety_settings.SafetySettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _settings_payload(s)
+    # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
+    return {**_settings_payload(s), "reset": list(getattr(s, "reset_fields", []) or [])}
 
 
 @router.post("/backup/encrypted")
@@ -126,7 +127,7 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
             # BackupError includes the encrypted-store refusal (an encrypted corpus
             # must use the streaming encrypted backup, not this decrypt-to-plaintext
             # path) — surface it as a clean 400, never an ungraceful 500.
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from exc
+            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
     return StreamingResponse(
         io.BytesIO(blob),
         media_type="application/octet-stream",

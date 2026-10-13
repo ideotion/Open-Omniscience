@@ -72,19 +72,44 @@ mailbox's) is in no place the nets above can read until it is accepted. A route 
 :func:`scrub_and_reraise`: whatever comes out of the block is a ``RuntimeError`` carrying the scrubbed text, raised
 ``from None``, and the record of the failure is written with the key out of it.
 
+THE OTHER WAY A SECRET REACHES A RECORD (2026-10-06): an exception that carries it as DATA. A passphrase with a lone
+surrogate in it (a JSON body's ``"\\ud800"``, an environment variable of bytes that are not UTF-8) cannot be encoded, and
+the ``UnicodeEncodeError`` Python raises for it names the character and its place in the passphrase and holds the whole text
+as its ``object``: not a form of the secret any scrub above can recognise, because it is a PIECE of it. So the places that
+turn a passphrase into bytes, or hand it to something that does, go through :func:`passphrase_bytes` (the key derivations, the
+store's key, the ``ATTACH ... KEY`` of the encrypt tool and the release run's hand-over of its passphrase to a child in the
+environment), which raises a fixed message from outside the handler, and the one that only compares two passphrases through
+:func:`same_passphrase`, which cannot raise.
+
+THE LAST CHECK BEFORE A HANDLER WRITES (2026-10-06). Every place above takes a passphrase out of a text where the text is made;
+none of them covers a record written some other way. :class:`SecretFilter` is the net under them: a filter of every handler the app
+builds (the audit files and the console of ``src/utils/logging_config.py``, the server's own handlers through its log
+configuration, the migration environment's console), which takes the passphrases the process holds out of the message, the
+exception and the stack of each record and writes a fixed line when it cannot check one. It knows only the passphrases the process
+holds, and only the handlers it was attached to: the app's, the server's, every one that exists when the error journal is installed
+and every one built after that, whoever builds it (:func:`protect_new_handlers`); ``tests/test_secret_filter.py`` pins that no
+module builds a handler without it and writes an exception through the handlers boot builds in the order the app starts them.
+The handlers that exist BEFORE the error journal is installed (the last-resort one, which writes to ``stderr`` while no other
+exists, is the one a module logger's warning reaches then) are put behind it by :func:`guard_process`, which the entry points, the
+application's lifespan and the store's own key-handing functions call first: from the moment a process holds a passphrase or hands
+one to an engine, not from the moment the journal is installed.
+
 Stdlib only, so the restore child can import it wherever it is -- after a failed boot included.
 """
 
 from __future__ import annotations
 
 import contextlib
+import copy
+import functools
+import hmac
 import json
 import logging
 import os
 import shutil
 import sys
 import traceback
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Literal, TypeGuard
 
@@ -123,11 +148,59 @@ MIN_SECRET_CHARS = 4
 #: secret, each a substring scan of a text of a few hundred characters to a few kilobytes. A fourth level is not covered.
 CARRIER_DEPTH = 3
 
+#: The environment variables that hand this process a passphrase it then holds: the store's (``src/database/connect.py`` reads it
+#: at import, and a scripted or headless start sets it) and the one that wraps the signing keys (``src/custody/signing.py``).
+#: ONE list for the two things that must agree on it: :func:`held_passphrases` takes what they hold out of every text, and
+#: ``model_store.child_env`` leaves them out of the environment of a child that has no use for a passphrase.
+HELD_ENV_VARS: tuple[str, ...] = ("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
+
+
+#: What :func:`take_from_environment` took out of ``os.environ``: name -> value. The process keeps the passphrases it was started
+#: with in ONE place that is not its environment, because the environment is what every process it starts is given (the standard
+#: library's resource tracker and its forkserver are started by ``exec`` with the parent's environment, and no code of ours runs
+#: in them before they hold it).
+_TAKEN: dict[str, str] = {}
+#: The class of each failure of :func:`take_from_environment` (never its text, which could hold the value): a passphrase that was
+#: not taken is still in the environment every child inherits, and the boot record says so (``env_take``).
+_TAKE_FAILED: list[str] = []
+
+
+def take_from_environment(names: tuple[str, ...] = HELD_ENV_VARS) -> None:
+    """Move the passphrases the process was started with out of ``os.environ`` into this module (called by
+    ``src/database/connect.py`` once it has read ``OO_DB_PASSPHRASE``, so every child started afterwards, however it is started,
+    begins without one). :func:`env_secret` is how the app reads them from then on; :func:`taken_environment` is what a child
+    that must have them is handed by name. Never raises."""
+    for name in names:
+        try:
+            value = os.environ.pop(name, None)
+            if value:
+                _TAKEN[name] = value
+        except Exception as exc:  # noqa: BLE001 - never raises; the class is recorded
+            _TAKE_FAILED.append(type(exc).__name__)
+
+
+def take_failed() -> list[str]:
+    """The class of every failure of :func:`take_from_environment` so far (empty when none): the passphrase of a failed take stays in
+    the process's environment, and a record that says nothing would read as a take that worked."""
+    return list(_TAKE_FAILED)
+
+
+def env_secret(name: str) -> str | None:
+    """The value of the passphrase variable ``name``: the environment's when it holds one now (a test, or an operator's code that
+    set it after start), else the one :func:`take_from_environment` took. ``None`` when neither holds one."""
+    return os.environ.get(name) or _TAKEN.get(name) or None
+
+
+def taken_environment() -> dict[str, str]:
+    """The passphrases :func:`take_from_environment` took, as the variables to hand a process that is this program again
+    (``os.execve`` of the app itself on a data-drive restart); a process that is not must not be handed them."""
+    return dict(_TAKEN)
+
 
 def held_passphrases() -> tuple[str, ...] | None:
     """Every passphrase this process holds right now, for a scrub made where a text is written (a log record, the error
     journal, a job's error line, a response): the one the unlocked session keeps (``src.database.connect._passphrase``), the
-    one the environment hands the app (``OO_DB_PASSPHRASE``, which stays in the environment after a lock) and the one that wraps
+    one the environment handed the app (``OO_DB_PASSPHRASE``: taken out of the environment at start, :func:`take_from_environment`, and kept after a lock) and the one that wraps
     the signing keys (``OO_KEY_PASSPHRASE``, ``src/custody/signing.py``: a passphrase the process holds like the others). Read
     when asked and never kept: the shapes the scrub made of them (:func:`_held_forms`) stay in ONE cache entry, which clearing the
     session's passphrase empties (a failed unlock or create, the crypto-erase: :func:`forget_held`, called by
@@ -144,11 +217,9 @@ def held_passphrases() -> tuple[str, ...] | None:
     try:
         store = sys.modules.get("src.database.connect")
         session = None if store is None else vars(store).get("_passphrase")
-        found = tuple(
-            dict.fromkeys(
-                p for p in (session, os.environ.get("OO_DB_PASSPHRASE"), os.environ.get("OO_KEY_PASSPHRASE")) if p
-            )
-        )
+        # BOTH values of a name: one set in the environment after the take (a test, an operator's code) must not hide the one taken
+        values = (session, *(v for name in HELD_ENV_VARS for v in (os.environ.get(name), _TAKEN.get(name))))
+        found = tuple(dict.fromkeys(p for p in values if p))
         return found if all(isinstance(p, str) for p in found) else None
     except Exception:  # noqa: BLE001 - what is held could not be read: the callers withhold
         return None
@@ -191,6 +262,35 @@ def _carried(text: str) -> tuple[str, ...]:
     )
 
 
+_LOWER_HEX = frozenset("0123456789abcdef")
+
+
+#: What a passphrase that cannot be written as UTF-8 is refused with: fixed words that name neither the passphrase nor the
+#: character at fault.
+UNENCODABLE_PASSPHRASE = "the passphrase holds a character that cannot be saved as text (an unpaired surrogate)"
+
+
+def passphrase_bytes(passphrase: str, *, error: type[Exception] = ValueError) -> bytes:
+    """``passphrase`` as UTF-8 bytes: the one way the app turns one into the bytes a key is derived from. A text that cannot
+    be encoded (a lone surrogate) is refused with ``error(UNENCODABLE_PASSPHRASE)``, raised HERE and not from inside the
+    ``except``: an exception raised in a handler keeps the one being handled as its ``__context__``, and that one carries
+    the whole passphrase as its ``object`` and names the character at fault and its place in the text. ``from None`` would
+    only hide the chain from a traceback that honours it; a raise after the handler has no chain at all."""
+    try:
+        return passphrase.encode("utf-8")
+    except UnicodeEncodeError:
+        pass
+    raise error(UNENCODABLE_PASSPHRASE)
+
+
+def same_passphrase(a: str, b: str) -> bool:
+    """Whether two passphrases are the same text, compared in constant time, with an answer for every text there is: a lone
+    surrogate is encoded as itself (``surrogatepass``) and not refused, so the comparison cannot raise, and two different
+    texts are never one. For comparing only: nothing is derived from these bytes (:func:`passphrase_bytes` is the one
+    that encodes a key)."""
+    return hmac.compare_digest(a.encode("utf-8", "surrogatepass"), b.encode("utf-8", "surrogatepass"))
+
+
 def _shapes(secret: object) -> tuple[str, ...]:
     """The shapes ``secret`` takes in text the code writes, each once and none empty, WHATEVER ITS LENGTH. TWO BASES: as typed, and as an SQL string
     literal holds it (every ``'`` doubled, which is how ``PRAGMA key = '...'`` and ``ATTACH '...'`` carry it, and an engine's
@@ -198,10 +298,15 @@ def _shapes(secret: object) -> tuple[str, ...]:
     statement an engine quotes into an error is written again by ``str()`` of an exception that holds it, by the ``repr`` of that
     exception, by a dict or a list that holds the message, by the JSON body that carries the dict and by the ``repr`` of the bytes
     a library keeps the message as. A secret with no quote, no backslash, no control and no letter outside ASCII has one shape;
-    the most one has is 518 (2 + 12 + 72 + 432). A missing or empty one has none."""
+    the most one has is 518 (2 + 12 + 72 + 432). A secret that is all lowercase hex (a key derived from the passphrase, as
+    ``columnar._derive_key`` writes it) has its capitals as a third base, because an engine may quote hex in either case.
+    A missing or empty one has none."""
     if not isinstance(secret, str) or not secret:
         return ()
-    layer = list(dict.fromkeys((secret, secret.replace("'", "''"))))
+    bases = [secret, secret.replace("'", "''")]
+    if set(secret) <= _LOWER_HEX:
+        bases.append(secret.upper())
+    layer = list(dict.fromkeys(bases))
     forms = list(layer)
     for _ in range(CARRIER_DEPTH):
         layer = list(dict.fromkeys(form for text in layer for form in _carried(text)))
@@ -681,6 +786,228 @@ class scrub_and_reraise:  # noqa: N801 - read as a statement: ``with scrub_and_r
         except Exception:  # noqa: BLE001 - an exception whose text cannot be made: its class says what failed
             text = _class_only(exc)
         raise RuntimeError(scrubbed(text, *self._secrets, withheld=_class_only(exc))) from None
+
+
+#: What stands in for a log record whose text could not be checked for a passphrase.
+WITHHELD_RECORD = "(a log record was withheld: its text could not be checked for a passphrase)"
+
+#: The attribute of a handler CLASS that says it takes the passphrases out of what it writes itself, from the text as logged
+#: (the error journal counts ``database is locked`` off the words before it scrubs them, and a passphrase that is a piece of
+#: that phrase would take it out first), so :func:`protect_handler` leaves it without a :class:`SecretFilter`.
+SCRUBS_ITS_OWN_RECORDS = "scrubs_its_own_records"
+
+#: Whether a filter may hand a handler a DIFFERENT record from the one it was given. Python 3.12 allows it; before that, any
+#: truthy answer only said "write this one", so a filter that answered with a scrubbed copy let the original go on to the
+#: handler, passphrase and all. The project's floor is 3.13 (``requires-python``, every CI, packaging and release interpreter;
+#: ``tests/test_secret_filter.py`` pins that), so this is a seam and not a branch the app takes: on an interpreter below 3.12 the
+#: filter writes the scrubbed words into the record it was given instead of letting it through, which costs the error journal's
+#: counts for the one passphrase that is a piece of a counted phrase and nothing else.
+_FILTER_MAY_REPLACE = sys.version_info >= (3, 12)
+
+
+def _withheld(record: logging.LogRecord) -> logging.LogRecord:
+    """A copy of ``record`` that says it was withheld: its own text, arguments, exception and stack are not in it."""
+    out = copy.copy(record)
+    out.msg, out.args = WITHHELD_RECORD, ()
+    out.exc_info = out.exc_text = out.stack_info = None
+    return out
+
+
+def _kept_arguments(record: logging.LogRecord, clean: str) -> tuple[str, Any] | None:
+    """The template and the arguments of ``record`` with the passphrases taken out of each text among them, when formatting
+    those gives exactly ``clean`` (the message with them taken out): a formatter that reads the arguments (uvicorn's access line
+    unpacks five of them) then finds them where it expects. ``None`` when it does not: a passphrase that a template and an
+    argument write between them, an argument that is no text and writes one."""
+    args = record.args
+    if not args or not isinstance(record.msg, str):
+        return None
+    try:
+        if isinstance(args, tuple):
+            kept: Any = tuple(scrubbed(a) if isinstance(a, str) else a for a in args)
+        elif isinstance(args, Mapping):
+            kept = {k: scrubbed(v) if isinstance(v, str) else v for k, v in args.items()}
+        else:
+            return None
+        msg = scrubbed(record.msg)
+        return (msg, kept) if msg % kept == clean else None
+    except Exception:  # noqa: BLE001 - not formattable that way: the caller writes the one text
+        return None
+
+
+def _scrubbed_copy(record: logging.LogRecord) -> logging.LogRecord | None:
+    """A copy of ``record`` with the passphrases the process holds taken out of its message, its exception and its stack, or
+    ``None`` when the record holds none and may be written as it is.
+
+    The message is formatted first (an argument that is an exception writes its words here). When it holds a passphrase the copy
+    keeps the record's own template and arguments with the passphrase taken out of each text, as long as formatting those gives
+    the same words (:func:`_kept_arguments`), and otherwise is ONE text with the arguments cleared, so that no later format reads
+    them again. A record the passphrase is not in keeps its arguments untouched. The exception is written as the text a
+    formatter would cache (``exc_text``) and ``exc_info`` is dropped from the copy, so that no handler formats the exception
+    again as it made its message. The record itself is not touched: it is shared by every handler it reaches."""
+    text = record.getMessage()
+    clean = _checked(text, ())
+    if clean is None:
+        return _withheld(record)
+    exc_text, stack = record.exc_text, record.stack_info
+    if record.exc_info and record.exc_info[1] is not None:
+        # FIRST, even when an earlier formatter cached ``exc_text``: that text has the words of a UnicodeError in it, and only
+        # ``traceback_text`` records such an error by its class (the cached text would be taken through ``scrubbed`` alone).
+        exc_text = traceback_text(record.exc_info[1]).rstrip("\n")
+    elif exc_text:
+        exc_text = scrubbed(exc_text)
+    if stack:
+        stack = scrubbed(stack)
+    if clean == text and exc_text == record.exc_text and stack == record.stack_info and not record.exc_info:
+        return None
+    out = copy.copy(record)
+    if clean != text:
+        out.msg, out.args = _kept_arguments(record, clean) or (clean, ())
+    out.exc_text, out.stack_info, out.exc_info = exc_text, stack, None
+    return out
+
+
+class SecretFilter(logging.Filter):
+    """The last check a handler makes on a record before it writes it: the passphrases the process holds
+    (:func:`held_passphrases`, read when the record arrives and never kept) taken out of its message, its exception and its
+    stack. The net under :func:`log_failure` and the handlers the static guard reads: a record written any other way (a
+    ``logger.exception`` in a module nobody read, a library's, the server's own ``Exception in ASGI application``) carries the
+    exception as it made its message, and a handler that holds no filter writes it as it is.
+
+    It hands the handler a scrubbed COPY of the record and leaves the record itself as it was (a filter may return a record in
+    place of the one it was given), because a record is shared by every handler it reaches: scrubbing it in place would make the
+    first filtered handler's answer the text of every later one, the error journal's included, whose counts are read off the
+    words as logged.
+
+    A FILTER OF A HANDLER, because a record that propagates up the logger tree meets the handlers of every logger on the way
+    and the filters of none of them (a logger's filter runs only for the records that logger makes): so it is attached to each
+    handler the app builds (:func:`protect_handler`), to the server's own, through its log configuration, to every handler that
+    exists when the error journal is installed (:func:`protect_handlers`) and to every handler built after that, by anyone
+    (:func:`protect_new_handlers`). Not covered: a passphrase the process does not hold (one typed into a request being served is
+    the site's to take out), one that came apart before it was written (a message cut or a secret split across two records), and
+    a handler built before the journal was installed that no logger holds (a queue listener's target). It FAILS CLOSED: a record
+    it cannot check, because what the process holds cannot be read or the text cannot be made, is written as
+    :data:`WITHHELD_RECORD`, with its exception and stack dropped, and one that cannot even be copied is not written. Free while no
+    passphrase is held (it reads two variables and touches nothing)."""
+
+    def filter(self, record: logging.LogRecord) -> bool | logging.LogRecord:  # noqa: D102
+        answer = self._answer(record)
+        if answer is True or answer is False or _FILTER_MAY_REPLACE:
+            return answer
+        # Below 3.12 a record handed back is only a truthy answer: the handler would write the one it was given. So the words go
+        # into that one (for this handler and every later one), and the answer is "write it".
+        try:
+            record.__dict__.update(answer.__dict__)
+        except Exception:  # noqa: BLE001 - the record cannot take them: it is not written
+            return False
+        return True
+
+    @staticmethod
+    def _answer(record: logging.LogRecord) -> bool | logging.LogRecord:
+        try:
+            held = held_passphrases()
+            if held is None:
+                return _withheld(record)
+            if not held:
+                return True
+            return _scrubbed_copy(record) or True
+        except Exception:  # noqa: BLE001 - a record that cannot be checked is written without its words
+            try:
+                return _withheld(record)
+            except Exception:  # noqa: BLE001 - not even a copy could be made: nothing is written
+                return False
+
+
+def protect_handler(handler: logging.Handler) -> logging.Handler:
+    """``handler`` behind a :class:`SecretFilter`, once: a second call adds none, and a handler whose class says it scrubs its own
+    records (:data:`SCRUBS_ITS_OWN_RECORDS`) gets none. Returns the handler, for a builder to chain."""
+    if getattr(handler, SCRUBS_ITS_OWN_RECORDS, False):
+        return handler
+    if not any(isinstance(f, SecretFilter) for f in handler.filters):
+        handler.addFilter(SecretFilter())
+    return handler
+
+
+#: ``logging.Handler.__init__`` as it was before :func:`protect_new_handlers` replaced it; ``None`` while it is not replaced.
+_HANDLER_INIT: Callable[..., None] | None = None
+
+
+def _hook_handler_construction() -> bool:
+    """Replace ``logging.Handler.__init__`` with one that puts a :class:`SecretFilter` on the handler it has just built (through
+    :func:`protect_handler`, so a class that scrubs its own records gets none). Every handler is built through it, whoever builds
+    it and whenever: ``dictConfig``, ``fileConfig``, ``basicConfig``, a library's ``addHandler`` of one it made after this process
+    began to hold a passphrase. Returns whether it replaced it (``False``: it already had)."""
+    global _HANDLER_INIT
+    if _HANDLER_INIT is not None:
+        return False
+    original = logging.Handler.__init__
+
+    @functools.wraps(original)
+    def init(self: logging.Handler, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        with contextlib.suppress(Exception):  # a handler that cannot take a filter is left to the next protect_handlers()
+            protect_handler(self)
+
+    logging.Handler.__init__ = init  # type: ignore[method-assign]
+    _HANDLER_INIT = original
+    return True
+
+
+def _unhook_handler_construction() -> bool:
+    """Put ``logging.Handler.__init__`` back as it was. For a test that installed the hook and has to leave the process as it
+    found it; the app never takes the filter off a handler. Returns whether it was replaced."""
+    global _HANDLER_INIT
+    if _HANDLER_INIT is None:
+        return False
+    logging.Handler.__init__ = _HANDLER_INIT  # type: ignore[method-assign]
+    _HANDLER_INIT = None
+    return True
+
+
+def protect_new_handlers() -> None:
+    """From now on every handler built in this process is built behind a :class:`SecretFilter`, wherever it is built. The net
+    for what :func:`protect_handlers` cannot see because it did not exist yet: a library that adds a handler to the root logger
+    after startup, a ``dictConfig`` that runs again. (``tests/conftest.py`` stubs it: a suite that held a filter in front of
+    pytest's capture handlers would pass the tests that look for a passphrase in what they capture for the wrong reason.)"""
+    _hook_handler_construction()
+
+
+def protect_handlers() -> int:
+    """Every handler that exists now, on the root logger and on every named one, and the last-resort handler that writes to
+    ``stderr`` when no other does, behind a :class:`SecretFilter`, and every handler built from now on
+    (:func:`protect_new_handlers`). Returns how many it protected that were not.
+
+    For the handlers the app does not build itself: the migration environment's ``fileConfig`` builds a console handler on the
+    root logger and, each time it runs, replaces the ones that were there (so a filter attached before it is gone after it), and a
+    library that calls ``basicConfig`` adds one. The caller runs it where such a handler has just been made."""
+    protect_new_handlers()
+    loggers = [logging.getLogger(), *(lg for lg in list(logging.Logger.manager.loggerDict.values()) if isinstance(lg, logging.Logger))]
+    handlers = [h for lg in loggers for h in lg.handlers]
+    if logging.lastResort is not None:
+        handlers.append(logging.lastResort)
+    fresh = [
+        h
+        for h in dict.fromkeys(handlers)
+        if not getattr(h, SCRUBS_ITS_OWN_RECORDS, False) and not any(isinstance(f, SecretFilter) for f in h.filters)
+    ]
+    for handler in fresh:
+        protect_handler(handler)
+    return len(fresh)
+
+
+def guard_process() -> None:
+    """What a process does before it holds a passphrase or hands one to an engine, in this order: hold its core dumps to nothing
+    (``core_guard.engage``: a native crash must not write out the memory the key is in) and put every log handler that exists,
+    the last-resort one that writes to ``stderr`` while no other does included, behind the passphrase filter
+    (:func:`protect_handlers`, which also makes every handler built from then on be). The net under an entry point that forgot to
+    say so first: the store's own key-handing functions call it (``src/database/connect.py``), so does the application's lifespan,
+    so do the entry points. Both halves are idempotent and cheap beside a key derivation. It never raises and never blocks: where
+    either cannot be done the boot record (``core_guard``) says so, and a store that will not open helps no one."""
+    with contextlib.suppress(Exception):
+        from src.monitoring.core_guard import engage
+
+        engage()
+    with contextlib.suppress(Exception):
+        protect_handlers()
 
 
 def _scrub_cut_text(text: str, needle: str) -> str:

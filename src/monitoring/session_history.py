@@ -68,6 +68,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from datetime import UTC, datetime
@@ -125,7 +126,7 @@ _END_MARK_KEYS = (
 #: What this build's records carry, written on every boot record, so a reader can tell
 #: "this session never started collection" (the feature is present and no event was
 #: recorded) from "this build did not record collection" (the feature is absent).
-LEDGER_FEATURES = ("collection", "clock-step", "span")
+LEDGER_FEATURES = ("collection", "clock-step", "span", "end-peaks")
 
 _LOCK = threading.Lock()
 _SESSION_ID: str | None = None
@@ -321,21 +322,48 @@ def read_liveness() -> dict[str, Any] | None:
 # --------------------------------------------------------------------------- #
 
 
-def _hwm_last_seen(prev_state: dict[str, Any]) -> dict[str, Any] | None:
-    """The memory high-water sidecar's record of the previous session, when it names the
-    same process as the sentinel. Read before ``capture_previous()`` resets it (the boot
-    calls this module first), so it still describes the session that died."""
+def previous_session_id() -> str | None:
+    """The ledger's id of the session that came before this one, by the rule ``_close_previous`` uses: the nearest boot BEFORE this
+    session's own boot record, else (this session's boot was never appended) the last boot of the ledger; ``None`` when the ledger
+    names none. A boot written LATER by another instance does not win (a second instance that fails to bind still boots: the
+    server runs its lifespan startup before it binds). What a reader of the previous session's marks compares the marks' own
+    ``session_id`` with (:func:`_hwm_last_seen` does the same at the end record). Never raises."""
     try:
-        from src.monitoring.session_hwm import previous
+        now = current_session().get("session_id")
+        boots = [r.get("session_id") for r in read_records() if r.get("kind") == "boot" and isinstance(r.get("session_id"), str)]
+        if now in boots:
+            boots = boots[: boots.index(now)]
+        return boots[-1] if boots else None
+    except Exception:  # noqa: BLE001 - a nicety on a record, never load-bearing
+        return None
 
-        got = previous()
-    except Exception:  # noqa: BLE001 - a nicety on a seeded record, never load-bearing
-        return None
+
+def _hwm_last_seen(prev_state: dict[str, Any] | None, sid: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    """``(marks, why_not)``: the memory high-water sidecar's record of the session that died, and when there is none to trust, why
+    (``"absent"``, ``"unreadable"``, ``"another session"`` or ``"no identity"``). Read before ``capture_previous()`` resets it (the
+    boot calls this module first), so it still describes the session that died.
+
+    WHOSE it is is decided by identity, never by a process id alone (the system reuses them): ``sid`` is the ledger's id for the
+    session that died, and the sidecar must carry the same one (``session_hwm`` writes it from the ledger at boot). A sidecar with
+    no id is no evidence, and so is a stale one a failed reset left behind, which names an older session. The SEED (no ``sid``: the
+    ledger holds no boot of that session) has only the sentinel's process id to go by, and refuses when either side lacks it."""
+    try:
+        from src.monitoring.session_hwm import previous_why
+
+        got, why = previous_why()
+    except Exception:  # noqa: BLE001 - a nicety on a record, never load-bearing
+        return None, "unreadable"
     if not isinstance(got, dict):
-        return None
-    if prev_state.get("pid") is not None and got.get("pid") is not None and got.get("pid") != prev_state.get("pid"):
-        return None
-    return got
+        return None, why or "absent"
+    if sid is not None:
+        ident = got.get("session_id")
+        if not isinstance(ident, str) or not ident:
+            return None, "no identity"
+        return (got, None) if ident == sid else (None, "another session")
+    want, have = (prev_state or {}).get("pid"), got.get("pid")
+    if not isinstance(want, int) or not isinstance(have, int):
+        return None, "no identity"
+    return (got, None) if want == have else (None, "another session")
 
 
 def _json_bytes(obj: Any) -> int:
@@ -470,7 +498,7 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
                            "source": "forensics-sentinel", "sentinel_state": state or None}
     ended = _norm_iso(prev_state.get("ended_at"))
     teardown = _norm_iso(prev_state.get("shutdown_phase_at"))
-    hwm = _hwm_last_seen(prev_state) if state != "clean" else None
+    hwm = _hwm_last_seen(prev_state)[0] if state != "clean" else None
     last_seen = _norm_iso((hwm or {}).get("last_ts"))
     if state == "clean" and ended:
         end.update({"at": ended, "clean": True, "basis": "the sentinel's clean-shutdown stamp"})
@@ -484,14 +512,172 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
     else:
         end.update({"at": None, "clean": False if state and state != "clean" else None,
                     "basis": "the sentinel names no end time and nothing else dated it, so the end has no time"})
-    try:
-        peaks = _end_peaks(hwm)
-    except Exception:  # noqa: BLE001 - the ledger never breaks a boot; the end is written without the marks
-        peaks = None
-    if peaks:
-        end["previous_peaks"] = peaks
+    if hwm:
+        # The marks AND when each was set: the chronology shows these beside the session's other dated
+        # events, and a minimum with no time cannot be placed among them.
+        try:
+            peaks = _peaks_of(hwm)
+        except Exception:  # noqa: BLE001 - the ledger never breaks a boot; the end is written without the marks
+            peaks = None
+        if peaks:
+            end["previous_peaks"] = peaks
     _append(end)
     return end
+
+
+#: The marks the memory high-water sidecar keeps, which an end record carries as ``previous_peaks`` (the seed and every unclean end).
+_PEAK_KEYS = (
+    "rss_max_mb", "rss_max_at", "avail_min_mb", "avail_min_at", "swap_used_max_mb", "swap_used_max_at", "phase",
+)
+#: The most one of the two memory records of an end (``previous_at_peak``, ``previous_pressure``) may take, in bytes of the
+#: line as it is WRITTEN (ASCII-escaped JSON). WHAT IT PROTECTS: the ledger's size and the debug bundle's. A crash loop writes
+#: one end per boot, and ``boots.json`` carries ten of them inside its own 30 KiB share of the 4 MB zip; two records of 2,048
+#: bytes keep an end near 5 KiB, so the member's cut to its budget drops a few of the oldest boots and never a record in half.
+#: A cut says what it left out (``cut``); it never shrinks what is COUNTED (``threads_in_snapshot``).
+END_RECORD_MAX_BYTES = 2048
+#: How many of the busiest threads of the newest heavy snapshot an end record names. WHAT IT PROTECTS: the record's size (about
+#: 150 bytes a thread): three innermost frames say where a crash loop sat, and a fourth seldom changes the answer. The count of
+#: threads in the snapshot is kept whole, and the cut counts the ones left out.
+_END_THREADS = 3
+#: The longest a thread's NAME and its innermost FRAME may be in an end record (after paths are tokenised). WHAT THEY PROTECT:
+#: the record's size against a name or a frame that carries a long text; a name or frame that is cut ends in :data:`_CUT_MARK`.
+_THREAD_NAME_MAX = 80
+_FRAME_MAX = 160
+_CUT_MARK = "…[cut]"
+
+
+def _json_size(value: Any) -> int:
+    """The size of ``value`` as the ledger WRITES it (``_append``: ASCII-escaped, no spaces), not as UTF-8 text: a letter outside
+    ASCII is six bytes in the file."""
+    return len(json.dumps(value, separators=(",", ":"), default=str).encode("ascii"))
+
+
+def _cut_text(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + _CUT_MARK
+
+
+def _peaks_of(hwm: dict[str, Any]) -> dict[str, Any]:
+    return {k: hwm[k] for k in _PEAK_KEYS if k in hwm}
+
+
+def _scalars(source: Any) -> dict[str, Any]:
+    """The plain numbers and short texts of ``source``: what a record of the memory's makeup keeps of a nested reading."""
+    if not isinstance(source, dict):
+        return {}
+    return {k: v for k, v in source.items() if isinstance(v, (int, float, str, bool))}
+
+
+def _at_peak_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
+    """What the memory was made of at the session's RSS peak (``at_peak``: anonymous against file-backed, glibc's heap in
+    use against freed-but-held, CPython's blocks), its plain fields, cut to :data:`END_RECORD_MAX_BYTES` with the cut named. The
+    cut's own text is counted before it is written."""
+    got = _scalars(hwm.get("at_peak"))
+    if not got:
+        return None
+    left_out = 0
+    while got and _json_size(got if not left_out else {**got, "cut": {"fields_left_out": len(got) + left_out}}) > END_RECORD_MAX_BYTES:
+        got.popitem()
+        left_out += 1
+    if left_out:
+        got["cut"] = {"fields_left_out": left_out}
+    return got
+
+
+def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
+    """The newest HEAVY snapshot of the session, as much of it as a crash needs: why it was taken and when, the memory
+    readings, CPython's blocks, the guard's block with the release ladder's last record (rebuilt from the allow-list: numbers,
+    step names and the class of an error), and the busiest threads by NAME and innermost frame with every path tokenised
+    (``path_tokens``: nothing under the home directory is written whole). Cut to :data:`END_RECORD_MAX_BYTES` as the line is
+    written, and ``cut`` says what it left out (threads, then the release record, then the guard block, and how many names or
+    frames were cut short); the cut's own text is counted before it is written."""
+    from src.monitoring.path_tokens import tokenise_paths
+    from src.monitoring.release_view import allow_listed
+
+    snaps = hwm.get("pressure")
+    snap = snaps[-1] if isinstance(snaps, list) and snaps and isinstance(snaps[-1], dict) else None
+    if snap is None:
+        return None
+    out: dict[str, Any] = {k: snap[k] for k in ("why", "at", "avail_mb", "total_mb", "rss_mb", "swap_used_mb") if k in snap}
+    blocks = (snap.get("memory") or {}).get("py_alloc_blocks") if isinstance(snap.get("memory"), dict) else None
+    if blocks is not None:
+        out["py_alloc_blocks"] = blocks
+    guard = snap.get("guard")
+    if isinstance(guard, dict):
+        out["guard"] = {k: v for k, v in guard.items() if k != "last_release"}
+        release = allow_listed(guard.get("last_release"))
+        if release is not None:
+            out["release"] = release
+    threads = []
+    for t in snap.get("threads") or []:
+        if not isinstance(t, dict) or t.get("waiting") or t.get("sampler"):
+            continue
+        stack = t.get("stack") or []
+        name = tokenise_paths(str(t.get("name") or "?"))
+        frame = tokenise_paths(str(stack[0])) if stack else None
+        threads.append({
+            "name": _cut_text(name, _THREAD_NAME_MAX),
+            "frame": None if frame is None else _cut_text(frame, _FRAME_MAX),
+            **({"cpu_s": t["cpu_s"]} if "cpu_s" in t else {}),
+        })
+        if len(threads) == _END_THREADS:
+            break
+    if threads:
+        out["threads"] = threads
+    out["threads_in_snapshot"] = len([t for t in snap.get("threads") or [] if isinstance(t, dict)])
+
+    def texts_cut() -> int:
+        """How many TEXTS (a name or a frame) of the threads still in the record were cut: counted from what is in it."""
+        return sum(1 for t in out.get("threads", []) for k in ("name", "frame") if isinstance(t.get(k), str) and t[k].endswith(_CUT_MARK))
+
+    cut: dict[str, Any] = {"texts_cut": texts_cut()} if texts_cut() else {}
+    # The largest cut text this record can carry, reserved while anything is being cut: the size is the line as written.
+    reserve = {"texts_cut": 2 * _END_THREADS, "threads_left_out": _END_THREADS, "fields_left_out": ["release", "guard"]}
+
+    def over() -> bool:
+        return _json_size({**out, "cut": reserve}) > END_RECORD_MAX_BYTES
+
+    if _json_size({**out, **({"cut": cut} if cut else {})}) > END_RECORD_MAX_BYTES:
+        while over() and out.get("threads"):
+            out["threads"].pop()
+            cut["threads_left_out"] = cut.get("threads_left_out", 0) + 1
+        if not out.get("threads"):
+            out.pop("threads", None)
+        for field in ("release", "guard"):
+            if over() and field in out:
+                del out[field]
+                cut.setdefault("fields_left_out", []).append(field)
+    if texts_cut():  # after the loop: a thread the size loop left out takes its cut texts with it
+        cut["texts_cut"] = texts_cut()
+    else:
+        cut.pop("texts_cut", None)
+    if cut:
+        out["cut"] = cut
+    return out
+
+
+def _end_evidence(prev_state: dict[str, Any] | None, sid: str | None, last_boot: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What an UNCLEAN end carries of its own session (``end-peaks``): ``previous_peaks`` (the marks with their times), what the memory was made of at the peak and the newest
+    heavy snapshot's essentials, read from the high-water sidecar of the session that died. WHOSE sidecar it is: the ledger's id
+    for that session must be the one the sidecar carries (:func:`_hwm_last_seen`); a sidecar that carries no id is accepted only
+    when the ledger's last boot and the sentinel describe ONE process (:func:`_same_process`) and the sidecar names that
+    process. An end that has no evidence says why (``previous_evidence_missing``: ``absent``, ``unreadable``, ``another session``
+    or ``no identity``), so a missing record is never read as a session that had nothing to report. Best-effort: nothing here
+    fails a boot."""
+    hwm, why = _hwm_last_seen(prev_state, sid)
+    if not hwm and why == "no identity" and isinstance(prev_state, dict) and isinstance(last_boot, dict) and _same_process(last_boot, prev_state):
+        hwm, why = _hwm_last_seen(prev_state)  # a sidecar with no id: by the sentinel's process, which the boot has just been shown to share
+    if not hwm:
+        return {"previous_evidence_missing": why or "absent"}
+    out: dict[str, Any] = {}
+    for name, build in (("previous_peaks", _peaks_of), ("previous_at_peak", _at_peak_record), ("previous_pressure", _pressure_record)):
+        try:
+            got = build(hwm)
+        except Exception:  # noqa: BLE001 - a record that cannot be built is absent, never a failed boot
+            _LOG.debug("end record: %s not built", name)
+            continue
+        if got:
+            out[name] = got
+    return out
 
 
 def _same_process(boot: dict[str, Any], state: dict[str, Any]) -> bool:
@@ -547,19 +733,7 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen
-        # The dead session's own marks, on its end line (finding E, 2026-10-01): only the pre-ledger
-        # seed ever wrote them, so a crash loop erased the peaks, the pressure snapshots and the
-        # stacks of every crash but the latest -- the sidecar holds ONE session and is reset at each
-        # boot. Written only when the sidecar and the ledger name the same process (pid, machine boot and
-        # start, ``_same_process``): a boot the ledger missed would otherwise hand one session's marks to
-        # another's end.
-        if isinstance(prev_state, dict) and _same_process(last_boot, prev_state):
-            try:
-                peaks = _end_peaks(_hwm_last_seen(prev_state))
-            except Exception:  # noqa: BLE001 - the ledger never breaks a boot; the end is written without them
-                peaks = None
-            if peaks:
-                rec["previous_peaks"] = peaks
+        rec.update(_end_evidence(prev_state, sid, last_boot))
     _append(rec)
     return rec
 
@@ -614,6 +788,45 @@ def _boot_allocator() -> dict[str, Any]:
         return {"error": type(exc).__name__}
 
 
+def _boot_core_guard() -> dict[str, Any]:
+    """Which guard against a core dump this process runs under (``src/monitoring/core_guard.py``), compactly: the mechanism
+    (``rlimit``, ``dumpable``, ``none`` or ``unsupported``), the soft and hard limit it reads, whether a child is covered,
+    and which handler the machine sends a dump to. Written on the boot record so a session that ended in a native crash
+    says whether it could have left a dump holding the passphrase: a crash with no dump is not a crash that did not
+    happen, and a dump on a machine whose record says ``none`` is not a surprise."""
+    try:
+        from src.monitoring.core_guard import status
+
+        got = status()
+        return {k: got.get(k) for k in ("mechanism", "soft", "hard", "dumpable", "inherited_by_children", "handler")}
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
+def _boot_env_take() -> dict[str, Any]:
+    """Whether the passphrases this process was started with left its environment (``secret_scrub.take_from_environment``): the
+    NAMES of the variables still there (never a value) and the CLASS of any failure of the take. A take that failed leaves the value
+    in the environment every child inherits, and a record that said nothing would read as a take that worked. The take runs at the
+    first import of ``src.database.connect``: where that has not happened yet the names are still there for the first import to
+    take, so the record says the store is not imported and gives both lists as null (a name reported then would read as a failed take, and an empty list as a take that worked). The lifespan imports the store before the boot record, so this is the answer only of a caller that is not the server."""
+    try:
+        if "src.database.connect" not in sys.modules:
+            return {"store_imported": False, "still_in_environment": None, "take_failed": None}
+        from src.monitoring import secret_scrub
+
+        failed = secret_scrub.take_failed()
+        connect_failed = getattr(sys.modules.get("src.database.connect"), "_TAKE_FAILED", None)
+        if connect_failed:
+            failed.append(str(connect_failed))
+        return {
+            "store_imported": True,
+            "still_in_environment": [n for n in secret_scrub.HELD_ENV_VARS if os.environ.get(n)],
+            "take_failed": failed,
+        }
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
 def _boot_rollup_mode() -> str | None:
     """``auto``, ``forced-on`` or ``forced-off``: whether an operator's own
     ``OO_COLUMNAR_SERVE`` is in play beside the tier's default. A rollup that is off
@@ -627,6 +840,27 @@ def _boot_rollup_mode() -> str | None:
         return serve_mode()
     except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
         return f"unreadable ({type(exc).__name__})"
+
+
+def _boot_build() -> dict[str, Any] | None:
+    """Which build this session ran (``build_id.build_identity``): the commit where there is a checkout, a hash of the source
+    files' bytes and the schema head, so an update reads as an update and not as a crash. Never raises."""
+    try:
+        from src.monitoring.build_id import build_identity
+
+        return build_identity()
+    except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
+        return {"error": type(exc).__name__}
+
+
+def _bind_hwm(sid: str) -> None:
+    """Give the memory high-water sidecar this session's ledger id, so the next boot can tell its marks from a stale file's."""
+    try:
+        from src.monitoring.session_hwm import bind_session
+
+        bind_session(sid)
+    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
+        _LOG.debug("session ledger: the sidecar was not bound", exc_info=True)
 
 
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -659,9 +893,13 @@ def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "memory_budget": _boot_memory_budget(),
         "allocator": _boot_allocator(),
         "rollup_serve_mode": _boot_rollup_mode(),
+        "core_guard": _boot_core_guard(),
+        "env_take": _boot_env_take(),
+        "build": _boot_build(),
         "code": _code_markers(),
     }
     _append(rec)
+    _bind_hwm(sid)
     compact_if_needed()
     _write_liveness(now_wall, now_mono, now_bt)
     if os.getenv("OO_SESSION_LIVENESS", "1") != "0":

@@ -38,7 +38,7 @@ import shutil
 import sqlite3
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 _LOG = logging.getLogger("database.connect")
 
@@ -131,7 +131,38 @@ _lock = threading.Lock()
 # deliberately expensive — ~173 ms, CLAUDE.md's rate-limiting-is-a-
 # deliberate-omission entry).
 _last_good_page_size: dict[str, int | None] = {}
+
+
+def _guard_the_key() -> None:
+    """What this process does before it holds a passphrase or hands one to the engine (2026-10-06): hold its core dumps to
+    nothing and put every log handler behind the passphrase filter (``secret_scrub.guard_process``; ``src.monitoring.core_guard``
+    explains the limit and what it cannot cover). The net under every entry point that forgot to say so first, and it is called
+    at EVERY place this module hands a key to the engine (the store's key, the encrypt tool's ``ATTACH ... KEY``) and where a
+    process first holds one (the environment at import, ``set_passphrase``): a key typed into a request is given to the engine
+    before it is held, so "when it is held" is too late for a server that was not started by ``_serve`` (the uvicorn command
+    line), and for a command line tool that reads one. Never raises and never blocks an open: where the guard cannot be engaged
+    the boot record says so, and a store that will not open helps no one."""
+    with contextlib.suppress(Exception):
+        from src.monitoring.secret_scrub import guard_process
+
+        guard_process()
+
+
 _passphrase: str | None = os.environ.get("OO_DB_PASSPHRASE") or None
+if _passphrase:
+    _guard_the_key()
+# The passphrases this process was started with leave its environment now, before anything starts a child: a process started by
+# ``exec`` with the parent's environment (the standard library's resource tracker, the forkserver) holds a copy no code of ours
+# has run in to guard. The app reads them from the scrub module from here on (``env_secret``), and a child that must have one is
+# handed it by name.
+#: The class of a failure to import the scrub module or to take (never its text); the boot record names it (``env_take``).
+_TAKE_FAILED: str | None = None
+try:
+    from src.monitoring.secret_scrub import take_from_environment
+
+    take_from_environment()
+except Exception as _take_exc:  # noqa: BLE001 - never blocks an open; the class is recorded
+    _TAKE_FAILED = type(_take_exc).__name__
 
 
 class DatabaseLockedError(RuntimeError):
@@ -145,8 +176,18 @@ class WrongPassphraseError(RuntimeError):
 
 def set_passphrase(p: str | None) -> None:
     global _passphrase
+    if p:
+        _guard_the_key()  # before the process holds the key, not after
     with _lock:
         _passphrase = p or None
+    try:  # a store that was locked may read now: do not serve the held failure of the old key
+        from src.config.kv_store import clear_failures, forget_stores
+
+        clear_failures()
+        if p:
+            forget_stores()  # a key is actually set (unlock, create): the store seen before is not this one
+    except Exception:  # noqa: BLE001, S110 - never a reason for the key to be refused
+        pass
     # The scrub keeps ONE cache entry: the passphrases it last took out of a text and the shapes it made of them. A failed
     # unlock or create and the crypto-erase clear the session's passphrase here, so they clear that copy too (a core dump is in
     # the rule). Outside the lock, and never a reason for the call to fail.
@@ -200,6 +241,12 @@ def _sql_literal_escape(value: str) -> str:
 
 
 def _apply_key(conn, key: str) -> None:
+    # A key with a lone surrogate in it cannot be written into a statement, and the error the driver raises for it names the
+    # character and its place in the key: refused first with fixed words (``secret_scrub.passphrase_bytes``).
+    from src.monitoring.secret_scrub import passphrase_bytes
+
+    _guard_the_key()  # the key is about to go to the engine, and a process that was only handed it has not held it yet
+    passphrase_bytes(key)
     cur = conn.cursor()
     try:
         # The key never reaches any log.
@@ -208,10 +255,29 @@ def _apply_key(conn, key: str) -> None:
         cur.close()
 
 
+def _read_only_uri(p: PurePath) -> str:
+    """The ``mode=ro`` URI of an ABSOLUTE path, in any of the forms a Windows data directory takes. ``as_uri`` writes a UNC path with
+    the server as the URI's authority (``file://nas/share/x``), and SQLite refuses a URI authority other than ``localhost``: it wants
+    the empty authority and the path ``//nas/share/x`` (``file:////nas/share/x``). The extended prefixes (``\\\\?\\D:\\x``,
+    ``\\\\?\\UNC\\nas\\share\\x``) are written without the prefix first, which ``as_uri`` turns into a nonsense authority."""
+    if isinstance(p, PureWindowsPath):
+        text = str(p)
+        if text.upper().startswith("\\\\?\\UNC\\"):
+            text = "\\\\" + text[8:]
+        elif text.startswith(("\\\\?\\", "\\\\.\\")):
+            text = text[4:]
+        uri = PureWindowsPath(text).as_uri()
+        if not uri.startswith("file:///"):
+            uri = "file:////" + uri[len("file://"):]
+    else:
+        uri = p.as_uri()
+    return uri + "?mode=ro"
+
+
 def _read_only_target(p: Path) -> str:
     """The URI of ``p`` opened ``mode=ro`` (``uri=True`` goes with it). The path is made absolute and
-    percent-encoded by ``Path.as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax."""
-    return p.resolve().as_uri() + "?mode=ro"
+    percent-encoded by ``as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax."""
+    return _read_only_uri(p.resolve())
 
 
 def _try_open_encrypted(
@@ -387,18 +453,25 @@ def _connect(
         from sqlcipher3 import dbapi2 as sqc
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
-        _apply_key(conn, key)
-        # ORDER MATTERS (empirically verified, DB-10 §1b, 2026-07-17): on a fresh
-        # SQLCipher connection cipher_page_size MUST be set BEFORE auto_vacuum —
-        # setting auto_vacuum first corrupts page 1's HMAC once the schema is
-        # written, and the store then fails to reopen AT ALL, not merely at the
-        # wrong size. This was proven by the page-size A/B bench's own
-        # rebuild_at_pragmas; the bench was removed on 2026-07-31 (Settings review
-        # ruling 6) after delivering its verdict, so the ordering fact is recorded
-        # here — it is load-bearing for every encrypted store this factory creates.
-        page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
-        conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
-        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        try:
+            _apply_key(conn, key)
+            # ORDER MATTERS (empirically verified, DB-10 §1b, 2026-07-17): on a fresh
+            # SQLCipher connection cipher_page_size MUST be set BEFORE auto_vacuum —
+            # setting auto_vacuum first corrupts page 1's HMAC once the schema is
+            # written, and the store then fails to reopen AT ALL, not merely at the
+            # wrong size. This was proven by the page-size A/B bench's own
+            # rebuild_at_pragmas; the bench was removed on 2026-07-31 (Settings review
+            # ruling 6) after delivering its verdict, so the ordering fact is recorded
+            # here — it is load-bearing for every encrypted store this factory creates.
+            page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
+            conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
+            conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        except BaseException:
+            # An engine that refuses the key or a page setting must not leave its connection open; a close that fails too
+            # must not replace the error being raised.
+            with contextlib.suppress(Exception):
+                conn.close()
+            raise
         return conn
     if create_encrypted is False or (create_encrypted is None and plaintext_mode()):
         conn = sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
@@ -410,11 +483,18 @@ def _connect(
         from sqlcipher3 import dbapi2 as sqc
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
-        _apply_key(conn, use_key)
-        # Same ordering requirement as the explicit-key branch above.
-        page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
-        conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
-        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        try:
+            _apply_key(conn, use_key)
+            # Same ordering requirement as the explicit-key branch above.
+            page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
+            conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
+            conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        except BaseException:
+            # An engine that refuses the key or a page setting must not leave its connection open; a close that fails too
+            # must not replace the error being raised.
+            with contextlib.suppress(Exception):
+                conn.close()
+            raise
         return conn
     raise DatabaseLockedError(
         f"{p.name} does not exist yet: choose a passphrase (encrypted by default) "
@@ -614,6 +694,13 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
         raise DatabaseLockedError("sqlcipher3 driver unavailable")
     from sqlcipher3 import dbapi2 as sqc
 
+    from src.monitoring.secret_scrub import passphrase_bytes
+
+    # The source is plaintext, so no ``_apply_key`` has looked at this key yet: the process is guarded here, as there, and the
+    # key goes into the ATTACH statement as text that the driver encodes by itself, so a lone surrogate fails there with the
+    # character, its place in the statement and the statement (with the key in it) held. Refused first, with fixed words.
+    _guard_the_key()
+    passphrase_bytes(key)
     src_p, dest_p = Path(src_plain), Path(dest)
     dest_p.parent.mkdir(parents=True, exist_ok=True)
     dest_p.unlink(missing_ok=True)

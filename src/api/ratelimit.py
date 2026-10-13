@@ -59,6 +59,7 @@ to drift.
 from __future__ import annotations
 
 import ipaddress
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -133,4 +134,17 @@ class _LoopbackAwareLimiter(Limiter):
         return super().limit(limit_value, *args, **kwargs)
 
 
+class _DropRatelimitWarning(logging.Filter):
+    """Drops slowapi's own ``ratelimit %s (%s) exceeded at endpoint: %s`` warning. Its last argument is the path the CLIENT typed
+    (the default key style is ``url``: the request's path), so it would carry whatever was typed into the address bar to every log
+    handler and to the error journal the debug bundle ships. The app records the same event itself, naming the route template
+    (``rate_limit_exceeded_handler`` in ``src/api/main.py``), so nothing is lost; any other record of the logger passes."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: D102
+        return not (isinstance(record.msg, str) and record.msg.startswith("ratelimit ") and "exceeded at endpoint" in record.msg)
+
+
 limiter = _LoopbackAwareLimiter(key_func=get_remote_address)
+# On the limiter's own logger (``slowapi``), checked before the record reaches any handler of the process.
+if not any(isinstance(f, _DropRatelimitWarning) for f in limiter.logger.filters):
+    limiter.logger.addFilter(_DropRatelimitWarning())

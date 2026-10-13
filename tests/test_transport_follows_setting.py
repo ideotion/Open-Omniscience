@@ -281,10 +281,70 @@ def test_the_three_api_fetchers_carry_protected_mode_set_after_import(settings_e
     assert following_fetcher("hazards").proxy == SINGLE
 
 
+def test_the_wikipedia_and_ores_clients_follow_a_switch_to_protected_mode_and_back(settings_env):
+    """MUTATION TARGET: ``WikiClient.session`` / ``OresClient.session`` asking ``following_session`` on every request (a client that
+    kept the session it built keeps the transport it was built with until a restart)."""
+    from src.safety.settings import save_settings
+    from src.wiki.client import WikiClient
+    from src.wiki.ores import OresClient
+
+    for client in (WikiClient(), OresClient()):
+        before = client.session
+        assert before.transport_proxy is None and client.session is before, "kept while the transport is unchanged"
+        save_settings({"fetch_mode": "protected", "http_proxy": SINGLE})
+        during = client.session
+        assert during is not before and during.transport_proxy and during.transport_proxy.startswith("socks5h://127.0.0.1:9150")
+        save_settings({"fetch_mode": "transparent"})
+        after = client.session
+        assert after is not during and after.transport_proxy is None
+
+
+def test_a_setting_that_flips_between_two_reads_never_caches_a_session_under_the_other_transports_key(settings_env):
+    """MUTATION TARGET: ``following_session`` building from the snapshot its key came from (``_session_for``): the key was taken from
+    one read of the settings and the session built from a second, so a flip between them cached a direct session under the key of
+    a protected one."""
+    from src.safety.settings import SafetySettings
+
+    protected = SafetySettings(fetch_mode="protected", http_proxy=SINGLE)
+    direct = SafetySettings(fetch_mode="transparent")
+    seen = iter([protected, direct] * 4)
+    settings_env.setattr(fetcher_mod, "load_settings", lambda: next(seen))
+    for _ in range(4):
+        got = fetcher_mod.following_session("flip", "ua")
+        key, held = fetcher_mod._FOLLOWING["session/flip"]
+        assert got is held
+        assert bool(key[0]) == bool(held.transport_proxy), (key, held.transport_proxy)
+        fetcher_mod.following_session("flip", "ua")  # the second read of the pair, which a rebuild would have used
+
+
+def test_the_wikipedia_lane_stream_carries_a_switch_made_while_the_lane_is_built(settings_env):
+    """MUTATION TARGET: ``session_of=lambda: client.session`` in ``service._build``. The stream is built once and kept; it used to hold
+    the session it was built with and reconnect over that transport for as long as the lane ran."""
+    from src.safety.settings import save_settings
+    from src.wiki import service
+
+    settings_env.setattr(service, "_editions", lambda: ("en",))
+    runner = service._build()
+    stream = runner._stream
+    assert stream._current_session().transport_proxy is None
+    save_settings({"fetch_mode": "protected", "http_proxy": SINGLE})
+    assert stream._current_session().transport_proxy.startswith("socks5h://127.0.0.1:9150")
+    save_settings({"fetch_mode": "transparent"})
+    assert stream._current_session().transport_proxy is None
+
+
+def test_an_injected_session_is_kept_by_both_clients():
+    from src.wiki.client import WikiClient
+    from src.wiki.ores import OresClient
+
+    sentinel = requests.Session()
+    assert WikiClient(session=sentinel).session is sentinel and OresClient(session=sentinel).session is sentinel
+
+
 def _import_time_calls(path: Path) -> list[int]:
     """Lines where ``path`` calls a fetcher factory outside any function body: at module
     level or directly in a class body, i.e. at import time."""
-    factories = {"make_fetcher", "guarded_session", "following_fetcher", "EthicalFetcher"}
+    factories = {"make_fetcher", "guarded_session", "following_fetcher", "following_session", "EthicalFetcher"}
     tree = ast.parse(path.read_text(encoding="utf-8"))
     hits: list[int] = []
 
@@ -435,3 +495,30 @@ def test_the_connect_guard_allowlists_the_proxy_requests_actually_uses(env_proxy
     explicit = {"http": SINGLE, "https": SINGLE}
     f.session.get(URLS[0], timeout=5, proxies=dict(explicit))
     assert f._request_proxy_endpoints(URLS[0], explicit)["https"] == rec.sent[1][1]["https"] == SINGLE
+
+
+def test_a_partial_update_after_a_failed_read_refuses_and_keeps_the_saved_protected_mode(settings_env):
+    """MUTATION TARGET: ``save_settings`` reading through ``_read_raw_strict``. A lenient read that fails reads as the defaults, and a
+    partial update then rewrote the stored blob from them: a saved protected mode and its proxies were dropped."""
+    from src.config import kv_store
+    from src.safety import settings as S
+    from src.safety.settings import SafetySettingsError, save_settings
+
+    save_settings({"fetch_mode": "protected", "http_proxy": SINGLE})
+    kv_store.kv_invalidate()
+
+    def broken(key):
+        raise RuntimeError("engine text that must never reach the message")
+
+    real_strict, real_lenient = kv_store.kv_get_json_strict, kv_store.kv_get_json
+    kv_store.kv_get_json_strict = broken
+    kv_store.kv_get_json = lambda key: None  # the lenient reader reads as absent, as a locked store does
+    try:
+        with pytest.raises(SafetySettingsError) as err:
+            save_settings({"discovery_external_enabled": True})
+    finally:
+        kv_store.kv_get_json_strict, kv_store.kv_get_json = real_strict, real_lenient
+    assert "RuntimeError" in str(err.value) and "engine text" not in str(err.value)
+    kv_store.kv_invalidate()
+    kept = S.load_settings()
+    assert kept.fetch_mode == "protected" and kept.http_proxy == SINGLE and kept.discovery_external_enabled is False

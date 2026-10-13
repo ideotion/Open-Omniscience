@@ -39,6 +39,11 @@ class SafetySettingsError(ValueError):
     """Raised when a safety settings update carries an invalid value."""
 
 
+class _DamagedSettings(SafetySettingsError):
+    """The stored settings are there and cannot be parsed (as against a store that could not be opened). A save that supplies the
+    whole connection choice replaces them: choosing the connection again is the remedy, and the user's own action."""
+
+
 @dataclass
 class SafetySettings:
     fetch_mode: str = "transparent"
@@ -67,6 +72,12 @@ class SafetySettings:
     def is_protected(self) -> bool:
         return self.fetch_mode == "protected"
 
+    #: True on the settings :func:`load_settings` makes when the stored choice could not be READ (locked, keyed to another
+    #: passphrase, damaged). Not a field, so it is in no saved or served dict. Such settings are protected with no proxy, which
+    #: no fetcher or session turns into a direct connection (``TransportUnavailable`` / a transport refusal): offline, as the app
+    #: starts (R117), until the store reads again.
+    read_failed = False
+
 
 # The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
 _KV_KEY = "settings.safety"
@@ -87,14 +98,23 @@ def _use_kv() -> bool:
 
 
 def _read_json_file() -> dict | None:
+    """The legacy ``safety_settings.json``: ``None`` when there is no file. A file that is there and cannot be read, or is not a
+    JSON object, raises ``KvReadError`` (the class only): it is the user's saved choice, damaged, and reading it as the defaults
+    would be the direct connection."""
+    from src.config.kv_store import KvReadError
+
     path = _path()
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("safety_settings.json unreadable; using defaults", exc_info=True)
-        return None
+        raw = json.loads(path.read_text("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - failed closed, by class
+        _LOG.warning("safety_settings.json unreadable (%s); the transport stays closed", type(exc).__name__)
+        raise KvReadError(type(exc).__name__, damaged=isinstance(exc, ValueError)) from None
+    if not isinstance(raw, dict):
+        _LOG.warning("safety_settings.json is not an object; the transport stays closed")
+        raise KvReadError("NotAnObject", damaged=True)
+    return raw
 
 
 def _read_raw() -> dict | None:
@@ -102,9 +122,9 @@ def _read_raw() -> dict | None:
     to (and one-time migrating) the legacy ``safety_settings.json`` file."""
     if not _use_kv():
         return _read_json_file()
-    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.config.kv_store import kv_get_json_checked, kv_set_json
 
-    raw = kv_get_json(_KV_KEY)
+    raw = kv_get_json_checked(_KV_KEY)  # raises KvReadError on a failed read: that is not "no settings"
     if raw is not None:
         return raw
     raw = _read_json_file()
@@ -112,8 +132,8 @@ def _read_raw() -> dict | None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)
-    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("safety_settings migration into app_state deferred", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("safety_settings migration into app_state deferred (%s)", type(exc).__name__)
     return raw
 
 
@@ -127,10 +147,66 @@ def _clean_proxy_list(raw) -> list[str]:
     return [p.strip() for p in raw if isinstance(p, str) and p.strip()]
 
 
+def _read_raw_strict() -> dict | None:
+    """``_read_raw`` for a caller that will REWRITE what it read: a stored blob that cannot be read raises ``SafetySettingsError``
+    (the class only, never the engine's text) instead of reading as the defaults, because writing the defaults back over a saved
+    protected mode and proxy list is the loss this prevents."""
+    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json
+
+    def refused(exc: BaseException) -> SafetySettingsError:
+        damaged = is_damaged(exc)
+        return (_DamagedSettings if damaged else SafetySettingsError)(
+            f"the stored safety settings could not be read ({type(exc).__name__}); nothing was changed"
+            + (" - choose the connection again in the safety settings to replace them" if damaged else "")
+        )
+
+    if not _use_kv():
+        try:
+            return _read_json_file()
+        except Exception as exc:  # noqa: BLE001 - refused, by class
+            raise refused(exc) from None
+    try:
+        raw = kv_get_json_strict(_KV_KEY)
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise refused(exc) from None
+    if raw is not None:
+        return raw
+    try:
+        raw = _read_json_file()
+    except Exception as exc:  # noqa: BLE001 - refused, by class
+        raise refused(exc) from None
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("safety_settings migration into app_state deferred (%s)", type(exc).__name__)
+    return raw
+
+
 def load_settings() -> SafetySettings:
-    """Load safety settings; env vars override the persisted value (for headless use)."""
+    """Load safety settings; env vars override the persisted value (for headless use).
+
+    A stored choice that cannot be READ never reads as the defaults (which are the direct connection): the settings come back
+    protected with no proxy and ``read_failed`` set, which every transport builder refuses. Absent is still the defaults."""
+    from src.config.kv_store import KvReadError
+
+    try:
+        raw = _read_raw()
+    except KvReadError:
+        # The environment decides when it names a mode (the headless path never reads the store for it); otherwise the choice is
+        # UNKNOWN, not absent: protected, and with nothing to route through unless the environment names a proxy.
+        s = _settings_from(None)
+        if os.getenv("OO_FETCH_MODE") not in VALID_MODES:
+            s.fetch_mode = "protected"
+            s.read_failed = not (s.http_proxy or s.http_proxies)
+        return s
+    return _settings_from(raw)
+
+
+def _settings_from(raw: dict | None) -> SafetySettings:
+    """The settings a stored blob (or none) and the environment make."""
     s = SafetySettings()
-    raw = _read_raw()
     if raw is not None:
         mode = raw.get("fetch_mode", s.fetch_mode)
         if mode in VALID_MODES:
@@ -160,7 +236,18 @@ def save_settings(updates: dict) -> SafetySettings:
     """Apply a partial update and persist atomically. Validates before writing."""
     from src.safety.fetcher import validate_socks_pool
 
-    current = load_settings()
+    reset: list[str]
+    try:
+        stored = _read_raw_strict()
+    except _DamagedSettings:
+        if updates.get("fetch_mode") is None or updates.get("http_proxy") is None:
+            raise  # a partial update would write the defaults over what the damaged value may still say
+        stored = None  # the whole choice is supplied: it replaces the damaged value
+        reset = [f for f in ("http_proxies", "discovery_external_enabled") if updates.get(f) is None]
+    else:
+        reset = []
+    current = _settings_from(stored)
+    current.reset_fields = reset  # type: ignore[attr-defined]
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
         if mode not in VALID_MODES:

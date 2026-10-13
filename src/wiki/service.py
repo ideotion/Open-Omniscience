@@ -272,11 +272,12 @@ def _build():
         raise ValueError("the Wikipedia lane has no editions configured")
     client = WikiClient()
     adapter = WikiStreamAdapter(client=client, editions=editions)
-    # THE STREAM SHARES THE CLIENT'S GUARDED SESSION. Not a convenience: a second
+    # THE STREAM SHARES THE CLIENT'S GUARDED SESSION, asked for on every connection (a switch of the transport reaches a lane that is
+    # running, and an open connection ends at its next event so the next one opens over it). Not a convenience: a second
     # session would be a second place the kill switch, the protected-mode proxy and
     # the honest User-Agent have to be wired, and the one that was forgotten is the
     # one that egresses. The non-negotiable is a SINGLE fetch path.
-    stream = WikiEventStream(session=client.session, editions=editions)
+    stream = WikiEventStream(session_of=lambda: client.session, editions=editions)
     # THE WALK SHARES THE CLIENT TOO (Q701 = c, Q722 = b): the same session, so the same
     # transport and kill switch, and the same one-second interval between requests, so the
     # walk and the drain's text fetches are one polite client rather than two.
