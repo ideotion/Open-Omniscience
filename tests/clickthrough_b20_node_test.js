@@ -198,7 +198,7 @@ async function run() {
       "the level map kept the old language after a switch: " + JSON.stringify(drawn));
   });
 
-  await test("R4: the ring map redraws through showRingMap with the payload it holds", () => {
+  await test("R4: the ring map (drawn or empty) redraws through showRingMap with the payload it holds", () => {
     const calls = [];
     const hostWith = (hasSvg) => ({ querySelector: (sel) => (sel === "svg#oo-choro" && hasSvg ? {} : null) });
     const make = (host, last) => {
@@ -209,10 +209,16 @@ async function run() {
         (id) => (id === "sg-ringmap" ? host : null), (...a) => calls.push(a), last);
     };
     const last = { ringId: "election", d: { found: true, countries: [] } };
+    // nothing cached (no group on screen, or another one is still loading / was not found): nothing to redraw
+    make(hostWith(false), null)();
+    make(hostWith(true), null)();
+    assert(calls.length === 0, "redrew a ring map that holds no payload");
+    // a cached EMPTY payload (no svg: the empty state, which carries the translated caveat) redraws too, so a
+    // language switch does not leave the caveat in the previous language
     make(hostWith(false), last)();
-    assert(calls.length === 0, "redrew a ring map that holds no drawn map");
+    assert(calls.length === 1, "the empty state kept the old language after a switch: " + JSON.stringify(calls));
     make(hostWith(true), last)();
-    assert(calls.length === 1 && calls[0][0] === "election" && calls[0][1] === last.d,
+    assert(calls.length === 2 && calls[1][0] === "election" && calls[1][1] === last.d,
       "the redraw must pass the cached payload so showRingMap skips its fetch: " + JSON.stringify(calls));
     // ...and showRingMap really does skip the fetch when handed one.
     const body = extract("showRingMap", "async function showRingMap(", INS);
