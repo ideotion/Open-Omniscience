@@ -11,6 +11,10 @@ construction; the point of building it first is that a rename behind a view is p
 (the differential test in ``tests/test_derived_read_seam.py`` reads the same rows both
 ways) while a rename of ~500 references is not.
 
+ONE ID SPACE IS ASSUMED by ``database.query.windowed_group_counts``, which bounds every statement of a
+read by ``max(id)`` taken at its start: when the view becomes a head plus sealed segments, that bound has to
+be taken per segment, or the ids guaranteed disjoint.
+
 WHAT THIS MODULE OWNS
   * :data:`MENTIONS_VIEW` -- the SQL view, ``keyword_mentions_all``, over ``keyword_mentions``;
   * :func:`ensure_derived_views` -- creates it, or re-creates it when the table's column set

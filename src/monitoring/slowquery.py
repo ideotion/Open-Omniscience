@@ -15,6 +15,9 @@ benchmark alone. It is the key to "where do I add a covering index or a rollup?"
 Honesty + safety: local-only, network-free, timings + SQL shape only (bound values are
 NOT recorded — no corpus content leaks). The listener never raises (a broken log must
 not break the app). EXPLAIN is read-only and deadline-guarded.
+
+It sees SINGLE statements: a read that totals minutes as thousands of short statements (the chunked
+trending and corpus-keyword reads, ``database/query.py``) no longer shows up here as one slow query.
 """
 
 from __future__ import annotations
