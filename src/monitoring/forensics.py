@@ -345,6 +345,8 @@ def record_session_start() -> dict[str, Any] | None:
         "last_unlock": (prev or {}).get("last_unlock"),
         # and the last large-log recovery, which an unlock with no log would otherwise erase
         "last_recovery": (prev or {}).get("last_recovery"),
+        # and the per-step time of the last cold init_db (STORE-02), for a start with no unlock record
+        "last_init_db": (prev or {}).get("last_init_db"),
     }
     # The two handles the NEXT boot needs to find this session's death in the host's
     # journal (2026-09-26): the machine boot it runs in, so the right boot is read by
@@ -504,6 +506,10 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
 #: constant.
 UNLOCK_VERIFY_PHASE = "passphrase verify + WAL recovery + checkpoint-on-close"
 
+#: The unlock step that runs ``init_db``. Named once for the same reason as the verify phase: the writer
+#: (``api/unlock.py``) and the reader that names its slowest step (``p0_validation``) share ONE constant.
+UNLOCK_INIT_DB_PHASE = "init_db (schema self-heal + migrations + WAL recovery)"
+
 #: The smallest log whose unlock COULD be read as a rate (the floor in force is
 #: :func:`recovery_floor_bytes`: this, or one byte above the resting ceiling when that is larger).
 #: Below it the keyed open's own fixed cost (the key derivation alone measured 0.2 to 0.4 s here)
@@ -555,6 +561,21 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
     if recovery is not None:
         state["last_recovery"] = {**recovery, "at": _now()}
     _write_state(state)
+
+
+def record_init_db(record: dict[str, Any]) -> None:
+    """Persist the per-step time of this process's first ``init_db`` into the sentinel as ``last_init_db``.
+
+    The unlock path carries the same record inside ``last_unlock`` (``init_db_steps``); a start with no
+    unlock (a plaintext store, ``serve``, ``python -m uvicorn``) has no such record, and the field's slow
+    ``init_db`` (STORE-02) was read on starts of both kinds. Best-effort: forensics never blocks a boot.
+    """
+    try:
+        state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
+        state["last_init_db"] = record
+        _write_state(state)
+    except Exception as exc:  # noqa: BLE001 - a record that cannot be kept is not worth a failed boot
+        log_failure(_LOG, "could not record the init_db steps", exc, level=logging.DEBUG)
 
 
 def _recovery_from_record(record: dict[str, Any]) -> dict[str, Any] | None:
@@ -1807,6 +1828,9 @@ def session_forensics() -> dict[str, Any]:
         # The speed of this machine's last large-log recovery: the estimate the next unlock page
         # shows is built from it, so a report that explains a slow unlock carries it too.
         "last_recovery": cur.get("last_recovery"),
+        # The per-step time of this machine's last cold init_db (STORE-02): which of its 37 steps the
+        # time went on, beside the one number the unlock record keeps for the whole call.
+        "last_init_db": cur.get("last_init_db"),
         # Where a pass got to in its tail (S0.5) — the window the field's S2 session
         # died in, from which nothing survived because record_run sits below it.
         "pass_tail_journal": pass_tail_journal(),
