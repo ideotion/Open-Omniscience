@@ -28,8 +28,8 @@ The verdict is one word from a closed vocabulary, with its reason; there is no s
                         site's, the robots rules' or this environment's network policy)
 
 It asks ONE host, www.legislation.gov.uk over https, and says so before it asks: the URLs it builds are checked
-before any request, every redirect hop to another host is refused before it is followed, and so is an answer whose
-final URL is anywhere else. It refuses
+before any request, every request the fetcher makes (the page, robots.txt, each redirect hop) is checked as a whole
+URL before it goes out, and an answer whose final URL is anywhere else is refused. It refuses
 without --online (the operator's consent for this run; the app's own airplane state lives in the app's
 process and is not visible from here, so run it with the app stopped), and writes only into a NEW, EMPTY
 scratch data directory (never a store someone uses):
@@ -192,12 +192,27 @@ def run(
 
 
 def make_fetcher(timeout: float = 45.0):
-    """The app's ethical fetcher, held to :data:`HOST` on EVERY hop: a redirect to any other host is refused
-    before it is followed (the redirect path re-runs ``_guard_target`` on each target), and a result whose final
-    URL is not an allowed one is refused after."""
+    """The app's ethical fetcher, held to :data:`HOST` on EVERY request: the session's ``get`` refuses any URL
+    that is not an allowed one before it goes out (page, robots.txt, every redirect hop), the redirect path's
+    ``_guard_target`` refuses another host's name, and a result whose final URL is not allowed is refused after."""
     from src.ingest import BlockedTarget, EthicalFetcher, FetchError
 
     class _Pinned(EthicalFetcher):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            real_get = self.session.get
+
+            def _get(url, *a, **kw):
+                # EVERY request (the page, robots.txt, each redirect hop) passes here, and the WHOLE URL is judged:
+                # the hop guard below sees only a hostname, and a parser differential (a backslash form such as
+                # ``https://evil.test\\@www.legislation.gov.uk/x``) reads as the right host there and as another
+                # to the library that connects.
+                if not allowed_url(url):
+                    raise BlockedTarget(f"refused: {url!r} is not an https URL on {HOST}")
+                return real_get(url, *a, **kw)
+
+            self.session.get = _get
+
         def _guard_target(self, host):  # called for the request and for every redirect target
             if host != HOST:
                 raise BlockedTarget(f"refused: {host!r} is not {HOST}")

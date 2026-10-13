@@ -229,6 +229,10 @@ def test_the_default_act_is_in_the_catalogue_on_the_publishers_host():
         "https://evil.test\\@www.legislation.gov.uk/ukpga/2018/12/data.xml",  # backslash: a browser reads evil.test
         "https://www.legislation.gov.uk /ukpga/2018/12/data.xml",            # whitespace
         "ftp://www.legislation.gov.uk/ukpga/2018/12/data.xml",
+        "https://www.legislation.gov.uk/ukpga/a\\b/data.xml",                  # a backslash in the PATH: only that clause refuses it
+        "https://www.legislation.gov.uk/ukpga/a b/data.xml",                 # a space in the path
+        "https://www.legislation.gov.uk/ukpga/a\nb/data.xml",                # a newline in the path
+        "https://www.legislation.gov.uk/ukpga/a\x00b/data.xml",              # a control character in the path
         "",
     ],
 )
@@ -279,12 +283,74 @@ def test_the_catalogue_row_must_be_on_the_publisher_for_both_urls(monkeypatch):
     assert R._catalogue_row("An Act")["official_url"] == good["official_url"]
 
 
-def test_the_fetcher_refuses_a_redirect_hop_to_another_host_and_an_answer_from_one(monkeypatch):
+class _Resp:
+    def __init__(self, status: int, url: str, location: str | None = None) -> None:
+        self.status_code = status
+        self.url = url
+        self.headers = {"Location": location} if location else {}
+
+    def close(self) -> None:
+        pass
+
+
+def _drive(monkeypatch, answers: dict[str, _Resp]):
+    """The real fetcher class with its HTTP session's `get` and the base `_guard_target` (a DNS lookup) replaced
+    by recorders, so the REAL redirect loop runs and nothing touches a network. Returns (fetcher, requests asked,
+    hosts handed to the base guard)."""
+    import requests
+
+    import src.ingest as ingest
+
+    asked: list[str] = []
+    guarded: list[str] = []
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: asked.append(url) or answers[url])
+    monkeypatch.setattr(ingest.EthicalFetcher, "_guard_target", lambda self, host: guarded.append(host))
+    return R.make_fetcher(), asked, guarded
+
+
+def test_a_hop_to_the_publisher_is_followed_and_the_base_guard_still_runs(monkeypatch):
+    first, second = "https://www.legislation.gov.uk/a", "https://www.legislation.gov.uk/b"
+    fetcher, asked, guarded = _drive(monkeypatch, {first: _Resp(302, first, second), second: _Resp(200, second)})
+    resp, final = fetcher._guarded_redirect_get(first)
+    assert asked == [first, second] and final == second and resp.status_code == 200
+    assert guarded == [R.HOST]  # the override hands the allowed host on to the app's SSRF guard (the super() call)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://evil.test/x",                                    # another host: the hop guard
+        "https://evil.test\\@www.legislation.gov.uk/x",            # urlparse reads www.legislation.gov.uk, urllib3 evil.test
+        "http://www.legislation.gov.uk/x",                        # a downgrade on the right host
+        "https://www.legislation.gov.uk:8443/x",                  # a port on the right host
+        "https://www.legislation.gov.uk@evil.test/x",             # userinfo
+    ],
+)
+def test_a_redirect_that_leaves_the_publisher_is_refused_before_it_is_requested(monkeypatch, location):
+    import src.ingest as ingest
+
+    first = "https://www.legislation.gov.uk/a"
+    fetcher, asked, _guarded = _drive(monkeypatch, {first: _Resp(302, first, location)})
+    with pytest.raises(ingest.BlockedTarget):
+        fetcher._guarded_redirect_get(first)
+    assert asked == [first]  # the hop's own request was never made
+
+
+def test_the_page_and_robots_requests_are_judged_too(monkeypatch):
+    import src.ingest as ingest
+
+    fetcher, asked, _guarded = _drive(monkeypatch, {})
+    with pytest.raises(ingest.BlockedTarget):
+        fetcher._guarded_redirect_get("https://evil.test/robots.txt")
+    assert asked == []
+
+
+def test_the_fetcher_refuses_another_hosts_name_and_an_answer_from_one(monkeypatch):
     import src.ingest as ingest
 
     fetcher = R.make_fetcher()
     with pytest.raises(ingest.BlockedTarget):
-        fetcher._guard_target("evil.test")  # what the redirect path calls on every hop's target
+        fetcher._guard_target("evil.test")
     with pytest.raises(ingest.BlockedTarget):
         fetcher._guard_target("legislation.gov.uk")
 
