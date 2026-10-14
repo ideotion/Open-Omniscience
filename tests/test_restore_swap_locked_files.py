@@ -339,7 +339,7 @@ def test_the_restore_refuses_when_the_checkpoint_did_not_fold_the_log():
     gate = source.index("if not _checkpoint_before_swap(why=why):")
     refusal = source[gate : gate + 300]
     assert "raise RestoreRefused(_swap_refusal(why[0] if why else" in refusal, refusal  # the refusal names the reason the checkpoint gave
-    assert gate < source.index("swap_in_corpus(working, target)", gate)
+    assert gate < source.index("_carry_and_swap(working, target, report)", gate)  # the carry and the replace, under the write gate
 
 
 def test_a_checkpoint_blocked_behind_a_writer_is_bounded(monkeypatch):
@@ -474,8 +474,9 @@ def test_the_swap_checkpoints_before_it_unlinks_anything():
             assert name in found, f"{name} is not called in {fn_node.name} at all"
         return {name: found.index(name) for name in wanted}
 
-    before = _order(body, {"_checkpoint_before_swap", "swap_in_corpus"})
-    assert before["_checkpoint_before_swap"] < before["swap_in_corpus"], (
+    # run_restore reaches the helper through ``_carry_and_swap`` (the write-gate hold, 2026-10-13); the helper's own call is checked in it.
+    before = _order(body, {"_checkpoint_before_swap", "_carry_and_swap"})
+    assert before["_checkpoint_before_swap"] < before["_carry_and_swap"], (
         "the checkpoint needs a live engine, so it must run before the swap helper disposes it"
     )
     where = _order(helper, {"dispose_engine", "_clear_stale_side_files", "_replace_live_corpus"})

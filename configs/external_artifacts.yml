@@ -499,6 +499,35 @@ artifacts:
       - "the pure-Python decoder (src/osm/pbf.py) must keep reading what pyosmium reads: test_both_readers_write_identical_rows"
     last_verified: "2026-09-28"
 
+  - id: sqlcipher3-driver
+    title: sqlcipher3 (the SQLCipher 4 driver, a core dependency)
+    kind: runtime-coupling
+    description: >
+      The at-rest encryption driver (src/database/connect.py), a wheel that BUNDLES its own SQLCipher and SQLite.
+      The coupling is to how the engine REPORTS PAGE DAMAGE: src/database/damage.py (the poisoned-connection
+      observer, which reclassifies SQLCipher's code 11 and an empty MemoryError) and the page pass in
+      src/database/verify_pages (which pages make a table check answer "unchecked", code 1) are built on the
+      reports of SQLCipher 4.12.0 (sqlcipher3 0.6.2 and 0.6.3, SQLite 3.51.1). 0.6.4 bundles SQLCipher 4.19.0
+      (SQLite 3.53.4) and reports differently (measured 2026-10-13: a healthy read after a damaged page raises
+      "database disk image is malformed" instead of the poisoned connection's empty MemoryError; no page of the
+      articles table makes its table check answer unchecked), so tests/test_poisoned_connection.py (8) and
+      tests/test_database_verify_pages.py (21 setup errors) fail on it, on main, in the lanes that install
+      unpinned. pyproject therefore carries a CEILING (<0.6.4); requirements.lock and the wheel smoke job pin 0.6.2.
+    upstream: https://pypi.org/project/sqlcipher3/ (https://github.com/coleifer/sqlcipher3)
+    check_upstream: "pypi.org/pypi/sqlcipher3/json - compare info.version; 0.6.4 was the newest on 2026-10-13 and is NOT qualified"
+    license: zlib (the wrapper); SQLCipher is BSD-3-Clause-style (Zetetic)
+    pin: {floor: "0.6.2", verified: "0.6.3"}
+    refresh: >
+      qualify the new version (docs/ledger/OPEN_QUEUE.md, the 0.6.4 entry): run tests/test_poisoned_connection.py and
+      tests/test_database_verify_pages.py on it, decide for each failure whether the app's classification or only the
+      test's encoding of the 4.12 report is out of date (never loosen a test to pass), then lift the pyproject ceiling and
+      requirements.lock together
+    freshness: {max_age_months: 6}
+    couplings:
+      - "pyproject.toml dependencies sqlcipher3 carries the same floor and a ceiling below the first unqualified release"
+      - "requirements.lock and the sqlcipher-smoke job pin 0.6.2; the lock moves only with a qualification"
+    last_verified: "2026-10-13"
+
   - id: vader-linear-reproduction
     title: vaderSentiment 3.3.2 internals, reproduced in linear time
     kind: runtime-coupling
