@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from datetime import date  # noqa: TC003 - used in a runtime annotation string
 
 from src.briefing.card import Card
+from src.monitoring.secret_scrub import log_failure
 
 
 def _deadline_expired(session) -> bool:
@@ -175,16 +176,13 @@ def _release_transaction(session) -> None:
     """
     try:
         session.commit()
-    except Exception:  # noqa: BLE001 - a commit failure must not abort the feed
-        _LOG.warning("run_all: commit between producers failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a commit failure must not abort the feed
+        log_failure(_LOG, "run_all: commit between producers failed", exc, level=logging.WARNING)
         try:
             session.rollback()
-        except Exception:  # noqa: BLE001 - best-effort recovery only, never fatal
-            _LOG.warning(
-                "run_all: rollback after a failed commit ALSO failed -- the "
-                "session may stay poisoned for the rest of this pass",
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001 - best-effort recovery only, never fatal
+            log_failure(_LOG, "run_all: rollback after a failed commit ALSO failed -- the "
+                "session may stay poisoned for the rest of this pass", exc, level=logging.WARNING)
 
 
 class _WalGuardResult:
@@ -503,8 +501,8 @@ def _disabled_names() -> frozenset[str]:
 
         s = load_settings()
         return frozenset(set(s.cards_disabled or []) | set(s.recipes_disabled or []))
-    except Exception:  # noqa: BLE001 - settings must never take down the briefing
-        _LOG.debug("card settings unavailable; running every producer", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - settings must never take down the briefing
+        log_failure(_LOG, "card settings unavailable; running every producer", exc, level=logging.DEBUG)
         return frozenset()
 
 
@@ -662,8 +660,8 @@ def run_all_bounded(
                     produced = producer(session, as_of=as_of) or []
                 else:
                     produced = producer(session) or []
-        except Exception:  # noqa: BLE001 - one bad producer must not abort the feed
-            _LOG.warning("briefing producer %r failed", name, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad producer must not abort the feed
+            log_failure(_LOG, f"briefing producer {name!r} failed", exc, level=logging.WARNING)
             produced = []
         if as_of is not None and name not in disabled:
             (anchored_names if anchorable.get(name) else unanchored_names).append(name)

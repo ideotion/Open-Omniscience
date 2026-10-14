@@ -19,6 +19,8 @@ import signal
 import threading
 import time
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("safety.shutdown")
 
 
@@ -29,8 +31,8 @@ def _close_db_quietly() -> None:
         from src.database.session import dispose_engine
 
         dispose_engine()
-    except Exception:  # noqa: BLE001 - best-effort; never block the shutdown
-        _LOG.debug("shutdown: engine dispose failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort; never block the shutdown
+        log_failure(_LOG, "shutdown: engine dispose failed", exc, level=logging.DEBUG)
 
 
 def _reap_worker_processes() -> None:
@@ -50,8 +52,8 @@ def _reap_worker_processes() -> None:
         from src.analytics.reindex_parallel import terminate_live_pools
 
         terminate_live_pools()
-    except Exception:  # noqa: BLE001 - best-effort; never block the shutdown
-        _LOG.debug("shutdown: reaping worker processes failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort; never block the shutdown
+        log_failure(_LOG, "shutdown: reaping worker processes failed", exc, level=logging.DEBUG)
 
 
 def _default_arm(delay: float) -> None:

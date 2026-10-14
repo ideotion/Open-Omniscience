@@ -74,6 +74,7 @@ from sqlalchemy import text, update
 from sqlalchemy.orm import Session
 
 from src.database.corpus_lease import corpus_lease
+from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:
     from src.analytics.article_lang_map import ArticleLanguageMap
@@ -817,8 +818,8 @@ class KeywordFoldJobManager:
             p = self._report_file()
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
-        except OSError:
-            _LOG.warning("could not write the keyword fold report", exc_info=True)
+        except OSError as exc:
+            log_failure(_LOG, "could not write the keyword fold report", exc, level=logging.WARNING)
 
     def _count_keywords(self, session: Session) -> int:
         try:
@@ -855,8 +856,8 @@ class KeywordFoldJobManager:
                 else:
                     self._state = "paused"
                     self._save()
-        except Exception:  # noqa: BLE001 - surface the failure, never crash the thread
-            _LOG.exception("keyword fold job failed")
+        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+            log_failure(_LOG, "keyword fold job failed", exc)
             with contextlib.suppress(Exception):
                 session.rollback()
             with self._lock:

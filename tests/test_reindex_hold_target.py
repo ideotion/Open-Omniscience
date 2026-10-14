@@ -30,13 +30,14 @@ Time is a fake clock that moves only when an article is indexed, so no test here
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 import types
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 import src.analytics.store as store_mod
@@ -44,7 +45,13 @@ from src.analytics.extract import BaselineExtractor
 from src.analytics.store import reindex_articles
 from src.backup import merge as merge_mod
 from src.database.models import Article, Base, Source
-from src.database.writer import WriterGate
+from src.database.writer import (
+    WriterGate,
+    _on_after_transaction_end,
+    _on_before_flush,
+    _on_orm_execute,
+    write_gate,
+)
 
 # --------------------------------------------------------------------------- #
 # the gate says who is waiting                                                #
@@ -98,6 +105,15 @@ def test_an_unreadable_override_keeps_the_bound_instead_of_removing_it(monkeypat
     assert merge_mod.reindex_hold_target_s() == merge_mod.REINDEX_HOLD_TARGET_S
 
 
+@pytest.mark.parametrize("raw", ["-0", "-0.0", "0.0", "+0"])
+def test_a_negative_zero_is_a_plain_zero_and_is_published_as_one(monkeypatch, raw):
+    """``float("-0")`` is ``-0.0``, which equals 0 and passes ``>= 0``: the drain published it as ``hold_target_seen``."""
+    monkeypatch.setenv("OO_REINDEX_HOLD_TARGET_S", raw)
+    got = merge_mod.reindex_hold_target_s()
+    assert got == 0.0 and math.copysign(1.0, got) == 1.0
+    assert merge_mod.reindex_flush_policy() is None
+
+
 def test_a_target_of_zero_is_the_count_only_rule_and_hands_out_no_policy(monkeypatch):
     monkeypatch.setenv("OO_REINDEX_HOLD_TARGET_S", "0")
     assert merge_mod.reindex_flush_policy() is None
@@ -141,12 +157,17 @@ def test_a_queued_writer_cannot_end_a_batch_younger_than_the_minimum_hold(monkey
 # --------------------------------------------------------------------------- #
 
 
-@pytest.fixture()
-def corpus():
-    """Seven articles in an in-memory store, the fake clock, and the ids to re-index."""
+def _corpus(*, gated: bool):
+    """Seven articles in an in-memory store. ``gated`` attaches the REAL write-gate handlers to the session factory, as
+    ``session.py`` does for the app's: ``hold_write_window`` then really takes the gate and the commit really gives it back."""
     engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
-    db = sessionmaker(bind=engine, future=True)()
+    maker = sessionmaker(bind=engine, future=True)
+    if gated:
+        event.listen(maker, "before_flush", _on_before_flush)
+        event.listen(maker, "do_orm_execute", _on_orm_execute)
+        event.listen(maker, "after_transaction_end", _on_after_transaction_end)
+    db = maker()
     db.add(Source(name="S", domain="x.test", country="fr"))
     db.commit()
     ids = []
@@ -160,6 +181,21 @@ def corpus():
         db.add(a)
         db.commit()
         ids.append(a.id)
+    return db, ids
+
+
+@pytest.fixture()
+def corpus():
+    """A GATED session: the hold figures below are the gate's, taken through the real ``hold_write_window``."""
+    db, ids = _corpus(gated=True)
+    yield db, ids
+    db.close()
+
+
+@pytest.fixture()
+def ungated_corpus():
+    """A session the gate does not cover (``hold_write_window`` returns False for it)."""
+    db, ids = _corpus(gated=False)
     yield db, ids
     db.close()
 
@@ -414,3 +450,61 @@ def test_a_window_that_could_not_be_taken_ends_no_hold_and_is_not_charged_to_the
 
     assert out == {"reindexed": 6, "failed": 1}, "the article whose window failed is the one that failed"
     assert stats["longest_batch_s"] == 15.0, "three articles of five seconds: the 500 s was a wait, not a hold"
+
+
+def test_a_session_the_gate_does_not_cover_publishes_no_hold(ungated_corpus, fake_clock):
+    """There is no gate hold to time, so ``longest_batch_s`` is None: wall time from the first article is not a hold, and a
+    figure that looks like one is worse than none. The commits are still counted, and the policy still sees the batch's age."""
+    db, ids = ungated_corpus
+    asked: list[tuple[int, float]] = []
+
+    def _policy(staged: int, held_s: float) -> bool:
+        asked.append((staged, held_s))
+        return staged >= 3
+
+    out, stats = _run(db, ids, commit_batch=100, should_flush=_policy)
+    assert out == {"reindexed": 7, "failed": 0}
+    assert stats["longest_batch_s"] is None
+    assert stats["batch_commits"] == 3 and stats["early_batch_commits"] == 2
+    assert asked[:3] == [(1, 5.0), (2, 10.0), (3, 15.0)], "the policy is asked of the batch's age whether or not a gate is held"
+
+
+def test_the_real_window_is_taken_when_a_batch_opens_held_through_it_and_given_back_at_each_commit(corpus, fake_clock):
+    """The real ``hold_write_window`` on a gated session, not a stand-in: the gate is held whenever the policy is asked (a
+    batch is open), is free after the run, and the published hold is the time the batch held it."""
+    db, ids = corpus
+    held_when_asked: list[bool] = []
+
+    def _policy(staged: int, held_s: float) -> bool:
+        held_when_asked.append(bool(write_gate.stats()["held"]))
+        return False
+
+    before = write_gate.stats()["grants"]
+    out, stats = _run(db, ids, commit_batch=3, should_flush=_policy)
+    assert out == {"reindexed": 7, "failed": 0}
+    # Seven articles at width 3: the policy is asked after articles 1, 2, 4, 5 and 7. A batch that fills the width
+    # (articles 3 and 6) is flushed without asking, because there is nothing left to decide.
+    assert held_when_asked == [True] * 5, "a batch is open every time the policy is asked, and the gate is held through it"
+    assert not write_gate.stats()["held"], "the last commit gave it back"
+    assert write_gate.stats()["grants"] - before >= 3, "one grant per batch (three batches), the epoch bump's besides"
+    assert stats["longest_batch_s"] == 15.0 and stats["batch_commits"] == 3
+
+
+def test_a_failed_batch_gives_the_real_gate_back_and_is_still_timed(corpus, fake_clock, monkeypatch):
+    """The same real gate through a commit that raises: the rollback releases it, and the hold it ended is the one published."""
+    db, ids = corpus
+    real_commit = db.commit
+    failed_once = {"done": False}
+
+    def _flaky_commit():
+        if not failed_once["done"] and fake_clock["t"] > 1000.0:
+            failed_once["done"] = True
+            fake_clock["t"] += 100.0
+            raise RuntimeError("disk I/O error")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", _flaky_commit)
+    out, stats = _run(db, ids, commit_batch=100, should_flush=lambda staged, held_s: True)
+    assert out == {"reindexed": 7, "failed": 0}
+    assert stats["longest_batch_s"] == 105.0
+    assert not write_gate.stats()["held"]

@@ -32,10 +32,12 @@ to discover new sources and identify RSS feeds. It includes:
 Author: Ideotion
 """
 
+import logging
 import re
 import time
 from urllib.parse import parse_qsl, unquote, urljoin, urlparse
 
+from src.monitoring.secret_scrub import log_failure
 from src.utils.logging_config import setup_logging
 from src.utils.security import safe_href
 
@@ -149,7 +151,7 @@ class DuckDuckGoSearch:
             # Broad on purpose: catches transport errors AND NetworkBlocked (kill
             # switch) without importing requests here -- keeps this module off the
             # socket-importer allowlist. Surfaced honestly to the caller.
-            logger.error(f"DuckDuckGo search failed: {e}")
+            log_failure(logger, "DuckDuckGo search failed", e)
             raise Exception(f"DuckDuckGo search failed: {e}") from e
 
     @classmethod
@@ -244,7 +246,7 @@ class DuckDuckGoSearch:
         try:
             parts = urlparse(url.replace("&amp;", "&"))
         except ValueError as e:
-            logger.debug(f"redirect unwrap: unparseable URL {url!r}, left as-is: {e}")
+            log_failure(logger, f"redirect unwrap: unparseable URL {url!r}, left as-is", e, level=logging.DEBUG)
             return url
         host = (parts.hostname or "").lower()
         if parts.path not in cls._REDIRECT_PATHS:
@@ -292,7 +294,7 @@ class DuckDuckGoSearch:
             url = url.replace("&amp;", "&")
             url = unquote(url)
         except (ValueError, UnicodeError) as e:  # malformed encoding: keep the raw URL
-            logger.debug(f"URL unquote failed, keeping raw form: {e}")
+            log_failure(logger, "URL unquote failed, keeping raw form", e, level=logging.DEBUG)
 
         # Validate URL
         try:
@@ -300,7 +302,7 @@ class DuckDuckGoSearch:
             if not parsed.scheme or not parsed.netloc:
                 return None
         except ValueError as e:  # e.g. invalid IPv6 literal in netloc
-            logger.debug(f"URL validation failed for {url!r}: {e}")
+            log_failure(logger, f"URL validation failed for {url!r}", e, level=logging.DEBUG)
             return None
         # Belt-and-braces scheme allowlist: only http(s) is a real source URL. The
         # downstream fetch re-guards (robots/SSRF/scheme), but a discovery result
@@ -321,7 +323,7 @@ class DuckDuckGoSearch:
                 domain = domain[4:]
             return domain
         except ValueError as e:  # malformed URL
-            logger.debug(f"domain extraction failed for {url!r}: {e}")
+            log_failure(logger, f"domain extraction failed for {url!r}", e, level=logging.DEBUG)
             return ""
 
     @classmethod
@@ -387,7 +389,7 @@ class DuckDuckGoSearch:
             try:
                 html = fetcher.fetch(url, require_html=True).content
             except FetchError as e:
-                logger.info(f"Ethical fetch refused or failed for {url}: {e}")
+                log_failure(logger, f"Ethical fetch refused or failed for {url}", e, level=logging.INFO)
                 return []
 
             # Method 1: Look for <link> tags with RSS/Atom types
@@ -456,8 +458,8 @@ class DuckDuckGoSearch:
 
             return valid_feeds
 
-        except Exception:  # last resort: degrade gracefully, but never opaquely
-            logger.exception(f"Unexpected error discovering RSS feeds for {url}")
+        except Exception as exc:  # last resort: degrade gracefully, but never opaquely
+            log_failure(logger, f"Unexpected error discovering RSS feeds for {url}", exc)
             return []
 
     @classmethod
@@ -477,7 +479,7 @@ class DuckDuckGoSearch:
             )
             return resolved
         except ValueError as e:  # urlparse/urljoin on malformed input
-            logger.debug(f"URL resolve failed for {path!r} on {base_url!r}: {e}")
+            log_failure(logger, f"URL resolve failed for {path!r} on {base_url!r}", e, level=logging.DEBUG)
             return None
 
     @classmethod
@@ -515,10 +517,10 @@ class DuckDuckGoSearch:
                     return False
             return True
         except FetchError as e:
-            logger.debug(f"RSS feed validation refused/failed for {url}: {e}")
+            log_failure(logger, f"RSS feed validation refused/failed for {url}", e, level=logging.DEBUG)
             return False
         except Exception as e:
-            logger.debug(f"RSS feed validation error for {url}: {e}")
+            log_failure(logger, f"RSS feed validation error for {url}", e, level=logging.DEBUG)
             return False
 
     @classmethod
@@ -598,8 +600,8 @@ class DuckDuckGoSearch:
             logger.info(f"Discovered {len(sources)} sources for topic: {topic}")
             return sources
 
-        except Exception:  # last resort: degrade gracefully, but never opaquely
-            logger.exception(f"Unexpected error discovering sources for topic {topic!r}")
+        except Exception as exc:  # last resort: degrade gracefully, but never opaquely
+            log_failure(logger, f"Unexpected error discovering sources for topic {topic!r}", exc)
             return []
 
     @classmethod

@@ -50,6 +50,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session
 
 from src.database.models import MENTIONS_VIEW, KeywordMention, mentions_view_sql
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -83,8 +84,8 @@ def ensure_derived_views(bind: Engine | Connection) -> str:
                 conn.execute(text(f"DROP VIEW IF EXISTS {MENTIONS_VIEW}"))
             conn.execute(text(want))
             return "recreated" if current else "created"
-    except Exception:  # noqa: BLE001 - a read seam must never stop the app booting
-        _LOG.warning("could not ensure the derived-row views", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a read seam must never stop the app booting
+        log_failure(_LOG, "could not ensure the derived-row views", exc, level=logging.WARNING)
         return "skipped"
 
 

@@ -646,6 +646,13 @@ def _wal_sentence(last_unlock: dict) -> str:
     )
 
 
+def _slowest_init_step(record: Any) -> dict | None:
+    """The slowest step of a stored ``init_db`` step record, or None when there is none to read."""
+    from src.database.init_steps import slowest_step
+
+    return slowest_step(record)
+
+
 def _unlock_verdict(last_unlock: dict | None) -> dict:
     """Pure verdict from the last boot's recorded unlock timing (or its absence)."""
     bar = _acceptance_bars()["p0_4_unlock"]
@@ -681,6 +688,16 @@ def _unlock_verdict(last_unlock: dict | None) -> dict:
         "method": last_unlock.get("method"),
         "how_to_time_next_cold_boot": _COLD_BOOT_HOWTO,
     }
+    # STORE-02: which step of init_db the time went on. Absent on a record from a build before the steps
+    # were timed, and then the verdict says nothing about them rather than naming a step it cannot see.
+    init_steps = last_unlock.get("init_db_steps")
+    slowest_step = _slowest_init_step(init_steps)
+    if slowest_step is not None:
+        from src.database.init_steps import METHOD
+
+        measurements["init_db_steps"] = init_steps
+        measurements["slowest_init_db_step"] = slowest_step
+        measurements["init_db_steps_method"] = METHOD
     if total_ms is None:
         return _verdict(
             "not-measurable",
@@ -698,7 +715,11 @@ def _unlock_verdict(last_unlock: dict | None) -> dict:
         )
     detail = f"the last boot's synchronous unlock was {total_ms:.0f} ms, over the {_UNLOCK_BAR_MS:.0f} ms bar."
     if slowest:
+        from src.monitoring.forensics import UNLOCK_INIT_DB_PHASE
+
         detail += f" Slowest phase: {slowest.get('phase')} ({float(slowest.get('ms') or 0):.0f} ms)."
+        if slowest.get("phase") == UNLOCK_INIT_DB_PHASE and slowest_step is not None:
+            detail += f" Its slowest step: {slowest_step['step']} ({float(slowest_step['ms']):.0f} ms)."
     return _verdict("fail", detail, measurements, bar)
 
 

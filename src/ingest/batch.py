@@ -46,6 +46,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from src.database.models import Source
 
@@ -239,8 +241,8 @@ class ArticleBatch:
                 if len(out) >= 300:  # guard against pathological link-farm pages
                     break
             return out
-        except Exception:  # noqa: BLE001 - link analysis is auxiliary
-            _LOG.warning("link extraction at stage time failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - link analysis is auxiliary
+            log_failure(_LOG, "link extraction at stage time failed", exc, level=logging.WARNING)
             return []
 
     # -- flush ------------------------------------------------------------- #
@@ -266,13 +268,9 @@ class ArticleBatch:
         self._pending_text_bytes = 0
         try:
             self._flush_batched(entries)
-        except Exception:  # noqa: BLE001 - zero loss outranks tidiness
+        except Exception as exc:  # noqa: BLE001 - zero loss outranks tidiness
             self._session.rollback()
-            _LOG.warning(
-                "batched collect commit failed; redoing %d article(s) one at a time",
-                len(entries),
-                exc_info=True,
-            )
+            log_failure(_LOG, f"batched collect commit failed; redoing {len(entries)} article(s) one at a time", exc, level=logging.WARNING)
             for e in entries:
                 # Per-entry guard (skeptic finding): an unexpected error on ONE
                 # redo (e.g. a pool-checkout timeout) must not abort the
@@ -280,14 +278,9 @@ class ArticleBatch:
                 # and re-fetched next pass (content-hash dedup keeps it single).
                 try:
                     self._store_one(e)
-                except Exception:  # noqa: BLE001 - zero loss outranks tidiness
+                except Exception as exc:  # noqa: BLE001 - zero loss outranks tidiness
                     self.tally["errors"] += 1
-                    _LOG.warning(
-                        "collect redo: unexpected error storing %s; recounted "
-                        "as an error, re-fetched next pass",
-                        e.requested_url,
-                        exc_info=True,
-                    )
+                    log_failure(_LOG, f"collect redo: unexpected error storing {e.requested_url}; recounted as an error, re-fetched next pass", exc, level=logging.WARNING)
 
     def _flush_batched(self, entries: list[_StagedArticle]) -> None:
         from src.database.models import Article
@@ -475,11 +468,7 @@ class ArticleBatch:
         except Exception as exc:  # noqa: BLE001 - indexing is auxiliary per article
             if is_locked_error(exc):
                 raise
-            _LOG.warning(
-                "keyword indexing failed for article %s (kept unindexed)",
-                article.id,
-                exc_info=True,
-            )
+            log_failure(_LOG, f"keyword indexing failed for article {article.id} (kept unindexed)", exc, level=logging.WARNING)
 
     def _links_one(self, article_id: int, links: list[dict]) -> None:
         from src.database.write import is_locked_error
@@ -492,7 +481,7 @@ class ArticleBatch:
         except Exception as exc:  # noqa: BLE001 - link analysis is auxiliary
             if is_locked_error(exc):
                 raise
-            _LOG.warning("link indexing failed for article %s", article_id, exc_info=True)
+            log_failure(_LOG, f"link indexing failed for article {article_id}", exc, level=logging.WARNING)
 
     # -- the per-article redo path (zero loss) ------------------------------ #
 
@@ -558,9 +547,9 @@ class ArticleBatch:
                 self._session.commit()
 
             run_write_with_retry(_work, session=self._session, label=f"index_links[{article_id}]")
-        except Exception:  # noqa: BLE001 - link analysis is auxiliary
+        except Exception as exc:  # noqa: BLE001 - link analysis is auxiliary
             self._session.rollback()
-            _LOG.warning("link indexing on redo failed", exc_info=True)
+            log_failure(_LOG, "link indexing on redo failed", exc, level=logging.WARNING)
 
 
 def _link_rows(article_id: int, links: list[dict]) -> list:

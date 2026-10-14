@@ -34,6 +34,8 @@ import logging
 import os
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 TABLE = "event_imports"
@@ -146,9 +148,8 @@ def sync_imports(imports: dict) -> dict:
                 conn.commit()
             finally:
                 conn.close()
-    except Exception:  # noqa: BLE001 - the mirror must never break the authoritative JSON write
-        _LOG.warning("event_imports mirror sync failed; the JSON side-file is authoritative",
-                     exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the mirror must never break the authoritative JSON write
+        log_failure(_LOG, "event_imports mirror sync failed; the JSON side-file is authoritative", exc, level=logging.WARNING)
         return {"synced": False, "reason": "db error"}
     return {"synced": True, "rows": len(rows)}
 
@@ -168,8 +169,8 @@ def load_imports() -> dict:
             ).fetchall()
         finally:
             conn.close()
-    except Exception:  # noqa: BLE001 - a missing table / locked DB is a normal "no rows"
-        _LOG.debug("event_imports load unavailable; caller falls back", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a missing table / locked DB is a normal "no rows"
+        log_failure(_LOG, "event_imports load unavailable; caller falls back", exc, level=logging.DEBUG)
         return {}
     out: dict = {}
     for fam_key, fp, fam_name, fam_user, imported_at, title, date_, sources, uids in rows:

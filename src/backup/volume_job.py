@@ -27,7 +27,7 @@ from src.backup.newsletter_export import NewsletterFilterRefused
 
 # The passphrase never reaches a status, a log record or the run journal through a caught exception: every
 # handler below writes its text through these (stdlib only, so this cannot cycle either).
-from src.monitoring.secret_scrub import exception_text, log_failure, traceback_text
+from src.monitoring.secret_scrub import exception_text, log_failure, record_text, record_traceback
 
 _LOG = logging.getLogger(__name__)
 
@@ -102,8 +102,8 @@ def hand_off_reindex(report: dict) -> None:
         from src.backup.merge import reindex_backlog
 
         bk = reindex_backlog()
-    except Exception:  # noqa: BLE001 - a committed import must never fail on its own epilogue
-        _LOG.warning("could not read the re-index backlog after import", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a committed import must never fail on its own epilogue
+        log_failure(_LOG, "could not read the re-index backlog after import", exc, level=logging.WARNING)
         bk = {"available": False, "reason": "see server log"}
 
     report["reindex_deferred"] = {
@@ -170,8 +170,8 @@ def start_reindex_drain() -> tuple[bool, str | None]:
         _REINDEX_RESUME_JOB.start()
         return True, None
     except Exception as exc:  # noqa: BLE001 - already-running is normal in a queue
-        _LOG.info("re-index drain not started now (%s); the backlog stays visible", exc)
-        return False, str(exc)
+        log_failure(_LOG, "re-index drain not started now; the backlog stays visible", exc, level=logging.INFO)
+        return False, record_text(exc, typed=False)
 
 
 def _stage_phase_name(stage_name: str) -> str:
@@ -361,7 +361,7 @@ class VolumeBackupManager:
         except (VolumeError, OSError) as exc:
             return {
                 "state": "unavailable",
-                "reason": f"the volume set could not be re-read: {exc}",
+                "reason": f"the volume set could not be re-read: {exception_text(exc, typed=False)}",
                 "method": method,
             }
         return {
@@ -470,8 +470,8 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(refused).__name__,
-                msg=exception_text(refused, passphrase, typed=False, limit=2000),
-                traceback=traceback_text(refused, passphrase)[-8000:],
+                msg=record_text(refused, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                traceback=record_traceback(refused, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(refused).__name__)
             with self._lock:
@@ -483,12 +483,12 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=exception_text(exc, passphrase, typed=False, limit=2000),
-                traceback=traceback_text(exc, passphrase)[-8000:],
+                msg=record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                traceback=record_traceback(exc, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
-                self._state, self._error = "error", exception_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+                self._state, self._error = "error", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
@@ -907,7 +907,7 @@ class VolumeBackupManager:
                             )
                             report["file_members"] = {
                                 "placed": 0,
-                                "error": exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                                "error": record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
                                 "method": (
                                     "The corpus restored; putting the large public files "
                                     "back did not. They are re-downloadable, and the "
@@ -967,9 +967,9 @@ class VolumeBackupManager:
             # actionable sentence ("another job is still writing to your corpus (...)",
             # naming the holder) was dropped on the way to the UI and the operator got
             # a bare "cancelled".
-            said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+            said = record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
-            runlog.end("refused", detail=said[:500])
+            runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             with self._lock:
                 self._state = "error"
                 self._error = said
@@ -978,9 +978,9 @@ class VolumeBackupManager:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
-            said = exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+            said = record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.info("volume restore stopped by the operator: %s", said)
-            runlog.end("stopped-by-operator", detail=said[:500])
+            runlog.end("stopped-by-operator", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             with self._lock:
                 self._state = "cancelled"
                 self._error = None
@@ -1004,8 +1004,8 @@ class VolumeBackupManager:
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
-                msg=exception_text(exc, passphrase, corpus_passphrase, typed=False, limit=2000),
-                traceback=traceback_text(exc, passphrase, corpus_passphrase)[-8000:],
+                msg=record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                traceback=record_traceback(exc, passphrase, corpus_passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:
@@ -1064,7 +1064,7 @@ class VolumeBackupManager:
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             log_failure(_LOG, "volume verify failed", exc, passphrase)
             with self._lock:
-                self._state, self._error = "error", exception_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+                self._state, self._error = "error", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:

@@ -40,6 +40,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import exception_text, log_failure
+
 _LOG = logging.getLogger(__name__)
 
 #: The spelled-out token (Q212 = c). One constant so the rename the ledger still
@@ -121,11 +123,11 @@ def allocate_export_folder(
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise ExportFolderError(f"Cannot use destination {base}: {exc}") from exc
+        raise ExportFolderError(f"Cannot use destination {base}: {exception_text(exc, typed=False)}") from None
     if not base.is_dir():
         raise ExportFolderError(f"{base} is not a folder.")
     when = now or datetime.now()
-    first: OSError | None = None
+    first: str | None = None
     for ordinal in range(1, _MAX_ORDINAL + 1):
         candidate = base / folder_name(when, ordinal=ordinal)
         try:
@@ -136,7 +138,7 @@ def allocate_export_folder(
             # A real filesystem refusal (permissions, read-only drive, full disk).
             # Reported as itself rather than retried under another name, which would
             # spin _MAX_ORDINAL times and then blame the ordinals.
-            first = exc
+            first = exception_text(exc, typed=False)
             break
         return candidate
     if first is not None:
@@ -185,8 +187,8 @@ def write_export_request(
     try:
         tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
         os.replace(tmp, p)
-    except OSError:
-        _LOG.warning("export folder: could not record the request in %s", d, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"export folder: could not record the request in {d}", exc, level=logging.WARNING)
         return None
     return p
 

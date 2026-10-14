@@ -163,7 +163,8 @@ def test_restore_failure_gets_the_honest_classified_detail(tmp_path):
     assert st["state"] == "error"
     # The classified, honest detail -- not the bare exception string.
     assert "data-merge issue, not a version mismatch" in st["error"]
-    assert "UNIQUE constraint failed" in st["error"]  # the original detail is kept, not lost
+    assert "UNIQUE constraint failed" not in st["error"]  # a driver's words are never recorded
+    assert "IntegrityError (a database driver's text is withheld)" in st["error"]
 
 
 def test_restore_merge_error_keeps_its_own_message(tmp_path):

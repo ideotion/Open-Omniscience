@@ -25,6 +25,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -106,8 +107,8 @@ def record_consent(version: str = CONSENT_DOC_VERSION, *, actor: str = "local") 
     path = consent_path()
     try:
         path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        _LOG.exception("could not write the legal consent record to %s", path)
+    except OSError as exc:
+        log_failure(_LOG, f"could not write the legal consent record to {path}", exc)
         raise
     return record
 

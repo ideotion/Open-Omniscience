@@ -1,0 +1,34 @@
+# Curated EXTRA stopwords -- Amharic. LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
+# regardless of which one a word lives in -- this split is a readability/maintenance convenience, not a
+# per-language scoping guarantee. See configs/stopwords_extra/PROVENANCE.md for the evidence trail.
+stopwords:
+  # batch am-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5; single reader: ሁለት, ለዚሁ, መስከረም, መካከል, ራሷን, በላይ, በመቶ, በበኩሉ, በተጨማሪ, በተጨማሪም, በዚሁ, በዚህ, ብሏል, ተናግረዋል, ነበር, አምስት, አንድ, እነዚህን, እንደ, እንዲሁም, ከ43, ከ80, ከዚህ, ውስጥ, ዘጠኝ, ይህም, ይህንን, ይሆናል, ድረስ)
+  - ሁለት
+  - ለዚሁ
+  - መስከረም
+  - መካከል
+  - ራሷን
+  - በላይ
+  - በመቶ
+  - በበኩሉ
+  - በተጨማሪ
+  - በተጨማሪም
+  - በዚሁ
+  - በዚህ
+  - ብሏል
+  - ተናግረዋል
+  - ነበር
+  - አምስት
+  - አንድ
+  - እነዚህን
+  - እንደ
+  - እንዲሁም
+  - ከ43
+  - ከ80
+  - ከዚህ
+  - ውስጥ
+  - ዘጠኝ
+  - ይህም
+  - ይህንን
+  - ይሆናል
+  - ድረስ

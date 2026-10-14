@@ -1572,6 +1572,356 @@ def test_the_clock_steps_survive_a_restart_and_are_trimmed_to_their_limit(hist):
     assert again["clock_steps"] == before and again["clock_stepped_back"] == m["clock_stepped_back"]
 
 
+# --- forward clock steps (the boot-time clock against the wall clock) ------------------------------------
+TICK = 5  # the liveness tick (``session_history.MEMORY_WATCH_S``)
+
+
+def _beat(wall: float, boot: float | None) -> None:
+    """One tick with all three clocks injected (``boot=None``: the platform has no boot-time clock)."""
+    v.tick(now=float(wall), boot=boot)
+
+
+def _run(wall, boot, ticks: int, *, wall_extra: float = 0.0, every: float = TICK):
+    """``ticks`` ticks ``every`` seconds apart on both clocks, the first one ``wall_extra`` seconds further
+    on the wall clock than the boot-time clock says it should be: a step, if it is big enough."""
+    for k in range(ticks):
+        wall += every + (wall_extra if k == 0 else 0.0)
+        boot = None if boot is None else boot + every
+        _beat(wall, boot)
+    return wall, boot
+
+
+def _fresh_recorder() -> None:
+    v.reset_for_tests()
+    v._path().unlink(missing_ok=True)  # a history of its own
+    v.start()
+
+
+def test_a_forward_step_is_recorded_with_its_size_and_marks_the_gap_it_opens(hist):
+    """Read finding 6. A clock correction forward read as time the process was down, and nothing could
+    tell the two apart."""
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = float(HOUR0), 10_000.0
+    _beat(wall, boot)
+    wall, boot = _run(wall, boot, 59)  # a full bucket: wall and boot-time advance together
+    last = wall
+    wall, boot = _run(wall, boot, 60, wall_extra=10_800.0)  # the wall clock is set three hours forward
+    m = _member()
+    assert m["clock_stepped_forward"] == 1 and m["clock_stepped_back"] == 0
+    assert m["clock_steps"] == [{"at": v._iso(last + TICK + 10_800), "was": v._iso(last), "forward_s": 10_800}]
+    assert m["gaps"] and m["gaps"][-1].get("clock_step") is True
+
+
+def test_a_suspend_or_a_stalled_process_records_no_step_and_its_gap_stays_unmarked(hist):
+    """The boot-time clock counts through a suspend, so the wall clock and it advance together and the
+    wall clock was not moved; the gap is the machine's or the process's, and says nothing it cannot know."""
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = float(HOUR0), 10_000.0
+    _beat(wall, boot)
+    wall, boot = _run(wall, boot, 59)
+    for lost in (900.0, 10_800.0):  # a stall that missed three buckets, a three-hour suspend
+        # the monotonic clock stops during a suspend: the tick never reads it, only the boot-time clock
+        v.tick(now=wall + lost, mono=123.0, boot=boot + lost)
+        wall, boot = wall + lost, boot + lost
+        wall, boot = _run(wall, boot, 60)
+    m = _member()
+    assert m["clock_stepped_forward"] == 0 and m["clock_steps"] == []
+    assert m["gaps"] and all("clock_step" not in gap for gap in m["gaps"])
+
+
+# the places in a bucket the last tick can fall, the seconds between two ticks (a late tick, a stall), the sizes
+_OFFSETS = (0.0, 0.1, 149.9, 295.0, 299.5, 299.9)
+_INTERVALS = (5.0, 5.4, 20.0, 120.0, 599.8, 1200.0)
+# none sits exactly on the floor (1 s) or the minimum (600 s): a float sum of fractional seconds lands either side of it
+_STEPS = (0.0, 0.5, 1.5, 100.0, 560.0, 585.0, 590.0, 594.9, 595.1, 599.0, 601.0, 605.0, 650.0, 1800.0)
+
+
+def test_every_gap_a_forward_step_opens_is_recorded_and_marked_at_any_alignment_and_tick_interval(hist):
+    """Finding S1 of the read: "600 s is the smallest step that can open a gap" held only for ticks on a 5 s grid
+    that lines up with the buckets. A tick can fall anywhere in its bucket and come late, so a step of 595.1 s
+    (or 585 s on a tick 20 s late) opens a listed gap; the rule is decided per tick, not by a constant, and this
+    sweeps places, intervals and sizes against the gap rule written out here (not the module's helper)."""
+    hist["fast"] = {"rss": 500.0}
+    trials = 0
+    for offset in _OFFSETS:
+        for interval in _INTERVALS:
+            for step in _STEPS:
+                _fresh_recorder()
+                hist["fast"] = {"rss": 500.0}
+                first, boot = HOUR0 + offset, 10_000.0
+                _beat(first, boot)
+                _beat(first + interval + step, boot + interval)
+                m = _member()
+                before = HOUR0
+                after = int((first + interval + step) // v.FINE_S) * v.FINE_S
+                without = int((first + interval) // v.FINE_S) * v.FINE_S
+                gap = after - before > 2 * v.FINE_S
+                made = gap and not (without - before > 2 * v.FINE_S) and step >= v.FORWARD_STEP_FLOOR_S
+                where = (offset, interval, step)
+                assert bool(m["gaps"]) == gap, where
+                assert m["clock_stepped_forward"] == (1 if step >= 600 or made else 0), where
+                if made:
+                    assert m["gaps"][-1].get("clock_step") is True, where
+                if step == 0:
+                    assert m["clock_steps"] == [], where
+                trials += 1
+    assert trials == len(_OFFSETS) * len(_INTERVALS) * len(_STEPS)
+
+
+def test_the_probes_of_the_read_each_open_a_gap_the_step_made_and_are_recorded(hist):
+    for offset, interval, step in ((299.9, 5.0, 595.5), (299.5, 5.0, 596.0), (297.0, 5.0, 599.0), (295.0, 20.0, 585.0)):
+        _fresh_recorder()
+        hist["fast"] = {"rss": 500.0}
+        first = HOUR0 + offset
+        _beat(first, 10_000.0)
+        _beat(first + interval + step, 10_000.0 + interval)
+        m = _member()
+        assert m["gaps"] and m["gaps"][-1].get("clock_step") is True, (offset, interval, step)
+        assert m["clock_stepped_forward"] == 1 and m["clock_steps"][0]["forward_s"] == int(step)
+
+
+def test_a_step_of_the_minimum_is_recorded_even_where_the_alignment_left_no_gap_and_the_minimum_is_the_gap_span(hist):
+    assert v.FORWARD_STEP_MIN_S == 2 * v.FINE_S
+    hist["fast"] = {"rss": 500.0}
+    _beat(float(HOUR0), 10_000.0)
+    _beat(HOUR0 + TICK + 600.0, 10_000.0 + TICK)  # lands on the bucket two on: nothing is missing but one bucket
+    m = _member()
+    assert m["gaps"] == [] and m["clock_stepped_forward"] == 1
+
+
+def test_a_step_under_the_floor_opens_a_gap_without_being_recorded_and_one_over_it_is(hist):
+    """The floor is 1 s, written out here as a number: two clocks read apart agree to milliseconds, and a
+    stalled interval that happens to end on a bucket edge is not a clock event."""
+    for step, recorded in ((0.9, 0), (1.1, 1)):
+        _fresh_recorder()
+        hist["fast"] = {"rss": 500.0}
+        first = HOUR0 + 299.9  # the last tick of its bucket
+        _beat(first, 10_000.0)
+        _beat(first + 599.8 + step, 10_000.0 + 599.8)  # without the step this lands in the bucket two on: no gap
+        m = _member()
+        assert m["gaps"], step  # with the step the tick lands three buckets on: the step made the gap
+        assert m["clock_stepped_forward"] == recorded, step
+        assert bool(m["gaps"] and m["gaps"][-1].get("clock_step")) == bool(recorded), step
+    assert "and from 1 s where the step is what opened a gap" in m["method"]
+    assert "more than 0.1 s apart nor for the tick after it" in m["method"]
+
+
+def test_a_step_inside_a_gap_the_absence_opened_anyway_is_not_recorded_and_the_method_says_so(hist):
+    """Finding S1 of the delta read. A 3,600 s stall with 599 s of clock step in it is a gap of down time first:
+    the step did not make it, and under the minimum it is not recorded; the method lists the case."""
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = float(HOUR0), 10_000.0
+    _beat(wall, boot)
+    wall, boot = _run(wall, boot, 59)
+    _beat(wall + 3600.0 + 599.0, boot + 3600.0)
+    m = _member()
+    assert m["gaps"] and m["gaps"][-1]["seconds"] > 3600 and "clock_step" not in m["gaps"][-1]
+    assert m["clock_stepped_forward"] == 0 and m["clock_steps"] == []
+    assert f"a step under {v.FORWARD_STEP_MIN_S} s inside a gap the process's absence opened anyway" in m["method"]
+
+
+def test_a_forward_step_inside_a_held_step_back_opens_no_gap_and_is_not_recorded(hist):
+    """Finding L2 of the delta read. During a hold the tick stays in the bucket the history holds, so its
+    gap is measured from that bucket and not from the bucket of the wall clock, which is hours behind."""
+    t0 = HOUR0 + 100_000
+    v.tick(now=float(t0), mono=5000.0, boot=1000.0)
+    v.tick(now=float(t0 - 7200), mono=5005.0, boot=1005.0)  # step back 1: a new history
+    v.tick(now=float(t0 - 7195), mono=5010.0, boot=1010.0)
+    v.tick(now=float(t0 - 20_000), mono=5015.0, boot=1015.0)  # step back 2, too soon: held in the open bucket
+    v.tick(now=float(t0 - 20_000 + 305), mono=5020.0, boot=1020.0)  # and 300 s forward, still behind the history
+    m = _member()
+    assert m["clock_stepped_back"] == 2 and m["clock_stepped_forward"] == 0
+    assert all("forward_s" not in s for s in m["clock_steps"])
+
+
+def test_a_pause_between_the_two_boot_time_readings_breaks_the_pair_and_records_no_step(hist, monkeypatch):
+    """Finding L1 of the read. The boot-time clock is read on both sides of the wall clock; a pause between the
+    reads (the interpreter lock, a frozen process, a suspend) would be a step of its own length."""
+    import types
+
+    hist["fast"] = {"rss": 500.0}
+    wall = {"now": 1000.0}
+    reads: list[float] = []
+    monkeypatch.setattr(v, "boottime", lambda: reads.pop(0))
+    clock = types.SimpleNamespace(time=lambda: wall["now"])
+    fake_time = {n: getattr(time, n) for n in dir(time) if not n.startswith("_")}
+    fake_time["time"] = clock.time
+    monkeypatch.setattr(v, "time", types.SimpleNamespace(**fake_time))
+    reads[:] = [100.0, 100.0001]  # the first tick: a pair a tenth of a millisecond apart
+    v.tick()
+    assert v._LAST_BOOT is not None and abs(v._LAST_BOOT - 100.00005) < 1e-6
+    wall["now"] = 1005.0 + 700.0  # the second tick's boot read came first, then 700 s passed, then the wall read
+    reads[:] = [105.0, 805.0]
+    v.tick()
+    assert v._LAST_BOOT is None  # the pair was not used: no baseline for the next tick, and no step recorded
+    m = _member()
+    assert m["clock_stepped_forward"] is None and m["clock_steps"] == [] and m["errors"] == {}  # never compared
+
+
+@pytest.mark.parametrize(("skew", "used"), [(0.05, True), (0.5, False)])
+def test_the_two_boot_time_readings_are_used_only_within_a_tenth_of_a_second(hist, monkeypatch, skew, used):
+    """Finding L1 of the delta read. The midpoint of a pair is wrong by at most half their distance on each
+    side, so the bound stays a tenth of the 1 s floor: a pair apart by more is no reading at all."""
+    import types
+
+    hist["fast"] = {"rss": 500.0}
+    reads = [100.0, 100.0 + skew]
+    monkeypatch.setattr(v, "boottime", lambda: reads.pop(0))
+    fake_time = {n: getattr(time, n) for n in dir(time) if not n.startswith("_")}
+    fake_time["time"] = lambda: 1000.0
+    monkeypatch.setattr(v, "time", types.SimpleNamespace(**fake_time))
+    v.tick()
+    assert (v._LAST_BOOT is not None) is used
+    if used:
+        assert abs(v._LAST_BOOT - (100.0 + skew / 2)) < 1e-9
+
+
+def test_without_a_boot_time_clock_nothing_is_recorded_the_counter_is_null_and_the_gap_stays_unmarked(hist):
+    hist["fast"] = {"rss": 500.0}
+    wall = float(HOUR0)
+    _beat(wall, None)
+    wall, _ = _run(wall, None, 59)
+    _run(wall, None, 60, wall_extra=10_800.0)
+    m = _member()
+    assert m["clock_stepped_forward"] is None  # not measured, which is not 0
+    assert m["clock_steps"] == []
+    assert m["gaps"] and all("clock_step" not in gap for gap in m["gaps"])
+    assert "only where the platform has a boot-time clock" in m["method"]
+    assert "`clock_stepped_forward` is `null` until a tick has had a boot-time clock to compare with" in m["method"]
+
+
+def test_a_counter_that_may_be_absent_reads_only_a_whole_number_in_range():
+    assert v._count_or_none(0) == 0 and v._count_or_none(7) == 7
+    for bad in (None, True, False, 7.0, -1, "7", [7], v._MAX_TICKS, 10**400):
+        assert v._count_or_none(bad) is None, bad
+
+
+def test_the_counter_is_null_until_a_tick_has_a_baseline_and_a_file_without_it_reads_null(hist):
+    hist["fast"] = {"rss": 500.0}
+    assert _member()["clock_stepped_forward"] is None
+    _beat(float(HOUR0), 10_000.0)
+    assert _member()["clock_stepped_forward"] is None  # one tick has nothing to compare with
+    _beat(float(HOUR0 + TICK), 10_000.0 + TICK)
+    assert _member()["clock_stepped_forward"] == 0  # measured, none
+    v.flush()
+    doc = json.loads(v._path().read_text(encoding="utf-8"))
+    del doc["clock_stepped_forward"]  # a file of a build that did not measure it
+    v._path().write_text(json.dumps(doc), encoding="utf-8")
+    v.reset_for_tests()
+    v.start(now=float(HOUR0 + 100))
+    assert _member()["clock_stepped_forward"] is None
+
+
+def test_an_injected_wall_or_monotonic_clock_never_reads_the_real_boot_time_clock(hist, monkeypatch):
+    """A real boot-time reading beside an injected wall clock would invent a step the size of their
+    difference; only a bare ``tick()`` reads it."""
+    reads: list[int] = []
+    monkeypatch.setattr(v, "boottime", lambda: reads.append(1) or 1e9)
+    v.tick(now=float(HOUR0))
+    v.tick(mono=5.0)
+    v.tick(now=float(HOUR0 + 5), mono=6.0)
+    assert reads == []
+    v.tick()
+    assert reads == [1, 1]  # a bare tick reads it on both sides of the wall clock
+
+
+def test_a_step_across_a_restart_is_not_measured_and_the_first_tick_has_no_baseline(hist):
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = _run(float(HOUR0), 10_000.0, 12)
+    assert _member()["clock_stepped_forward"] == 0
+    # the process is gone for two hours and the wall clock is set an hour forward meanwhile
+    _restart(wall + 7200 + 3600)
+    hist["fast"] = {"rss": 500.0}
+    _beat(wall + 7200 + 3600, boot + 7200)  # the first tick of the new session
+    _beat(wall + 7205 + 3600, boot + 7205)
+    m = _member()
+    assert m["clock_stepped_forward"] == 0 and m["clock_steps"] == []
+    _beat(wall + 7210 + 3600 + 3600, boot + 7210)  # a step inside the new session is measured
+    assert _member()["clock_stepped_forward"] == 1
+
+
+def test_a_tick_whose_boot_time_clock_could_not_be_read_is_no_baseline_and_the_next_one_still_records(hist):
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = _run(float(HOUR0), 10_000.0, 12)
+    _beat(wall + 5, None)  # the read failed: nothing to measure the next tick against
+    _beat(wall + 10 + 3600, boot + 10)  # a step across that tick is not measured, and the tick does not fail
+    m = _member()
+    assert m["clock_stepped_forward"] == 0 and m["errors"] == {}
+    _beat(wall + 15 + 3600 + 3600, boot + 15)  # this tick has a baseline again
+    m = _member()
+    assert m["clock_stepped_forward"] == 1 and m["errors"] == {}
+
+
+@pytest.mark.skipif(not hasattr(time, "CLOCK_BOOTTIME"), reason="no boot-time clock on this platform")
+def test_the_real_wall_and_boot_time_clocks_advance_together_so_an_unmoved_clock_records_nothing(hist):
+    """The premise of the measure, on the machine's own clocks: nothing moved the wall clock, so it
+    advanced by what the boot-time clock did and a bare ``tick()`` sees no step."""
+    hist["fast"] = {"rss": 500.0}
+    w0, b0 = time.time(), time.clock_gettime(time.CLOCK_BOOTTIME)
+    v.tick()
+    time.sleep(0.2)
+    v.tick()
+    w1, b1 = time.time(), time.clock_gettime(time.CLOCK_BOOTTIME)
+    assert abs((w1 - w0) - (b1 - b0)) < 1.0
+    m = _member()
+    assert m["clock_stepped_forward"] == 0 and m["clock_steps"] == [] and m["errors"] == {}
+
+
+def test_forward_steps_are_counted_past_the_list_and_survive_a_restart(hist):
+    """What the list's limit shrinks is what is printed, never what is counted."""
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = float(HOUR0), 10_000.0
+    _beat(wall, boot)
+    for _ in range(v.CLOCK_STEPS_KEEP + 5):
+        wall, boot = _run(wall, boot, 1, wall_extra=1000.0)
+    m = _member()
+    assert m["clock_stepped_forward"] == v.CLOCK_STEPS_KEEP + 5 and len(m["clock_steps"]) == v.CLOCK_STEPS_KEEP
+    assert {s["forward_s"] for s in m["clock_steps"]} == {1000}
+    _restart(wall + 10**6)
+    again = _member()
+    assert again["clock_steps"] == m["clock_steps"] and again["clock_stepped_forward"] == m["clock_stepped_forward"]
+
+
+def test_a_gap_whose_step_the_list_no_longer_holds_is_unmarked_though_the_step_is_counted(hist):
+    """The method names this limit: a gap is marked from the steps still in the list of ``CLOCK_STEPS_KEEP``."""
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = float(HOUR0), 10_000.0
+    _beat(wall, boot)
+    for _ in range(v.CLOCK_STEPS_KEEP + 1):
+        wall, boot = _run(wall, boot, 1, wall_extra=1000.0)
+        wall, boot = _run(wall, boot, 130)  # two buckets of ticks, so the next step's marks fall outside this gap's reach
+    m = _member()
+    assert m["clock_stepped_forward"] == v.CLOCK_STEPS_KEEP + 1 and len(m["clock_steps"]) == v.CLOCK_STEPS_KEEP
+    marks = [g.get("clock_step") for g in m["gaps"]]
+    assert len(marks) == v.CLOCK_STEPS_KEEP + 1 and marks[0] is None and all(mark is True for mark in marks[1:])
+    assert "a step the list no longer holds" in m["method"]
+
+
+def test_a_step_forward_and_a_step_back_share_the_list_in_the_order_they_happened(hist):
+    hist["fast"] = {"rss": 500.0}
+    wall, boot = _run(float(HOUR0 + 7200), 10_000.0, 60)
+    wall, boot = _run(wall, boot, 60, wall_extra=36_000.0)  # set ten hours forward
+    _beat(HOUR0 + 400, boot + 5)  # and set back to where it was: a step the bucket logic records
+    m = _member()
+    assert m["clock_stepped_forward"] == 1 and m["clock_stepped_back"] == 1
+    assert ["forward_s" in s for s in m["clock_steps"]] == [True, False]
+    assert "back_s" in m["clock_steps"][1]
+    assert sum(r[COL["n"]] for r in m["fine"]) == 121  # every tick is in a row, none twice
+
+
+def test_a_counter_of_the_file_is_never_below_zero_and_a_forward_one_that_is_wrong_reads_null(hist):
+    _ticks(hist, HOUR0, 900, rss=77.0)
+    v.flush()
+    base = json.loads(v._path().read_text(encoding="utf-8"))
+    for back, forward, want_back, want_forward in ((-3, -3, 0, None), ("7", "7", 7, None), (2, 2, 2, 2)):
+        doc = dict(base, clock_stepped_back=back, clock_stepped_forward=forward)
+        v._path().write_text(json.dumps(doc), encoding="utf-8")
+        v.reset_for_tests()
+        v.start(now=float(HOUR0 + 1000))
+        m = _member()
+        assert (m["clock_stepped_back"], m["clock_stepped_forward"]) == (want_back, want_forward), (back, forward)
+
+
 def test_a_rebase_dates_the_lines_after_the_step_into_the_new_hour(hist):
     """Read 7 (M31). The log hour was kept open across a rebase, so the lines after the step were counted
     into an hour two hours ahead, which stayed open until the clock caught up."""
@@ -1609,7 +1959,7 @@ def test_a_restored_hour_exactly_one_hour_behind_the_clock_is_closed_at_start(hi
         ("previous_sessions", None), ("previous_sessions", 5), ("previous_sessions", [{"minutes": None}]),
         ("clock_steps", None), ("clock_steps", 3), ("open_logs_counts", 7), ("open_logs_t", "soon"),
         ("open_logs_t", [1]), ("minutes", None), ("logs", None), ("session_starts", None),
-        ("clock_stepped_back", "x"), ("open_fine", 5), ("open_coarse", "x"), ("coarse", 4),
+        ("clock_stepped_back", "x"), ("clock_stepped_forward", "x"), ("open_fine", 5), ("open_coarse", "x"), ("coarse", 4),
     ],
 )
 def test_one_wrong_typed_field_costs_that_field_and_never_the_history(hist, field, value):

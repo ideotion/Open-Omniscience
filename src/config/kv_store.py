@@ -475,7 +475,8 @@ def kv_set_json(key: str, obj: dict) -> None:
             # leaf lock below is never held while anything waits for the gate, so taking it here adds no order.
             #
             # The older entry is dropped FIRST: a signal that lands between the statements below then leaves no entry (the next read
-            # goes to the file), never the older one under a version that has moved.
+            # goes to the file), never the older one under a version that has moved. (A signal landing before the pop itself leaves
+            # the older entry under the older version: the same residual as a read's, and the closing of the section is not atomic.)
             with _lock:
                 _cache.pop((path, key), None)
                 _wver[(path, key)] = _wver.get((path, key), 0) + 1

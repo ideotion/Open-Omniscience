@@ -8,6 +8,8 @@ import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 _CITATION_MIN = 3  # distinct citing articles before a domain becomes a candidate
@@ -437,8 +439,8 @@ def catalog_candidates(
         return {"decisions": []}
     try:
         catalog = load_sources_from_yaml()  # the packaged configs/sources.yml
-    except Exception:  # noqa: BLE001 - a catalog problem must not break a scrape
-        _LOG.warning("could not load the packaged catalog for discovery", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a catalog problem must not break a scrape
+        log_failure(_LOG, "could not load the packaged catalog for discovery", exc, level=logging.WARNING)
         return {"decisions": []}
 
     decisions: list[dict] = []
@@ -702,11 +704,8 @@ def _run_discovery_on_a_shared_session(session, *, per_run: int, third: int) -> 
             remaining -= len(wiki)
             catalogd = catalog_channel(session, cap=remaining) if remaining > 0 else []
             session.flush()
-    except Exception:  # noqa: BLE001 - discovery must never break the scrape
-        _LOG.warning(
-            "source discovery failed; rolled back its savepoint, the scrape is unaffected",
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 - discovery must never break the scrape
+        log_failure(_LOG, "source discovery failed; rolled back its savepoint, the scrape is unaffected", exc, level=logging.WARNING)
         return {"enabled": True, "budget": per_run, "created": 0, "error": "discovery_rolled_back"}
     return {
         "enabled": True,
@@ -792,11 +791,8 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
             if remaining > 0
             else {"decisions": []}
         )
-    except Exception:  # noqa: BLE001 - discovery must never break the scrape
-        _LOG.warning(
-            "source discovery failed during the read/decide phase; nothing was written",
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 - discovery must never break the scrape
+        log_failure(_LOG, "source discovery failed during the read/decide phase; nothing was written", exc, level=logging.WARNING)
         session.rollback()  # end whatever read transaction the failed scan left open
         return {"enabled": True, "budget": per_run, "created": 0, "error": "discovery_rolled_back"}
 
@@ -836,11 +832,8 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
             wiki = wikipedia_reference_channel(session, cap=wiki_cap, _decided=wiki_result)
             catalogd = catalog_channel(session, cap=catalog_cap, _decided=catalog_result)
             session.flush()
-    except Exception:  # noqa: BLE001 - discovery must never break the scrape
-        _LOG.warning(
-            "source discovery failed; rolled back its savepoint, the scrape is unaffected",
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 - discovery must never break the scrape
+        log_failure(_LOG, "source discovery failed; rolled back its savepoint, the scrape is unaffected", exc, level=logging.WARNING)
         return {"enabled": True, "budget": per_run, "created": 0, "error": "discovery_rolled_back"}
 
     report = {

@@ -53,8 +53,11 @@ from src.database import damage as _damage
 # functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
 from src.database import fts_norm as _fts_norm  # noqa: F401
 from src.database import library_generation as _library_generation
+from src.database.init_steps import recorded as _record_init_steps
+from src.database.init_steps import step as _init_step
 from src.database.pool_reserve import ReservingQueuePool
 from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir, default_sqlite_url
 
 DATA_DIR = data_dir()
@@ -335,14 +338,22 @@ from src.database import pool_watch as _pool_watch  # noqa: E402
 _pool_watch.register(engine)
 
 
+@_record_init_steps
 def init_db() -> None:
     """
     Create all tables. Call this ONCE explicitly (app lifespan / installer / tests).
 
     Imported lazily to avoid a circular import (models imports this module).
+
+    Every step names itself with ``_init_step`` BEFORE it runs, and ``@_record_init_steps`` keeps the
+    time of each (``src/database/init_steps.py``, STORE-02): a step you add needs its line, and
+    ``tests/test_init_steps.py`` fails when it has none, because the time of an unnamed step is
+    charged to the one before it.
     """
+    _init_step("import:models")
     from src.database.models import Base  # local import breaks the cycle
 
+    _init_step("create_all")
     Base.metadata.create_all(engine)
 
     # Ensure the full-text search index (SQLite FTS5). No-op on other backends. The index
@@ -350,8 +361,10 @@ def init_db() -> None:
     # (fresh table with existing articles, or an interrupted past build) — NOT on every
     # boot, which was the P0.4 unlock-at-scale regression (a corpus-scaled codec rebuild
     # recurring 981 s → 1,645 s at 130 GB). A rebuild is a one-time, honestly-logged event.
+    _init_step("import:fts")
     from src.database.fts import ensure_fts
 
+    _init_step("ensure_fts")
     _fts_action = ensure_fts(engine)
     if _fts_action == "rebuilt":
         _LOG.info(
@@ -361,13 +374,18 @@ def init_db() -> None:
 
     # Mark a freshly-created DB at the current migration baseline so future schema
     # changes apply via `alembic upgrade head`. No-op if already alembic-managed.
+    _init_step("import:bulk_build")
     from src.analytics.bulk_build import heal_bulk_build
+
+    _init_step("import:migrate")
     from src.database.migrate import stamp_if_unstamped
 
+    _init_step("stamp_if_unstamped")
     stamp_if_unstamped(engine)
 
     # Hot-path indexes for databases created before they existed (create_all
     # never adds indexes to existing tables; not every install runs alembic).
+    _init_step("import:maintenance")
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_detected_language_column,
@@ -403,44 +421,57 @@ def init_db() -> None:
 
     # Denormalised keyword counters (+ their index, + one-time backfill) BEFORE the
     # generic hot-index pass, since the counters' index depends on the column.
+    _init_step("ensure_keyword_counter_columns")
     ensure_keyword_counter_columns(engine)
 
     # K1/K2 identity seams on articles (self-heal + backfill for pre-existing stores).
+    _init_step("ensure_article_identity_columns")
     ensure_article_identity_columns(engine)
 
     # Source IP provenance columns (self-heal for pre-existing stores; no backfill).
+    _init_step("ensure_article_ip_columns")
     ensure_article_ip_columns(engine)
 
     # Which artifact a merge batch came from (self-heal; NO backfill -- an unknown
     # digest must never match, or a never-done import could be skipped).
+    _init_step("ensure_merge_batch_source_digest")
     ensure_merge_batch_source_digest(engine)
 
     # QUARANTINE columns (S3.2, self-heal for pre-existing stores; no backfill) --
     # BEFORE ensure_hot_indexes, since idx_article_quarantined needs the column to exist.
+    _init_step("ensure_article_quarantine_columns")
     ensure_article_quarantine_columns(engine)
 
     # Secondary/deduced language column (field §2.6; self-heal, populates forward).
+    _init_step("ensure_article_detected_language_column")
     ensure_article_detected_language_column(engine)
 
     # Own-top-keyword precompute columns (rulings 23/38/39; self-heal, no backfill) --
     # BEFORE ensure_hot_indexes, whose idx_article_top_keyword is built over them.
+    _init_step("ensure_article_top_keyword_columns")
     ensure_article_top_keyword_columns(engine)
 
     # The keyword pass's attempt record (PRH-01; self-heal, no backfill) -- what lets
     # the backfill queue rotate past an article that legitimately yields zero terms.
+    _init_step("ensure_article_keyword_indexed_column")
     ensure_article_keyword_indexed_column(engine)
 
     # Denormalised keyword_mentions.source_id (flood/bury card; self-heal, no backfill).
+    _init_step("ensure_keyword_mention_source_column")
     ensure_keyword_mention_source_column(engine)
 
     # The version anchor on articles (S4; self-heal, no backfill) -- which upstream
     # revision an article's stored TEXT came from, for versioned sources.
+    _init_step("ensure_article_source_revision_column")
     ensure_article_source_revision_column(engine)
 
     # The newsletter List-Id on articles (ingest provenance; self-heal, no backfill) --
     # the ruled stable key for a platform sender whose host names no publication.
+    _init_step("ensure_article_newsletter_list_id_column")
     ensure_article_newsletter_list_id_column(engine)
+    _init_step("ensure_article_newsletter_attach_column")
     ensure_article_newsletter_attach_column(engine)
+    _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
 
     # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
@@ -448,13 +479,16 @@ def init_db() -> None:
     # moved. AFTER the column self-heals above -- a view naming a column the table does not
     # yet have blocks every ALTER ... RENAME until it is repaired. Boot makes no network call
     # and this reads one sqlite_master row when the view is current.
+    _init_step("import:derived_views")
     from src.database.derived_views import ensure_derived_views
 
+    _init_step("ensure_derived_views")
     ensure_derived_views(engine)
 
     # The two article-list indexes (R128) are left to the ``article-indexes`` start-up step, which shows
     # its progress in the task manager; building them here would be a silent wait inside opening the
     # database, on a big store minutes long (src/database/article_indexes.py).
+    _init_step("ensure_hot_indexes")
     ensure_hot_indexes(engine, include_deferred=False)
 
     # R23 / PR 5: finish a bulk build that a crash interrupted with its indexes dropped.
@@ -467,15 +501,18 @@ def init_db() -> None:
     # turning every query that used them into a full scan, silently. The heal is driven
     # by a durable marker and asks sqlite_master what is actually absent, so it is a
     # no-op (one small read, no DDL) on every boot where nothing was interrupted.
+    _init_step("heal_bulk_build")
     heal_bulk_build(engine)
 
     # Per-feed de-churn backoff columns (field log finding F) for databases that
     # already had feed_fetch_state before these columns existed (create_all never
     # ALTERs an existing table; not every install runs alembic).
+    _init_step("ensure_feed_backoff_columns")
     ensure_feed_backoff_columns(engine)
 
     # article_analyses.prompt_text (exact prompt provenance) for stores created
     # before that column existed — same self-heal reason as the feed columns.
+    _init_step("ensure_article_analysis_columns")
     ensure_article_analysis_columns(engine)
 
     # 0.09-cycle columns that shipped WITHOUT a boot self-heal (upgrade audit,
@@ -483,44 +520,58 @@ def init_db() -> None:
     # living-source columns (b6c7d8e9f0a1 + c9d8e7f6a5b4) and the super-ring
     # member marker (f4a5b6c7d8e9). Without these, a 0.0.8/early-0.09 store
     # opened by 0.1 code raises "no such column" on the first ORM query.
+    _init_step("ensure_keyword_extractor_column")
     ensure_keyword_extractor_column(engine)
+    _init_step("ensure_watch_filters_column")
     ensure_watch_filters_column(engine)
+    _init_step("ensure_wiki_text_columns")
     ensure_wiki_text_columns(engine)
+    _init_step("ensure_supergroup_ring_column")
     ensure_supergroup_ring_column(engine)
 
     # Q4a: external_sources.discovered_via provenance (self-heal, no backfill; populates forward
     # as the discovery funnel resolves domains into the registry).
+    _init_step("ensure_external_source_discovery_columns")
     ensure_external_source_discovery_columns(engine)
 
     # Law versioned-text columns (the versioned-sources ruling): materialised latest + per-revision
     # full text (self-heal, no backfill; populates forward as the law tracker stores full text).
+    _init_step("ensure_law_text_columns")
     ensure_law_text_columns(engine)
 
     # S4b: law_documents.language/.country (the Cambodia fix — self-heal, no backfill;
     # populates forward as documents are re-registered/re-synced from the catalog).
+    _init_step("ensure_law_document_language_columns")
     ensure_law_document_language_columns(engine)
 
     # S04-10 S1 (Q917): the adapter's dates + the diff's anchor (self-heal, no backfill;
     # populates forward as the tracker records revisions -- a pre-existing row's NULL
     # diff_basis honestly reads "recorded before the basis was tracked").
+    _init_step("ensure_law_l0_columns")
     ensure_law_l0_columns(engine)
+    _init_step("ensure_law_model_columns")
     ensure_law_model_columns(engine)
+    _init_step("ensure_law_source_type")
     ensure_law_source_type(engine)
 
     # S6: maintained per-source article counter (self-heal, no backfill; reconcile populates
     # forward + stamps freshness, a NULL count reads live).
+    _init_step("ensure_source_counter_columns")
     ensure_source_counter_columns(engine)
 
     # Qualification lifecycle STAMP columns (0.3 CLOSE GATE ruling): self-heal + the
     # one-time "already scraped -> already qualified" backfill (never starves an
     # install that was already collecting before this column existed).
+    _init_step("ensure_source_qualification_columns")
     ensure_source_qualification_columns(engine)
 
     # C3: crawl-supplement rotation marker (self-heal, no backfill; populates
     # forward as the §8 crawl-by-default rung visits sources).
+    _init_step("ensure_source_last_crawled_column")
     ensure_source_last_crawled_column(engine)
 
     # R71 (b): the natural key of a restored text-keyed row (places, Wikidata items).
+    _init_step("ensure_merged_rows_row_key_column")
     ensure_merged_rows_row_key_column(engine)
 
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
@@ -529,8 +580,10 @@ def init_db() -> None:
     # (re-adding already-present columns -> "duplicate column"). Align the stamp to head,
     # but ONLY when the schema is verified fully at head (a genuinely-behind store keeps its
     # stamp and still migrates). Cheap when already at head; best-effort, never raises.
+    _init_step("import:migrate:for_align")
     from src.database.migrate import align_stamp_to_head
 
+    _init_step("align_stamp_to_head")
     _stamp = align_stamp_to_head(engine)
     # THE STAMP ALIGNMENT RUNS ALEMBIC, and env.py drops the derived-row view for any run that
     # is not already at head (SQLite refuses a column drop or table re-create while a view
@@ -538,6 +591,7 @@ def init_db() -> None:
     # install whose stamp lagged its self-healed schema the view would be gone and every
     # migrated reader would 500 until the next restart. Re-ensure: one sqlite_master read when
     # the view is present, so it costs nothing at steady state.
+    _init_step("ensure_derived_views:after_align")
     ensure_derived_views(engine)
     if _stamp.get("action") == "advanced":
         _LOG.info(
@@ -576,8 +630,8 @@ def close_session(session: SASession) -> None:
     """
     try:
         session.close()
-    except Exception:
-        _LOG.debug("close_session: error during session.close()", exc_info=True)
+    except Exception as exc:
+        log_failure(_LOG, "close_session: error during session.close()", exc, level=logging.DEBUG)
 
 
 # "This transaction has written." Tracked on the Session CLASS, so it holds for
@@ -693,8 +747,8 @@ def release_idle_connection(session: SASession) -> bool:
             return False
         session.rollback()
         return True
-    except Exception:  # noqa: BLE001 - releasing early is never worth an error
-        _LOG.debug("release_idle_connection: could not end the transaction", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - releasing early is never worth an error
+        log_failure(_LOG, "release_idle_connection: could not end the transaction", exc, level=logging.DEBUG)
         return False
 
 
@@ -739,8 +793,8 @@ def _release_write_gate(session: SASession) -> None:
         from src.database.writer import release_if_held
 
         release_if_held(session)
-    except Exception:  # noqa: BLE001 - cleanup must never raise
-        _LOG.debug("write-gate safety release failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - cleanup must never raise
+        log_failure(_LOG, "write-gate safety release failed", exc, level=logging.DEBUG)
 
 
 def dispose_engine() -> None:

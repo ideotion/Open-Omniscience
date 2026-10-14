@@ -48,6 +48,7 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 from src.llm.weights_pin import PinMismatch as _PinMismatch
+from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -678,11 +679,8 @@ def record_install_attempt(
         _history_disabled = True
         _history_disabled_reason = f"{type(exc).__name__}: {exc}"[:200]
         try:
-            _LOG.warning(
-                "vLLM install-attempt journal write failed -- recording disabled "
-                "for this process",
-                exc_info=True,
-            )
+            log_failure(_LOG, "vLLM install-attempt journal write failed -- recording disabled "
+                "for this process", exc, level=logging.WARNING)
         except Exception:  # noqa: BLE001, S110 - even the failure log must not raise here
             pass
 
@@ -1583,7 +1581,7 @@ def _migrate_start_history(path: Path) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write_text(path, legacy.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - losing old history must not stop new history
-        _LOG.info("could not migrate the vLLM start journal: %s", exc)
+        log_failure(_LOG, "could not migrate the vLLM start journal", exc, level=logging.INFO)
 
 
 #: How many FAILED starts keep their full server log. Small on purpose: the newest few
@@ -1628,7 +1626,7 @@ def _preserve_failed_log(pid: int | None, returncode: int) -> str | None:
             stale.unlink(missing_ok=True)
         return str(dest)
     except Exception as exc:  # noqa: BLE001 - preserving evidence must never break a probe
-        _LOG.info("could not preserve the failed vLLM server log: %s", exc)
+        log_failure(_LOG, "could not preserve the failed vLLM server log", exc, level=logging.INFO)
         return None
 
 
@@ -1698,7 +1696,7 @@ def _record_start_attempt(record: dict) -> None:
         if len(lines) > _ATTEMPTS_CAP:
             _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
     except Exception as exc:  # noqa: BLE001 - never break a start to record it
-        _LOG.info("could not record a vLLM start attempt: %s", exc)
+        log_failure(_LOG, "could not record a vLLM start attempt", exc, level=logging.INFO)
 
 
 def start_history(limit: int | None = None) -> list[dict]:
@@ -1917,7 +1915,7 @@ def clear_gpu_for_vllm(*, settle: float = _VRAM_SETTLE_TIMEOUT_S) -> dict:
 
         released = release_vram()
     except Exception as exc:  # noqa: BLE001 - see the docstring
-        _LOG.info("could not clear the GPU before starting vLLM: %s", exc)
+        log_failure(_LOG, "could not clear the GPU before starting vLLM", exc, level=logging.INFO)
         released = {"released": [], "reason": str(exc), "attempted": True}
     waited = 0.0
     if released.get("released") and before is not None:
@@ -2290,7 +2288,7 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
             os.kill(pid, signal.SIGTERM)
             stopped.append(pid)
         except OSError as exc:
-            _LOG.info("could not signal vLLM pid %s: %s", pid, exc)
+            log_failure(_LOG, f"could not signal vLLM pid {pid}", exc, level=logging.INFO)
     if not stopped:
         return {"stopped": False, "reason": "found the server but could not signal it"}
     # Wait for the port to actually go quiet: the caller's next move is usually to put
@@ -3522,8 +3520,8 @@ def _resolver_argv(
                 exit_code = int(line.split(" ", 1)[1].strip() or "1")
                 continue
             tail.append(line)
-    except Exception:  # noqa: BLE001 - uv is an accelerator; pip is the floor
-        _LOG.warning("could not install uv; falling back to pip", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - uv is an accelerator; pip is the floor
+        log_failure(_LOG, "could not install uv; falling back to pip", exc, level=logging.WARNING)
         exit_code = None
     uv = venv_bin("uv")
     if exit_code == 0 and uv.is_file():
@@ -3815,8 +3813,8 @@ def _terminate_child(proc: subprocess.Popen, *, timeout: float = 10.0) -> None:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=5)
-    except Exception:  # noqa: BLE001 - best-effort teardown; never mask the real outcome
-        _LOG.warning("could not terminate the install subprocess", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort teardown; never mask the real outcome
+        log_failure(_LOG, "could not terminate the install subprocess", exc, level=logging.WARNING)
 
 
 def _default_runner(

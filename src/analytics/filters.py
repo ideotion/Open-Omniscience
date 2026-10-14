@@ -25,6 +25,8 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 SETTINGS_VERSION = "oo-keyword-filter-1"
 _MIN_LEN_LO, _MIN_LEN_HI = 1, 20
@@ -59,8 +61,8 @@ def load_settings() -> KeywordFilter:
         return KeywordFilter()
     try:
         raw = json.loads(p.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break analytics
-        _LOG.warning("keyword_filter.json unreadable; using defaults", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not break analytics
+        log_failure(_LOG, "keyword_filter.json unreadable; using defaults", exc, level=logging.WARNING)
         return KeywordFilter()
     d = KeywordFilter()
     excluded = raw.get("excluded", [])

@@ -212,7 +212,7 @@ def test_the_interrupt_is_recognised_whatever_the_driver_calls_its_exception(tmp
     import inspect
 
     src = inspect.getsource(m._step_watch)
-    assert "except Exception as exc:" in src
+    assert "except Exception:" in src
     assert "sqlcipher3" in src, "the reason must be stated where the next author will look"
 
     # The fact itself, pinned: if these ever became one class hierarchy, the
@@ -249,8 +249,8 @@ def test_the_interrupt_is_recognised_whatever_the_driver_calls_its_exception(tmp
         raise _OtherDriverError("interrupted")
 
     assert "articles" in str(ei.value)
-    assert isinstance(ei.value.__cause__, _OtherDriverError), (
-        "the foreign driver error must be preserved as the cause, not swallowed"
+    assert ei.value.__cause__ is None and ei.value.__suppress_context__, (
+        "a driver's words are not chained into the refusal (a record would carry them); the stop itself is what is reported"
     )
 
 

@@ -36,6 +36,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 SCHEMA = "oo-criteria-calibration-1"
@@ -164,8 +166,8 @@ def advance_cursor(
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(cursors, indent=2), encoding="utf-8")
         os.replace(tmp, path)
-    except OSError:
-        _LOG.warning("criteria-calibration cursor could not be written", exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, "criteria-calibration cursor could not be written", exc, level=logging.WARNING)
         rec["persisted"] = False
     else:
         rec["persisted"] = True

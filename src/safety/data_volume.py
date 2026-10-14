@@ -51,6 +51,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger("safety.data_volume")
 
 MARKER_NAME = ".oos-volume"
@@ -163,8 +165,8 @@ def record_incident(event: str, **fields: Any) -> None:
         tmp.write_text("\n".join(lines[-_INCIDENT_KEEP:]) + "\n", encoding="utf-8")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
-    except OSError:
-        _LOG.warning("could not record the data-drive incident %s", event, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"could not record the data-drive incident {event}", exc, level=logging.WARNING)
     _LOG.warning("data drive: %s %s", event, fields)
 
 
@@ -225,8 +227,8 @@ def forget_volume_id() -> None:
             return
         kept = [ln for ln in env.read_text(encoding="utf-8").splitlines() if not ln.startswith(f"export {ENV_ID}=")]
         env.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
-    except OSError:
-        _LOG.warning("could not remove %s from oo.env", ENV_ID, exc_info=True)
+    except OSError as exc:
+        log_failure(_LOG, f"could not remove {ENV_ID} from oo.env", exc, level=logging.WARNING)
 
 
 # --------------------------------------------------------------------------- #
@@ -486,8 +488,8 @@ class VolumeMonitor:
         while not self._stop.wait(POLL_SECONDS):
             try:
                 self.tick()
-            except Exception:  # noqa: BLE001 - the watchdog must outlive its own bugs
-                _LOG.exception("data-drive watchdog tick failed")
+            except Exception as exc:  # noqa: BLE001 - the watchdog must outlive its own bugs
+                log_failure(_LOG, "data-drive watchdog tick failed", exc)
 
     def tick(self) -> None:
         with self._lock:
@@ -563,8 +565,8 @@ def _pause_writers() -> None:
         from src.scheduler.runner import pause_for_exclusive_operation
 
         pause_for_exclusive_operation()
-    except Exception:  # noqa: BLE001
-        _LOG.warning("data drive: could not pause collection", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "data drive: could not pause collection", exc, level=logging.WARNING)
 
 
 def _reap() -> None:

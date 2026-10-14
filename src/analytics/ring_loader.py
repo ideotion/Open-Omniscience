@@ -54,6 +54,7 @@ from src.analytics.wikidata_rings import (
     wbentities_url,
     wbsearch_url,
 )
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -387,7 +388,7 @@ def load_rings_from_wikidata(
             rings.append(ring)
         except Exception as exc:  # noqa: BLE001 - per-candidate resilience, counted and logged
             skipped[SKIP_ERROR] = skipped.get(SKIP_ERROR, 0) + 1
-            _LOG.info("ring load: %s (%s) failed: %s", cand.normalized, cand.language, exc)
+            log_failure(_LOG, f"ring load: {cand.normalized} ({cand.language}) failed", exc, level=logging.INFO)
 
     written = merge_local_rings(rings) if (write and rings) else 0
     if written:

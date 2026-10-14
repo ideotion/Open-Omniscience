@@ -63,6 +63,7 @@ from typing import cast
 from sqlalchemy import Engine, Table, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from src.monitoring.secret_scrub import log_failure
 from src.versioned.lanes import LaneSpec, lane
 
 _LOG = logging.getLogger("versioned.store")
@@ -356,8 +357,8 @@ def _lane_specific_setup(kind: str, engine: Engine) -> None:
         from src.wiki.lane_search import ensure_index
 
         ensure_index(engine)
-    except Exception:  # noqa: BLE001 - the search index must never stop the lane opening
-        _LOG.warning("the Wikipedia lane search index could not be set up", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the search index must never stop the lane opening
+        log_failure(_LOG, "the Wikipedia lane search index could not be set up", exc, level=logging.WARNING)
 
 class LaneSchemaError(RuntimeError):
     """A lane file whose schema this build cannot reconcile without a real migration."""

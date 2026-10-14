@@ -47,6 +47,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from src.monitoring.secret_scrub import log_failure
+
 logger = logging.getLogger(__name__)
 
 # Optional accelerator libraries (zstandard / lz4 / blosc / snappy) are exactly
@@ -617,7 +619,7 @@ class Compressor:
                 _, stats = self.compress_with_stats(data, algorithm)
                 results.append(stats)
             except Exception as e:
-                logger.warning(f"Benchmark failed for {algorithm.value}: {e}")
+                log_failure(logger, f"Benchmark failed for {algorithm.value}", e, level=logging.WARNING)
 
         return results
 
@@ -762,7 +764,7 @@ class DatabaseCompressor:
 
         try:
             return self.compressor.compress(text, algorithm=algorithm, config=config)
-        except CompressionError:
+        except CompressionError as exc:
             # Resilience: a codec bug must never block storage of a journalist's
             # corpus. zlib (stdlib) is the guaranteed floor — fall back to it rather
             # than letting the write 500. If zlib itself fails, something is truly wrong.
@@ -770,9 +772,7 @@ class DatabaseCompressor:
                 raise
             import logging
 
-            logging.getLogger(__name__).warning(
-                "compression with %s failed; falling back to zlib", algorithm, exc_info=True
-            )
+            log_failure(logging.getLogger(__name__), f"compression with {algorithm} failed; falling back to zlib", exc, level=logging.WARNING)
             return self.compressor.compress(
                 text,
                 algorithm=CompressionAlgorithm.ZLIB,

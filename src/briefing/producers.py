@@ -35,6 +35,7 @@ from src.database.models import (
     WikiRevision,
 )
 from src.database.stand_in import not_a_stand_in_article_id
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -964,13 +965,12 @@ def _articles_by_id(session, ids: list[str]) -> dict[str, dict]:
 def echo_chamber(session) -> list[Card]:
     """Surface coordinated near-duplicate floods — annotated by default (§6 'equal but
     aware'); the card invites the user to *apply* a collapse, never auto-applied."""
-    from src.integrity.actors import corpus_actors
-    from src.integrity.collapse import is_applied
-
     # PR-7: the thresholds are the operator's now (Settings -> Cards -> Overtold).
     # settings_for() returns the shipped defaults when nothing is stored, so the
     # untouched behaviour is byte-identical to the old module constants.
     from src.briefing.catalog import settings_for
+    from src.integrity.actors import corpus_actors
+    from src.integrity.collapse import is_applied
 
     cfg = settings_for("echo_chamber")
     min_sources, max_cards = cfg["min_sources"], cfg["max_cards"]
@@ -1974,8 +1974,8 @@ def weather_corroboration(session) -> list[Card]:
         from src.analytics.corroboration import find_weather_opportunities
 
         found = find_weather_opportunities(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("weather corroboration scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "weather corroboration scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2095,8 +2095,8 @@ def space_time_convergence(session) -> list[Card]:
         )
 
         found = find_convergences(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("space-time convergence scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "space-time convergence scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2221,8 +2221,8 @@ def watch_matches(session) -> list[Card]:
         from src.analytics.watches import recent_fired_watches
 
         fired = recent_fired_watches(session)
-    except Exception:  # noqa: BLE001 - a watch problem must never blank the feed
-        _LOG.warning("watch-engine card pass failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a watch problem must never blank the feed
+        log_failure(_LOG, "watch-engine card pass failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2291,15 +2291,14 @@ def source_laundering(session) -> list[Card]:
     """
     try:
         from src.analytics.laundering import LAUNDERING_CAVEAT, find_source_laundering
-
         from src.briefing.catalog import settings_for
 
         cfg = settings_for("source_laundering")
         found = find_source_laundering(
             session, min_sources=cfg["min_sources"], min_articles=cfg["min_articles"]
         )
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("source-laundering scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "source-laundering scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2374,8 +2373,8 @@ def recycled_claim(session) -> list[Card]:
         from src.analytics.recycled_claim import RECYCLED_CAVEAT, find_recycled_claims
 
         found = find_recycled_claims(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("recycled-claim scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "recycled-claim scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2466,8 +2465,8 @@ def headline_body_mismatch(session) -> list[Card]:
         )
 
         found = find_headline_body_mismatch(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("headline-body-mismatch scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "headline-body-mismatch scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2561,8 +2560,8 @@ def manufactured_emergence(session) -> list[Card]:
         from src.analytics.emergence import EMERGENCE_CAVEAT, find_manufactured_emergence
 
         found = find_manufactured_emergence(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("manufactured-emergence scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "manufactured-emergence scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2627,7 +2626,6 @@ def flooded_topic(session) -> list[Card]:
     """
     try:
         from src.analytics.concentration import FLOOD_CAVEAT, find_flooded_topics
-
         from src.briefing.catalog import settings_for
 
         cfg = settings_for("flooded_topic")
@@ -2639,8 +2637,8 @@ def flooded_topic(session) -> list[Card]:
             min_share=cfg["min_share"],
             z_min=cfg["z_min"],
         )
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("flood scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "flood scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2713,7 +2711,6 @@ def copypasta(session) -> list[Card]:
     """
     try:
         from src.analytics.copypasta import COPYPASTA_CAVEAT, find_copypasta
-
         from src.briefing.catalog import settings_for
 
         cfg = settings_for("copypasta")
@@ -2723,8 +2720,8 @@ def copypasta(session) -> list[Card]:
             k=cfg["k"],
             min_sources=cfg["min_sources"],
         )
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("copypasta scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "copypasta scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2798,8 +2795,8 @@ def buried_topic(session) -> list[Card]:
         from src.analytics.concentration import BURY_CAVEAT, find_buried_topics
 
         found = find_buried_topics(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("bury scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "bury scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -2897,8 +2894,8 @@ def severity_alerts(session) -> list[Card]:
         from src.analytics.alerts import ALERT_CAVEAT, ALERT_METHOD, compute_alerts
 
         alerts = compute_alerts(session)
-    except Exception:  # noqa: BLE001 - an alert-scan problem must never blank the feed
-        _LOG.warning("severity-alert scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - an alert-scan problem must never blank the feed
+        log_failure(_LOG, "severity-alert scan failed", exc, level=logging.WARNING)
         return []
 
     tiers = alerts.get("tiers", {})
@@ -3010,8 +3007,8 @@ def disputed_chronology(session) -> list[Card]:
         )
 
         found = find_disputed_chronology(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("disputed-chronology scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "disputed-chronology scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -3083,8 +3080,8 @@ def story_propagation(session) -> list[Card]:
         )
 
         found = find_story_propagation(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("story-propagation scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "story-propagation scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -3154,8 +3151,8 @@ def supply_chain_ripple(session) -> list[Card]:
         )
 
         found = find_supply_chain_ripples(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("supply-chain-ripple scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "supply-chain-ripple scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -3226,8 +3223,8 @@ def supergroup_rising(session) -> list[Card]:
         from src.analytics.supergroup_rising import RISING_CAVEAT, find_rising_supergroups
 
         found = find_rising_supergroups(session)
-    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
-        _LOG.warning("supergroup-rising scan failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a scan problem must never blank the feed
+        log_failure(_LOG, "supergroup-rising scan failed", exc, level=logging.WARNING)
         return []
 
     cards: list[Card] = []
@@ -3616,9 +3613,7 @@ def register_default_producers() -> None:
 
         for name, producer in RECIPE_PRODUCERS:
             register(name, producer)
-    except Exception:  # noqa: BLE001 - additive pack must not kill the core feed
+    except Exception as exc:  # noqa: BLE001 - additive pack must not kill the core feed
         import logging
 
-        logging.getLogger(__name__).warning(
-            "recipe producers failed to register; core briefing continues", exc_info=True
-        )
+        log_failure(logging.getLogger(__name__), "recipe producers failed to register; core briefing continues", exc, level=logging.WARNING)

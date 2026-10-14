@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -223,8 +223,8 @@ def import_checkpoint_k() -> int:
             from src.config.app_settings import load_settings
 
             raw = str(load_settings().import_checkpoint_k)
-        except Exception:  # noqa: BLE001 - an unreadable setting is not a licence to guess
-            _LOG.debug("could not read import_checkpoint_k; using the default", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an unreadable setting is not a licence to guess
+            log_failure(_LOG, "could not read import_checkpoint_k; using the default", exc, level=logging.DEBUG)
             return CHECKPOINT_K_DEFAULT
     try:
         k = int(raw)
@@ -335,8 +335,8 @@ class ImportQueueManager:
             tmp = p.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload), encoding="utf-8")
             os.replace(tmp, p)
-        except Exception:  # noqa: BLE001 - never break an import over its own log
-            _LOG.warning("could not persist the import queue state", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - never break an import over its own log
+            log_failure(_LOG, "could not persist the import queue state", exc, self._passphrase, level=logging.WARNING)
 
     def _load_persisted(self) -> None:
         try:
@@ -511,8 +511,8 @@ class ImportQueueManager:
         for cancel in (self._cancel_volume, self._cancel_folder, self._cancel_newsletters):
             try:
                 cancel()
-            except Exception:  # noqa: BLE001 - one manager's refusal must not block the others
-                _LOG.warning("cancelling a sub-job during import stop failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - one manager's refusal must not block the others
+                log_failure(_LOG, "cancelling a sub-job during import stop failed", exc, self._passphrase, level=logging.WARNING)
 
     # -- sub-manager seams (overridable in tests) ---------------------------- #
     def _cancel_volume(self) -> None:
@@ -549,8 +549,8 @@ class ImportQueueManager:
                     self._collection_paused = True
                 drove = True
                 self._drive()
-        except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-            _LOG.warning("the exclusive window for the import failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+            log_failure(_LOG, "the exclusive window for the import failed", exc, self._passphrase, level=logging.WARNING)
         finally:
             with self._lock:
                 self._collection_paused = False
@@ -575,8 +575,8 @@ class ImportQueueManager:
                 "post-import re-index drain %s",
                 "started" if started else f"not started ({detail})",
             )
-        except Exception:  # noqa: BLE001
-            _LOG.warning("could not start the post-import re-index drain", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "could not start the post-import re-index drain", exc, self._passphrase, level=logging.WARNING)
 
     def _drive(self) -> None:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
@@ -674,7 +674,7 @@ class ImportQueueManager:
                     # ``import_queue.json``) and a log record. A single-file restore raises the route layer's own
                     # ``HTTPException``, whose text can name the exception that caused it, and the queue is the
                     # recorder of that text, so it is taken out of the passphrase here, where the text is made.
-                    said = exception_text(exc, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)  # scrubbed, THEN cut
+                    said = record_text(exc, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)  # scrubbed, THEN cut
                     if stopped_here:
                         _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), said)
                     else:
@@ -775,8 +775,8 @@ class ImportQueueManager:
 
             with session_scope() as session:
                 self._tuned = optimize_after_bulk(session)
-        except Exception:  # noqa: BLE001 - tuning is never load-bearing
-            _LOG.warning("post-import tuning pass failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - tuning is never load-bearing
+            log_failure(_LOG, "post-import tuning pass failed", exc, self._passphrase, level=logging.WARNING)
         finally:
             with self._lock:
                 self._live = None
@@ -879,8 +879,8 @@ class ImportQueueManager:
         if guard is not None:
             try:
                 guard.close()
-            except Exception:  # noqa: BLE001 - a registry release must never fail a run
-                _LOG.warning("releasing the checkpoint group's staging guard failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a registry release must never fail a run
+                log_failure(_LOG, "releasing the checkpoint group's staging guard failed", exc, self._passphrase, level=logging.WARNING)
         return group
 
     #: How much of a failure's own text a discarded or errored item keeps (the discard reason and
@@ -898,7 +898,7 @@ class ImportQueueManager:
     def _failure_text(self, failure: BaseException | str) -> str:
         """The failure's text for the queue file and the status: scrubbed first, THEN cut."""
         if isinstance(failure, BaseException):
-            return exception_text(failure, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)
+            return record_text(failure, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)
         return scrubbed(failure, self._passphrase)[: self._FAILURE_TEXT_KEEP]
 
     def _discard_group(self, reason: str) -> None:
@@ -1080,8 +1080,8 @@ class ImportQueueManager:
                 return
             prev = item.get("stage_reached")
             item["stage_reached"] = s if not isinstance(prev, int) else max(prev, s)
-        except Exception:  # noqa: BLE001 - bookkeeping must never cost an import
-            _LOG.debug("could not record the import stage", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping must never cost an import
+            log_failure(_LOG, "could not record the import stage", exc, self._passphrase, level=logging.DEBUG)
 
     def _await(self, status_fn, cancel_fn, *, poll: float = 0.4) -> dict:
         """Drive one sub-manager to a terminal state, mirroring its live progress.
@@ -1104,8 +1104,8 @@ class ImportQueueManager:
                 cancelled = True
                 try:
                     cancel_fn()
-                except Exception:  # noqa: BLE001
-                    _LOG.warning("cancelling a sub-job failed", exc_info=True)
+                except Exception as exc:  # noqa: BLE001
+                    log_failure(_LOG, "cancelling a sub-job failed", exc, self._passphrase, level=logging.WARNING)
             time.sleep(poll)
 
     def _run_corpus(self, item: dict, *, hold: bool = False) -> dict:

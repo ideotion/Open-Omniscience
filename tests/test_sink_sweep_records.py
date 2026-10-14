@@ -15,18 +15,21 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_runs_log_sinks import _leaks
+from tests.test_runs_log_sinks import _enclosing_function, _leaks
 
 ROOT = Path(__file__).resolve().parents[1]
 #: The calls that may be handed a caught exception: the class, and the scrubbing line. ``note_error``/``log_failure_once`` are the
 #: storage guard's own entry points (they log through ``log_failure`` and keep a per-path dedupe key in memory only);
 #: ``refusal_text``/``is_damaged`` are the settings store's class-only refusal and its damaged-value test; ``refusal_token``/
 #: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message.
-CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of"}
+CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver", "restore_failure_text"}
 MODULES = sorted(
     p.relative_to(ROOT).as_posix()
     for entry in ("src/scheduler", "src/wiki")
     for p in (ROOT / entry).rglob("*.py")
+) + sorted(
+    p.relative_to(ROOT).as_posix() for p in (ROOT / "src/backup").rglob("*.py")
 ) + ["src/api/unlock.py"]
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
@@ -37,6 +40,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/scheduler/storage_guard.py": {"_LOG.warning is kept as a name, a log call the scan cannot read": 1,
                                        "_LOG.info is kept as a name, a log call the scan cannot read": 1},
     "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
+    "src/backup/runlog.py": {"getattr reaches attr, a way round the scan of the log calls": 1},
 }
 
 #: Functions that take a caught exception to CLASSIFY it (a bool, an enum, an int, a class name) or to build an in-memory dedupe
@@ -44,8 +48,8 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 #: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
 CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/scheduler/plan_cache.py": {
-        ('_label', 'if err is not None:'): 1,
-        ('_label', 'out["refresh_error"] = err'): 1,
+        ('PlanPreviewCache._label', 'if err is not None:'): 1,
+        ('PlanPreviewCache._label', 'out["refresh_error"] = err'): 1,
     },
     "src/scheduler/storage_guard.py": {
         ('_text_head', 'return str(exc).split("\\n[SQL:", 1)[0]'): 1,
@@ -60,12 +64,12 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_first_line_detail', 'quoted = _text_head(exc).rpartition("Original exception was: ")[2]'): 1,
         ('_io_error_detail', 'return _first_line_detail(exc)'): 1,
         ('_disk_full_detail', 'return _first_line_detail(exc, quote_head=True)'): 1,
-        ('note_error', 'if is_disk_full(exc):'): 1,
-        ('note_error', 'return self.note_io_error(exc, where)'): 1,
-        ('note_error', 'self.note_disk_full(f"{where + \': \' if where else \'\'}{_disk_full_detail(exc)}")'): 1,
-        ('note_io_error', 'if not is_io_error(exc):'): 1,
-        ('note_io_error', '"detail": _io_error_detail(exc),'): 1,
-        ('log_failure_once', 'first = (str(exc).splitlines() or [""])[0][:80]'): 1,
+        ('StorageGuard.note_error', 'if is_disk_full(exc):'): 1,
+        ('StorageGuard.note_error', 'return self.note_io_error(exc, where)'): 1,
+        ('StorageGuard.note_error', 'self.note_disk_full(f"{where + \': \' if where else \'\'}{_disk_full_detail(exc)}")'): 1,
+        ('StorageGuard.note_io_error', 'if not is_io_error(exc):'): 1,
+        ('StorageGuard.note_io_error', '"detail": _io_error_detail(exc),'): 1,
+        ('StorageGuard.log_failure_once', 'first = (str(exc).splitlines() or [""])[0][:80]'): 1,
     },
     "src/wiki/history.py": {
         ('retry_after_of', 'response = getattr(exc, "response", None)'): 1,
@@ -78,6 +82,26 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('refusal_token', 'raise exc'): 1,
         ('refusal_detail', 'status = _http_status(exc)'): 1,
     },
+    # Backup: the restore classifier reads the real text to CLASSIFY (a missing table, a locked file) and WRITES ``shown``, which is the
+    # class only for a database driver's exception (``record_text``); the lock probes read an attribute and no text.
+    "src/backup/merge.py": {
+        ("_file_is_locked", 'return getattr(exc, "winerror", None) in (32, 33)'): 1,
+        ("_lock_holder_note", 'name = getattr(exc, "filename", None)'): 1,
+        ("classify_restore_error", "msg = str(exc)"): 1,
+        ("classify_restore_error", "if _file_is_locked(exc):"): 1,
+        ("classify_restore_error", 'f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "'): 1,
+        ("_retry_while_locked", "if not _file_is_locked(exc) or time.monotonic() >= deadline:"): 1,
+        # BackupError is ``validate_sqlite_file``'s own error; its text is fixed words plus ``record_text`` (class only for a driver).
+        ("prepare_staged_corpus", "raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text"): 1,
+        # A comparison with the one known engine message that means "no rows yet"; nothing is written.
+        ("_incoming_group_rows", 'if str(exc).lower() != f"no such table: cnt.{table}":'): 1,
+    },
+    # ``PendingRulingError`` is the attribution module's own error: fixed words naming the missing ruling.
+    "src/backup/export_summary.py": {("export_facts", "attribution, attribution_error = [], str(exc)"): 1},
+    # ``_ExportRefused`` is this module's own refusal with fixed words (_NO_SPACE and the like); any other failure is its class.
+    "src/backup/newsletter_export.py": {("drop_newsletters_encrypted", "reason = str(exc) if refused else type(exc).__name__"): 1},
+    # ``refused`` is a RestoreRefused: its ``served_text`` is a fixed sentence the code wrote, naming the holder of a lock.
+    "src/backup/volume_job.py": {("VolumeBackupManager._run_backup", 'self._state, self._error = "error", refused.served_text'): 1},
 }
 
 #: Operator-facing text that nothing stores: the unlock answer and the start-up status the lock screen shows, a dump lookup's HTTP
@@ -89,7 +113,7 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         # One WARNING line (the class and the scrubbed FIRST line, never the statement or a trailing line): the log, not a record.
         ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
         ("_finish_unlock", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
-        ("_upkeep", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
+        ("_finish_unlock._upkeep", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
         ("_file_opens_with", _UNLOCK_DETAIL): 1,
         ("_unlock_locked", _UNLOCK_DETAIL): 1,
         (
@@ -101,8 +125,28 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         ("find_page", 'return {"found": False, "reason": "block-unreadable", "error": exception_text(exc, typed=False),'): 1,
     },
     "src/wiki/lane_search.py": {
-        ("_run", "raise _TrackerUnavailable(exception_text(exc)) from None"): 1,
+        ("_TrackerReader._run", "raise _TrackerUnavailable(exception_text(exc)) from None"): 1,
         ("search", 'return {**base, "total": None, "items": [], "error": "query_invalid", "detail": exception_text(exc, typed=False)}'): 1,
+    },
+    # Backup: an exception that is NOT a database driver's (a file system refusal, a journal that cannot be opened, a member that
+    # fails to decrypt) keeps its scrubbed words, with every held secret passed (ruling 2026-10-13: other links keep their words).
+    "src/backup/export_folder.py": {
+        ("allocate_export_folder", 'raise ExportFolderError(f"Cannot use destination {base}: {exception_text(exc, typed=False)}") from None'): 1,
+        ("allocate_export_folder", "first = exception_text(exc, typed=False)"): 1,
+    },
+    "src/backup/merge.py": {
+        ("_restore_ring_members", 'out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})'): 1,
+        ("merge_side_files", 'refused.append(f"{name}: {exception_text(exc, typed=False)}")'): 1,
+    },
+    "src/backup/runlog.py": {
+        ("RunLog._open", 'self._disable("milestones", exception_text(exc))'): 1,
+        ("RunLog._open", 'self._disable("beats", exception_text(exc))'): 1,
+        ("RunLog._write", 'self._disable("beats" if beat else "milestones", exception_text(exc))'): 1,
+    },
+    "src/backup/stream_backup.py": {("verify_stream_backup", "reason = exception_text(exc, passphrase, typed=False)"): 1},
+    "src/backup/volume_job.py": {
+        ("VolumeBackupManager._verify_after_write", '"reason": f"the volume set could not be re-read: {exception_text(exc, typed=False)}",'): 1,
+        ("VolumeBackupManager.start_backup", "reason = exception_text(exc, passphrase, typed=False)"): 1,
     },
 }
 
@@ -110,15 +154,19 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 def _found(rel: str, source: str) -> list[str]:
     table = {k: v for k, v in KEPT.get(rel, {}).items() if v}
     lines = source.splitlines()
-    fns = [n for n in ast.walk(ast.parse(source)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    tree = ast.parse(source)
+    parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    nodes_by_line = {}
+    for n in ast.walk(tree):
+        if hasattr(n, 'lineno'):
+            nodes_by_line.setdefault(n.lineno, n)
     allowed = dict(CLASSIFIED.get(rel, {}))
     out = []
     seen: dict[str, int] = {}
     for finding in _leaks(source, only_scrubbing=CALLS, words_kept=table or None, params=True):
         line, _, message = finding.partition(": ")
         if line.isdigit():
-            enclosing = sorted((n for n in fns if n.lineno <= int(line) <= n.end_lineno), key=lambda n: n.end_lineno - n.lineno)
-            key = (enclosing[0].name if enclosing else "", lines[int(line) - 1].strip())
+            key = (_enclosing_function(nodes_by_line[int(line)], parent) if int(line) in nodes_by_line else "", lines[int(line) - 1].strip())
             if allowed.get(key, 0) > 0:
                 allowed[key] -= 1
                 continue

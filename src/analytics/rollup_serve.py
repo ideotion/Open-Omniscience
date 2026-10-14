@@ -69,6 +69,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from src.config.power_profiles import rollup_serve_ttl_s
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -818,8 +819,8 @@ def _build_and_swap() -> str:
             _STATE["stopped"] = None
         outcome = "built"
         return outcome
-    except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
-        _LOG.warning("rollup serve: background build failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
+        log_failure(_LOG, "rollup serve: background build failed", exc, level=logging.WARNING)
         outcome = "failed"
         return outcome
     finally:
@@ -834,12 +835,12 @@ def _trigger_build_async() -> None:
     thread = threading.Thread(target=_build_and_swap, name="rollup-build", daemon=True)
     try:
         thread.start()
-    except Exception:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
+    except Exception as exc:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
         # The thread that would have released the lock never ran: release it here, or every later
         # build (and the boot sequence's wait for this one) blocks on it forever.
         _LAST_OUTCOME["value"] = "failed"
         _BUILD_LOCK.release()
-        _LOG.warning("rollup serve: could not start the build thread", exc_info=True)
+        log_failure(_LOG, "rollup serve: could not start the build thread", exc, level=logging.WARNING)
 
 
 def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:
@@ -952,8 +953,8 @@ def windowed_rows(
             if con is None:
                 return None
             return columnar.windowed_top_terms_raw(con, start_day=start, kind=kind, limit=limit)
-    except Exception:  # noqa: BLE001 - any serve failure -> live fallback
-        _LOG.warning("rollup serve: windowed serve failed; falling back to live", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
+        log_failure(_LOG, "rollup serve: windowed serve failed; falling back to live", exc, level=logging.WARNING)
         return None
 
 
@@ -984,8 +985,8 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
                 return None
             counts = columnar.windowed_term_counts(con, start_day=lo, end_day=hi)
         return {kid: mv[0] for kid, mv in counts.items()}  # mentions only (exact)
-    except Exception:  # noqa: BLE001 - any serve failure -> live fallback
-        _LOG.warning("rollup serve: windowed counts failed; falling back to live", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
+        log_failure(_LOG, "rollup serve: windowed counts failed; falling back to live", exc, level=logging.WARNING)
         return None
 
 

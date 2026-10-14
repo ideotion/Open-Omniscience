@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.llm.ollama import DEFAULT_MODEL, LLMError, LLMUnavailable, OllamaClient
+from src.monitoring.secret_scrub import log_failure
 from src.wiki.languages import UI_LOCALE_CODES
 
 if TYPE_CHECKING:
@@ -181,8 +182,8 @@ def advance_law_summaries(
         return out
     try:
         pending = pending_ai_summaries(session, limit=limit)
-    except Exception:  # noqa: BLE001
-        logger.warning("law auto-summary: could not list pending revisions", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log_failure(logger, "law auto-summary: could not list pending revisions", exc, level=logging.WARNING)
         return out
     if not pending:
         return out
@@ -190,8 +191,8 @@ def advance_law_summaries(
     for rev, doc in pending:
         try:
             res = summarize_revision(session, doc, rev, client)
-        except Exception:  # noqa: BLE001 - one bad revision never breaks the batch
-            logger.warning("law auto-summary: revision %s failed", rev.id, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - one bad revision never breaks the batch
+            log_failure(logger, f"law auto-summary: revision {rev.id} failed", exc, level=logging.WARNING)
             session.rollback()
             out["failed"] += 1
             continue

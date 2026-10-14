@@ -54,6 +54,7 @@ from pathlib import Path
 
 from src.ai_layer import bench_batch as BB
 from src.llm.ollama import bounded_error
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("ai_layer.model_bench")
 
@@ -800,7 +801,7 @@ def bench_one_pair(
             else:
                 raise ValueError(f"unknown bench task {name!r}")
         except Exception as exc:  # noqa: BLE001 - one task must not end the pair
-            _LOG.warning("bench task %s failed for %s/%s", name, backend, model, exc_info=True)
+            log_failure(_LOG, f"bench task {name} failed for {backend}/{model}", exc, level=logging.WARNING)
             res = {"status": "error", "detail": bounded_error(exc, 300)}
         out["tasks"][name] = res
     out["finished_at"] = datetime.now().isoformat(timespec="seconds")
@@ -1301,7 +1302,7 @@ def _prior_holder() -> dict | None:
         holder = current_holder()
         return holder if holder.get("backend") else None
     except Exception as exc:  # noqa: BLE001 - an unreadable prior state is not a crash
-        _LOG.info("bench: could not read which backend was serving (%s)", exc)
+        log_failure(_LOG, "bench: could not read which backend was serving", exc, level=logging.INFO)
         return None
 
 
@@ -1466,7 +1467,7 @@ def _vllm_available(wanted: list[str]) -> list[str]:
             if vllm_lifecycle.model_cache_state(model).get("cached") is True:
                 available.append(model)
         except Exception as exc:  # noqa: BLE001
-            _LOG.info("bench: could not probe the vLLM cache for %s (%s)", model, exc)
+            log_failure(_LOG, f"bench: could not probe the vLLM cache for {model}", exc, level=logging.INFO)
     return available
 
 
@@ -1502,7 +1503,7 @@ def _installed_by_backend(
             _, client = get_client_with_name(backend=backend)
             out[backend] = list(client.list_installed())
         except Exception as exc:  # noqa: BLE001 - unreachable is a fact, not a crash
-            _LOG.info("bench: backend %s unreachable (%s)", backend, exc)
+            log_failure(_LOG, f"bench: backend {backend} unreachable", exc, level=logging.INFO)
             out[backend] = None
     return out
 

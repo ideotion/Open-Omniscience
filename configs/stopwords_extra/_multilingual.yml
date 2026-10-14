@@ -357,3 +357,14 @@ stopwords:
   - pdesc
   - pmurl
   - ppurl
+  # batch ja-2026-10-batch1 and zh-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 beb3efd563e5): entries
+  # that carry Latin letters inside Japanese or Chinese text; filed here because ja.yml and zh.yml may hold
+  # their own scripts only (test_stopword_file_scripts)
+  - aiの特性上
+  - facebookxblueskycopy
+  - spotifyで聴く
+  - xlinefacebookemailprint
+  - 生成aiの音声合成技術を利用して自動生成しています
+  - 西日本新聞meとは
+  - mail帳號
+  - 點我訂閱自由財經youtube頻道

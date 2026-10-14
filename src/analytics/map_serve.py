@@ -42,6 +42,8 @@ import time
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import log_failure
+
 _LOG = logging.getLogger(__name__)
 
 # Guards the SHARED served connection; the build holds it only for the instant swap.
@@ -173,8 +175,8 @@ def _build_and_swap() -> None:
                 except Exception:  # noqa: BLE001
                     pass
         _LOG.info("map serve: built in-memory source_coverage (%s rows)", rows)
-    except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
-        _LOG.warning("map serve: background build failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
+        log_failure(_LOG, "map serve: background build failed", exc, level=logging.WARNING)
     finally:
         _BUILD_LOCK.release()
 
@@ -186,9 +188,9 @@ def _trigger_build_async() -> None:
     thread = threading.Thread(target=_build_and_swap, name="map-rollup-build", daemon=True)
     try:
         thread.start()
-    except Exception:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
+    except Exception as exc:  # noqa: BLE001 - "can't start new thread" is what a memory-starved machine raises
         _BUILD_LOCK.release()  # the thread that would have released it never ran
-        _LOG.warning("map rollup: could not start the build thread", exc_info=True)
+        log_failure(_LOG, "map rollup: could not start the build thread", exc, level=logging.WARNING)
 
 
 def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:
@@ -287,15 +289,15 @@ def map_coverage(session: Session) -> dict | None:
             if con is None:
                 return None
             rows = columnar.source_coverage_rows(con)
-    except Exception:  # noqa: BLE001 - any serve failure -> live fallback
-        _LOG.warning("map serve: source_coverage serve failed; falling back to live", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
+        log_failure(_LOG, "map serve: source_coverage serve failed; falling back to live", exc, level=logging.WARNING)
         return None
     if not rows:
         return None  # cold/empty rollup -> live fallback
     try:
         return _assemble(session, rows)
-    except Exception:  # noqa: BLE001 - reconstruction failure -> live fallback
-        _LOG.warning("map serve: reassembly failed; falling back to live", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - reconstruction failure -> live fallback
+        log_failure(_LOG, "map serve: reassembly failed; falling back to live", exc, level=logging.WARNING)
         return None
 
 

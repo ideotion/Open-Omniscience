@@ -118,10 +118,10 @@ def parity_available() -> bool:
 def _np() -> Any:
     try:
         import numpy as np
-    except ImportError as exc:  # pragma: no cover - guarded by parity_available()
+    except ImportError:  # pragma: no cover - guarded by parity_available()
         raise VolumeError(
             "parity needs numpy (the 'analysis' extra); this build is volumes-only"
-        ) from exc
+        ) from None
     return np
 
 
