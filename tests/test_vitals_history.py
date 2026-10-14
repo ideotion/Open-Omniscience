@@ -584,7 +584,8 @@ def test_flushes_that_overlap_never_tear_the_file_and_the_next_start_loads_the_h
     a test left running) wrote the SAME temporary name: the second truncated what the first was still writing, or
     renamed it away, a file read at that moment was torn, and ``start`` reads a damaged file as none and answers
     with an empty history. Two threads flush in a loop while this one reads the file exactly as ``start`` does;
-    without ``_FLUSH_LOCK`` a load in about thirty read a torn file and two flushes in five failed."""
+    without ``_FLUSH_LOCK`` flushes fail on any host (FileNotFoundError, counted) and, on a host with more than
+    one CPU, loads of the file read it torn."""
     for k in range(v.FINE_KEEP):
         v.tick(now=float(HOUR0 + v.FINE_S * k))
     expected = len(v._FINE)
@@ -2001,8 +2002,8 @@ def test_a_step_across_ticks_without_a_reading_blames_the_clock_only_from_the_mi
     if recorded:
         assert m["clock_steps"][0]["was"] == v._iso(a_wall) and m["clock_steps"][0]["forward_s"] == 700
     assert "a step of 600 s or more in between is not lost" in m["method"]
-    assert "where a step the list no longer holds had been recorded" in m["method"]
-    assert "where both stamps of a recorded step lie outside the gap, which is then strictly between them" in m["method"]
+    assert "a step the list no longer holds, which had been recorded" in m["method"]
+    assert "a recorded step whose two stamps both lie outside the gap, which is then strictly between them" in m["method"]
     assert "a step that spans ticks without a boot-time reading" in m["method"]
 
 
