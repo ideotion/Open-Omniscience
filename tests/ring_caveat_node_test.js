@@ -9,7 +9,8 @@
  * no map, so ooMap is never called); a test that only greps the source passed anyway. This one fails when the
  * empty state stops carrying the caveat.
  *
- * Run by tests/test_ring_caveat_i18n.py (and standalone: `node tests/ring_caveat_node_test.js`).
+ * Run by tests/test_ring_caveat_i18n.py, which hands over the two sentences the endpoint sends in RING_COUNTRY_CAVEAT
+ * and RING_COUNTRY_METHOD (the test refuses to start without them, so run it through that wrapper).
  *
  * Open Omniscience - Global Intelligence Platform for Investigative Journalism
  * Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -72,7 +73,7 @@ async function render(payload, code, opts) {
   const drawn = [];
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
+    "let _ringMapLast = null; let _ringSeq = 0; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
   const fn = run({ OOI18N: opts.noTf ? { t } : { t, tf } }, opts.noTf ? { t } : { t, tf }, (id) => els[id] || null, ESC,
     async () => payload, (c) => c, async (host, o) => { drawn.push(o); }, (a, b) => a + b, (x) => x, (x) => x,
     () => "", () => {});
@@ -92,7 +93,7 @@ function session(code, apiFn, ooMapFn) {
   const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
+    "let _ringMapLast = null; let _ringSeq = 0; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
   const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, ooMapFn || (async () => {}),
     (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
   return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
@@ -193,13 +194,51 @@ const NO_MENTIONS = {
     assert(!sess.host().includes("hidden") && sess.host() === before, "the previous group came back: " + sess.host());
   });
   await test("a draw that failed is not redrawn by a language switch (the host shows the error, not the payload)", async () => {
-    const sess = session("en", async () => LOCATED, async () => { throw new Error("map failed"); });
+    let attempts = 0;
+    const sess = session("en", async () => LOCATED, async () => { attempts += 1; throw new Error("map failed"); });
     await sess.show("news-media");
     const before = sess.host();
-    assert(before.includes("map failed"), before);
+    assert(before.includes("map failed") && attempts === 1, before);
     sess.switchTo("fr"); sess.repaint();
     await new Promise((r) => setImmediate(r));
     assert(sess.host() === before, "the failed draw was redrawn: " + sess.host());
+    assert(attempts === 1, "the failed draw was attempted again (" + attempts + " draws)");
+  });
+  await test("an answer that arrives after a newer pick is dropped, and a language switch redraws the newer group", async () => {
+    const waiting = {};
+    const NEWER = Object.assign({}, LOCATED, { ring_id: "second", label: "Second group" });
+    const sess = session("en", (url) => new Promise((resolve) => { waiting[url.split("ring_id=")[1]] = resolve; }),
+      async (host, o) => { host.innerHTML = "drawn:" + o.aria; });
+    const first = sess.show("first"), second = sess.show("second");
+    waiting.second(NEWER); await second;
+    assert(sess.host().includes("drawn:Second group"), "the newer pick did not draw: " + sess.host());
+    const shown = sess.host();
+    waiting.first(Object.assign({}, LOCATED, { ring_id: "first", label: "First group" })); await first;
+    assert(sess.host() === shown, "the slow answer of the older pick painted over the newer one: " + sess.host());
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(!sess.host().includes("First group"), "a language switch redrew the older pick: " + sess.host());
+  });
+  await test("a late ERROR of an older pick does not replace the newer group either", async () => {
+    const waiting = {};
+    const sess = session("en", (url) => new Promise((resolve, reject) => { waiting[url.split("ring_id=")[1]] = { resolve, reject }; }),
+      async (host, o) => { host.innerHTML = "drawn:" + o.aria; });
+    const first = sess.show("first"), second = sess.show("second");
+    waiting.second.resolve(Object.assign({}, LOCATED, { ring_id: "second", label: "Second group" })); await second;
+    waiting.first.reject(new Error("slow failure")); await first;
+    assert(sess.host().includes("drawn:Second group") && !sess.host().includes("slow failure"), "a late error replaced the newer group: " + sess.host());
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(sess.host().includes("drawn:Second group"), "the newer group stopped being redrawable after the late error: " + sess.host());
+  });
+  await test("a late answer after the picker was cleared draws nothing", async () => {
+    const waiting = {};
+    const sess = session("en", (url) => new Promise((resolve) => { waiting.r = resolve; }),
+      async (host, o) => { host.innerHTML = "drawn:" + o.aria; });
+    const pending = sess.show("first");
+    await sess.show("");
+    waiting.r(LOCATED); await pending;
+    assert(sess.host() === "", "a cleared picker was painted by a late answer: " + sess.host());
   });
   await test("the 'all hidden' and the 'nothing indexed' states read differently (R111 T2)", async () => {
     const a = (await render(HIDDEN, "en")).host, b = (await render(NONE, "en")).host;

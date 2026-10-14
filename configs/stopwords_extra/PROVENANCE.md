@@ -472,7 +472,7 @@ reading of these three languages "partial", and no word kept carries the `single
 (`台南市政府提供`, `屏東縣政府提供`, `觀光局提供`) have the shape of the statement lines left out above (`教育局表示`), but a credit line says who supplied a picture and never what that body did or said, so hiding it
 loses no statement. The suicide-prevention footer lines (`生命線專線`, `自殺不能解決問題`) are a fixed block of Taiwanese newsrooms. ja `ログイン` is kept for its volume (76 articles) although, once Japanese is split,
 it would also drop a phrase such as `不正 ログイン` (unauthorised login); `お知らせ`, `購読料`, `オススメ`, `閉じる` and ko `등록번호` are marginal labels that can also be words, hidden at read time and so reversible. Not done
-and for a later batch (batch 8 did the attribution tails, all but `を発表`): the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious; `々` (as in 人々) is not yet allowed in
+and for a later batch (batch 8 did the attribution tails): the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious; `々` (as in 人々) is not yet allowed in
 `ja.yml` by the script guard. Hiding is retroactive with no re-index; extraction also drops them from now on.
 
 ## Stoplist batch 7: function words, number words and calendar words in Amharic, Basque, Faroese, Galician, Hausa, Kazakh, Macedonian, Kinyarwanda and Swahili (2026-10-13, R131, language group 6)
@@ -490,18 +490,19 @@ articles); kk `бес` (five, but also the Russian "demon", a content word). The
 **Kept on purpose:** the Kazakh, Basque and Macedonian words the notes show in Russian-, Spanish- and English-tagged articles are those languages' function words quoted or mis-tagged, not a second sense. The same holds for `zao` (read in Serbian-tagged articles, where it is also "bad", mostly in "zao mi je"; kept, a known small cost), `huu`, `што`, `кои` (Belarusian- and Bulgarian-tagged articles) and `duen` (Catalan-tagged articles), whose notes name a language the word is quoted in, not a content use of it. The script guard
 and the tool's script map gain Ethiopic (am) and Cyrillic (kk, mk). Hiding is retroactive with no re-index; extraction also drops them from now on.
 
-## Stoplist batch 8: attribution tails in Japanese (2026-10-14, R131 follow-up to batch 6)
+## Stoplist batch 8: attribution and announcement tails in Japanese (2026-10-14, R131 follow-up to batch 6)
 
-10 words, all in `ja.yml`, from the same triage and the same method as batches 2 to 7 (read batch 2 first), run on the decision file `full.repeat-agreed.tsv` (sha256 47400de97c79; the earlier batches cite `full.tsv`, whose
-ja rows are the same readings without the repeat marker): `としています`, `とコメント`, `と強調`, `と指摘`, `と指摘した`, `と振り返った`, `と振り返り`, `と振り返る`, `と語る`, `と説明`. Batch 6 named five of these families as "for a
-later batch": they are the same kind as the `と述べた`, `と語った`, `と強調した` and `と説明した` it kept, a quotation particle and a verb of saying that attribute a statement and carry none of its content, and leaving
-them out was over-cautious. The triage coded them `fr` (fragment) where the kept ones are `ph`, but the fragment rule of batch 6 exists for a noun cut at its particle (`기자회견을`), where hiding the entry hides the
-name or topic built on it; these have no noun to lose. Every one is a high-confidence N with the blind repeat agreeing (`repeat_agreed`, 10 of 10, no `single_reader` flag), the tool refused none, and each is read in 8 to
-14 articles.
+12 words, all in `ja.yml`, from the same triage and the same method as batches 2 to 7 (read batch 2 first), run on the decision file `full.repeat-agreed.tsv` (sha256 47400de97c79; the earlier batches cite `full.tsv`, whose
+ja rows are the same readings without the repeat marker): `としています`, `とコメント`, `と強調`, `と指摘`, `と指摘した`, `と振り返った`, `と振り返り`, `と振り返る`, `と語る`, `と説明`, `を発表`, `を発表せず`. Batch 6 named
+these families as "for a later batch": they are the same kind as the `と述べた`, `と語った`, `と強調した` and `と説明した` it kept, a quotation particle and a verb of saying that attribute a statement and carry none of its
+content, and leaving them out was over-cautious. The triage coded them `fr` (fragment) where the kept ones are `ph`, but the fragment rule of batch 6 exists for a noun cut at its particle (`기자회견을`), where hiding the
+entry hides the name or topic built on it; these have no noun to lose. `を発表` and `を発表せず` are the same speech act in its announcing form: batch 6 already hides `を発表した` and `を発表しました`, so leaving the bare
+and negated forms out only left the same phrase visible under two spellings. Every one is a high-confidence N with the blind repeat agreeing (`repeat_agreed`, 12 of 12, no `single_reader` flag), the tool refused none,
+and each is read in 8 to 14 articles (`と強調` 14, `としています` and `とコメント` 13, `と指摘した` 11, `と指摘` `と説明` and `と振り返った` 10, `と振り返る` 9, `と振り返り` `と語る` `を発表` and `を発表せず` 8).
 
-**Left out on purpose** (the other `fr` rows of the same shape, which say what happened rather than who said it): `を発表` and `を発表せず` (announced / did not announce), `を発売` (put on sale), `が登場` and
-`は登場せず` (appeared), `を紹介` (introduced), `を搭載` (equipped with), `に出演` (appeared in), `が復活` (came back); `と言うために` and `と言うコーナーがありましたら` are not attributions. The earlier note listed `を発表`
-among the candidates; on reading, an announcement is the event of a news item, so hiding it would hide the story, and it stays out.
+**Left out on purpose** (the other `fr` rows of the same shape, which say what happened, so hiding them would hide the story): `を発売` (put on sale), `が登場` and `は登場せず` (appeared), `を紹介` (introduced),
+`を搭載` (equipped with), `に出演` (appeared in), `が復活` (came back); `と言うために` and `と言うコーナーがありましたら` are not attributions. The distinction is the one the kept `を発表した` already draws: an
+announcement phrase names the act of saying, whatever was announced stays in the keywords beside it, while a product launch or a comeback is the event itself.
 
 **How these entries match:** hiding is exact (the whole stored keyword must equal an entry at read time, a token at extraction). The log's Japanese keywords are stored runs, so these hide the runs that are exactly
 one of them, retroactively and with no re-index; new Japanese keywords are split into words by janome when the optional `[segmentation]` extra is installed, and a token like `と` then comes apart from `指摘`, so on new

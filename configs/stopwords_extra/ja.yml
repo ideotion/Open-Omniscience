@@ -212,7 +212,7 @@ stopwords:
   - 音声に関するご注意
   - 音声に関するご注意本文の音声は
   - 音声読み上げは
-  # batch ja-2026-10-batch2 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 10 of 10)
+  # batch ja-2026-10-batch2 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 12 of 12)
   - としています
   - とコメント
   - と強調
@@ -223,3 +223,5 @@ stopwords:
   - と振り返る
   - と語る
   - と説明
+  - を発表
+  - を発表せず
