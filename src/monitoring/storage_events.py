@@ -810,6 +810,10 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
     global _WRITE_FAILURES, _LAST_WRITE_FAILURE, _LAST_WRITE_OK_AT, _INTERNAL_FAILURES, _LAST_INTERNAL_FAILURE, _WRITER_DEATHS
     global _READ_FAILURES, _LAST_READ_FAILURE
     with _LOCK:
+        # Nothing recorded, loaded or written since the last reset means this process never made the file: the removal below
+        # resolves the data directory, and on a marked drive that has gone missing that resolution is itself a signal to the
+        # volume monitor (it pauses collection), which a test that merely walked past must not cause.
+        touched = bool(_LOADED or _STATE or _OPEN or _VERSION or _WRITTEN_VERSION or _DIRTY)
         _LOADED = False
         _STATE = {}
         _EARLIER = {}
@@ -831,7 +835,7 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
         _WRITTEN_VERSION = 0
         _WRITE_FAILURES = 0
         _LAST_WRITE_FAILURE = _LAST_WRITE_OK_AT = None
-        if not keep_file:
+        if touched and not keep_file:
             with suppress(Exception):  # a test that broke the path must still be able to reset
                 path = _path()
                 for victim in (path, path.with_name(path.name + ".tmp")):

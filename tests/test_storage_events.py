@@ -25,6 +25,7 @@ import json
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -1690,3 +1691,22 @@ def test_the_gate_report_keeps_the_sampled_route_when_the_release_finds_none(jou
     writer._note_hold_end("h", 61.0, 1.5)
     (e,) = _events("gate_hold")
     assert e["route"] == "POST /api/x" and e["seconds"] == 61.0 and e["open"] is False
+
+
+def test_a_reset_of_a_journal_nothing_touched_never_resolves_the_data_directory(monkeypatch):
+    """On a marked drive that has gone missing, resolving the data directory is itself a signal to the volume monitor, which pauses
+    collection for the rest of the process: the suite's isolation fixture runs this reset after EVERY test, so a test that merely
+    walked past (the data-volume tests) must not cause it."""
+    se.reset_for_tests()
+    resolved: list[int] = []
+    monkeypatch.setattr(se, "_path", lambda: resolved.append(1) or Path("/nonexistent/storage_events.json"))
+    se.reset_for_tests()
+    assert resolved == []
+
+
+def test_a_reset_of_a_journal_that_was_written_removes_its_file(journal):
+    se.record("gate_hold", {"n": 1}, key="k")
+    se.flush()
+    assert journal.exists()
+    se.reset_for_tests()
+    assert not journal.exists()
