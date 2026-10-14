@@ -1504,7 +1504,14 @@ class EthicalFetcher:
             theirs = (parse_url(url).host or "").lower().strip("[]")
         except Exception:  # noqa: BLE001 - an unparsable URL is refused, not fetched
             raise BlockedTarget("URL is not parsable by the HTTP client") from None
-        ours = (urlparse(url).hostname or "").lower().strip("[]")
+        try:
+            ours = (urlparse(url).hostname or "").lower().strip("[]")
+        except ValueError:
+            raise BlockedTarget("URL host cannot be read") from None
+        if "%" in theirs or "%" in ours:
+            # Whether a percent-encoded host is decoded depends on the urllib3 version (2.7.0 connects to the decoded
+            # address, urlparse reads a name), so it is refused outright rather than compared.
+            raise BlockedTarget("URL host is percent-encoded")
         if not ours.isascii():
             # Two IDNA standards disagree on some names (faß.de), so a non-ASCII host
             # is accepted only when the codec the resolver uses gives the client's name.
