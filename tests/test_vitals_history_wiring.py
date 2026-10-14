@@ -81,21 +81,19 @@ def test_the_helper_waits_for_a_tick_in_flight_and_keeps_a_thread_that_outlives_
     """Finding L2 of the read. The join is what makes the stop real (a tick in flight must finish before the
     recorder is reset), and a thread still alive after the wait stays recorded as the process's thread, so a
     later ``start_liveness`` does not start a second one."""
-    import time
-
     from tests.conftest import _stop_leaked_liveness_thread
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
     sh._reset_for_tests()
     v.reset_for_tests()
     monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.01)
-    inside = threading.Event()
+    inside, release = threading.Event(), threading.Event()
 
-    def slow_observe(*_a, **_k):
+    def held_observe(*_a, **_k):
         inside.set()
-        time.sleep(0.4)
+        release.wait(30.0)  # in flight until the test lets it go: no stall of the machine can end it early
 
-    monkeypatch.setattr(session_hwm, "observe", slow_observe)
+    monkeypatch.setattr(session_hwm, "observe", held_observe)
     monkeypatch.setattr(v, "tick", lambda *a, **k: None)
     try:
         assert sh.start_liveness() is True
@@ -104,31 +102,49 @@ def test_the_helper_waits_for_a_tick_in_flight_and_keeps_a_thread_that_outlives_
         _stop_leaked_liveness_thread(timeout=0.01)  # the tick in flight outlives this wait
         assert thread is not None and thread.is_alive() and sh._THREAD is thread
         assert sh.start_liveness() is False  # no second thread
+        release.set()
         _stop_leaked_liveness_thread()  # the real wait: the tick finishes, the loop ends
         assert not thread.is_alive() and sh._THREAD is None
     finally:
+        release.set()
         sh._reset_for_tests()
 
 
 def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_recorder():
-    """A guard on the fixture itself (a fixture cannot be called from a test): the stop call is there, and
-    ahead of the first reset, so a tick in flight finishes before the recorder is wiped. Read from the
-    syntax tree, not sliced out of the source text."""
+    """A guard on the fixture itself (a fixture cannot be called from a test): on the way OUT (after the
+    ``yield``), the stop is a statement of its own that nothing can skip (not under an ``if`` or a ``try``, and
+    nothing but imports ahead of it), and it comes before the statement that resets the recorder, so a tick in
+    flight finishes before the recorder is wiped. Read from the syntax tree, not sliced out of the source text."""
     tree = ast.parse((Path(__file__).parent / "conftest.py").read_text(encoding="utf-8"))
     fixture = next(
-        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_vitals_history_isolated"
+        (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_vitals_history_isolated"), None
     )
+    assert fixture is not None, "the isolation fixture is gone"
 
-    def called_at(name: str) -> list[int]:
-        return [
-            c.lineno
-            for c in ast.walk(fixture)
-            if isinstance(c, ast.Call) and name in (getattr(c.func, "id", None), getattr(c.func, "attr", None))
-        ]
+    def calls(node: ast.AST, name: str) -> bool:
+        return any(
+            isinstance(c, ast.Call) and name in (getattr(c.func, "id", None), getattr(c.func, "attr", None))
+            for c in ast.walk(node)
+        )
 
-    stops, resets = called_at("_stop_leaked_liveness_thread"), called_at("reset_for_tests")
-    assert stops and resets
-    assert min(stops) < min(resets)
+    body = fixture.body
+    yielded = next(
+        (i for i, st in enumerate(body) if isinstance(st, ast.Expr) and isinstance(st.value, ast.Yield)), None
+    )
+    assert yielded is not None, "the fixture has no top-level yield"
+    teardown = body[yielded + 1 :]
+    stop = next(
+        (
+            i
+            for i, st in enumerate(teardown)
+            if isinstance(st, ast.Expr) and isinstance(st.value, ast.Call) and calls(st.value, "_stop_leaked_liveness_thread")
+        ),
+        None,
+    )
+    assert stop is not None, "no unconditional call of the stop helper after the yield"
+    assert all(isinstance(st, ast.Import | ast.ImportFrom) for st in teardown[:stop]), "something can skip the stop"
+    reset = next((i for i, st in enumerate(teardown) if calls(st, "reset_for_tests")), None)
+    assert reset is not None and stop < reset
 
 
 def test_a_tick_that_raises_does_not_stop_the_liveness_loop(monkeypatch, tmp_path):
