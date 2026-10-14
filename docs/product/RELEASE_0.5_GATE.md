@@ -330,6 +330,14 @@ same disclosures), and the map of amendment activity states its vintage. Brief `
 `www.legislation.gov.uk` in the environment's network settings and a thread does the fetches; row G joins no
 operator step. Until the site is reachable the row says `not-measurable-here` and names this ruling.
 
+**2026-10-13 — R132.** The maintainer answered «OK for the UK web link, mark it as safe». The sandbox's network
+policy still has to carry the host (Project settings → the cloud environment → Allowed domains: the proxy answered
+`CONNECT tunnel failed, response 403` after the answer), so the row still says `not-measurable-here`, now naming R132.
+The check is one command, built and tested on the fixture jurisdiction (`scripts/law_pit_real_run.py`,
+`tests/test_law_pit_real_run.py`): it fetches one Act's version for a 2019 day and its current version through the
+ethical fetcher, tracks both, and asks point-in-time search for words only the 2019 text holds. Its first real run is
+also the first time the CLML adapter reads a real document.
+
 **2026-09-28 — built (PR #1203).** ONE version reader, `src/static/ooversions.js`, mounted by the standalone law
 page, the Living sources Law panel and the Wikipedia tracked-changes panel, fed by one payload shape
 (`src/law/versions.py`, `src/wiki/versions.py`) and one comparison computed locally from the two full texts
