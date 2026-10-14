@@ -150,12 +150,19 @@ def test_there_is_deliberately_NO_abort_point_after_the_swap():
     # single point past which there is no undo.
     # RE-ANCHORED AGAIN 2026-10-06 (E3): the replace moved into ONE helper shared with the repair (``swap_in_corpus``, which holds
     # the swap window), so run_restore's commit point is the helper's call; the property is unchanged.
-    SWAP = "swap_in_corpus("
+    # RE-ANCHORED AGAIN 2026-10-13 (the write-gate hold): the helper call sits inside ``_carry_and_swap`` (the settings carry and the
+    # replace under one hold of the write gate), so run_restore's commit point is that call, and the helper must hold no abort point itself.
+    SWAP = "_carry_and_swap("
     assert body.count(SWAP) == 1, "the anchor must be the single commit point, or the split lies"
     after_swap = body.split(SWAP, 1)[1]
     assert "_abort_point(" not in after_swap, (
         "an abort after the atomic swap would imply an undo that does not exist"
     )
+    import inspect
+
+    import src.backup.merge as merge
+
+    assert "_abort_point(" not in inspect.getsource(merge._carry_and_swap), "the helper is past the last abort point"
 
 
 def test_the_post_swap_reindex_still_receives_the_stop():

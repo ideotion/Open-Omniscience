@@ -1321,6 +1321,9 @@ def _swap(
             raise
     finally:
         watch.close()
+    from src.config.kv_store import kv_invalidate
+
+    kv_invalidate()  # the settings the replaced file held are not the live ones: the restore's swap empties the cache the same way
     dispose_engine()
     _fsync_dir(target.parent)
     report["kept_file"] = damaged.name
