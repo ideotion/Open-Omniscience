@@ -55,7 +55,7 @@ def test_first_request_with_backslash_is_refused():
     assert s.urls == []
 
 
-@pytest.mark.parametrize("url", ["http://a.org/x y", "http://a.org/\x00", "http://a.org\t/"])
+@pytest.mark.parametrize("url", ["http://a.org\x00.evil/", "http://a.org\t/", "http://a .org/"])
 def test_whitespace_and_control_characters_are_refused(url):
     with pytest.raises(BlockedTarget):
         EthicalFetcher._refuse_parser_mismatch(url)
@@ -64,3 +64,31 @@ def test_whitespace_and_control_characters_are_refused(url):
 def test_ordinary_urls_pass():
     for u in ("https://www.example.org/a?b=1", "http://[::1]:8080/", "https://bücher.example/x"):
         EthicalFetcher._refuse_parser_mismatch(u)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://%31%32%37.0.0.1/",  # the host comparison alone refuses this
+        "http://%65vil.test/",
+        "http://faß.de/",  # two IDNA standards, two names
+        "https://evil.test\\@www.example.org/x",  # the backslash clause alone
+    ],
+)
+def test_each_clause_refuses_what_only_it_refuses(url):
+    with pytest.raises(BlockedTarget):
+        EthicalFetcher._refuse_parser_mismatch(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://a.org/p?q=a b",
+        "https://example.org/news/some article.html",
+        "https://a.org/x#frag ment",
+        "https://a.org/p?q=a\\b",
+        "https://bücher.example/x",
+    ],
+)
+def test_a_space_or_backslash_outside_the_authority_is_fetched_not_refused(url):
+    EthicalFetcher._refuse_parser_mismatch(url)

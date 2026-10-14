@@ -166,7 +166,7 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 #: ``src/database`` (all but ``repair.py``): the damage lane's classifiers and walks (``damage.py``, ``verify.py``, ``salvage.py``: each reads a
 #: caught exception to CLASSIFY it, and what it records is ``failure_label``/``failure_text``/``corruption_of``, a class and a fixed label,
 #: never the engine's words), the retry/lock walks in ``write.py``, the connect helper that hands the driver's exception back to its
-#: caller to re-raise, the statement-deadline translation in ``maintenance.py`` (its ``from exc`` keeps the driver error as the cause
+#: caller to chain as the cause of WrongPassphraseError, the statement-deadline translation in ``maintenance.py`` (its ``from exc`` keeps the driver error as the cause
 #: because the damage and storage classifiers read it; every sink of a chain goes through ``log_failure``/``record_text``/
 #: ``record_traceback``, which apply the per-link driver rule), and ``session.info`` dictionaries (not logs). Read line by line; counted.
 _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
@@ -292,7 +292,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
 }
 CLASSIFIED.update(_DATABASE_CLASSIFIED)
-#: ``pool_watch``/``writer`` import ``traceback`` to print the stacks of OTHER threads' frames, not an exception.
+#: ``pool_watch``/``writer`` import ``traceback`` to print a stack of frames (the current thread's own), not an exception.
 _DATABASE_NOT_RECORDS: dict[str, dict[str, int]] = {
     'src/database/pool_watch.py': {'the traceback module is imported': 2},
     'src/database/writer.py': {'the traceback module is imported': 1},

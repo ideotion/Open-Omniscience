@@ -32,3 +32,17 @@ def test_the_damage_lane_records_carry_no_driver_words(exc):
     assert FRAGMENT not in damage.failure_label(exc)
     assert FRAGMENT not in repr(damage.corruption_of(exc))
     assert FRAGMENT not in repr(verify.classify_error(exc))
+
+
+def test_the_disk_gone_poke_names_our_marker_never_the_drivers_words(monkeypatch):
+    from types import SimpleNamespace
+
+    from src.database import session
+    from src.safety import data_volume
+
+    seen: list[str] = []
+    monkeypatch.setattr(data_volume.MONITOR, "poke", lambda why: seen.append(why))
+    exc = RuntimeError("no such table: disk i/o error horse-battery")
+    session._data_drive_on_disk_error(SimpleNamespace(original_exception=exc))
+    assert seen == ["database error: disk i/o error"]
+    assert "horse-battery" not in seen[0]
