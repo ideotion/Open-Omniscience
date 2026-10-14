@@ -48,7 +48,8 @@ def test_the_rendered_states_carry_the_caveat_in_every_locale():
     assert len(locales) >= 12
     proc = subprocess.run(["node", str(ROOT / "tests" / "ring_caveat_node_test.js")],
                           capture_output=True, text=True, check=False,
-                          env={**os.environ, "RING_COUNTRY_CAVEAT": queries._RING_COUNTRY_CAVEAT})
+                          env={**os.environ, "RING_COUNTRY_CAVEAT": queries._RING_COUNTRY_CAVEAT,
+                               "RING_COUNTRY_METHOD": queries._RING_COUNTRY_METHOD})
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    # five rendered shapes per locale, plus the four locale-free checks (the two language-switch repaints among them): a loop that ran zero times fails here
-    assert f"{5 * len(locales) + 4} passed" in proc.stdout, proc.stdout
+    # five rendered shapes per locale, plus the five locale-free checks (the three language-switch repaints among them): a loop that ran zero times fails here
+    assert f"{5 * len(locales) + 5} passed" in proc.stdout, proc.stdout

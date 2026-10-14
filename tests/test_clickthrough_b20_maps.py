@@ -90,7 +90,8 @@ def test_the_language_switch_redraws_the_statistics_and_ring_maps_from_cache():
     assert 'querySelector("svg#oo-choro, table")' in stat, "redraw only a map that is on screen"
     assert "!_ringMapLast || !host" in ring, "redraw only from the payload the host shows"
     show = strip_comments(function_body(read_static("app-insights.js"), "showRingMap"))
-    assert "_ringMapLast = null;" in show, "a group that starts loading must clear the cached payload"
+    assert re.search(r"if \(!cached\) \{\s*_ringMapLast = null;", show), "a group that starts loading must clear the cached payload"
+    assert re.search(r"catch \(e\) \{\s*_ringMapLast = null;", show), "a draw that failed must not be redrawn from the cache"
     for body in (stat, ring):
         assert "api(" not in body, "a language switch must never fetch"
 

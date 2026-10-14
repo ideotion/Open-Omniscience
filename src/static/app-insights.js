@@ -556,7 +556,10 @@
         const truncNote = (d.truncated && tf)
           ? `<div class="hint">${esc(countLine)}</div>` : "";
         if (detail) detail.innerHTML = langs + langBd + truncNote + unlocNote + dumb + tbl;
-      } catch (e) { host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
+      } catch (e) {
+        _ringMapLast = null;  // the host now shows an error, not that payload: a language switch must not redraw it
+        host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
+      }
     }
     // §D: the shared country-cell drill -- exact article ids behind (ring, country),
     // via the /ring-country-articles endpoint (same keyword resolution as the

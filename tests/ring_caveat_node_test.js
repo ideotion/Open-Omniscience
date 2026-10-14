@@ -29,9 +29,10 @@ const CODES = fs.readdirSync(path.join(STATIC, "locales")).filter((f) => f.endsW
 // The caveat of a ring that has mention rows: handed over by tests/test_ring_caveat_i18n.py from
 // src/analytics/queries.py (_RING_COUNTRY_CAVEAT), so the fixtures carry the sentence the endpoint really sends.
 const STANDARD = process.env.RING_COUNTRY_CAVEAT || "";
+const METHOD = process.env.RING_COUNTRY_METHOD || "";
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 
-if (!STANDARD) { console.error("FAIL: RING_COUNTRY_CAVEAT is not set (run tests/test_ring_caveat_i18n.py)"); process.exit(1); }
+if (!STANDARD || !METHOD) { console.error("FAIL: RING_COUNTRY_CAVEAT / RING_COUNTRY_METHOD is not set (run tests/test_ring_caveat_i18n.py)"); process.exit(1); }
 let passed = 0;
 function assert(cond, msg) { if (!cond) { console.error("FAIL: " + msg); process.exit(1); } }
 function test(name, fn) {
@@ -82,7 +83,7 @@ async function render(payload, code, opts) {
 const REPAINT = extract("repaintRingMapFromCache", "function repaintRingMapFromCache(", INS);
 
 // A reader's session: one set of elements and one _ringMapLast, so a language switch can repaint what is on screen.
-function session(code, apiFn) {
+function session(code, apiFn, ooMapFn) {
   const map = {};
   const load = (c) => { Object.keys(map).forEach((k) => delete map[k]); if (c !== "en") Object.assign(map, LOCALE(c)); };
   load(code);
@@ -92,7 +93,7 @@ function session(code, apiFn) {
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
     "let _ringMapLast = null; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
-  const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, async () => {},
+  const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, ooMapFn || (async () => {}),
     (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
   return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
            switchTo: (c) => load(c), host: () => els["sg-ringmap"].innerHTML };
@@ -112,7 +113,6 @@ const NONE = {
   caveat_i18n: "No indexed keywords in this group yet for your corpus.", caveat_vars: {},
 };
 // The populated shapes carry what the endpoint always sends: label, method and the standard caveat.
-const METHOD = "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.";
 const UNLOCATED_ONLY = {
   found: true, ring_id: "news-media", label: "News media", n_keywords: 3, languages: ["en"], n_countries: 0,
   countries_listed: 0, truncated: false, countries: [{ country: null, articles: 4, mentions: 9 }],
@@ -191,6 +191,15 @@ const NO_MENTIONS = {
     sess.switchTo("fr"); sess.repaint();
     await new Promise((r) => setImmediate(r));
     assert(!sess.host().includes("hidden") && sess.host() === before, "the previous group came back: " + sess.host());
+  });
+  await test("a draw that failed is not redrawn by a language switch (the host shows the error, not the payload)", async () => {
+    const sess = session("en", async () => LOCATED, async () => { throw new Error("map failed"); });
+    await sess.show("news-media");
+    const before = sess.host();
+    assert(before.includes("map failed"), before);
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(sess.host() === before, "the failed draw was redrawn: " + sess.host());
   });
   await test("the 'all hidden' and the 'nothing indexed' states read differently (R111 T2)", async () => {
     const a = (await render(HIDDEN, "en")).host, b = (await render(NONE, "en")).host;
