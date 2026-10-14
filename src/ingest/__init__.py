@@ -45,7 +45,7 @@ from src.ingest.ssrf_guard import (
     is_blocked_ip,
 )
 from src.monitoring.activity import activity_monitor
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -1125,7 +1125,7 @@ class EthicalFetcher:
                         url, extra_headers=extra_headers, proxies=iso_proxies
                     )
                 except requests.RequestException as exc:
-                    transient = FetchFailed(f"request error for {url}: {exc}")
+                    transient = FetchFailed(f"request error for {url}: {record_text(exc, typed=False)}")
                 finally:
                     with self._host_state_guard:
                         self._last_request[parsed.netloc] = self._now()
@@ -1307,7 +1307,7 @@ class EthicalFetcher:
         try:
             infos = socket.getaddrinfo(host, None)
         except OSError as exc:
-            raise FetchFailed(f"cannot resolve host {host!r}: {exc}") from exc
+            raise FetchFailed(f"cannot resolve host {host!r}: {record_text(exc, typed=False)}") from None
         if len(self._dns_cache) >= _DNS_CACHE_MAX:
             self._dns_cache.clear()
         self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
@@ -1474,7 +1474,7 @@ class EthicalFetcher:
                         continue
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
-                raise BlockedTarget(str(exc)) from exc
+                raise BlockedTarget(record_text(exc, typed=False)) from None
         raise FetchFailed(f"too many redirects for {url}")
 
     def _request_proxy_endpoints(

@@ -281,8 +281,8 @@ def open_window(purpose: str, *, ttl_s: float | None = None) -> dict:
     cap = _max_ttl()
     try:
         ttl = cap if ttl_s is None else float(ttl_s)
-    except (TypeError, ValueError) as exc:
-        raise EgressWindowError(f"ttl_s must be a number, got {ttl_s!r}") from exc
+    except (TypeError, ValueError):
+        raise EgressWindowError(f"ttl_s must be a number, got {ttl_s!r}") from None
     ttl = max(1.0, min(cap, ttl))
     now = _now()
     with _LOCK:
