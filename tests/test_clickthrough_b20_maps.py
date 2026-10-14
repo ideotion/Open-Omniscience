@@ -83,10 +83,14 @@ def test_the_language_switch_redraws_the_statistics_and_ring_maps_from_cache():
     )
     stat = strip_comments(function_body(read_static("app-map.js"), "repaintStatMapFromCache"))
     ring = strip_comments(function_body(read_static("app-insights.js"), "repaintRingMapFromCache"))
-    # The level map draws a ranked table instead of the svg (re-walk L-3), so the
-    # statistics guard names both; the ring map only ever draws the svg.
+    # The level map draws a ranked table instead of the svg (re-walk L-3), so the statistics guard names both.
+    # The ring map redraws whenever it holds a payload -- its EMPTY state draws no svg but carries a translated
+    # caveat -- and what keeps that "only a map that is on screen" is that the cached payload is cleared the moment
+    # another group starts loading (tests/ring_caveat_node_test.js runs both halves for real).
     assert 'querySelector("svg#oo-choro, table")' in stat, "redraw only a map that is on screen"
-    assert 'querySelector("svg#oo-choro")' in ring, "redraw only a map that is on screen"
+    assert "!_ringMapLast || !host" in ring, "redraw only from the payload the host shows"
+    show = strip_comments(function_body(read_static("app-insights.js"), "showRingMap"))
+    assert "_ringMapLast = null;" in show, "a group that starts loading must clear the cached payload"
     for body in (stat, ring):
         assert "api(" not in body, "a language switch must never fetch"
 

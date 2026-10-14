@@ -1624,6 +1624,14 @@ _RING_ALL_HIDDEN = (
     "so there is nothing to count."
 )
 _RING_NONE_INDEXED = "No indexed keywords in this group yet for your corpus."
+# The caveat of a ring that has mention rows. Keyed x12 and t()'d by the ring map: a reword is re-keyed in
+# src/static/locales/*.json. (tests/test_ring_caveat_i18n.py hands this exact sentence to the node test.)
+_RING_COUNTRY_CAVEAT = (
+    "Coverage by producing-source country, never a credibility ranking or score. "
+    "Articles whose source has no country are counted under 'Not mapped (source "
+    "country unknown)', never dropped. Co-occurrence in your corpus, never a claim "
+    "about the country."
+)
 
 
 def _empty_ring_caveat_parts(session, ring_id: str) -> dict:
@@ -1760,12 +1768,7 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         # Both sentences are keyed x12 and t()'d by the ring map (row R, R5), so a reword
         # here must be re-keyed in src/static/locales/*.json. The unlocated bucket is named
         # by the UI's own label for it, never by the storage word ("null") it once used.
-        "caveat": (
-            "Coverage by producing-source country, never a credibility ranking or score. "
-            "Articles whose source has no country are counted under 'Not mapped (source "
-            "country unknown)', never dropped. Co-occurrence in your corpus, never a claim "
-            "about the country."
-        ),
+        "caveat": _RING_COUNTRY_CAVEAT,
     }
 
 

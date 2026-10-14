@@ -36,7 +36,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ def ingest_pdf_blobs(session: Session, blobs, *, extractor=None, source=None) ->
         except Exception as exc:  # noqa: BLE001 - one bad file must not abort the batch
             session.rollback()
             log_failure(_LOG, f"pdf import failed for {filename}", exc, level=logging.WARNING)
-            res = {"status": "skipped", "filename": filename, "reason": f"error: {exc}"}
+            res = {"status": "skipped", "filename": filename, "reason": f"error: {record_text(exc, typed=False)}"}
         _tally_one(tally, res)
     return tally
 
@@ -208,7 +208,7 @@ def ingest_pdf_files(session: Session, paths, *, extractor=None, source=None) ->
         except Exception as exc:  # noqa: BLE001 - a read error is one file's problem only
             session.rollback()
             log_failure(_LOG, f"pdf import failed reading {path}", exc, level=logging.WARNING)
-            res = {"status": "skipped", "filename": filename, "reason": f"read error: {exc}"}
+            res = {"status": "skipped", "filename": filename, "reason": f"read error: {record_text(exc, typed=False)}"}
         _tally_one(tally, res)
     return tally
 

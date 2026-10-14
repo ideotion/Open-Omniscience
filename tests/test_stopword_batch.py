@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import zipfile
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -792,9 +793,68 @@ def test_a_hand_review_file_that_says_nothing_for_the_language_is_called_out(tmp
 
 def test_the_primary_code_decides_whether_a_language_is_twice_read(tmp_path):
     assert all(sb.is_twice_read(c) for c in ("ko", "KO", "ko-kr", "vi_VN", "tl", "as"))
-    assert not any(sb.is_twice_read(c) for c in ("en", "kok", "ja", "", "fil"))
+    assert not any(sb.is_twice_read(c) for c in ("en", "kok", "ja", ""))
     v = _marker_verdicts(tmp_path, "ko-kr", "zzalpha\tN\tbp\tH\treader\t")
     assert sb.verdict_refusals("zzalpha", v, "ko-kr") == ["not_twice_read"]
+
+
+@pytest.mark.parametrize("alias,lang", [("kor", "ko"), ("vie", "vi"), ("tgl", "tl"), ("asm", "as"), ("fil", "tl"),
+                                        ("KOR", "ko"), ("kor-KR", "ko"), ("vie_VN", "vi")])
+def test_the_three_letter_codes_of_the_twice_read_languages_are_held_to_the_same_gate(tmp_path, alias, lang):
+    assert sb.primary_code(alias) == lang and sb.is_twice_read(alias)
+    v = _marker_verdicts(tmp_path, alias.lower().replace("_", "-"), "zzalpha\tN\tbp\tH\treader\t",
+                         "zzbeta\tN\tbp\tH\treader\trepeat_agreed")
+    code = alias.lower().replace("_", "-")
+    assert sb.verdict_refusals("zzalpha", v, code) == ["not_twice_read"]
+    assert sb.verdict_refusals("zzbeta", v, code) == []
+    assert sb.verdict_refusals("zzalpha", v, code, frozenset({"zzalpha"})) == []
+
+
+def test_a_codes_alias_table_only_names_twice_read_languages_and_no_other_language_is_caught():
+    assert set(sb.TWICE_READ_ALIASES.values()) <= sb.TWICE_READ
+    for code in ("eng", "fra", "deu", "jpn", "zho", "rus", "ara", "hin", "ben", "ind", "por", "spa", "ceb", "kok", "kos"):
+        assert not sb.is_twice_read(code), code
+
+
+@pytest.mark.parametrize("code", ["kor", "vie", "tgl", "asm", "fil", "ko-kr", "vi_vn", "KOR"])
+def test_apply_refuses_another_spelling_of_a_twice_read_language_and_writes_nothing(tmp_path, monkeypatch, code):
+    # the gate alone would hold (not_twice_read), but the file would be kor.yml and the script split would not apply
+    rows = [(code, "zzuno", "N", "fn", "H", "reader-a", "repeat_agreed")]
+    with pytest.raises(SystemExit, match="another spelling of"):
+        _apply(tmp_path, monkeypatch, code, "zzuno\n", rows, [_kw("zzuno", code, 500, sources=50)], batch_id="x-1")
+    assert not list((tmp_path / "extra").glob("*.yml"))
+
+
+def test_a_row_in_another_spelling_of_the_runs_language_stops_the_file_rather_than_being_skipped(tmp_path, monkeypatch):
+    # the dissent in "kor" must not be dropped as another language's row: zzlatin would be batched on the "ko" vote alone
+    rows = [("ko", "zzlatin", "N", "fn", "H", "reader-a", "repeat_agreed"), ("kor", "zzlatin", "K", "fn", "H", "reader-b", "")]
+    with pytest.raises(SystemExit, match="under another spelling"):
+        _apply(tmp_path, monkeypatch, "ko", "zzlatin\n", rows, [_kw("zzlatin", "ko", 500, sources=50)], batch_id="ko-1")
+    assert not list((tmp_path / "extra").glob("*.yml"))
+    for spelling_ in ("ko-KR", "ko_kr", "KOR"):
+        f = _verdict_file(tmp_path, (spelling_, "zzlatin", "K", "fn", "H", "reader-b", ""))
+        with pytest.raises(SystemExit, match="under another spelling"):
+            sb.read_verdicts(f, "ko")
+
+
+def test_a_different_language_that_only_looks_alike_is_still_skipped_not_refused(tmp_path):
+    f = _verdict_file(tmp_path, ("kok", "zzlatin", "K", "fn", "H", "reader-b", ""),
+                      ("ko", "zzlatin", "N", "fn", "H", "reader-a", "repeat_agreed"))
+    seen = Counter()
+    assert set(sb.read_verdicts(f, "ko", seen)) == {"zzlatin"} and seen["kok"] == 1
+    # and a language that is not twice-read keeps the old behaviour: "pt-br" rows are another language's, skipped
+    g = _verdict_file(tmp_path, ("pt-br", "zzlatin", "K", "fn", "H", "reader-b", ""),
+                      ("pt", "zzlatin", "N", "fn", "H", "reader-a", ""))
+    assert set(sb.read_verdicts(g, "pt")) == {"zzlatin"}
+
+
+def test_a_hand_review_row_in_another_spelling_stops_the_file_too(tmp_path):
+    f = tmp_path / "hand.tsv"
+    f.write_text("kor\t사이트\n", "utf-8")
+    with pytest.raises(SystemExit, match="under another spelling"):
+        sb.read_hand_reviewed(f, "ko")
+    f.write_text("ja\t사이트\n", "utf-8")
+    assert sb.read_hand_reviewed(f, "ko") == frozenset()
 
 
 def test_the_hand_review_file_is_never_overwritten_by_the_json_report(tmp_path):
