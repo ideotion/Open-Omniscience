@@ -452,6 +452,7 @@
     // The newest load's ticket: an answer that arrives after a newer group was picked (or the picker was cleared)
     // is dropped, so a slow response never paints over the group the reader chose last.
     let _ringSeq = 0;
+    let _ringCleared = false;  // the last call cleared the picker, so a draw that finishes late must leave the host empty
     function repaintRingMapFromCache() {
       const host = $("sg-ringmap");
       // _ringMapLast is non-null only while the host shows exactly that payload (it is cleared when another
@@ -472,16 +473,17 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
       const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
       if (!host) return;
-      if (!ringId) { _ringSeq++; host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
+      if (!ringId) { _ringSeq++; _ringCleared = true; host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
       const ticket = cached ? _ringSeq : ++_ringSeq;
       if (!cached) {
+        _ringCleared = false;
         _ringMapLast = null;
         host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
         if (detail) detail.innerHTML = "";
       }
       try {
         const d = cached || await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
-        if (!cached && ticket !== _ringSeq) return;  // a newer pick (or a cleared picker) owns the host now
+        if (ticket !== _ringSeq) return;  // a newer pick (or a cleared picker) owns the host now
         if (!d.found) { host.innerHTML = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
         _ringMapLast = { ringId, d };
         const values = {}, names = {}; let unloc = null;
@@ -528,6 +530,13 @@
             method: d.method ? t(d.method) : "", caveat: ringCaveat,
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
+          // ooMap awaits its own geometry loads, so an older draw can finish after a newer pick (or a cleared
+          // picker): it must not write its detail, and whatever it painted into the host is put right.
+          if (ticket !== _ringSeq) {
+            if (_ringMapLast) showRingMap(_ringMapLast.ringId, _ringMapLast.d);
+            else if (_ringCleared) host.innerHTML = "";
+            return;
+          }
         }
         // Detail: the per-language mention split (from /top?group=true) + unlocated + a table.
         const lb = _ringLangIndex[ringId];
@@ -562,7 +571,7 @@
           ? `<div class="hint">${esc(countLine)}</div>` : "";
         if (detail) detail.innerHTML = langs + langBd + truncNote + unlocNote + dumb + tbl;
       } catch (e) {
-        if (!cached && ticket !== _ringSeq) return;  // the newer pick's own draw stands, not this late error
+        if (ticket !== _ringSeq) return;  // the newer pick's own draw stands, not this late error
         _ringMapLast = null;  // the host now shows an error, not that payload: a language switch must not redraw it
         host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
       }

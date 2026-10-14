@@ -73,7 +73,7 @@ async function render(payload, code, opts) {
   const drawn = [];
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; let _ringSeq = 0; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
+    "let _ringMapLast = null; let _ringSeq = 0; let _ringCleared = false; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
   const fn = run({ OOI18N: opts.noTf ? { t } : { t, tf } }, opts.noTf ? { t } : { t, tf }, (id) => els[id] || null, ESC,
     async () => payload, (c) => c, async (host, o) => { drawn.push(o); }, (a, b) => a + b, (x) => x, (x) => x,
     () => "", () => {});
@@ -93,7 +93,7 @@ function session(code, apiFn, ooMapFn) {
   const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; let _ringSeq = 0; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
+    "let _ringMapLast = null; let _ringSeq = 0; let _ringCleared = false; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
   const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, ooMapFn || (async () => {}),
     (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
   return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
@@ -230,6 +230,67 @@ const NO_MENTIONS = {
     sess.switchTo("fr"); sess.repaint();
     await new Promise((r) => setImmediate(r));
     assert(sess.host().includes("drawn:Second group"), "the newer group stopped being redrawable after the late error: " + sess.host());
+  });
+  // ooMap awaits its own geometry loads: a draw that is still inside it when a newer pick draws (or the picker is
+  // cleared) must not leave its map in the host. The stub holds every ooMap call until the test releases it.
+  const held = () => {
+    const calls = [];
+    return { calls, ooMap: (host, o) => new Promise((resolve, reject) => {
+      calls.push({ aria: o.aria, release: () => { host.innerHTML = "drawn:" + o.aria; resolve(); }, fail: () => reject(new Error("late failure")) });
+    }) };
+  };
+  const tick = () => new Promise((r) => setImmediate(r));
+  const GA = Object.assign({}, LOCATED, { ring_id: "a", label: "Group A" });
+  const GB = Object.assign({}, LOCATED, { ring_id: "b", label: "Group B" });
+  await test("an older pick still inside ooMap when a newer pick draws leaves the newer group in the host", async () => {
+    const h = held();
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? GA : GB), h.ooMap);
+    const a = sess.show("a"); await tick();
+    const b = sess.show("b"); await tick();
+    assert(h.calls.length === 2, "both picks should be inside ooMap: " + h.calls.length);
+    h.calls[1].release(); await b;
+    h.calls[0].release(); await tick();
+    // the older draw's stale tail puts the newer group back; release that redraw too
+    for (let i = 2; i < h.calls.length; i++) h.calls[i].release();
+    await a;
+    assert(sess.host() === "drawn:Group B — 1 countries", "the older pick's map was left in the host: " + sess.host());
+    sess.switchTo("fr"); sess.repaint(); await tick();
+    for (let i = 3; i < h.calls.length; i++) h.calls[i].release();
+    await tick();
+    assert(sess.host().includes("Group B"), "the cache stopped holding the newer group: " + sess.host());
+  });
+  await test("a picker cleared while a draw is inside ooMap ends with an empty host", async () => {
+    const h = held();
+    const sess = session("en", async () => GA, h.ooMap);
+    const a = sess.show("a"); await tick();
+    await sess.show("");
+    h.calls[0].release(); await a;
+    assert(sess.host() === "", "the cleared picker was painted by a draw that finished late: " + sess.host());
+  });
+  await test("a language-switch repaint of an older group that fails late does not replace the newer group", async () => {
+    const h = held();
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? GA : GB), h.ooMap);
+    const first = sess.show("a"); await tick();
+    h.calls[0].release(); await first;
+    sess.switchTo("fr"); sess.repaint(); await tick();
+    const b = sess.show("b"); await tick();
+    h.calls[2].release(); await b;
+    h.calls[1].fail(); await tick();
+    assert(sess.host().includes("Group B") && !sess.host().includes("late failure"), "a late error of the repaint replaced the newer group: " + sess.host());
+  });
+  await test("a language-switch repaint still inside ooMap when another group is picked does not stay on screen", async () => {
+    const h = held();
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? GA : GB), h.ooMap);
+    const first = sess.show("a"); await tick();
+    h.calls[0].release(); await first;
+    sess.switchTo("fr"); sess.repaint(); await tick();
+    assert(h.calls.length === 2, "the repaint should be inside ooMap: " + h.calls.length);
+    const b = sess.show("b"); await tick();
+    h.calls[2].release(); await b;
+    h.calls[1].release(); await tick();
+    for (let i = 3; i < h.calls.length; i++) h.calls[i].release();
+    await tick();
+    assert(sess.host().includes("Group B") && !sess.host().includes("Group A"), "the repaint of the older group stayed on screen: " + sess.host());
   });
   await test("a late answer after the picker was cleared draws nothing", async () => {
     const waiting = {};

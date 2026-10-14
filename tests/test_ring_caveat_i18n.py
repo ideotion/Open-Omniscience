@@ -38,6 +38,9 @@ def test_every_template_is_keyed_in_every_locale_with_its_placeholder_intact():
             assert have == re.findall(r"\{(\w+)\}", template), f"{path.name} changes the placeholders of {template[:50]!r}"
 
 
+LOCALE_FREE_TESTS = 12
+
+
 def test_the_rendered_states_carry_the_caveat_in_every_locale():
     """showRingMap, extracted from the shipped source, run with the real locale files and the real tf()
     (tests/ring_caveat_node_test.js), for every locale in the directory: the empty state (which draws no map) shows
@@ -51,8 +54,9 @@ def test_the_rendered_states_carry_the_caveat_in_every_locale():
                           env={**os.environ, "RING_COUNTRY_CAVEAT": queries._RING_COUNTRY_CAVEAT,
                                "RING_COUNTRY_METHOD": queries._RING_COUNTRY_METHOD})
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    # five rendered shapes per locale, plus the locale-free checks (their number may grow, so it is not pinned here):
-    # a loop that ran zero times, or only for some locales, falls short of the per-locale floor
+    # five rendered shapes per locale plus the locale-free checks (the language-switch repaints and the ordering cases
+    # among them). The total is pinned exactly: a loop that ran for fewer locales, or a deleted locale-free test,
+    # changes it. Adding a locale-free test means raising LOCALE_FREE_TESTS.
     counted = re.search(r"^(\d+) passed$", proc.stdout, re.M)
     assert counted, proc.stdout
-    assert int(counted.group(1)) >= 5 * len(locales) + 1, proc.stdout
+    assert int(counted.group(1)) == 5 * len(locales) + LOCALE_FREE_TESTS, proc.stdout

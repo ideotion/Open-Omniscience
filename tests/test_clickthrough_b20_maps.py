@@ -90,11 +90,12 @@ def test_the_language_switch_redraws_the_statistics_and_ring_maps_from_cache():
     assert 'querySelector("svg#oo-choro, table")' in stat, "redraw only a map that is on screen"
     assert "!_ringMapLast || !host" in ring, "redraw only from the payload the host shows"
     show = strip_comments(function_body(read_static("app-insights.js"), "showRingMap"))
-    assert re.search(r"if \(!cached\) \{\s*_ringMapLast = null;", show), "a group that starts loading must clear the cached payload"
-    assert re.search(r"catch \(e\) \{\s*(?:if \(!cached && ticket !== _ringSeq\) return;[^\n]*\n\s*)?_ringMapLast = null;", show), \
+    assert re.search(r"if \(!cached\) \{\s*(?:_ringCleared = false;\s*)?_ringMapLast = null;", show), "a group that starts loading must clear the cached payload"
+    assert re.search(r"catch \(e\) \{\s*(?:if \(ticket !== _ringSeq\) return;[^\n]*\n\s*)?_ringMapLast = null;", show), \
         "a draw that failed must not be redrawn from the cache"
-    # an older pick's slow answer (or late error) must not paint over the newer pick: both the answer and the catch check the ticket
-    assert show.count("ticket !== _ringSeq") == 2 and "++_ringSeq" in show, "showRingMap lost its request ticket"
+    # an older pick's slow answer (or late error) must not paint over the newer pick: the answer, the draw (ooMap
+    # awaits its own loads) and the catch each check the ticket
+    assert show.count("ticket !== _ringSeq") == 3 and "++_ringSeq" in show, "showRingMap lost its request ticket"
     for body in (stat, ring):
         assert "api(" not in body, "a language switch must never fetch"
 

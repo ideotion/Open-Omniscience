@@ -472,7 +472,7 @@ reading of these three languages "partial", and no word kept carries the `single
 (`台南市政府提供`, `屏東縣政府提供`, `觀光局提供`) have the shape of the statement lines left out above (`教育局表示`), but a credit line says who supplied a picture and never what that body did or said, so hiding it
 loses no statement. The suicide-prevention footer lines (`生命線專線`, `自殺不能解決問題`) are a fixed block of Taiwanese newsrooms. ja `ログイン` is kept for its volume (76 articles) although, once Japanese is split,
 it would also drop a phrase such as `不正 ログイン` (unauthorised login); `お知らせ`, `購読料`, `オススメ`, `閉じる` and ko `등록번호` are marginal labels that can also be words, hidden at read time and so reversible. Not done
-and for a later batch (batch 8 did the attribution tails): the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious; `々` (as in 人々) is not yet allowed in
+and for a later batch (batch 8 did the attribution tails): the reporting phrases `と指摘した`, `と強調`, `と説明`, `を発表` and `としています` are the same kind as the kept `と述べた` and were left out as over-cautious (done in batch 8); `々` (as in 人々) is not yet allowed in
 `ja.yml` by the script guard. Hiding is retroactive with no re-index; extraction also drops them from now on.
 
 ## Stoplist batch 7: function words, number words and calendar words in Amharic, Basque, Faroese, Galician, Hausa, Kazakh, Macedonian, Kinyarwanda and Swahili (2026-10-13, R131, language group 6)
