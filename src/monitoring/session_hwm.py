@@ -79,7 +79,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed_name
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -670,7 +670,7 @@ def thread_snapshot() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for ident, frame in frames.items():
         thread = by_ident.get(ident)
-        entry: dict[str, Any] = {"name": thread.name if thread else f"thread {ident}"}
+        entry: dict[str, Any] = {"name": scrubbed_name(thread.name) if thread else f"thread {ident}"}
         native = getattr(thread, "native_id", None) if thread else None
         if native is not None:
             entry["tid"] = native
@@ -1101,7 +1101,7 @@ def _busiest_threads(
     ranked.sort(key=lambda r: (r[0] is None, -(r[0] or 0.0), -r[1]))
     out: list[dict[str, Any]] = []
     for delta, _c, thread, frame, native in ranked[:_LIGHT_THREADS]:
-        entry: dict[str, Any] = {"name": thread.name, "tid": native, "stack": _stack_of(frame)}
+        entry: dict[str, Any] = {"name": scrubbed_name(thread.name), "tid": native, "stack": _stack_of(frame)}
         if native in cpu:
             entry["cpu_s"] = cpu[native]
         if delta is not None:

@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed_name
 
 _LOG = logging.getLogger("database.maintenance")
 
@@ -1819,7 +1819,7 @@ def raise_if_memory_short(*, started: float | None = None) -> None:
     elapsed = None if started is None else max(0.0, time.monotonic() - started)
     _LOG.warning(
         "memory stop: stopped a read on thread %s (%.0f MB available, floor %.0f MB)",
-        threading.current_thread().name, avail, floor,
+        scrubbed_name(threading.current_thread().name), avail, floor,
     )
     raise MemoryShort(_memory_short_message(avail, floor, elapsed=elapsed))
 
@@ -1891,7 +1891,7 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
         if avail_at_start is not None and avail_at_start <= floor:
             _LOG.warning(
                 "memory stop: refused a read on thread %s (%.0f MB available, floor %.0f MB)",
-                threading.current_thread().name, avail_at_start, floor,
+                scrubbed_name(threading.current_thread().name), avail_at_start, floor,
             )
             raise MemoryShort(_memory_short_message(avail_at_start, floor, elapsed=None))
     # The reading that stopped the read, for the message. A list so the handler can set it.
@@ -1967,7 +1967,7 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             _LOG.warning(
                 "memory stop: stopped a read on thread %s after %.1f s "
                 "(%.0f MB available, floor %.0f MB)",
-                threading.current_thread().name, elapsed, short_at[-1], floor,
+                scrubbed_name(threading.current_thread().name), elapsed, short_at[-1], floor,
             )
             raise MemoryShort(
                 _memory_short_message(short_at[-1], floor, elapsed=elapsed)

@@ -524,6 +524,14 @@ def scrubbed(text: str, *secrets: str | None, withheld: str = UNREADABLE_TEXT) -
     return withheld if out is None else out
 
 
+def scrubbed_name(name: str | None) -> str | None:
+    """A thread's name as a record or a log line may carry it: ``None`` stays ``None``, a name is :func:`scrubbed`.
+
+    A thread is named from a request (``oo-osm-{code}``, ``served-cache-{key}``, ``oo-dump-{key}``), so the name is user-chosen text
+    and can hold a held passphrase. Never raises."""
+    return None if name is None else scrubbed(str(name))
+
+
 def scrubbed_value(value: Any, *secrets: str | None, withheld: str = UNREADABLE_TEXT) -> Any:
     """``value`` with EVERY string in it passed through :func:`scrubbed` (the secrets handed in, the passphrases the process
     holds, a secret under the floor withholding the string that holds it), through dicts, lists and tuples. KEYS are kept as they

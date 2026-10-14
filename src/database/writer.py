@@ -92,7 +92,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed_name
 
 _LOG = logging.getLogger("database.writer")
 
@@ -592,7 +592,7 @@ def _log_long_release(holder: str | None, held: float) -> None:
     error says no more than one that did not. Never raises."""
     with suppress(Exception):
         if held >= _watchdog_threshold_s():
-            _LOG.warning("write gate released after %.1fs by %r", held, holder)
+            _LOG.warning("write gate released after %.1fs by %r", held, scrubbed_name(holder))
 
 
 def _scrubbed_name(name: str | None) -> str | None:
@@ -732,7 +732,7 @@ def watchdog_tick(gate: WriterGate, warned_since: float | None) -> float | None:
     _LOG.warning(
         "write gate held %.1fs by %r (waiters=%s, queued=%s) -- stack:\n%s",
         held_for,
-        holder,
+        scrubbed_name(holder),
         s.get("waiters"),
         s.get("queued"),
         _holder_stack(ident),
