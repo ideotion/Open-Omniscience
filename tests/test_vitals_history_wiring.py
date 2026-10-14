@@ -111,15 +111,22 @@ def test_the_helper_waits_for_a_tick_in_flight_and_keeps_a_thread_that_outlives_
 
 
 def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_recorder():
-    """A guard on the fixture itself (a fixture cannot be called from a test): on the way OUT (after the
-    ``yield``), the stop is a statement of its own that nothing can skip (not under an ``if`` or a ``try``, and
-    nothing but imports ahead of it), and it comes before the statement that resets the recorder, so a tick in
-    flight finishes before the recorder is wiped. Read from the syntax tree, not sliced out of the source text."""
+    """A guard on the fixture itself (a fixture cannot be called from a test): it is an autouse fixture, and on
+    the way OUT (after the ``yield``) the stop is a statement of its own, called with no argument (so the wait
+    stays the helper's default and no condition or wrapper can skip it), with nothing but imports ahead of it
+    and a reset of the recorder after it, so a tick in flight finishes before the recorder is wiped. Read from
+    the syntax tree, not sliced out of the source text."""
     tree = ast.parse((Path(__file__).parent / "conftest.py").read_text(encoding="utf-8"))
     fixture = next(
         (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_vitals_history_isolated"), None
     )
     assert fixture is not None, "the isolation fixture is gone"
+    assert any(
+        isinstance(d, ast.Call)
+        and getattr(d.func, "attr", None) == "fixture"
+        and any(k.arg == "autouse" and isinstance(k.value, ast.Constant) and k.value.value is True for k in d.keywords)
+        for d in fixture.decorator_list
+    ), "the isolation fixture is not an autouse pytest fixture"
 
     def calls(node: ast.AST, name: str) -> bool:
         return any(
@@ -133,15 +140,19 @@ def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_reco
     )
     assert yielded is not None, "the fixture has no top-level yield"
     teardown = body[yielded + 1 :]
-    stop = next(
-        (
-            i
-            for i, st in enumerate(teardown)
-            if isinstance(st, ast.Expr) and isinstance(st.value, ast.Call) and calls(st.value, "_stop_leaked_liveness_thread")
-        ),
-        None,
-    )
-    assert stop is not None, "no unconditional call of the stop helper after the yield"
+
+    def is_bare_stop(st: ast.stmt) -> bool:
+        return (
+            isinstance(st, ast.Expr)
+            and isinstance(st.value, ast.Call)
+            and isinstance(st.value.func, ast.Name)
+            and st.value.func.id == "_stop_leaked_liveness_thread"
+            and not st.value.args
+            and not st.value.keywords
+        )
+
+    stop = next((i for i, st in enumerate(teardown) if is_bare_stop(st)), None)
+    assert stop is not None, "no bare call of the stop helper, as a statement of its own, after the yield"
     assert all(isinstance(st, ast.Import | ast.ImportFrom) for st in teardown[:stop]), "something can skip the stop"
     reset = next((i for i, st in enumerate(teardown) if calls(st, "reset_for_tests")), None)
     assert reset is not None and stop < reset
