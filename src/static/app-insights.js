@@ -451,7 +451,10 @@
     let _ringMapLast = null;
     function repaintRingMapFromCache() {
       const host = $("sg-ringmap");
-      if (!_ringMapLast || !host || !host.querySelector("svg#oo-choro")) return;
+      // _ringMapLast is non-null only while the host shows exactly that payload (it is cleared when another
+      // group starts loading and when one is not found), so the EMPTY states -- which draw no svg and carry the
+      // caveat -- repaint in the new language too.
+      if (!_ringMapLast || !host) return;
       showRingMap(_ringMapLast.ringId, _ringMapLast.d);
     }
     // Item #4: render a cross-language ring's coverage on the ooMap component — where the
@@ -468,6 +471,7 @@
       if (!host) return;
       if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
       if (!cached) {
+        _ringMapLast = null;
         host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
         if (detail) detail.innerHTML = "";
       }

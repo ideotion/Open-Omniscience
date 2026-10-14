@@ -284,7 +284,8 @@
       // The Statistics map and the Super-groups ring map are ooMap surfaces like the World
       // map and the Governments map above: the legend, the contested line and the worldview
       // picker are t()'d at render, so they kept the old language until re-run (row R, R4).
-      // Each redraws from the payload it last drew, and only when it holds a drawn map.
+      // Each redraws from the payload it last drew, and only when it holds one (the ring map's empty state, which
+      // carries a translated caveat, counts: its payload is cleared whenever another group starts loading).
       try { if (typeof repaintStatMapFromCache === "function") repaintStatMapFromCache(); } catch (_e) {}
       try { if (typeof repaintRingMapFromCache === "function") repaintRingMapFromCache(); } catch (_e) {}
       // Settings → Advanced → Diagnostics: the three job lines (re-index, keyword fold,
