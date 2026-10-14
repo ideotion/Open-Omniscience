@@ -1513,7 +1513,7 @@ def test_a_read_that_fails_with_an_io_error_is_looked_at_again_before_the_file_i
             Flaky.reads += 1
             if Flaky.reads <= 2:
                 raise OSError(errno.EIO, f"I/O error {MARKER}")
-            return real_path.read_text(**kw)
+            return real_path.read_text(encoding="utf-8")
 
     monkeypatch.setattr(se, "_path", lambda: Flaky())
     assert _member()["kinds"]["guard"]["total"] == 6 and Flaky.reads == 3
