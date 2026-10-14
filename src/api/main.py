@@ -67,6 +67,7 @@ from src.catalog.provenance import (
     PROVENANCE_CLASSES,
     provenance_of,
 )
+from src.config.kv_store import KvWriteRefused
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -1125,6 +1126,13 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "Too many requests. Please try again later."},
         headers=headers,
     )
+
+
+@app.exception_handler(KvWriteRefused)
+async def settings_write_refused_handler(request: Request, exc: KvWriteRefused):
+    """A settings save refused, with nothing written, because a restore is switching the corpus file: a 503 whose JSON ``detail`` the
+    UI shows as for any refused save (its text is fixed and carries nothing from the engine), with a ``Retry-After``."""
+    return JSONResponse(status_code=503, content={"detail": str(exc)}, headers={"Retry-After": "30"})
 
 
 @app.exception_handler(Exception)

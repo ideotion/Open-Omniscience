@@ -58,8 +58,11 @@ def test_counts_only_no_score():
     # the map colours by distinct-article spread + shows mentions; never a composite score
     assert "values[c.country] = c.articles" in _JS
     assert "ringScore" not in _JS and "c.score" not in _JS
-    # method + caveat from the endpoint ride the ooMap render (honesty visible)
-    assert "method: d.method" in _JS and "caveat: d.caveat" in _JS
+    # method + caveat from the endpoint ride the ooMap render (honesty visible). The caveat goes through the
+    # empty-state-aware ringCaveat (the T5 layout PR: a template the UI translates, else the plain sentence), which
+    # is built from the payload's caveat_i18n or caveat; tests/ring_caveat_node_test.js runs it for real.
+    assert "method: d.method" in _JS and "caveat: ringCaveat" in _JS
+    assert "d.caveat_i18n" in _JS and "d.caveat ? t(d.caveat)" in _JS
 
 
 def test_ring_map_strings_are_translated():

@@ -48,7 +48,7 @@ def test_the_settings_are_resolved_once_and_before_the_snapshot_in_the_source():
     assert snaps, "anti-vacuity: the snapshot call was not found"
     assert reads[0] < min(snaps), "the settings read must precede every snapshot of the live file"
     # No other settings read hides between the snapshot and the swap.
-    swap = _call_lines(node, "swap_in_corpus")
+    swap = _call_lines(node, "_carry_and_swap")  # the carry and the replace, under the write gate
     assert len(swap) == 1
     for name in ("load_settings", "get_settings", "_read_raw", "kv_get_json", "kv_set_json"):
         between = [ln for ln in _call_lines(node, name) if min(snaps) < ln < swap[0]]

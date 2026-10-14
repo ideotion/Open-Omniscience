@@ -115,6 +115,20 @@ def test_duckdb_floor_matches_pyproject():
     )
 
 
+def test_sqlcipher3_range_in_pyproject_matches_the_registry_and_keeps_its_ceiling():
+    """The damage lane (src/database/damage.py, the page pass) is built on how SQLCipher 4.12 reports page damage; sqlcipher3 0.6.4
+    (SQLCipher 4.19) reports it differently and reddened tests/test_poisoned_connection.py and tests/test_database_verify_pages.py
+    (2026-10-13). pyproject carries a ceiling below the first unqualified release and the registry carries the same floor: lifting
+    the ceiling is the qualification's last step (docs/ledger/OPEN_QUEUE.md), never a way to get the lane green."""
+    entry = next(a for a in R.load_registry() if a["id"] == "sqlcipher3-driver")
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'"sqlcipher3>=([0-9.]+),<([0-9.]+)"', pyproject)
+    assert m, "pyproject.toml's sqlcipher3 requirement lost its ceiling (see the comment above it and OPEN_QUEUE)"
+    assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the sqlcipher3 floor"
+    assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified version is below the floor"
+    assert not R._ver_ge(str(entry["pin"]["verified"]), m.group(2)), "the verified version is not below the ceiling"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

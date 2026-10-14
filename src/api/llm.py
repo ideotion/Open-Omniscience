@@ -21,6 +21,7 @@ for the CPU-only fleet, never dropped). Ollama-ONLY management operations
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import UTC, datetime
 
@@ -45,6 +46,8 @@ from src.llm.ollama import (
     OllamaClient,
 )
 from src.llm.prompts_i18n import PROMPTS as _PROMPTS
+
+_LOG = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
@@ -1251,8 +1254,8 @@ def vllm_start(req: VllmStartRequest) -> dict:
             from src.config.app_settings import save_settings
 
             save_settings({"llm_model_vllm": req.model})
-        except Exception:  # noqa: BLE001 - a settings-persist hiccup must not fail the start
-            pass
+        except Exception as exc:  # noqa: BLE001 - a settings-persist hiccup must not fail the start
+            _LOG.warning("the chosen model was not saved as a preference (%s)", type(exc).__name__)  # a restore's refusal included
     return result
 
 
@@ -1437,8 +1440,8 @@ def default_model_install() -> dict:
             from src.config.app_settings import save_settings
 
             save_settings({"llm_model_vllm": plan["artifact"]})
-        except Exception:  # noqa: BLE001 - a settings hiccup must not read as a failed install
-            pass
+        except Exception as exc:  # noqa: BLE001 - a settings hiccup must not read as a failed install
+            _LOG.warning("the chosen model was not saved as a preference (%s)", type(exc).__name__)
         job.start(model=plan["artifact"])
         return {**plan, "action": "downloading", "result": job.status()}
 
@@ -1466,8 +1469,8 @@ def default_model_install() -> dict:
         from src.config.app_settings import save_settings
 
         save_settings({"llm_model": plan["artifact"]})
-    except Exception:  # noqa: BLE001 - the download is the load-bearing half
-        pass
+    except Exception as exc:  # noqa: BLE001 - the download is the load-bearing half
+        _LOG.warning("the chosen model was not saved as a preference (%s)", type(exc).__name__)
     return {**plan, "action": "queued", "result": queued}
 
 

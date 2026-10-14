@@ -155,6 +155,10 @@ ACCEPTED_FLAGS = frozenset({"single_reader", "repeat_agreed"})
 # The languages whose single triage reading is not trusted alone (the maintainer's marker ruling, R131):
 # a word is admitted only when a blind repeat agreed (``repeat_agreed``) or a reader's hand review lists it.
 TWICE_READ = frozenset({"vi", "ko", "as", "tl"})
+# The same languages under their three-letter ISO 639-2/3 codes (a verdict file or ``--language`` may spell them so):
+# without this ``--language kor`` would skip the gate and write ``kor.yml``, which the loader unions for every
+# language. ``fil`` (Filipino) is Tagalog's standardised form and is held to the same rule.
+TWICE_READ_ALIASES = {"kor": "ko", "vie": "vi", "tgl": "tl", "asm": "as", "fil": "tl"}
 # A batch id lands in a YAML comment; it must never be able to open a new line.
 BATCH_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 # How many other-language / entity rows the table prints before saying "and N more": two lines of
@@ -295,6 +299,7 @@ def read_verdicts(path: Path, lang: str, skipped: Counter | None = None) -> dict
         if len(cols) < 2 or not VERDICT_LANGUAGE.fullmatch(cols[0].lower()):
             raise SystemExit(f"{path}:{number}: not a verdict row (tab-separated, the first column a language "
                              f"code); refusing to skip it, a skipped row could be the dissenting one: {line[:60]!r}")
+        refuse_other_spelling(path, number, cols[0].lower(), lang)
         if cols[0].lower() != lang:
             # Skipped unread, but it must still LOOK like a row: a row of THIS language that lost its
             # language column shifts left, and its word ("zq", "is") then passes for a language code.
@@ -352,14 +357,30 @@ def read_hand_reviewed(path: Path, lang: str) -> frozenset[str]:
         cols = [c.strip() for c in line.split("\t")]
         if len(cols) != 2 or not VERDICT_LANGUAGE.fullmatch(cols[0].lower()) or not cols[1]:
             raise SystemExit(f"{path}:{number}: not a hand-review row (language <TAB> word): {line[:60]!r}")
+        refuse_other_spelling(path, number, cols[0].lower(), lang)
         if cols[0].lower() == lang:
             out.add(spelling(cols[1]))
     return frozenset(out)
 
 
+def primary_code(lang: str) -> str:
+    """The two-letter form of ``lang``'s primary code: ``ko-KR`` and ``kor`` both read ``ko``."""
+    head = re.split(r"[-_]", lang.lower(), maxsplit=1)[0]
+    return TWICE_READ_ALIASES.get(head, head)
+
+
 def is_twice_read(lang: str) -> bool:
-    """Whether ``lang`` is a twice-read language: the primary code decides, so ``ko-kr`` is Korean too."""
-    return re.split(r"[-_]", lang.lower(), maxsplit=1)[0] in TWICE_READ
+    """Whether ``lang`` is a twice-read language, under any spelling ``primary_code`` knows."""
+    return primary_code(lang) in TWICE_READ
+
+
+def refuse_other_spelling(path: Path, number: int, row_lang: str, lang: str) -> None:
+    """Stop the file on a row of a twice-read language spelt other than the run's (``kor``, ``ko-KR`` in a
+    ``--language ko`` run): skipped as "another language" it could be the row that dissents."""
+    if row_lang != lang and is_twice_read(lang) and primary_code(row_lang) == primary_code(lang):
+        raise SystemExit(f"{path}:{number}: a row for {row_lang!r} is the same language as --language "
+                         f"{lang!r} under another spelling; refusing to skip it (a skipped row could be the "
+                         f"dissenting one). Spell it {lang!r} in the file")
 
 
 def twice_read_rule(word: str, lang: str, verdicts: dict[str, dict[str, Any]],
@@ -585,6 +606,10 @@ def check_language(lang: str) -> str:
     if not LANGUAGE_CODE.fullmatch(lang) or lang in RESERVED_NAMES:
         raise SystemExit(f"{lang!r} is not a language code (a letter, then letters, digits, - or _; "
                          "no device names); refusing to build a path from it")
+    if is_twice_read(lang) and lang != primary_code(lang):
+        raise SystemExit(f"{lang!r} is another spelling of {primary_code(lang)!r}: run with --language "
+                         f"{primary_code(lang)} (its file is {primary_code(lang)}.yml and its script split "
+                         "applies to that name only)")
     return lang
 
 

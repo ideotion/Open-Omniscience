@@ -30,7 +30,7 @@ from pathlib import Path
 
 from src.database.corpus_lease import corpus_lease
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
-from src.monitoring.secret_scrub import exception_text, log_failure, traceback_text
+from src.monitoring.secret_scrub import log_failure, record_text, record_traceback
 
 _LOG = logging.getLogger("ingest.import_job")
 
@@ -390,12 +390,12 @@ class NewsletterImportManager:
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             # Written through the one scrub (``secret_scrub``): the process's own passphrase out of the text, then the cut.
-            said = exception_text(exc, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+            said = record_text(exc, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             runlog.milestone(
                 "error",
                 cls=type(exc).__name__,
                 msg=said,
-                traceback=traceback_text(exc)[-runlog.FAILURE_TRACEBACK_KEEP :],
+                traceback=record_traceback(exc)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
             with self._lock:

@@ -43,7 +43,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import islice
@@ -99,6 +99,11 @@ _SWAP_HANDLE_WAIT_S = float(os.environ.get("OO_SWAP_HANDLE_WAIT_S", "300") or 30
 
 # How long to let the pre-swap WAL checkpoint run before treating the corpus as busy.
 _SWAP_CHECKPOINT_S = float(os.environ.get("OO_SWAP_CHECKPOINT_S", "60") or 60)
+
+# How long the restore waits, before the settings carry, for the settings saves already in flight (``_carry_and_swap``). A save may be waiting for
+# the single-writer gate behind a long writer, so the wait is bounded: a restore that cannot start its hold refuses with nothing written, and waiting
+# for ever would trade a lost setting for a hang. ``0`` does not wait at all (it holds only if no save is in flight), unlike OO_CKPT_GATE_TIMEOUT_S, where 0 waits for ever.
+_SWAP_SETTINGS_HOLD_S = float(os.environ.get("OO_SWAP_SETTINGS_HOLD_S", "60") or 60)
 
 
 def _log_is_folded(record: Any, wal: Path | None) -> bool:
@@ -5451,8 +5456,8 @@ _CARRIED_SETTINGS_KEYS = ("settings.", "agenda.", "ui.")
 
 
 def _carry_live_settings(working: Path) -> dict:
-    """Bring the LIVE corpus's settings (``app_state`` rows named in ``_CARRIED_SETTINGS_KEYS``) into the working copy, as late as
-    the swap allows.
+    """Bring the LIVE corpus's settings (the ``app_state`` rows named in ``_CARRIED_SETTINGS_KEYS``, and the one row the search-history
+    module names through ``is_history_key``) into the working copy, as late as the swap allows.
 
     The swap makes the working copy the live corpus, and ``app_state`` is not merged (local wins entirely, ``_MERGE_IGNORED``),
     so the settings that came out of a restore were whatever the SNAPSHOT held. Anything written to the live file after the
@@ -5465,11 +5470,13 @@ def _carry_live_settings(working: Path) -> dict:
     not settings are left as the snapshot has them and named in ``left_as_snapshot`` when they differ. A failure changes nothing,
     is reported by CLASS ONLY (and logged as a warning), and the swap goes on exactly as it did before this existed.
 
-    WHAT IT CANNOT COVER, stated plainly: a settings save that commits after this read and before the file is replaced is lost.
-    Settings writers hold neither the corpus lease (so the quiescence wait does not wait for them) nor a guard of the swap
-    window (so such a save is not refused either): it returns success, the in-process cache serves it, and the value reverts at
-    the next start. The gap is the swap itself, since the carry now follows the checkpoint, and closing it needs the write gate
-    held from here to the replace (recorded in OPEN_QUEUE)."""
+    The history predicate is imported lazily from ``src.api.search_advanced``, which outside the API pulls in fastapi and registers
+    its background job at import; the import is inside the try for that reason, and a failure leaves the history as the snapshot has it.
+
+    THE GAP THIS DOES NOT CLOSE BY ITSELF: a settings save that commits after this read and before the file is replaced would be
+    lost (settings writers hold neither the corpus lease nor a guard of the swap window). It is closed by the CALLER:
+    :func:`_carry_and_swap` holds settings writes (``kv_store.hold_writes``) from before this read to the replace, so such a save
+    waits and lands in the new file. Called without that hold, the gap is open again."""
     from src.backup.sqlite_backup import live_db_path
     from src.database.connect import connect as db_connect
 
@@ -5526,6 +5533,55 @@ def _carry_live_settings(working: Path) -> dict:
     except Exception as exc:  # noqa: BLE001 - the swap must go on as before; the class says why, the engine's words stay out
         _LOG.warning("settings carry skipped before the swap (%s)", type(exc).__name__)
         return {"carried": 0, "skipped": type(exc).__name__}
+
+
+def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
+    """The settings carry and the replace, under ONE hold of settings writes, then the settings cache emptied.
+
+    A settings save (``kv_set_json``) holds neither the corpus lease nor a guard of the swap window, and reads its file through a raw
+    connection, so without a hold one that commits between :func:`_carry_live_settings`' read and the replace is lost: it returns
+    success, the in-process cache serves it, and the value reverts at the next start. ``kv_store.hold_writes`` closes that: a save
+    that starts meanwhile WAITS (``OO_KV_WRITE_WAIT_S``) and lands in the new file, or is refused with nothing written (the API
+    answers a 503 whose detail the UI shows); the ones already in flight are waited for first. The cache is emptied before the hold
+    ends, and a reader that began before the replace cannot re-fill it afterwards (the cache's epoch).
+
+    WHY NOT THE SINGLE-WRITER GATE. The first build held ``write_lock()`` here and the independent read measured what that costs: the
+    file steps of ``swap_in_corpus`` wait (up to ``_SWAP_HANDLE_WAIT_S``) for every handle on the live file to close, and some threads
+    check a connection out first and only then wait for the gate (an ORM session that reads before it writes, ``hold_write_window``,
+    ``checkpoint_wal``). With the gate held they keep the handle while they wait for it, so the restore waits for a thread that waits
+    for the restore, every writer in the app stands still, and the swap fails with the sharing violation it would have got past
+    (a Windows lock, measured). The settings hold takes NO lock the gate or the corpus knows about, so those threads still get the free
+    gate, are refused as stale and let go, exactly as before; and it works with ``OO_WRITE_GATE=0``.
+
+    WHERE THE HOLD STARTS. After :func:`_checkpoint_before_swap` returned (it holds nothing now, but a settings save is not what it
+    waits for either way). A restore that cannot start the hold within ``_SWAP_SETTINGS_HOLD_S`` (a save is in flight, perhaps queued
+    behind a long writer for the gate) refuses and nothing was written to the corpus; ``0`` does not wait at all."""
+    from src.config.kv_store import KvWriteBusy, hold_writes, kv_invalidate
+    from src.database.library_generation import LibraryBusy
+
+    with ExitStack() as hold:
+        try:
+            hold.enter_context(hold_writes(_SWAP_SETTINGS_HOLD_S))
+        except KvWriteBusy:
+            raise RestoreRefused(
+                f"a setting was still being saved after {_SWAP_SETTINGS_HOLD_S:.0f}s (your corpus is being written to) — nothing was "
+                "written to your corpus. Let the running job finish, and import again."
+            ) from None
+        # Carry the settings the live file holds NOW into the copy that is about to become it, as late as the swap allows: under the
+        # hold nothing can be saved to the live file between this read and the replace.
+        report["settings_carry"] = _carry_live_settings(working)
+        try:
+            # The engine is disposed, the live log names cleared and the file replaced inside ONE window (swap_in_corpus), in
+            # which no connection is being opened and every connection made before it is refused: a save that waited out the
+            # restore fails loudly instead of committing into a file nobody reads (the deep read of E3, B1 and NEW-1).
+            swap_in_corpus(working, target)
+        except LibraryBusy:
+            raise RestoreRefused(
+                "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
+                "switched — nothing was written to your corpus. Import again."
+            ) from None
+        finally:
+            kv_invalidate()  # whatever the old file held is no longer the file: the next read goes to the one that is live
 
 
 def merge_side_files(staged: StagedArtifact) -> dict:
@@ -7303,7 +7359,6 @@ def run_restore(
     and states the range."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
-    from src.database.library_generation import LibraryBusy
     from src.database.session import init_db
     from src.scheduler.runner import owns_the_machine
 
@@ -7726,19 +7781,8 @@ def run_restore(
             why: list[str] = []
             if not _checkpoint_before_swap(why=why):
                 raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
-            # Carry the settings the live file holds NOW into the copy that is about to become it, as late as the swap allows
-            # (after the checkpoint, which can take a minute) -- see _carry_live_settings for what it covers and what it cannot.
-            report["settings_carry"] = _carry_live_settings(working)
-            try:
-                # The engine is disposed, the live log names cleared and the file replaced inside ONE window (swap_in_corpus), in
-                # which no connection is being opened and every connection made before it is refused: a save that waited out the
-                # restore fails loudly instead of committing into a file nobody reads (the deep read of E3, B1 and NEW-1).
-                swap_in_corpus(working, target)
-            except LibraryBusy:
-                raise RestoreRefused(
-                    "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
-                    "switched — nothing was written to your corpus. Import again."
-                ) from None
+            # The carry and the replace under one hold of settings writes, so a settings save in between waits for the new file.
+            _carry_and_swap(working, target, report)
             init_db()
 
         report["committed"] = True
