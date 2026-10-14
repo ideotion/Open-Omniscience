@@ -252,15 +252,12 @@ def _lines(node: ast.AST, name: str) -> list[int]:
 
 
 def test_the_carry_runs_once_after_the_checkpoint_and_right_before_the_swap():
+    """The restore reaches the carry only through ``_carry_and_swap`` (which holds the write gate across it and the replace; the order inside
+    is pinned in ``test_restore_holds_gate_through_swap.py``), once, after the quiescence wait and the checkpoint."""
     node = _run_restore_node()
-    carry, quiet, ckpt, swap = (
-        _lines(node, "_carry_live_settings"),
-        _lines(node, "wait_for_quiescence"),
-        _lines(node, "_checkpoint_before_swap"),
-        _lines(node, "swap_in_corpus"),
-    )
-    assert len(carry) == len(quiet) == len(ckpt) == len(swap) == 1
-    assert quiet[0] < ckpt[0] < carry[0] < swap[0], "as late as the swap allows: the checkpoint can take a minute"
+    hold, quiet, ckpt = _lines(node, "_carry_and_swap"), _lines(node, "wait_for_quiescence"), _lines(node, "_checkpoint_before_swap")
+    assert len(hold) == len(quiet) == len(ckpt) == 1
+    assert quiet[0] < ckpt[0] < hold[0], "as late as the swap allows: the checkpoint can take a minute"
     # and it is reported, never silent
     assert 'report["settings_carry"] = _carry_live_settings(working)' in _MERGE_PY.read_text(encoding="utf-8")
 

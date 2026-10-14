@@ -409,25 +409,25 @@ class ArticleBatch:
             )
         return out
 
-    def _article_row(self, e: _StagedArticle):
+    def _article_row(self, staged: _StagedArticle):
         from src.database.models import Article
 
         return Article(
-            url=e.requested_url,
-            canonical_url=e.canonical_url,
+            url=staged.requested_url,
+            canonical_url=staged.canonical_url,
             source_id=self._source.id,
-            title=e.title,
-            content=e.text,
-            published_at=e.published_at,
-            language=e.language,
-            hash=e.content_hash,
-            author=e.author,
-            word_count=len(e.text.split()),
-            created_at=e.staged_at,
-            updated_at=e.staged_at,
-            server_ip=e.server_ip,
-            server_ip_reason=e.server_ip_reason,
-            ip_observed_at=e.fetched_at,
+            title=staged.title,
+            content=staged.text,
+            published_at=staged.published_at,
+            language=staged.language,
+            hash=staged.content_hash,
+            author=staged.author,
+            word_count=len(staged.text.split()),
+            created_at=staged.staged_at,
+            updated_at=staged.staged_at,
+            server_ip=staged.server_ip,
+            server_ip_reason=staged.server_ip_reason,
+            ip_observed_at=staged.fetched_at,
         )
 
     def _index_one(self, article, extractor, *, content=None, deriv=None) -> None:
@@ -485,7 +485,7 @@ class ArticleBatch:
 
     # -- the per-article redo path (zero loss) ------------------------------ #
 
-    def _store_one(self, e: _StagedArticle) -> None:
+    def _store_one(self, staged: _StagedArticle) -> None:
         """The safe per-article path used on a batch failure: exactly the
         legacy store semantics (retry transient locks; a duplicate is counted;
         an exhausted lock is logged + counted, never raised — no batch-mate is
@@ -498,14 +498,14 @@ class ArticleBatch:
             _maybe_record_custody,
         )
 
-        if _exists(self._session, hash=e.content_hash):
+        if _exists(self._session, hash=staged.content_hash):
             self.tally["duplicate"] += 1
             return
         holder: dict = {}
 
         def _work() -> None:
             # Rebuilt each attempt: a rollback expunges pending objects.
-            a = self._article_row(e)
+            a = self._article_row(staged)
             self._session.add(a)
             self._session.commit()
             holder["article"] = a
@@ -528,9 +528,9 @@ class ArticleBatch:
         self.tally["stored"] += 1
         _maybe_record_custody(article)
         # C12: populate the dedup front now the redo commit is CONFIRMED.
-        mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
+        mark_stored(canonical_url=staged.canonical_url, content_hash=staged.content_hash)
         _maybe_index_keywords(self._session, article, self._source)
-        self._store_links_committed(article.id, e.links)
+        self._store_links_committed(article.id, staged.links)
 
     def _store_links_committed(self, article_id: int, links: list[dict]) -> None:
         """Links on the redo path: own small committed write, best-effort."""

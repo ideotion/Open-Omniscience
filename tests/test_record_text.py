@@ -233,6 +233,7 @@ def test_an_exception_group_member_built_in_the_handler_is_withheld():
 
 
 def test_a_text_over_the_read_limit_counts_as_quoting():
+    """Pins the fail-closed limit (the commit that moved the quote check to n-grams), not the wrapper-chain change after it."""
     from src.monitoring import secret_scrub
     from src.monitoring.secret_scrub import quotes_a_driver
 

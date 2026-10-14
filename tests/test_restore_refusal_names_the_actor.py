@@ -164,7 +164,8 @@ def test_both_swap_barriers_raise_the_refusal_not_the_operators_stop():
 
     # The commit point is the call of the ONE swap helper (``swap_in_corpus``: the engine's disposal, the side files and the replace
     # inside the library's swap window); the replace itself moved into it with the E3 fold, so the helper's call is the anchor.
-    start, end = _line_of("wait_for_quiescence"), _line_of("swap_in_corpus")
+    # (since 2026-10-13 the call in run_restore is ``_carry_and_swap``, which holds the write gate across the carry and that helper)
+    start, end = _line_of("wait_for_quiescence"), _line_of("_carry_and_swap")
     assert start < end
 
     barrier_raises = [
