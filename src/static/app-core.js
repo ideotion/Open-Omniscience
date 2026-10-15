@@ -2102,6 +2102,8 @@
     function _storagePausedText(phase, g) {
       // The damage pause is the database's own report, not a limit the override covers.
       if (phase === "paused-damaged") return "Paused: the database reported damage";
+      // The clean stop (B2): the app is ending itself because memory stayed exhausted. Not a limit to override either.
+      if (phase === "memory-stop") return "The app is stopping itself because memory stayed exhausted";
       // Nor is the check after an unexpected stop: it is the app reading its own files, never a limit to override.
       if (phase === "paused-verifying") return "Paused: checking the data files after an unexpected stop";
       if (g && g.overridden) return null;
@@ -2214,6 +2216,23 @@
     // server-side). Absent when the ledger has nothing; never a fabricated count.
     // The full picture (the timeline, the stretches, the 72 h bar) lives in
     // Settings -> Advanced -> Diagnostics -> Chronology.
+    // A one-time toast on the first load after the app stopped itself for memory (B2). Acknowledged per stop, in the browser only:
+    // the stop's own time is the key, so a second stop toasts again and a reload does not.
+    async function memoryStopNoticeOnce() {
+      try {
+        const v = await api("/api/system/vitals");
+        const prev = v && v.session && v.session.previous_session_end;
+        if (!prev || prev.stopped_for !== "memory") return;
+        const key = "oo.memstop.ack";
+        let seen = null;
+        try { seen = localStorage.getItem(key); } catch (e) { /* private window: toast every load rather than never */ }
+        const stamp = String(prev.at || "unknown");
+        if (seen === stamp) return;
+        try { localStorage.setItem(key, stamp); } catch (e) { /* not remembered */ }
+        const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (x => x);
+        toast(t9("The app stopped itself last time because memory stayed exhausted. Nothing was lost; start collection again when you are ready."), "err");
+      } catch (e) { /* the vitals are best-effort; a missing notice is not an error */ }
+    }
     function _sessionHtml(s) {
       if (!s) return "";
       const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (x => x);
@@ -2234,8 +2253,12 @@
       }
       const prev = s.previous_session_end;
       if (prev) {
-        const how = prev.clean === true ? t9("clean shutdown") : (prev.clean === false ? t9("unclean end") : t9("end with no time"));
-        rows.push(row(t9("Previous session"), `${how} · ${prev.at ? fmtDateTime(prev.at) : "—"}`, prev.basis || ""));
+        // A session the app ended itself because memory stayed exhausted says so, and its hover carries the caveat (B2).
+        const stoppedForMemory = prev.stopped_for === "memory";
+        const how = stoppedForMemory ? t9("Stopped itself — memory stayed exhausted")
+          : prev.clean === true ? t9("clean shutdown") : (prev.clean === false ? t9("unclean end") : t9("end with no time"));
+        rows.push(row(t9("Previous session"), `${how} · ${prev.at ? fmtDateTime(prev.at) : "—"}`,
+          stoppedForMemory ? t9("The app ended this session itself because available memory stayed at the floor while collection was paused, and the memory it held did not come back. It did so to keep the corpus safe: nothing was lost, and what was running stays stopped until you start it again.") : (prev.basis || "")));
       }
       if (s.longest_stretch_s != null) rows.push(row(t9("Longest continuous stretch"), dur(s.longest_stretch_s)));
       return `<div class="vsect">${esc(t9("Sessions"))}</div>` + rows.join("") +

@@ -2075,6 +2075,31 @@ because a read changes nothing.
 are being read, which is where a view that loads a whole table grows, and
 nothing else. `OO_READ_MEMORY_STOP=0` turns it off without touching the guard.
 
+#### When memory stays exhausted, the app stops itself and says so
+
+The memory guard pauses new collection when memory is short. A pause does not
+give back what the app already holds, so on a small machine memory can stay at
+the floor for many minutes and then the operating system kills the app with no
+word of why. The app now ends itself instead. It does so only when **all** of
+this holds: the guard has been engaged for the whole of the last **5 minutes**
+(`OO_MEM_STOP_WINDOW_S`), at least nine in ten of its readings were at or below
+**64 MB** available (`OO_MEM_STOP_AVAIL_MB`), none was above 128 MB, no stretch
+of the window went without a reading, and this app holds at least a third of
+the machine's memory (if something else holds it, stopping would free nothing,
+and the app does not stop). A recovery, even a brief one, or pressing start or
+resume empties the window.
+
+Before it stops, it keeps what it knows: a snapshot of what every thread was
+doing, a line in the session ledger, and `memory_stop.json` beside your data
+(numbers and step names, at most 8 KB). Then it ends through the same path as
+the power button: nothing in your corpus is touched. While it runs, the task
+manager says *"The app is stopping itself because memory stayed exhausted"*.
+At the next start the System tab's **Sessions** row reads *"Stopped itself —
+memory stayed exhausted"* (hover for the caveat), a one-time message says the
+same, and the Diagnostics zip carries the record. **What ends is what was
+running; you start it again.** `OO_MEM_STOP=0` turns the stop off and leaves the
+pause.
+
 #### Why the app cannot simply cap its own memory
 
 There is no honest way for a program to enforce a memory ceiling on itself:
