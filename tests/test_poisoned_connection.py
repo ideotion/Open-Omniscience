@@ -470,7 +470,6 @@ def test_with_the_production_default_rereads_on_the_latch_of_a_last_page_poison_
     import threading
 
     from src.database import connect as connect_mod
-
     from src.database import verify
 
     path = tmp_path / "ov.db"
