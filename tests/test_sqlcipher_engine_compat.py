@@ -66,6 +66,8 @@ def test_the_ci_floor_leg_tells_the_tests_it_is_the_floor():
     job = ci.split("  sqlcipher-engines:", 1)[1].split("\n  # ", 1)[0]
     assert re.search(r"-\s*\{engine: floor, spec: \"sqlcipher3==", job), "the floor matrix entry is not named `floor`"
     steps = [s for s in re.split(r"\n      - ", job) if "python -m pytest" in s]
-    assert len(steps) == 1, "the job has no single step that runs pytest"
-    env = steps[0].split("run:", 1)[0]  # the step's own `env:` block, which precedes its `run:`
-    assert "OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}" in env, "the step that runs pytest no longer exports the engine it runs"
+    assert steps, "the job has no step that runs pytest"
+    for step in steps:  # every pytest step of the job, wherever its `env:` sits in the step: a job-level export would not count
+        assert "OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}" in step, (
+            f"a step that runs pytest no longer exports the engine it runs: {step.strip().splitlines()[0]!r}"
+        )

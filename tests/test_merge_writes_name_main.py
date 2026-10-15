@@ -39,7 +39,7 @@ _WRITE = re.compile(
     r"|ALTER\s+TABLE|CREATE\s+(?:TABLE|VIRTUAL\s+TABLE|INDEX|UNIQUE\s+INDEX|TRIGGER|VIEW)(?:\s+IF\s+NOT\s+EXISTS)?)\s+(\"?[\w{}.]+\"?)",
     re.I,
 )
-_READ_HEADS = {"SELECT", "PRAGMA", "ATTACH", "DETACH", "BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE", "VACUUM", "ANALYZE"}
+_READ_HEADS = {"SELECT", "PRAGMA", "ATTACH", "DETACH", "BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE", "VACUUM"}
 _ANY_WRITE = re.compile(r"\b(INSERT|REPLACE|UPDATE|DELETE|DROP|ALTER|CREATE)\b", re.I)
 _TEXT_WRAPPERS = {"text", "_text"}
 _EXEC_METHODS = {"execute", "executemany", "executescript", "exec_driver_sql"}
@@ -48,8 +48,8 @@ _EXEC_METHODS = {"execute", "executemany", "executescript", "exec_driver_sql"}
 _ALLOWED: dict[str, str] = {
     "_fts_insert_suspended: ddl": "the CREATE TRIGGER text read back from main's own sqlite_master, replayed on the same connection: it creates in main",
     "merge_corpus: fts_trigger_ddl": "the same stored CREATE TRIGGER text, handed to _restore_fts_insert_trigger",
-    "_carry_live_settings: CREATE TABLE IF NOT EXISTS app_state": "runs on the working copy's own standalone connection, with nothing attached",
-    "merge_custody: CREATE TABLE IF NOT EXISTS custody_imported_entries": "runs on custody_log.db's own standalone connection, with nothing attached",
+    "_carry_live_settings: CREATE TABLE IF NOT EXISTS app_state": "an unqualified CREATE always creates in main and IF NOT EXISTS looks at main only; it also runs on the working copy's own standalone connection",
+    "merge_custody: CREATE TABLE IF NOT EXISTS custody_imported_entries": "an unqualified CREATE always creates in main and IF NOT EXISTS looks at main only; it also runs on custody_log.db's own standalone connection",
     "merge_custody: sql": "the two SELECTs appended to `sources` just above (a chain's rows are only fetched by _custody_rows); no write reaches it",
 }
 
@@ -59,27 +59,51 @@ _META = {
 }
 
 
+_LEADING_COMMENT = re.compile(r"\s*(?:--[^\n]*(?:\n|$)|/\*.*?\*/)", re.S)
+
+
+def _strip_leading_comments(sql: str) -> str:
+    """A leading ``--`` or ``/* */`` comment is not part of the statement's head (and a write must not hide behind one)."""
+    while m := _LEADING_COMMENT.match(sql):
+        sql = sql[m.end():]
+    return sql.lstrip()
+
+
+def _looks_like_write(sql: str) -> bool:
+    sql = _strip_leading_comments(sql)
+    return bool(_WRITE.match(sql)) or (sql[:4].upper() == "WITH" and bool(_ANY_WRITE.search(sql)))
+
+
 def _classify(sql: str) -> list[str]:
     """What is wrong with one statement text (``{}`` stands for a piece the source builds at run time): empty when it is a read, a
-    temp-table statement, or a write that names ``main``."""
+    temp-table statement, or a write that names ``main``. The schema prefix is compared case-insensitively and must be the BARE word:
+    a quoted ``"main.t"`` is a table of that odd name, in main."""
     problems: list[str] = []
-    for stmt in (part.strip() for part in sql.split(";")):
+    for stmt in (_strip_leading_comments(part) for part in sql.split(";")):
         if not stmt:
             continue
         m = _WRITE.match(stmt)
         if m:
-            target = m.group(2).strip('"')
-            if target.startswith(_EXEMPT):
+            raw = m.group(2)
+            if raw.lower().startswith(_EXEMPT):
                 continue
             if re.match(r"\s*(CREATE\s+(?:TEMP|TEMPORARY)\b)", stmt, re.I):
                 continue
-            problems.append(f"{' '.join(m.group(1).split()).upper()} {target}")
+            problems.append(f"{' '.join(m.group(1).split()).upper()} {raw.strip(chr(34))}")
             continue
         head = re.match(r"\s*(\w+)", stmt)
         word = head.group(1).upper() if head else ""
+        if word == "ANALYZE":  # an unqualified ANALYZE writes sqlite_stat1 into EVERY attached schema
+            if not re.match(r"\s*ANALYZE\s+(?:main|temp)\.", stmt, re.I):
+                problems.append("ANALYZE names no schema")
+            continue
+        if word == "PRAGMA":  # `PRAGMA optimize` (like ANALYZE) reaches every attached schema unless it names one
+            if re.match(r"\s*PRAGMA\s+optimize\b", stmt, re.I):
+                problems.append("PRAGMA optimize names no schema")
+            continue
         if word in _READ_HEADS:
             continue
-        if word in {"CREATE", "WITH"} and re.match(r"\s*CREATE\s+(?:TEMP|TEMPORARY)\b", stmt, re.I):
+        if word == "CREATE" and re.match(r"\s*CREATE\s+(?:TEMP|TEMPORARY)\b", stmt, re.I):
             continue
         if word == "WITH" and not _ANY_WRITE.search(stmt):
             continue
@@ -98,7 +122,8 @@ class _Scan:
         self.defs: list[ast.AST] = [n for n in ast.walk(self.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
         self.parent: dict[ast.AST, ast.AST] = {c: p for p in ast.walk(self.tree) for c in ast.iter_child_nodes(p)}
         self.module_assigns = self._assigns(self.tree.body)
-        self.passthrough: dict[str, set[int]] = {}
+        #: helper name -> {parameter name: its positional index, or None when keyword-only}: the parameters that reach an execute call
+        self.passthrough: dict[str, dict[str, int | None]] = {}
         self.problems: list[str] = []
         self.allowed_used: set[str] = set()
 
@@ -120,7 +145,7 @@ class _Scan:
         ``None`` when it is made of anything else."""
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return None
-        params = {a.arg for a in fn.args.args if a.arg != "self"}
+        params = {name for name, _ in self._params(fn)}
         if isinstance(node, ast.Name):
             if node.id in params:
                 return {node.id}
@@ -136,9 +161,25 @@ class _Scan:
                     return None
                 out |= got
             return out
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"replace", "strip", "format", "lstrip"}:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"replace", "strip", "format", "lstrip", "rstrip"}:
+            # `.replace` can take the schema prefix OFF (`sql.replace("main.", "")`), so it passes only when what it replaces is a plain
+            # string that is not one; anything else makes the text unreadable at the helper, which is a problem
+            if node.func.attr == "replace":
+                gone = self._texts(node.args[0], fn) if node.args else None
+                if gone is None or any(w in t.lower() for t in gone for w in ("main", "temp")):
+                    return None
             return self._origin_params(node.func.value, fn, seen)
         return None
+
+    @staticmethod
+    def _params(fn: ast.AST) -> list[tuple[str, int | None]]:
+        """``(name, positional index as a caller counts it)`` for every parameter of ``fn``: a leading ``self`` / ``cls`` is not passed by a
+        caller, and a keyword-only parameter has no index."""
+        a = fn.args  # type: ignore[attr-defined]
+        positional = [*a.posonlyargs, *a.args]
+        if positional and positional[0].arg in {"self", "cls"}:
+            positional = positional[1:]
+        return [(p.arg, i) for i, p in enumerate(positional)] + [(p.arg, None) for p in a.kwonlyargs]
 
     def _func_of(self, node: ast.AST) -> ast.AST | None:
         while node in self.parent:
@@ -179,7 +220,7 @@ class _Scan:
                 return ["SELECT"]
             return None
         if isinstance(node, ast.Name):
-            params = {a.arg for a in fn.args.args} if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) else set()
+            params = {name for name, _ in self._params(fn)} if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) else set()
             if node.id in seen:
                 return None
             pool = self._assigns(fn.body).get(node.id) if fn is not None else None  # type: ignore[attr-defined]
@@ -202,14 +243,12 @@ class _Scan:
         while changed:
             changed = False
             for fn in self.defs:
-                params = [a.arg for a in fn.args.args if a.arg != "self"]  # type: ignore[attr-defined]
+                index = dict(self._params(fn))
                 for call in (n for n in ast.walk(fn) if isinstance(n, ast.Call) and self._func_of(n) is fn):
                     for arg in self._sql_args(call):
-                        origin = self._origin_params(arg, fn)
-                        for name in origin or ():
-                            idx = params.index(name)
-                            if idx not in self.passthrough.setdefault(fn.name, set()):  # type: ignore[attr-defined]
-                                self.passthrough[fn.name].add(idx)  # type: ignore[attr-defined]
+                        for name in self._origin_params(arg, fn) or ():
+                            if name not in self.passthrough.setdefault(fn.name, {}):  # type: ignore[attr-defined]
+                                self.passthrough[fn.name][name] = index[name]  # type: ignore[attr-defined]
                                 changed = True
         # 2. every SQL-bearing call, read to a text (an argument made only of the caller's own parameters is checked at the caller's callers)
         for call in (n for n in ast.walk(self.tree) if isinstance(n, ast.Call)):
@@ -221,18 +260,39 @@ class _Scan:
         for node in ast.walk(self.tree):
             if isinstance(node, (ast.Constant, ast.JoinedStr)):
                 text = self._texts(node, None)
-                if text and _WRITE.match(text[0]) and not isinstance(self.parent.get(node), ast.Expr):
+                if text and _looks_like_write(text[0]) and not isinstance(self.parent.get(node), ast.Expr):
                     for problem in _classify(text[0]):
                         self._report(node, problem)
         return sorted(set(self.problems))
 
     def _sql_args(self, call: ast.Call) -> list[ast.expr]:
-        """The arguments of ``call`` that are SQL: the first of an execute-like method, and the passed-through parameters of a helper."""
+        """The arguments of ``call`` that are SQL: the statement of an execute-like method (positional or by keyword), and the passed-through
+        parameters of a helper (positional or by keyword). A ``*args`` / ``**kwargs`` that could carry one is returned as it stands, which
+        the reader cannot resolve: a problem, not a skip."""
         f = call.func
-        if isinstance(f, ast.Attribute) and f.attr in _EXEC_METHODS and call.args:
-            return [call.args[0]]
+        if (isinstance(f, ast.Call) and isinstance(f.func, ast.Name) and f.func.id == "getattr" and len(f.args) >= 2
+                and isinstance(f.args[1], ast.Constant) and f.args[1].value in _EXEC_METHODS):  # getattr(con, "execute")(...)
+            f = ast.Attribute(value=f.args[0], attr=f.args[1].value)
+        keywords = {k.arg: k.value for k in call.keywords if k.arg is not None}
+        spread = [ast.Starred(value=k.value) for k in call.keywords if k.arg is None]  # a Starred is never a readable text
+        starred = next((a for a in call.args if isinstance(a, ast.Starred)), None)
+        if isinstance(f, ast.Attribute) and f.attr in _EXEC_METHODS:
+            if call.args and not isinstance(call.args[0], ast.Starred):
+                return [call.args[0]]
+            found = [keywords[k] for k in ("statement", "sql", "operation") if k in keywords]
+            return found or ([starred] if starred is not None else spread[:1])
         name = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
-        return [call.args[i] for i in sorted(self.passthrough.get(name, ())) if i < len(call.args)] if name else []
+        out: list[ast.expr] = []
+        for param, idx in (self.passthrough.get(name) or {}).items() if name else ():
+            if idx is not None and idx < len(call.args) and not any(isinstance(a, ast.Starred) for a in call.args[: idx + 1]):
+                out.append(call.args[idx])
+            elif param in keywords:
+                out.append(keywords[param])
+            elif starred is not None:
+                out.append(starred)
+            elif spread:
+                out.append(spread[0])
+        return out
 
     def _report(self, node: ast.AST, problem: str) -> None:
         fn = self._func_of(node)
@@ -326,6 +386,35 @@ def test_the_scan_sees_the_real_module_s_writes():
         'def f(con, verb):\n    con.execute(f"{verb} INTO main.t (a) VALUES (1)")',
         # a string that is a write but sits in a variable nothing executes in this function
         'SQL = "INSERT INTO t (a) VALUES (1)"',
+        # a WITH-led or comment-led string is still a write
+        'SQL = "WITH w AS (SELECT 1) INSERT INTO t SELECT * FROM w"',
+        'SQL = "-- note\\nDELETE FROM t"',
+        'def f(con):\n    con.execute("/* note */ DELETE FROM t")',
+        # SQL handed over BY KEYWORD: to execute, to text(), to a helper (a positional, a keyword-only and a classmethod parameter)
+        'from sqlalchemy import text\ndef f(s):\n    s.execute(statement=text("UPDATE t SET a = 1"))',
+        'def f(con, v):\n    con.execute(statement=f"{v} FROM t")',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con):\n    run(con, sql="WITH w AS (SELECT 1) INSERT INTO t SELECT * FROM w")',
+        'def run(con, *, sql):\n    con.execute(sql)\ndef f(con):\n    run(con, sql="DELETE FROM t")',
+        'def run(con, sql, /):\n    con.execute(sql)\ndef f(con):\n    run(con, "DELETE FROM t")',
+        'class A:\n    @classmethod\n    def run(cls, con, sql):\n        con.execute(sql)\ndef f(con):\n    A.run(con, "DELETE FROM t")',
+        'class A:\n    def run(self, con, sql):\n        con.execute(sql)\ndef f(con, a):\n    a.run(con, sql="DELETE FROM t")',
+        # *args and **kwargs that could carry the statement are not resolvable
+        'def f(con, args):\n    con.execute(*args)',
+        'def f(con, kw):\n    con.execute(**kw)',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, a):\n    run(*a)',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, kw):\n    run(con, **kw)',
+        # a string method that takes the schema prefix OFF the text the helper executes
+        'def run(con, sql):\n    con.execute(sql.replace("main.", ""))\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        'def run(con, sql, x):\n    con.execute(sql.replace(x, ""))\ndef f(con):\n    run(con, "DELETE FROM main.t", "main.")',
+        'def run(con, sql):\n    con.execute(sql.replace("MAIN.", ""))\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        # a quoted `"main.t"` is a table of that odd name, not the schema
+        'def f(con):\n    con.execute(\'DELETE FROM "main.t"\')',
+        # ANALYZE and PRAGMA optimize write into every attached schema unless one is named
+        'def f(con):\n    con.execute("ANALYZE")',
+        'def f(con):\n    con.execute("ANALYZE t")',
+        'def f(con):\n    con.execute("PRAGMA optimize")',
+        # a method fetched by name is still the execute method
+        'def f(con):\n    getattr(con, "execute")("DELETE FROM t")',
     ],
 )
 def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
@@ -347,10 +436,33 @@ def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
         'def f(con):\n    sql = "INSERT INTO main.t (a) VALUES (?)"\n    con.executemany(sql, [(1,)])',
         'def run(con, sql):\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
         'def f(con):\n    """UPDATE afterwards would rewrite every row."""\n    return 1',
+        # the prefix in any case; a keyword spelling of a read; a comment in front of a qualified write
+        'def f(con):\n    con.execute("DELETE FROM MAIN.t")',
+        'def f(con):\n    con.execute("-- note\\nDELETE FROM main.t")',
+        'def f(con):\n    con.execute(statement="SELECT 1")',
+        'def run(con, *, sql):\n    con.execute(sql)\ndef f(con):\n    run(con, sql="SELECT 1")',
+        'class A:\n    @classmethod\n    def run(cls, con, sql):\n        con.execute(sql)\ndef f(con):\n    A.run(con, "SELECT 1")',
+        'def run(con, sql):\n    con.execute(sql.replace("{x}", "1"))\ndef f(con):\n    run(con, "SELECT {x}")',
+        'def f(con):\n    con.execute("ANALYZE main.t")',
+        'def f(con):\n    con.execute("PRAGMA main.optimize")',
+        'def f(con):\n    getattr(con, "execute")("DELETE FROM main.t")',
     ],
 )
 def test_the_scan_passes_the_qualified_and_the_read_shapes(snippet):
     assert _scan(snippet) == [], snippet
+
+
+def test_the_fts_bulk_indexer_the_merge_calls_names_main():
+    """``fts.index_articles`` runs on the merge connection while the backup is attached and writes through ``_index_rows``: the scan reads
+    ``merge.py`` only, so the one function in another module that writes there is read here."""
+    import inspect
+    import textwrap
+
+    from src.database import fts
+
+    source = textwrap.dedent(inspect.getsource(fts._index_rows))
+    assert source.count("main.article_fts") >= 2 and "main.article_fts_norm" in source
+    assert _scan(source) == []
 
 
 def _corpus(path: Path):

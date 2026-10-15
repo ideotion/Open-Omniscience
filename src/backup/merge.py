@@ -1510,7 +1510,7 @@ def _insert_window(
     full text back through the SQLCipher codec for a number we already hold.
     The COUNT survives only as a fallback for a driver that declines to report.
     """
-    wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM "{table}"').fetchone()[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+    wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM main."{table}"').fetchone()[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     con.execute(insert_sql, params)
     keyed = key_column is not None and any(
         c[1] == "row_key" for c in con.execute("PRAGMA main.table_info(merged_rows)")
@@ -1520,18 +1520,18 @@ def _insert_window(
             raise ValueError(f"unsafe key column {key_column!r}")
         cur = con.execute(
             'INSERT INTO main.merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-            f'SELECT ?, ?, rowid, "{key_column}" FROM "{table}" WHERE rowid > ?',
+            f'SELECT ?, ?, rowid, "{key_column}" FROM main."{table}" WHERE rowid > ?',
             (batch_id, table, wm),
         )
     else:
         cur = con.execute(
             f'INSERT INTO main.merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-            f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
+            f'SELECT ?, ?, rowid FROM main."{table}" WHERE rowid > ?',
             (batch_id, table, wm),
         )
     n = cur.rowcount
     if n is None or n < 0:  # a driver that does not report -- pay for the scan
-        return _count(con, f'SELECT COUNT(*) FROM "{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        return _count(con, f'SELECT COUNT(*) FROM main."{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     return int(n)
 
 
