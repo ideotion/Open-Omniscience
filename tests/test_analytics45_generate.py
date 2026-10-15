@@ -210,15 +210,18 @@ def test_the_tripwire_refuses_everything_that_is_not_the_loopback():
 
 
 def test_the_run_fails_when_the_tripwire_refused_anything_even_if_the_app_swallowed_it():
+    import ast
+
     src = (ROOT / "scripts" / "analytics45_generate.py").read_text(encoding="utf-8")
-    assert "if REFUSALS:" in src.split("def main() -> int:", 1)[1]
+    main = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    main_body = ast.get_source_segment(src, main) or ""
+    assert "if REFUSALS:" in main_body
     # main() must install it before anything runs: deleting the call would leave the tests above green
-    main_body = src.split("def main() -> int:", 1)[1]
     assert main_body.index("_install_socket_tripwire()") < main_body.index("init_db()")
 
 
 def test_the_generator_refuses_a_used_data_directory(tmp_path):
-    (tmp_path / "x").write_text("a store someone uses")
+    (tmp_path / "x").write_text("a store someone uses", encoding="utf-8")
     env = {**os.environ, "OO_DATA_DIR": str(tmp_path)}
     env.pop("DATABASE_URL", None)
     done = subprocess.run([sys.executable, str(ROOT / "scripts" / "analytics45_generate.py")], cwd=ROOT, env=env,
@@ -227,6 +230,7 @@ def test_the_generator_refuses_a_used_data_directory(tmp_path):
 
 
 def test_the_look_judges_a_generated_state_by_the_same_keys_as_the_seeded_one():
+    pytest.importorskip("playwright")  # the look drives a browser; the core-only install has none
     spec = importlib.util.spec_from_file_location("a45_look", ROOT / "scripts" / "analytics45_look.py")
     sys.path.insert(0, str(ROOT / "scripts"))
     try:
