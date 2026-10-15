@@ -354,8 +354,20 @@ def init_db() -> None:
     _init_step("import:models")
     from src.database.models import Base  # local import breaks the cycle
 
+    # A file that already holds a corpus keeps the country form it has (src/database/country_form.py); one the
+    # app is creating NOW is stamped alpha-3 right after the tables exist, before any row can carry a code.
+    _init_step("country_form:look")
+    from sqlalchemy import inspect as _sa_inspect
+
+    from src.database.country_form import stamp_new_store
+
+    _had_tables = bool(_sa_inspect(engine).get_table_names())
+
     _init_step("create_all")
     Base.metadata.create_all(engine)
+
+    _init_step("country_form:stamp")
+    stamp_new_store(engine, had_tables=_had_tables)
 
     # Ensure the full-text search index (SQLite FTS5). No-op on other backends. The index
     # is maintained incrementally by triggers, so ``ensure_fts`` rebuilds ONLY when needed

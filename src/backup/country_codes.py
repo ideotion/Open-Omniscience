@@ -45,13 +45,14 @@ from typing import Literal
 from src.catalog.countries import to_iso2, to_iso3
 from src.monitoring.secret_scrub import record_text
 
-#: The store's canonical country form. **ONE constant, ONE read** (``_converter``):
-#: the 0.5 storage half (Q301 = c, brief ``S05-02``) flips this literal and nothing
-#: else in this module, and both settings are pinned by tests so the flip cannot
-#: silently change what the normaliser claims to do. 0.4 is alpha-2 because that is
-#: what the store holds today; the DIRECTION-AGNOSTIC part is that either form is
-#: ACCEPTED on the way in whatever the target is.
-CANONICAL_COUNTRY_FORM: Literal["alpha2", "alpha3"] = "alpha2"
+#: The form a store is MIGRATED to and a NEW store is created in (Q301 = c, brief ``S05-02``): alpha-3, flipped
+#: 2026-10-16 (0.5 row B, PR B1). It is the TARGET, not the answer to "what form is THIS store in?": a store that
+#: predates the flip is still alpha-2 until ``open-omniscience migrate-countries`` has run, and a restore must follow the
+#: store it is merging INTO, never the constant, or it would write the other form into a corpus that holds this one and
+#: land every value-keyed join as a duplicate. That question is answered by :func:`store_form_of` (the marker in the
+#: working copy, read in ONE place), and :func:`_converter` takes the form it is handed. Both converters accept EITHER
+#: input form and fail closed, so the normaliser stays direction-agnostic.
+CANONICAL_COUNTRY_FORM: Literal["alpha2", "alpha3"] = "alpha3"
 
 #: table -> the columns on it that hold a country (or country-like) code, for the
 #: tables the merge actually COPIES. A table nothing copies cannot contribute a
@@ -75,6 +76,11 @@ COUNTRY_COLUMNS: dict[str, tuple[str, ...]] = {
     # are OSM object ids, so it can never collide two rows, but it must reach the store in the
     # store's form so a carried place and a locally materialised one compare like with like.
     "places": ("country",),
+    # 2026-10-15, row B1: the derived-row carry (src/backup/merge.py, `_carry_derived_rows`) copies a certified
+    # article's mentioned places straight from the staged table, so the column now reaches the store from a
+    # backup. It was exempt while "no handler copies it" was true; the carry made that false, and a carried
+    # place read back through the column type would otherwise differ from the one a re-index writes.
+    "article_mentioned_places": ("country",),
 }
 
 #: The country-bearing columns deliberately NOT normalised, each with the reason.
@@ -104,31 +110,35 @@ COUNTRY_COLUMNS_EXEMPT: dict[str, str] = {
         "display surfaces); normalising it toward the store's alpha-2 would overwrite the very "
         "form the column exists to hold. It is derived from `country` and never a join key"
     ),
-    "article_mentioned_places.country": (
-        "purely derived and in _MERGE_NOT_CARRIED -- no handler copies it, so it can "
-        "never reach a value-keyed join; index_article rebuilds it after the swap"
-    ),
 }
 
 
-def _converter() -> Callable[[str | None], str | None]:
-    """The single read of :data:`CANONICAL_COUNTRY_FORM`.
+def store_form_of(con: sqlite3.Connection, schema: str = "main") -> Literal["alpha2", "alpha3"]:
+    """The country form of the database in ``schema`` of ``con`` (the working copy: ``main``) -- the ONE read of it.
 
-    Read once, here, so the verdict AND every sentence about it come from one place --
-    a second read is a second place to flip. Both converters accept EITHER input form
-    and both fail closed, which is what makes the normaliser direction-agnostic rather
-    than a one-way alpha-2 -> alpha-3 migration.
-    """
-    return to_iso3 if CANONICAL_COUNTRY_FORM == "alpha3" else to_iso2
+    A restore normalises the incoming copy toward THIS, so the answer is a fact about the file being merged into
+    (``src/database/country_form.py``: absent marker = alpha-2, which is every store that predates it)."""
+    from src.database.country_form import read_form_in
+
+    return read_form_in(con, schema)
 
 
-def canonical_country(value: str | None) -> str | None:
-    """The canonical form of ``value``, or ``None`` when it is not a country code.
+def _converter(form: Literal["alpha2", "alpha3"] | None = None) -> Callable[[str | None], str | None]:
+    """The single decision between the two converters.
+
+    Both accept EITHER input form and both fail closed, which is what makes the normaliser direction-agnostic rather than
+    a one-way alpha-2 -> alpha-3 migration. ``form`` is the form of the store being written to; absent, the target
+    form new stores are created in (:data:`CANONICAL_COUNTRY_FORM`)."""
+    return to_iso3 if (form or CANONICAL_COUNTRY_FORM) == "alpha3" else to_iso2
+
+
+def canonical_country(value: str | None, form: Literal["alpha2", "alpha3"] | None = None) -> str | None:
+    """The canonical form of ``value`` in ``form``, or ``None`` when it is not a country code.
 
     ``None`` here means "this module has nothing to say about that value" -- it is
     never written back. Callers leave such a value exactly as they found it.
     """
-    return _converter()(value)
+    return _converter(form)(value)
 
 
 def _table_exists(con: sqlite3.Connection, schema: str, table: str) -> bool:
@@ -146,7 +156,7 @@ def _columns_of(con: sqlite3.Connection, schema: str, table: str) -> set[str]:
     }
 
 
-def _live_corpus_in_target_form(con: sqlite3.Connection) -> dict:
+def _live_corpus_in_target_form(con: sqlite3.Connection, form: Literal["alpha2", "alpha3"] | None = None) -> dict:
     """Read-only: does the LIVE corpus already store the form this normaliser targets?
 
     Answers with counts, never a verdict. ``off_form`` is the number of distinct stored
@@ -156,6 +166,7 @@ def _live_corpus_in_target_form(con: sqlite3.Connection) -> dict:
     either way: they have no canonical form, so they are not evidence about which form
     the corpus uses.
     """
+    form = form or store_form_of(con)
     off: dict[str, list[str]] = {}
     checked = 0
     for table in sorted(COUNTRY_COLUMNS):
@@ -174,7 +185,7 @@ def _live_corpus_in_target_form(con: sqlite3.Connection) -> dict:
             except Exception:  # noqa: BLE001 - a read-only measurement never fails a restore
                 continue
             for (value,) in rows:
-                target = canonical_country(value)
+                target = canonical_country(value, form)
                 if target is not None and target != value:
                     off.setdefault(f"{table}.{column}", []).append(str(value))
     out: dict = {
@@ -182,7 +193,7 @@ def _live_corpus_in_target_form(con: sqlite3.Connection) -> dict:
         "off_form": sum(len(v) for v in off.values()),
         "method": (
             "distinct stored spellings in the LIVE corpus that this normaliser would "
-            f"rewrite to {CANONICAL_COUNTRY_FORM}. 0 = the live corpus is already in "
+            f"rewrite to {form}. 0 = the live corpus is already in "
             "the target form. Codes with no canonical form are not counted: they say "
             "nothing about which form the corpus uses"
         ),
@@ -190,10 +201,10 @@ def _live_corpus_in_target_form(con: sqlite3.Connection) -> dict:
     if off:
         out["spellings"] = {k: sorted(set(v)) for k, v in sorted(off.items())}
         out["caveat"] = (
-            "the live corpus is not fully in the target form, so a restore normalised "
-            "toward that form can miss a value-keyed join and land a duplicate. This is "
-            "the ordering S05-02 owns: rewrite the live corpus BEFORE flipping "
-            "CANONICAL_COUNTRY_FORM, never after"
+            f"the store says it is in {form}, but still holds values of the other form, so a restore normalised "
+            "toward that form can miss a value-keyed join and land a duplicate. This is the ordering S05-02 owns: "
+            "the marker flips only inside the last transaction of `open-omniscience migrate-countries`, after it "
+            "verified nothing was left to convert, so a store in this state was not migrated by it"
         )
     return out
 
@@ -262,6 +273,7 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
     refused: dict[str, list[str]] = {}
     collisions: list[dict] = []
     scanned = 0
+    form = store_form_of(con)  # the store being merged INTO decides; read once, used for the arithmetic AND every sentence about it
 
     for table in sorted(COUNTRY_COLUMNS):
         if not _table_exists(con, schema, table):
@@ -281,7 +293,7 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                 f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\''
             ).fetchall()
             for (value,) in rows:
-                target = canonical_country(value)
+                target = canonical_country(value, form)
                 if target is None:
                     # The converter refused it: an aggregate, a non-ISO jurisdiction,
                     # or junk. LEFT EXACTLY AS IT IS -- see the module docstring.
@@ -321,26 +333,26 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                 converted[key] = converted.get(key, 0) + int(cur.rowcount or 0)
 
     report: dict = {
-        "target_form": CANONICAL_COUNTRY_FORM,
+        "target_form": form,
         "columns_scanned": scanned,
         "rows_converted": sum(converted.values()),
         # THE 0.5 PRECONDITION, MEASURED ON EVERY RESTORE. This step normalises the
-        # STAGED copy toward `CANONICAL_COUNTRY_FORM`; it does not and must not touch
-        # the live corpus. So on the day that constant flips (S05-02), a live corpus
-        # that has NOT yet been rewritten is holding the other form -- and every
-        # value-keyed join then misses, turning one document into two. Reproduced under
-        # simulation: with the constant set to "alpha3" and a live corpus still on
-        # alpha-2, one law document came out as two rows while this report cheerfully
-        # said "2 rows converted". It is REPORTED rather than refused because no
-        # automatic verdict is available: a real corpus legitimately holds values the
-        # converter refuses (aggregates, the app's non-ISO jurisdictions, junk) and can
-        # be honestly mixed, so a threshold would either refuse good restores or miss
-        # bad ones. The ordering is the answer -- the live rewrite lands BEFORE the
-        # constant flips -- and this number is how an operator sees whether it has.
-        "live_corpus_in_target_form": _live_corpus_in_target_form(con),
+        # STAGED copy toward the form the STORE says it is in (`store_form_of`); it does
+        # not and must not touch the live corpus. The store's marker flips only inside
+        # the last transaction of the migration (`src/backup/country_migration.py`), so a
+        # store that says alpha-3 but still holds alpha-2 was not migrated by it -- and
+        # every value-keyed join then misses, turning one document into two. Reproduced
+        # under simulation: a working copy claiming alpha-3 over alpha-2 law rows made
+        # one document come out as two while this report cheerfully said "2 rows
+        # converted". It is REPORTED rather than refused because no automatic verdict is
+        # available: a real corpus legitimately holds values the converter refuses
+        # (aggregates, the app's non-ISO jurisdictions, junk) and can be honestly mixed,
+        # so a threshold would either refuse good restores or miss bad ones. This number
+        # is how an operator sees it.
+        "live_corpus_in_target_form": _live_corpus_in_target_form(con, form),
         "method": (
             "every registered country column of the incoming corpus is converted to "
-            f"the store's canonical form ({CANONICAL_COUNTRY_FORM}) before the "
+            f"the store's canonical form ({form}) before the "
             "value-keyed joins; a code the converter does not recognise is left "
             "unchanged and listed, and NULL stays NULL"
         ),
@@ -398,6 +410,7 @@ def scan_country_code_duplicates(con: sqlite3.Connection, *, schema: str = "main
     ``schema`` is ``main`` (the live corpus) for the operator's run and can be an
     attached alias for a test. Nothing is written.
     """
+    form = store_form_of(con, schema)  # reported in the form the scanned file says it is in
     columns: dict[str, dict] = {}
     total = 0
     exempt_pairs = dict(COUNTRY_COLUMNS_EXEMPT)
@@ -420,7 +433,7 @@ def scan_country_code_duplicates(con: sqlite3.Connection, *, schema: str = "main
         by_canonical: dict[str, list[tuple[str, int]]] = {}
         unresolved: list[str] = []
         for value, n in rows:
-            canonical = canonical_country(value)
+            canonical = canonical_country(value, form)
             if canonical is None:
                 unresolved.append(str(value))
                 continue
@@ -453,7 +466,7 @@ def scan_country_code_duplicates(con: sqlite3.Connection, *, schema: str = "main
     return {
         "duplicates": total,
         "columns": columns,
-        "target_form": CANONICAL_COUNTRY_FORM,
+        "target_form": form,
         "method": (
             "per country-bearing column, the distinct stored spellings are grouped by "
             "their canonical form; a group with more than one spelling is one "

@@ -1,0 +1,458 @@
+"""The alpha-2 -> alpha-3 migration of a store: app-stopped, verified, resumable, and honest about what it leaves.
+
+Every store here is a scratch file built for the test; no real data is read or written.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+
+import pytest
+from sqlalchemy import create_engine
+
+from src.backup import country_migration as cm
+from src.database import country_form as cf
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _new_store(path: Path, *, articles: int = 60, sources: int = 4) -> Path:
+    """A scratch alpha-2 store with every country-bearing table populated."""
+    from src.database.models import Base
+
+    eng = create_engine(f"sqlite:///{path}", future=True)
+    Base.metadata.create_all(eng)
+    eng.dispose()
+    con = sqlite3.connect(path)
+    spell = ["fr", "FR", "de", "us", "gb", "uk", "eu", "int", "WLD", "zz", None, "FRA", "fra"]
+    for i in range(sources):
+        con.execute(
+            "INSERT INTO sources (name, domain, rss_url, country, language, source_type, reliability_score, rate_limit_ms, enabled, priority) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (f"s{i}", f"s{i}.example", f"http://s{i}.example/rss", spell[i], "en", "news", 0.5, 1000, 1, 1),
+        )
+    for i in range(articles):
+        con.execute(
+            "INSERT INTO articles (url, canonical_url, source_id, title, content, hash, country) VALUES (?,?,?,?,?,?,?)",
+            (f"http://a/{i}", f"http://a/{i}", 1, f"t{i}", f"c{i}", f"h{i}", spell[i % len(spell)]),
+        )
+    # sparse rowids on purpose: the sweep walks rowid windows, not row positions
+    con.execute("DELETE FROM articles WHERE id % 7 = 3")
+    for i, j in enumerate((("fr", "u1"), ("de", "u2"), ("uk", "u3"), ("int", "u4"))):
+        con.execute("INSERT INTO law_documents (jurisdiction, title, url, country) VALUES (?,?,?,?)", (j[0], f"d{i}", j[1], j[0]))
+    con.execute("INSERT INTO places (id, name, country, country_alpha3) VALUES ('p1', 'Paris', 'fr', 'FRA')")
+    con.execute("INSERT INTO places (id, name, country, country_alpha3) VALUES ('p2', 'Nowhere', NULL, NULL)")
+    con.commit()
+    con.close()
+    return path
+
+
+def _column(path: Path, table: str, column: str) -> dict:
+    con = sqlite3.connect(path)
+    try:
+        return dict(con.execute(f'SELECT "{column}", COUNT(*) FROM "{table}" GROUP BY "{column}"').fetchall())
+    finally:
+        con.close()
+
+
+@pytest.fixture(autouse=True)
+def _small_windows(monkeypatch):
+    monkeypatch.setattr(cm, "BATCH_ROWIDS", 9)  # many windows, so the cursor and the per-window commit are exercised
+
+
+def test_the_run_converts_what_has_an_alpha3_and_keeps_everything_else_as_stored(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    before = _column(db, "articles", "country")
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert rep.state == "done", rep.message
+    after = _column(db, "articles", "country")
+    assert sum(after.values()) == sum(before.values())  # no row lost or added
+    assert after.get(None) == before.get(None)  # NULL stays NULL
+    for kept in ("uk", "eu", "int", "WLD", "zz"):  # no ISO meaning: exactly as stored (R100)
+        assert after.get(kept) == before.get(kept), kept
+    assert not {"fr", "FR", "fra", "de", "us", "gb"} & set(after), "a convertible spelling is still there"
+    assert after["FRA"] == before.get("fr", 0) + before.get("FR", 0) + before.get("FRA", 0) + before.get("fra", 0)
+    assert _column(db, "places", "country") == {None: 1, "FRA": 1}
+    assert _column(db, "places", "country_alpha3") == {None: 1, "FRA": 1}  # the other column is not touched
+    assert cf.read_form(sqlite3.connect(db)) == "alpha3"
+    assert all(b["balanced"] for b in rep.balance.values())
+
+
+def test_what_has_no_iso_meaning_is_counted_and_listed_by_table_and_column(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert set(rep.unmapped["articles.country"]) >= {"uk", "eu", "int", "WLD", "zz"}
+    assert rep.unmapped["law_documents.jurisdiction"] == {"int": 1, "uk": 1}
+    assert rep.unmapped["law_documents.country"] == {"int": 1, "uk": 1}
+    assert "places.country" not in rep.unmapped  # nothing unmapped there: not listed with an empty entry
+    assert all(isinstance(n, int) and n > 0 for vals in rep.unmapped.values() for n in vals.values())
+
+
+def test_a_second_run_changes_nothing(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    cm.migrate(db, backup_dir=tmp_path / "bk")
+    snap = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk2")
+    assert rep.state == "already-done"
+    assert snap == {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    assert not (tmp_path / "bk2").exists(), "a finished store takes no second safety copy"
+
+
+def test_the_safety_copy_is_taken_first_verified_and_holds_the_old_form(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    live_before = {t: _column(db, t, "country") for t in ("articles",)}
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    copy = Path(rep.backup["path"])
+    assert copy.exists() and rep.backup["quick_check"] == "ok"
+    con = sqlite3.connect(copy)
+    try:
+        assert dict(con.execute("SELECT country, COUNT(*) FROM articles GROUP BY country").fetchall()) == live_before["articles"]
+        assert cf.read_form(con) == "alpha2"
+    finally:
+        con.close()
+    assert rep.backup["tables"]["articles"] == sum(live_before["articles"].values())
+
+
+def test_no_free_space_for_the_copy_refuses_before_any_row_moves(tmp_path, monkeypatch):
+    db = _new_store(tmp_path / "s.db")
+    before = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    monkeypatch.setattr(cm, "_free_bytes", lambda _d: 10)
+    with pytest.raises(cm.MigrationRefused, match="not enough free space"):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    assert cf.read_form(sqlite3.connect(db)) == "alpha2"
+
+
+def test_a_collision_in_a_unique_index_refuses_before_any_row_moves(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO law_documents (jurisdiction, title, url, country) VALUES ('FRA', 'dup', 'u1', 'FRA')")  # fr+u1 exists
+    con.commit()
+    con.close()
+    before = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert rep.state == "refused" and rep.collisions
+    hit = rep.collisions[0]
+    assert (hit["table"], hit["column"], hit["becomes"], hit["others"], hit["rows"]) == ("law_documents", "jurisdiction", "FRA", ["u1"], 2)
+    assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}, "a refused run changed a row"
+    assert not (tmp_path / "bk").exists()
+
+
+def test_two_spellings_of_one_country_that_would_collide_are_found_too(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO law_documents (jurisdiction, title, url, country) VALUES ('FR', 'dup', 'u1', 'FR')")  # fr+u1 and FR+u1
+    con.commit()
+    con.close()
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert rep.state == "refused" and rep.collisions[0]["rows"] == 2
+
+
+def test_the_old_unscoped_search_trigger_is_refused_not_paid_for_per_row(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    con = sqlite3.connect(db)
+    con.execute("DROP TRIGGER IF EXISTS article_fts_au")
+    con.execute("CREATE TRIGGER article_fts_au AFTER UPDATE ON articles BEGIN SELECT 1; END")
+    con.commit()
+    con.close()
+    with pytest.raises(cm.MigrationRefused, match="unscoped"):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert cf.read_form(sqlite3.connect(db)) == "alpha2"
+
+
+def test_the_run_holds_the_file_and_a_holder_stops_the_run(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    holder = sqlite3.connect(db)
+    holder.execute("PRAGMA journal_mode=WAL")
+    holder.execute("SELECT COUNT(*) FROM articles").fetchall()
+    holder.execute("BEGIN")
+    holder.execute("SELECT COUNT(*) FROM articles").fetchall()  # a reader inside a transaction: the app, idle
+    before = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    with pytest.raises(cm.AppStillRunning):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+    holder.close()
+    assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    seen: list[str] = []
+
+    def during(event: dict) -> None:
+        if event["phase"] == "sweep" and not seen:
+            try:
+                other = sqlite3.connect(db, timeout=0.2)
+                other.execute("INSERT INTO sources (name, domain, rss_url) VALUES ('x','x','x')")
+                other.commit()
+                seen.append("WROTE")
+            except sqlite3.OperationalError as exc:
+                seen.append("refused" if "locked" in str(exc) else str(exc))
+
+    cm.migrate(db, backup_dir=tmp_path / "bk", progress=during)
+    assert seen == ["refused"], "a second program could write while the migration ran"
+
+
+def test_estimate_reads_the_plan_and_changes_nothing_with_the_file_open(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    other = sqlite3.connect(db)
+    other.execute("SELECT 1 FROM articles LIMIT 1").fetchall()
+    before = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    rep = cm.migrate(db, estimate_only=True, backup_dir=tmp_path / "bk")
+    other.close()
+    assert rep.plan["to_rewrite"] > 0 and rep.estimate["rows_to_rewrite"] == rep.plan["to_rewrite"]
+    assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    assert not (tmp_path / "bk").exists() and cf.read_form(sqlite3.connect(db)) == "alpha2"
+
+
+def test_the_estimate_is_shown_first_and_a_no_leaves_the_store_untouched(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    before = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    shown: list[dict] = []
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk", confirm=lambda plan, est: shown.append(est) or False)
+    assert rep.state == "declined" and shown and shown[0]["rows_to_rewrite"] > 0
+    assert shown[0]["rate_rows_per_s"] and "rolled back" in shown[0]["basis"]
+    assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}, "the timing window was not rolled back"
+    assert not (tmp_path / "bk").exists()
+
+
+# ---- killed mid-run: every way to die leaves a store the next run finishes ---------------------------------- #
+_CHILD = textwrap.dedent(
+    """
+    import os, sys, sqlite3
+    from pathlib import Path
+    from src.backup import country_migration as cm
+    cm.BATCH_ROWIDS = 9
+    db, bk, mode, n = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], int(sys.argv[4])
+    calls = {"n": 0}
+    if mode == "inside-window":
+        real = cm._sweep_window
+        def dying(con, cp, lo, hi):
+            out = real(con, cp, lo, hi)          # the UPDATE ran ...
+            calls["n"] += 1
+            if calls["n"] == n:
+                os._exit(9)                      # ... and the process dies before the window COMMITs
+            return out
+        cm._sweep_window = dying
+        cm.migrate(db, backup_dir=bk)
+    else:
+        def after_commit(event):
+            if event["phase"] == "sweep":
+                calls["n"] += 1
+                if calls["n"] == n:
+                    os._exit(9)                  # dies between windows
+        cm.migrate(db, backup_dir=bk, progress=after_commit)
+    """
+)
+
+
+def _kill_child(db: Path, bk: Path, mode: str, n: int) -> None:
+    done = subprocess.run([sys.executable, "-c", _CHILD, str(db), str(bk), mode, str(n)], cwd=ROOT,
+                          env={**os.environ, "OO_DB_PLAINTEXT": "1"}, capture_output=True, text=True, timeout=240)
+    assert done.returncode == 9, done.stdout + done.stderr
+
+
+@pytest.mark.parametrize("mode", ["inside-window", "between-windows"])
+def test_a_run_killed_mid_way_is_finished_by_the_next_one_and_ends_exactly_as_an_unbroken_run(tmp_path, mode):
+    ref = _new_store(tmp_path / "ref.db")
+    cm.migrate(ref, backup_dir=tmp_path / "bk-ref")
+    want = {t: _column(ref, t, c) for t, c in cm.migration_columns()}
+
+    db = _new_store(tmp_path / "s.db")
+    _kill_child(db, tmp_path / "bk", mode, 3)
+    mid = _column(db, "articles", "country")
+    assert cf.read_form(sqlite3.connect(db)) == "alpha2", "a half-done run must not claim alpha-3"
+    assert "FRA" in mid and ("fr" in mid or "FR" in mid), "the kill came too early or too late to leave a half-done store"
+    copy = next((tmp_path / "bk").glob("*.db"))
+    stamp = copy.stat().st_mtime_ns
+    with sqlite3.connect(db) as c:
+        assert json.loads(c.execute("SELECT value FROM app_state WHERE key = ?", (cm.JOURNAL_KEY,)).fetchone()[0])["state"] == "running"
+
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert rep.state == "done", rep.message
+    assert want == {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    assert all(b["balanced"] for b in rep.balance.values())
+    assert copy.stat().st_mtime_ns == stamp and len(list((tmp_path / "bk").glob("*.db"))) == 1, "the safety copy was taken again, half-migrated"
+    assert cf.read_form(sqlite3.connect(db)) == "alpha3"
+
+
+def test_a_window_killed_before_its_commit_leaves_none_of_its_rows_converted(tmp_path):
+    db = _new_store(tmp_path / "s.db", articles=200)
+    before = _column(db, "articles", "country")
+    _kill_child(db, tmp_path / "bk", "inside-window", 1)  # dies in the very first window, after its UPDATE ran
+    assert _column(db, "articles", "country") == before, "an uncommitted window was applied"
+
+
+def test_stopping_between_windows_is_resumable(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    ticks = {"n": 0}
+
+    def stop() -> bool:
+        ticks["n"] += 1
+        return ticks["n"] > 3
+
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk", should_stop=stop)
+    assert rep.state == "interrupted" and cf.read_form(sqlite3.connect(db)) == "alpha2"
+    assert cm.migrate(db, backup_dir=tmp_path / "bk").state == "done"
+
+
+def test_a_resume_whose_safety_copy_is_gone_refuses_rather_than_copy_a_half_migrated_store(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    _kill_child(db, tmp_path / "bk", "between-windows", 3)
+    for f in (tmp_path / "bk").glob("*.db"):
+        f.unlink()
+    with pytest.raises(cm.MigrationRefused, match="safety copy is gone"):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+
+
+def test_a_store_that_says_alpha3_but_holds_alpha2_is_not_called_done(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    con = sqlite3.connect(db)
+    cf.write_form(con, "alpha3", by="test")
+    con.commit()
+    con.close()
+    with pytest.raises(cm.MigrationRefused, match="still holds alpha-2"):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+
+
+# ---- the encrypted path --------------------------------------------------------------------------------------- #
+def test_an_encrypted_store_is_migrated_under_its_key_and_its_safety_copy_stays_ciphertext(tmp_path, monkeypatch):
+    from src.database import connect as dbc
+
+    if not dbc.have_driver():
+        pytest.skip("no SQLCipher driver in this environment")
+    plain = _new_store(tmp_path / "plain.db")
+    enc = dbc.reencrypt_plain_to(plain, tmp_path / "enc.db", "correct horse battery staple")
+    monkeypatch.setattr(dbc, "_passphrase", "correct horse battery staple")
+    assert dbc.is_encrypted_file(enc)
+    rep = cm.migrate(enc, backup_dir=tmp_path / "bk")
+    assert rep.state == "done", rep.message
+    copy = Path(rep.backup["path"])
+    assert dbc.is_encrypted_file(copy), "the safety copy of an encrypted store must be encrypted"
+    con = dbc.connect(enc, check_same_thread=False)
+    try:
+        assert cf.read_form(con) == "alpha3"
+        assert con.execute("SELECT COUNT(*) FROM articles WHERE country IN ('fr','FR')").fetchone()[0] == 0
+    finally:
+        con.close()
+    back = dbc.connect(copy, check_same_thread=False)
+    try:
+        assert back.execute("SELECT COUNT(*) FROM articles WHERE country = 'fr'").fetchone()[0] > 0
+        assert cf.read_form(back) == "alpha2"
+    finally:
+        back.close()
+    assert "correct horse" not in json.dumps(rep.__dict__, default=str)
+
+
+# ---- one list of columns ---------------------------------------------------------------------------------------- #
+def test_the_migration_covers_exactly_the_typed_columns_and_every_registered_one():
+    from src.backup.country_codes import COUNTRY_COLUMNS, COUNTRY_COLUMNS_EXEMPT
+
+    typed = set(cm.migration_columns())
+    registered = {(t, c) for t, cols in COUNTRY_COLUMNS.items() for c in cols}
+    assert registered <= typed, f"a column the restore normalises is not migrated: {sorted(registered - typed)}"
+    extra = typed - registered
+    assert extra == {("article_mentioned_places", "country")}, f"a typed column nobody classified: {sorted(extra)}"
+    exempt = {tuple(k.split(".", 1)) for k in COUNTRY_COLUMNS_EXEMPT}
+    assert not (typed & exempt - {("article_mentioned_places", "country")}), "an exempt column is typed and would be rewritten"
+
+
+# ---- the column type ---------------------------------------------------------------------------------------------- #
+@pytest.mark.parametrize("form, stored", [("alpha2", {"fr": "fr", "FR": "FR", "FRA": "FRA", "uk": "uk"}),
+                                          ("alpha3", {"fr": "FRA", "FR": "FRA", "FRA": "FRA", "uk": "uk", "WLD": "WLD", "": "", "xx": "xx"})])
+def test_a_value_is_written_in_the_form_the_store_holds(monkeypatch, form, stored):
+    monkeypatch.setattr(cf, "store_form", lambda: form)
+    t = cf.CountryCode(8)
+    for given, want in stored.items():
+        assert t.process_bind_param(given, None) == want, (form, given)
+    assert t.process_bind_param(None, None) is None
+
+
+def test_a_value_is_read_back_as_alpha2_and_what_has_no_meaning_is_not_touched():
+    t = cf.CountryCode(8)
+    assert [t.process_result_value(v, None) for v in ("FRA", "fra", "fr", "uk", "int", "eu", "WLD", None, "")] == [
+        "fr", "fr", "fr", "uk", "int", "eu", "WLD", None, ""]
+
+
+def test_an_unreadable_store_form_stops_a_write_instead_of_assuming_alpha2(monkeypatch):
+    from src.config import kv_store
+
+    def boom(_k):
+        raise kv_store.KvReadError("OperationalError")
+
+    monkeypatch.setattr(kv_store, "kv_get_json_checked", boom)
+    with pytest.raises(cf.StoreFormUnreadable):
+        cf.CountryCode(8).process_bind_param("fr", None)
+
+
+def _cli(data_dir: Path, *args: str, stdin: str = "") -> subprocess.CompletedProcess:
+    env = {**os.environ, "OO_DATA_DIR": str(data_dir), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1", "OO_AUTOSEED": "0"}
+    env.pop("DATABASE_URL", None)
+    code = "import sys; sys.argv = ['open-omniscience', *sys.argv[1:]]; from src.api.main import main; main()"
+    return subprocess.run([sys.executable, "-c", code, "migrate-countries", *args], cwd=ROOT, env=env, input=stdin,
+                          capture_output=True, text=True, timeout=240)
+
+
+def test_the_console_command_estimates_asks_and_migrates_the_store_it_is_pointed_at(tmp_path):
+    data = tmp_path / "state"
+    data.mkdir()
+    db = _new_store(data / "open_omniscience.db")
+    est = _cli(data, "--estimate", "--backup-dir", str(tmp_path / "bk"))
+    assert est.returncode == 0, est.stderr[-1500:]
+    assert "Rows to rewrite" in est.stdout and cf.read_form(sqlite3.connect(db)) == "alpha2"
+    declined = _cli(data, "--backup-dir", str(tmp_path / "bk"), stdin="no\n")
+    assert cf.read_form(sqlite3.connect(db)) == "alpha2" and not (tmp_path / "bk").exists(), declined.stdout[-800:]
+    done = _cli(data, "--yes", "--backup-dir", str(tmp_path / "bk"))
+    assert done.returncode == 0, done.stdout[-800:] + done.stderr[-1500:]
+    assert cf.read_form(sqlite3.connect(db)) == "alpha3" and _column(db, "law_documents", "jurisdiction")["FRA"] == 1
+    assert any((tmp_path / "bk").iterdir()), "the safety copy must exist"
+
+
+def test_the_diagnostics_card_reads_the_form_and_the_estimate_and_starts_nothing(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as client:
+        r = client.get("/api/diagnostics/country-form")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # a store the app created is stamped alpha-3 at birth, and says it was not migrated
+        assert body["form"] == "alpha3" and body["readable"] and body["migrated"] is False
+        assert body["command"] == "open-omniscience migrate-countries"
+        est = client.get("/api/diagnostics/country-form?estimate=true").json()
+        assert est["estimate"] is not None and ("rows_to_rewrite" in est["estimate"] or "refused" in est["estimate"])
+        monkeypatch.setattr(cf, "store_form", lambda: (_ for _ in ()).throw(cf.StoreFormUnreadable("x")))
+        down = client.get("/api/diagnostics/country-form").json()
+        assert down["readable"] is False and down["form"] is None, "an unreadable form is never reported as alpha-2"
+
+
+def test_the_diagnostics_page_wires_the_card_to_the_route():
+    html = (ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "src" / "static" / "app-diagnostics.js").read_text(encoding="utf-8")
+    assert 'id="country-form-out"' in html and html.count("loadCountryForm(this,") == 2
+    assert "/api/diagnostics/country-form" in js and "_countryFormTicket" in js
+
+
+def test_a_listing_ordered_by_country_comes_back_in_the_same_order_in_both_forms(tmp_path):
+    """AUS sorts before AUT where `at` sorts before `au`: ordering by the stored text would reorder an alpha-3 store's
+    listings, a payload change B1 promises not to make (the order is the Python side's alpha-2 in either form)."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from src.database.models import Source
+
+    orders = {}
+    for form in ("alpha2", "alpha3"):
+        eng = create_engine(f"sqlite:///{tmp_path / (form + '.db')}", future=True)
+        Source.metadata.create_all(eng)
+        with cf.writing_in(form), Session(eng) as s:
+            for i, cc in enumerate(["au", "at", "ch", "cn", "gb", "uk", None, "de"]):
+                s.add(Source(name=f"s{i}", domain=f"s{i}.example", country=cc))
+            s.commit()
+            orders[form] = [r.country for r in s.execute(select(Source).order_by(cf.alpha2_order(Source.country), Source.id)).scalars()]
+        eng.dispose()
+    assert orders["alpha2"] == orders["alpha3"] == [None, "at", "au", "ch", "cn", "de", "gb", "uk"]
+    keys = [cf.order_key(v, i) for i, v in enumerate(["b", None, "a"])]
+    assert [k[2] for k in sorted(keys)] == [1, 2, 0], "NULL first, then the value, as ORDER BY does"

@@ -141,10 +141,14 @@ def list_sources(
     if countries:
         # Forgiving filter through the one conversion layer: ?country=France,
         # ?country=FR and ?country=fr all match the canonical stored code. OR within.
-        from src.catalog.countries import normalize_country
+        # The column's own type converts each spelling to the store's form, so no `lower()` wraps it: a function
+        # over the column would hide it from the type and compare alpha-2 text with an alpha-3 store.
+        from src.catalog.countries import country_query_forms
 
-        ccs = [normalize_country(c) or c.strip().lower() for c in countries]
-        filters.append(func.lower(Source.country).in_(ccs))
+        # Both cases of every spelling, because the `lower()` that made this filter case-blind is gone and a
+        # source file may still hold `FR`.
+        ccs = sorted({v for c in countries for f in country_query_forms(c) for v in (f, f.lower(), f.upper())})
+        filters.append(Source.country.in_(ccs))
     langs = _vals(language)
     if langs:
         filters.append(func.lower(Source.language).in_([x.lower() for x in langs]))
@@ -172,6 +176,11 @@ def list_sources(
     # source never sorts as SQLite's lowest value while its row shows a live count (the boot
     # self-heal backfill makes NULLs rare; count_basis discloses any that remain). No join.
     col = func.coalesce(Source.article_count, 0) if sort_key == "articles" else getattr(Source, sort_key)
+    if sort_key == "country":
+        # In the Python side's alpha-2 whatever the store holds, so the same rows come back in the same order.
+        from src.database.country_form import alpha2_order
+
+        col = alpha2_order(Source.country)
     base = base.order_by(col.desc() if order == "desc" else col.asc(), Source.id)
     sources = base.limit(limit).offset(offset).all()
 

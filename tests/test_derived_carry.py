@@ -98,10 +98,33 @@ _ARTICLES = [
 ]
 
 
+#: The country form this test's working files keep. A side file made with ``create_all`` carries no marker, which
+#: reads as alpha-2, while the ORM binds in the form the PROCESS's store holds -- so the two are made to agree here:
+#: every test runs once per form, its files stamped and its writes pinned to it (``writing_in``).
+_FORM = ["alpha2"]
+
+
+@pytest.fixture(autouse=True, params=["alpha2", "alpha3"])
+def _country_form(request):
+    from src.database.country_form import writing_in
+
+    _FORM[0] = request.param
+    with writing_in(request.param):
+        yield request.param
+    _FORM[0] = "alpha2"
+
+
 def _schema(path: Path) -> None:
     engine = create_engine(f"sqlite:///{path}", future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
+    if _FORM[0] == "alpha3":
+        from src.database.country_form import write_form
+
+        con = sqlite3.connect(path)
+        write_form(con, "alpha3", by="test")
+        con.commit()
+        con.close()
     con = sqlite3.connect(path, isolation_level=None)
     for ddl in _FTS_DDL:
         con.execute(ddl)
@@ -114,7 +137,9 @@ def _session(path: Path):
 
 
 def _backup(path: Path) -> None:
-    """The exporting corpus: every article indexed by THIS engine, so each is stamped."""
+    """The exporting corpus: every article indexed by THIS engine, so each is stamped. An alpha-2 file, as every
+    backup written before 0.5 is."""
+    _FORM[0] = "alpha2"
     _schema(path)
     engine, s = _session(path)
     try:
@@ -294,8 +319,11 @@ def _assert_same(carried: dict, reindexed: dict) -> None:
 
 @pytest.fixture(scope="module")
 def backup(tmp_path_factory):
+    from src.database.country_form import writing_in
+
     path = tmp_path_factory.mktemp("carry") / "backup.db"
-    _backup(path)
+    with writing_in("alpha2"):
+        _backup(path)
     assert _stamped(path) == len(_ARTICLES), "the exporter did not stamp every article"
     return path
 

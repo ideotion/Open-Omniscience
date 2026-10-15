@@ -3423,6 +3423,7 @@ def main() -> None:
     Subcommands:
       (none) / serve   Run the local web app (loopback only).
       doctor           Print a health-check report and exit.
+      migrate-countries  Move the store's country codes to alpha-3 (app closed).
 
     Binds to loopback only by default: this is a single-user, local-first app and
     must never be exposed on a network interface (see PRODUCT_SYNTHESIS §0.3). Set
@@ -3437,10 +3438,11 @@ def main() -> None:
         sys.exit(run_doctor())
     if argv and argv[0] in ("-h", "--help", "help"):
         print(
-            "Usage: open-omniscience [serve|doctor|panic|terms|accept-terms] [--ephemeral]\n"
+            "Usage: open-omniscience [serve|doctor|panic|terms|accept-terms|migrate-countries] [--ephemeral]\n"
             "  serve        (default) run the local web app at http://127.0.0.1:8000\n"
             "  doctor       print a health-check report (Python, data, db, LLM, launcher)\n"
             "  panic        irreversibly wipe the local data dir (asks to confirm)\n"
+            "  migrate-countries  move the store's country codes to alpha-3 (app CLOSED; --estimate reads only)\n"
             "  terms        show the legal documents to accept (docs/legal/) and the consent status\n"
             "  accept-terms record explicit acceptance of the legal documents (asks to confirm)\n"
             "  --ephemeral  run against a throwaway temp data dir, wiped on exit\n"
@@ -3455,6 +3457,10 @@ def main() -> None:
     if argv and argv[0] == "panic":
         _panic_cli(force=("--yes" in argv or "-y" in argv))
         return
+    if argv and argv[0] == "migrate-countries":
+        from src.backup.country_migration import main as _migrate_countries
+
+        sys.exit(_migrate_countries(argv[1:]))
     if "--ephemeral" in argv or os.getenv("OO_EPHEMERAL") == "1":
         _run_ephemeral([a for a in argv if a != "--ephemeral"])
         return

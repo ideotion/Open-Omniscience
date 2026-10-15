@@ -22,6 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.catalog.countries import country_payload_iso3, country_query_forms
+from src.database.country_form import order_key
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
 from src.monitoring.secret_scrub import log_failure
@@ -172,7 +173,7 @@ def law_documents(
         # than tidy: Q303 displays `GBR` for a row stored as `uk`, so an operator can
         # read the code off the screen, paste it here, and must not get an empty list.
         q = q.filter(LawDocument.jurisdiction.in_(country_query_forms(jurisdiction)))
-    docs = q.order_by(LawDocument.jurisdiction, LawDocument.id).all()
+    docs = sorted(q.all(), key=lambda d: order_key(d.jurisdiction, d.id))  # in Python: the stored form (alpha-3) would order differently
     rev_counts: dict[int, int] = {
         doc_id: n
         for doc_id, n in db.query(LawRevision.document_id, func.count(LawRevision.id))
