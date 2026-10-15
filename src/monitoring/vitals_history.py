@@ -243,6 +243,21 @@ _LOCK = threading.RLock()
 # which takes an asyncio error inside an asyncio error; one line lost per such event is the
 # price of never waiting for itself.)
 _LOG_LOCK = threading.RLock()
+# ONE WRITER OF THE FILE AT A TIME. ``flush`` writes ``vitals_history.json.tmp`` and renames it over the file;
+# two flushes that overlap (the liveness thread's, a clean end's, the exit hook's, a thread a test left
+# running) write the SAME temporary name: the second truncates what the first is still writing, or
+# renames it away from under the first, and the file the rename leaves is torn or the first flush
+# fails with "No such file or directory". A torn file starts the next boot with an empty history
+# (``start`` reads a damaged file as none), which loses the 48 hours and the tails of the last
+# sessions the file exists to keep. The whole flush runs under this lock, the snapshot included, so a
+# later flush always holds the newer state and the bookkeeping after a write belongs to that write; the
+# order is ``_FLUSH_LOCK`` then ``_LOCK`` then ``_LOG_LOCK``, and nothing that holds ``_LOCK`` calls
+# ``flush``. It covers the threads of ONE process: two processes recording into one data folder would
+# still race. Re-entrant because a plain lock would make a handler that flushes on the thread inside a
+# flush wait for itself for ever; the nested flush that allows writes the same temporary name as the one it
+# interrupted and can tear the file, so nothing may flush from a signal handler or a finalizer, and
+# nothing does today (the SIGHUP handler does not).
+_FLUSH_LOCK = threading.RLock()
 _STARTED = False
 _FINE: list[list[Any]] = []
 _COARSE: list[list[Any]] = []
@@ -960,25 +975,29 @@ def flush() -> None:
     try:
         if not _STARTED:
             return
-        started_wall, started_cpu = time.perf_counter(), _thread_cpu()
-        try:
-            doc = _state_doc()
-            doc.update({"schema": SCHEMA, "saved_at": _iso(time.time())})
-            target = _path()
-            target.parent.mkdir(parents=True, exist_ok=True)
-            tmp = target.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-            os.replace(tmp, target)
-        except Exception as exc:
+        with _FLUSH_LOCK:
+            started_wall, started_cpu = time.perf_counter(), _thread_cpu()  # after the wait: the cost is the write's
+            try:
+                with _LOCK:
+                    if not _STARTED:  # a reset while this flush waited has left nothing to write: not an empty history
+                        return
+                    doc = _state_doc()
+                doc.update({"schema": SCHEMA, "saved_at": _iso(time.time())})
+                target = _path()
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
+                os.replace(tmp, target)
+            except Exception as exc:
+                with _LOCK:
+                    _LAST_FLUSH = time.monotonic() - FLUSH_S + FLUSH_RETRY_S
+                _note_error("flush", exc)
+                raise
             with _LOCK:
-                _LAST_FLUSH = time.monotonic() - FLUSH_S + FLUSH_RETRY_S
-            _note_error("flush", exc)
-            raise
-        with _LOCK:
-            _LAST_FLUSH = time.monotonic()
-            _LAST_FLUSH_AT = doc["saved_at"]
-        _note_cost("flush", started_wall, started_cpu)
-        _COST["flush_bytes_last"] = float(target.stat().st_size)
+                _LAST_FLUSH = time.monotonic()
+                _LAST_FLUSH_AT = doc["saved_at"]
+            _note_cost("flush", started_wall, started_cpu)
+            _COST["flush_bytes_last"] = float(target.stat().st_size)
     except Exception as err:  # noqa: BLE001
         _debug_failure("vitals history flush failed", err)
 
@@ -1145,7 +1164,11 @@ def start(now: float | None = None) -> None:
                 _HOUR_LOGS = {}
                 _HOUR_LOG_NAMES.clear()
         _MINUTES = []
-        _LAST_WALL = None  # a step back is measured between two ticks of one session, never across a restart
+        # the first tick of a session has no previous tick of its own: a step back is measured from the restored open
+        # bucket's start (see ``tick``), a forward step is not measured at all. ``_BOOT_BASE`` is not touched here for
+        # the second reason: ``start`` does its work once per process, or after ``reset_for_tests``, and both leave it
+        # ``None``, so no reading of an earlier session is ever compared with this one's
+        _LAST_WALL = None
         _SESSIONS.append({"t": int(wall), "pid": os.getpid()})
         _trim(_SESSIONS, SESSIONS_KEEP)
         _STARTED = True
@@ -1167,7 +1190,9 @@ def _gaps(fine: list[list[Any]], steps: list[dict[str, Any]] | None = None) -> l
     clock's correction and not time the process was down. A forward step is recorded only where
     the platform has a boot-time clock, from ``FORWARD_STEP_MIN_S`` (and from ``FORWARD_STEP_FLOOR_S``
     where it is what opened a gap, see ``tick``), and not across a restart, so a gap without the mark
-    can still be one."""
+    can still be one. A step that is recorded can leave its gap unmarked too: one that spans ticks without
+    a boot-time reading can have both of its stamps outside the gap it sits behind, and the test above looks
+    for a stamp inside it or at its edge."""
     out: list[dict[str, Any]] = []
     times = [int(r[0]) for r in fine]
     stamps = [str(x) for st in steps or [] for x in (st.get("at"), st.get("was")) if x]
@@ -1254,10 +1279,11 @@ def diagnostics_member(max_bytes: int = MEMBER_BUDGET_BYTES) -> dict[str, Any]:
                 "`clock_stepped_back` and `clock_stepped_forward` count every recorded step, those the list no "
                 f"longer holds included, while `clock_steps` keeps the newest {CLOCK_STEPS_KEEP} of both; a gap "
                 "marked `clock_step` is next to a step still in that list, back or forward, and may be the clock's "
-                "correction and not down time, and a gap without the mark can still be one wherever a step "
-                "is not recorded (no boot-time clock, a step the list no longer holds, a step under "
-                f"{FORWARD_STEP_MIN_S} s inside a gap the process's absence opened anyway, across a restart, a gap "
-                "strictly between the two stamps of a step that spans ticks without a boot-time reading); "
+                "correction and not down time, and a gap without the mark can still be one in three ways: a step that is "
+                "not recorded (no boot-time clock, a step under "
+                f"{FORWARD_STEP_MIN_S} s inside a gap the process's absence opened anyway, across a restart); a step the "
+                "list no longer holds, which had been recorded; a recorded step whose two stamps both lie outside the "
+                "gap, which is then strictly between them (a step that spans ticks without a boot-time reading); "
                 "`previous_sessions` holds the last "
                 "minutes of the sessions before this one (newest last); `open` on a log hour marks the "
                 "hour that was open at the last write."
