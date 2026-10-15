@@ -588,10 +588,11 @@ def _disk_unread_pages(path: Path, page_size: int, cancel: threading.Event) -> t
     ``min(asked, file size - offset)``; a chunk that falls short is read again page by page, and a page that falls short is counted. A
     page that reads and is wrong is damage, which SQLite names, and is not counted here. WHY IT EXISTS: SQLite 3.43 and later answer
     a failed READ as ``SQLITE_CORRUPT``, so the per-table check cannot tell a drive that failed from a file that was overwritten,
-    and past 4 GiB the page pass is not run at all (:data:`verify.PAGE_PASS_LIMIT_BYTES`): this pass may be the only witness. R129's
-    removal of the kept copy must not rest on a verdict that may be the drive's. The file is quiescent (the repair holds the write
-    gate and the engine has not been touched since the copy) and the pass is one sequential read, which the copy has already
-    warmed. A file that cannot be OPENED raises: the repair then fails with every file as it was and is tried again at the next
+    and past 4 GiB the engine's page pass is not run at all (:data:`verify.PAGE_PASS_LIMIT_BYTES`; the app's own tag check answers
+    there, R134, and counts a page it could not read apart from one that failed): this pass is the repair's own witness, taken on the
+    copy itself. R129's removal of the kept copy must not rest on a verdict that may be the drive's. The file is quiescent (the
+    repair holds the write gate and the engine has not been touched since the copy) and the pass is one sequential read, which the
+    copy has already warmed. A file that cannot be OPENED raises: the repair then fails with every file as it was and is tried again at the next
     start. The stop is checked before every chunk AND before every page of a chunk that is read one by one, so a run of bad sectors
     (each a slow failed read) delays a stop by one read, not by the chunk."""
     size = path.stat().st_size

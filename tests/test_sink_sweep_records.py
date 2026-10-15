@@ -211,6 +211,12 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = prev_deadline'): 1,
         ('statement_deadline', 'session.info.pop(_DEADLINE_KEY, None)'): 1,
     },
+    'src/database/page_auth.py': {
+        ('_Tally.not_read', 'if exc is not None and self.failure is None:'): 1,
+        ('_Tally.not_read', 'self.failure = failure_label(exc)'): 1,
+        ('_scan', 'tally.not_read(exc)'): 2,
+        ('check_path', 'return _result(STATE_UNREADABLE, empty, failure=failure_label(exc))'): 1,
+    },
     'src/database/pool_watch.py': {
         ('_on_invalidate', 'orig = getattr(exception, "orig", exception)'): 2,
     },
@@ -273,6 +279,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_read_table', 'verdict, reason = classify_error(exc)'): 1,
         ('_read_table', 'elif verdict == VERDICT_UNCHECKED and is_generic_error(exc):'): 1,
         ('_page_pass', 'verdict, reason = classify_error(exc)'): 1,
+        ('_tag_pass', 'verdict, reason = classify_error(exc)'): 1,
     },
     'src/database/write.py': {
         ('_exc_chain', 'stack: list[BaseException | None] = [exc]'): 1,

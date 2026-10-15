@@ -22,12 +22,15 @@ on demand (a build without the pragma, a disk error in the middle of a pass, a m
 """
 from __future__ import annotations
 
+import errno
+import hashlib
 import json
 import os
 import random
 import shutil
 import sqlite3
 import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -826,57 +829,189 @@ def test_the_kept_lines_are_bounded_and_the_count_is_not():
     assert kept.count == 10_000 and kept.lines == ["row 0", "row 1", "row 2"]
 
 
-class _SizedPath:
-    """A path whose ``stat()`` answers a length, for a file the size of which nothing in a test should have to make (a sparse file is
-    not sparse on NTFS, which would allocate the whole 4 GiB). ``sizes`` are answered in turn, the last one for ever."""
-
-    def __init__(self, *sizes: int) -> None:
-        self.sizes = list(sizes)
-
-    def stat(self):
-        size = self.sizes.pop(0) if len(self.sizes) > 1 else self.sizes[0]
-        return type("Stat", (), {"st_size": size})()
-
-
 def test_the_page_pass_limit_is_exactly_four_gib():
     assert verify.PAGE_PASS_LIMIT_BYTES == 1 << 32
 
 
-def test_a_file_longer_than_4_gib_is_not_given_to_the_page_pass_and_one_of_exactly_4_gib_is():
-    """The coordinator's check of E2b: past 4 GiB the pass's offsets wrap (measured on a healthy 4.52 GB store: a failure for every page from
-    the first one that starts at 2^32), so the pass is skipped, ``unchecked`` with the reason, and the file is neither called damaged nor
-    clean. The boundary is a page that STARTS at 2^32: a file of exactly 2^32 bytes ends there and is still checked."""
+class _PragmaCon:
+    """A stand-in connection for a pass that is asked two things: the cipher settings (the SQLCipher 4 defaults) and the pragma (the rows it
+    is given). The sizes it is built with are the real file's, so the own check can run on the real file beside it."""
+
+    SETTINGS = {
+        "cipher_page_size": "16384",
+        "cipher_kdf_algorithm": "PBKDF2_HMAC_SHA512",
+        "cipher_hmac_algorithm": "HMAC_SHA512",
+        "kdf_iter": "256000",
+        "cipher_use_hmac": "1",
+        "cipher_plaintext_header_size": "0",
+        "cipher_hmac_salt_mask": "3a",
+        "cipher_hmac_pgno": "le",
+    }
+
+    def __init__(self, rows=(), settings=None):
+        self.rows, self.closed = rows, 0
+        self.settings = {**self.SETTINGS, **(settings or {})}
+
+    def execute(self, sql, *args):
+        text = str(sql)
+        if "cipher_integrity_check" in text:
+            return _Cursor(self.rows)
+        value = self.settings.get(text.removeprefix("PRAGMA ").strip())
+        return types.SimpleNamespace(fetchone=lambda: None if value is None else (value,))
+
+    def close(self):
+        self.closed += 1
+
+
+def _past_the_limit(monkeypatch, path: Path) -> int:
+    """Make ``path`` 'longer than 4 GiB' by lowering the limit under its real length; returns the length."""
+    size = path.stat().st_size
+    monkeypatch.setattr(verify, "PAGE_PASS_LIMIT_BYTES", size - 1)
+    return size
+
+
+def test_a_file_longer_than_the_limit_is_given_to_the_own_check_and_one_of_exactly_the_limit_to_the_pragma(healthy, monkeypatch):
+    """The boundary is a page that STARTS at 2^32: a file of exactly 2^32 bytes ends there and is still the pragma's. The same real file is
+    answered by each, so the entry's ``method`` says which (only the own check carries one)."""
+    size = healthy.stat().st_size
+    monkeypatch.setattr(verify, "PAGE_PASS_LIMIT_BYTES", size)
+    exact = verify.confirm_encrypted_damage(healthy)
+    assert exact["verdict"] == VERDICT_OK and "method" not in exact and "file_bytes" not in exact, exact
+    monkeypatch.setattr(verify, "PAGE_PASS_LIMIT_BYTES", size - 1)
+    over = verify.confirm_encrypted_damage(healthy)
+    assert over["verdict"] == VERDICT_OK and over["method"] == "own-tag-check" and over["file_bytes"] == size, over
+    assert over["pages_checked"] == size // PAGE, "every page of the file was judged"
+
+
+def test_a_page_past_the_limit_is_named_as_the_pragma_names_it_and_confirmed_by_a_second_read(damaged, damaged_page, monkeypatch):
+    """The same damaged file, answered by the pragma and by the own check: the same pages and the same count, in the same entry shape."""
+    by_pragma = verify.confirm_encrypted_damage(damaged)
+    _past_the_limit(monkeypatch, damaged)
+    by_own = verify.confirm_encrypted_damage(damaged)
+    assert by_own["verdict"] == VERDICT_DAMAGED and by_own["method"] == "own-tag-check", by_own
+    assert by_own["pages"] == by_pragma["pages"] == [damaged_page] and by_own["pages_total"] == by_pragma["pages_total"] == 1
+    assert by_own["second_read"] == verify.SECOND_READ_AGREED, "a damaged answer stands only when a second pass agrees (R100)"
+    assert by_own["detail"][0] == by_pragma["detail"][0] and verify._TAG_ON_BIG_FILE in by_own["detail"]
+
+
+def test_the_own_check_files_what_a_scripted_second_read_did_not_repeat_as_unchecked(healthy, monkeypatch):
+    """R100 holds past 4 GiB: damage the first pass reported and the second did not is ``unchecked`` with the first read's line kept."""
+    _past_the_limit(monkeypatch, healthy)
+    answers = iter(
+        [
+            {"state": "checked", "failing": 2, "pages": [7, 9], "unread": 0, "examined": 300, "pages_in_file": 300, "trailing_bytes": 0, "file_bytes": 1, "failure": None},
+            {"state": "checked", "failing": 0, "pages": [], "unread": 0, "examined": 300, "pages_in_file": 300, "trailing_bytes": 0, "file_bytes": 1, "failure": None},
+        ]
+    )
+    monkeypatch.setattr(verify.page_auth, "check_path", lambda *a, **k: next(answers))
+    entry = verify.confirm_encrypted_damage(healthy)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["second_read"] == verify.SECOND_READ_CLEAN, entry
+    assert "2 page(s) failed" in entry["first_read"][0] and entry["detail"] == [verify._DIFFERENTLY[: verify.DETAIL_CHARS]]
+
+
+_CHECKED = {
+    "state": "checked", "failing": 0, "pages": [], "unread": 0, "examined": 299, "lock_byte_page": 65_537, "pages_in_file": 300, "trailing_bytes": 0,
+    "file_bytes": 4_900_000, "failure": None,
+}
+
+
+@pytest.mark.parametrize(
+    ("found", "verdict", "needle"),
+    [
+        ({**_CHECKED, "state": "mismatch", "failing": 1, "pages": [1]}, VERDICT_UNCHECKED, "did not match this file's first page"),
+        ({**_CHECKED, "state": "no-key", "examined": 0}, VERDICT_UNCHECKED, "no passphrase is held"),
+        ({**_CHECKED, "state": "stopped", "examined": 12}, VERDICT_UNCHECKED, "the check was stopped"),
+        ({**_CHECKED, "state": "unreadable", "failure": "OSError EIO"}, VERDICT_UNCHECKED, "OSError EIO"),
+        ({**_CHECKED, "state": "unreadable"}, VERDICT_UNCHECKED, "a short read"),
+        ({**_CHECKED, "unread": 3, "examined": 297, "failure": "OSError EIO"}, VERDICT_UNCHECKED, "could not read 3 page(s)"),
+        ({**_CHECKED, "failing": 40, "pages": list(range(10, 42)), "unread": 2, "failure": "OSError EIO"}, VERDICT_DAMAGED, "40 page(s) failed"),
+        (_CHECKED, VERDICT_OK, "no page of the file failed"),
+    ],
+)
+def test_every_state_of_the_own_check_is_one_entry_that_is_never_damage_unless_a_page_failed(healthy, monkeypatch, found, verdict, needle):
+    _past_the_limit(monkeypatch, healthy)
+    monkeypatch.setattr(verify.page_auth, "check_path", lambda *a, **k: found)
+    first = verify._page_pass(healthy)
+    assert first["verdict"] == verdict and first["method"] == "own-tag-check" and needle in " | ".join(first["detail"]), first
+    assert len(first["detail"]) <= verify.DETAIL_LINES and all(len(d) <= verify.DETAIL_CHARS for d in first["detail"])
+    if verdict != VERDICT_DAMAGED:
+        assert "pages" not in first and "pages_total" not in first, "only a failing page is a finding"
+    if found["unread"]:
+        assert first["pages_unread"] == found["unread"], "what was counted stays in the record"
+    assert first["lock_byte_page"] == 65_537, "the one page that was not judged is said, whatever the verdict"
+    if verdict == VERDICT_DAMAGED:
+        assert first["pages"] == found["pages"] and first["pages_total"] == 40 and "…" not in first["detail"][0]
+        assert first["detail"][0].endswith("and more"), "eight numbers are shown and the rest is said"
+
+
+def test_a_calibration_that_disagrees_is_unchecked_with_the_reason_and_nothing_latches(tmp_path, healthy, files, monkeypatch):
+    """A key that does not match the file (here the key of another file's salt): the check says the METHOD did not match, files nothing as
+    damaged, runs no second read, and the file is not latched."""
+    _past_the_limit(monkeypatch, healthy)
+    real = verify.page_auth.derive_tag_key
+    monkeypatch.setattr(verify.page_auth, "derive_tag_key", lambda salt: real(bytes(16)))
+    direct = verify.confirm_encrypted_damage(healthy)
+    assert direct["verdict"] == VERDICT_UNCHECKED and direct["detail"] == [verify._TAG_MISMATCH] and "second_read" not in direct, direct
+    monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    _run(files, healthy, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    assert entry["verdict"] == VERDICT_UNCHECKED and "did not match" in entry["reason"], entry
+    assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_settings_the_check_was_not_measured_on_are_refused_before_the_file_is_read(healthy, monkeypatch):
+    _past_the_limit(monkeypatch, healthy)
+    called: list[object] = []
+    monkeypatch.setattr(verify.page_auth, "check_path", lambda *a, **k: called.append(a))
+    con = _PragmaCon(settings={"cipher_kdf_algorithm": "PBKDF2_HMAC_SHA1"})
+    entry = verify.confirm_encrypted_damage(healthy, opener=lambda p: con)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"][0].endswith("so its pages were not checked"), entry
+    assert called == [] and con.closed == 1, "the connection was closed before anything else, and the file was not read"
+
+
+def test_a_missing_passphrase_is_named_and_the_connection_is_closed_before_the_read(healthy, monkeypatch):
+    _past_the_limit(monkeypatch, healthy)
+    con = _PragmaCon()
+    monkeypatch.setattr(connect_mod, "_passphrase", None)
+    entry = verify.confirm_encrypted_damage(healthy, opener=lambda p: con)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == [verify._TAG_NO_KEY] and con.closed == 1, entry
+
+
+def test_a_connection_that_cannot_be_opened_is_classified_as_any_pass_is(healthy, monkeypatch):
+    _past_the_limit(monkeypatch, healthy)
+
+    def refuse(path):
+        raise _driver_error("database is locked", 5)
+
+    entry = verify.confirm_encrypted_damage(healthy, opener=refuse)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == ["the file was busy"] and entry["method"] == "own-tag-check", entry
+
+
+def test_a_stop_asked_for_before_the_pass_ends_it_before_anything_is_opened(healthy, monkeypatch):
+    _past_the_limit(monkeypatch, healthy)
     opened: list[object] = []
-
-    def opener(path):
-        opened.append(path)
-        return _Rows(rows=[])
-
-    big = _SizedPath(verify.PAGE_PASS_LIMIT_BYTES + 1)
-    entry = verify.confirm_encrypted_damage(big, opener=opener)
-    assert entry["verdict"] == VERDICT_UNCHECKED and entry["skipped"] == "file-over-4-gib", entry
-    assert entry["file_bytes"] == verify.PAGE_PASS_LIMIT_BYTES + 1
-    assert opened == [], "the pass was run on a file past 4 GiB"
-    exact = _SizedPath(verify.PAGE_PASS_LIMIT_BYTES)
-    entry = verify.confirm_encrypted_damage(exact, opener=opener)
-    assert opened == [exact] and entry["verdict"] == VERDICT_OK, entry
+    stop = threading.Event()
+    stop.set()
+    entry = verify.confirm_encrypted_damage(healthy, opener=lambda p: opened.append(p), cancel=stop)
+    assert entry["verdict"] == VERDICT_UNCHECKED and opened == [], entry
 
 
-def test_the_reason_a_file_past_4_gib_was_not_checked_survives_the_cut_to_a_detail_line():
-    """The coordinator's check of E2 (second): ``entry()`` cuts every detail at ``DETAIL_CHARS``, and the sentence that matters ends the
-    reason: the user read '...a failure for every page fro' and lost 'so the pages were not checked'."""
-    entry = verify.confirm_encrypted_damage(_SizedPath(verify.PAGE_PASS_LIMIT_BYTES + 1), opener=lambda p: _Rows(rows=[]))
-    assert len(verify._OVER_LIMIT_REASON) < verify.DETAIL_CHARS
-    assert entry["detail"] == [verify._OVER_LIMIT_REASON] and "not checked" in entry["detail"][0] and entry["detail"][0].endswith("not checked")
+def test_the_reasons_the_own_check_gives_survive_the_cut_to_a_detail_line():
+    """``entry()`` cuts every detail at ``DETAIL_CHARS``; the half of each sentence that matters is its end."""
+    for reason in (verify._TAG_MISMATCH, verify._TAG_NO_KEY, verify._TAG_ON_BIG_FILE, verify._TAG_CLEAN):
+        assert len(reason) < verify.DETAIL_CHARS, reason
+    assert verify._TAG_MISMATCH.endswith("were not checked") and verify._TAG_NO_KEY.endswith("were not checked")
 
 
-def test_a_file_that_crossed_4_gib_while_the_pass_ran_drops_the_rows_the_pass_answered():
-    """The coordinator's check of E2 (second), item 2: an outside writer can take the file past 2^32 bytes between the size read before the pass and
-    the pass's own reads; the rows are then about wrong bytes (here a false failing page and an unknown row), and are dropped."""
-    path = _SizedPath(verify.PAGE_PASS_LIMIT_BYTES, verify.PAGE_PASS_LIMIT_BYTES + 4096)
+def test_a_file_that_crossed_4_gib_while_the_pragma_ran_drops_its_rows_and_is_answered_by_the_own_check(healthy, monkeypatch):
+    """The pragma's rows are about wrong bytes once the file is past 2^32 (here a false failing page and an unknown row): they are dropped,
+    and the app's own check of the real file answers instead."""
+    sizes = iter([100, 10**10])
+    monkeypatch.setattr(verify, "PAGE_PASS_LIMIT_BYTES", 1000)
+    monkeypatch.setattr(verify, "_size_of", lambda path: next(sizes))
     rows = [("HMAC verification failed for page 262145",), ("something this app has never seen",)]
-    entry = verify.confirm_encrypted_damage(path, opener=lambda p: _Rows(rows=rows))
-    assert entry["verdict"] == VERDICT_UNCHECKED and entry["skipped"] == "file-over-4-gib", entry
+    entry = verify.confirm_encrypted_damage(healthy, opener=lambda p: _PragmaCon(rows=rows))
+    assert entry["verdict"] == VERDICT_OK and entry["method"] == "own-tag-check", entry
     assert "pages" not in entry and "pages_total" not in entry and "strange_rows" not in entry, "the rows of a pass past 4 GiB were kept"
 
 
@@ -909,15 +1044,26 @@ def test_a_table_list_that_cannot_be_read_beside_a_pass_that_could_not_read_keep
     assert not damage.registry.latched(FILE_CORPUS)
 
 
-def test_a_table_list_that_cannot_be_read_on_a_file_past_4_gib_says_the_pages_were_not_checked(tmp_path, healthy, files, monkeypatch):
-    """The unreadable-table-list branch pastes the pass's reason into its own; with the limit made small the real file is 'past 4 GiB'."""
-    monkeypatch.setattr(verify, "PAGE_PASS_LIMIT_BYTES", 1000)
+def test_a_table_list_that_cannot_be_read_on_a_file_past_4_gib_says_what_the_own_check_found(tmp_path, healthy, files, monkeypatch):
+    """The unreadable-table-list branch pastes the pass's reason into its own; with the limit made small the real file is 'past 4 GiB'.
+    The own check read every page and none failed, so the file is neither called clean (the list was not read) nor damaged."""
+    _past_the_limit(monkeypatch, healthy)
     monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
     _run(files, healthy, monkeypatch)
     entry = _record(tmp_path)["verification"][FILE_CORPUS]
     assert entry["verdict"] == VERDICT_UNCHECKED and entry["tables"] == []
-    assert "OperationalError" in entry["reason"] and "not checked" in entry["reason"], entry["reason"]
+    assert "OperationalError" in entry["reason"] and "no page of the file failed" in entry["reason"], entry["reason"]
     assert not damage.registry.latched(FILE_CORPUS)
+
+
+def test_a_table_list_that_cannot_be_read_on_a_damaged_file_past_4_gib_files_the_named_page_and_latches(tmp_path, damaged, damaged_page, files, monkeypatch):
+    _past_the_limit(monkeypatch, damaged)
+    monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    _run(files, damaged, monkeypatch)
+    entry = _record(tmp_path)["verification"][FILE_CORPUS]
+    pages = _by_table(entry)[verify.PAGES_ENTRY]
+    assert entry["verdict"] == VERDICT_DAMAGED and pages["pages"] == [damaged_page] and pages["method"] == "own-tag-check", entry
+    assert pages["second_read"] == verify.SECOND_READ_AGREED and damage.registry.latched(FILE_CORPUS)
 
 
 @pytest.mark.parametrize(("message", "code", "verdict"), [("database disk image is malformed", 11, VERDICT_DAMAGED), ("database is locked", 5, VERDICT_UNCHECKED)])
@@ -1172,3 +1318,195 @@ def test_a_run_whose_second_pass_reads_a_different_file_latches_nothing_and_says
     assert entry["verdict"] == VERDICT_UNCHECKED
     assert not damage.registry.latched(FILE_CORPUS), "a finding that two connections disagreed about latched the file"
     assert sg.StorageGuard().admit() is None
+
+
+# --------------------------------------------------------------------------- #
+#  the passphrase rule (R134 (3)): the passphrase and the derived key reach no sink, on a success and on every failure
+# --------------------------------------------------------------------------- #
+MARKER_PASS = "MARKER-pass-4711-correct-horse-ÄÖ"
+
+
+def _spec_key(passphrase: str, salt: bytes) -> bytes:
+    """SQLCipher 4's tag key written out from the specification (not through ``page_auth``), to know what must never be written."""
+    enc = hashlib.pbkdf2_hmac("sha512", passphrase.encode("utf-8"), salt, 256000, 32)
+    return hashlib.pbkdf2_hmac("sha512", enc, bytes(b ^ 0x3A for b in salt), 2, 32)
+
+
+def _forbidden(passphrase: str, key: bytes) -> dict[str, str]:
+    """Every form either secret could be written in, by what it is: the passphrase as text, as its UTF-8 bytes in hex and as the repr of
+    those bytes (and the ASCII part of it alone); the key in hex (both cases), as the repr of bytes or a bytearray, and as a list of ints."""
+    raw = passphrase.encode("utf-8")
+    return {
+        "passphrase": passphrase,
+        "passphrase marker": passphrase.split("-Ä")[0],
+        "passphrase hex": raw.hex(),
+        "passphrase repr": repr(raw),
+        "key hex": key.hex(),
+        "key HEX": key.hex().upper(),
+        "key repr": repr(key),
+        "key bytearray": repr(bytearray(key)),
+        "key list": str(list(key)),
+    }
+
+
+def _leaks(texts: dict[str, str], forbidden: dict[str, str]) -> list[tuple[str, str]]:
+    return [(sink, what) for sink, text in texts.items() for what, form in forbidden.items() if form in text]
+
+
+@pytest.fixture
+def marker_store(tmp_path):
+    previous = connect_mod.get_passphrase()
+    connect_mod.set_passphrase(MARKER_PASS)
+    path = tmp_path / "marker.db"
+    con = connect_mod.connect(str(path), create_encrypted=True, check_same_thread=False)
+    try:
+        con.execute("CREATE TABLE t(x BLOB)")
+        rng = random.Random(2)
+        for _ in range(600):
+            con.execute("INSERT INTO t VALUES (?)", (rng.randbytes(3000),))
+        con.commit()
+    finally:
+        con.close()
+    yield path
+    connect_mod.set_passphrase(previous)
+
+
+@pytest.fixture
+def sinks(tmp_path, monkeypatch, caplog):
+    """Every place the pass's words can land, read back after it: the log (every logger, DEBUG), the error journal (``app_errors.jsonl``,
+    through its own handler on the root logger), the storage-events journal, the damage record's file, and that record as the Diagnostics
+    archive carries it (the slot's answer written through the bundle's own member writer into a real zip)."""
+    import io
+    import logging
+    import zipfile
+
+    from src.api import diagnostics_slots as slots
+    from src.api.diagnostics import bundle as bundle_mod
+    from src.monitoring import errorlog
+    from src.monitoring import storage_events as se
+
+    monkeypatch.setattr(errorlog, "_log_path", lambda: tmp_path / "app_errors.jsonl")
+    monkeypatch.setattr(se, "_path", lambda: tmp_path / "storage_events.json")
+    se.reset_for_tests()
+    root = logging.getLogger()
+    handler = errorlog._JsonlErrorHandler(level=logging.WARNING)
+    root.addHandler(handler)
+    caplog.set_level(logging.DEBUG)
+
+    def collect() -> dict[str, str]:
+        se.flush()
+        out = {"log": caplog.text}
+        for name, path in (("app_errors", tmp_path / "app_errors.jsonl"), ("storage events", tmp_path / "storage_events.json"), ("damage record", tmp_path / "database-damage.json")):
+            out[name] = path.read_text(encoding="utf-8") if path.exists() else ""
+        (slot,) = [s for s in slots.SLOTS if s.name == "database-damage.json"]
+        raw = io.BytesIO()
+        with zipfile.ZipFile(raw, "w", zipfile.ZIP_DEFLATED) as zf:
+            bundle_mod._write_member(zf, "database-damage.json", slots.thunk(slot)())
+        with zipfile.ZipFile(io.BytesIO(raw.getvalue())) as zf:
+            out["diagnostics zip"] = zf.read("database-damage.json").decode("utf-8")
+        return out
+
+    try:
+        yield collect
+    finally:
+        root.removeHandler(handler)
+        se.reset_for_tests()
+
+
+def test_the_sink_check_can_fail(sinks, marker_store):
+    """The harness is not vacuous: a record that carries the key (or the passphrase) in the shapes it checks is found in the log."""
+    import logging
+
+    with open(marker_store, "rb") as fh:
+        salt = fh.read(16)
+    key = _spec_key(MARKER_PASS, salt)
+    logging.getLogger("tests.page_auth").warning("leak %s %s", key.hex(), MARKER_PASS)
+    found = _leaks(sinks(), _forbidden(MARKER_PASS, key))
+    assert ("log", "key hex") in found and ("log", "passphrase") in found, found
+    assert ("app_errors", "key hex") in found, "the error journal keeps a hex key (it only scrubs the passphrases the process holds)"
+
+
+def _scenario(name: str, path: Path, monkeypatch) -> None:
+    """Set the failure up. The messages every stand-in failure carries hold the passphrase and the real key, so a pass that wrote an exception's
+    words anywhere would leave both in a sink."""
+    page_auth = verify.page_auth
+    with open(path, "rb") as fh:
+        salt = fh.read(16)
+    poison = f"{MARKER_PASS} {_spec_key(MARKER_PASS, salt).hex()}"
+    if name == "damaged":
+        H.overwrite_pages(path, [60], PAGE)
+    elif name == "mismatch":
+        real = page_auth.derive_tag_key
+        monkeypatch.setattr(page_auth, "derive_tag_key", lambda s: real(bytes(16)))
+    elif name == "unreadable":
+
+        class Eio:
+            def __init__(self, real):
+                self.real = real
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.real.close()
+
+            def seek(self, *args):
+                return self.real.seek(*args)
+
+            def readinto(self, view):
+                pos = self.real.tell()
+                if pos < 40 * PAGE and pos + len(view) > 39 * PAGE:  # page 40
+                    raise OSError(errno.EIO, poison, f"/home/{MARKER_PASS}/f.db")
+                return self.real.readinto(view)
+
+        monkeypatch.setattr(page_auth, "_raw_open", lambda p, mode="rb", buffering=0: Eio(open(p, mode, buffering=buffering)))  # noqa: SIM115 - the wrapper owns the handle and closes it
+    elif name == "hmac raises":
+
+        def boom(*args, **kwargs):
+            raise RuntimeError(poison)
+
+        monkeypatch.setattr(page_auth, "hmac", types.SimpleNamespace(new=boom, compare_digest=lambda a, b: False))
+    elif name == "derivation raises":
+        real_hashlib = hashlib
+        calls = []
+
+        class Spy:
+            @staticmethod
+            def pbkdf2_hmac(*args):
+                calls.append(args)
+                if len(calls) % 2 == 0:  # the second derivation of every pass
+                    raise RuntimeError(poison)
+                return real_hashlib.pbkdf2_hmac(*args)
+
+        monkeypatch.setattr(page_auth, "hashlib", Spy)
+
+
+@pytest.mark.parametrize("scenario", ["clean", "damaged", "mismatch", "unreadable", "hmac raises", "derivation raises"])
+def test_neither_the_passphrase_nor_the_derived_key_reaches_any_sink_on_any_path(scenario, marker_store, files, tmp_path, monkeypatch, sinks):
+    _scenario(scenario, marker_store, monkeypatch)
+    _past_the_limit(monkeypatch, marker_store)
+    monkeypatch.setattr(verify, "inspect_file", lambda path, opener=None: {"error": (VERDICT_UNCHECKED, "OperationalError"), "sqlite_code": 1})
+    held: list[bytes] = []
+    real = verify.page_auth.derive_tag_key
+
+    def watch(salt):
+        key = real(salt)
+        if key is not None:
+            held.append(bytes(key))
+        return key
+
+    monkeypatch.setattr(verify.page_auth, "derive_tag_key", watch)
+    _run(files, marker_store, monkeypatch)
+    direct = verify.confirm_encrypted_damage(marker_store)  # the entry as the pass returns it, and the pass's own result below
+    with open(marker_store, "rb") as fh:
+        salt = fh.read(16)
+    raw = verify.page_auth.check_path(marker_store, PAGE)
+    texts = {**sinks(), "entry": json.dumps(direct), "result": json.dumps(raw)}
+    forbidden = _forbidden(MARKER_PASS, _spec_key(MARKER_PASS, salt))
+    for key in held:  # whatever key the pass held, the right one or the wrong one
+        forbidden.update({f"held key hex {i}": k.hex() for i, k in enumerate([key])})
+    assert held or scenario == "derivation raises", "the pass derived no key: the scenario is vacuous"
+    assert _leaks(texts, forbidden) == [], _leaks(texts, forbidden)
+    assert texts["damage record"], "the pass left a record to read"
+    verdicts = {"clean": VERDICT_OK, "damaged": VERDICT_DAMAGED}
+    assert direct["verdict"] == verdicts.get(scenario, VERDICT_UNCHECKED), direct

@@ -31,9 +31,12 @@ that code, on a file whose header is ciphertext, the file is asked once (:func:`
 recorded as one more entry, ``(pages)``: ``damaged`` when any page fails (the page numbers kept up to
 :data:`MAX_PAGES_LISTED`, the count always), ``ok`` when none does (the tables that did not answer STAY unchecked, so the
 file is not called clean), ``unchecked`` with the reason when the pass could not be made or could not read the file to the end.
-A main file LONGER THAN 4 GiB is not given to it (:data:`PAGE_PASS_LIMIT_BYTES`: past that point the pass reads the wrong bytes, measured on a
-healthy 4.52 GB file as a failure for every page from the first past 4 GiB), so such a file's pass is ``unchecked`` with that reason and
-its unanswered tables stay unchecked.
+A main file LONGER THAN 4 GiB is not given to the engine's pragma (:data:`PAGE_PASS_LIMIT_BYTES`: past that point the pragma reads the wrong
+bytes, measured on a healthy 4.52 GB file as a failure for every page from the first past 4 GiB). It is given to the app's OWN check of the same
+tags instead (R134, ``database/page_auth.py``: it reads the main file itself and checks each page's SQLCipher 4 tag, matched against the
+pragma page for page on a clean store and on corrupted copies), which holds only a derived key and zeroes it, and which says ``unchecked``,
+never ``damaged``, when its calibration on page 1 disagrees with the file. Its entry carries ``method: "own-tag-check"`` and ``file_bytes``;
+the second read (R100) and the record are the pragma's. The tables that did not answer stay unchecked either way.
 Nothing else asks it: a healthy file, a wrong passphrase and a busy or locked file never reach it (an I/O error reaches it only as
 the generic error a failing page also gives, and the pass then says what it read: a page it could not read is counted apart from a
 page that failed, and is never filed as damage).
@@ -123,7 +126,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from src.database import damage
+from src.database import damage, page_auth
 from src.database.damage import VERDICT_DAMAGED, VERDICT_OK, VERDICT_UNCHECKED
 
 _LOG = logging.getLogger(__name__)
@@ -168,20 +171,26 @@ _COULD_NOT_READ = re.compile(
     r"|database file is undefined"
 )
 
-#: A main file larger than this is NOT given to the page pass. WHAT IT PROTECTS: the verdict. MEASURED (the coordinator's check of
-#: E2b): on a HEALTHY 4.52 GB store of 16 KiB pages, ``quick_check`` answered ``ok`` and every byte read fine through the codec, yet
-#: ``PRAGMA cipher_integrity_check`` answered 13,934 "HMAC verification failed" rows, one for every page from 262,145 on (the first
-#: page that starts at 2^32); a ``pread`` shim saw no read at or past 4 GiB, so the pass's offsets wrap and it checks the wrong bytes.
-#: The pass builds every row before it returns the first (+28 MB at 260,000 rows, about 113 bytes a false row, about 250 MB on a
-#: 40 GB corpus), so filtering the rows afterwards still reads the whole file and holds them: the file is skipped, ``unchecked``
-#: with the reason, and the table that sent it here stays unchecked, so the file is not called clean either. A page that starts at
-#: 2^32 or later exists exactly when the file is longer than 2^32 bytes (page sizes are powers of two).
+#: A main file larger than this is NOT given to the engine's page pass: it is given to the app's own tag check (:func:`_tag_pass`, R134).
+#: WHAT IT PROTECTS: the verdict. MEASURED (the coordinator's check of E2b): on a HEALTHY 4.52 GB store of 16 KiB pages, ``quick_check``
+#: answered ``ok`` and every byte read fine through the codec, yet ``PRAGMA cipher_integrity_check`` answered 13,934 "HMAC verification
+#: failed" rows, one for every page from 262,145 on (the first page that starts at 2^32); a ``pread`` shim saw no read at or past 4 GiB,
+#: so the pass's offsets wrap and it checks the wrong bytes. The pass builds every row before it returns the first (+28 MB at 260,000
+#: rows, about 113 bytes a false row, about 250 MB on a 40 GB corpus), so filtering the rows afterwards still reads the whole file and holds
+#: them: the pragma is not run on such a file at all. A page that starts at 2^32 or later exists exactly when the file is longer than 2^32
+#: bytes (page sizes are powers of two).
 PAGE_PASS_LIMIT_BYTES = 1 << 32
 
-#: What the record says of a file the page pass was not run on. WHAT THE LENGTH PROTECTS: the sentence is cut at ``DETAIL_CHARS`` like every
-#: detail line, and the half that matters (the pages were NOT checked) is its end, so it stays under that (pinned by a test); the
-#: measurement is in :data:`PAGE_PASS_LIMIT_BYTES`'s comment and the module docstring.
-_OVER_LIMIT_REASON = "the file is longer than 4 GiB, where the page check reads the wrong bytes (measured), so its pages were not checked"
+#: The ``method`` an entry carries when the app's own tag check made it (the pragma's entries carry none).
+_OWN_METHOD = "own-tag-check"
+
+#: What the record says of a file longer than 4 GiB whose own tag check could not give a verdict, or found something. WHAT THE LENGTH
+#: PROTECTS: each sentence is cut at ``DETAIL_CHARS`` like every detail line and the half that matters (the pages were NOT checked, or
+#: where the finding came from) is its end, so each stays under that (pinned by a test).
+_TAG_MISMATCH = "the page check's method did not match this file's first page, so no page was called damaged and the pages were not checked"
+_TAG_NO_KEY = "no passphrase is held here to check the pages' tags with, so the pages were not checked"
+_TAG_ON_BIG_FILE = "found by the app's own page check: the file is longer than 4 GiB, where the engine's check cannot be used"
+_TAG_CLEAN = "no page of the file failed its authentication check (the app's own check; the file is longer than 4 GiB)"
 
 #: What a damaged answer is filed as when the SECOND read, on a new connection, did not repeat it (a verdict must be measured, R100; a read that
 #: two connections disagree about measured nothing). ``second_read`` is the KEY on the entry: ``agreed`` (the damage stands), ``clean`` (the
@@ -549,6 +558,64 @@ class _Kept:
             self.lines.append(line)
 
 
+def _tag_pass(
+    path: Path, size: int, *, opener: Opener | None, cancel: threading.Event | None, entry: Callable[..., dict[str, Any]]
+) -> dict[str, Any]:
+    """The page pass of a main file longer than :data:`PAGE_PASS_LIMIT_BYTES`: the app's own check of each page's authentication tag
+    (``database/page_auth.py``, R134), in the pragma's entry shape (``pages``, ``pages_total``, ``pages_unread``) plus ``method`` and
+    ``file_bytes``. Never raises. The read-only connection is opened only to read the cipher settings (the page size, and that nothing is
+    but the SQLCipher 4 defaults) and is CLOSED before the long read, so the pass pins no snapshot. ``damaged`` when a page fails its tag,
+    ``ok`` when none does, ``unchecked`` with the reason in every other case: a calibration on page 1 that disagrees with the file
+    (the method did not match, never damage), settings the check was not measured on, no passphrase held, a stop, a file that cannot be
+    read, or pages the drive would not give with none failing. The passphrase never reaches this function: ``page_auth`` derives
+    and zeroes its key itself."""
+    more: dict[str, Any] = {"method": _OWN_METHOD, "file_bytes": size}
+    con = None
+    try:
+        con = (opener or _open)(path)
+        page_size, why = page_auth.read_settings(con)
+    except Exception as exc:  # noqa: BLE001 - the verdict IS the exception's class
+        verdict, reason = classify_error(exc)
+        return entry(verdict, [reason], **more)
+    finally:
+        if con is not None:
+            with contextlib.suppress(Exception):
+                con.close()
+    if page_size is None:
+        return entry(VERDICT_UNCHECKED, [f"{why}, so its pages were not checked"], **more)
+    found = page_auth.check_path(path, page_size, cancel=cancel, keep=MAX_PAGES_LISTED)
+    more["file_bytes"] = found["file_bytes"] or size
+    if found.get("lock_byte_page") is not None:
+        more["lock_byte_page"] = found["lock_byte_page"]  # the one page SQLite never writes: not judged, and said (page_auth.PENDING_BYTE)
+    state, failing, unread = found["state"], found["failing"], found["unread"]
+    how = found["failure"] or "a short read"
+    if state == page_auth.STATE_STOPPED:
+        return entry(VERDICT_UNCHECKED, [_SQLITE_REASONS[9]], **more)
+    if state == page_auth.STATE_MISMATCH:
+        return entry(VERDICT_UNCHECKED, [_TAG_MISMATCH], **more)
+    if state == page_auth.STATE_NO_KEY:
+        return entry(VERDICT_UNCHECKED, [_TAG_NO_KEY], **more)
+    if state != page_auth.STATE_CHECKED:
+        return entry(VERDICT_UNCHECKED, [f"the page check could not read the file ({how}), so its pages were not checked"], **more)
+    counts: dict[str, int] = {"pages_unread": unread} if unread else {}
+    if failing:
+        pages = found["pages"]
+        shown = ", ".join(str(n) for n in pages[:8]) + (" and more" if failing > 8 else "")
+        lines = [f"{failing} page(s) failed their authentication check (HMAC verification): {shown}"]
+        if unread:
+            lines.append(f"{unread} page(s) could not be read by the page check and are not counted above: {how}")
+        lines.append(_TAG_ON_BIG_FILE)
+        return entry(VERDICT_DAMAGED, lines[:DETAIL_LINES], pages=pages, pages_total=failing, **counts, **more)
+    if unread:
+        return entry(
+            VERDICT_UNCHECKED,
+            [f"the page check could not read {unread} page(s) ({how}) and so did not check the file to the end", _TAG_ON_BIG_FILE],
+            **counts,
+            **more,
+        )
+    return entry(VERDICT_OK, [_TAG_CLEAN], pages_checked=found["examined"], **more)
+
+
 def _page_pass(path: Path, *, opener: Opener | None = None, cancel: threading.Event | None = None) -> dict[str, Any]:
     """ONE page pass of an encrypted file: ``PRAGMA cipher_integrity_check``, once, on a read-only connection that is
     closed on every path. Never raises. ``damaged`` when any page fails its authentication tag (``pages`` the first
@@ -557,8 +624,9 @@ def _page_pass(path: Path, *, opener: Opener | None = None, cancel: threading.Ev
     exception's class decides, as for a table), or the rows it answered say it could not READ (``_COULD_NOT_READ``: a disk error
     on a page is answered as a row, measured, never raised; ``pages_unread`` counts them, and beside a failing page they are kept
     in the detail and the count, not dropped; the unknown rows are counted as ``strange_rows``: a cap shrinks what is printed, never
-    what is counted), or the file is longer than :data:`PAGE_PASS_LIMIT_BYTES` (``skipped = "file-over-4-gib"``, the pass is not run).
-    A pass that did not finish never reads as clean. The measurements are in the module docstring."""
+    what is counted). A file longer than :data:`PAGE_PASS_LIMIT_BYTES` is not given to the pragma: :func:`_tag_pass` answers for it, with the
+    same entry shape and ``method: "own-tag-check"``. A pass that did not finish never reads as clean. The measurements are in the
+    module docstring."""
     t0 = time.monotonic()
 
     def entry(verdict: str, detail: list[str], **more: Any) -> dict[str, Any]:
@@ -577,12 +645,9 @@ def _page_pass(path: Path, *, opener: Opener | None = None, cancel: threading.Ev
             VERDICT_UNCHECKED,
             ["this build of SQLCipher has no page-authentication check (PRAGMA cipher_integrity_check), so the pages were not checked"],
         )
-    def skipped(size: int) -> dict[str, Any]:
-        return entry(VERDICT_UNCHECKED, [_OVER_LIMIT_REASON], skipped="file-over-4-gib", file_bytes=size)
-
     size = _size_of(path)
     if size > PAGE_PASS_LIMIT_BYTES:
-        return skipped(size)
+        return _tag_pass(path, size, opener=opener, cancel=cancel, entry=entry)
     con = None
     try:
         con = (opener or _open)(path)
@@ -615,8 +680,8 @@ def _page_pass(path: Path, *, opener: Opener | None = None, cancel: threading.Ev
     size = _size_of(path)
     if size > PAGE_PASS_LIMIT_BYTES:
         # The file crossed 2^32 bytes WHILE the pass ran (an outside writer, a backup landing): what the pass answered is about wrong bytes
-        # past that point, so its rows are dropped, exactly as if the file had been that long when it began.
-        return skipped(size)
+        # past that point, so its rows are dropped, exactly as if the file had been that long when it began, and the app's own check answers.
+        return _tag_pass(path, size, opener=opener, cancel=cancel, entry=entry)
     if not answered:
         return entry(VERDICT_OK, ["no page of the file failed its authentication check"])
     unreadable, strange = unread.count, other.count
