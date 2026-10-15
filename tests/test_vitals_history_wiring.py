@@ -11,7 +11,9 @@ classified, so the run-time coverage report and the CI ratchet both see it.
 
 from __future__ import annotations
 
+import ast
 import threading
+from pathlib import Path
 
 from src.api import diagnostics as d
 from src.api.diagnostics import bundle as b
@@ -45,6 +47,88 @@ def test_the_liveness_thread_starts_ticks_and_flushes_the_history(monkeypatch, t
         sh.stop_liveness()
     assert v._path().exists()  # a clean end writes the history it holds
     sh._reset_for_tests()
+
+
+def test_a_liveness_thread_a_test_left_running_is_stopped_before_it_can_tick_the_next_tests_recorder(
+    monkeypatch, tmp_path
+):
+    """Seen once on CI: a test that boots the app leaves the daemon thread ticking, and the loop's
+    ``tick()`` reads the REAL clock, so a later test that started the recorder found a sample stamped at
+    the run's own wall time ahead of its injected rows. The autouse fixture stops the thread through this
+    helper, which must leave no live thread and must not flush into the current data dir."""
+    from tests.conftest import _stop_leaked_liveness_thread
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    sh._reset_for_tests()
+    v.reset_for_tests()
+    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.01)
+    monkeypatch.setattr(session_hwm, "observe", lambda *a, **k: None)
+    ticked = threading.Event()
+    monkeypatch.setattr(v, "tick", lambda *a, **k: ticked.set())
+    try:
+        assert sh.start_liveness() is True
+        assert ticked.wait(5.0), "the liveness loop never ticked"
+        v._path().unlink(missing_ok=True)  # start() may have written nothing; the flush below must not
+        _stop_leaked_liveness_thread()
+        assert sh._THREAD is None
+        assert not any(t.name == "oo-session-liveness" and t.is_alive() for t in threading.enumerate())
+        assert not v._path().exists()  # stopped, not stop_liveness(): no flush into the current data dir
+    finally:
+        sh._reset_for_tests()
+
+
+def test_the_helper_waits_for_a_tick_in_flight_and_keeps_a_thread_that_outlives_the_wait(monkeypatch, tmp_path):
+    """Finding L2 of the read. The join is what makes the stop real (a tick in flight must finish before the
+    recorder is reset), and a thread still alive after the wait stays recorded as the process's thread, so a
+    later ``start_liveness`` does not start a second one."""
+    import time
+
+    from tests.conftest import _stop_leaked_liveness_thread
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    sh._reset_for_tests()
+    v.reset_for_tests()
+    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.01)
+    inside = threading.Event()
+
+    def slow_observe(*_a, **_k):
+        inside.set()
+        time.sleep(0.4)
+
+    monkeypatch.setattr(session_hwm, "observe", slow_observe)
+    monkeypatch.setattr(v, "tick", lambda *a, **k: None)
+    try:
+        assert sh.start_liveness() is True
+        assert inside.wait(5.0)
+        thread = sh._THREAD
+        _stop_leaked_liveness_thread(timeout=0.01)  # the tick in flight outlives this wait
+        assert thread is not None and thread.is_alive() and sh._THREAD is thread
+        assert sh.start_liveness() is False  # no second thread
+        _stop_leaked_liveness_thread()  # the real wait: the tick finishes, the loop ends
+        assert not thread.is_alive() and sh._THREAD is None
+    finally:
+        sh._reset_for_tests()
+
+
+def test_the_isolation_fixture_stops_the_leaked_thread_before_it_resets_the_recorder():
+    """A guard on the fixture itself (a fixture cannot be called from a test): the stop call is there, and
+    ahead of the first reset, so a tick in flight finishes before the recorder is wiped. Read from the
+    syntax tree, not sliced out of the source text."""
+    tree = ast.parse((Path(__file__).parent / "conftest.py").read_text(encoding="utf-8"))
+    fixture = next(
+        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_vitals_history_isolated"
+    )
+
+    def called_at(name: str) -> list[int]:
+        return [
+            c.lineno
+            for c in ast.walk(fixture)
+            if isinstance(c, ast.Call) and name in (getattr(c.func, "id", None), getattr(c.func, "attr", None))
+        ]
+
+    stops, resets = called_at("_stop_leaked_liveness_thread"), called_at("reset_for_tests")
+    assert stops and resets
+    assert min(stops) < min(resets)
 
 
 def test_a_tick_that_raises_does_not_stop_the_liveness_loop(monkeypatch, tmp_path):
