@@ -117,3 +117,18 @@ def test_a_session_that_never_stopped_has_no_record(home, monkeypatch):
     forensics.record_clean_shutdown()
     _next_boot(monkeypatch)
     assert forensics.previous_session_report()["memory_stop"] is None
+
+
+@pytest.mark.parametrize("said, kept", [("memory exhausted", "memory exhausted"), ("data drive disconnected", "data drive disconnected"),
+                                         ("some text the sentinel happened to hold", "unrecognised"), (["a", "list"], "unrecognised"),
+                                         ({"a": 1}, "unrecognised"), (7, "unrecognised")])
+def test_the_ledger_carries_only_the_apps_own_shutdown_reasons(home, said, kept):
+    forensics.record_session_start()
+    rec = sh._close_previous({"state": "shutting-down", "shutdown_reason": said, "pid": 1}, None)
+    assert rec["reason"] == kept, "a non-string or unknown value never raises, is never copied, and is never dropped silently"
+
+
+def test_no_reason_in_the_sentinel_means_no_reason_key(home):
+    forensics.record_session_start()
+    rec = sh._close_previous({"state": "shutting-down", "pid": 1}, None)
+    assert "reason" not in rec

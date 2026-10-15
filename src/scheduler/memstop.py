@@ -295,7 +295,9 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
     # transaction is the user's data. Wait for it to close, bounded, and say what happened; then the NORMAL shutdown path runs (an
     # unfinished transaction is rolled back, the pool disposed, nothing forced). The scheduler's own hold (a volume restore or a
     # data-drive move takes it) is RECORDED at the start but not waited for: once the pause has run that hold is the stop's own, so it
-    # cannot be told apart from the operation's. Such an operation writes under the gate or a lease, which the wait does cover.
+    # cannot be told apart from the operation's. A restore's batches may hold the gate or a lease, which the wait covers, but its
+    # final file swap is not gate-protected (``runner.py``'s own note): that swap is only in the record, and the normal shutdown that
+    # follows does not interrupt it.
     def _exclusive() -> None:
         started = _clock()
         while _clock() - started < EXCLUSIVE_WAIT_S and _busy(in_flight(own_hold=False)):
@@ -360,7 +362,8 @@ def read_record(session_id: str | None) -> dict[str, Any] | None:
         with open(_path(), "rb") as fh:
             raw = fh.read(RECORD_MAX_BYTES + 1)  # at most the bound plus one byte, whatever the file has grown to since the stat
         if len(raw) > RECORD_MAX_BYTES:
-            return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": max(size, len(raw))}
+            grew = len(raw) > RECORD_MAX_BYTES >= size  # it was small at the stat and larger by the read: said, not hidden
+            return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": size, "grew_while_reading": grew}
         got = json.loads(raw.decode("utf-8"))
         if not isinstance(got, dict) or got.get("session_id") != session_id:
             return None

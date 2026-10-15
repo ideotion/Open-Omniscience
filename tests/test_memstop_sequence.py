@@ -316,21 +316,47 @@ def test_a_record_that_cannot_be_statted_or_parsed_reads_as_unreadable_not_absen
     assert got == {"unreadable": True, "error": "PermissionError", "attributed": False}
 
 
-def test_a_file_that_grew_after_the_stat_is_not_read_whole(stop, monkeypatch):
+def test_a_file_that_grew_after_the_stat_is_read_for_at_most_the_bound_plus_one_byte(stop, monkeypatch):
     _c, _d, data = stop
     f = data / "memory_stop.json"
-    f.write_text(json.dumps({"session_id": "sess-1"}))
     f.write_text("x" * (memstop.RECORD_MAX_BYTES * 20))
     real_stat = type(f).stat
-    small = real_stat(f)
 
     class _S:
         st_size = 10
 
     monkeypatch.setattr(type(f), "stat", lambda self, *a, **k: _S() if self.name == "memory_stop.json" else real_stat(self, *a, **k))
+    asked: list = []
+    real_open = open
+
+    class _Spy:
+        def __init__(self, fh):
+            self._fh = fh
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self._fh.close()
+
+        def read(self, n=-1):
+            asked.append(n)
+            return self._fh.read(n)
+
+    monkeypatch.setattr(memstop, "open", lambda *a, **k: _Spy(real_open(*a, **k)), raising=False)
     got = memstop.read_record("sess-1")
-    assert got["oversize"] is True and got["bytes_on_disk"] == memstop.RECORD_MAX_BYTES + 1 and got["bytes_read"] == 0
-    assert small.st_size > memstop.RECORD_MAX_BYTES
+    assert asked == [memstop.RECORD_MAX_BYTES + 1], "never an unbounded read"
+    assert got["oversize"] is True and got["bytes_on_disk"] == 10 and got["grew_while_reading"] is True and got["bytes_read"] == 0
+
+
+def test_a_loop_that_stopped_is_recorded_as_stopped(stop, monkeypatch):
+    from src.scheduler import runner
+
+    sched = _Sched(False)
+    sched.is_running = lambda: False
+    monkeypatch.setattr(runner, "get_scheduler", lambda: sched)
+    rec = memstop.execute(DECISION, _Guard())
+    assert rec["loop_still_running"] is False
 
 
 def test_the_forced_snapshot_that_was_not_taken_is_not_recorded_as_ok(stop, monkeypatch):

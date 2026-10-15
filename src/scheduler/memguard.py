@@ -390,7 +390,8 @@ class MemoryGuard:
 
         Not on the caller's thread: the stop waits (a bounded pause, a bounded exclusive wait, ~70 s at most), and the caller is the
         scheduler's own loop or a polling endpoint -- the first would be asked to join itself in the pause, the second would hang a
-        request. ``self._stop_thread`` is kept so a test can join it."""
+        request. ``self._stop_thread`` is kept so a test can join it. If the thread cannot start (plausible at the memory floor) the
+        stop runs on the caller's thread instead: a stop that waits is better than a stop that is lost."""
         fn = self._stop_fn
         if fn is None:
             from src.scheduler.memstop import execute as fn  # noqa: PLC0415
