@@ -436,6 +436,7 @@ def resolve_qid_names(
     A lookup Wikidata answered with a redirect to an address the client does not follow is refused, not followed, and
     comes back as its own decline reason (``redirect_refused``) with a count
     (``lookups_refused``) and the class name (``refusal``), never an address.
+    A protected fetch mode with no usable proxy declines the row and the rest as ``transport_unavailable``: the lookup was never sent.
     """
     from src.catalog.qid_labels import (
         AirplaneRefusal,

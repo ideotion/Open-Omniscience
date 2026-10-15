@@ -31,6 +31,7 @@ from src.catalog.qid_labels import (
     DECLINED_NO_LABEL,
     DECLINED_REDIRECT_REFUSED,
     DECLINED_REFUSED,
+    DECLINED_TRANSPORT,
     DECLINED_UNRESOLVED,
     AirplaneRefusal,
     admit_or_decline,
@@ -39,7 +40,7 @@ from src.catalog.qid_labels import (
     resolve_labels,
 )
 from src.ingest.airplane import AirplaneModeError
-from src.safety.fetcher import NetworkBlocked, RedirectRefused
+from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 
 
 def _entity(qid: str, labels: dict[str, str]) -> dict:
@@ -237,6 +238,42 @@ def test_a_kill_switch_refusal_from_the_fetch_is_named_for_that_row_and_the_rest
     assert out["labels"] == {"Q1": "Body Q1"}
     assert out["declined"] == {"Q2": DECLINED_REFUSED, "Q3": DECLINED_REFUSED}
     assert out["lookups_refused"] == 0 and "refusal" not in out, "the kill switch is not a redirect refusal"
+
+
+def test_a_missing_transport_is_named_for_that_row_and_the_rest_not_called_an_unresolved_label() -> None:
+    """TransportUnavailable IS a ConnectionError, so the generic clause would call it `label_not_resolved`. It is the operator's own
+    setting (protected mode with no usable proxy), the lookup was never sent, and every later row would be refused the same way."""
+    def fetch(url: str) -> dict:
+        qid = url.split("ids=")[1].split("&")[0]
+        if qid == "Q2":
+            raise TransportUnavailable("protected mode has no usable proxy")
+        return _entity(qid, {"en": f"Body {qid}"})
+
+    sleeps: list[float] = []
+    out = resolve_labels(["Q1", "Q2", "Q3", "Q4"], fetch=fetch, sleep=sleeps.append, kill_switch=lambda: False)
+    assert out["labels"] == {"Q1": "Body Q1"}
+    assert out["declined"] == {"Q2": DECLINED_TRANSPORT, "Q3": DECLINED_TRANSPORT, "Q4": DECLINED_TRANSPORT}
+    assert DECLINED_TRANSPORT not in (DECLINED_UNRESOLVED, DECLINED_NO_LABEL, DECLINED_REFUSED, DECLINED_REDIRECT_REFUSED)
+    assert out["lookups_refused"] == 0 and "refusal" not in out, "it is not a redirect refusal"
+    assert len(sleeps) == 1, "the run stops: no ten-second wait for rows that would be refused the same way"
+
+
+def test_a_transport_decline_says_what_did_not_happen_and_only_its_row_says_it() -> None:
+    out = admit_or_decline([(1, "Q1"), (2, "Q2")], {}, {"Q1": DECLINED_TRANSPORT, "Q2": DECLINED_UNRESOLVED})
+    by_qid = {d["qid"]: d for d in out["declined"]}
+    assert by_qid["Q1"]["reason"] == DECLINED_TRANSPORT
+    assert "no usable proxy" in by_qid["Q1"]["detail"] and "not discarded" in by_qid["Q1"]["detail"]
+    assert "proxy" not in by_qid["Q2"]["detail"] and "redirect" not in by_qid["Q1"]["detail"]
+
+
+def test_the_endpoint_reports_a_missing_transport_as_its_own_reason(monkeypatch) -> None:
+    def _no_transport(url: str):  # noqa: ANN202
+        raise TransportUnavailable("protected mode has no usable proxy")
+
+    out = _endpoint_with_getter(monkeypatch, _no_transport)
+    assert out["declined"] == {"Q133293483": DECLINED_TRANSPORT}
+    assert [d["reason"] for d in out["declined_rows"]] == [DECLINED_TRANSPORT]
+    assert out["lookups_refused"] == 0 and "refusal" not in out
 
 
 def test_a_repeated_qid_is_one_row_and_a_resolved_one_is_never_also_declined() -> None:

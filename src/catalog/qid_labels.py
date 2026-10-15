@@ -51,6 +51,9 @@ _BARE_QID = re.compile(r"^\s*[Qq]\d+\s*$")
 DECLINED_UNRESOLVED = "label_not_resolved"
 DECLINED_NO_LABEL = "wikidata_has_no_label"
 DECLINED_REFUSED = "network_refused"
+#: Protected fetch mode is on and no usable proxy is configured (``TransportUnavailable``), so the lookup was never sent: the operator's own
+#: transport setting, not Wikidata and not airplane mode, and every later row would be refused the same way.
+DECLINED_TRANSPORT = "transport_unavailable"
 #: Wikidata answered with a redirect to an address this client does not follow (another host, plain http, another port) and the request was refused rather than
 #: followed (``RedirectRefused``): not "could not reach Wikidata" and not "no label", because a
 #: person has to look at where the answer pointed and a retry would be refused the same way.
@@ -117,7 +120,7 @@ def resolve_labels(
 
     from src.ingest import kill_switch_active
     from src.ingest.airplane import AirplaneModeError
-    from src.safety.fetcher import NetworkBlocked, RedirectRefused
+    from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 
     active = kill_switch or kill_switch_active
     napper = sleep if sleep is not None else time.sleep
@@ -149,6 +152,12 @@ def resolve_labels(
             # The kill switch engaged between the check above and the socket: named as the kill switch, for this row and the rest.
             for remaining in order[i:]:
                 declined.setdefault(remaining, DECLINED_REFUSED)
+            break
+        except TransportUnavailable:
+            # A ConnectionError, so it has to be named BEFORE the generic clause: protected mode has nothing to route through, which is the
+            # operator's setting to fix, and the rest of the run would be refused the same way (one sleep each, for nothing).
+            for remaining in order[i:]:
+                declined.setdefault(remaining, DECLINED_TRANSPORT)
             break
         except RedirectRefused:
             # Counted and named as itself: it is not a failed lookup (the host answered) and a retry is refused the same way.
@@ -219,7 +228,13 @@ def admit_or_decline(
                 "it, so admitting it would put an identifier in the catalogue where a "
                 "name belongs. The row is left for a later pass, not discarded."
             )
-            if reason == DECLINED_REDIRECT_REFUSED:
+            if reason == DECLINED_TRANSPORT:
+                detail = (
+                    "The name is a bare Wikidata identifier. The lookup was not sent: protected fetch mode is on and no usable proxy is "
+                    "configured, so the request is refused rather than sent directly. Admitting the row would put an identifier in the "
+                    "catalogue where a name belongs, so it is left for a later pass, not discarded."
+                )
+            elif reason == DECLINED_REDIRECT_REFUSED:
                 detail = (
                     "The name is a bare Wikidata identifier. Wikidata answered the lookup "
                     "with a redirect to an address this client does not follow (another host, plain http or another port), which is refused rather than followed, "
