@@ -34,6 +34,9 @@ import urllib.parse
 LANGS: tuple[str, ...] = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
 
 API_ENDPOINT = "https://www.wikidata.org/w/api.php"
+#: The hosts a session that fetches ``API_ENDPOINT`` may talk to (``src.safety.fetcher.guarded_session(allowed_hosts=...)``): a request or
+#: a redirect hop anywhere else is refused before it is sent. Exactly the host of the endpoint above; a test pins that the two agree.
+API_HOSTS: tuple[str, ...] = ("www.wikidata.org",)
 
 #: R8, 2026-09-12: "automated Wikidata downloads respect <= 1 request per 10 seconds."
 #: The number lives here because both consumers owe it and a rate two callers each hold

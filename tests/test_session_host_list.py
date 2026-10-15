@@ -235,6 +235,11 @@ def test_the_two_readings_baseline_passes(monkeypatch):
     [
         ({"u3_host": "evil.test"}, "host is not one"),
         ({"up_hostname": "evil.test"}, "host is not one"),
+        ({"u3_host": None}, "host is not one"),  # urllib3 reads no host at all
+        ({"up_hostname": None}, "host is not one"),  # urlparse reads no host at all
+        ({"up_hostname": ""}, "host is not one"),
+        ({"u3_host": "de%2ewikipedia.org"}, "host is not one"),  # a percent in ONE reading only: the comparison refuses it by itself
+        ({"up_hostname": "de%2ewikipedia.org"}, "host is not one"),
         ({"u3_port": 8443}, "port other than 443"),
         ({"up_port": 8443}, "port other than 443"),
         ({"u3_scheme": "http"}, "scheme is not https"),
@@ -253,11 +258,29 @@ def test_each_reading_has_to_pass_on_its_own(monkeypatch, override, reason):
     assert reason in err.reason
 
 
+@pytest.mark.parametrize("which", ["urllib3", "urlparse"])
+def test_a_percent_in_only_one_reading_is_refused_by_the_percent_clause_when_it_runs(monkeypatch, which):
+    """``_refuse_parser_mismatch`` is the refusal that NAMES the cause, and it looks at both parsers' hosts: with a percent in only one of
+    them, that clause refuses before any comparison. (Only the two parsers it calls are faked, so the real clause runs.)"""
+    import urllib3.util
+
+    from src import ingest
+
+    encoded, plain = "de%2ewikipedia.org", "de.wikipedia.org"
+    monkeypatch.setattr(urllib3.util, "parse_url", lambda url: SimpleNamespace(host=encoded if which == "urllib3" else plain))
+    monkeypatch.setattr(ingest, "urlparse", lambda url: SimpleNamespace(hostname=encoded if which == "urlparse" else plain))
+    err = _refused(lambda: refuse_unlisted_host("https://de.wikipedia.org/", HOSTS))
+    assert err.reason == "URL host is percent-encoded"
+
+
 def test_the_real_parsers_split_a_backslash_authority_and_the_clauses_after_the_mismatch_refusal_still_refuse_it(monkeypatch):
     """With the mismatch refusal taken out, ``urllib3`` reads the listed ``de.wikipedia.org`` and ``urlparse`` (the reading the adapter
     connects to on the installed ``requests``) reads ``evil.test`` after an ``@``: the second reading refuses it as user information."""
+    url = "https://de.wikipedia.org\\@evil.test/"
+    # The premise, asserted so the test cannot pass vacuously if either library changes how it reads this string:
+    assert fetcher_mod.parse_url(url).host == "de.wikipedia.org" and fetcher_mod.urlparse(url).hostname == "evil.test"
     monkeypatch.setattr(fetcher_mod.EthicalFetcher, "_refuse_parser_mismatch", staticmethod(lambda url: None))
-    err = _refused(lambda: refuse_unlisted_host("https://de.wikipedia.org\\@evil.test/", HOSTS))
+    err = _refused(lambda: refuse_unlisted_host(url, HOSTS))
     assert err.reason == "the URL carries a user name or a password"
 
 
@@ -423,20 +446,118 @@ def test_an_injected_session_is_not_given_a_list(transparent):
 
 
 # --------------------------------------------------------------------------- #
+# The six fixed-endpoint sessions that were the open remainder: each goes through its own default getter
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def scripted(monkeypatch):
+    """Every ``guarded_session`` a module imports at call time is a real one with a scripted adapter mounted, so the module's OWN default
+    getter runs against the real redirect machinery. Drop the ``allowed_hosts`` from a call site and its test below fails."""
+    monkeypatch.setattr(fetcher_mod, "load_settings", lambda: SafetySettings(fetch_mode="transparent"))
+    wire = _Script()
+    real = fetcher_mod.guarded_session
+
+    def build(**kw):
+        s = real(**kw)
+        s.mount("https://", wire)
+        s.mount("http://", wire)
+        return s
+
+    monkeypatch.setattr(fetcher_mod, "guarded_session", build)
+    return wire
+
+
+def _wikidata_get():
+    from src.analytics import ring_loader
+    from src.catalog import wikidata_apply
+    from src.entities import gazetteer_build, items
+
+    return {
+        "catalog.wikidata_apply": wikidata_apply._default_getter,
+        "entities.items": items._default_getter,
+        "entities.gazetteer_build": gazetteer_build.guarded_getter,
+        "analytics.ring_loader": ring_loader._default_getter,
+    }
+
+
+WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q42&format=json"
+
+
+@pytest.mark.parametrize("name", ["catalog.wikidata_apply", "entities.items", "entities.gazetteer_build", "analytics.ring_loader"])
+def test_a_wikidata_api_getter_refuses_a_redirect_off_its_host_and_follows_one_on_it(scripted, name):
+    get = _wikidata_get()[name]
+    scripted.routes[WIKIDATA_API_URL] = (302, "https://evil.test/steal")
+    with pytest.raises(RedirectRefused):
+        get(WIKIDATA_API_URL)
+    assert scripted.sent == [WIKIDATA_API_URL], "the hop was refused before it was sent"
+    scripted.sent.clear()
+    scripted.routes[WIKIDATA_API_URL] = (302, "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q42&format=json&redirected=1")
+    get(WIKIDATA_API_URL)
+    assert len(scripted.sent) == 2, "a hop to its own host is followed"
+
+
+def test_the_sparql_transport_refuses_a_redirect_off_its_host_and_follows_one_on_it(scripted):
+    import urllib.parse
+
+    from src.catalog import discover
+    from src.catalog.wikidata import WDQS_ENDPOINT, build_query
+
+    cfg = {"label_lang": "en", "limit": 5}
+    run_query = discover._guarded_run_query(cfg)
+    url = f"{WDQS_ENDPOINT}?" + urllib.parse.urlencode({"query": build_query("FR", ["Q11032"], label_lang="en", limit=5), "format": "json"})
+    scripted.routes[url] = (302, "https://evil.test/steal")
+    with pytest.raises(RedirectRefused):
+        run_query("FR", ["Q11032"])
+    assert scripted.sent == [url]
+
+
+def test_the_weights_digest_fetch_refuses_a_redirect_off_huggingface_and_says_so(scripted, monkeypatch):
+    from src.llm import ollama
+    from src.llm.ollama import MINISTRAL_VLLM_MODEL
+    from src.monitoring import release_run
+
+    class _NoOllama:
+        def __init__(self, *a, **k):
+            raise RuntimeError("no local Ollama in this test")
+
+    monkeypatch.setattr(ollama, "OllamaClient", _NoOllama)
+    url = f"https://huggingface.co/api/models/{MINISTRAL_VLLM_MODEL}"
+    scripted.routes[url] = (302, "https://evil.test/steal")
+    out = release_run._weights_digest_proposal()
+    assert out["hf"]["measured"] is False and "request refused" in out["hf"]["error"]
+    assert "evil" not in out["hf"]["error"]
+    assert scripted.sent == [url]
+
+
+def test_every_endpoint_constant_passes_the_list_its_session_carries():
+    """The lists are the hosts of the URLs the code builds, and a constant that moves host without its list is caught here."""
+    from src.analytics import wikidata_rings
+    from src.catalog import wikidata, wikidata_enrich
+    from src.monitoring import release_run
+
+    refuse_unlisted_host(wikidata_rings.API_ENDPOINT, wikidata_rings.API_HOSTS)
+    refuse_unlisted_host(wikidata_enrich._API, wikidata_enrich.API_HOSTS)
+    refuse_unlisted_host(wikidata.WDQS_ENDPOINT, wikidata.WDQS_HOSTS)
+    refuse_unlisted_host("https://huggingface.co/api/models/x/y", release_run.HF_API_HOSTS)
+    for hosts in (wikidata_rings.API_HOSTS, wikidata_enrich.API_HOSTS, wikidata.WDQS_HOSTS, release_run.HF_API_HOSTS):
+        assert fetcher_mod._checked_hosts(hosts) == hosts
+    assert wikidata_rings.API_HOSTS == wikidata_enrich.API_HOSTS, "two modules state the one Wikidata API host"
+    # ... and a neighbour of each is refused, so a list that grew into a family would show up here:
+    for url, hosts in (
+        ("https://query.wikidata.org/sparql", wikidata_rings.API_HOSTS),
+        ("https://www.wikidata.org/w/api.php", wikidata.WDQS_HOSTS),
+        ("https://cdn-lfs.huggingface.co/x", release_run.HF_API_HOSTS),
+    ):
+        _refused(lambda url=url, hosts=hosts: refuse_unlisted_host(url, hosts))
+
+
+# --------------------------------------------------------------------------- #
 # What still has no list, so that a new session without one is a decision and not an accident
 # --------------------------------------------------------------------------- #
-_WIKIDATA = "a fixed Wikidata endpoint (www.wikidata.org / query.wikidata.org): a list is possible, its redirects have not been looked at"
 _BULK = "bulk downloads from request-chosen mirrors that redirect between CDNs by design"
 #: Every module that builds a guarded session WITHOUT a host list: ``{path: (calls, why it has none)}``. Zero slack: a call that gains a
-#: list leaves this table, and a new call joins it with its reason. Six of the eleven are a fixed API endpoint like the three this change
-#: covers; they are the open remainder, not a decision that a list is wrong for them.
+#: list leaves this table, and a new call joins it with its reason. What is left here are URLs chosen by the request or the catalogue, or
+#: hosts that move; a session for a fixed endpoint names its list instead.
 UNLISTED_SESSIONS = {
-    "src/analytics/ring_loader.py": (1, _WIKIDATA),
-    "src/catalog/discover.py": (1, _WIKIDATA),
-    "src/catalog/wikidata_apply.py": (1, _WIKIDATA),
-    "src/entities/gazetteer_build.py": (1, _WIKIDATA),
-    "src/entities/items.py": (1, _WIKIDATA),
-    "src/monitoring/release_run.py": (1, "a fixed huggingface.co API endpoint: a list is possible, its redirects have not been looked at"),
     "src/geo/osm_downloads.py": (2, _BULK),
     "src/ingest/segmented_download.py": (2, _BULK),
     "src/wiki/dumps.py": (2, _BULK),
@@ -488,6 +609,7 @@ def _unlisted_session_calls() -> dict[str, int]:
 
 
 def test_a_guarded_session_without_a_host_list_is_a_decision_not_an_accident():
+    assert all(why.strip() for _calls, why in UNLISTED_SESSIONS.values()), "every unlisted session says why it has no list"
     found = _unlisted_session_calls()
     table = {path: calls for path, (calls, _why) in UNLISTED_SESSIONS.items()}
     assert found == table, (

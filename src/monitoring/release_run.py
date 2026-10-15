@@ -1481,6 +1481,11 @@ def _ores_probe() -> dict[str, Any]:
     }
 
 
+#: The hosts the weights-digest fetch below may talk to (``guarded_session(allowed_hosts=...)``): its one URL is on ``huggingface.co``, and a
+#: redirect hop anywhere else is refused before it is sent. A renamed repository redirects within the same host.
+HF_API_HOSTS: tuple[str, ...] = ("huggingface.co",)
+
+
 def _weights_digest_proposal() -> dict[str, Any]:
     """Row T's operator input, FETCHED rather than typed: the Hugging Face commit SHA of
     the roster model and the Ollama manifest digest of the roster tag. Written into the
@@ -1492,7 +1497,7 @@ def _weights_digest_proposal() -> dict[str, Any]:
     try:
         from src.safety.fetcher import guarded_session
 
-        s = guarded_session()
+        s = guarded_session(allowed_hosts=HF_API_HOSTS)
         r = s.get(f"https://huggingface.co/api/models/{MINISTRAL_VLLM_MODEL}", timeout=30)
         if getattr(r, "status_code", None) == 200:
             sha = str((r.json() or {}).get("sha") or "")

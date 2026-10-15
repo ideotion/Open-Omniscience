@@ -21,6 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from src.catalog.wikidata_enrich import (
+    API_HOSTS,
     parse_search_qids,
     reconcile,
     wbentities_url,
@@ -40,7 +41,7 @@ def _default_getter(url: str) -> Any:
     """
     from src.safety.fetcher import guarded_session
 
-    return guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url).get(
+    return guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=API_HOSTS).get(
         url, timeout=_TIMEOUT_S
     )
 

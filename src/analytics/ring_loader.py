@@ -46,6 +46,7 @@ from typing import Any
 
 from src.analytics import equivalence
 from src.analytics.wikidata_rings import (
+    API_HOSTS,
     LANGS,
     POLITE_SLEEP_S,
     build_ring,
@@ -325,7 +326,7 @@ def _default_getter(url: str) -> dict:
 
     from src.safety.fetcher import guarded_session
 
-    resp = guarded_session(user_agent=USER_AGENT, isolation_token=url).get(url, timeout=_TIMEOUT_S)
+    resp = guarded_session(user_agent=USER_AGENT, isolation_token=url, allowed_hosts=API_HOSTS).get(url, timeout=_TIMEOUT_S)
     resp.raise_for_status()
     return json.loads(resp.text)
 

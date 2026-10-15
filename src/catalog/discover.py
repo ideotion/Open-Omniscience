@@ -24,7 +24,7 @@ import urllib.parse
 from collections.abc import Callable, Iterable
 
 from src.catalog.build import generate_catalog, load_query_config
-from src.catalog.wikidata import WDQS_ENDPOINT, build_query, iso3_crosscheck
+from src.catalog.wikidata import WDQS_ENDPOINT, WDQS_HOSTS, build_query, iso3_crosscheck
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 
 _TIMEOUT_S = 90
@@ -47,7 +47,7 @@ def _guarded_run_query(
     def run_query(cc: str, type_qids: list[str]) -> dict:
         q = build_query(cc, type_qids, label_lang=cfg["label_lang"], limit=cfg["limit"])
         url = f"{WDQS_ENDPOINT}?" + urllib.parse.urlencode({"query": q, "format": "json"})
-        resp = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=cc).get(
+        resp = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=cc, allowed_hosts=WDQS_HOSTS).get(
             url, timeout=_TIMEOUT_S
         )
         try:
