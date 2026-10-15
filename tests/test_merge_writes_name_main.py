@@ -111,9 +111,7 @@ class _Scan:
                     for t in node.targets:
                         if isinstance(t, ast.Name):
                             out.setdefault(t.id, []).append(node.value)
-                elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
-                    out.setdefault(node.target.id, []).append(node.value)
-                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+                elif isinstance(node, (ast.AugAssign, ast.AnnAssign)) and isinstance(node.target, ast.Name) and node.value is not None:
                     out.setdefault(node.target.id, []).append(node.value)
         return out
 
