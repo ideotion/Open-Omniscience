@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,10 +25,11 @@ from requests.adapters import BaseAdapter
 from src.safety import fetcher as fetcher_mod
 from src.safety.fetcher import RedirectRefused, guarded_session, refuse_unlisted_host
 from src.safety.settings import SafetySettings
+from src.wiki.walk import WAIT_REFUSED, refusal_token
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The three words of the reasons a refusal may carry, none of them a URL or a host.
+#: The suffix family under wikipedia.org and the bare wikimedia.org (the pageviews host): host names, not URLs.
 HOSTS = (".wikipedia.org", "wikimedia.org")
 
 
@@ -180,8 +182,12 @@ def test_the_default_port_written_out_is_not_a_refusal(transparent):
     assert s.get("https://en.wikipedia.org/a").status_code == 200 and len(wire.sent) == 2
 
 
-def test_the_parser_clause_refuses_a_host_the_two_readings_disagree_on():
-    """``urllib3`` reads ``evil.test`` here and ``urlparse`` ``de.wikipedia.org``; the list names evil.test so only the disagreement can refuse."""
+def test_the_backslash_clause_refuses_an_authority_the_two_readings_split():
+    """``urllib3`` reads ``evil.test`` here and ``urlparse`` ``de.wikipedia.org``; the list names evil.test so only the disagreement can refuse.
+
+    The other clauses of ``_refuse_parser_mismatch`` (unparsable, cannot be IDNA-encoded, two hosts) cannot be reached through a session:
+    ``prepare_url`` IDNA-encodes a first request and ``requote_uri`` percent-encodes a hop. They have their own tests in
+    ``test_ssrf_parser_mismatch.py``."""
     err = _refused(lambda: refuse_unlisted_host("https://evil.test\\@de.wikipedia.org/b", ("evil.test", ".wikipedia.org")))
     assert "backslash" in err.reason
 
@@ -196,6 +202,63 @@ def test_the_percent_clause_holds_on_a_hop_that_survives_requoting(transparent):
     s, wire = _session({"https://en.wikipedia.org/a": (302, "https://x%2B.wikipedia.org/b")})  # %2B is not unreserved, so it stays
     _refused(lambda: s.get("https://en.wikipedia.org/a"))
     assert wire.sent == ["https://en.wikipedia.org/a"]
+
+
+# --------------------------------------------------------------------------- #
+# The URL is read both ways, and the list does not lean on the mismatch refusal
+# --------------------------------------------------------------------------- #
+def _readings(monkeypatch, **kw):
+    """Take ``_refuse_parser_mismatch`` out and answer for both parsers, so only the comparison itself can refuse. With no overrides both
+    readings are the clean ``https://de.wikipedia.org/`` (the baseline test proves that passes)."""
+    monkeypatch.setattr(fetcher_mod.EthicalFetcher, "_refuse_parser_mismatch", staticmethod(lambda url: None))
+    one = {"scheme": "https", "auth": None, "port": None, "host": "de.wikipedia.org"}
+    two = {"scheme": "https", "netloc": "de.wikipedia.org", "hostname": "de.wikipedia.org", "port": None}
+    for key, value in kw.items():
+        (one if key.startswith("u3_") else two)[key[3:]] = value
+    monkeypatch.setattr(fetcher_mod, "parse_url", lambda url: SimpleNamespace(**one))
+
+    def urlparse_(url):
+        if two.get("raises"):
+            raise ValueError("unreadable")
+        return SimpleNamespace(**{k: v for k, v in two.items() if k != "raises"})
+
+    monkeypatch.setattr(fetcher_mod, "urlparse", urlparse_)
+
+
+def test_the_two_readings_baseline_passes(monkeypatch):
+    _readings(monkeypatch)
+    refuse_unlisted_host("https://de.wikipedia.org/", HOSTS)
+
+
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [
+        ({"u3_host": "evil.test"}, "host is not one"),
+        ({"up_hostname": "evil.test"}, "host is not one"),
+        ({"u3_port": 8443}, "port other than 443"),
+        ({"up_port": 8443}, "port other than 443"),
+        ({"u3_scheme": "http"}, "scheme is not https"),
+        ({"up_scheme": "http"}, "scheme is not https"),
+        ({"u3_auth": "user:pw"}, "user name or a password"),
+        ({"up_netloc": "user@de.wikipedia.org"}, "user name or a password"),
+        ({"up_raises": True}, "cannot be read"),
+    ],
+    ids=lambda v: "-".join(v) if isinstance(v, dict) else v,
+)
+def test_each_reading_has_to_pass_on_its_own(monkeypatch, override, reason):
+    """``requests`` >= 2.32.2 connects to what ``urlparse`` reads and older releases to what ``urllib3`` reads, so a clause that looked at
+    one reading only would protect whichever client version it was written against. The other reading is clean in every case."""
+    _readings(monkeypatch, **override)
+    err = _refused(lambda: refuse_unlisted_host("https://de.wikipedia.org/", HOSTS))
+    assert reason in err.reason
+
+
+def test_the_real_parsers_split_a_backslash_authority_and_the_clauses_after_the_mismatch_refusal_still_refuse_it(monkeypatch):
+    """With the mismatch refusal taken out, ``urllib3`` reads the listed ``de.wikipedia.org`` and ``urlparse`` (the reading the adapter
+    connects to on the installed ``requests``) reads ``evil.test`` after an ``@``: the second reading refuses it as user information."""
+    monkeypatch.setattr(fetcher_mod.EthicalFetcher, "_refuse_parser_mismatch", staticmethod(lambda url: None))
+    err = _refused(lambda: refuse_unlisted_host("https://de.wikipedia.org\\@evil.test/", HOSTS))
+    assert err.reason == "the URL carries a user name or a password"
 
 
 @pytest.mark.parametrize("location", ["https://evil.test/steal?token=SECRET", "https://evil.test\\@de.wikipedia.org/b", "https://x%2B.wikipedia.org/b"])
@@ -216,6 +279,12 @@ def test_a_refusal_is_a_request_failure_that_is_not_a_connection_error(transpare
 # --------------------------------------------------------------------------- #
 # The list is opt-in, holds in both transports, and is validated
 # --------------------------------------------------------------------------- #
+def test_the_walk_names_a_redirect_refusal_a_refusal_not_a_dropped_connection():
+    """Any ``OSError`` the walk meets is a connection that did not answer, and ``RedirectRefused`` is a ``RequestException`` (an
+    ``OSError``); nothing was sent, so the edition's wait is named for what it is (``request_refused``)."""
+    assert refusal_token(RedirectRefused("the host is not one this client talks to")) == WAIT_REFUSED
+
+
 def test_a_session_built_without_a_list_follows_redirects_as_before(transparent):
     s = guarded_session()
     wire = _Script({"https://en.wikipedia.org/a": (302, "https://anywhere.test/b")})
@@ -239,11 +308,31 @@ def test_the_list_holds_in_protected_mode_too(monkeypatch):
 
 @pytest.mark.parametrize(
     "bad",
-    [(), ("",), (".",), ("Wikipedia.org",), ("https://wikipedia.org",), ("wikipedia.org/",), ("wikipedia.org:443",), ("..wikipedia.org",), ("a..b",), ("-a.org",), ("wíki.org",), ("a b.org",)],
+    [
+        (), ("",), (".",), ("Wikipedia.org",), ("https://wikipedia.org",), ("wikipedia.org/",), ("wikipedia.org:443",),
+        ("..wikipedia.org",), ("a..b",), ("-a.org",), ("wíki.org",), ("a b.org",),
+        (".org",), ("org",), (".com",),  # a single label: a whole TLD, or no domain at all
+        ("wikipedia.org.",), (".wikipedia.org.",),  # a trailing dot is an empty last label
+        ("a-.org",), ("a.-b.org",),  # a hyphen at the edge of a label
+        ("127.0.0.1",), (".0.0.1",), ("a.1",),  # an address, or a numeric last label, is not a name
+        ("x_y.org",), ("*.wikipedia.org",), ("ok.org", "bad host.org"),  # one bad entry among good ones
+    ],
 )
 def test_a_malformed_list_is_refused_when_the_session_is_built(bad, transparent):
     with pytest.raises(ValueError):
         guarded_session(allowed_hosts=bad)
+
+
+def test_a_bare_string_is_not_a_list_of_its_characters(transparent):
+    """``tuple("localhost")`` is nine one-letter entries, each of which a lax check would have called a host."""
+    for bare in ("localhost", "wikipedia.org", ".wikipedia.org"):
+        with pytest.raises(TypeError):
+            guarded_session(allowed_hosts=bare)
+
+
+def test_ordinary_hosts_and_punycode_labels_are_listable(transparent):
+    ok = ("a-b.org", ".a-b.org", "xn--bcher-kva.example", ".co.uk", "ores.wikimedia.org", "a1.b2.org")
+    assert guarded_session(allowed_hosts=ok).allowed_hosts == ok
 
 
 def test_a_well_formed_list_is_stored_as_a_tuple(transparent):
@@ -256,6 +345,17 @@ def test_following_session_keys_the_cache_on_the_list(transparent):
     b = fetcher_mod.following_session("o", "ua", allowed_hosts=("b.org",))
     assert b is not a and b.allowed_hosts == ("b.org",), "another list is another session"
     assert fetcher_mod.following_session("o", "ua").allowed_hosts is None
+
+
+def test_a_session_kept_while_the_settings_cannot_be_read_is_kept_only_for_the_list_it_was_built_with(transparent):
+    plain = fetcher_mod.following_session("o", "ua")
+    unreadable = SafetySettings(fetch_mode="transparent")
+    unreadable.read_failed = True
+    transparent.setattr(fetcher_mod, "load_settings", lambda: unreadable)
+    assert fetcher_mod.following_session("o", "ua") is plain, "same list and agent: the held session is kept"
+    listed = fetcher_mod.following_session("o", "ua", allowed_hosts=("a.org",))
+    assert listed is not plain and listed.allowed_hosts == ("a.org",), "another list is another session, readable settings or not"
+    assert fetcher_mod.following_session("o", "ua", allowed_hosts=("a.org",)) is listed
 
 
 # --------------------------------------------------------------------------- #
@@ -325,22 +425,54 @@ def test_an_injected_session_is_not_given_a_list(transparent):
 # --------------------------------------------------------------------------- #
 # What still has no list, so that a new session without one is a decision and not an accident
 # --------------------------------------------------------------------------- #
-#: Every module that builds a guarded session WITHOUT a host list, with the number of such calls. Each is a fixed upstream whose list is
-#: not yet decided (the dumps and OSM mirrors, the model hosts and the statistics sources redirect between CDNs by design), so a list
-#: needs a look at where each really redirects. Zero slack: a call that gains a list leaves this table, and a new call joins it.
+_WIKIDATA = "a fixed Wikidata endpoint (www.wikidata.org / query.wikidata.org): a list is possible, its redirects have not been looked at"
+_BULK = "bulk downloads from request-chosen mirrors that redirect between CDNs by design"
+#: Every module that builds a guarded session WITHOUT a host list: ``{path: (calls, why it has none)}``. Zero slack: a call that gains a
+#: list leaves this table, and a new call joins it with its reason. Six of the eleven are a fixed API endpoint like the three this change
+#: covers; they are the open remainder, not a decision that a list is wrong for them.
 UNLISTED_SESSIONS = {
-    "src/analytics/ring_loader.py": 1,
-    "src/catalog/discover.py": 1,
-    "src/catalog/wikidata_apply.py": 1,
-    "src/entities/gazetteer_build.py": 1,
-    "src/entities/items.py": 1,
-    "src/geo/osm_downloads.py": 2,
-    "src/ingest/segmented_download.py": 2,
-    "src/llm/installer.py": 2,
-    "src/monitoring/release_run.py": 1,
-    "src/stats/fetch.py": 1,
-    "src/wiki/dumps.py": 2,
+    "src/analytics/ring_loader.py": (1, _WIKIDATA),
+    "src/catalog/discover.py": (1, _WIKIDATA),
+    "src/catalog/wikidata_apply.py": (1, _WIKIDATA),
+    "src/entities/gazetteer_build.py": (1, _WIKIDATA),
+    "src/entities/items.py": (1, _WIKIDATA),
+    "src/monitoring/release_run.py": (1, "a fixed huggingface.co API endpoint: a list is possible, its redirects have not been looked at"),
+    "src/geo/osm_downloads.py": (2, _BULK),
+    "src/ingest/segmented_download.py": (2, _BULK),
+    "src/wiki/dumps.py": (2, _BULK),
+    "src/llm/installer.py": (2, "release assets whose storage host moves (docs/SECURITY.md, local AI install); needs its own look"),
+    "src/stats/fetch.py": (1, "the statistics agencies' catalogue URLs: many hosts, none fixed"),
 }
+
+#: The factories that make a session. A call to one is unlisted unless it passes ``allowed_hosts`` something other than a literal
+#: ``None``; a bare reference to a FUNCTION (``functools.partial(guarded_session, ...)``) cannot be checked, so it counts as unlisted too.
+_SESSION_FACTORIES = ("guarded_session", "following_session", "GuardedSession", "_session_for")
+_SESSION_FUNCTIONS = ("guarded_session", "following_session")
+
+
+def _unlisted_in(source: str, filename: str) -> int:
+    tree = ast.parse(source, filename=filename)
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in _SESSION_FACTORIES and alias.asname:
+                    aliases[alias.asname] = alias.name
+    called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+
+    def name_of(node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return aliases.get(node.id, node.id)
+        return node.attr if isinstance(node, ast.Attribute) else ""
+
+    count = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and name_of(node.func) in _SESSION_FACTORIES:
+            listed = any(k.arg == "allowed_hosts" and not (isinstance(k.value, ast.Constant) and k.value.value is None) for k in node.keywords)
+            count += 0 if listed else 1
+        elif isinstance(node, (ast.Name, ast.Attribute)) and id(node) not in called and name_of(node) in _SESSION_FUNCTIONS:
+            count += 1  # a reference that is not a call: handed to partial(), stored, passed on
+    return count
 
 
 def _unlisted_session_calls() -> dict[str, int]:
@@ -349,20 +481,46 @@ def _unlisted_session_calls() -> dict[str, int]:
         rel = path.relative_to(ROOT).as_posix()
         if rel == "src/safety/fetcher.py":
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
-            if name in ("guarded_session", "following_session") and not any(k.arg == "allowed_hosts" for k in node.keywords):
-                found[rel] = found.get(rel, 0) + 1
+        n = _unlisted_in(path.read_text(encoding="utf-8"), rel)
+        if n:
+            found[rel] = n
     return found
 
 
 def test_a_guarded_session_without_a_host_list_is_a_decision_not_an_accident():
     found = _unlisted_session_calls()
-    assert found == UNLISTED_SESSIONS, (
+    table = {path: calls for path, (calls, _why) in UNLISTED_SESSIONS.items()}
+    assert found == table, (
         "a session built without allowed_hosts follows any redirect; give it a list, or add it to UNLISTED_SESSIONS with the reason "
-        f"(new or changed: {sorted(set(found.items()) ^ set(UNLISTED_SESSIONS.items()))})"
+        f"(new or changed: {sorted(set(found.items()) ^ set(table.items()))})"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from src.safety import fetcher\nfetcher.guarded_session()",
+        "from src.safety.fetcher import guarded_session\nguarded_session(isolation_token='x')",
+        "from src.safety.fetcher import following_session\nfollowing_session('o', 'ua')",
+        "from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=None)",
+        "from src.safety.fetcher import guarded_session as gs\ngs()",
+        "import functools\nfrom src.safety.fetcher import guarded_session\nfunctools.partial(guarded_session, isolation_token='x')",
+        "from src.safety.fetcher import GuardedSession\nGuardedSession()",
+        "from src.safety.fetcher import _session_for\n_session_for(s, user_agent='ua')",
+    ],
+)
+def test_the_scanner_counts_every_way_of_building_a_session_without_a_list(source):
+    assert _unlisted_in(source, "x.py") == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=('a.org',))",
+        "from src.safety.fetcher import guarded_session as gs\ngs(allowed_hosts=HOSTS)",
+        "from src.safety.fetcher import following_session\nfollowing_session('o', 'ua', allowed_hosts=HOSTS)",
+        "x = 1",
+    ],
+)
+def test_the_scanner_passes_a_session_that_names_its_list(source):
+    assert _unlisted_in(source, "x.py") == 0

@@ -1,12 +1,16 @@
 ## 2026-10-15 — a redirect hop goes through Session.send, not Session.request: put a host guard in send, and list what the shared session really serves (PR #1393)
 
 **What was found.** The sink sweep's parked LOW said the Wikipedia, ORES and DuckDuckGo clients "bypass `_guarded_redirect_get`". The cause is one level lower than the suggested fix (`allow_redirects=False` plus a re-issue per client).
-requests' `Session.resolve_redirects` calls `self.send` for every hop, not `self.request`, so anything a `GuardedSession` does in `request` (the kill switch, the transport choice) runs once, for the first URL, and never on a hop.
+requests' `Session.resolve_redirects` calls `self.send` for every hop, not `self.request`, so what a `GuardedSession` does in `request` (the app-level kill-switch refusal, the transport decision) runs once, for the first URL. Nothing leaked on a
+hop: `requests` carries the per-request proxy mapping onto each hop and the airplane socket guard stands under both. What no check did was look at WHERE a hop went.
 A host check belongs in `send`, where the first request and every hop both pass. It is one override instead of a manual redirect loop per client, and it holds for any caller that follows redirects through the session.
 
 **The rules.**
-1. **Guard in `send`, check the whole URL, and reuse the parser-mismatch refusal.** The check runs `EthicalFetcher._refuse_parser_mismatch` first (backslash, whitespace or control in the authority, any `%` in the host, the two parsers
-   disagreeing, non-IDNA hosts), then https only, no userinfo, port 443 only, then the list. The host compared is the one urllib3 will connect to (`parse_url(url).host`, which lower-cases), not the `urlparse` one.
+1. **Guard in `send`, check the whole URL, and compare BOTH readings of it.** The check runs `EthicalFetcher._refuse_parser_mismatch` first (backslash, whitespace or control in the authority, any `%` in the host, the two parsers
+   disagreeing, non-IDNA hosts), then https only, no userinfo, port 443 only and the list, each against `urllib3`'s reading AND `urlparse`'s. The first draft compared only urllib3's host and wrote in a comment that it is "the one the
+   connection is made to". It is not: `requests` 2.32.2 and later builds the pool key from `urlparse(request.url).hostname` (`adapters._urllib3_request_context`), older releases (pyproject still allows `requests>=2.31`) use urllib3's.
+   For `https://de.wikipedia.org\@evil.test/` the adapter's host is `evil.test` while urllib3 reads `de.wikipedia.org`; the list comparison alone would have passed it and only the mismatch call stood in the way. Say which parser the
+   connection uses, from the library's source and not from memory, compare against both, and test the comparison with the mismatch refusal taken out (`_readings` in the test file).
 2. **An entry's KIND decides its comparison, so branch on it.** A first draft tested `host == entry` for every entry and then the suffix clause; urllib3 returns `.wikipedia.org` (an empty label) as-is, so the suffix entry `.wikipedia.org`
    matched its own empty-label host. `if entry.startswith("."): suffix and strictly longer; elif host == entry` closes it, and a parametrized test pins the label boundaries: `notwikipedia.org`, `wikipedia.org.evil.test`,
    `.wikipedia.org`, the bare `wikipedia.org`, a trailing dot, `127.0.0.1`, `[::1]`. A mutation run found this; reading the code had not.
@@ -17,5 +21,10 @@ A host check belongs in `send`, where the first request and every hop both pass.
    `%41` proves nothing. `%2B` survives requoting and reaches the check; the unquoted form is tested by calling the check directly.
 5. **Make an opt-in list a decision, not an accident.** `allowed_hosts` defaults to `None` (every other caller unchanged), and an AST ratchet pins every `guarded_session` / `following_session` call WITHOUT a list in a table with its
    count, zero slack, so a new unlisted session fails a test and says why. The sessions left out are the ones that redirect between CDNs by design; they need their own look at where each really redirects.
-6. **A mutation matrix must prove its baseline first.** One run against a red baseline reported every mutant killed, because every mutant failed for the unrelated reason. The script now runs the unmutated tests and refuses to score
-   unless they are green.
+6. **A mutation matrix must prove its baseline first.** One run against a red baseline reported every mutant killed, because every mutant failed for the unrelated reason. The matrix (a scratch script, not committed: about 40 text
+   substitutions over `fetcher.py`, the three clients and `walk.py`, each run against `tests/test_session_host_list.py`) runs the unmutated tests first and refuses to score unless they are green.
+7. **A table of exceptions carries a reason per row, and the reasons get read.** The first `UNLISTED_SESSIONS` had one comment, "they redirect between CDNs by design", and the independent read found it false for six of the eleven rows (five
+   Wikidata loaders and the Hugging Face release check are fixed API endpoints, the shape this change fixed). Each row now says why it has no list, so the open remainder is visible instead of folded into a reassuring sentence. The scanner behind
+   the table is itself tested on eight ways of building a session without a list (an explicit `allowed_hosts=None`, an aliased import, `functools.partial`, `GuardedSession()`, `_session_for`) because it first counted one of them.
+8. **A list entry must be a name of at least two labels.** `.org` as a suffix entry would open a whole TLD; a bare string passed as a list is a tuple of characters; a trailing dot or an all-numeric last label is not a name. `_checked_hosts` refuses all
+   of these when the session is built. It does not consult the public suffix list (`.co.uk` passes): the lists are constants a reader approves.

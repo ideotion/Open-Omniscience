@@ -90,49 +90,82 @@ class RedirectRefused(requests.exceptions.RequestException):
         self.reason = reason
 
 
+def _listable(entry: str) -> bool:
+    """Whether ``entry`` is a host name or a leading-dot suffix a list may hold: lower-case ASCII labels (letters, digits, hyphens
+    inside a label), at least two of them (a single label is a whole TLD, or no domain at all), no empty label (so no trailing dot and
+    no double dot) and a last label that is not all digits (an address is not a name). It does NOT consult the public suffix list, so
+    ``.co.uk`` passes: the lists are constants a reader approves, not input."""
+    body = entry[1:] if entry.startswith(".") else entry
+    labels = body.split(".")
+    return (
+        entry == entry.lower()
+        and len(labels) >= 2
+        and not labels[-1].isdigit()
+        and all(
+            label and not label.startswith("-") and not label.endswith("-") and all(c.isascii() and (c.isalnum() or c == "-") for c in label)
+            for label in labels
+        )
+    )
+
+
 def _checked_hosts(allowed: Iterable[str] | None) -> tuple[str, ...] | None:
     """A host list as the session stores it, or ``None`` for no policy. Each entry is a host (``ores.wikimedia.org``) or a leading-dot
-    suffix (``.wikipedia.org``: any host UNDER it, never the bare domain). A malformed entry is a programming error and raises, as
-    does an empty list, which would refuse every request: say ``None`` for a session that follows no list."""
+    suffix (``.wikipedia.org``: any host UNDER it, never the bare domain). A malformed entry is a programming error and raises
+    (:func:`_listable`), as does an empty list, which would refuse every request (say ``None`` for a session that follows no list), and a
+    bare string, which would otherwise be read as one entry per character."""
     if allowed is None:
         return None
+    if isinstance(allowed, str):
+        raise TypeError("a host list is a sequence of hosts, not one string")
     hosts = tuple(allowed)
     if not hosts:
         raise ValueError("an empty host list would refuse every request; pass None for a session with no list")
     for entry in hosts:
-        body = entry[1:] if entry.startswith(".") else entry
-        if not body or entry != entry.lower() or not all(c.isascii() and (c.isalnum() or c in ".-") for c in body) or body.startswith((".", "-")) or ".." in body:
+        if not _listable(entry):
             raise ValueError(f"not a host or a leading-dot suffix: {entry!r}")
     return hosts
 
 
-def refuse_unlisted_host(url: str, allowed: tuple[str, ...]) -> None:
-    """Raise :class:`RedirectRefused` unless ``url`` is an https URL to a listed host, read the way the HTTP client will read it.
+def _host_listed(host: str, allowed: tuple[str, ...]) -> bool:
+    for entry in allowed:
+        if entry.startswith("."):
+            if host.endswith(entry) and len(host) > len(entry):  # any host UNDER the domain: not the domain, not an empty label
+                return True
+        elif host == entry:
+            return True
+    return False
 
-    The host is the one ``urllib3`` parses out of the string, because that is the host the connection is made to; ``urlparse`` is
-    asked as well and the two must agree (``EthicalFetcher._refuse_parser_mismatch``: a backslash or whitespace in the authority, a
-    ``%`` in the host and two readings of one name are refused outright). A user name or password, a port other than 443 and a scheme
-    other than https are refused too: no endpoint a session with a list talks to redirects there, so a hop that does is not one of
-    its own. ``allowed`` holds hosts and leading-dot suffixes (:func:`_checked_hosts`)."""
+
+def refuse_unlisted_host(url: str, allowed: tuple[str, ...]) -> None:
+    """Raise :class:`RedirectRefused` unless ``url`` is an https URL to a listed host, on port 443, with no user name.
+
+    The URL is read BOTH ways it can be read, and each reading has to pass: by ``urllib3`` (``parse_url``) and by ``urlparse``.
+    ``requests`` 2.32.2 and later makes the connection to the host ``urlparse`` reads (``adapters._urllib3_request_context``) and the
+    older releases ``pyproject`` still allows to the one ``urllib3`` reads, so a list compared with only one of them would be a list
+    for whichever client version it was written against. ``EthicalFetcher._refuse_parser_mismatch`` runs first and refuses outright a
+    URL the two read differently (a backslash or whitespace in the authority, a ``%`` in the host, two readings of one name), which
+    also names the cause; the comparison below does not rely on that call staying in place. A user name or password, a port other
+    than 443 and a scheme other than https are refused too: no endpoint a session with a list talks to redirects there, so a hop that
+    does is not one of its own. ``allowed`` holds hosts and leading-dot suffixes (:func:`_checked_hosts`)."""
     try:
         EthicalFetcher._refuse_parser_mismatch(url)
     except BlockedTarget as exc:
         raise RedirectRefused(str(exc)) from None  # a fixed sentence of that function, never the URL
-    parsed = parse_url(url)
-    if (parsed.scheme or "").lower() != "https":
+    by_urllib3 = parse_url(url)
+    try:
+        by_urlparse = urlparse(url)
+        urlparse_host, urlparse_port = by_urlparse.hostname or "", by_urlparse.port
+    except ValueError:
+        raise RedirectRefused("the URL cannot be read") from None
+    if (by_urllib3.scheme or "").lower() != "https" or by_urlparse.scheme.lower() != "https":
         raise RedirectRefused("the scheme is not https")
-    if parsed.auth:
+    if by_urllib3.auth or "@" in by_urlparse.netloc:
         raise RedirectRefused("the URL carries a user name or a password")
-    if parsed.port not in (None, 443):
+    if by_urllib3.port not in (None, 443) or urlparse_port not in (None, 443):
         raise RedirectRefused("the URL names a port other than 443")
-    host = parsed.host or ""  # urllib3 has lower-cased it, which is the name the connection is made to
-    for entry in allowed:
-        if entry.startswith("."):
-            if host.endswith(entry) and len(host) > len(entry):  # any host UNDER the domain: not the domain, not an empty label
-                return
-        elif host == entry:
-            return
-    raise RedirectRefused("the host is not one this client talks to")
+    # Both readings are lower-case already (urllib3 lower-cases; urlparse's ``hostname`` does too).
+    if not (_host_listed(by_urllib3.host or "", allowed) and _host_listed(urlparse_host, allowed)):
+        raise RedirectRefused("the host is not one this client talks to")
 
 
 class GuardedSession(requests.Session):
@@ -169,6 +202,8 @@ class GuardedSession(requests.Session):
     #: The hosts this session may talk to (:func:`_checked_hosts`), or ``None`` for no list, which is every session built without
     #: one. Checked in :meth:`send`, the method ``requests`` itself calls for the first request AND for each redirect hop
     #: (``resolve_redirects`` calls ``self.send``, not ``self.request``), so a hop to another host is refused before it is sent.
+    #: (:meth:`request`'s own checks run once, on the first URL: ``requests`` carries the per-request proxy mapping onto each hop, and
+    #: the airplane socket guard stands under both, but nothing there looks at WHERE a hop goes.)
     allowed_hosts: tuple[str, ...] | None = None
 
     def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
@@ -534,7 +569,7 @@ def following_session(owner: str, user_agent: str, *, allowed_hosts: Iterable[st
     name = f"session/{owner}"
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(name)
-        if getattr(s, "read_failed", False) and held is not None and held[0][-1] == user_agent:
+        if getattr(s, "read_failed", False) and held is not None and held[0][-1] == user_agent and held[0][-2] == hosts:
             return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
         if held is None or held[0] != key:
             held = (key, _session_for(s, user_agent=user_agent, allowed_hosts=hosts))

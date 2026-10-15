@@ -127,13 +127,18 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `src/services/duckduckgo.py:DuckDuckGoSearch.ALLOWED_HOSTS`), and the session checks the
   whole URL against it **before every request, each redirect hop included**
   (`src/safety/fetcher.py:refuse_unlisted_host`): https only, no user name or password, port
-  443 only, no `%` in the host, and the host must read the same under both URL parsers the
-  stack uses. An entry is an exact host or a leading-dot suffix (`.wikipedia.org` means any
-  host under it, never the bare domain). A refusal raises `RedirectRefused` before the request
-  is sent and names the clause, never the address. Sessions built without a list (the dump,
-  OSM and model downloads and the statistics sources, which redirect between CDNs by design)
-  are listed in `tests/test_session_host_list.py:UNLISTED_SESSIONS`, so a new one is a
-  decision rather than an accident.
+  443 only, no `%` in the host, and a listed host. The URL is read by **both** parsers the stack
+  uses (`urllib3`'s and `urlparse`'s; `requests` 2.32.2 and later connects to the host
+  `urlparse` reads, older releases to `urllib3`'s) and each reading has to pass; a URL the two
+  read differently is refused outright. An entry is an exact host or a leading-dot suffix
+  (`.wikipedia.org` means any host under it, never the bare domain), written as a name of at
+  least two labels. A refusal raises `RedirectRefused` before the request is sent and names
+  the clause, never the address. **Not yet covered:** every other session built by
+  `guarded_session` or `following_session` without a list. Six of the eleven modules are fixed
+  API endpoints like these three (five Wikidata loaders and the Hugging Face release check) and
+  are the open remainder; the rest are bulk downloads and installs from request-chosen mirrors
+  and CDNs. `tests/test_session_host_list.py:UNLISTED_SESSIONS` pins each with its reason, so a
+  new one is a decision rather than an accident.
 
   **What an OpenTimestamps submission reveals** is your IP and timing, to the calendar
   operator — the *act of submitting*, not the content: only an opaque SHA-256 digest of
