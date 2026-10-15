@@ -28,6 +28,7 @@ marks a SQLCipher code-11 error as a disconnect for that one connection. What is
 """
 from __future__ import annotations
 
+import functools
 import logging
 import random
 import sqlite3
@@ -106,6 +107,76 @@ def _build_overflow(path: Path, damaged: str) -> int:
         f.seek((target - 1) * _PAGE)
         f.write(random.Random(target).randbytes(_PAGE))
     return target
+
+
+@functools.cache
+def _poison_style() -> str:
+    """HOW THE ENGINE POISONS A CONNECTION, measured on the installed driver (never read off a version string, so an engine that does
+    a third thing fails here, loudly, instead of passing as one of the two): after a read of a damaged page fails, what does the
+    NEXT statement on the same connection answer?
+
+      * ``"memory"``: an empty ``MemoryError`` (SQLCipher 4.12, sqlcipher3 0.6.2 and 0.6.3: indistinguishable from a real
+        out-of-memory, so the observer discards the connection and latches nothing);
+      * ``"corrupt"``: the same code-11 ``DatabaseError`` again, on every statement (SQLCipher 4.19, sqlcipher3 0.6.4: a real
+        corruption error, so the observer latches the file as well)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "style.db"
+        _build_overflow(path, "leaf")
+        con = connect(path, key=_KEY, check_same_thread=False)
+        try:
+            with pytest.raises(sqc.DatabaseError):
+                con.execute("SELECT id FROM ov WHERE id = 1").fetchone()
+            try:
+                con.execute("SELECT count(*) FROM small").fetchall()
+            except MemoryError as exc:
+                if type(exc) is MemoryError and not str(exc):
+                    return "memory"
+            except sqc.DatabaseError as exc:
+                if getattr(exc, "sqlite_errorcode", None) == 11:
+                    return "corrupt"
+            else:
+                pytest.fail("the statement after a damaged page was answered: the engine no longer poisons the connection (see the module docstring)")
+        finally:
+            con.close()
+    pytest.fail("the statement after a damaged page raised something that is neither an empty MemoryError nor a code-11 DatabaseError")
+
+
+def _poisoned():
+    """``pytest.raises``-ready: the error a poisoned connection answers (an empty ``MemoryError``, or a code-11 ``DatabaseError``)."""
+    return pytest.raises(MemoryError if _poison_style() == "memory" else sqc.DatabaseError)
+
+
+def _assert_poison(exc: BaseException) -> None:
+    if _poison_style() == "memory":
+        assert type(exc) is MemoryError and not str(exc), "the poison is not an empty MemoryError"
+    else:
+        assert getattr(exc, "sqlite_errorcode", None) == 11, "the poison is not a code-11 error"
+
+
+def _assert_incident_is_class_only(registry) -> None:
+    """The newest incident carries the driver's CLASS and one of the app's fixed labels, never a word of the driver's own text.
+    (On SQLCipher 4.19 the driver's text IS the fixed label's words, so this alone cannot catch a record of the raw text there; the
+    guard against that is ``tests/test_database_damage.py``, which uses text no label contains. On 4.12 there is no record to check.)"""
+
+    def find(node):
+        if isinstance(node, dict):
+            if "driver_class" in node and "message" in node:
+                return node
+            for v in node.values():
+                if (got := find(v)) is not None:
+                    return got
+        elif isinstance(node, list):
+            for v in node:
+                if (got := find(v)) is not None:
+                    return got
+        return None
+
+    incident = find(registry.state(detail=True))
+    assert incident is not None, "no incident record was written"
+    assert incident["driver_class"] == "DatabaseError"
+    assert incident["message"] in (damage.CORRUPT_IMAGE, damage.CORRUPT_SCHEMA, damage.CORRUPT_OTHER), incident["message"]
 
 
 @pytest.fixture
@@ -204,10 +275,12 @@ def test_canary_without_the_observer_the_pooled_connection_is_poisoned(store):
     """The driver fact the fix answers. If this stops failing, SQLCipher stopped poisoning and the fix is moot."""
     eng, opened = _engine(store, observed=False, pool_size=1)
     _first_bad_range(eng)
-    with pytest.raises(MemoryError):
+    with _poisoned() as first:
         _healthy_read(eng)
-    with pytest.raises(MemoryError):
+    _assert_poison(first.value)
+    with _poisoned() as again:
         _healthy_read(eng)  # and it stays poisoned: the same pooled connection comes back every time
+    _assert_poison(again.value)
     assert len(opened) == 1, "a new connection was opened: the pool did not hand the poisoned one back"
 
 
@@ -327,7 +400,7 @@ def test_a_damaged_leaf_or_first_or_middle_overflow_page_raises_code_11_on_that_
             with pytest.raises(sqc.DatabaseError) as info:
                 con.execute("SELECT v FROM ov WHERE id = 1").fetchone()
         assert getattr(info.value, "sqlite_errorcode", None) == 11
-        with pytest.raises(MemoryError):
+        with _poisoned():
             con.execute("SELECT count(*) FROM small").fetchall()  # and the poison follows
     finally:
         con.close()
@@ -345,14 +418,14 @@ def test_a_damaged_last_overflow_page_returns_the_wrong_tail_with_no_error_and_p
         assert con.execute("SELECT id FROM ov WHERE id = 1").fetchone() == (1,)  # the leaf is intact
         value = con.execute("SELECT v FROM ov WHERE id = 1").fetchone()[0]
         assert len(value) == len(_LONG) and value != _LONG, "the read raised or returned the right bytes"
-        with pytest.raises(MemoryError) as info:
+        with _poisoned() as info:
             con.execute("SELECT count(*) FROM small").fetchall()
-        assert type(info.value) is MemoryError and not str(info.value)
+        _assert_poison(info.value)
     finally:
         con.close()
 
 
-def test_the_observer_discards_a_connection_that_answers_an_empty_memory_error_and_latches_nothing(tmp_path, registry):
+def test_the_observer_discards_a_connection_the_last_overflow_page_poisoned_and_files_it_as_the_engine_answers(tmp_path, registry):
     path = tmp_path / "ov.db"
     _build_overflow(path, "last")
     eng, opened = _engine(path, observed=True, pool_size=1)
@@ -360,15 +433,62 @@ def test_the_observer_discards_a_connection_that_answers_an_empty_memory_error_a
         with eng.connect() as c:
             value = c.execute(text("SELECT v FROM ov WHERE id = 1")).scalar_one()
         assert value != _LONG  # the read that touched the page raised nothing
-        with pytest.raises(MemoryError):
+        with _poisoned() as paid:
             _healthy_read(eng)  # the one statement that pays, and it is the caller's own error
+        _assert_poison(paid.value)
         assert _healthy_read(eng) == 3, "the poisoned connection went back to the pool"
         assert len(opened) == 2
-        # an empty MemoryError names no file: a real allocation failure raises the same
-        assert not registry.latched(FILE_CORPUS)
-        assert registry.state()["incident_count"] == 0
+        if _poison_style() == "memory":
+            # an empty MemoryError names no file: a real allocation failure raises the same
+            assert not registry.latched(FILE_CORPUS)
+            assert registry.state()["incident_count"] == 0
+        else:
+            # a code-11 error is corruption: the file IS damaged, so it is latched, once, and the record keeps the class of the
+            # driver's error and none of its words (the statement that paid read a healthy table; the record says the file)
+            assert registry.latched(FILE_CORPUS)
+            assert registry.state()["incident_count"] == 1
+            _assert_incident_is_class_only(registry)
     finally:
         eng.dispose()
+
+
+def test_with_the_production_default_rereads_on_the_latch_of_a_last_page_poison_is_released_by_the_clean_reread(tmp_path, registry):
+    """What the process's own registry does (``rereads=True``; the suite turns it off): on SQLCipher 4.19 the statement that pays for a
+    damaged LAST overflow page raises corruption, the file is latched, and the automatic re-read of the tables that statement named reads
+    the HEALTHY one clean and releases the latch; the incident ends superseded, answered ``clean``. The statement that surfaced it is
+    not the damaged table, and the record does not say so (measured 2026-10-13, stated in docs/ledger/OPEN_QUEUE.md). On 4.12 nothing is
+    latched or recorded in the first place."""
+    import threading
+
+    from src.database import connect as connect_mod
+
+    path = tmp_path / "ov.db"
+    _build_overflow(path, "last")
+    rereads_before = registry.rereads
+    registry.rereads = True
+    before = connect_mod.get_passphrase()
+    connect_mod.set_passphrase(_KEY)  # the re-read opens the file as the process does
+    eng, _opened = _engine(path, observed=True, pool_size=1, url=True)
+    try:
+        with eng.connect() as c:
+            assert c.execute(text("SELECT v FROM ov WHERE id = 1")).scalar_one() != _LONG
+        with _poisoned() as paid:
+            _healthy_read(eng)
+        _assert_poison(paid.value)
+        for t in threading.enumerate():
+            if t.name in ("oo-database-reread", "oo-damage-record"):
+                t.join(30)
+        assert not registry.latched(FILE_CORPUS), "the clean re-read of the named table no longer releases the latch"
+        if _poison_style() == "memory":
+            assert registry.state()["incident_count"] == 0
+        else:
+            assert registry.state()["incident_count"] == 1
+            incident = next(i for i in registry.state(detail=True)["incidents"] if "answered_by" in i)
+            assert incident["superseded"] is True and incident["answered_by"] == "clean"
+    finally:
+        eng.dispose()
+        registry.rereads = rereads_before  # the suite's isolation fixture owns turning it off
+        connect_mod.set_passphrase(before)
 
 
 # -- the rule itself, on real driver errors and on stand-ins ----------------------------------------------------
@@ -553,8 +673,9 @@ def test_canary_a_raw_cursor_statement_on_a_damaged_page_poisons_the_pool_past_t
             with pytest.raises(sqc.DatabaseError):
                 raw.execute(_BAD_RANGE.replace(":lo", "1").replace(":hi", "900")).fetchall()
         assert not registry.latched(FILE_CORPUS), "the observer saw a raw statement: this canary is out of date"
-        with pytest.raises(MemoryError):
+        with _poisoned() as poisoned:
             _healthy_read(eng)
+        _assert_poison(poisoned.value)
     finally:
         eng.dispose()
 
@@ -678,7 +799,7 @@ def test_the_guard_names_no_file_for_an_engine_that_is_not_attached_but_still_di
         eng.dispose()
 
 
-def test_the_guard_discards_on_an_empty_memory_error_and_latches_nothing(tmp_path, registry):
+def test_the_guard_discards_a_connection_the_last_overflow_page_poisoned_and_files_it_as_the_engine_answers(tmp_path, registry):
     path = tmp_path / "ov.db"
     _build_overflow(path, "last")
     eng, opened = _engine(path, observed=True, pool_size=1, url=True)
@@ -686,12 +807,17 @@ def test_the_guard_discards_on_an_empty_memory_error_and_latches_nothing(tmp_pat
         with eng.connect() as c:
             raw = c.connection.dbapi_connection
             raw.execute("SELECT v FROM ov WHERE id = 1").fetchone()  # the silent read: poison for the next statement
-            with pytest.raises(MemoryError), damage.guard_raw_driver(c):
+            with _poisoned() as paid, damage.guard_raw_driver(c):
                 raw.execute("SELECT count(*) FROM small").fetchall()
+            _assert_poison(paid.value)
             assert c.invalidated
         assert _healthy_read(eng) == 3
         assert len(opened) == 2
-        assert not registry.latched(FILE_CORPUS) and registry.state()["incident_count"] == 0
+        if _poison_style() == "memory":
+            assert not registry.latched(FILE_CORPUS) and registry.state()["incident_count"] == 0
+        else:  # a code-11 error is corruption: the guard names the file and latches it, once
+            assert registry.latched(FILE_CORPUS) and registry.state()["incident_count"] == 1
+            _assert_incident_is_class_only(registry)
     finally:
         eng.dispose()
 

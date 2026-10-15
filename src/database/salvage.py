@@ -26,7 +26,8 @@ good and counted lost only when its own pages (an overflow chain) are not.
 
 AFTER A FAILED READ THE CONNECTION IS CLOSED AND OPENED AGAIN, always. Measured on SQLCipher: after the first
 page that fails its check, every later page read on that connection raises ``MemoryError`` (empty message,
-the text of a real out-of-memory), including reads of tables that are fine; only a new connection reads again,
+the text of a real out-of-memory; SQLCipher 4.19 raises the same code-11 corruption error again instead), including reads of
+tables that are fine; only a new connection reads again,
 at the price of one key derivation (0.2 to 0.4 s). A plaintext connection is not affected, and gets the same
 treatment because there is one code path.
 
