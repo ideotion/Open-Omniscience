@@ -52,7 +52,11 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
     "Untyped" = ``source_type`` is NULL or the bare default ``news`` (a curated
     non-default type is never touched). Refuses up front under airplane mode. Each
     source's failure is isolated (one bad lookup never aborts the batch). Returns
-    ``{"scanned", "sources_typed"}``.
+    ``{"scanned", "sources_typed", "sources_refused"}``: a source whose lookup was refused
+    because Wikidata redirected off its own host (``RedirectRefused``) is COUNTED, and the
+    result then also carries ``"refusal"``, the class name and nothing else (no URL), so a
+    refused pass reads differently from "Wikidata had no match". Any other failure of a
+    source is skipped as before.
     """
     # Defense in depth: refuse before any socket, so the refusal is testable offline.
     if kill_switch_active():
@@ -63,8 +67,10 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
     from src.database.models import Source
     from src.database.stand_in import not_a_stand_in_source
     from src.database.writer import write_lock
+    from src.safety.fetcher import RedirectRefused
 
     getter = get or _default_getter
+    refused = 0
     todo = (
         session.query(Source)
         # a stand-in source is no outlet: no lookup is made by its placeholder name, and no type is written onto it
@@ -87,6 +93,8 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
             )
             if row and row["source_type"] != s.source_type:
                 pending.append((s, row["source_type"]))
+        except RedirectRefused:
+            refused += 1  # not followed, and not silent: the tally and the class name go in the result
         except Exception:  # noqa: BLE001 - one source's failure never aborts the batch
             continue
 
@@ -94,4 +102,7 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
         for s, new_type in pending:
             s.source_type = new_type
         session.commit()
-    return {"scanned": len(todo), "sources_typed": len(pending)}
+    result: dict[str, Any] = {"scanned": len(todo), "sources_typed": len(pending), "sources_refused": refused}
+    if refused:
+        result["refusal"] = RedirectRefused.__name__
+    return result
