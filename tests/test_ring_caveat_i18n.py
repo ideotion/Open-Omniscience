@@ -38,7 +38,7 @@ def test_every_template_is_keyed_in_every_locale_with_its_placeholder_intact():
             assert have == re.findall(r"\{(\w+)\}", template), f"{path.name} changes the placeholders of {template[:50]!r}"
 
 
-LOCALE_FREE_TESTS = 12
+LOCALE_FREE_TESTS = 16
 
 
 def test_the_rendered_states_carry_the_caveat_in_every_locale():

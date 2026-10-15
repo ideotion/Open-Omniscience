@@ -452,7 +452,9 @@
     // The newest load's ticket: an answer that arrives after a newer group was picked (or the picker was cleared)
     // is dropped, so a slow response never paints over the group the reader chose last.
     let _ringSeq = 0;
-    let _ringCleared = false;  // the last call cleared the picker, so a draw that finishes late must leave the host empty
+    // What the host shows while no map is being drawn (empty after a clear, the loading line, not found, an error),
+    // so a draw that finishes late can put it back after the map it painted over it.
+    let _ringHostNote = "";
     function repaintRingMapFromCache() {
       const host = $("sg-ringmap");
       // _ringMapLast is non-null only while the host shows exactly that payload (it is cleared when another
@@ -473,18 +475,17 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
       const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
       if (!host) return;
-      if (!ringId) { _ringSeq++; _ringCleared = true; host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
+      if (!ringId) { _ringSeq++; _ringHostNote = ""; host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
       const ticket = cached ? _ringSeq : ++_ringSeq;
       if (!cached) {
-        _ringCleared = false;
         _ringMapLast = null;
-        host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        host.innerHTML = _ringHostNote = `<div class="muted">${esc(t("Loading…"))}</div>`;
         if (detail) detail.innerHTML = "";
       }
       try {
         const d = cached || await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
         if (ticket !== _ringSeq) return;  // a newer pick (or a cleared picker) owns the host now
-        if (!d.found) { host.innerHTML = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
+        if (!d.found) { host.innerHTML = _ringHostNote = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
         _ringMapLast = { ringId, d };
         const values = {}, names = {}; let unloc = null;
         (d.countries || []).forEach(c => {
@@ -534,7 +535,7 @@
           // picker): it must not write its detail, and whatever it painted into the host is put right.
           if (ticket !== _ringSeq) {
             if (_ringMapLast) showRingMap(_ringMapLast.ringId, _ringMapLast.d);
-            else if (_ringCleared) host.innerHTML = "";
+            else host.innerHTML = _ringHostNote;
             return;
           }
         }
@@ -573,7 +574,7 @@
       } catch (e) {
         if (ticket !== _ringSeq) return;  // the newer pick's own draw stands, not this late error
         _ringMapLast = null;  // the host now shows an error, not that payload: a language switch must not redraw it
-        host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
+        host.innerHTML = _ringHostNote = `<div class="muted">${esc(e && e.message || e)}</div>`;
       }
     }
     // §D: the shared country-cell drill -- exact article ids behind (ring, country),
