@@ -70,11 +70,19 @@ def _js_round(x: float) -> int:
     return int(x + 0.5)
 
 
-def _install_socket_tripwire() -> None:
-    """Refuse every non-loopback connection or name lookup for the rest of this process.
+#: Every refusal the tripwire made, as ``(what, host)``. The app's own code catches ``Exception`` around a fetch, so a refusal can
+#: be swallowed on the spot and the run would still print a plan; ``main`` reads this at the end and fails when it is not empty.
+REFUSALS: list[tuple[str, str]] = []
 
-    Covers the TCP path ``requests`` uses (``connect``, ``connect_ex``, ``getaddrinfo``, ``gethostbyname``) and the UDP
-    send calls. A host is local only if it IS a loopback address or ``localhost`` (not merely a name that starts with one).
+
+def _install_socket_tripwire() -> None:
+    """Refuse every non-loopback connection, datagram or name lookup for the rest of this process.
+
+    Covers the TCP path ``requests`` uses (``connect``, ``connect_ex``, ``getaddrinfo``, ``gethostbyname``), the UDP and message
+    send calls (``sendto``, ``sendmsg``) and the other name lookups (``gethostbyname_ex``, ``gethostbyaddr``, ``getnameinfo``).
+    ``create_connection`` resolves through ``getaddrinfo`` and connects through ``connect``, so it is covered by those two. A host
+    is local only if it IS a loopback address (an IPv4-mapped IPv6 address counts as the IPv4 address it wraps) or exactly
+    ``localhost``; a name that merely starts with one (``127.x.example``) is not.
     """
     import ipaddress
     import socket
@@ -86,12 +94,17 @@ def _install_socket_tripwire() -> None:
             return False
         if host == "localhost":
             return True
+        # a scope (``fe80::1%eth0``) belongs to an IPv6 literal only: on anything else the text after ``%`` is part of a NAME
+        text = host.split("%", 1)[0] if ":" in host else host
         try:
-            return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+            ip = ipaddress.ip_address(text)
         except ValueError:
             return False
+        mapped = getattr(ip, "ipv4_mapped", None)
+        return (mapped or ip).is_loopback
 
     def refuse(what: str, host) -> None:
+        REFUSALS.append((what, repr(host)))
         raise OSError(f"analytics45_generate: {what} {host!r} was refused; only the stand-in may answer")
 
     def guarded(fn, what, take_host):
@@ -108,24 +121,28 @@ def _install_socket_tripwire() -> None:
     def sendto_host(self, data, *a, **_kw):
         return None if self.family == socket.AF_UNIX else a[-1][0]
 
+    def sendmsg_host(self, buffers, ancdata=(), flags=0, address=None):
+        return None if (address is None or self.family == socket.AF_UNIX) else address[0]
+
     for name in ("connect", "connect_ex"):
         setattr(socket.socket, name, guarded(getattr(socket.socket, name), "a connection to", addr_host))
     socket.socket.sendto = guarded(socket.socket.sendto, "a datagram to", sendto_host)  # type: ignore[method-assign]
+    socket.socket.sendmsg = guarded(socket.socket.sendmsg, "a message to", sendmsg_host)  # type: ignore[method-assign]
 
-    real_lookup, real_byname = socket.getaddrinfo, socket.gethostbyname
+    def name_guard(real, what, take_host):
+        def wrapper(*a, **kw):
+            host = take_host(*a, **kw)
+            if not _is_local(host):
+                refuse(what, host)
+            return real(*a, **kw)
+        return wrapper
 
-    def lookup(host, *a, **kw):
-        if not _is_local(host):
-            refuse("a name lookup for", host)
-        return real_lookup(host, *a, **kw)
-
-    def byname(host):
-        if not _is_local(host):
-            refuse("a name lookup for", host)
-        return real_byname(host)
-
-    socket.getaddrinfo = lookup  # type: ignore[assignment]
-    socket.gethostbyname = byname  # type: ignore[assignment]
+    first = lambda host, *_a, **_kw: host  # noqa: E731
+    socket.getaddrinfo = name_guard(socket.getaddrinfo, "a name lookup for", first)  # type: ignore[assignment]
+    socket.gethostbyname = name_guard(socket.gethostbyname, "a name lookup for", first)  # type: ignore[assignment]
+    socket.gethostbyname_ex = name_guard(socket.gethostbyname_ex, "a name lookup for", first)  # type: ignore[assignment]
+    socket.gethostbyaddr = name_guard(socket.gethostbyaddr, "a reverse lookup for", first)  # type: ignore[assignment]
+    socket.getnameinfo = name_guard(socket.getnameinfo, "a reverse lookup for", lambda sockaddr, *_a, **_kw: sockaddr[0])  # type: ignore[assignment]
 
 
 def main() -> int:
@@ -344,6 +361,8 @@ def main() -> int:
             problems.append(f"top list {code}: the stored list differs from the plan")
     if sorted(refreshed) != sorted(world.tops):
         problems.append(f"pageview refresh reached {sorted(refreshed)}, plan {sorted(world.tops)}")
+    if REFUSALS:  # the app's own code catches Exception around a fetch, so a refusal it swallowed is only visible here
+        problems.append(f"the tripwire refused {len(REFUSALS)} call(s): {REFUSALS[:5]}")
     if problems:
         print(json.dumps({"problems": problems}, indent=1), file=sys.stderr)
         return 3

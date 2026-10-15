@@ -143,31 +143,78 @@ def test_the_session_answers_two_apis_and_refuses_everything_else_loudly():
         s.get("https://en.wikipedia.org/w/api.php", params={"action": "query", "prop": "revisions"})
 
 
-def test_the_generator_refuses_a_remote_connection_and_a_used_data_directory(tmp_path):
-    code = (
-        "import sys, socket; sys.path.insert(0, 'scripts'); import analytics45_generate as g; g._install_socket_tripwire()\n"
-        "for fn in (lambda: socket.getaddrinfo('example.org', 443), lambda: socket.socket().connect(('93.184.216.34', 443))):\n"
+_TRIP = "import sys, socket; sys.path.insert(0, 'scripts'); import analytics45_generate as g; g._install_socket_tripwire()\n"
+
+
+def _probe(body: str) -> list[str]:
+    done = subprocess.run([sys.executable, "-c", _TRIP + body], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-1500:]
+    return done.stdout.split()
+
+
+def test_the_tripwire_lets_exactly_the_loopback_through():
+    """Allowed: any 127/8 address, ::1, the name ``localhost``, and ::ffff:127.0.0.1 (an IPv4-mapped loopback). Each goes through
+    the wrapped call itself; one that is refused here prints REFUSED, so a refuse-everything tripwire fails this test."""
+    body = (
+        "def attempt(fn):\n"
         "    try: fn()\n"
-        "    except OSError as e: print('refused', 'analytics45_generate' in str(e))\n"
-        "    else: print('REACHED')\n"
-        "s = socket.socket(); s.bind(('127.0.0.1', 0)); print('loopback ok')\n"
+        "    except OSError as e: print('REFUSED' if 'analytics45_generate' in str(e) else 'ok')\n"
+        "    else: print('ok')\n"
+        "for h in ('127.0.0.2', 'localhost'):\n"
+        "    attempt(lambda h=h: socket.getaddrinfo(h, 80))\n"
+        "    attempt(lambda h=h: socket.gethostbyname(h))\n"
+        "attempt(lambda: socket.getaddrinfo('::1', 80))\n"
+        "attempt(lambda: socket.getaddrinfo('::ffff:127.0.0.1', 80))\n"
+        "attempt(lambda: socket.getnameinfo(('127.0.0.1', 80), 0))\n"
+        "s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(1); port = s.getsockname()[1]\n"
+        "c = socket.socket(); attempt(lambda: c.connect(('127.0.0.1', port)))\n"
+        "c2 = socket.socket(); attempt(lambda: c2.connect_ex(('127.0.0.1', port)))\n"
+        "u = socket.socket(type=socket.SOCK_DGRAM); attempt(lambda: u.sendto(b'x', ('127.0.0.1', port)))\n"
+        "attempt(lambda: u.sendmsg([b'x'], [], 0, ('127.0.0.1', port)))\n"
     )
-    done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=60)
-    assert done.stdout.split() == ["refused", "True", "refused", "True", "loopback", "ok"], done.stdout + done.stderr
-    more = (
-        "import sys, socket; sys.path.insert(0, 'scripts'); import analytics45_generate as g; g._install_socket_tripwire()\n"
-        "for fn in (lambda: socket.socket().connect_ex(('93.184.216.34', 443)), lambda: socket.gethostbyname('example.org'),\n"
-        "           lambda: socket.getaddrinfo('localhost.evil.example', 80), lambda: socket.socket(type=socket.SOCK_DGRAM).sendto(b'x', ('93.184.216.34', 53))):\n"
+    out = _probe(body)
+    assert out == ["ok"] * len(out) and len(out) == 11, out
+
+
+def test_the_tripwire_refuses_everything_that_is_not_the_loopback():
+    """Refused: a public IPv4 and IPv6, an IPv4-mapped public address, a NAME that starts like a loopback or carries a ``%``
+    after it (the scope is stripped from IPv6 literals only), every wrapped lookup and send, and ``create_connection`` to a
+    public host. The tripwire's own count of refusals must match what was refused."""
+    body = (
+        "n = 0\n"
+        "def attempt(fn):\n"
+        "    global n\n"
         "    try: fn()\n"
-        "    except OSError as e: print('refused' if 'analytics45_generate' in str(e) else 'OTHER')\n"
+        "    except OSError as e: print('refused' if 'analytics45_generate' in str(e) else 'OTHER ' + str(e))\n"
         "    else: print('REACHED')\n"
+        "for h in ('93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946', '::ffff:93.184.216.34', '127.x.example',\n"
+        "          '127.0.0.1%x.example', 'localhost.evil.example', '2130706433'):\n"
+        "    attempt(lambda h=h: socket.getaddrinfo(h, 80))\n"
+        "attempt(lambda: socket.gethostbyname('example.org'))\n"
+        "attempt(lambda: socket.gethostbyname_ex('example.org'))\n"
+        "attempt(lambda: socket.gethostbyaddr('93.184.216.34'))\n"
+        "attempt(lambda: socket.getnameinfo(('93.184.216.34', 80), 0))\n"
+        "attempt(lambda: socket.socket().connect(('93.184.216.34', 443)))\n"
+        "attempt(lambda: socket.socket().connect_ex(('93.184.216.34', 443)))\n"
+        "attempt(lambda: socket.socket(type=socket.SOCK_DGRAM).sendto(b'x', ('93.184.216.34', 53)))\n"
+        "attempt(lambda: socket.socket(type=socket.SOCK_DGRAM).sendmsg([b'x'], [], 0, ('93.184.216.34', 53)))\n"
+        "attempt(lambda: socket.create_connection(('example.org', 443), timeout=2))\n"
+        "print(len(g.REFUSALS))\n"
     )
-    done = subprocess.run([sys.executable, "-c", more], cwd=ROOT, capture_output=True, text=True, timeout=60)
-    assert done.stdout.split() == ["refused"] * 4, done.stdout + done.stderr
-    # main() must install it before anything runs: deleting the call would leave the tests above green
+    out = _probe(body)
+    assert out[:-1] == ["refused"] * 16, out
+    assert int(out[-1]) >= 16, "the tripwire must count what it refused so the run can assert it is 0"
+
+
+def test_the_run_fails_when_the_tripwire_refused_anything_even_if_the_app_swallowed_it():
     src = (ROOT / "scripts" / "analytics45_generate.py").read_text(encoding="utf-8")
+    assert "if REFUSALS:" in src.split("def main() -> int:", 1)[1]
+    # main() must install it before anything runs: deleting the call would leave the tests above green
     main_body = src.split("def main() -> int:", 1)[1]
     assert main_body.index("_install_socket_tripwire()") < main_body.index("init_db()")
+
+
+def test_the_generator_refuses_a_used_data_directory(tmp_path):
     (tmp_path / "x").write_text("a store someone uses")
     env = {**os.environ, "OO_DATA_DIR": str(tmp_path)}
     env.pop("DATABASE_URL", None)
