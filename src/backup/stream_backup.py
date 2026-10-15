@@ -87,6 +87,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import is_driver_error, log_failure
 
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
@@ -662,19 +663,41 @@ def _drain_wal(db_path: Path) -> Path | None:
     waits for readers up to the pooled connection's busy timeout (one wait, not sixty retries),
     re-read after each try until ``_CHECKPOINT_WAIT_S``; a call that raised ends the retrying."""
     wal = db_path.with_name(db_path.name + "-wal")
-    if _wal_complete(db_path, _wal_row("PASSIVE")):
+    started = time.monotonic()
+    passive = _wal_row("PASSIVE")
+    if _wal_complete(db_path, passive):
+        _journal_drain(passive, None, 0, started)
         return None
     deadline = time.monotonic() + _CHECKPOINT_WAIT_S
+    tries = 0
     while True:
         row = _wal_row("TRUNCATE")
+        tries += 1
         if _wal_complete(db_path, row):
+            _journal_drain(passive, row, tries, started)
             return None
         if row is None or time.monotonic() >= deadline:
             _LOG.info(
                 "backup: the main file is not a complete image (checkpoint row %s)", row
             )
+            _journal_drain(passive, row, tries, started, failed=row is None)
             return wal
         time.sleep(0.5)
+
+
+def _journal_drain(passive: Any, truncate: Any, tries: int, started: float, *, failed: bool = False) -> None:
+    """Keep the backup's checkpoint in the storage-events journal as ONE event (the PASSIVE row, the last TRUNCATE row, how many
+    TRUNCATE tries and the seconds), not one per retry: a backup that waits for a reader would otherwise fill the journal's ten places
+    by itself. Never raises."""
+    storage_events.note_checkpoint(
+        "backup",
+        passive=passive,
+        truncate=truncate,
+        seconds=time.monotonic() - started,
+        outcome="failed" if failed else "done",  # ``failed``: the TRUNCATE itself raised (``_wal_row`` swallowed it and answered None)
+        error="the TRUNCATE gave no row" if failed else None,
+        extra={"truncate_tries": tries},
+    )
 
 
 def _logical_db_bytes(path: Path) -> int:

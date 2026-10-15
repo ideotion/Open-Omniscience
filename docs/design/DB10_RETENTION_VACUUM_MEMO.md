@@ -167,7 +167,7 @@ Each option above is ruling-gated on numbers the app can already produce (all re
 
 | To decide | Measure | Where |
 |---|---|---|
-| §1 auto_vacuum urgency | freelist growth over time (`free_bytes`), and whether it's a growing fraction of `db_bytes` | `storage_composition` (`free_bytes`, now `auto_vacuum` — §7) |
+| §1 auto_vacuum urgency | freelist growth over time (`free_bytes`), and whether it's a growing fraction of `db_bytes` | `storage_composition` (`free_bytes`, renamed `freelist_bytes` on 2026-10-13 because it is the freelist and not the drive; now `auto_vacuum` — §7) |
 | §1b page_size | 4K vs 16K range-scan p95 on an ENCRYPTED corpus | the GAMMA harness (`scale_bench`, operator) |
 | §2 VACUUM gating threshold | `db_bytes` at which VACUUM's ~2× scratch/time is infeasible | `storage_composition` `db_bytes` |
 | §4 tiered retention worth | raw `articles.content` bytes vs index/mention bytes | `storage_composition` per-table `dbstat` (available when the build has `SQLITE_ENABLE_DBSTAT_VTAB`) |
@@ -185,7 +185,7 @@ build, or reads the PRAGMA totals which work everywhere).
 `storage_composition` now also reports **`auto_vacuum`** (`none` / `full` / `incremental`) — the
 central §1 fact made visible in the live diagnostic: an operator (and a future field export) can
 SEE whether the corpus is on the reclaimable path at all. When `auto_vacuum=none` and there are
-freelist bytes, a `free_bytes_note` states plainly that those bytes are reclaimable ONLY by a
+freelist bytes, a `free_bytes_note` (now `freelist_bytes_note`) states plainly that those bytes are reclaimable ONLY by a
 full VACUUM (infeasible at scale) and points here. No score, no recommendation — a fact.
 
 That is the only code DB-10 ships. The seam (§1), the incremental-vacuum pass (§3), the

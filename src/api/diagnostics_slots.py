@@ -102,6 +102,14 @@ class Slot:
 #:     method); the per-table lists of a real check come on top, so 40,000 is about 2.5 times the measured part
 #:     and ``test_the_damage_budget_holds_a_full_record_twice_over`` holds the two together. Over it the oldest
 #:     incidents go first and then the check's table lists, and the member says each.
+#:   * ``storage-events`` 90,000: MEASURED at the journal's full retention (``storage_events.KEEP``: 20 holds of the write gate, 10 each
+#:     of guard engagements, checkpoints, notable checkpoints, store opens and pool timeouts) with the events the hooks write, the
+#:     checkpoints with the reader snapshot ``hygiene`` hands every one of them: 38,578 bytes with ordinary names, 83,288 with every thread,
+#:     route and frame name at the 160-character cut (the longest ``_clean`` lets through), of which 2,353 is the fixed part (each figure moves by a byte or two with the width of the process id every event carries). 90,000 is
+#:     8 per cent above the second. The hard ceiling is 70 events at
+#:     ``MAX_EVENT_BYTES`` (3,000), about 212 KB, and a member over its budget drops the OLDEST events of its largest kind and says how
+#:     many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut. ``test_the_storage_events_budget_holds_a_full_journal``
+#:     rebuilds both measurements and holds them to this number.
 #:   * ``keyword-pipeline`` 60,000, the one not built yet, is its owner's FIRST ESTIMATE, to be replaced by a
 #:     measurement when it lands (the budget is one line here, never in ``bundle.py``).
 SLOTS: tuple[Slot, ...] = (
@@ -114,10 +122,13 @@ SLOTS: tuple[Slot, ...] = (
     Slot("boots.json", "src.monitoring.boots:diagnostics_member", "RC", 30_720, "sessions"),
     # WAL's damage record (built), then the owner's record not built yet, listed as ``not-in-build`` until its module exists.
     Slot("database-damage.json", "src.database.damage:diagnostics_member", "WAL", 40_000, "database"),
+    # WAL's events behind the instant (built): holds of the write gate of 30 s or more, guard engagements, every checkpoint, each opening of
+    # the store with its init_db slowest steps, and the pool's checkout timeouts, each kind with its total and what it dropped.
+    Slot("storage-events.json", "src.monitoring.storage_events:diagnostics_member", "WAL", 90_000, "database"),
     Slot("keyword-pipeline.json", "src.analytics.keyword_pipeline:diagnostics_member", "keyword", 60_000, "keywords"),
 )
 
-#: The most the slot members can add together, in raw JSON. A cap on the budgets (their sum is 470,720 at
+#: The most the slot members can add together, in raw JSON. A cap on the budgets (their sum is 560,720 at
 #: this head), not a size of any zip: at the first measure's 4.6 to 1 it is about 130 KB zipped of a part
 #: of 4,000,000 bytes, which is what it protects (room for the members that are not slots).
 TOTAL_BUDGET_BYTES = 600_000
@@ -134,7 +145,7 @@ TOTAL_BUDGET_BYTES = 600_000
 #: when those members are measured;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 470,720 with all six rows and the free room about 1.9 MB, so a row can grow by that much before
+#: 560,720 with all seven rows and the free room about 1.9 MB, so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
 OTHER_NEW_MEMBERS_BYTES = 919_000

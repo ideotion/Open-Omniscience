@@ -893,13 +893,16 @@ _SLOT_PRODUCER_MODULES = (
     "src/monitoring/session_hwm.py",
     "src/database/damage.py",
     "src/monitoring/boots.py",
+    "src/monitoring/storage_events.py",
 )
 #: What each may hand a caught exception to: ``failure_label`` is the class and the errno name, never the message; ``_error_text`` is
 #: ``exception_text`` with the paths tokenised and then cut; ``note_raw_driver_error`` hands the exception to the damage registry, which
-#: keeps ``corruption_of``'s fixed label or ``failure_label`` (the registry's own tests hold that).
+#: keeps ``corruption_of``'s fixed label or ``failure_label`` (the registry's own tests hold that); the storage-events journal's ``_label``
+#: is the class and the errno name, and its ``_internal_failure`` keeps that label and logs the failure through ``log_failure``.
 _SLOT_PRODUCER_SCRUBS = {
     "src/database/damage.py": {"failure_label", "note_raw_driver_error"},
     "src/monitoring/boots.py": {"_error_text"},
+    "src/monitoring/storage_events.py": {"_label", "_internal_failure"},
 }
 #: A line the guard reports in these modules that is not a leak, with why. Keyed like :data:`_BUNDLE_ALLOWED`: by (the module, the
 #: function the line stands in, the line's text) with the NUMBER of hits it excuses. The same text copied into another function (a raw

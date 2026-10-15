@@ -41,6 +41,7 @@ from pathlib import Path
 # INSIDE the try would be unbound for any failure raised before that line --
 # turning a real error into a NameError from the handler.
 from src.database.writer import WriteGateBusy
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("scheduler.hygiene")
@@ -235,6 +236,12 @@ def checkpoint_wal(
 ) -> dict | None:
     """Run ``PRAGMA wal_checkpoint(TRUNCATE)`` at a pass boundary, measured.
 
+    Every checkpoint that ran, was refused or failed is also kept in the storage-events journal (``storage_events.note_checkpoint``),
+    under who asked: ``boundary`` for the scheduler's pass boundary, ``guard`` when the storage guard's drain wrapped the call in
+    ``storage_events.checkpoint_trigger("guard")``, and ``forced`` for any other ``force=True`` call (the restore's checkpoint before
+    the swap is the one in the app). A context, not a parameter, so every caller and every test double of this function keeps its
+    signature.
+
     Serialised through ``write_lock()`` (the same gate every writer takes), so
     it can NEVER run beside a gated writer — it queues behind one instead.
     S2.5: that queue is now BOUNDED (``OO_CKPT_GATE_TIMEOUT_S``, 30 s; a caller
@@ -260,6 +267,9 @@ def checkpoint_wal(
     failure path here, and visible in the returned record rather than silent.
     """
     global _LAST_CKPT_MONO
+    trigger = storage_events.current_trigger()
+    if force and trigger == "boundary":
+        trigger = "forced"
     gate_timeout = _ckpt_gate_timeout_s() if gate_timeout_s is None else gate_timeout_s
     if not wal_checkpoint_enabled():
         return None
@@ -360,6 +370,15 @@ def checkpoint_wal(
             "readers": _reader_snapshot(),
         }
         _LOG.info("wal checkpoint(TRUNCATE): %s", out)
+        storage_events.note_checkpoint(
+            trigger,
+            passive=(p_busy, p_log, p_ckpt) if passive_row else None,
+            truncate=(busy, log_frames, ckpt_frames) if row else None,
+            seconds=duration_ms / 1000.0,
+            wal_before=bytes_before,
+            wal_after=bytes_after,
+            readers=out["readers"],
+        )
         return out
     except WriteGateBusy as exc:
         # S2.5: NOT a failure -- another writer holds the gate, so the WAL stays
@@ -368,6 +387,7 @@ def checkpoint_wal(
         # "disabled / not due"): a checkpoint that could not run and one that was
         # never asked to run are opposite facts.
         log_failure(_LOG, "wal checkpoint skipped", exc, level=logging.WARNING)
+        storage_events.note_checkpoint(trigger, outcome="skipped", seconds=gate_timeout, error=type(exc).__name__)
         return {
             "skipped": "gate busy",
             "detail": type(exc).__name__,
@@ -375,6 +395,7 @@ def checkpoint_wal(
         }
     except Exception as exc:  # noqa: BLE001 - hygiene must never break the run loop
         log_failure(_LOG, "wal checkpoint failed; run loop continues", exc, level=logging.WARNING)
+        storage_events.note_checkpoint(trigger, outcome="failed", error=type(exc).__name__)
         if errors is not None:
             errors.append(type(exc).__name__)
         return None

@@ -411,27 +411,43 @@ def _callee_names(stmt):
     return out
 
 
-#: Calls that are not steps: the logger line and the dict read that follow a step (``_LOG.info``, ``_stamp.get``).
-_NOT_A_STEP = {"info", "get"}
+def _callee_key(call):
+    """``(owner, name)`` of a call: ``_LOG.info(...)`` is ``("_LOG", "info")``, ``f(...)`` is ``(None, "f")``, and a call on anything
+    that is not a plain name (``a.b.get(...)``, ``f().get(...)``) has no owner, so it can never pass for the two lines below."""
+    f = call.func
+    if isinstance(f, ast.Name):
+        return None, f.id
+    if isinstance(f, ast.Attribute):
+        return (f.value.id if isinstance(f.value, ast.Name) else None), f.attr
+    return None, None
+
+
+#: The two calls that are not steps: the logger line and the dict read that follow ``align_stamp_to_head`` (``_LOG.info``,
+#: ``_stamp.get``), by OWNER and name. They used to be skipped by name alone, which let ``session.get(Model, 1)`` or any other
+#: ``.info()`` / ``.get()`` that does real work through unnamed.
+_NOT_A_STEP = {("_LOG", "info"), ("_stamp", "get")}
 
 
 def _label_of(stmt):
-    """What a top-level statement of ``init_db`` is, for the name that must precede it, or None when it is not a step."""
-    if isinstance(stmt, ast.ImportFrom):
-        return "import:" + (stmt.module or "").split(".")[-1]
-    if isinstance(stmt, ast.Import):
-        return "import:" + stmt.names[0].name.split(".")[-1]
-    called = [n for n in _callee_names(stmt) if n not in _NOT_A_STEP]
-    return called[0] if called else None
+    """What a top-level statement of ``init_db`` is, for the name that must precede it, or None when it is not a step. An import
+    or a call ANYWHERE inside the statement counts (an ``if`` or a ``try`` around a bare import is still an import that costs
+    time), and the first one in source order names it."""
+    found = []
+    for i, node in enumerate(ast.walk(stmt)):
+        if isinstance(node, ast.ImportFrom):
+            found.append((node.lineno, node.col_offset, i, "import:" + (node.module or "").split(".")[-1]))
+        elif isinstance(node, ast.Import):
+            found.append((node.lineno, node.col_offset, i, "import:" + node.names[0].name.split(".")[-1]))
+        elif isinstance(node, ast.Call):
+            key = _callee_key(node)
+            if key[1] and key not in _NOT_A_STEP:
+                found.append((node.lineno, node.col_offset, i, key[1]))
+    return min(found)[3] if found else None
 
 
-def test_every_step_init_db_runs_is_named_before_it_runs():
-    """A step with no name is charged to the one before it, which is the misattribution this module exists to
-    stop: the cold-process cost of an import landing on the step that happened to run first. So EVERY top-level
-    statement of ``init_db`` that imports or calls anything (the logger line and a dict read apart) is preceded by
-    ``_init_step("<its own name>")``, and every name is followed by the thing it names. A later ``repair_x(engine)`` or
-    a plain ``import foo`` fails here too. A name used twice takes a suffix after a colon."""
-    fn = _init_db_function_ast()
+def _naming_problems(fn):
+    """Everything wrong with how the statements of a function body are named, as sentences (empty when it is right)."""
+    problems: list[str] = []
     pending: str | None = None
     named: list[str] = []
     for stmt in fn.body:
@@ -441,26 +457,104 @@ def test_every_step_init_db_runs_is_named_before_it_runs():
             and getattr(stmt.value.func, "id", None) == "_init_step"
         ):
             args = stmt.value.args
-            assert len(args) == 1 and isinstance(args[0], ast.Constant) and isinstance(args[0].value, str)
-            assert pending is None, f"the name {pending!r} is followed by another name, not by what it names"
+            if not (len(args) == 1 and isinstance(args[0], ast.Constant) and isinstance(args[0].value, str)):
+                problems.append(f"line {stmt.lineno}: a name is one string literal")
+                continue
+            if pending is not None:
+                problems.append(f"the name {pending!r} is followed by another name, not by what it names")
             pending = args[0].value
             continue
         label = _label_of(stmt)
         if label is None:
-            assert pending is None, f"the name {pending!r} is followed by a statement that is not a step"
+            if pending is not None:
+                problems.append(f"the name {pending!r} is followed by a statement that is not a step")
+                pending = None
             continue
-        assert pending is not None, f"{label!r} (line {stmt.lineno} of init_db) runs unnamed"
-        assert pending == label or pending.startswith(label + ":"), f"{label!r} runs under the name {pending!r}"
+        if pending is None:
+            problems.append(f"{label!r} (line {stmt.lineno} of init_db) runs unnamed")
+            continue
+        if not (pending == label or pending.startswith(label + ":")):
+            problems.append(f"{label!r} runs under the name {pending!r}")
         named.append(pending)
         pending = None
-    assert pending is None, f"the last name, {pending!r}, names nothing"
-    assert len(named) == len(set(named)), "a step name is used once, so a record can say WHICH of two it was"
+    if pending is not None:
+        problems.append(f"the last name, {pending!r}, names nothing")
+    if len(named) != len(set(named)):
+        problems.append("a step name is used once, so a record can say WHICH of two it was")
+    return problems
 
+
+def test_every_step_init_db_runs_is_named_before_it_runs():
+    """A step with no name is charged to the one before it, which is the misattribution this module exists to
+    stop: the cold-process cost of an import landing on the step that happened to run first. So EVERY top-level
+    statement of ``init_db`` that imports or calls anything (the logger line and the dict read apart) is preceded by
+    ``_init_step("<its own name>")``, and every name is followed by the thing it names. A later ``repair_x(engine)`` or
+    a plain ``import foo`` fails here too, and so does one inside an ``if`` or a ``try``. A name used twice takes a suffix
+    after a colon."""
+    fn = _init_db_function_ast()
+    assert _naming_problems(fn) == []
+    named = [
+        stmt.value.args[0].value
+        for stmt in fn.body
+        if isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and getattr(stmt.value.func, "id", None) == "_init_step"
+    ]
     ensures = {n.split(":")[0] for n in named if n.startswith("ensure_")}
     called = {n for stmt in fn.body for n in _callee_names(stmt) if n.startswith("ensure_")}
     assert ensures == called and len(ensures) >= 30, "a name for every self-heal init_db calls, and nothing else"
     assert "ensure_derived_views:after_align" in named and "ensure_derived_views" in named
     assert named[0] == "import:models" and named[-1] == "ensure_derived_views:after_align"
+
+
+def _problems_after(old: str, new: str, *, count: int = 1):
+    """The naming problems of the real ``init_db`` with ``old`` replaced by ``new`` in its source (a mutant)."""
+    from src.database.session import init_db
+
+    source = textwrap.dedent(inspect.getsource(init_db))
+    assert source.count(old) >= 1, f"the mutant's anchor is gone from init_db: {old!r}"
+    mutant = source.replace(old, new, count)
+    tree = ast.parse(mutant)
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "init_db")
+    return _naming_problems(fn)
+
+
+@pytest.mark.parametrize(
+    "mutant",
+    [
+        # a bare import inside an ``if`` and inside a ``try``: the guard used to read only top-level imports
+        '    if _LOG:\n        import json\n    _init_step("create_all")',
+        '    try:\n        from json import dumps\n    except ImportError:\n        pass\n    _init_step("create_all")',
+        # a call that is called ``get`` or ``info`` and does real work: the guard used to skip any call with those names
+        '    session_probe = engine.get("x")\n    _init_step("create_all")',
+        '    engine.info("x")\n    _init_step("create_all")',
+        # a plain unnamed call and a second import
+        '    repair_something(engine)\n    _init_step("create_all")',
+    ],
+    ids=["import-in-if", "import-in-try", "unnamed-get", "unnamed-info", "unnamed-call"],
+)
+def test_the_naming_guard_catches_what_it_used_to_let_through(mutant):
+    """MUTATION TESTS of the guard itself (the coordinator's two lows on #1372): each mutant adds one unnamed thing before
+    ``create_all`` and must be reported."""
+    problems = _problems_after('    _init_step("create_all")', mutant)
+    assert problems, f"the guard let this through: {mutant!r}"
+
+
+def test_a_named_import_inside_an_if_is_clean():
+    """The other direction, so the guard cannot be satisfied by refusing everything: the same ``if`` around an import, with its
+    name before it, passes."""
+    named = '    _init_step("import:json")\n    if _LOG:\n        import json\n    _init_step("create_all")'
+    assert _problems_after('    _init_step("create_all")', named) == []
+
+
+def test_the_two_lines_that_are_not_steps_stay_unnamed():
+    """The guard's one allowance is exact: the logger line and the dict read that follow ``align_stamp_to_head``."""
+    assert _label_of(ast.parse('_LOG.info("x")').body[0]) is None
+    assert _label_of(ast.parse('if _stamp.get("action") == "advanced":\n    _LOG.info("x", _stamp.get("from"))').body[0]) is None
+    assert _label_of(ast.parse('session.get(Model, 1)').body[0]) == "get"
+    assert _label_of(ast.parse('a.b.get(1)').body[0]) == "get", "a call on a dotted owner is not the dict read"
+    assert _label_of(ast.parse('logging.getLogger("x").info("y")').body[0]) == "info", "the outermost call names it; it has no owner"
+    assert _label_of(ast.parse('if flag:\n    import json').body[0]) == "import:json"
 
 
 def test_init_db_records_every_step_and_the_steps_account_for_the_call():
