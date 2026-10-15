@@ -156,7 +156,7 @@ def refusal_token(exc: BaseException) -> str:
     line to retry.
 
     CLASSIFIED BY SHAPE, WITHOUT IMPORTING ``requests``. This module opens no socket, and
-    importing an HTTP library for three exception types would put it on the socket-importer
+    importing an HTTP library for these few exception types would put it on the socket-importer
     allowlist (``tests/test_network_consent.py``) that exists to list the modules that CAN
     reach the network. Every ``requests`` exception is an ``OSError`` (its base class derives
     from ``IOError``), an HTTP refusal is the one carrying a response with a status, and a

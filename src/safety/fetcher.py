@@ -144,7 +144,8 @@ def refuse_unlisted_host(url: str, allowed: tuple[str, ...]) -> None:
     older releases ``pyproject`` still allows to the one ``urllib3`` reads, so a list compared with only one of them would be a list
     for whichever client version it was written against. ``EthicalFetcher._refuse_parser_mismatch`` runs first and refuses outright a
     URL the two read differently (a backslash or whitespace in the authority, a ``%`` in the host, two readings of one name), which
-    also names the cause; the comparison below does not rely on that call staying in place. A user name or password, a port other
+    also names the cause. The scheme, user-information, port and host comparisons below do not rely on that call staying in place; the
+    refusals of a ``%`` in the host and of a host that cannot be IDNA-encoded do, and exist only there. A user name or password, a port other
     than 443 and a scheme other than https are refused too: no endpoint a session with a list talks to redirects there, so a hop that
     does is not one of its own. ``allowed`` holds hosts and leading-dot suffixes (:func:`_checked_hosts`)."""
     try:
