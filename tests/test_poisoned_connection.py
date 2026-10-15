@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 import random
 import sqlite3
 import types
@@ -141,6 +142,14 @@ def _poison_style() -> str:
         finally:
             con.close()
     pytest.fail("the statement after a damaged page raised something that is neither an empty MemoryError nor a code-11 DatabaseError")
+
+
+def test_the_floor_leg_still_sees_the_memory_style_poison():
+    """THE FLOOR LEG'S GUARD: ``_poison_style()`` accepts either engine's answer, so on its own the blocking ``sqlcipher-engines`` floor leg would
+    pass if sqlcipher3 0.6.2 stopped poisoning the 4.12 way. The job sets ``OO_EXPECT_SQLCIPHER_ENGINE=floor`` there and this fails then."""
+    if os.environ.get("OO_EXPECT_SQLCIPHER_ENGINE") != "floor":
+        pytest.skip("not the floor leg of the sqlcipher-engines job")
+    assert _poison_style() == "memory", "the floor engine no longer poisons a connection with an empty MemoryError"
 
 
 def _poisoned():

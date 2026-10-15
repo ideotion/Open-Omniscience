@@ -609,6 +609,9 @@ jobs:
           PY
 
       - name: Test (the files that run a real damaged store through the engine)
+        env:
+          # The floor leg must STILL see the 4.12 behaviours the floor exists to cover (tests/test_sqlcipher_engine_compat.py).
+          OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}
         run: >-
           python -m pytest -q
           tests/test_poisoned_connection.py tests/test_database_verify_pages.py tests/test_sqlcipher_engine_compat.py

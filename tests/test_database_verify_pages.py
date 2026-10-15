@@ -328,6 +328,14 @@ def test_the_list_of_tables_carries_the_generic_code_when_it_could_not_be_read_a
         assert other["error"][0] == VERDICT_UNCHECKED and "sqlite_code" not in other, (message, other)
 
 
+def test_the_floor_leg_still_has_a_real_unchecked_page(real_unchecked_page):
+    """THE FLOOR LEG'S GUARD: ``real_unchecked_page`` falls back to a stand-in when the engine has none, so the blocking floor leg would pass
+    without ever running the real ``unchecked`` path. The ``sqlcipher-engines`` job sets ``OO_EXPECT_SQLCIPHER_ENGINE=floor`` there."""
+    if os.environ.get("OO_EXPECT_SQLCIPHER_ENGINE") != "floor":
+        pytest.skip("not the floor leg of the sqlcipher-engines job")
+    assert real_unchecked_page is not None, "the floor engine no longer gives a page whose table check answers unchecked (generic error)"
+
+
 def test_the_engines_answers_for_a_damaged_page_are_the_ones_the_module_knows(base, tmp_path):
     """The qualification of a new engine, as a test: every page of ``articles`` overwritten, one at a time, and the table check answers
     ``damaged``, ``ok`` (a page nothing reads) or ``unchecked`` WITH the generic code, never a third thing. SQLCipher 4.12 answers
