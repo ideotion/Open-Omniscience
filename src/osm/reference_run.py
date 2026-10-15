@@ -101,10 +101,13 @@ DEFAULT_FLOOR_FACTOR = 2.0
 #: worst case (the country is nearly all of it, as the United States is of North America's), not the expected one.
 OSM_DB_PER_PBF_BYTE_LOW = 6.0
 OSM_DB_PER_PBF_BYTE_HIGH = 7.5
-#: Above 512 MiB the pyosmium reader keeps node locations in a file, 16 bytes a node, and a real extract holds about 0.11
-#: nodes a byte (Liechtenstein 65.7 k nodes in 593 KB, Utrecht 1.16 M in 11.8 MB): up to 16 x 0.11 = 1.8 bytes per extract
-#: byte while the cut runs, rounded up to 2. The file is deleted when the ingest ends, so it counts toward the PEAK only.
-LOCATION_INDEX_BYTES_PER_PBF_BYTE = 2.0
+#: Above 512 MiB the pyosmium reader keeps node locations in a file, and a real extract holds about 0.11 nodes a byte
+#: (Liechtenstein 65.7 k nodes in 593 KB, Utrecht 1.16 M in 11.8 MB). Forcing the file on the 16 x Utrecht composite
+#: measured +473 MB of peak disk for 18.5 M nodes, about 26 bytes a node (more than the 16 of the entries themselves): 26 x
+#: 0.11 = 2.9 bytes per extract byte while the cut runs, rounded up to 3. The file is deleted when the ingest ends, so it
+#: counts toward the PEAK only. The pure-Python reader's spill file starts at any size once its dict passes the memory
+#: budget, which this figure does not cover (the preflight is not told the reader).
+LOCATION_INDEX_BYTES_PER_PBF_BYTE = 3.0
 #: How long a stopped child's process group gets to leave on SIGTERM (so SQLite closes its files
 #: cleanly) before SIGKILL: long enough to flush a WAL, short enough that a guard actually guards.
 #: It never extends the disk risk: inside the grace the sampler's disk read continues, and free disk
@@ -300,10 +303,11 @@ def preflight(
         basis += "; the history phase is assumed to add one more ingest-sized footprint (also a guess)"
     needed = min_free_override if min_free_override is not None else footprint + history_footprint + reserve_bytes
     ok = free_bytes >= needed
-    # THE WORST CASE, DERIVED FROM THE MEASUREMENT AND NOT A SECOND GUESS: the country is nearly the whole file, so osm.db is
-    # the measured high ratio of it, plus the node-location file while the cut runs when the file is large enough to have one.
-    # It only WARNS (a refusal at 7.5 x would turn France in Europe's 28 GB away from any disk under 270 GB, though France is
-    # a sixth of that file); the mid-run sampler stops a run whose disk reaches the reserve, which is the protection.
+    # THE WORST CASE, EXTRAPOLATED FROM TWO SMALL MEASUREMENTS (a 0.6 MB and a 12 MB file settled at 6.0 and 7.5 x), NOT
+    # MEASURED AT THIS SIZE: the country is nearly the whole file, so osm.db is the high ratio of it, plus the node-location
+    # file while the cut runs when the file is large enough to have one. It only WARNS (a refusal at 10.5 x would turn France
+    # in Europe's 28 GB away from any disk under about 300 GB, though France is a sixth of that file); the mid-run sampler
+    # stops a run whose disk reaches the reserve, which is the protection.
     from src.osm.reader import PyosmiumExtract
 
     per_byte = OSM_DB_PER_PBF_BYTE_HIGH + (LOCATION_INDEX_BYTES_PER_PBF_BYTE if extract_bytes > PyosmiumExtract.ON_DISK_ABOVE else 0)
@@ -313,8 +317,9 @@ def preflight(
     if ok and ratio is None and min_free_override is None and free_bytes < worst:
         warning = (f"free disk is {free_bytes} bytes; if this country is most of the {extract_bytes}-byte extract the run can need "
                    f"{worst} (osm.db at {OSM_DB_PER_PBF_BYTE_LOW:g} to {OSM_DB_PER_PBF_BYTE_HIGH:g} times the country's own bytes, "
-                   f"measured on real extracts, plus the node-location file for a large one). It starts: the sampler stops it "
-                   f"cleanly if the disk reaches the reserve. Pass --min-free-gb to refuse instead")
+                   f"settled sizes of two small real extracts scaled up, plus the node-location file for a large one"
+                   f"{', and the history phase adds its own footprint (counted twice here)' if history_bytes else ''}). "
+                   f"It starts: the sampler stops it cleanly if the disk reaches the reserve. Pass --min-free-gb to refuse instead")
     return {
         "free_bytes": free_bytes,
         "needed_bytes": needed,
@@ -949,6 +954,7 @@ def _run(
     phases_override: list[PhaseSpec] | None = None,
     plan_only: bool = False,
     on_start: Callable[[Path], object] | None = None,
+    on_preflight: Callable[[dict], object] | None = None,
     report_path: Path | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[dict, Path | None]:
@@ -958,7 +964,8 @@ def _run(
     deleted; with ``keep_store`` it is the directory to hand to ``--cleanup`` later.
     ``phases_override`` exists for tests (a scripted child in place of the app's scripts).
     ``on_start`` is called with the run directory as soon as it exists (the operator learns where it is
-    before an hours-long run, not after); ``report_path`` has the report written inside the signal
+    before an hours-long run, not after); ``on_preflight`` is called with the preflight once the disk floor is met and before
+    anything starts (the worst-case warning belongs before the run, not in its summary); ``report_path`` has the report written inside the signal
     handling's reach. Linux only: the stop is process groups, ``waitid`` and a parent-death backstop.
     """
     if not sys.platform.startswith("linux"):
@@ -1078,6 +1085,9 @@ def _run(
         report["not_measured"] = ["everything: the preflight refused before any phase started"]
         return _finish(None, None)  # a refusal is a result too: the report names it, so the operator is never pointed at nothing
 
+    if on_preflight is not None:
+        with contextlib.suppress(OSError):  # a closed terminal must not end the run before it starts
+            on_preflight(pf)
     run_dir = base / f"oo-osm-reference-run-{stamp}-{secrets.token_hex(3)}"
     data_dir = run_dir / "data"
     tmp_dir = run_dir / "tmp"

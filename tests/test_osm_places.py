@@ -110,11 +110,13 @@ def test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_r
     counts = P.build_search_index("ZZZ")
     monkeypatch.setattr(P, "READ_PAGE", 2)
     reads: list[str] = []
+    first: list[tuple] = []
     eng = store.lane_engine("osm")
 
     def spy(conn, cursor, statement, parameters, context, executemany):
         if statement.lstrip().upper().startswith("SELECT") and "osm_objects" in statement and "LIMIT" in statement.upper():
             reads.append(statement)
+            first or first.append((statement, parameters))
 
     event.listen(eng, "before_cursor_execute", spy)
     try:
@@ -122,6 +124,11 @@ def test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_r
     finally:
         event.remove(eng, "before_cursor_execute", spy)
     assert len(reads) >= 4, f"the objects were read in {len(reads)} statement(s), not a page at a time"
+    # The rowid must drive each page. Through ``ix_osm_objects_country_kind`` SQLite looks up every row of the country and
+    # sorts them to keep one page, so the build costs the square of the country (measured 2026-10-15: the lane runs no ANALYZE).
+    with eng.connect() as c:
+        plan = " | ".join(r[-1] for r in c.exec_driver_sql("EXPLAIN QUERY PLAN " + first[0][0], first[0][1]))
+    assert "USE TEMP B-TREE FOR ORDER BY" not in plan and "ix_osm_objects_country_kind" not in plan, plan
     assert paged_counts == counts, "paging changed what was indexed"
     assert {q: _objects(P.search_names(q, limit=50)) for q in whole} == whole
 

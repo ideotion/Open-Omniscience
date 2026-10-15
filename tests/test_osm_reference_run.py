@@ -253,11 +253,11 @@ def test_the_floor_is_a_labelled_guess_until_a_measured_report_replaces_it():
 def test_a_big_share_country_is_warned_by_name_with_the_measured_worst_case():
     """Liechtenstein's 2013 extract settled at 6.0 x its own bytes and a Dutch city's at 7.5 x, so 2 x the CONTINENT file is
     plenty for France in Europe and not for the United States in North America (a 14 GB file: about 105 GB of osm.db and
-    28 GB of node locations against a floor of 30). A refusal at the worst case would turn France away from any disk under
-    270 GB, so the floor stays a labelled guess and the worst case WARNS, from the measured ratios, naming the way to refuse."""
+    42 GB of node locations against a floor of 30). A refusal at the worst case would turn France away from any disk under
+    about 300 GB, so the floor stays a labelled guess and the worst case WARNS, from the measured ratios, naming the way to refuse."""
     pf = R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB)
     assert pf["ok"] is True and pf["needed_bytes"] == 2 * 14 * GB + 2 * GB, "the refusal floor is unchanged"
-    assert pf["worst_case_bytes"] == int((7.5 + 2.0) * 14 * GB) + 2 * GB, "7.5 x for osm.db plus 2 x for the location file"
+    assert pf["worst_case_bytes"] == int((7.5 + 3.0) * 14 * GB) + 2 * GB, "7.5 x for osm.db plus 3 x for the location file"
     assert pf["warning"] and str(pf["worst_case_bytes"]) in pf["warning"] and "6 to 7.5" in pf["warning"]
     assert "--min-free-gb" in pf["warning"]
     # A small file has no location file (pyosmium keeps them in memory below 512 MiB): only the 7.5 x counts.
@@ -273,9 +273,12 @@ def test_a_big_share_country_is_warned_by_name_with_the_measured_worst_case():
                        min_free_override=10 * GB)["warning"] is None
     # The history phase writes into the same store after the ingest: the worst case doubles.
     hist = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=400 * GB, reserve_bytes=2 * GB)
-    assert hist["worst_case_bytes"] == 2 * int(9.5 * 14 * GB) + 2 * GB
+    assert hist["worst_case_bytes"] == 2 * int(10.5 * 14 * GB) + 2 * GB
     # A refusal stays by name: the floor itself is not met.
-    assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=20 * GB, reserve_bytes=2 * GB)["ok"] is False
+    refused = R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=20 * GB, reserve_bytes=2 * GB)
+    assert refused["ok"] is False and refused["warning"] is None, "a refusal says so by name; it is not also a warning"
+    assert "history phase" in R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=100 * GB,
+                                          reserve_bytes=2 * GB)["warning"]
 
 
 def test_free_disk_falling_below_the_reserve_stops_the_child_cleanly_and_ends_the_run(tmp_path):
@@ -1445,3 +1448,17 @@ def test_the_exit_code_survives_a_command_started_with_stdout_closed(tmp_path, m
     monkeypatch.setattr(R, "run", lambda **kw: (report, None))
     monkeypatch.setattr(sys, "stdout", None)  # `cmd >&-`
     assert CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")]) == 3
+
+
+def test_the_preflight_is_handed_over_before_the_store_exists(tmp_path):
+    """The worst-case warning is advice about STARTING; printed after the run it would reach the operator hours late."""
+    order: list[str] = []
+    report, _ = _run(tmp_path, phases_override=_scripted("print('hi')"), probe=_Probe(free=100 * GB),
+                     on_preflight=lambda pf: order.append("preflight:" + str(pf["ok"])),
+                     on_start=lambda d: order.append("store"))
+    assert order == ["preflight:True", "store"], order
+    # A refusal is the report's own reason and never starts anything: the callback is not asked to warn about it.
+    refused = []
+    _run(tmp_path, phases_override=_scripted("print('hi')"), probe=_Probe(free=1),
+         on_preflight=lambda pf: refused.append(pf))
+    assert refused == []

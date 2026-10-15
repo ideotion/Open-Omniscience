@@ -6,8 +6,9 @@ carry on with everything that can be done without them. No OpenStreetMap host is
 sandbox (`download.geofabrik.de`, `planet.openstreetmap.org`, `overpass-api.de` and `www.wikidata.org`
 all answer the egress proxy's 403; `raw.githubusercontent.com` and `pypi.org` answer), so every byte
 below is from a small real extract that a public GitHub repository carries as test data. **No
-OpenStreetMap byte is committed here** (ODbL): this directory holds scripts, the walk's record and four
-screenshots, and the numbers.
+extract (`.pbf`/`.osm`) is committed here** (ODbL): this directory holds scripts, the walk's record, four
+screenshots and the numbers. The walk's record and one screenshot do show four street addresses with their points that
+the local geocoder returned from the public Liechtenstein extract; they are OpenStreetMap data (© OpenStreetMap contributors, ODbL).
 
 ## The real extracts
 
@@ -45,11 +46,13 @@ vintage `2013-08-03`, 3,035 bytes, the same sha256 from both readers.
    including its WAL), about 500 bytes per kept object, and a large file also keeps 16 bytes a node of locations
    (about 2 x the file) while the cut runs. The runner is handed the CONTINENT file and cannot know the country's share:
    for France in Europe 2 x is plenty, for the United States in North America (14 GB file) the worst case is about
-   133 GB against a floor of 30. A refusal at the worst case would turn France away from any disk under 270 GB, so the
-   refusal floor is unchanged and the preflight now carries `worst_case_bytes`, derived from the measured ratios, and
+   147 GB against a floor of 30. A refusal at the worst case would turn France away from any disk under about 300 GB, so the
+   refusal floor is unchanged and the preflight now carries `worst_case_bytes`, EXTRAPOLATED from those two small files' settled
+   ratios (6 to 7.5 x, the high end taken) plus 3 bytes per extract byte for the node-location file (the forced on-disk run
+   below measured +473 MB of peak disk for 18.5 M nodes, about 26 bytes a node; a large file only), and
    a `warning` naming it (and `--min-free-gb` to refuse instead) whenever the disk is below it and no measured report or
    override replaced the guess; the CLI prints it. The mid-run sampler still stops a run whose disk reaches the reserve.
-3. **Memory that grew with the country** (the section below): the search-index build read every object at once; now a page at a time, test red without it (`test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_rows`).
+3. **Memory that grew with the country** (the section below): the search-index build read every object at once; now a page at a time, test red without it (`test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_rows`). The review of the paging found that it must also be read in id order from the rowid: through the country index SQLite looks up every remaining row of the country and sorts them to keep one page (`EXPLAIN QUERY PLAN` on the real schema: the index plus a temp b-tree; the lane never runs ANALYZE), which costs about the square of the country (reads only, 2 M rows: 5.0 s as one read, 13.9 s paged). The query now takes the rowid plan and the same test reads the plan. The 16 x row below was run before that fix.
 4. **Two facts about 2013 data, not defects:** the extract holds two nodes named Gamprin-Bendern at one point
    (both `place=village`, both become Places and both rows are in the gazetteer), and its country tag is
    lower-case `li`.
