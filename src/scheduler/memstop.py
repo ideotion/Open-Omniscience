@@ -62,11 +62,18 @@ RECORD_KEYS = (
     "guard",
     "release_at_engage",
     "release_again",
+    "in_flight_at_start",
     "exclusive",
     "scheduler_stopped",
+    "loop_still_running",
     "steps",
-    "bytes_written",
 )
+
+#: The only ``kind`` a stop record carries, and the longest ``at`` (an ISO second with an offset is 25 characters) and the types
+#: ``read_record`` accepts for the identity fields: a record that is not this code's is read as little as it can be.
+RECORD_KIND = "memory-stop"
+AT_MAX_CHARS = 40
+SESSION_ID_MAX_CHARS = 80
 
 #: The most bytes the record may be, written and read. What it protects: the record rides the Diagnostics zip inside the
 #: session-forensics member (zips stay under 4 MB, R119), and a stop is written on a machine at the floor, where a large write is
@@ -76,6 +83,9 @@ RECORD_MAX_BYTES = 8192
 
 #: The most characters of the guard's own sentence ("only 48 MB of system memory available"): one line built from readings.
 GUARD_REASON_CHARS = 200
+
+#: The clock the bounded wait is counted on (elapsed time, not polls: a slow poll must not stretch the bound). A name tests replace.
+_clock = time.monotonic
 
 _LOCK = threading.Lock()
 _STARTED = False
@@ -96,6 +106,11 @@ def _write(record: dict[str, Any]) -> int | None:
             record = {k: v for k, v in record.items() if k not in dropped}
             record["cut"] = {"left_out": dropped, "because": "the record was larger than the bound it is written within"}
             text = json.dumps(record, indent=1, default=str)
+            if len(text.encode("utf-8")) > RECORD_MAX_BYTES:
+                # Still over: only the identity, the decision's numbers and the cut itself are kept. Said, never silent.
+                record = {k: record[k] for k in ("kind", "session_id", "pid", "at", "uptime_s", "decision", "cut") if k in record}
+                record["cut"]["left_out"] = sorted(set(record["cut"]["left_out"]) | {"steps", "in_flight_at_start", "exclusive"})
+                text = json.dumps(record, indent=1, default=str)
         tmp = _path().with_suffix(".json.tmp")
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, _path())
@@ -141,6 +156,50 @@ def _allow_listed(release: Any) -> Any:
     return allow_listed(release)
 
 
+def in_flight(own_hold: bool = True) -> dict[str, Any]:
+    """What is holding the machine's data right now, as facts with no names a caller chose: the import run's window, the
+    scheduler's exclusive hold (a volume restore, a data-drive move, a merge take it), the corpus leases by their fixed names with
+    counts, and the write gate (held, and for how long; the holder's thread name is NOT read: a thread name is request-chosen text).
+    ``own_hold=False`` leaves the scheduler's hold out: during the wait it is the stop's own pause. A part that cannot be read says
+    so (``None``), never ``False``. Never raises."""
+    out: dict[str, Any] = {}
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        out["exclusive_window"] = bool(exclusive_window_open())
+    except Exception:  # noqa: BLE001 - unreadable is not absent
+        out["exclusive_window"] = None
+    if own_hold:
+        try:
+            from src.scheduler.runner import get_scheduler
+
+            out["scheduler_hold"] = bool(get_scheduler().holds_exclusive())
+        except Exception:  # noqa: BLE001
+            out["scheduler_hold"] = None
+    try:
+        from src.database import corpus_lease
+
+        names = corpus_lease.active_leases()
+        out["leases"] = sorted(str(n)[:64] for n in names)
+    except Exception:  # noqa: BLE001
+        out["leases"] = None
+    try:
+        from src.database.writer import write_gate
+
+        st = write_gate.stats()
+        out["gate_held"] = bool(st.get("held"))
+        out["gate_held_for_s"] = st.get("held_for_s")
+    except Exception:  # noqa: BLE001
+        out["gate_held"] = None
+        out["gate_held_for_s"] = None
+    return out
+
+
+def _busy(state: dict[str, Any]) -> bool:
+    """Is anything in ``state`` holding the machine? An unreadable part counts as not holding (the wait is a courtesy, bounded)."""
+    return bool(state.get("exclusive_window") or state.get("scheduler_hold") or state.get("leases") or state.get("gate_held"))
+
+
 def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
     """Run the clean stop ONCE. Returns the record, or ``None`` when a stop had already begun in this process.
 
@@ -150,7 +209,7 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
         if _STARTED:
             return None
         _STARTED = True
-    record: dict[str, Any] = {"kind": "memory-stop", "at": datetime.now(UTC).isoformat(timespec="seconds"), "steps": {}}
+    record: dict[str, Any] = {"kind": RECORD_KIND, "at": datetime.now(UTC).isoformat(timespec="seconds"), "steps": {}}
     try:
         from src.monitoring import session_history
 
@@ -174,8 +233,12 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
     def _snapshot() -> None:
         from src.monitoring import session_hwm
 
+        before = session_hwm.pressure_taken()
         session_hwm.observe(phase="memory stop", may_snapshot_threads=True, force_why="memory stop")
         session_hwm.flush()
+        if session_hwm.pressure_taken() <= before:
+            # observe() swallows its own failures; a snapshot that was not taken must not read as "ok" in the record.
+            raise RuntimeError("the forced snapshot was not taken")
 
     _step(record, "snapshot", _snapshot)
 
@@ -185,7 +248,7 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
         session_history.record_event("memory-stop", reason=SHUTDOWN_REASON, decision=record["decision"])
 
     _step(record, "ledger_event", _event)
-    record["bytes_written"] = _write(record)
+    _write(record)
 
     # 2. The ladder once more, never to cancel the stop but to give the teardown room to finish.
     def _ladder() -> dict[str, Any] | None:
@@ -195,7 +258,10 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
 
     record["release_again"] = _step(record, "release_again", _ladder)
 
-    # 3. No new work starts; the phase tells the person why the app is pausing.
+    # 3. What was in flight BEFORE the stop's own pause (the pause sets the scheduler's hold itself, so it must be read first).
+    record["in_flight_at_start"] = _step(record, "in_flight", in_flight)
+
+    # 3a. No new work starts; the phase tells the person why the app is pausing.
     def _phase() -> None:
         from src.scheduler import runner
 
@@ -212,18 +278,24 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
 
     _step(record, "pause", _pause)
 
-    # 3b. An exclusive operation in flight (the pause above cannot stop it): its transaction is the user's data. Wait for it to
-    # close, bounded, and say what happened; then the NORMAL shutdown path runs (an unfinished transaction is rolled back, the
-    # pool disposed, nothing forced).
-    def _exclusive() -> None:
-        from src.scheduler.runner import exclusive_window_open
+    def _loop_alive() -> bool:
+        from src.scheduler.runner import get_scheduler
 
-        waited = 0.0
-        open_at_start = bool(exclusive_window_open())
-        while exclusive_window_open() and waited < EXCLUSIVE_WAIT_S:
+        return bool(get_scheduler().is_running())
+
+    record["loop_still_running"] = _step(record, "loop_check", _loop_alive)
+
+    # 3b. Anything in flight that the pause cannot stop (an import run, a restore, a data-drive move, a lease, a write holding the
+    # gate): its transaction is the user's data. Wait for it to close, bounded, and say what happened; then the NORMAL shutdown
+    # path runs (an unfinished transaction is rolled back, the pool disposed, nothing forced).
+    def _exclusive() -> None:
+        started = _clock()
+        while _clock() - started < EXCLUSIVE_WAIT_S and _busy(in_flight(own_hold=False)):
             time.sleep(EXCLUSIVE_POLL_S)
-            waited += EXCLUSIVE_POLL_S
-        record["exclusive"] = {"open_at_start": open_at_start, "waited_s": waited, "still_open": bool(exclusive_window_open())}
+        record["exclusive"] = {
+            "waited_s": round(_clock() - started, 1),
+            "still_in_flight": in_flight(own_hold=False),
+        }
 
     _step(record, "exclusive_wait", _exclusive)
     _write(record)
@@ -242,7 +314,7 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
         request_shutdown(confirm=True)
 
     _step(record, "shutdown", _shutdown)
-    record["bytes_written"] = _write(record)
+    _write(record)
     return record
 
 
@@ -256,22 +328,37 @@ def reset_for_tests() -> None:
 def read_record(session_id: str | None) -> dict[str, Any] | None:
     """The record of the stop that ended session ``session_id``, through the allow-list (:data:`RECORD_KEYS`), with the size read
     named (``bytes_read``); ``None`` when there is none, it is another session's, or it cannot be read. A record belongs to a
-    session only if it names it: an older file never reads as the previous session's. Never raises."""
+    session only if it names it: an older file never reads as the previous session's. The size is read with ``stat`` BEFORE the
+    file is parsed, and a file over :data:`RECORD_MAX_BYTES` is not parsed at all (only its size is said): a diagnostic must not
+    be made large by what it reads. Never raises."""
     try:
-        raw = _path().read_bytes()
-        got = json.loads(raw.decode("utf-8"))
-    except (OSError, ValueError):
+        size = _path().stat().st_size
+    except OSError:
         return None
     try:
-        if not isinstance(got, dict) or not session_id or got.get("session_id") != session_id:
+        if not session_id:
+            return None
+        if size > RECORD_MAX_BYTES:
+            # Not a record this code wrote, and not parsed: the size is the one fact said about it. It names no session, so it
+            # can never read as this one's.
+            return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": size}
+        raw = _path().read_bytes()[: RECORD_MAX_BYTES + 1]
+        if len(raw) > RECORD_MAX_BYTES:
+            return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": len(raw)}
+        got = json.loads(raw.decode("utf-8"))
+        if not isinstance(got, dict) or got.get("session_id") != session_id:
             return None
         out = {k: got[k] for k in RECORD_KEYS if k in got}
-        if len(raw) > RECORD_MAX_BYTES:
-            # Not a record this code wrote: its identity is kept and everything else is replaced by the size, named.
-            out = {k: out[k] for k in ("kind", "session_id", "pid", "at", "uptime_s") if k in out}
-            out["decision"] = {"cut": "the record was larger than the bound it is written within", "bytes": len(raw)}
-        elif "cut" in got and isinstance(got["cut"], dict):
-            out["cut"] = {k: got["cut"].get(k) for k in ("left_out", "because")}
+        out["kind"] = RECORD_KIND if got.get("kind") == RECORD_KIND else None
+        out["session_id"] = session_id if len(session_id) <= SESSION_ID_MAX_CHARS else None
+        at = got.get("at")
+        out["at"] = at if isinstance(at, str) and len(at) <= AT_MAX_CHARS else None
+        for k in ("pid", "uptime_s"):
+            v = got.get(k)
+            out[k] = v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+        cut = got.get("cut")
+        if isinstance(cut, dict):
+            out["cut"] = {k: cut.get(k) for k in ("left_out", "because")}
         out["bytes_read"] = len(raw)
         return out
     except Exception:  # noqa: BLE001 - a diagnostic never fails its caller

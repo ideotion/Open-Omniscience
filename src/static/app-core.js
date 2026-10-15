@@ -2230,7 +2230,7 @@
         if (seen === stamp) return;
         try { localStorage.setItem(key, stamp); } catch (e) { /* not remembered */ }
         const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (x => x);
-        toast(t9("The app stopped itself last time because memory stayed exhausted. Nothing was lost; start collection again when you are ready."), "err");
+        toast(t9("The app stopped itself last time because memory stayed exhausted. Your saved data was not touched, and work that was in progress then was not finished. Start collection again when you are ready."), "err");
       } catch (e) { /* the vitals are best-effort; a missing notice is not an error */ }
     }
     function _sessionHtml(s) {
@@ -2258,7 +2258,7 @@
         const how = stoppedForMemory ? t9("Stopped itself — memory stayed exhausted")
           : prev.clean === true ? t9("clean shutdown") : (prev.clean === false ? t9("unclean end") : t9("end with no time"));
         rows.push(row(t9("Previous session"), `${how} · ${prev.at ? fmtDateTime(prev.at) : "—"}`,
-          stoppedForMemory ? t9("The app ended this session itself because available memory stayed at the floor while collection was paused, and the memory it held did not come back. It did so to keep the corpus safe: nothing was lost, and what was running stays stopped until you start it again.") : (prev.basis || "")));
+          stoppedForMemory ? t9("The app ended this session itself because available memory stayed at the floor while collection was paused, and the memory it held did not come back. Your saved data was not touched. Work that was in progress when it stopped was not finished, and stays stopped until you start it again.") : (prev.basis || "")));
       }
       if (s.longest_stretch_s != null) rows.push(row(t9("Longest continuous stretch"), dur(s.longest_stretch_s)));
       return `<div class="vsect">${esc(t9("Sessions"))}</div>` + rows.join("") +

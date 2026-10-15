@@ -155,19 +155,28 @@ def test_the_record_stays_within_its_stated_size_at_its_largest(stop):
     assert got["bytes_read"] <= memstop.RECORD_MAX_BYTES
 
 
-def test_a_record_over_the_bound_is_read_with_its_size_and_cut_named(stop):
+def test_a_record_over_the_bound_is_not_parsed_and_only_its_size_is_said(stop, monkeypatch):
     _c, _d, data = stop
     (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "decision": {"pad": "p" * (memstop.RECORD_MAX_BYTES + 10)}}))
+    monkeypatch.setattr(memstop.json, "loads", lambda *a, **k: (_ for _ in ()).throw(AssertionError("parsed an oversize file")))
     got = memstop.read_record("sess-1")
-    assert got["bytes_read"] > memstop.RECORD_MAX_BYTES
-    assert got["decision"] == {"cut": "the record was larger than the bound it is written within", "bytes": got["bytes_read"]}
+    assert got == {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": (data / "memory_stop.json").stat().st_size}
+
+
+def test_huge_or_odd_identity_values_are_not_carried(stop):
+    _c, _d, data = stop
+    (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "kind": "x" * 1000, "at": "y" * 1000, "pid": "z" * 1000,
+                                                       "uptime_s": [1] * 100}))
+    got = memstop.read_record("sess-1")
+    assert got["kind"] is None and got["at"] is None and got["pid"] is None and got["uptime_s"] is None
+    assert len(json.dumps(got)) < 400
 
 
 def test_a_record_that_cannot_be_written_is_a_logged_step_not_a_stop(stop, monkeypatch):
     calls, _d, data = stop
     monkeypatch.setattr(os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
     rec = memstop.execute(DECISION, _Guard())
-    assert rec["bytes_written"] is None and "shutdown" in calls
+    assert not (data / "memory_stop.json").exists() and "shutdown" in calls
 
 
 def test_a_record_that_would_pass_the_bound_is_cut_as_it_is_written_and_says_so(stop):
@@ -190,36 +199,91 @@ def test_the_guards_sentence_is_cut_to_what_it_protects(stop):
     assert len(rec["guard"]["reason"]) <= memstop.GUARD_REASON_CHARS
 
 
+class _FakeTime:
+    """Sleep advances the clock the wait is counted on, so a 60 s bound runs in no real time."""
+
+    def __init__(self, monkeypatch):
+        self.now = 1000.0
+        self.slept: list[float] = []
+        monkeypatch.setattr(memstop, "_clock", lambda: self.now)
+        monkeypatch.setattr(memstop.time, "sleep", self.sleep)
+
+    def sleep(self, s):
+        self.slept.append(s)
+        self.now += s
+
+
+def _quiet(monkeypatch, **over):
+    state = {"exclusive_window": False, "scheduler_hold": False, "leases": [], "gate_held": False, "gate_held_for_s": None}
+    state.update(over)
+    monkeypatch.setattr(memstop, "in_flight", lambda own_hold=True: {k: v for k, v in state.items() if own_hold or k != "scheduler_hold"})
+    return state
+
+
 def test_an_exclusive_operation_in_flight_is_waited_for_then_the_normal_shutdown_runs(stop, monkeypatch):
-    from src.scheduler import runner
-
     calls, _d, _data = stop
-    state = {"open": True, "polls": 0}
+    clock = _FakeTime(monkeypatch)
+    state = _quiet(monkeypatch, exclusive_window=True)
 
-    def still_open():
-        state["polls"] += 1
-        if state["polls"] > 4:
-            state["open"] = False
-        return state["open"]
+    def end_after_four(_s):
+        clock.now += _s
+        clock.slept.append(_s)
+        if len(clock.slept) >= 4:
+            state["exclusive_window"] = False
 
-    monkeypatch.setattr(runner, "exclusive_window_open", still_open)
-    monkeypatch.setattr(memstop.time, "sleep", lambda s: None)
+    monkeypatch.setattr(memstop.time, "sleep", end_after_four)
     rec = memstop.execute(DECISION, _Guard())
-    assert rec["exclusive"] == {"open_at_start": True, "waited_s": 3.0, "still_open": False}
+    assert rec["in_flight_at_start"]["exclusive_window"] is True
+    assert rec["exclusive"]["waited_s"] == 4.0 and rec["exclusive"]["still_in_flight"]["exclusive_window"] is False
     assert calls[-2:] == ["sentinel", "shutdown"], "the shutdown comes after the wait"
 
 
-def test_an_exclusive_operation_that_never_ends_is_waited_for_a_bounded_time_and_recorded(stop, monkeypatch):
+@pytest.mark.parametrize("what", [{"exclusive_window": True}, {"scheduler_hold": True}, {"leases": ["restore"]}, {"gate_held": True, "gate_held_for_s": 3.0}])
+def test_anything_in_flight_is_recorded_at_start_and_waited_for_a_bounded_time(stop, monkeypatch, what):
+    calls, _d, _data = stop
+    clock = _FakeTime(monkeypatch)
+    _quiet(monkeypatch, **what)
+    rec = memstop.execute(DECISION, _Guard())
+    for k, v in what.items():
+        assert rec["in_flight_at_start"][k] == v
+    if "scheduler_hold" in what:
+        # the stop's own pause sets that hold: after the pause it is not a reason to wait
+        assert rec["exclusive"]["waited_s"] == 0.0
+    else:
+        assert sum(clock.slept) == memstop.EXCLUSIVE_WAIT_S and rec["exclusive"]["waited_s"] == memstop.EXCLUSIVE_WAIT_S
+    assert "shutdown" in calls, "the stop is not held hostage by it"
+
+
+def test_the_scheduler_hold_is_read_before_the_stops_own_pause(stop, monkeypatch):
+    """A bare scheduler hold (a volume restore or a data-drive move takes it) is in the start snapshot; the pause's own hold,
+    set afterwards, is not mistaken for one."""
     from src.scheduler import runner
 
-    calls, _d, _data = stop
-    slept: list[float] = []
-    monkeypatch.setattr(runner, "exclusive_window_open", lambda: True)
-    monkeypatch.setattr(memstop.time, "sleep", lambda s: slept.append(s))
+    class _Sched:
+        held = True
+        def holds_exclusive(self): return self.held
+        def is_running(self): return False
+
+    sched = _Sched()
+    monkeypatch.setattr(runner, "get_scheduler", lambda: sched)
+    monkeypatch.setattr(runner, "pause_for_exclusive_operation", lambda timeout=10.0: setattr(sched, "held", True) or True)
     rec = memstop.execute(DECISION, _Guard())
-    assert sum(slept) == memstop.EXCLUSIVE_WAIT_S
-    assert rec["exclusive"] == {"open_at_start": True, "waited_s": memstop.EXCLUSIVE_WAIT_S, "still_open": True}
-    assert "shutdown" in calls, "the stop is not held hostage by it"
+    assert rec["in_flight_at_start"]["scheduler_hold"] is True and rec["loop_still_running"] is False
+
+
+def test_the_forced_snapshot_that_was_not_taken_is_not_recorded_as_ok(stop, monkeypatch):
+    from src.monitoring import session_hwm
+
+    monkeypatch.setattr(session_hwm, "observe", lambda *a, **k: None)
+    rec = memstop.execute(DECISION, _Guard())
+    assert rec["steps"]["snapshot"] == {"ok": False, "error": "RuntimeError"}
+
+
+def test_an_unreadable_part_of_the_in_flight_snapshot_says_none_not_false(stop, monkeypatch):
+    from src.database import corpus_lease
+
+    monkeypatch.setattr(corpus_lease, "active_leases", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    assert memstop.in_flight()["leases"] is None
 
 
 def test_a_pause_that_timed_out_is_recorded_and_the_stop_goes_on(stop, monkeypatch):

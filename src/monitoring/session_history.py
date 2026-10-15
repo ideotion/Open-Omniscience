@@ -596,6 +596,11 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
                     "basis": "no sentinel end and no liveness tick, so the end has no time",
                     "sentinel_state": state or None})
     if rec.get("clean") is not True:
+        # The reason the app gave for the shutdown it had begun (the sentinel keeps it): a stop the kernel cut short still says why
+        # it was ending. A fixed phrase the app wrote, cut to a line; a value of another shape is not carried.
+        said = (prev_state or {}).get("shutdown_reason")
+        if isinstance(said, str) and said and "\n" not in said:
+            rec["reason"] = said[:80]
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen

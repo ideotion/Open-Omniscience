@@ -107,6 +107,15 @@ def _feed(g, clock, seconds, avail, step=1.5, rss=1500.0, total=3900.0):
     for _ in range(int(seconds / step)):
         clock.t += step
         g.observe(rss_mb=rss, mem_avail_mb=avail, mem_total_mb=total)
+    join_stop(g)
+
+
+def join_stop(g):
+    """The stop runs on its own named thread (it waits; the sampler must not): wait for it before asserting what it did."""
+    t = g._stop_thread
+    if t is not None:
+        t.join(5)
+        assert not t.is_alive()
 
 
 def test_the_guard_hands_the_process_to_the_stop_once(monkeypatch):
@@ -126,7 +135,9 @@ def test_a_recovery_empties_the_window(monkeypatch):
     _feed(g, clock, 6, 900.0)  # healthy with margin: resume_after consecutive samples release the guard
     assert not g.engaged
     assert g.state()["stop"]["last_decision"] is None, "the last answer is about an engagement that ended"
-    _feed(g, clock, 200, 48.0)
+    assert len(g._stall) == 0, "the window the recovery ended is gone"
+    # 270 s is under the 285 s the window needs to cover: the readings before the recovery, if they survived, would make it 300+
+    _feed(g, clock, 270, 48.0)
     assert calls == [], "the clock started again at the new engagement"
 
 
@@ -173,7 +184,15 @@ def test_missing_readings_count_nothing(monkeypatch):
     for _ in range(300):
         clock.t += 1.5
         g.observe(rss_mb=None, mem_avail_mb=None, mem_total_mb=None)
-    assert calls == [] and not g.engaged
+    assert calls == [] and not g.engaged and len(g._stall) == 0
+    # and a stretch of unreadable ones inside an engaged window leaves a gap the criterion refuses to bridge
+    _feed(g, clock, 150, 48.0)
+    assert g.engaged
+    for _ in range(100):
+        clock.t += 1.5
+        g.observe(rss_mb=None, mem_avail_mb=None, mem_total_mb=None)
+    _feed(g, clock, 60, 48.0)
+    assert calls == [], "150 s of readings, 150 s of none, 60 s of readings is not a plateau"
 
 
 def test_the_window_holds_readings_for_its_span_only(monkeypatch):

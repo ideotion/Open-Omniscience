@@ -51,6 +51,8 @@ def _stall_and_stop(monkeypatch, *, finish: bool):
     for _ in range(220):
         clock["t"] += 1.5
         g.observe(rss_mb=1500.0, mem_avail_mb=48.0, mem_total_mb=3900.0)
+    assert g._stop_thread is not None, "the stop starts on its own thread"
+    g._stop_thread.join(30)
     assert sent == [{"confirm": True}], "the stop asked for the shutdown once"
     if finish:
         forensics.record_clean_shutdown()
@@ -89,6 +91,8 @@ def test_a_stop_the_kernel_cut_short_reads_as_ended_during_shutdown_with_the_rec
     rep = forensics.previous_session_report()
     assert rep["previous_session"] == "unclean-end-during-shutdown" and rep["shutdown_reason"] == "memory exhausted"
     assert rep["memory_stop"]["decision"]["due"] is True
+    prev = chronology.for_vitals(max_age_s=0.0)["previous_session_end"]
+    assert prev["stopped_for"] == "memory" and prev["clean"] is False, "a stop the kernel cut short still says why it was ending"
 
 
 def test_an_older_record_never_reads_as_the_previous_sessions(home, monkeypatch):

@@ -7,6 +7,7 @@ rows are there, the uncommitted ones are not, and the -wal is folded back to a s
 take its time (it waits for an exclusive window to close, bounded), and it never forces an exit."""
 from __future__ import annotations
 
+import json
 import os
 import signal
 import sqlite3
@@ -21,10 +22,18 @@ ROOT = Path(__file__).resolve().parent.parent
 
 CHILD = textwrap.dedent(
     """
-    import json, sys, threading, time
+    import json, signal, sys, threading, time
     from sqlalchemy import text
     from src.database.session import SessionLocal, init_db
     from src.scheduler import memstop
+
+    def graceful(signum, frame):
+        # what the app's own handler does: leave through the normal interpreter exit (daemon threads end, no transaction commits)
+        print("SIGTERM-HANDLED", flush=True)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, graceful)
+    memstop.EXCLUSIVE_WAIT_S = 3.0  # the production bound is 60 s; the test only needs it to be honoured
 
     init_db()
     s = SessionLocal()
@@ -59,6 +68,8 @@ CHILD = textwrap.dedent(
 
     rec = memstop.execute({"due": True, "samples": 200, "low_share": 1.0}, Guard())
     print("STOP-RETURNED", json.dumps(rec["steps"]), flush=True)
+    print("IN-FLIGHT", json.dumps(rec["in_flight_at_start"]), flush=True)
+    print("WAITED", json.dumps(rec["exclusive"]), flush=True)
     time.sleep(60)  # the shutdown thread ends the process; reaching the end of this sleep is a failure
     print("STOP-DID-NOT-END", flush=True)
     """
@@ -73,7 +84,12 @@ def test_a_long_write_in_flight_is_rolled_back_cleanly_and_the_store_is_consiste
            "OO_SESSION_LIVENESS": "0"}
     env.pop("OO_DB_PASSPHRASE", None)
     proc = subprocess.run([sys.executable, "-c", CHILD], cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=180, check=False)
-    assert proc.returncode == -signal.SIGTERM, (proc.returncode, proc.stdout[-2000:], proc.stderr[-2000:])
+    assert proc.returncode == 0 and "SIGTERM-HANDLED" in proc.stdout, (proc.returncode, proc.stdout[-2000:], proc.stderr[-2000:])
+    line = next(ln for ln in proc.stdout.splitlines() if ln.startswith("IN-FLIGHT"))
+    seen = json.loads(line.split(" ", 1)[1])
+    assert seen["gate_held"] is True and seen["gate_held_for_s"] is not None, "the record says a write held the gate"
+    waited = json.loads(next(ln for ln in proc.stdout.splitlines() if ln.startswith("WAITED")).split(" ", 1)[1])
+    assert waited["waited_s"] >= 3.0 and waited["still_in_flight"]["gate_held"] is True, "bounded, and said to still be in flight"
     assert "GATE-HELD" in proc.stdout and "True" in proc.stdout.split("GATE-HELD", 1)[1].splitlines()[0], proc.stdout[-600:]
     assert "STOP-RETURNED" in proc.stdout and "STOP-DID-NOT-END" not in proc.stdout
     db = next(p for p in data.glob("*.db"))

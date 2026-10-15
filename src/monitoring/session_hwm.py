@@ -1199,6 +1199,11 @@ def previous_why() -> tuple[dict[str, Any] | None, str | None]:
     return _read_record_why()
 
 
+def pressure_taken() -> int:
+    """How many heavy snapshots this session has taken: a caller that forced one reads it before and after to know one was."""
+    return int(_PRESSURE_TAKEN)
+
+
 def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, force_why: str | None = None) -> None:
     """Fold one reading into this session's high-water marks. Best-effort, throttled.
 

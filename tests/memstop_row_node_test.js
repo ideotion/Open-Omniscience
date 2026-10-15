@@ -40,8 +40,8 @@ const i18n = (lang) => {
 
 const EN_PHASE = "The app is stopping itself because memory stayed exhausted";
 const EN_ROW = "Stopped itself — memory stayed exhausted";
-const EN_HOVER = "The app ended this session itself because available memory stayed at the floor while collection was paused, and the memory it held did not come back. It did so to keep the corpus safe: nothing was lost, and what was running stays stopped until you start it again.";
-const EN_TOAST = "The app stopped itself last time because memory stayed exhausted. Nothing was lost; start collection again when you are ready.";
+const EN_HOVER = "The app ended this session itself because available memory stayed at the floor while collection was paused, and the memory it held did not come back. Your saved data was not touched. Work that was in progress when it stopped was not finished, and stays stopped until you start it again.";
+const EN_TOAST = "The app stopped itself last time because memory stayed exhausted. Your saved data was not touched, and work that was in progress then was not finished. Start collection again when you are ready.";
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed += 1; console.log("ok  - " + name); }

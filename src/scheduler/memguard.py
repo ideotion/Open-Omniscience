@@ -80,9 +80,15 @@ STOP_WINDOW_S = 300.0
 STOP_AVAIL_MB = 64.0
 #: Fewest readings a window may stand on, the share of them that must be at the floor, and the share of the window its real
 #: span must cover (a missing reading counts nothing, as in ``observe``).
+#: What each protects: ``STOP_MIN_SAMPLES`` -- a window of two readings is a blip, not a plateau; ``STOP_LOW_SHARE`` -- one stray reading
+#: above the floor may not hold a real stall off, but a tenth of them may not be waved through; ``STOP_SPAN_SHARE`` -- a window the
+#: readings do not actually cover is a guess about the missing time.
 STOP_MIN_SAMPLES = 10
 STOP_LOW_SHARE = 0.9
 STOP_SPAN_SHARE = 0.95
+#: The shortest window an environment override may set: below it the gap rule (window / 10) would leave under two seconds
+#: between readings and a passing dip would stop the app. A smaller override is raised to this, not honoured.
+STOP_MIN_WINDOW_S = 20.0
 #: This process must hold this share of the machine's RAM, or stopping it frees nothing another process is holding.
 STOP_HELD_SHARE = 1.0 / 3.0
 
@@ -211,6 +217,7 @@ class MemoryGuard:
         # The clean stop (B2): the engaged window's readings, the one-shot flag, and the last criterion answer. ``stop_fn`` is
         # injectable so the guard stays a latch in tests and the sequence is its own module.
         self._stop_fn = stop_fn
+        self._stop_thread: threading.Thread | None = None
         self._stall: deque[tuple[float, float]] = deque()
         self._stop_started = False
         self._stall_last: dict | None = None
@@ -276,6 +283,9 @@ class MemoryGuard:
         tripped_engagement = 0
         resumed = False
         stop_decision: dict | None = None
+        # Read before the lock is taken: the environment is not work to do while a sampler waits on it.
+        stop_window = max(STOP_MIN_WINDOW_S, _env_float("OO_MEM_STOP_WINDOW_S", STOP_WINDOW_S))
+        stop_floor = _env_float("OO_MEM_STOP_AVAIL_MB", STOP_AVAIL_MB)
         with self._lock:
             prev_swap = self._last_proc_swap
             if proc_swap_mb is not None:
@@ -330,7 +340,7 @@ class MemoryGuard:
                 else:
                     self._under = 0
                 if self._engaged:
-                    stop_decision = self._note_stall_locked(mem_avail_mb, rss_mb, mem_total_mb)
+                    stop_decision = self._note_stall_locked(mem_avail_mb, rss_mb, mem_total_mb, stop_window, stop_floor)
             engaged = self._engaged
         # Log OUTSIDE the lock (skeptic nit: the jsonl error handler does file
         # I/O; workers' admit() checks must never queue behind a log write).
@@ -355,15 +365,15 @@ class MemoryGuard:
     def stop_enabled() -> bool:
         return os.getenv("OO_MEM_STOP", "1") != "0"
 
-    def _note_stall_locked(self, avail: float | None, rss: float | None, total: float | None) -> dict | None:
+    def _note_stall_locked(
+        self, avail: float | None, rss: float | None, total: float | None, window: float, floor: float
+    ) -> dict | None:
         """Fold one engaged sample into the stall window and, when the criterion holds for the first time, claim the one stop.
         Caller holds the lock and runs the stop OUTSIDE it. The window is pruned by TIME (older than the window), so what it
         holds is bounded by how often readings arrive, not by a count."""
         if avail is None or not self.stop_enabled():
             return None
         now = time.monotonic()
-        window = _env_float("OO_MEM_STOP_WINDOW_S", STOP_WINDOW_S)
-        floor = _env_float("OO_MEM_STOP_AVAIL_MB", STOP_AVAIL_MB)
         self._stall.append((now, avail))
         while self._stall and self._stall[0][0] < now - window:
             self._stall.popleft()
@@ -375,14 +385,24 @@ class MemoryGuard:
         return decision
 
     def _run_stop(self, decision: dict) -> None:
-        """Hand the process to the clean stop. Never raises: the pause stands whether or not the stop runs."""
+        """Hand the process to the clean stop, on its OWN named thread. Never raises: the pause stands whether or not the stop runs.
+
+        Not on the caller's thread: the stop waits (a bounded pause, a bounded exclusive wait, ~70 s at most), and the caller is the
+        scheduler's own loop or a polling endpoint -- the first would be asked to join itself in the pause, the second would hang a
+        request. ``self._stop_thread`` is kept so a test can join it."""
         fn = self._stop_fn
         if fn is None:
             from src.scheduler.memstop import execute as fn  # noqa: PLC0415
-        try:
-            fn(decision, self)
-        except Exception as exc:  # noqa: BLE001 - a failed stop leaves the pause in force
-            log_failure(_LOG, "memory guard: the clean stop failed", exc, level=logging.WARNING)
+
+        def _go() -> None:
+            try:
+                fn(decision, self)
+            except Exception as exc:  # noqa: BLE001 - a failed stop leaves the pause in force
+                log_failure(_LOG, "memory guard: the clean stop failed", exc, level=logging.WARNING)
+
+        t = threading.Thread(target=_go, name="oo-memory-stop", daemon=True)
+        self._stop_thread = t
+        t.start()
 
     def raw_pressure(
         self,
