@@ -49,6 +49,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from types import FrameType
 
 _LOG = logging.getLogger(__name__)
 
@@ -62,6 +63,12 @@ _cache: dict[tuple[str, str], str | None] = {}
 #: not moved since: a reader that missed the cache just before a restore replaced the file would otherwise store the old file's
 #: value AFTER the invalidation and serve it for the life of the process.
 _epoch = 0
+#: Moves, for ONE key, at every settings write of that key (save or delete). A reader notes it BEFORE it reads the file and fills the
+#: cache only if it has not moved: a reader that read the file before a writer's commit could otherwise store its older value after the
+#: writer's own fill and serve it for the life of the process. Never cleared (a reset could meet a noted number again); one int per
+#: key ever written. The keys are the settings namespaces, but some namespaces write one key per run (qualification_integrity writes one
+#: per repair run and never deletes it), so it grows by one small int each time.
+_wver: dict[tuple[str, str], int] = {}
 
 
 # --------------------------------------------------------------------------- #
@@ -92,6 +99,18 @@ _hold_by: int | None = None  # ident of the thread holding settings writes (a re
 _inflight = 0  # settings writes between their start and their end (they may be waiting for the gate)
 
 
+def _caller_of_the_write() -> str:
+    """``file:line in function`` of the nearest frame outside this module (the code that called ``kv_set_json`` / ``kv_delete``)."""
+    import sys
+
+    frame: FrameType | None = sys._getframe(1)
+    while frame is not None and frame.f_globals.get("__name__") in (__name__, "contextlib"):  # the slot is a generator context manager
+        frame = frame.f_back
+    if frame is None:
+        return "an unknown caller"
+    return f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_lineno} in {frame.f_code.co_name}"
+
+
 @contextmanager
 def _write_slot() -> Iterator[int]:
     """Around ONE settings write (before the gate is taken, never inside it): waits, bounded by :data:`KV_WRITE_WAIT_S`, while a
@@ -110,7 +129,9 @@ def _write_slot() -> Iterator[int]:
             # RECORDED as well as raised: an ``except Exception`` between here and the test (thirteen callers wrap a save) swallows the
             # AssertionError, so ``tests/conftest.py`` fails the test that left a violation in the list.
             what = "a settings write was entered by a thread that holds the single-writer gate (see kv_set_json)"
-            STRICT_VIOLATIONS.append(what)
+            # The list is process-global, so the test that finds an entry is not always the test that made it (a thread another test
+            # left running): the entry names the CALLER, which is the code to fix wherever it was noticed.
+            STRICT_VIOLATIONS.append(f"{what}; called from {_caller_of_the_write()} on thread {threading.current_thread().name!r}")
             raise AssertionError(what)
     passthrough = False
     counted = False
@@ -286,7 +307,7 @@ def kv_get_json_checked(key: str) -> dict | None:
         held = _failed.get(ck)
         if held is not None and held[0] > time.monotonic():
             raise KvReadError(held[1])
-        epoch = _epoch
+        epoch, ver = _epoch, _wver.get(ck, 0)
     try:
         try:
             raw = _read_value(path, key, read_only=True)
@@ -305,11 +326,11 @@ def kv_get_json_checked(key: str) -> dict | None:
         what = type(exc).__name__
         _LOG.debug("kv_get_json(%r) unreadable (%s)", key, what)
         with _lock:
-            if _epoch == epoch:  # a read the swap broke is not held against the file that is live now
+            if _epoch == epoch and _wver.get(ck, 0) == ver:  # a read the swap broke is not held against the file that is live now
                 _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what)
         raise KvReadError(what) from None
     with _lock:
-        if _epoch == epoch:  # an invalidation since the read began: what it read may be the file that was replaced
+        if _epoch == epoch and _wver.get(ck, 0) == ver:  # an invalidation or a save of this key since the read began: what it read may be stale
             _cache[ck] = raw
             _failed.pop(ck, None)
             _seen.add(path)
@@ -380,7 +401,7 @@ def kv_get_json_strict(key: str) -> dict | None:
     with _lock:
         if ck in _cache:
             return _loads_strict(_cache[ck])
-        epoch = _epoch
+        epoch, ver = _epoch, _wver.get(ck, 0)
     conn = _open(path)
     try:
         try:
@@ -396,7 +417,7 @@ def kv_get_json_strict(key: str) -> dict | None:
     finally:
         conn.close()
     with _lock:
-        if _epoch == epoch:
+        if _epoch == epoch and _wver.get(ck, 0) == ver:
             _cache[ck] = raw
     return _loads_strict(raw)
 
@@ -427,8 +448,9 @@ def kv_set_json(key: str, obj: dict) -> None:
     now = datetime.now(UTC).isoformat()
     from src.database.writer import write_lock
 
-    with _write_slot() as epoch:
-        with write_lock():
+    with _write_slot() as epoch, write_lock():
+        committed = False
+        try:
             conn = _open(path)
             try:
                 _ensure_table(conn)
@@ -439,17 +461,32 @@ def kv_set_json(key: str, obj: dict) -> None:
                     (key, value, now),
                 )
                 conn.commit()
+                committed = True
             finally:
                 conn.close()
-        with _lock:
-            if _epoch == epoch:
-                _cache[(path, key)] = value
-                _seen.add(path)
-            else:
-                # An invalidation landed since the write began (a restore's, or another key's: the epoch is global). The value is not
-                # cached, and an OLDER one must not stay: it would be served for the life of the process over what was just saved.
+        finally:
+            # Runs however the write ended, so a failure AFTER the commit landed (the close, an interrupt) cannot leave the older
+            # value cached over what the file now holds, nor let a reader that noted the version before the commit fill its older
+            # value: the version always moves, and the entry is filled only by a commit that is known to have landed.
+            #
+            # Filled INSIDE the gate: two saves of one key leave the file in the order they held the gate, and their fills must
+            # follow that order (outside it, the earlier save could fill last and serve the older value). With OO_WRITE_GATE=0 the
+            # gate does not serialise, and two saves of one key can still fill out of order: the gate is what this relies on. The
+            # leaf lock below is never held while anything waits for the gate, so taking it here adds no order.
+            #
+            # The older entry is dropped FIRST: a signal that lands between the statements below then leaves no entry (the next read
+            # goes to the file), never the older one under a version that has moved. (A signal landing before the pop itself leaves
+            # the older entry under the older version: the same residual as a read's, and the closing of the section is not atomic.)
+            with _lock:
                 _cache.pop((path, key), None)
-            _failed.pop((path, key), None)
+                _wver[(path, key)] = _wver.get((path, key), 0) + 1
+                if committed and _epoch == epoch:
+                    # Not filled when an invalidation landed since the write began (a restore's, or another key's: the epoch is
+                    # global) or the commit is not known to have landed: an OLDER value must not be served over what was saved.
+                    _cache[(path, key)] = value
+                    _seen.add(path)
+                if committed:
+                    _failed.pop((path, key), None)
 
 
 def kv_delete(key: str) -> None:
@@ -459,8 +496,8 @@ def kv_delete(key: str) -> None:
         return
     from src.database.writer import write_lock
 
-    with _write_slot():
-        with write_lock():
+    with _write_slot(), write_lock():
+        try:
             try:
                 conn = _open(path)
                 try:
@@ -474,9 +511,11 @@ def kv_delete(key: str) -> None:
                     conn.close()
             except Exception as exc:  # noqa: BLE001 - delete is best-effort; the class only (a keyed open chains the driver's error)
                 _LOG.debug("kv_delete(%r) failed (%s)", key, type(exc).__name__)
-        with _lock:
-            _cache.pop((path, key), None)
-            _failed.pop((path, key), None)
+        finally:
+            with _lock:  # inside the gate, like the save's fill, and however the delete ended (a BaseException after the commit too)
+                _cache.pop((path, key), None)
+                _wver[(path, key)] = _wver.get((path, key), 0) + 1
+                _failed.pop((path, key), None)
 
 
 def kv_invalidate(key: str | None = None) -> None:
