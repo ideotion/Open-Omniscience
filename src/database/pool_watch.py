@@ -188,6 +188,31 @@ def _pool_label(proxy: Any) -> str:
     return "corpus"
 
 
+def label_of_pool(pool: Any) -> str:
+    """The label :func:`register` gave this pool ("corpus" when it was never labelled): which rows of :func:`checked_out` are its own."""
+    try:
+        ent = _POOL_LABELS.get(id(pool))
+        if ent is not None and ent[0]() is pool:
+            return ent[1]
+    except Exception:  # noqa: BLE001 - an instrument must never break its caller
+        pass
+    return "corpus"
+
+
+def _scrubbed_thread(name: Any) -> Any:
+    """A thread's name as a diagnostics reader may show it: the passphrases the process holds taken out. A name is a code constant
+    or a catalogue/request key (``oo-osm-{code}``), so none is expected to carry one; the checkout hook (the hot path) keeps the
+    thread's own name and every reader that hands it out scrubs it here, cold. A name that cannot be checked is withheld. Never raises."""
+    if not isinstance(name, str):
+        return name
+    try:
+        from src.monitoring.secret_scrub import scrubbed
+
+        return scrubbed(name)
+    except Exception:  # noqa: BLE001 - a name that cannot be checked is not shown
+        return "(name withheld)"
+
+
 def _on_checkout(dbapi_connection, connection_record, _connection_proxy) -> None:
     # On the pool's hot path: an instrument must never be the reason a checkout fails.
     try:
@@ -284,7 +309,7 @@ def _on_invalidate(dbapi_connection, connection_record, exception) -> None:
         if log_it:
             _LOG.warning(
                 "pool connection invalidated: held by %s (route %s), %s%s%s",
-                held_by["thread"],
+                _scrubbed_thread(held_by["thread"]),
                 held_by["endpoint"],
                 rec["exception"],
                 f" {rec['code']}" if rec["code"] else "",
@@ -319,7 +344,18 @@ def checked_out() -> list[dict[str, Any]]:
     was serving at checkout (``None`` for a thread the app started itself), and ``ident``
     lets a caller ask for that thread's stack on demand (:func:`stacks_for`) without this
     module storing one (``stack_at_checkout`` appears only under ``OO_POOL_WATCH_STACKS=1``).
+    ``thread`` is the thread's name with the passphrases the process holds taken out (scrubbed here, after the lock, because every
+    caller of this reader writes the name into a record, a log or the bundle).
     """
+    rows = _live_rows()
+    for row in rows:
+        row["thread"] = _scrubbed_thread(row["thread"])
+    return rows
+
+
+def _live_rows() -> list[dict[str, Any]]:
+    """:func:`checked_out`'s rows with the thread names as the threads were called: for the callers that count or age rows and
+    publish no name."""
     global _PRUNED
     now = time.monotonic()
     with _LOCK:
@@ -368,15 +404,27 @@ def standing_holders(min_age_s: float = STANDING_AGE_S) -> int | None:
         return None
     return sum(
         1
-        for r in checked_out()
+        for r in _live_rows()
         if not r["collector"] and r["pool"] == "corpus" and r["age_s"] >= min_age_s
     )
 
 
 def invalidations() -> dict[str, Any]:
-    """The last pool invalidations (newest last) and the total since start."""
+    """The last pool invalidations (newest last) and the total since start. The thread names (``by_thread``, ``held_by.thread``) have
+    the passphrases the process holds taken out, as :func:`checked_out`'s do."""
     with _LOCK:
-        return {"total": _INVALIDATED, "recent": list(_INVALIDATIONS)}
+        total, recent = _INVALIDATED, list(_INVALIDATIONS)
+    return {
+        "total": total,
+        "recent": [
+            {
+                **rec,
+                "by_thread": _scrubbed_thread(rec.get("by_thread")),
+                "held_by": {**rec.get("held_by", {}), "thread": _scrubbed_thread((rec.get("held_by") or {}).get("thread"))},
+            }
+            for rec in recent
+        ],
+    }
 
 
 def pruned_total() -> int:
@@ -417,6 +465,38 @@ def stacks_for(idents: list[int], *, depth: int = STACK_DEPTH) -> dict[int, list
     except Exception:  # noqa: BLE001 - an instrument must never raise
         return out
     return out
+
+
+def pool_config() -> dict:
+    """The corpus pool as built: its size and overflow, its checkout timeout, the figures now, and which of them an operator's
+    ``OO_DB_POOL_SIZE`` / ``OO_DB_MAX_OVERFLOW`` / ``OO_DB_POOL_TIMEOUT`` set (the rest are the memory budget's tier). Counts and
+    names only. Never raises."""
+    try:
+        from src.config.memory_budget import budget
+        from src.database.session import engine
+
+        pool: Any = engine.pool  # the queue pool's size() / checkedout() are not on the base class
+        b = budget()
+        raw_overrides = b.get("overrides")
+        overrides = raw_overrides if isinstance(raw_overrides, dict) else {}
+        out: dict = {
+            "pool_class": type(pool).__name__,
+            "pool_size": int(pool.size()) if callable(getattr(pool, "size", None)) else None,
+            "max_overflow": getattr(pool, "_max_overflow", None),
+            "timeout_s": getattr(pool, "_timeout", None),
+            "checked_out_now": int(pool.checkedout()) if callable(getattr(pool, "checkedout", None)) else None,
+            "tier": b.get("tier"),
+            "set_by_the_operator": sorted(
+                [k for k in ("db_pool_size", "db_max_overflow") if k in overrides]
+                + (["pool_timeout"] if os.getenv("OO_DB_POOL_TIMEOUT") not in (None, "") else [])
+            ),
+        }
+        reservation = getattr(pool, "reservation", None)
+        if callable(reservation):
+            out["collector_reservation"] = reservation()
+        return out
+    except Exception as exc:  # noqa: BLE001 - a diagnostic member never raises
+        return {"available": False, "reason": type(exc).__name__}
 
 
 def is_registered() -> bool:

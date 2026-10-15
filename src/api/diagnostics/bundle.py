@@ -1930,14 +1930,20 @@ def _storage_member(db) -> dict:
 
 
 def _contention_member() -> dict:
-    """Who waited for whom: the write gate's holders and the stall attribution in one member."""
-    return _merged_member(
-        {
-            "write-gate": write_gate_report,
-            "stall-forensics": lambda: stall_forensics_report(limit=200),
-        },
-        replaces=["write-gate.json", "stall-forensics.json"],
-        why="one subject: who held what while a request waited",
+    """Who waited for whom: the write gate's holders and the stall attribution in one member.
+
+    Every name in it is a thread's, and a request can choose one (``oo-osm-{code}``): the readers scrub the names they hand out (the
+    gate's stats, the pool watch) and the whole member goes through the bundle's net as well, because a stall is filed in memory
+    BEFORE a passphrase is set and read after it."""
+    return _scrubbed_member_value(
+        _merged_member(
+            {
+                "write-gate": write_gate_report,
+                "stall-forensics": lambda: stall_forensics_report(limit=200),
+            },
+            replaces=["write-gate.json", "stall-forensics.json"],
+            why="one subject: who held what while a request waited",
+        )
     )
 
 

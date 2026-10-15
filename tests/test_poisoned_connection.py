@@ -770,7 +770,7 @@ def test_the_incremental_vacuum_goes_through_the_guard(tmp_path, registry, monke
         # driver's words are withheld from a log, as from a record) and not the ProgrammingError of a cursor closed on a closed
         # connection.
         first = text.split("\n", 1)[0]
-        assert "DatabaseError" in first and "ProgrammingError" not in first, text
+        assert first == "off-peak incremental vacuum failed: DatabaseError: its text is withheld (a database driver's words)", text
         assert "database disk image is malformed" not in text, text
         assert registry.latched(FILE_CORPUS), "the incremental vacuum named no file for a damaged page"
         assert _healthy_read(eng) == 3, "the incremental vacuum left a poisoned connection in the pool"

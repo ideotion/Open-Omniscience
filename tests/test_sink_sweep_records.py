@@ -29,7 +29,10 @@ MODULES = sorted(
     for entry in ("src/scheduler", "src/wiki")
     for p in (ROOT / entry).rglob("*.py")
 ) + sorted(
-    p.relative_to(ROOT).as_posix() for entry in ("src/backup", "src/ingest") for p in (ROOT / entry).rglob("*.py")
+    p.relative_to(ROOT).as_posix() for entry in ("src/backup", "src/ingest", "src/database") for p in (ROOT / entry).rglob("*.py")
+    # ``repair.py`` is the WAL thread's (its exc_info allowance is the last one in tests/data/exc_info_allowlist.json) and has its own
+    # PR in flight; it joins this reading when that PR lands.
+    if p.name != "repair.py" or p.parent.name != "database"
 ) + ["src/api/unlock.py"]
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
@@ -158,6 +161,144 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         ("VolumeBackupManager.start_backup", "reason = exception_text(exc, passphrase, typed=False)"): 1,
     },
 }
+
+
+#: ``src/database`` (all but ``repair.py``): the damage lane's classifiers and walks (``damage.py``, ``verify.py``, ``salvage.py``: each reads a
+#: caught exception to CLASSIFY it, and what it records is ``failure_label``/``failure_text``/``corruption_of``, a class and a fixed label,
+#: never the engine's words), the retry/lock walks in ``write.py``, the connect helper that hands the driver's exception back to its
+#: caller to chain as the cause of WrongPassphraseError, the statement-deadline translation in ``maintenance.py`` (its ``from exc`` keeps the driver error as the cause
+#: because the damage and storage classifiers read it; every sink of a chain goes through ``log_failure``/``record_text``/
+#: ``record_traceback``, which apply the per-link driver rule), and ``session.info`` dictionaries (not logs). Read line by line; counted.
+_DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    'src/database/connect.py': {
+        ('_try_open_encrypted', 'last_error[:] = [exc]'): 1,
+    },
+    'src/database/damage.py': {
+        ('driver_error', 'cur = exc'): 1,
+        ('failure_label', 'code = exc.errno if isinstance(exc, OSError) else None'): 1,
+        ('corruption_of', 'driver = driver_error(exc)'): 1,
+        ('failure_text', 'driver = driver_error(exc) or exc'): 2,
+        ('failure_text', 'found = corruption_of(exc)'): 1,
+        ('is_corruption', 'return corruption_of(exc) is not None'): 1,
+        ('poisons_connection', 'driver = driver_error(exc)'): 1,
+        ('poisons_connection', 'and not str(exc)'): 1,
+        ('note_raw_driver_error', 'registry.note(key, exc, statement=statement, path=path)'): 1,
+        ('note_raw_driver_error', 'if poisons_connection(exc, _dbapi_of(handle)) is not None:'): 1,
+        ('DamageRegistry.note', 'found = corruption_of(exc)'): 1,
+        ('diagnostics_member', 'return {"error": failure_label(exc)}  # the class only: the member rides the bundle, and what an exception says can be an engine\'s words'): 1,
+        ('guard_raw_driver', 'note_raw_driver_error(handle, exc, engine=engine, file_key=file_key, statement=statement)'): 1,
+        ('DamageRegistry._flush', "error = failure_label(exc)  # the class and the errno name: a drive's message names the path, and the record rides the bundle"): 1,
+        ('DamageRegistry._job_main', '_LOG.warning("database damage: the record could not be written (%s)", failure_label(exc))'): 1,
+        ('DamageRegistry._job_main', 'self._write_error = failure_label(exc)'): 1,
+    },
+    'src/database/fts.py': {
+        ('fts_status', 'out["error"] = failure_text(exc)'): 3,
+    },
+    'src/database/fts_norm.py': {
+        ('_normalize_sql', 'named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "word-segmentation"'): 3,
+    },
+    'src/database/library_generation.py': {
+        ('attach._stamp', 'connection_record.info[_KEY] = _GENERATION if taken is None else taken'): 1,
+        ('_refuse', 'if valid(conn.connection.info.get(_KEY)):'): 1,
+        ('attach._refuse_stale_checkout', 'if not valid(connection_record.info.get(_KEY)):'): 1,
+    },
+    'src/database/maintenance.py': {
+        ('statement_deadline', 'interrupted = "interrupt" in str(exc).lower()'): 1,
+        ('statement_deadline', ') from exc'): 2,
+        ('statement_deadline', 'session.info[_DEADLINE_KEY] = deadline_at'): 1,
+        ('statement_deadline', 'prev_deadline = session.info.get(_DEADLINE_KEY)'): 1,
+        ('deadline_expired', 'at = session.info.get(_DEADLINE_KEY)'): 1,
+        ('statement_deadline', 'session.info[_DEADLINE_KEY] = prev_deadline'): 1,
+        ('statement_deadline', 'session.info.pop(_DEADLINE_KEY, None)'): 1,
+    },
+    'src/database/pool_watch.py': {
+        ('_on_invalidate', 'orig = getattr(exception, "orig", exception)'): 2,
+    },
+    'src/database/salvage.py': {
+        ('Salvage._is_corrupt', 'return damage.corruption_of(exc) is not None'): 1,
+        ('Salvage._classify', 'return SalvageFailed(where, damage.failure_text(exc))'): 1,
+        ('Salvage._raise_for_target', 'if str(exc).lower().startswith("interrupted"):'): 1,
+        ('Salvage._raise_for_target', 'raise self._classify(where, exc) from None'): 1,
+        ('Salvage.run', 'raise self._classify("the copy", exc) from None'): 1,
+        ('Salvage._open_source', 'if self._is_corrupt(exc):'): 1,
+        ('Salvage._open_source', 'raise SalvageRefused("cannot-open", f"the damaged file could not be opened for reading ({damage.failure_text(exc)})") from None'): 1,
+        ('Salvage._read_schema', 'if self._is_corrupt(exc):'): 2,
+        ('Salvage._read_schema', 'raise self._classify("the schema", exc) from None'): 2,
+        ('Salvage._read_table_kinds', 'if self._is_corrupt(exc):'): 1,
+        ('Salvage._create_plain_header', 'raise self._classify("the new file", exc) from None'): 1,
+        ('Salvage._exec', 'self._raise_for_target(where, exc)'): 1,
+        ('Salvage._bounds', 'if not self._is_corrupt(exc):'): 2,
+        ('Salvage._bounds', 'raise self._classify(f"table {t.name}", exc) from None'): 2,
+        ('Salvage._stream', 'if not self._is_corrupt(exc):'): 1,
+        ('Salvage._stream', 'raise self._classify(f"table {t.name}", exc) from None'): 1,
+        ('Salvage._flush', 'self._raise_for_target(f"table {t.name}", exc)'): 1,
+        ('Salvage._probe', 'if not self._is_corrupt(exc):'): 1,
+        ('Salvage._probe', 'raise self._classify(f"table {t.name}", exc) from None'): 1,
+        ('Salvage._copy_one', 'if not self._is_corrupt(exc):'): 1,
+        ('Salvage._copy_one', 'raise self._classify(f"table {t.name}", exc) from None'): 1,
+        ('Salvage._copy_scan', 'if not self._is_corrupt(exc):'): 1,
+        ('Salvage._copy_scan', 'raise self._classify(f"table {t.name}", exc) from None'): 1,
+        ('Salvage._rebuild_search_index', 'self._raise_for_target("the search index", exc)'): 1,
+        ('Salvage._finish', 'self._raise_for_target("the finished copy", exc)'): 1,
+        ('Salvage._restore_counters', 'if self._is_corrupt(exc):'): 1,
+        ('Salvage._orphan_groups', 'self._raise_for_target("the foreign key check", exc)'): 1,
+        ('Salvage._single_key', 'self._raise_for_target("the foreign keys of a table", exc)'): 1,
+        ('Salvage._raise_sequence', 'self._raise_for_target("the counter of a table", exc)'): 1,
+        ('Salvage._id_above', 'self._raise_for_target("the highest id of a table that needs a stand-in row", exc)'): 1,
+        ('Salvage._stand_in', 'self._raise_for_target("the columns of a table that needs a stand-in row", exc)'): 1,
+        ('Salvage._stand_in', 'if "constraint" in str(exc).lower() or type(exc).__name__ == "IntegrityError":'): 1,
+        ('Salvage._stand_in', 'self._raise_for_target("a stand-in row", exc)'): 1,
+        ('Salvage._orphans', 'self._raise_for_target("the orphans", exc)'): 1,
+        ('Salvage._create_indexes', 'raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from None'): 1,
+        ('Salvage._null_the_set_null_keys', 'if "constraint" in str(exc).lower() or type(exc).__name__ == "IntegrityError":'): 1,
+        ('Salvage._null_the_set_null_keys', 'self._raise_for_target("the keys that set NULL", exc)'): 1,
+        ('Salvage._highest_referenced', 'self._raise_for_target("the highest id the orphans refer to", exc)'): 1,
+        ('Salvage._undo_stand_ins', 'self._raise_for_target("a stand-in row that was not needed", exc)'): 1,
+        ('Salvage._create_rest', 'raise SalvageFailed(f"index {name}", damage.failure_text(exc)) from None'): 1,
+        ('Salvage._orphans', 'self._raise_for_target("the list of columns of a table with orphans", exc)'): 1,
+    },
+    'src/database/session.py': {
+        ('_mark_wrote', 'session.info[_WROTE_FLAG] = True'): 1,
+        ('_clear_wrote', 'session.info.pop(_WROTE_FLAG, None)'): 1,
+        ('release_idle_connection', 'if session.info.get(_WROTE_FLAG) or session.info.get(_WRITE_GATE_SESSION_FLAG):'): 2,
+    },
+    'src/database/verify.py': {
+        ('classify_error', 'found = damage.corruption_of(exc)'): 1,
+        ('classify_error', 'driver = damage.driver_error(exc) or exc'): 2,
+        ('is_generic_error', 'if damage.corruption_of(exc) is not None:'): 1,
+        ('is_generic_error', 'driver = damage.driver_error(exc)'): 1,
+        ('_error_of', 'out: dict[str, Any] = {"error": classify_error(exc)}'): 1,
+        ('_error_of', 'if out["error"][0] == VERDICT_UNCHECKED and is_generic_error(exc):'): 1,
+        ('inspect_file', 'return _error_of(exc)'): 2,
+        ('_read_table', 'verdict, reason = classify_error(exc)'): 1,
+        ('_read_table', 'elif verdict == VERDICT_UNCHECKED and is_generic_error(exc):'): 1,
+        ('_page_pass', 'verdict, reason = classify_error(exc)'): 1,
+    },
+    'src/database/write.py': {
+        ('_exc_chain', 'stack: list[BaseException | None] = [exc]'): 1,
+        ('is_locked_error', 'for e in _exc_chain(exc):'): 1,
+        ('is_integrity_error', 'return any(isinstance(e, types) for e in _exc_chain(exc))'): 1,
+        ('run_write_with_retry', 'last_exc = exc'): 1,
+    },
+    'src/database/writer.py': {
+        ('release_if_held', 'if session.info.pop(_SESSION_FLAG, False):'): 1,
+        ('hold_write_window', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('_on_before_flush', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('_on_orm_execute', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('hold_write_window', 'if not session.info.get(_SESSION_FLAG):'): 1,
+        ('_on_before_flush', 'if not session.info.get(_SESSION_FLAG):'): 1,
+        ('_on_orm_execute', 'if not session.info.get(_SESSION_FLAG):'): 1,
+        ('_on_after_transaction_end', 'if transaction.parent is None and session.info.pop(_SESSION_FLAG, False):'): 1,
+    },
+}
+CLASSIFIED.update(_DATABASE_CLASSIFIED)
+#: ``pool_watch``/``writer`` import ``traceback`` to print a stack of frames (the current thread's own), not an exception.
+_DATABASE_NOT_RECORDS: dict[str, dict[str, int]] = {
+    'src/database/pool_watch.py': {'the traceback module is imported': 2},
+    'src/database/writer.py': {'the traceback module is imported': 1},
+}
+NOT_RECORDS.update(_DATABASE_NOT_RECORDS)
+
 
 
 def _found(rel: str, source: str) -> list[str]:

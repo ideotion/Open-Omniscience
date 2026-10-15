@@ -30,6 +30,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import (
     UNENCODABLE_PASSPHRASE,
     UNREADABLE_TEXT,
@@ -513,14 +514,17 @@ class _forensic_timer:
         try:
             from src.monitoring.forensics import record_unlock_timing
 
+            total_ms = round((self._time.monotonic() - self._t0) * 1000 + self._caller_ms, 1)
+            # The last ten openings, one line each (the whole step record stays in ``last_unlock`` and the sentinel, once).
+            storage_events.note_open(
+                "unlock", total_ms=total_ms, phases=self._phases, wal_bytes_before=self._wal, init_db=self._init_db
+            )
             record_unlock_timing(
                 {
                     "wal_bytes_before_open": self._wal,
                     "wal_state_before_open": self._wal_state,
                     "phases": self._phases,
-                    "synchronous_total_ms": round(
-                        (self._time.monotonic() - self._t0) * 1000 + self._caller_ms, 1
-                    ),
+                    "synchronous_total_ms": total_ms,
                     **({"init_db_steps": self._init_db} if self._init_db else {}),
                     "method": (
                         "Wall-clock over the SYNCHRONOUS unlock phases (the wait the "
@@ -602,7 +606,9 @@ def _close_after_checkpoint(conn, passphrase: str | None) -> None:
     driver's words of a failure are written with it (and with what the process holds) taken out."""
     try:
         conn.execute("PRAGMA busy_timeout = 0")
+        began = time.monotonic()
         row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        storage_events.note_checkpoint("unlock", truncate=row, seconds=time.monotonic() - began)
         if row is not None and int(row[0]) != 0:
             _LOG.info(
                 "verify checkpoint before close was busy (a reader holds the log): "
