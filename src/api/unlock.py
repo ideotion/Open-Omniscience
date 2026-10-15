@@ -390,10 +390,11 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
     reading (a fresh store) passes None and the timer says so rather than inventing
     one.
 
-    ``pages`` is the file's size in pages against its header's, read off the verify
-    connection before anything wrote (``src.monitoring.page_reading``): the engine's
-    own ``PRAGMA page_count`` beside the file's length, kept on the ``open`` line of the
-    storage-events journal. A fresh store has none.
+    ``pages`` is the file's size in pages against the database the engine counts, read
+    off the verify connection before anything wrote (``src.monitoring.page_reading``):
+    the engine's own ``PRAGMA page_count`` (``pages_in_database``, not the header's)
+    beside the file's length, kept on the ``open`` line of the storage-events journal.
+    A fresh store has none.
 
     On a large encrypted corpus the upkeep (bounded ANALYZE + catalog seeding + full
     COUNTs that decrypt every page + a cache warm) took long enough to freeze the
@@ -473,7 +474,7 @@ class _forensic_timer:
         import time as _time
 
         self._time = _time
-        # The size in pages against the header's, read by the caller off its verify connection (``page_reading``), or None.
+        # The size in pages against the database the engine counts, read by the caller off its verify connection (``page_reading``), or None.
         self._pages = pages
         self._t0 = _time.monotonic()
         self._last = self._t0

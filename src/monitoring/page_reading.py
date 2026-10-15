@@ -3,9 +3,10 @@
 A SQLite file states its length twice: in its header (bytes 28 to 31, "database size in pages") and by being as long as it is. On a
 healthy file the two agree. They did not on the Asus machine, where the file held 14,981 pages more than its header counted, and
 nothing in the bundle could say when that began, because the only place that read both was a verification that had already found
-damage (``database/verify.py``). This module takes the reading at EVERY open and keeps it as a fact: ``pages_in_file``,
-``pages_in_header`` and ``difference`` (positive = the file holds pages the header does not count). A difference is never a verdict
-here; what it can and cannot mean is in :data:`CAVEAT`.
+damage (``database/verify.py``). This module takes the reading at EVERY open and keeps it as a fact: ``pages_in_file``, the other
+count (``pages_in_header`` from the file's own bytes, ``pages_in_database`` from the engine, never both) and ``difference``
+(positive = the file holds pages that count does not). A difference is never a verdict here; what it can and cannot mean is in
+:data:`CAVEAT`.
 
 Two sources, because the store is plaintext or encrypted and only one of them has a header a reader can see:
 
@@ -47,7 +48,8 @@ CAVEAT = (
     "can overwrite them). While a -wal holds frames either sign is expected (the log's growth gives a negative difference, a shrink a "
     "positive one until a checkpoint truncates), so the log line is not written then. The unlock source is taken after any refused "
     "passphrase of this process (refused_attempts_before) and a refused passphrase folds the -wal into the file, so a 0 after one is "
-    "not evidence of a healthy previous end."
+    "not evidence of a healthy previous end; an absent refused_attempts_before means none. A -wal that could not be looked at "
+    "(wal_error, a class and errno name) is not an absent one, so no log line is written then either."
 )
 
 
@@ -61,11 +63,16 @@ def _int(data: bytes, start: int, width: int) -> int:
     return int.from_bytes(data[start : start + width], "big")
 
 
-def _wal_bytes(path: Path) -> int | None:
+def _wal_state(path: Path) -> tuple[int | None, str | None]:
+    """``(size, None)`` when the ``-wal`` is there, ``(None, None)`` when it is ABSENT (the file does not exist, nothing else), and
+    ``(None, reason)`` when it could not be looked at (a permission or I/O error, as class and errno name): an unreadable log is not
+    "no log", and the one log line asserts "no -wal"."""
     try:
-        return path.with_name(path.name + "-wal").stat().st_size
-    except OSError:
-        return None
+        return path.with_name(path.name + "-wal").stat().st_size, None
+    except FileNotFoundError:
+        return None, None
+    except Exception as exc:  # noqa: BLE001 - a reading that cannot be taken is a reading that says so
+        return None, _error(exc)
 
 
 def read_header(path: Path) -> dict[str, Any]:
@@ -89,7 +96,7 @@ def read_header(path: Path) -> dict[str, Any]:
         out["error"] = _error(exc)
         return out
     out["file_bytes"] = file_bytes
-    out["wal_bytes"] = _wal_bytes(path)
+    out["wal_bytes"], out["wal_error"] = _wal_state(path)
     if file_bytes == 0:
         out["state"] = "empty"
         return out
@@ -142,10 +149,12 @@ def from_connection(conn: Any, path: Path, *, refused_before: int = 0) -> dict[s
         out["state"] = "unreadable"
         out["error"] = _error(exc)
         return out
+    wal_bytes, wal_error = _wal_state(path)
     out.update(
         state="read",
         file_bytes=file_bytes,
-        wal_bytes=_wal_bytes(path),
+        wal_bytes=wal_bytes,
+        wal_error=wal_error,
         header_valid=None,
         refused_attempts_before=refused_before if refused_before > 0 else None,
     )
@@ -178,6 +187,7 @@ def compact(reading: dict[str, Any] | None) -> dict[str, Any] | None:
         "trailing_bytes",
         "file_bytes",
         "wal_bytes",
+        "wal_error",
         "refused_attempts_before",
         "error",
     )
@@ -186,11 +196,12 @@ def compact(reading: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def line_of(reading: dict[str, Any] | None) -> str | None:
     """The one log sentence for a reading that found the file longer than the database it counts while there is NO ``-wal`` (with one
-    either sign is expected, see :data:`CAVEAT`), else ``None``. Counts only."""
+    either sign is expected, see :data:`CAVEAT`; a log that could not be looked at, ``wal_error``, is not "no log" either), else
+    ``None``. Counts only."""
     if not isinstance(reading, dict):
         return None
     diff = reading.get("difference")
-    if not isinstance(diff, int) or diff <= 0 or reading.get("wal_bytes"):
+    if not isinstance(diff, int) or diff <= 0 or reading.get("wal_bytes") or reading.get("wal_error"):
         return None
     if reading.get("source") == "engine-pragma":
         counted = f"{reading.get('pages_in_database')} counted by the engine"

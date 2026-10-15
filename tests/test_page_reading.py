@@ -14,6 +14,7 @@ The headers are crafted byte by byte, so no engine is needed to produce a stale 
 
 from __future__ import annotations
 
+import errno
 import json
 import sqlite3
 from pathlib import Path
@@ -245,8 +246,11 @@ def _wal_store_with_a_shrunk_database_in_its_log(tmp_path: Path):
     holder.execute("COMMIT")
     holder.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     holder.execute("DELETE FROM t")
-    while holder.execute("PRAGMA freelist_count").fetchone()[0]:
+    for _ in range(20):  # bounded: a vacuum that drains nothing must fail this fixture, not hang the run
+        if not holder.execute("PRAGMA freelist_count").fetchone()[0]:
+            break
         holder.execute("PRAGMA incremental_vacuum(50)").fetchall()
+    assert holder.execute("PRAGMA freelist_count").fetchone()[0] == 0, "the fixture could not drain the free pages it needs"
     return path, holder
 
 
@@ -283,6 +287,73 @@ def test_the_header_bytes_source_also_gives_a_positive_difference_while_a_log_ho
     assert page_reading.line_of(page_reading.read_header(path)), "an EMPTY log holds no frames: the sentence is written"
     (tmp_path / (path.name + "-wal")).unlink()
     assert page_reading.line_of(page_reading.read_header(path))
+
+
+@pytest.fixture()
+def unreadable_log(monkeypatch):
+    """``install(exc)`` makes every ``stat`` of a ``-wal`` name raise ``exc`` (a log that is there and cannot be looked at: no
+    permission, an I/O error); any other path is the real one."""
+
+    def install(exc: OSError) -> None:
+        real = Path.stat
+
+        def stat(self, *args, **kwargs):
+            if self.name.endswith("-wal"):
+                raise exc
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", stat)
+
+    return install
+
+
+_LOG_ERRORS = [
+    (PermissionError(errno.EACCES, "denied", f"/home/{MARKER}/open_omniscience.db-wal"), "PermissionError EACCES"),
+    (OSError(errno.ENOTDIR, "not a directory", f"/home/{MARKER}/open_omniscience.db-wal"), "NotADirectoryError ENOTDIR"),
+    (OSError(errno.EIO, f"disk error at /home/{MARKER}/x", f"/home/{MARKER}/open_omniscience.db-wal"), "OSError EIO"),
+]
+
+
+@pytest.mark.parametrize(("exc", "label"), _LOG_ERRORS, ids=["eacces", "enotdir", "eio"])
+def test_a_log_that_cannot_be_looked_at_is_not_no_log_and_writes_no_line_from_the_header_bytes(tmp_path, unreadable_log, exc, label):
+    """Only an ABSENT ``-wal`` (the file does not exist) is "no -wal": the sentence says so, so an unreadable one fails closed. The
+    reason is its class and errno name, never the message or the path (the marker stands for a person's home folder)."""
+    path = _file(tmp_path, in_file=20, pages=5)
+    control = page_reading.read_header(path)
+    assert control["difference"] == 15 and control["wal_error"] is None and page_reading.line_of(control), "absent log: the line"
+    unreadable_log(exc)
+    r = page_reading.read_header(path)
+    assert r["wal_bytes"] is None and r["wal_error"] == label
+    assert r["difference"] == 15, "the figures are still a fact"
+    assert page_reading.line_of(r) is None
+    kept = page_reading.compact(r)
+    assert kept is not None and kept["wal_error"] == label and "wal_bytes" not in kept
+    assert MARKER not in json.dumps(r) and MARKER not in json.dumps(kept)
+
+
+def test_a_log_that_cannot_be_looked_at_writes_no_line_from_the_engine_either(tmp_path, unreadable_log):
+    path, holder = _wal_store_with_a_shrunk_database_in_its_log(tmp_path)
+    try:
+        other = sqlite3.connect(path)
+        try:
+            unreadable_log(OSError(errno.EIO, f"disk error at /home/{MARKER}/x", f"/home/{MARKER}/wal.db-wal"))
+            r = page_reading.from_connection(other, path)
+        finally:
+            other.close()
+    finally:
+        holder.close()
+    assert r["state"] == "read" and r["wal_bytes"] is None and r["wal_error"] == "OSError EIO" and r["difference"] > 0, r
+    assert page_reading.line_of(r) is None
+    assert MARKER not in json.dumps(r)
+    r["wal_error"] = None
+    assert page_reading.line_of(r), "the same figures with the log ABSENT are the signature"
+
+
+def test_the_log_sentence_is_withheld_for_any_wal_error_and_only_that():
+    said = {"difference": 3, "pages_in_file": 8, "pages_in_header": 5, "source": "header-bytes"}
+    assert page_reading.line_of(said)
+    assert page_reading.line_of({**said, "wal_error": "OSError EIO"}) is None
+    assert page_reading.line_of({**said, "wal_error": None, "wal_bytes": None}), "an absent log is None, with no error"
 
 
 def test_the_engine_source_with_a_torn_tail_counts_the_tail_apart_and_never_rounds_it_into_a_page(tmp_path):
@@ -362,7 +433,17 @@ def test_the_log_sentence_is_only_for_a_file_longer_than_its_header_and_is_count
 def test_the_caveat_says_what_a_difference_cannot_prove():
     text = page_reading.CAVEAT
     assert text.startswith("A fact, not a verdict.")
-    for clause in ("negative", "-wal", "version-valid-for", "does not rule out a stale header"):
+    for clause in (
+        "negative",
+        "-wal",
+        "version-valid-for",
+        "does not rule out a stale header",
+        "pages_in_database",
+        "refused_attempts_before",
+        "either sign",
+        "absent refused_attempts_before means none",
+        "wal_error",
+    ):
         assert clause in text, clause
 
 

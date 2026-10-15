@@ -368,12 +368,12 @@ def test_the_member_always_carries_its_method_its_caveat_and_the_state_of_its_fi
 # --------------------------------------------------------------------------- #
 _NAME = "n" * 400  # past the cut
 # The page reading with every field either source can carry, all at once (src/monitoring/page_reading.py ``compact``; the real readings
-# carry one of ``pages_in_header`` / ``pages_in_database`` and only the unlock's carries ``refused_attempts_before``): the widest numbers
+# carry one of ``pages_in_header`` / ``pages_in_database``, one of ``wal_bytes`` / ``wal_error``, and only the unlock's carries ``refused_attempts_before``): the widest numbers
 # a 64 KiB-page store could produce, so this is larger than any reading, and the ``open`` event's budget is measured on it.
 _PAGES_AT_THE_WIDEST = {
     "source": "engine-pragma", "state": "read", "pages_in_file": 123_456_789, "pages_in_header": 123_000_000, "pages_in_database": 123_000_000,
     "difference": 456_789, "page_size": 65536, "header_valid": True, "trailing_bytes": 65535, "file_bytes": 8_090_000_000_000,
-    "wal_bytes": 22_345_678_901, "refused_attempts_before": 999,
+    "wal_bytes": 22_345_678_901, "wal_error": "NotADirectoryError ENOTDIR", "refused_attempts_before": 999,
 }
 
 
@@ -425,7 +425,7 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 41,538 bytes with ordinary names and 86,248 with every name at the cut (a byte or two either way: every event carries the process id),
+    every kind, with the events the hooks write. Measured 41,948 bytes with ordinary names and 86,658 with every name at the cut (a byte or two either way: every event carries the process id),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 90,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
     from src.api import diagnostics_slots as slots
 

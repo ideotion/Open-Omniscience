@@ -1073,6 +1073,9 @@ def _ways_a_helper_uses_its_exception(source: str) -> dict[str, list[str]]:
         args = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)]
         if param not in args:
             bad.append(f"the exception parameter {param!r} is not a parameter of {name} (found {args})")
+        if fn.args.defaults or any(d is not None for d in fn.args.kw_defaults):
+            # a default can rebind a name the body relies on (``type=str``, ``_label=repr``) without a store anywhere in the body
+            bad.append(f"{at(fn)} (a parameter default: the helpers take none, and a default can stand in for a name the body calls)")
         if fn.decorator_list:
             bad.append(f"{name} is decorated")
         parents = {child: node for node in ast.walk(fn) for child in ast.iter_child_nodes(node)}
@@ -1169,6 +1172,13 @@ _PLANTED_BODIES = {
     "errno-as-text": _swap('    return f"{name} {named}" if named else name\n', '    return f"{name} {exc.errno}"\n'),
     "errno-value-escapes": _swap('    return f"{name} {named}" if named else name\n', '    return f"{name} {named} {code}"\n'),
     "shadowed-type": _swap("    name = type(exc).__name__\n", "    type = lambda e: str(e)\n    name = type(exc)\n"),
+    "default-rebinds-type": _swap("def _label(exc: BaseException) -> str:\n", "def _label(exc: BaseException, type=str) -> str:\n"),
+    "default-rebinds-label": _swap(
+        "def _internal_failure(what: str, exc: BaseException) -> None:\n", "def _internal_failure(what: str, exc: BaseException, _label=repr) -> None:\n"
+    ),
+    "keyword-default-rebinds-label": _swap(
+        "def _internal_failure(what: str, exc: BaseException) -> None:\n", "def _internal_failure(what: str, exc: BaseException, *, _label=repr) -> None:\n"
+    ),
     "module-level-rebind": lambda source: source + "\n_label = repr\n",
     "module-level-type": lambda source: source + "\ntype = lambda e: str(e)\n",
 }
