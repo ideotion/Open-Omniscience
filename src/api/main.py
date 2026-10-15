@@ -104,16 +104,22 @@ def _note_boot_init_db() -> None:
     """
     try:
         from src.database.init_steps import first_record, last_record
-        from src.monitoring import storage_events
-        from src.monitoring.forensics import record_init_db
+        from src.monitoring import page_reading, storage_events
+        from src.monitoring.forensics import pages_at_boot, record_init_db
 
         record = first_record() or last_record()
         if record is not None:
             record_init_db(record)
             if record.get("complete"):
                 # A start with no passphrase opened the store here; an unlock keeps its own line (``api/unlock.py``). A call that
-                # raised (a locked store, at the launcher's first ``init_db``) opened nothing and keeps none.
-                storage_events.note_open("boot", total_ms=record.get("total_ms"), init_db=record)
+                # raised (a locked store, at the launcher's first ``init_db``) opened nothing and keeps none. The pages reading is
+                # the one ``record_session_start`` took from the file's own bytes before any connection existed: a store that is
+                # encrypted has no header to read there, and says so (``encrypted-or-foreign``) rather than guessing.
+                pages = pages_at_boot()
+                storage_events.note_open("boot", total_ms=record.get("total_ms"), init_db=record, pages=pages)
+                said = page_reading.line_of(pages)
+                if said:
+                    logger.warning("boot: %s", said)
     except Exception as exc:  # noqa: BLE001 - forensics never blocks a boot
         log_failure(logger, "could not keep the init_db step record", exc, level=logging.DEBUG)
 

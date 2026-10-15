@@ -104,9 +104,9 @@ class Slot:
 #:     incidents go first and then the check's table lists, and the member says each.
 #:   * ``storage-events`` 90,000: MEASURED at the journal's full retention (``storage_events.KEEP``: 20 holds of the write gate, 10 each
 #:     of guard engagements, checkpoints, notable checkpoints, store opens and pool timeouts) with the events the hooks write, the
-#:     checkpoints with the reader snapshot ``hygiene`` hands every one of them: 38,578 bytes with ordinary names, 83,288 with every thread,
+#:     checkpoints with the reader snapshot ``hygiene`` hands every one of them: 41,948 bytes with ordinary names, 86,658 with every thread,
 #:     route and frame name at the 160-character cut (the longest ``_clean`` lets through), of which 2,353 is the fixed part (each figure moves by a byte or two with the width of the process id every event carries). 90,000 is
-#:     8 per cent above the second. The hard ceiling is 70 events at
+#:     4 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The hard ceiling is 70 events at
 #:     ``MAX_EVENT_BYTES`` (3,000), about 212 KB, and a member over its budget drops the OLDEST events of its largest kind and says how
 #:     many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut. ``test_the_storage_events_budget_holds_a_full_journal``
 #:     rebuilds both measurements and holds them to this number.

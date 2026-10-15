@@ -65,6 +65,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring import page_reading
 from src.monitoring.secret_scrub import log_failure, scrubbed
 from src.paths import data_dir
 
@@ -121,16 +122,25 @@ READ_RETRY_S = 0.05
 #: the kind recorded on every pass boundary.
 READER_HOLDERS = 3
 #: How many closed holds' keys are remembered (see :func:`end`). WHAT IT PROTECTS: memory only; a hold's key is its start time, so a key
-#: more than a few holds old cannot be offered again.
+#: more than a few holds old cannot be offered again. WHAT EVICTION COSTS: an evicted key that was then offered to :func:`record` would
+#: open an entry nothing ends. Not reachable for the gate, the one user: each tombstone is a hold of at least ``HOLD_RECORD_S`` (30 s) on
+#: a gate that holds one writer at a time, so evicting a key takes 64 more such holds (over half an hour) while the watchdog sample that
+#: could offer it late computes for microseconds to seconds.
 ENDED_KEYS_MAX = 64
 
 _LOCK = threading.RLock()
 _COND = threading.Condition(_LOCK)
 _WRITE_LOCK = threading.Lock()
 _LOAD_LOCK = threading.Lock()  # one reader of the file at a time; never held while recording
+_PATHS_LOCK = threading.Lock()  # guards _PATHS_USED only; a leaf, held for one set operation
 
 #: A token for THIS process, stamped on every event, so an entry that was open when an earlier process ended is recognised as such.
 _PROC = f"{os.getpid()}-{time.time_ns()}"  # nanoseconds: an exec restart keeps the pid and can come within the same second
+
+#: The journal files this process has tried to read or write, as the path was when it did (a data directory is fixed for a process; a
+#: test moves it). :func:`reset_for_tests` removes THESE and never resolves the data directory again, because resolving it is not free
+#: while a marked drive is missing (it signals the volume monitor, which pauses collection for good).
+_PATHS_USED: set[Path] = set()
 
 _LOADED = False
 _STATE: dict[str, dict[str, Any]] = {}  # kind -> {"total": int, "events": [event, ...]}: THIS process's events only
@@ -220,6 +230,14 @@ def _path() -> Path:
     return data_dir() / _FILE
 
 
+def _used_path() -> Path:
+    """:func:`_path`, remembered as one this journal has touched (for :func:`reset_for_tests`)."""
+    path = _path()
+    with _PATHS_LOCK:
+        _PATHS_USED.add(path)
+    return path
+
+
 def _empty_kind() -> dict[str, Any]:
     return {"total": 0, "events": []}
 
@@ -257,7 +275,7 @@ def _read_file() -> tuple[dict[str, dict[str, Any]], str | None, str, bool]:
     last = "missing"
     for attempt in range(READ_ATTEMPTS):
         try:
-            path = _path()
+            path = _used_path()
         except Exception as exc:  # noqa: BLE001 - a data volume that is not there: no file was read and none can be written
             return {}, None, f"unreadable ({_label(exc)})", True
         try:
@@ -339,7 +357,7 @@ def _write(text: str, version: int, generation: int) -> bool:
             return True
         tmp = None
         try:
-            path = _path()
+            path = _used_path()
             tmp = path.with_name(path.name + ".tmp")
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp.write_text(text, encoding="utf-8")
@@ -674,9 +692,13 @@ def note_open(
     phases: Any = None,
     wal_bytes_before: int | None = None,
     init_db: Any = None,
+    pages: Any = None,
 ) -> None:
     """The store was opened: ``via`` is ``unlock`` (a passphrase was entered; ``phases`` are the synchronous phases the unlock
-    timed) or ``boot`` (a start with no passphrase, where only ``init_db`` is timed)."""
+    timed) or ``boot`` (a start with no passphrase, where only ``init_db`` is timed). ``pages`` is the reading of the file's size in
+    pages against the size it counts (``src.monitoring.page_reading``): taken from the file's bytes before any connection existed (a
+    boot) or off the unlock's verify connection before it wrote or checkpointed (an unlock), a fact with the source that produced it,
+    never a verdict."""
     try:
         event = {
             "via": via,
@@ -684,6 +706,7 @@ def note_open(
             "phases": [[p.get("phase"), p.get("ms")] for p in phases if isinstance(p, dict)] if isinstance(phases, list) else None,
             "wal_bytes_before_open": wal_bytes_before,
             "init_db": _compact_init_db(init_db),
+            "pages": page_reading.compact(pages),
         }
         record("open", {k: v for k, v in event.items() if v is not None})
     except Exception as exc:  # noqa: BLE001
@@ -810,10 +833,6 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
     global _WRITE_FAILURES, _LAST_WRITE_FAILURE, _LAST_WRITE_OK_AT, _INTERNAL_FAILURES, _LAST_INTERNAL_FAILURE, _WRITER_DEATHS
     global _READ_FAILURES, _LAST_READ_FAILURE
     with _LOCK:
-        # Nothing recorded, loaded or written since the last reset means this process never made the file: the removal below
-        # resolves the data directory, and on a marked drive that has gone missing that resolution is itself a signal to the
-        # volume monitor (it pauses collection), which a test that merely walked past must not cause.
-        touched = bool(_LOADED or _STATE or _OPEN or _VERSION or _WRITTEN_VERSION or _DIRTY)
         _LOADED = False
         _STATE = {}
         _EARLIER = {}
@@ -835,9 +854,15 @@ def reset_for_tests(*, keep_file: bool = False) -> None:
         _WRITTEN_VERSION = 0
         _WRITE_FAILURES = 0
         _LAST_WRITE_FAILURE = _LAST_WRITE_OK_AT = None
-        if touched and not keep_file:
-            with suppress(Exception):  # a test that broke the path must still be able to reset
-                path = _path()
-                for victim in (path, path.with_name(path.name + ".tmp")):
-                    with suppress(OSError):
-                        victim.unlink(missing_ok=True)
+        if not keep_file:
+            # The files this journal tried to read or write, not the data directory as it resolves now: resolving it after a test
+            # made a marked folder disappear signalled the volume monitor, which paused collection for the rest of the process. A file
+            # it could not READ is among them (the attempt names it), so a test's unreadable file does not outlive the test.
+            with _PATHS_LOCK:
+                paths = list(_PATHS_USED)
+                _PATHS_USED.clear()
+            for path in paths:
+                with suppress(Exception):  # a test that broke the path must still be able to reset
+                    for victim in (path, path.with_name(path.name + ".tmp")):
+                        with suppress(OSError):
+                            victim.unlink(missing_ok=True)
