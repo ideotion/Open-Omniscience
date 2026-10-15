@@ -28,6 +28,7 @@ import pytest
 from src.analytics.wikidata_rings import POLITE_SLEEP_S
 from src.catalog.qid_labels import (
     DECLINED_NO_LABEL,
+    DECLINED_REDIRECT_REFUSED,
     DECLINED_REFUSED,
     DECLINED_UNRESOLVED,
     AirplaneRefusal,
@@ -36,6 +37,7 @@ from src.catalog.qid_labels import (
     looks_like_bare_qid,
     resolve_labels,
 )
+from src.safety.fetcher import RedirectRefused
 
 
 def _entity(qid: str, labels: dict[str, str]) -> dict:
@@ -187,6 +189,24 @@ def test_a_failed_lookup_declines_one_row_and_never_aborts_the_batch() -> None:
                          kill_switch=lambda: False)
     assert out["labels"] == {"Q1": "One", "Q3": "Three"}
     assert out["declined"] == {"Q2": DECLINED_UNRESOLVED}
+    assert out["lookups_refused"] == 0 and "refusal" not in out, "an ordinary failure is not a refusal"
+
+
+def test_a_lookup_wikidata_redirected_off_its_host_is_declined_as_ITSELF_counted_and_named() -> None:
+    """A refused redirect used to read as 'label_not_resolved', the same as a timeout: a retry would be refused the same way, and
+    only a person can look at where the answer pointed. It is its own reason, counted, with the class name and no address."""
+    def fetch(url: str) -> dict:
+        qid = url.split("ids=")[1].split("&")[0]
+        if qid == "Q2":
+            raise RedirectRefused("request refused: the host is not one this client talks to")
+        return _entity(qid, {"en": f"Body {qid}"})
+
+    out = resolve_labels(["Q1", "Q2", "Q3"], fetch=fetch, sleep=lambda _s: None, kill_switch=lambda: False)
+    assert out["labels"] == {"Q1": "Body Q1", "Q3": "Body Q3"}, "the batch carries on past a refused lookup"
+    assert out["declined"] == {"Q2": DECLINED_REDIRECT_REFUSED}
+    assert DECLINED_REDIRECT_REFUSED not in (DECLINED_UNRESOLVED, DECLINED_NO_LABEL, DECLINED_REFUSED)
+    assert out["lookups_refused"] == 1 and out["refusal"] == "RedirectRefused"
+    assert "talks" not in str(out["refusal"]) and out["requests"] == 2, "no message or address in the result; only answered lookups count as requests"
 
 
 def test_an_unresolved_row_is_declined_never_admitted_under_its_identifier() -> None:
@@ -203,6 +223,44 @@ def test_an_unresolved_row_is_declined_never_admitted_under_its_identifier() -> 
     )
     assert [d["qid"] for d in out["declined"]] == ["Q2"]
     assert "not discarded" in out["declined"][0]["detail"]
+
+
+def test_a_declined_row_carries_the_reason_its_lookup_ended_with() -> None:
+    rows = [(1, "Q1"), (2, "Q2"), (3, "Q3")]
+    out = admit_or_decline(rows, {}, {"Q1": DECLINED_REDIRECT_REFUSED, "Q2": DECLINED_NO_LABEL})
+    by_qid = {d["qid"]: d for d in out["declined"]}
+    assert by_qid["Q1"]["reason"] == DECLINED_REDIRECT_REFUSED
+    assert "redirect" in by_qid["Q1"]["detail"] and "not discarded" in by_qid["Q1"]["detail"]
+    assert by_qid["Q2"]["reason"] == DECLINED_NO_LABEL
+    assert by_qid["Q3"]["reason"] == DECLINED_UNRESOLVED, "a row with no recorded reason reads as before"
+    assert admit_or_decline(rows, {})["declined"][0]["reason"] == DECLINED_UNRESOLVED, "the reasons argument is optional"
+
+
+def test_the_endpoint_reports_a_refused_redirect_as_its_own_reason_with_a_count(monkeypatch) -> None:
+    """Through the real route function and a real in-memory database: the refusal reaches the response as a reason on the declined row,
+    a count and the class name, and nothing is renamed."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    import src.api.source_management as sm
+    from src.database.models import Base, Source
+
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    db.add(Source(name="Q133293483", domain="q133293483.example", source_type="news"))
+    db.commit()
+
+    def _refuse(url: str):  # noqa: ANN202
+        raise RedirectRefused("request refused: the host is not one this client talks to")
+
+    monkeypatch.setattr("src.catalog.wikidata_apply._default_getter", _refuse)
+    out = sm.resolve_qid_names(limit=30, db=db)
+    assert out["lookups_refused"] == 1 and out["refusal"] == "RedirectRefused"
+    assert out["declined"] == {"Q133293483": DECLINED_REDIRECT_REFUSED}
+    assert [d["reason"] for d in out["declined_rows"]] == [DECLINED_REDIRECT_REFUSED]
+    assert out["proposed_names"] == [] and out["applied"] is False
+    assert db.query(Source).one().name == "Q133293483", "nothing is renamed"
 
 
 def test_the_endpoint_refuses_under_the_kill_switch_with_a_named_409(monkeypatch) -> None:

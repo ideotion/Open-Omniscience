@@ -166,9 +166,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   country-catalogue query and the release check carry the refusal text; the entity cache and the
   gazetteer count the request as refused and the ring loader as an error; the source-typing pass
   counts the source (`sources_refused`, with the class name `RedirectRefused` and no address, and
-  the Diagnostics button shows "N refused" beside its tally); the QID label resolver records it
-  as `DECLINED_UNRESOLVED`, the same as any failed lookup, because it does not yet tell a
-  refusal apart.
+  the Diagnostics button shows "N refused" beside its tally); the QID label resolver declines the
+  row as `redirect_refused`, apart from an ordinary failed lookup (`unresolved`), and counts
+  it (`lookups_refused`, with the class name `RedirectRefused` and no address).
 
   **What an OpenTimestamps submission reveals** is your IP and timing, to the calendar
   operator — the *act of submitting*, not the content: only an opaque SHA-256 digest of

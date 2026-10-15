@@ -433,6 +433,9 @@ def resolve_qid_names(
 
     It renames nothing on its own: the resolved labels come back for review beside the
     declines, because a name is an identity field and identity fields are evidence, not fact.
+    A lookup Wikidata answered with a redirect to another host is refused, not followed, and
+    comes back as its own decline reason (``redirect_refused``) with a count
+    (``lookups_refused``) and the class name (``refusal``), never an address.
     """
     from src.catalog.qid_labels import (
         AirplaneRefusal,
@@ -474,7 +477,7 @@ def resolve_qid_names(
     except AirplaneRefusal as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    applied = admit_or_decline(targets, out["labels"])
+    applied = admit_or_decline(targets, out["labels"], out["declined"])
     return {
         "examined": len(rows),
         "bare_qid_rows": len(targets),
