@@ -471,8 +471,11 @@ def test_with_the_production_default_rereads_on_the_latch_of_a_last_page_poison_
 
     from src.database import connect as connect_mod
 
+    from src.database import verify
+
     path = tmp_path / "ov.db"
     _build_overflow(path, "last")
+    verify._reset_for_tests()  # a stop left set by an earlier test (the app's shutdown calls verify.stop) ends every re-read unanswered
     rereads_before = registry.rereads
     registry.rereads = True
     before = connect_mod.get_passphrase()
@@ -498,6 +501,7 @@ def test_with_the_production_default_rereads_on_the_latch_of_a_last_page_poison_
         eng.dispose()
         registry.rereads = rereads_before  # the suite's isolation fixture owns turning it off
         connect_mod.set_passphrase(before)
+        verify._reset_for_tests()
 
 
 # -- the rule itself, on real driver errors and on stand-ins ----------------------------------------------------
