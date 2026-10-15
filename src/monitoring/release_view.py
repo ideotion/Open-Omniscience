@@ -24,6 +24,21 @@ _STEPS_MAX = 12
 _NAMES_MAX = 8
 
 
+#: Stamped on a snapshot by a build that scrubbed its thread names as they were recorded. A snapshot without it comes from an older
+#: build, whose names were kept as they were, and nothing can prove them free of a passphrase the previous session held and this one
+#: does not: they are replaced by this marker (fail closed).
+NAMES_STAMP = "names_scrubbed"
+NAME_WITHHELD = "<thread name withheld: written by a build that did not scrub it>"
+
+
+def vouched_names(snap: Any) -> Any:
+    """The snapshot with every thread name replaced by :data:`NAME_WITHHELD` unless the snapshot carries :data:`NAMES_STAMP`."""
+    if not isinstance(snap, dict) or snap.get(NAMES_STAMP) is True or not isinstance(snap.get("threads"), list):
+        return snap
+    threads = [{**t, "name": NAME_WITHHELD} if isinstance(t, dict) and "name" in t else t for t in snap["threads"]]
+    return {**snap, "threads": threads}
+
+
 def _class_only(value: Any) -> str:
     """The class named at the start of ``value`` (``ValueError: boom`` is ``ValueError``), or a fixed word when it does not start
     with one. ``value.split(":")[0]`` and nothing after it is ever kept."""
@@ -93,6 +108,7 @@ def scrub_marks(marks: Any) -> tuple[dict[str, Any] | None, str | None]:
                 continue
             clean = []
             for snap in snaps:
+                snap = vouched_names(snap)
                 if isinstance(snap, dict) and isinstance(snap.get("guard"), dict) and "last_release" in snap["guard"]:
                     guard = {k: v for k, v in snap["guard"].items() if k != "last_release"}
                     rebuilt = allow_listed(snap["guard"].get("last_release"))

@@ -44,8 +44,8 @@ def test_session_forensics_member_nets_an_older_snapshot_that_kept_the_name(held
     assert MARKER not in text
 
 
-def _marks_with_the_name() -> dict:
-    snap = {"why": "near the line", "threads": [{"name": f"oo-dump-{MARKER}", "stack": ["f (x.py:1)"]}]}
+def _marks_with_the_name(stamped: bool = True) -> dict:
+    snap = {"why": "near the line", "names_scrubbed": stamped, "threads": [{"name": f"oo-dump-{MARKER}", "stack": ["f (x.py:1)"]}]}
     return {"session_id": "s1", "pressure": [dict(snap)], "pressure_light": [dict(snap)]}
 
 
@@ -58,6 +58,41 @@ def test_scrub_marks_takes_the_name_out_of_an_older_sidecar(held):
     assert "oo-dump-" in text and MARKER not in text
 
 
+def test_scrub_marks_withholds_the_names_of_an_unstamped_sidecar(held):
+    from src.monitoring.release_view import NAME_WITHHELD, scrub_marks
+
+    out, failed = scrub_marks(_marks_with_the_name(stamped=False))
+    assert failed is None
+    text = json.dumps(out)
+    assert NAME_WITHHELD in text and "oo-dump-" not in text and MARKER not in text
+
+
+def test_scrub_marks_refuses_when_the_marks_cannot_be_checked(monkeypatch):
+    from src.monitoring import release_view
+
+    monkeypatch.setattr(release_view, "scrubbed_value", lambda v: None)
+    out, failed = release_view.scrub_marks(_marks_with_the_name())
+    assert out is None and failed == "ValueError"
+
+
+def test_a_name_written_by_an_older_build_is_withheld_even_when_no_passphrase_is_held(monkeypatch):
+    """The boot that writes the unclean-end record holds no passphrase of the session that died, so held-scrubbing cannot help."""
+    from src.monitoring import session_history
+    from src.monitoring.release_view import NAME_WITHHELD
+
+    monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
+    old = {"pressure": [_marks_with_the_name(stamped=False)["pressure"][0]]}
+    rec = session_history._pressure_record(old)
+    assert rec and rec["threads"][0]["name"] == NAME_WITHHELD
+    new = {"pressure": [_marks_with_the_name(stamped=True)["pressure"][0]]}
+    assert session_history._pressure_record(new)["threads"][0]["name"].startswith("oo-dump-")
+
+
+def test_both_snapshot_writers_stamp_their_names():
+    text = (ROOT / "src/monitoring/session_hwm.py").read_text(encoding="utf-8")
+    assert text.count('snap["names_scrubbed"] = True') == 2
+
+
 def test_the_standalone_forensics_route_and_its_text_carry_no_name(held, monkeypatch):
     from src.monitoring import forensics, session_history, session_hwm
 
@@ -65,7 +100,7 @@ def test_the_standalone_forensics_route_and_its_text_carry_no_name(held, monkeyp
     monkeypatch.setattr(session_history, "previous_session_id", lambda: "s1")
     peaks = forensics._previous_peaks()
     assert peaks and peaks.get("available") is True
-    assert MARKER not in json.dumps(peaks)
+    assert "oo-dump-" in json.dumps(peaks) and MARKER not in json.dumps(peaks)  # the thread section rendered
     assert MARKER not in forensics.render_text(
         {"previous_session": {"previous_session": "unclean-end", "previous_session_peaks": peaks}}
     )
@@ -74,7 +109,7 @@ def test_the_standalone_forensics_route_and_its_text_carry_no_name(held, monkeyp
 def test_the_end_record_written_to_the_ledger_carries_no_name(held):
     from src.monitoring import session_history
 
-    hwm = {"pressure": [{"why": "x", "threads": [{"name": f"served-cache-{MARKER}", "stack": ["f (x.py:1)"]}]}]}
+    hwm = {"pressure": [{"why": "x", "names_scrubbed": True, "threads": [{"name": f"served-cache-{MARKER}", "stack": ["f (x.py:1)"]}]}]}
     rec = session_history._pressure_record(hwm)
     assert rec and rec.get("threads")
     assert MARKER not in json.dumps(rec)
@@ -87,7 +122,8 @@ _FILES = (
     "src/database/writer.py",
     "src/database/maintenance.py",
     "src/monitoring/session_hwm.py",
-    "src/monitoring/session_history.py",
+    # session_history.py reads names out of a sidecar (no thread's .name there: _pressure_record is tested above) and release_view.py
+    # only rebuilds marks; neither is listed because the reading has nothing to find in them.
 )
 #: Held in memory only; every line and member that PUBLISHES it scrubs it.
 _IN_MEMORY_ONLY = {("src/database/writer.py", "self._holder = threading.current_thread().name")}
@@ -149,7 +185,10 @@ def test_the_guard_sees_the_forms_it_claims_to(tmp_path, monkeypatch):
     probe = tmp_path / "src" / "p.py"
     probe.write_text(
         "import threading\n"
+        "import threading as t\n"
         "from threading import current_thread\n"
+        "from threading import current_thread as ct\n"
+        "d = t.current_thread().name\n"
         "a = getattr(thread, 'name')\n"
         "cur = threading.current_thread()\n"
         "b = cur.name\n"
@@ -159,7 +198,8 @@ def test_the_guard_sees_the_forms_it_claims_to(tmp_path, monkeypatch):
     )
     monkeypatch.setitem(globals(), "ROOT", tmp_path)
     found = _raw_thread_names("src/p.py")
-    assert len(found) == 4, found  # the import, getattr, cur.name, getName; the wrapped one passes
+    # both imports, the alias call, getattr, cur.name, getName; the wrapped one (line 11) passes
+    assert sorted(int(f.split(":")[1]) for f in found) == [3, 4, 5, 6, 8, 9], found
 
 
 def test_the_write_gate_holder_lines_are_scrubbed():

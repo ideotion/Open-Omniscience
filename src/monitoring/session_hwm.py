@@ -1024,6 +1024,7 @@ def _pressure_snapshot(
     snap["memory"] = composition(walk_heap=False)
     snap["holders"] = _holders_view()
     snap["threads"] = thread_snapshot()
+    snap["names_scrubbed"] = True  # release_view.NAMES_STAMP: a reader withholds the names of a snapshot without it
     return snap
 
 
@@ -1146,6 +1147,7 @@ def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] 
     if asked_for and not cpu:
         snap["thread_cpu"] = "unavailable on this platform: the threads below are not ranked by CPU"
     snap["threads"] = threads
+    snap["names_scrubbed"] = True  # release_view.NAMES_STAMP
     with _LOCK:
         _LIGHT_BASELINE = {"mono": mono, "blocks": blocks, "cpu": cpu}
     snap["took_ms"] = round((time.perf_counter() - t0) * 1000, 1)
