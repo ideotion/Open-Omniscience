@@ -80,8 +80,9 @@ first, +25 MB resident (about 100 bytes a page; about 100 MB at a million failin
 lowest page numbers, never a row per failing page (a set of them was 65 MB more at a million pages). The 61 per-table checks of the same file took 12.6 s (a keyed connection each, 0.17 s of key
 derivation apiece), so the pass adds under a tenth to a check that found a problem and runs at all only for one. The attempt budget is
 the check's own: the pass runs inside the file's entry (``running`` until it is done), so a process killed in it leaves the entry the next
-start counts as one unfinished attempt, ``MAX_VERIFY_ATTEMPTS`` of them in a row. It is NOT interruptible once begun (a single C loop answers
-no progress handler: about a second per 230 MB, 19 s at 4 GB), so a stop is looked for before it starts. A quit does NOT let a pass that
+start counts as one unfinished attempt, ``MAX_VERIFY_ATTEMPTS`` of them in a row. The ENGINE's pass is NOT interruptible once begun (a single C loop answers
+no progress handler: about a second per 230 MB, 19 s at 4 GB), so a stop is looked for before it starts; the app's own check of a file longer
+than 4 GiB looks for it before every chunk and before every page of a chunk it reads page by page. A quit does NOT let a pass that
 began end (the thread is a daemon): :func:`stop` gives the attempt back at once, the pass's answer is dropped and the next start reads
 the file again; only a kill counts. The progress line names the pass (``(pages)``) while it runs, and the app serves from the moment
 the boot sequence's thread starts: only collection waits for the check, as it already does.
@@ -228,7 +229,7 @@ _PROGRESS_STEPS = 100_000
 _LOCK = threading.Lock()
 _PLAN: dict[str, Any] | None = None
 _CANCEL = threading.Event()
-#: The file whose page pass is in flight (it cannot be interrupted: see :func:`stop`), and the files whose attempt a stop has already
+#: The file whose page pass is in flight (the engine's pass cannot be interrupted: see :func:`stop`), and the files whose attempt a stop has already
 #: given back in this run, so that the stop and the run's own end never give it back twice. Both under ``_LOCK``.
 _PASS_FILE: str | None = None
 _GAVE_BACK: set[str] = set()

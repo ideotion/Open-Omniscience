@@ -412,6 +412,28 @@ def test_a_stop_asked_for_while_a_chunk_is_read_page_by_page_ends_it_at_the_next
     assert found["unread"] == 0, "the stop came before the bad page was reached"
 
 
+def test_a_list_of_no_pages_does_not_hide_a_failing_first_page_from_the_calibration(copy):
+    """The calibration must not read page 1 out of the LIST of failing pages: with ``keep`` of 0 that list is empty, and a file the method
+    does not fit would be filed ``checked`` with every page failing, which is invented damage."""
+    _flip(copy, 1)
+    found = page_auth.check_path(copy, PAGE, keep=0)
+    assert found["state"] == page_auth.STATE_MISMATCH and found["mismatch_on"] == page_auth.MISMATCH_FIRST_PAGE, found
+    assert found["pages"] == []
+    for page in range(2, 2 + page_auth.CALIBRATION_PAGES):
+        _flip(copy, page)
+    _flip(copy, 1)  # page 1 holds again, pages 2 to 9 all fail
+    found = page_auth.check_path(copy, PAGE, keep=0)
+    assert found["state"] == page_auth.STATE_MISMATCH and found["mismatch_on"] == page_auth.MISMATCH_LATER_PAGES, found
+    for page in range(2, 2 + page_auth.CALIBRATION_PAGES):
+        _flip(copy, page)  # the file is healthy again; only the key is wrong now
+    connect_mod.set_passphrase("another passphrase entirely")
+    try:
+        found = page_auth.check_path(copy, PAGE, keep=0)
+    finally:
+        connect_mod.set_passphrase(PASSPHRASE)
+    assert found["state"] == page_auth.STATE_MISMATCH and found["mismatch_on"] == page_auth.MISMATCH_FIRST_PAGE, found
+
+
 def test_a_list_of_no_pages_still_counts_every_failing_page(copy):
     _flip(copy, 20)
     _flip(copy, 30)

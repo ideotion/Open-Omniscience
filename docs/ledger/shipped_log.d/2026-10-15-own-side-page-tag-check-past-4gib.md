@@ -4,7 +4,7 @@
 SQLCipher 4 page tags itself (HMAC-SHA512 of each page minus its tag, plus the page number, under a key derived once from the passphrase holder `connect._apply_key` reads) in 4 MiB chunks, wired into `verify._tag_pass` for files over
 the limit; the pragma path below 2^32 is unchanged.
 
-- **Calibration, so it cannot invent damage:** page 1 failing, or every one of pages 2–9 failing beside a good page 1, is `unchecked` ("the check does not match this file"), never `damaged`; an unreadable first page, a missing passphrase,
+- **Calibration, so it cannot invent damage:** page 1 failing, or every one of pages 2–9 failing beside a good page 1, is `unchecked` (each with its own sentence: "the page check's method did not match this file's first page" or "the first page matched but every page after it that was read failed"), never `damaged`; an unreadable first page, a missing passphrase,
   a stop and any unread page are `unchecked` with a reason; only a page that was read and whose tag does not hold is `damaged`, and R100's second read still confirms it before the verdict stands. Non-default cipher settings are refused
   in fixed words before the file is read.
 - **The lock-byte page:** SQLite never writes the page holding byte 2^30 (65,537 at 16 KiB), so it is zeros and fails the tag; the engine skips it and so does the check (counted as `lock_byte_page`). Found only on a real 4.37 GB store.

@@ -29,6 +29,7 @@ import os
 import random
 import shutil
 import sqlite3
+import sys
 import threading
 import types
 from pathlib import Path
@@ -978,6 +979,20 @@ def test_a_missing_passphrase_is_named_and_the_connection_is_closed_before_the_r
     assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == [verify._TAG_NO_KEY] and con.closed == 1, entry
 
 
+def test_pages_the_drive_would_not_give_are_said_as_such_and_nothing_is_said_to_have_been_found(healthy, monkeypatch):
+    """The unread-only entry: ``unchecked``, the count and the first failure's label, and the second line says the own check WAS USED
+    (nothing was found, so it must not say 'found by')."""
+    _past_the_limit(monkeypatch, healthy)
+    monkeypatch.setattr(verify.page_auth, "check_path", lambda *a, **k: {**_CHECKED, "unread": 3, "examined": 297, "failure": "OSError EIO"})
+    entry = verify._page_pass(healthy)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["pages_unread"] == 3, entry
+    assert entry["detail"] == [
+        "the page check could not read 3 page(s) (OSError EIO) and so did not check the file to the end",
+        verify._TAG_USED_OWN,
+    ]
+    assert verify._TAG_USED_OWN.startswith("the app's own page check was used") and "found" not in " ".join(entry["detail"])
+
+
 def test_a_calibration_that_fails_after_a_good_first_page_does_not_say_the_first_page_did_not_match(healthy, monkeypatch):
     """Pages 2 to 9 all failing beside a good page 1 is ``unchecked`` too (R134 (2)), but the record's words must be true of it: page 1
     DID match, and the same file under 4 GiB is ``damaged`` with those pages named by the pragma."""
@@ -991,6 +1006,31 @@ def test_a_calibration_that_fails_after_a_good_first_page_does_not_say_the_first
     entry = verify.confirm_encrypted_damage(healthy)
     assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == [verify._TAG_MISMATCH_LATER], entry
     assert "first page did not match" not in " ".join(entry["detail"]) and "second_read" not in entry
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="NTFS has no sparse files by default: the file would be written whole")
+def test_a_build_without_the_pragma_gives_a_file_past_4_gib_no_pass_and_says_why(tmp_path, monkeypatch):
+    """The own check is offered only where the engine's pragma exists (a build without it is not one the check was measured on). That
+    refusal comes BEFORE the size test, so it holds for a file longer than 2^32 bytes too: ``unchecked`` with the reason, no connection
+    opened, no read, and no ``method``."""
+    probe = tmp_path / "probe"
+    with open(probe, "wb") as fh:
+        fh.seek(1 << 24)
+        fh.write(b"x")
+    if os.stat(probe).st_blocks * 512 > 1 << 22:
+        pytest.skip("this filesystem does not keep holes")
+    probe.unlink()
+    big = tmp_path / "big.db"
+    with open(big, "wb") as fh:
+        fh.truncate(verify.PAGE_PASS_LIMIT_BYTES + 4 * PAGE)
+    assert big.stat().st_size > verify.PAGE_PASS_LIMIT_BYTES
+    monkeypatch.setattr(verify, "cipher_check_present", lambda: False)
+    opened: list[object] = []
+    entry = verify._page_pass(big, opener=lambda p: opened.append(p))
+    assert entry["verdict"] == VERDICT_UNCHECKED and opened == [] and "method" not in entry, entry
+    assert entry["detail"] == [
+        "this build of SQLCipher has no page-authentication check (PRAGMA cipher_integrity_check), so the pages were not checked"
+    ]
 
 
 def test_the_stop_reaches_the_own_check_through_the_page_pass(healthy, monkeypatch):

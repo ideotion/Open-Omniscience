@@ -187,12 +187,13 @@ class _Tally:
     """What a pass found: the pages that failed (the lowest ``keep`` numbers kept, ALL of them counted: a cap shrinks what is printed,
     never what is counted), the pages it could not read, and the first failure to read (a label, never a message)."""
 
-    __slots__ = ("examined", "failing", "first_unread", "keep", "lock_byte", "lowest", "failure", "unread")
+    __slots__ = ("examined", "failing", "first_failed", "first_unread", "keep", "lock_byte", "lowest", "failure", "unread")
 
     def __init__(self, keep: int) -> None:
         self.keep = keep
         self.examined = 0
         self.failing = 0
+        self.first_failed = False  # page 1 failed its tag: kept apart from the list, which a ``keep`` of 0 leaves empty
         self.unread = 0
         self.first_unread: int | None = None  # the lowest page number that could not be read
         self.lock_byte: int | None = None  # the lock-byte page, when the pass went over it (it is not judged)
@@ -204,6 +205,8 @@ class _Tally:
         if holds:
             return
         self.failing += 1
+        if number == 1:
+            self.first_failed = True
         if len(self.lowest) < self.keep:
             heapq.heappush(self.lowest, -number)
         elif self.lowest and number < -self.lowest[0]:  # ``keep`` of 0 lists none and still counts every one
@@ -228,13 +231,14 @@ class _Tally:
         self.unread += other.unread
         self.failure = self.failure or other.failure
         self.lock_byte = self.lock_byte or other.lock_byte
+        self.first_failed = self.first_failed or other.first_failed
         if other.first_unread is not None and (self.first_unread is None or other.first_unread < self.first_unread):
             self.first_unread = other.first_unread
         for number in other.pages():
             self.failing += 1
             if len(self.lowest) < self.keep:
                 heapq.heappush(self.lowest, -number)
-            elif number < -self.lowest[0]:
+            elif self.lowest and number < -self.lowest[0]:
                 heapq.heapreplace(self.lowest, -number)
         self.failing += other.failing - len(other.lowest)  # the failing pages the other did not list
 
@@ -345,7 +349,7 @@ def _judge(handle: Any, size: int, page_size: int, key: bytearray, cancel: threa
         return answer(STATE_STOPPED, calibration)
     if calibration.first_unread == 1:
         return answer(STATE_UNREADABLE, calibration)  # page 1 could not be read: there is nothing to calibrate on
-    page_one_failed = 1 in calibration.pages()
+    page_one_failed = calibration.first_failed
     after = calibration.examined - 1
     after_failing = calibration.failing - (1 if page_one_failed else 0)
     if page_one_failed or (after >= 2 and after_failing == after):
