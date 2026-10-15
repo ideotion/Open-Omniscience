@@ -727,3 +727,91 @@ def test_every_withheld_argument_in_src_is_a_literal_or_a_module_constant():
 def test_the_withheld_guard_tells_a_fixed_sentence_from_one_made_of_the_exception(value, fixed):
     (node,) = _withheld_values(f"http_detail(exc, withheld={value})")
     assert _is_fixed(node) is fixed
+
+
+# --- the helpers the api guard trusts BY NAME are pinned default-deny ------------------------------------------------------------------
+# ``_err_str``, ``_all_diag_err_str``, ``_record_text`` and ``_restore_error`` are credited as scrubbing calls in every module. A rename or
+# a body edit that stops them routing through the scrub would open every site that calls them, so each is held to two things: its body
+# is ONE return of a call into the scrub (or into another pinned helper) and uses the exception nowhere else, and behaviourally a driver's
+# words and a held passphrase planted in an exception never come out.
+
+_PINNED = {
+    # (file, qualified name) -> the callees its single return may be
+    ("src/api/diagnostics/bundle.py", "_all_diag_err_str"): {"_record_text"},
+    ("src/api/diagnostics/bundle.py", "_err_str"): {"_all_diag_err_str"},
+    ("src/api/backup_v2.py", "_restore_error"): {"restore_failure_text"},
+}
+
+
+def _function(source: str, name: str) -> ast.FunctionDef:
+    return next(n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.FunctionDef) and n.name == name)
+
+
+def _pinned_body_ok(source: str, name: str, allowed: set[str]) -> bool:
+    """The function is its docstring, imports, and ONE ``return`` in which the exception is an argument of a call to an ``allowed`` scrub
+    and is used nowhere else in the function (no ``str()``, f-string, attribute read, second return or copy)."""
+    fn = _function(source, name)
+    exc_param = fn.args.args[-1 if name == "_err_str" else (1 if name == "_restore_error" else 0)].arg
+    body = [n for n in fn.body if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)) and not isinstance(n, ast.ImportFrom | ast.Import)]
+    if len(body) != 1 or not isinstance(body[0], ast.Return) or body[0].value is None:
+        return False
+    uses = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == exc_param]
+    fed = [
+        c
+        for c in ast.walk(body[0])
+        if isinstance(c, ast.Call)
+        and getattr(c.func, "id", None) in allowed
+        and any(isinstance(a, ast.Name) and a.id == exc_param for a in c.args)
+    ]
+    return len(uses) == 1 and len(fed) == 1
+
+
+@pytest.mark.parametrize(("rel", "name"), sorted(_PINNED))
+def test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub(rel, name):
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    assert _pinned_body_ok(source, name, _PINNED[(rel, name)]), f"{rel}:{name} no longer routes its exception straight into the scrub"
+
+
+@pytest.mark.parametrize(
+    "mutant",
+    [
+        "def _err_str(exc) -> str:\n    return str(exc)",
+        "def _err_str(exc) -> str:\n    return f'{exc}'",
+        "def _err_str(exc) -> str:\n    return _all_diag_err_str(exc) + str(exc)",
+        "def _err_str(exc) -> str:\n    text = _all_diag_err_str(exc)\n    return text",
+        "def _err_str(exc) -> str:\n    return repr(exc)",
+        "_err_str = str",
+    ],
+)
+def test_the_pin_fails_for_each_way_a_trusted_helper_can_start_returning_the_exception(mutant):
+    try:
+        ok = _pinned_body_ok(mutant, "_err_str", {"_all_diag_err_str"})
+    except StopIteration:  # the name is gone: a rename the pin cannot miss, because the real read raises the same way
+        ok = False
+    assert ok is False
+
+
+def test_the_trusted_helpers_never_return_a_drivers_words_or_a_held_passphrase(monkeypatch):
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    from src.api.backup_v2 import _restore_error
+    from src.api.diagnostics.bundle import _all_diag_err_str
+    from src.database import connect
+
+    secret = "hunter2" + "Zq8Lm_tbl"
+    monkeypatch.setattr(connect, "_passphrase", "kQ7!vLm-held-key")
+    driver = OperationalError("SELECT 1 WHERE k = ?", (secret,), sqlite3.OperationalError(f"no such table: {secret}"))
+    plain = ValueError("failed with kQ7!vLm-held-key inside")
+    for exc in (driver, plain):
+        outs = [_all_diag_err_str(exc), _all_diag_err_str(exc, typed=True), str(_restore_error("restore", exc).detail)]
+        for out in outs:
+            assert secret not in out and "kQ7!vLm-held-key" not in out, out
+
+
+def test_the_record_text_alias_the_bundle_trusts_is_the_real_record_text():
+    from src.api.diagnostics import bundle
+    from src.monitoring import secret_scrub
+
+    assert bundle._record_text is secret_scrub.record_text
