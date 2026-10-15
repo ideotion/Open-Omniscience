@@ -541,6 +541,96 @@ def test_the_weights_digest_fetch_refuses_a_redirect_off_huggingface_and_says_so
     assert {s.allowed_hosts for s in scripted.sessions} == {("huggingface.co",)}, "the check's own session carries exactly the Hugging Face host"
 
 
+@pytest.fixture()
+def installer_scripted(scripted, monkeypatch):
+    """The Ollama installer's own default getter, run through ``prepare_installer`` against the scripted wire: a scripted platform, the kill switch clear."""
+    from src.ingest import clear_kill_switch
+    from src.llm import installer
+
+    clear_kill_switch()
+    monkeypatch.setattr(installer, "platform_support", lambda: {"scripted": True, "download_url": "https://ollama.com/download"})
+    yield scripted
+    clear_kill_switch()
+
+
+def test_the_installer_release_lookup_refuses_a_redirect_off_its_host_and_follows_one_on_it(installer_scripted):
+    from src.llm import installer
+
+    url = installer.GITHUB_LATEST_RELEASE
+    installer_scripted.routes[url] = (302, "https://exfil.example.invalid/steal?k=secret")
+    with pytest.raises(installer.InstallerRedirectRefused) as caught:
+        installer._default_get_json(url)
+    assert installer_scripted.sent == [url], "the hop was refused before it was sent"
+    assert isinstance(caught.value, installer.InstallerVerificationError), "the route that maps a verification failure maps this one too"
+    installer_scripted.sent.clear()
+    # GitHub answers a renamed repository with a 301 to the repository's id, on the SAME host: that stays followed.
+    installer_scripted.routes[url] = (301, "https://api.github.com/repositories/1/releases/latest")
+    assert installer._default_get_json(url) == {}
+    assert installer_scripted.sent == [url, "https://api.github.com/repositories/1/releases/latest"]
+    assert {s.allowed_hosts for s in installer_scripted.sessions} == {("api.github.com",)}, "the lookup's own session carries exactly the API host"
+
+
+def test_any_other_failure_of_the_release_lookup_is_not_called_a_refusal(installer_scripted):
+    """Only a refusal by the host list is named as one; a server error and a dropped connection keep the failure they always were."""
+    from src.llm import installer
+
+    installer_scripted.routes[installer.GITHUB_LATEST_RELEASE] = (500, None)
+    with pytest.raises(requests.HTTPError) as caught:
+        installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
+    assert not isinstance(caught.value, installer.InstallerRedirectRefused)
+
+    def _dropped(request, **kwargs):
+        raise requests.ConnectionError("the connection dropped")
+
+    installer_scripted.send = _dropped
+    with pytest.raises(requests.ConnectionError) as dropped:
+        installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
+    assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused)
+
+
+@pytest.mark.parametrize(
+    "refusal_text",
+    [None, "refused https://exfil.example.invalid/steal?k=secret"],
+    ids=["the real refusal", "a refusal whose own text names the target"],
+)
+def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_host_it_pointed_at(installer_scripted, monkeypatch, caplog, refusal_text):
+    """The 502 detail, the log and the exception chain say what did not happen, never where the redirect pointed.
+
+    The second case is what makes this a test of THIS code and not of ``refuse_unlisted_host``'s wording: a refusal that does carry the
+    target must still not reach a response, a log record or a traceback."""
+    import logging
+    import traceback
+
+    from fastapi import HTTPException
+
+    from src.api.llm import llm_install_prepare
+    from src.llm import installer
+
+    if refusal_text is not None:
+
+        def _names_the_target(url, allowed):
+            raise RedirectRefused(refusal_text)
+
+        monkeypatch.setattr(fetcher_mod, "refuse_unlisted_host", _names_the_target)
+    else:
+        installer_scripted.routes[installer.GITHUB_LATEST_RELEASE] = (302, "https://exfil.example.invalid/steal?k=secret")
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(HTTPException) as caught:
+        llm_install_prepare()
+    assert caught.value.status_code == 502
+    assert caught.value.detail == installer.InstallerRedirectRefused.MESSAGE
+    cause = caught.value.__cause__
+    assert isinstance(cause, installer.InstallerRedirectRefused)
+    assert cause.__cause__ is None and cause.__context__ is None, "no chain behind it: a traceback chain is a sink"
+    seen = [caught.value.detail, caplog.text, "".join(traceback.format_exception(caught.value))]
+    seen += [str(r.exc_info) + str(r.exc_text) for r in caplog.records]
+    for text in seen:
+        assert "exfil" not in text and "secret" not in text and "invalid" not in text
+    ours = [r for r in caplog.records if r.name == "src.llm.installer"]
+    assert [r.levelno for r in ours] == [logging.WARNING] and ours[0].getMessage().endswith("(RedirectRefused)"), "the class name is logged, once"
+    assert ours[0].exc_info is None
+
+
 def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
     """The lists are the hosts of the URLs the code builds: equal to them, not merely accepting them, so a list widened by one host
     (a sibling, a CDN, a family) fails here, and so does an endpoint that moves host without its list."""
@@ -548,9 +638,11 @@ def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
 
     from src.analytics import wikidata_rings
     from src.catalog import wikidata, wikidata_enrich
+    from src.llm import installer
     from src.monitoring import release_run
 
     pairs = (
+        (installer.GITHUB_API_HOSTS, installer.GITHUB_LATEST_RELEASE),
         (wikidata_rings.API_HOSTS, wikidata_rings.API_ENDPOINT),
         (wikidata_enrich.API_HOSTS, wikidata_enrich._API),
         (wikidata.WDQS_HOSTS, wikidata.WDQS_ENDPOINT),
@@ -568,6 +660,8 @@ def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
         ("https://query.wikidata.org/sparql", wikidata_rings.API_HOSTS),
         ("https://www.wikidata.org/w/api.php", wikidata.WDQS_HOSTS),
         ("https://cdn-lfs.huggingface.co/x", release_run.HF_API_HOSTS),
+        ("https://github.com/ollama/ollama/releases/download/v1/install.sh", installer.GITHUB_API_HOSTS),
+        ("https://release-assets.githubusercontent.com/x", installer.GITHUB_API_HOSTS),
     ):
         _refused(lambda url=url, hosts=hosts: refuse_unlisted_host(url, hosts))
 
@@ -578,16 +672,16 @@ def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
 _BULK = "bulk downloads from request-chosen mirrors that redirect between CDNs by design"
 #: Every module that builds a guarded session WITHOUT a host list: ``{path: (calls, why it has none)}``. Zero slack: a call that gains a
 #: list leaves this table, and a new call joins it with its reason. What is left here are URLs chosen by the request or the catalogue, or
-#: hosts that move, plus one fixed endpoint not listed yet (the installer's release lookup on ``api.github.com``, in the row below); a
-#: session for a fixed endpoint otherwise names its list instead.
+#: hosts that move (the installer's asset download is one: the row below says why); a session for a fixed endpoint names its list instead.
 UNLISTED_SESSIONS = {
     "src/geo/osm_downloads.py": (2, _BULK),
     "src/ingest/segmented_download.py": (2, _BULK),
     "src/wiki/dumps.py": (2, _BULK),
     "src/llm/installer.py": (
-        2,
-        "the release lookup on api.github.com is a fixed endpoint not listed yet; the asset download follows a response-chosen URL to storage "
-        "whose host moves (docs/SECURITY.md, local AI install); needs its own look",
+        1,
+        "the asset download follows a URL the release response chooses, to storage whose host has moved before and cannot be observed from "
+        "the build sandbox; its bytes are checked against the attested sha256 instead (docs/SECURITY.md, local AI install). The release "
+        "lookup on api.github.com names its list",
     ),
     "src/stats/fetch.py": (1, "the statistics agencies' catalogue URLs: many hosts, none fixed"),
 }
