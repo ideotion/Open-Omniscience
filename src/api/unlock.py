@@ -53,6 +53,11 @@ _MIN_PASSPHRASE = 8
 
 #: Held for the whole passphrase check and the open that follows it (see ``unlock``).
 _UNLOCK_ONE_AT_A_TIME = threading.Lock()
+#: How many passphrases this process refused through ``_unlock_locked``. A refused key's connection checkpoints the ``-wal`` into the file
+#: and deletes it, so the page reading an unlock takes afterwards describes the file after that and not the one the last session left;
+#: the reading carries this number so a difference of 0 after a typo is not read as a healthy previous end. Written and read under
+#: ``_UNLOCK_ONE_AT_A_TIME`` only.
+_REFUSED_ATTEMPTS = 0
 
 
 def main_db_path() -> Path | None:
@@ -739,6 +744,7 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
 
 
 def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
+    global _REFUSED_ATTEMPTS
     from src.database.connect import WrongPassphraseError, connect, set_passphrase
     from src.monitoring import page_reading
 
@@ -761,12 +767,14 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         _verify_t0 = time.monotonic()
         try:
             conn = connect(p, key=body.passphrase, check_same_thread=False)
-            # The size in pages against the header's, off the connection that just proved the key and before anything writes or
-            # checkpoints through it: the encrypted header cannot be read from the file's bytes, so this is the one moment the
-            # store can say it. Never raises; the line is a fact (counts only), not a verdict.
-            _pages = page_reading.from_connection(conn, p)
+            # The size in pages against the database's, off the connection that just proved the key and before anything writes or
+            # checkpoints through it: the encrypted header cannot be read from the file's bytes, so this is where an encrypted
+            # store can be read at all. It describes the file the last session left unless a key was REFUSED first (each refusal
+            # folds the log into the file), which the reading says. Never raises; a fact (counts only), not a verdict.
+            _pages = page_reading.from_connection(conn, p, refused_before=_REFUSED_ATTEMPTS)
             _close_after_checkpoint(conn, passphrase=body.passphrase)
         except WrongPassphraseError as exc:
+            _REFUSED_ATTEMPTS += 1
             # A wrong key under the floor of what can be taken out of a text (src/monitoring/secret_scrub.py,
             # MIN_SECRET_CHARS) withholds the message whole, so the withheld text is the message's fixed words, not
             # the scrub's "text withheld" notice: a mistyped short key is the lock screen's commonest answer.

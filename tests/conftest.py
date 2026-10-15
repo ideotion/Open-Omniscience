@@ -286,8 +286,10 @@ def _early_boot_wal_reading_not_leaked():
     from src.monitoring import forensics
 
     forensics._EARLY_WAL = None
+    forensics._EARLY_PAGES = None  # the page reading is taken beside it (``take_boot_wal_reading``) and consumed by the same call
     yield
     forensics._EARLY_WAL = None
+    forensics._EARLY_PAGES = None
 
 
 @pytest.fixture(autouse=True)

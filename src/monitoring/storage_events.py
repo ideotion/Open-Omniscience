@@ -65,6 +65,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring import page_reading
 from src.monitoring.secret_scrub import log_failure, scrubbed
 from src.paths import data_dir
 
@@ -695,11 +696,10 @@ def note_open(
 ) -> None:
     """The store was opened: ``via`` is ``unlock`` (a passphrase was entered; ``phases`` are the synchronous phases the unlock
     timed) or ``boot`` (a start with no passphrase, where only ``init_db`` is timed). ``pages`` is the reading of the file's size in
-    pages against its header's, taken BEFORE anything opened or wrote the store (``src.monitoring.page_reading``): a fact, with the
-    source that produced it, never a verdict."""
+    pages against the size it counts (``src.monitoring.page_reading``): taken from the file's bytes before any connection existed (a
+    boot) or off the unlock's verify connection before it wrote or checkpointed (an unlock), a fact with the source that produced it,
+    never a verdict."""
     try:
-        from src.monitoring import page_reading
-
         event = {
             "via": via,
             "total_ms": total_ms,

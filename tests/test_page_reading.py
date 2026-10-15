@@ -179,8 +179,10 @@ def test_the_engine_reading_of_a_healthy_file_agrees_with_the_header_bytes(tmp_p
         conn.close()
     assert by_engine["source"] == "engine-pragma" and by_engine["state"] == "read"
     assert by_engine["header_valid"] is None, "the engine cannot say whether the header was valid, so it never claims True"
-    for key in ("page_size", "pages_in_file", "pages_in_header", "difference", "trailing_bytes", "file_bytes"):
+    for key in ("page_size", "pages_in_file", "difference", "trailing_bytes", "file_bytes"):
         assert by_engine[key] == by_bytes[key], key
+    assert by_engine["pages_in_database"] == by_bytes["pages_in_header"]
+    assert "pages_in_header" not in by_engine, "with a -wal the engine's count is not the header's, so it is never offered as it"
     assert by_engine["difference"] == 0
 
 
@@ -194,9 +196,10 @@ def test_the_engine_reading_finds_pages_appended_beyond_what_the_header_counts(t
         r = page_reading.from_connection(conn, path)
     finally:
         conn.close()
-    assert r["difference"] == 3 and r["pages_in_header"] == before["pages_in_header"]
+    assert r["difference"] == 3 and r["pages_in_database"] == before["pages_in_header"]
     assert page_reading.read_header(path)["difference"] == 3, "the two sources agree on a file the engine can open"
-    assert "engine-pragma" in (page_reading.line_of(r) or "")
+    said = page_reading.line_of(r)
+    assert said and "engine-pragma" in said and "counted by the engine" in said and "no -wal" in said
 
 
 def test_an_engine_that_raises_is_its_class_and_never_its_message(tmp_path):
@@ -225,6 +228,112 @@ def test_an_engine_that_answers_a_page_size_of_zero_is_a_reason_and_not_a_divisi
 
 
 # --------------------------------------------------------------------------- #
+#  A -wal changes what either count means (the independent read of the first head)
+# --------------------------------------------------------------------------- #
+def _wal_store_with_a_shrunk_database_in_its_log(tmp_path: Path):
+    """A WAL store whose main file is long and whose log holds a committed SHRINK (rows deleted, then ``incremental_vacuum`` drained):
+    what any unclean end inside the idle window's vacuum leaves. Returns ``(path, holder)``; the holder keeps the log from being
+    checkpointed away and is closed by the caller."""
+    path = tmp_path / "wal.db"
+    holder = sqlite3.connect(path, isolation_level=None)
+    holder.execute("PRAGMA auto_vacuum = INCREMENTAL")
+    holder.execute("PRAGMA journal_mode = WAL")
+    holder.execute("PRAGMA wal_autocheckpoint = 0")
+    holder.execute("CREATE TABLE t(x BLOB)")
+    holder.execute("BEGIN")
+    holder.executemany("INSERT INTO t VALUES(?)", [(b"x" * 3000,) for _ in range(200)])
+    holder.execute("COMMIT")
+    holder.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    holder.execute("DELETE FROM t")
+    while holder.execute("PRAGMA freelist_count").fetchone()[0]:
+        holder.execute("PRAGMA incremental_vacuum(50)").fetchall()
+    return path, holder
+
+
+def test_a_shrink_held_in_the_log_is_a_positive_difference_that_the_engine_source_names_as_the_databases_and_logs_no_line(tmp_path):
+    """The block of the independent read: with a -wal, ``PRAGMA page_count`` is the database's size at the log's last commit, NOT the
+    header's, so a store whose log holds a shrink looked like the Asus signature (the file holds pages the header does not count)
+    and was logged at WARNING as such. The figures stay on the event; the sentence is only written when there is no log."""
+    path, holder = _wal_store_with_a_shrunk_database_in_its_log(tmp_path)
+    try:
+        assert (tmp_path / "wal.db-wal").stat().st_size > 0
+        other = sqlite3.connect(path)
+        try:
+            r = page_reading.from_connection(other, path)
+        finally:
+            other.close()
+    finally:
+        holder.close()
+    assert r["state"] == "read" and r["source"] == "engine-pragma" and "pages_in_header" not in r
+    assert r["wal_bytes"] and r["pages_in_database"] < r["pages_in_file"] and r["difference"] > 0, r
+    assert page_reading.line_of(r) is None, "a shrink in the log is expected, not the Asus signature"
+    r["wal_bytes"] = 0
+    assert page_reading.line_of(r), "the same figures with no log are the signature"
+
+
+def test_the_header_bytes_source_also_gives_a_positive_difference_while_a_log_holds_frames_and_logs_no_line(tmp_path):
+    """A passive checkpoint that backfilled page 1 but could not truncate (a reader pinned the log) leaves a header that counts
+    FEWER pages than the file; the log says the rest."""
+    path = _file(tmp_path, in_file=204, pages=4)
+    (tmp_path / (path.name + "-wal")).write_bytes(b"\x00" * 4152)
+    r = page_reading.read_header(path)
+    assert r["difference"] == 200 and r["wal_bytes"] == 4152
+    assert page_reading.line_of(r) is None
+    (tmp_path / (path.name + "-wal")).write_bytes(b"")
+    assert page_reading.line_of(page_reading.read_header(path)), "an EMPTY log holds no frames: the sentence is written"
+    (tmp_path / (path.name + "-wal")).unlink()
+    assert page_reading.line_of(page_reading.read_header(path))
+
+
+def test_the_engine_source_with_a_torn_tail_counts_the_tail_apart_and_never_rounds_it_into_a_page(tmp_path):
+    path = _store(tmp_path)
+    before = page_reading.read_header(path)
+    with open(path, "ab") as fh:
+        fh.write(b"\x00" * 1000)
+    conn = sqlite3.connect(path)
+    try:
+        r = page_reading.from_connection(conn, path)
+    finally:
+        conn.close()
+    assert r["trailing_bytes"] == 1000 and r["pages_in_file"] == before["pages_in_file"] and r["difference"] == 0
+
+
+def test_the_engine_source_zeroes_the_busy_timeout_before_it_asks_and_a_busy_answer_is_an_unreadable_reading(tmp_path):
+    asked: list[str] = []
+
+    class Busy:
+        def execute(self, sql, *args):
+            asked.append(sql)
+            if sql != "PRAGMA busy_timeout = 0":
+                raise sqlite3.OperationalError("database is locked")
+            return self
+
+    r = page_reading.from_connection(Busy(), tmp_path / "x.db")
+    assert asked[0] == "PRAGMA busy_timeout = 0", "an instrument must not make an unlock wait on the connection's long timeout"
+    assert r["state"] == "unreadable" and r["error"] == "OperationalError"
+
+
+def test_refused_attempts_before_the_reading_are_kept_when_there_are_some_and_omitted_when_there_are_none(tmp_path):
+    path = _store(tmp_path)
+    conn = sqlite3.connect(path)
+    try:
+        none = page_reading.from_connection(conn, path)
+        two = page_reading.from_connection(conn, path, refused_before=2)
+    finally:
+        conn.close()
+    assert "refused_attempts_before" not in page_reading.compact(none)
+    assert page_reading.compact(two)["refused_attempts_before"] == 2
+
+
+def test_a_file_shorter_than_the_magic_is_short_and_never_called_encrypted(tmp_path):
+    path = tmp_path / "open_omniscience.db"
+    path.write_bytes(b"SQLite fo")
+    assert page_reading.read_header(path)["state"] == "short"
+    path.write_bytes(b"\x07")
+    assert page_reading.read_header(path)["state"] == "short"
+
+
+# --------------------------------------------------------------------------- #
 #  compact and line_of
 # --------------------------------------------------------------------------- #
 def test_compact_keeps_only_what_was_read_and_drops_what_was_not(tmp_path):
@@ -234,6 +343,10 @@ def test_compact_keeps_only_what_was_read_and_drops_what_was_not(tmp_path):
     assert full is not None
     assert set(full) == {"source", "state", "pages_in_file", "pages_in_header", "difference", "page_size", "header_valid",
                          "trailing_bytes", "file_bytes"}, "no wal_bytes while there is no -wal, no error while none occurred"
+    kept = page_reading.compact({"source": "engine-pragma", "state": "unreadable", "error": "OperationalError", "pages_in_database": 0,
+                                 "refused_attempts_before": 2, "wal_bytes": 0, "pages_in_header": None})
+    assert kept == {"source": "engine-pragma", "state": "unreadable", "error": "OperationalError", "pages_in_database": 0,
+                    "refused_attempts_before": 2, "wal_bytes": 0}, "the reason an unreadable reading has no figure is kept, so is a 0"
     assert full["header_valid"] is True and full["trailing_bytes"] == 0, "a falsy value that WAS read is kept, only None is dropped"
     assert len(json.dumps(full)) < 400, "an event carries this ten times over, inside a fixed budget"
 
@@ -320,6 +433,7 @@ def unlock_ready(monkeypatch, tmp_path):
     monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase=None: None)
     monkeypatch.setattr(connect_mod, "_passphrase", None)
     monkeypatch.setattr(connect_mod, "set_passphrase", lambda p: None)
+    monkeypatch.setattr(unlock_mod, "_REFUSED_ATTEMPTS", 0)
     finished: list[dict] = []
     monkeypatch.setattr(unlock_mod, "_finish_unlock", lambda **kw: finished.append(kw))
     return unlock_mod, connect_mod, finished, tmp_path / "engine.db"
@@ -338,7 +452,7 @@ def test_an_unlock_reads_the_pages_off_the_verify_connection_before_the_finish_a
     (call,) = finished
     assert call["pages"]["source"] == "engine-pragma" and call["pages"]["difference"] == 4
     said = [r.getMessage() for r in caplog.records if r.name == "api.unlock" and r.levelno == logging.WARNING]
-    assert len(said) == 1 and said[0].startswith("unlock: the database file holds 4 pages more than its header counts")
+    assert len(said) == 1 and said[0].startswith("unlock: the database file holds 4 pages more than the database the engine counts")
 
 
 def test_a_healthy_file_unlocks_with_a_reading_and_no_log_line(unlock_ready, monkeypatch, caplog):
@@ -426,11 +540,47 @@ def test_a_boot_journals_the_reading_it_took_before_any_connection_and_logs_a_lo
 
 def test_the_unlock_reads_the_pages_before_the_connection_that_proved_the_key_is_checkpointed_and_closed():
     """MUTATION TARGET: the order. The close folds the log into the file and rewrites the header's size, so a reading taken after it
-    describes the file the unlock left and not the one the last session did. The behaviour above stubs the close out, so the order
-    is pinned on the source."""
+    describes the file the unlock left and not the one the last session did. The unlock-recovery test pins the same order on the
+    real close (``test_the_verify_connection_is_checkpointed_through_execute_before_it_closes``); the behavioural tests above stub the
+    close out, so the order is also pinned on the source."""
     import inspect
 
     from src.api import unlock as unlock_mod
 
     src = inspect.getsource(unlock_mod._unlock_locked)
-    assert 0 < src.index("page_reading.from_connection(conn, p)") < src.index("_close_after_checkpoint(conn")
+    assert 0 < src.index("page_reading.from_connection(conn, p, refused_before=_REFUSED_ATTEMPTS)") < src.index("_close_after_checkpoint(conn")
+
+
+def test_a_refused_passphrase_is_counted_and_the_next_unlocks_reading_says_so(unlock_ready, monkeypatch):
+    """Each refused key's connection folds the -wal into the file and deletes it, so the reading the right key takes afterwards
+    describes the file after that: a 0 there is not a healthy previous end. The count rides the reading."""
+    from fastapi import HTTPException
+
+    unlock_mod, connect_mod, finished, path = unlock_ready
+    path = _store(path.parent)
+
+    def refuse(*a, **k):
+        raise connect_mod.WrongPassphraseError("not it")
+
+    monkeypatch.setattr(connect_mod, "connect", refuse)
+    for _ in range(2):
+        with pytest.raises(HTTPException):
+            unlock_mod._unlock_locked(unlock_mod.PassphraseBody(passphrase=TYPED), path)
+    assert unlock_mod._REFUSED_ATTEMPTS == 2 and finished == []
+    monkeypatch.setattr(connect_mod, "connect", lambda p, key=None, **kw: sqlite3.connect(p))
+    unlock_mod._unlock_locked(unlock_mod.PassphraseBody(passphrase=TYPED), path)
+    (call,) = finished
+    assert call["pages"]["refused_attempts_before"] == 2
+    assert page_reading.compact(call["pages"])["refused_attempts_before"] == 2
+
+
+def test_the_early_page_reading_a_serve_leaves_behind_is_set_by_one_test(tmp_path, monkeypatch):
+    """First of a PAIR (the second asserts the conftest fixture cleared it): ``main._serve()`` run in-process takes the early reading."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    forensics.take_boot_wal_reading()
+    assert forensics._EARLY_PAGES is not None
+
+
+def test_the_early_page_reading_does_not_leak_into_the_next_test():
+    """Second of the pair: a reading taken for another test's data folder would be journaled as this boot's."""
+    assert forensics._EARLY_PAGES is None
