@@ -1459,6 +1459,7 @@ class EthicalFetcher:
                         kwargs["proxies"] = proxies
                     if stream and self._real_session:
                         kwargs["stream"] = True
+                    self._refuse_parser_mismatch(current)
                     resp = self.session.get(current, **kwargs)
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
@@ -1476,6 +1477,50 @@ class EthicalFetcher:
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
         raise FetchFailed(f"too many redirects for {url}")
+
+    @staticmethod
+    def _refuse_parser_mismatch(url: str) -> None:
+        """Refuse a URL that ``urlparse`` and ``urllib3`` read as two different hosts.
+
+        ``_guard_target`` is handed ``urlparse(url).hostname`` while the connection is
+        made to the host ``requests``/``urllib3`` parse out of the same string, and
+        the two disagree on a backslash before an ``@`` (``https://evil.test\\@good.org/``
+        is ``good.org`` to the first and ``evil.test`` to the second). The connect-time
+        guard still catches an internal address, but not where it stands down (a
+        hostname proxy), so the disagreement itself is refused, on the first request
+        and on every redirect hop.
+        """
+        # Only the authority can send the two parsers to different hosts; a space in a
+        # path or query is encoded by requests and fetched, so it is not refused.
+        rest = url.split("://", 1)[1] if "://" in url else url
+        authority = rest
+        for stop in ("/", "?", "#"):
+            authority = authority.split(stop, 1)[0]
+        if any(ch == "\\" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in authority):
+            raise BlockedTarget("URL authority contains a backslash, whitespace or control character")
+        from urllib3.util import parse_url
+
+        try:
+            theirs = (parse_url(url).host or "").lower().strip("[]")
+        except Exception:  # noqa: BLE001 - an unparsable URL is refused, not fetched
+            raise BlockedTarget("URL is not parsable by the HTTP client") from None
+        try:
+            ours = (urlparse(url).hostname or "").lower().strip("[]")
+        except ValueError:
+            raise BlockedTarget("URL host cannot be read") from None
+        if "%" in theirs or "%" in ours:
+            # Whether a percent-encoded host is decoded depends on the urllib3 version (2.7.0 connects to the decoded
+            # address, urlparse reads a name), so it is refused outright rather than compared.
+            raise BlockedTarget("URL host is percent-encoded")
+        if not ours.isascii():
+            # Two IDNA standards disagree on some names (faß.de), so a non-ASCII host
+            # is accepted only when the codec the resolver uses gives the client's name.
+            try:
+                ours = ours.encode("idna").decode("ascii")
+            except UnicodeError:
+                raise BlockedTarget("URL host cannot be encoded") from None
+        if theirs != ours:
+            raise BlockedTarget("URL host is read differently by two parsers")
 
     def _request_proxy_endpoints(
         self, url: str, explicit: dict[str, str] | None
