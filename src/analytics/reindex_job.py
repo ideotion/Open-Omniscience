@@ -35,7 +35,7 @@ import threading
 import time
 from pathlib import Path
 
-from src.monitoring.engine_text import engine_text
+from src.monitoring.engine_text import engine_text, is_pool_timeout
 
 # Articles per reindex_all_batch loop. Each batch commits per-article inside
 # index_article, and the cursor is persisted after each batch, so a crash loses at
@@ -67,24 +67,6 @@ def _articles_to_reindex(session, article_model) -> int:
 
     return max(0, int(session.query(article_model.id).count()) - stand_in_article_count(session))
 
-
-
-def _is_pool_timeout(exc: BaseException) -> bool:
-    """``True`` when ``exc``, or any exception it chains, is SQLAlchemy's connection-pool timeout (``QueuePool limit ... connection
-    timed out``). Judged by class, never by words, because the words of a driver error are not kept."""
-    try:
-        from sqlalchemy.exc import TimeoutError as PoolTimeout
-
-        seen: set[int] = set()
-        link: BaseException | None = exc
-        while link is not None and id(link) not in seen:
-            if isinstance(link, PoolTimeout):
-                return True
-            seen.add(id(link))
-            link = link.__cause__ or link.__context__
-    except Exception:  # noqa: BLE001 - a chain that cannot be read is not a timeout
-        return False
-    return False
 
 
 class ReindexJobManager:
@@ -440,7 +422,7 @@ class ReindexJobManager:
             with self._lock:
                 self._state = "error"
                 self._error = engine_text(exc)
-                self._pool_timeout = _is_pool_timeout(exc)
+                self._pool_timeout = is_pool_timeout(exc)
                 self._save()
 
     def _yield_to_exclusive(self) -> None:

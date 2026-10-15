@@ -750,7 +750,7 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
 #: A text longer than this is not read for a quoted run: it is taken to quote the driver (fail closed), so no cut can hide a piece.
 _QUOTE_READ_LIMIT = 200_000
 #: What a quoted run must be to count: long enough that two unrelated messages do not share one by chance (an ordinary word or a
-#: short phrase like "database is locked" is shorter), short enough that a cut or re-quoted piece of a driver's text still holds
+#: short phrase is shorter: "database is locked" is 18 characters, so a run of 12 is already most of a driver's one-line message), short enough that a cut or re-quoted piece of a driver's text still holds
 #: one. A shorter run catches more transformed quotes at the cost of withholding more honest messages; this one protects the first.
 _QUOTE_RUN = 12
 

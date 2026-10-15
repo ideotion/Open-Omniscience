@@ -727,3 +727,13 @@ def test_a_non_driver_whose_text_cannot_be_read_is_its_class_only_in_a_record_an
         assert "hunter2Zq8Lm_tbl" not in out and "hunter2Zq8Lm_tbl" not in tb
     assert ss.record_text(NoNotes("a")) == ss._class_only(NoNotes("a"))
     assert "a database driver's words" not in ss._last_line(NoNotes("database is locked"))
+
+
+def test_the_ui_walk_scrubs_page_errors_where_it_keeps_them():
+    """The behavioural test is skipped without a browser; this reads the one line that keeps a page error (L3), so the scrub cannot go
+    unseen in an environment that cannot drive Chromium."""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src/monitoring/ui_walk_playwright.py"
+    text = src.read_text(encoding="utf-8")
+    assert "self._pageerrors.append(tokenise_paths(record_text(exc, typed=False)))" in text

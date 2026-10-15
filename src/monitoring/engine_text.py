@@ -49,3 +49,21 @@ def engine_text(exc: BaseException, limit: int | None = None, *, typed: bool = F
     except Exception:  # noqa: BLE001 - the scrub could not be loaded: the class is all that is written
         out = f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
         return out if limit is None else out[:limit]
+
+
+def is_pool_timeout(exc: BaseException) -> bool:
+    """``True`` when ``exc``, or any exception it chains, is SQLAlchemy's connection-pool timeout (``QueuePool limit ... connection
+    timed out``). Judged by class, never by words, because the words of a driver error are not kept."""
+    try:
+        from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+        seen: set[int] = set()
+        link: BaseException | None = exc
+        while link is not None and id(link) not in seen:
+            if isinstance(link, PoolTimeout):
+                return True
+            seen.add(id(link))
+            link = link.__cause__ or link.__context__
+    except Exception:  # noqa: BLE001 - a chain that cannot be read is not a timeout
+        return False
+    return False

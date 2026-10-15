@@ -232,6 +232,7 @@ class QuarantineJobManager:
         self._include_prose_gate = True  # the nav-soup gate over >= _ARTICLE_MIN_WORDS bodies
         self._write = False  # dry-run by default; fixed for a run's lifetime, persisted across resumes
         self._error: str | None = None
+        self._pool_timeout = False  # classified where it happens: a driver error keeps no words for a reader to find
         self._cancelled = False
         self._started_at: float | None = None
         self._session_factory: Callable[[], Any] | None = None  # test seam
@@ -347,6 +348,7 @@ class QuarantineJobManager:
             self._index_page_tiers = frozenset(index_page_tiers or ())
             self._include_prose_gate = bool(include_prose_gate)
             self._error = None
+            self._pool_timeout = False
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
             self._work_fn = _work_fn
@@ -413,9 +415,13 @@ class QuarantineJobManager:
             finally:
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+            from src.monitoring.engine_text import engine_text, is_pool_timeout
+
             with self._lock:
                 self._state = "error"
-                self._error = str(exc)
+                # served in the job status, on screen and in the release-run report: a database driver's error is its class only
+                self._error = engine_text(exc)
+                self._pool_timeout = is_pool_timeout(exc)
                 self._save()
 
     def pause(self) -> None:
@@ -466,6 +472,7 @@ class QuarantineJobManager:
                 "tally": dict(self._tally),
                 "eta_seconds": eta_s,
                 "error": self._error,
+                "pool_timeout": self._pool_timeout,
                 "running": self._alive(),
                 "dry_run": not self._write,  # honest: reflects the ACTUAL mode this run is in
                 # ...and WHICH CRITERIA it is in, for the same reason. Two runs that stamp

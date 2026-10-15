@@ -96,6 +96,8 @@ def test_both_snapshot_writers_stamp_and_scrub_their_names(held, monkeypatch):
     # The light writer skips a thread that is waiting, and this one is: without this it would never hold the name and its half of the
     # test would pass whatever the writer did with it.
     monkeypatch.setattr(session_hwm, "_is_waiting", lambda line: False)
+    # and the light writer keeps only the busiest few: with other threads about, ours could rank out of them
+    monkeypatch.setattr(session_hwm, "_LIGHT_THREADS", 10_000)
     stop = threading.Event()
     t = threading.Thread(target=stop.wait, name=f"oo-dump-{MARKER}", daemon=True)
     t.start()

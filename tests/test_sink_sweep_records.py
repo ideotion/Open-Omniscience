@@ -319,6 +319,9 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_append', '_LOG.debug("diagnostics runs: could not write the record: %s", tidy_error(err))'): 1,
         ('diagnostics_member', '"reason": tidy_error(exc_line(exc), MEMBER_REASON_CHARS),'): 1,
     },
+    'src/monitoring/engine_text.py': {  # is_pool_timeout walks the chain by CLASS and returns a bool: no text of any link is read
+        ('is_pool_timeout', 'link: BaseException | None = exc'): 1,
+    },
     'src/monitoring/exit_evidence.py': {  # tidy_error (record_text underneath); the fatal trace is record_traceback
         ('arm_crash_trace', 'reason = tidy_error(exc, _ARM_REASON_CHARS)'): 1,
         ('note_fatal_exception', '_LOG.debug("could not record the fatal exception: %s", tidy_error(err))'): 1,

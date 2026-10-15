@@ -692,3 +692,54 @@ def test_status_says_which_criteria_the_run_is_applying(tmp_path):
     mgr2.start(_session_factory=Session2, write=True)
     _join(mgr2)
     assert mgr2.status()["include_prose_gate"] is True
+
+
+_SECRET = "hunter2Zq8Lm_tbl"
+
+
+def _failing_manager(tmp_path, error):
+    """The REAL manager, whose worker raises ``error``; joined, so its status is what a reader of the job would get."""
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+
+    def boom(*a, **k):
+        raise error
+
+    mgr.start(_session_factory=Session, _work_fn=boom)
+    _join(mgr)
+    return mgr
+
+
+def _driver_error():
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    return OperationalError("SELECT 1 WHERE k = ?", (_SECRET,), sqlite3.OperationalError(f"no such table: {_SECRET}"))
+
+
+def test_a_drivers_error_never_reaches_the_status_the_jobs_list_or_the_release_report(tmp_path, monkeypatch):
+    """L4: the failure the worker stores was ``str(exc)``, which for SQLAlchemy carries the statement and its [parameters]. It is served
+    in the job status, in /api/jobs (on screen) and in the release-run report: all three read the one status, so all three are checked."""
+    import json
+
+    from src.analytics import quarantine_job
+    from src.api import jobs
+
+    mgr = _failing_manager(tmp_path, _driver_error())
+    st = mgr.status()
+    assert st["state"] == "error" and st["pool_timeout"] is False
+    assert _SECRET not in json.dumps(st) and "OperationalError" in st["error"]
+    monkeypatch.setattr(quarantine_job, "get_quarantine_manager", lambda: mgr)
+    listed = jobs._quarantine_jobs()
+    assert listed and _SECRET not in json.dumps(listed)
+
+
+def test_a_pool_timeout_is_marked_so_the_release_run_can_resume_it(tmp_path):
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    mgr = _failing_manager(tmp_path, PoolTimeout("QueuePool limit of size 6 overflow 2 reached, connection timed out"))
+    st = mgr.status()
+    assert st["state"] == "error" and st["pool_timeout"] is True
+    assert "QueuePool" not in (st["error"] or ""), "the words of a driver error are not kept"
