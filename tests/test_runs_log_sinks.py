@@ -1145,8 +1145,10 @@ def _swap(old: str, new: str):
 
 def _whole_label(new_def: str):
     def apply(source: str) -> str:
-        start, end = source.index("def _label("), source.index("def _internal_failure(")
-        return source[:start] + new_def + "\n\n" + source[end:]
+        # bounded by the parser, not by a guessed delimiter (tests/test_source_slicing_discipline.py counts the hand-rolled slices)
+        (fn,) = [n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == "_label"]
+        lines = source.splitlines(keepends=True)
+        return "".join(lines[: fn.lineno - 1]) + new_def + "".join(lines[fn.end_lineno :])
 
     return apply
 
