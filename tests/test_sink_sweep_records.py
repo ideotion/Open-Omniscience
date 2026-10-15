@@ -688,10 +688,38 @@ def _withheld_values(source: str) -> list[ast.expr]:
     ]
 
 
-def _is_fixed(value: ast.expr) -> bool:
+def _module_strings(source: str) -> dict[str, bool]:
+    """Module-level names bound once to a PLAIN string literal (no f-string, no call, no concatenation): name -> True."""
+    out: dict[str, bool] = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            out[node.targets[0].id] = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            out[node.target.id] = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    return out
+
+
+def _imported_strings(source: str, name: str) -> bool:
+    """``name`` imported ``from src.x import name``: it must be a plain string literal there, at module level."""
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("src") and any((a.asname or a.name) == name for a in node.names):
+            target = ROOT / (node.module.replace(".", "/") + ".py")
+            if not target.exists():
+                target = ROOT / node.module.replace(".", "/") / "__init__.py"
+            real = next(a.name for a in node.names if (a.asname or a.name) == name)
+            return target.exists() and _module_strings(target.read_text(encoding="utf-8")).get(real, False)
+    return False
+
+
+def _is_fixed(value: ast.expr, source: str = "") -> bool:
+    """Default-deny: a string literal, or a NAME that resolves (in this module or the ``src`` module it is imported from) to a module-level
+    PLAIN string literal. An UPPER_CASE spelling proves nothing: ``NOTE = f"{exc}"`` is a name too."""
     if isinstance(value, ast.Constant):
         return isinstance(value.value, str) or value.value is None
-    return isinstance(value, ast.Name) and value.id.lstrip("_").isupper()
+    if isinstance(value, ast.Name) and source:
+        here = _module_strings(source)
+        return here[value.id] if value.id in here else _imported_strings(source, value.id)
+    return False
 
 
 #: Where the value is only PASSED THROUGH the helpers' own signatures (the caller's fixed sentence, or the class name the scrub
@@ -701,14 +729,27 @@ _WITHHELD_PASS_THROUGH = "src/monitoring/secret_scrub.py"
 
 def test_every_withheld_argument_in_src_is_a_literal_or_a_module_constant():
     bad: list[str] = []
+    seen = 0
     for path in sorted((ROOT / "src").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         if rel == _WITHHELD_PASS_THROUGH:
             continue
-        for value in _withheld_values(path.read_text(encoding="utf-8")):
-            if not _is_fixed(value):
+        text = path.read_text(encoding="utf-8")
+        for value in _withheld_values(text):
+            seen += 1
+            if not _is_fixed(value, text):
                 bad.append(f"{rel}:{value.lineno}: {ast.unparse(value)}")
+    assert seen >= 8, f"the walk found {seen} withheld= sites, and 8 are known: a walk over nothing proves nothing"
     assert bad == [], "withheld= must be a fixed sentence (a literal or an UPPER_CASE constant), never made from the exception"
+
+
+_CONTROL_SOURCE = (
+    "from src.monitoring.secret_scrub import UNREADABLE_TEXT\n"
+    "SENTENCE = 'its text is withheld'\n"
+    "NOTE = f'{exc}'\n"
+    "BUILT = 'a ' + str(exc)\n"
+    "def f(sentence):\n    pass\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -716,7 +757,10 @@ def test_every_withheld_argument_in_src_is_a_literal_or_a_module_constant():
     [
         ('"its text is withheld"', True),
         ("UNREADABLE_TEXT", True),
-        ("_UNCHECKED", True),
+        ("SENTENCE", True),
+        ("NOTE", False),  # an UPPER_CASE name bound to an f-string
+        ("BUILT", False),  # ... to a concatenation
+        ("UNKNOWN_CONSTANT", False),  # a name that resolves to nothing
         ('f"{type(exc).__name__}"', False),
         ("str(exc)", False),
         ("sentence", False),
@@ -726,7 +770,55 @@ def test_every_withheld_argument_in_src_is_a_literal_or_a_module_constant():
 )
 def test_the_withheld_guard_tells_a_fixed_sentence_from_one_made_of_the_exception(value, fixed):
     (node,) = _withheld_values(f"http_detail(exc, withheld={value})")
-    assert _is_fixed(node) is fixed
+    assert _is_fixed(node, _CONTROL_SOURCE) is fixed
+
+
+# --- withheld=UNREADABLE_TEXT is kept where a route had it: pinned as exact sets -------------------------------------------------------
+
+
+def _secret_carrying_http_detail_calls() -> dict[tuple[str, str], bool]:
+    """(file, enclosing function, line text) -> whether the call names ``withheld=``, for every ``http_detail`` in src/api that is handed a
+    secret (a third positional argument)."""
+    found: dict[tuple[str, str], bool] = {}
+    for path in sorted((ROOT / "src/api").rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        tree = ast.parse(text)
+        parent = {c: n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "http_detail" and len(node.args) >= 3:
+                fn = node
+                while fn in parent and not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+                    fn = parent[fn]
+                name = fn.name if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef) else ""
+                key = (path.relative_to(ROOT).as_posix(), f"{name}:{node.lineno}")
+                found[key] = any(k.arg == "withheld" for k in node.keywords)
+    return found
+
+
+def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_had_it():
+    """Both ways, by (file, function) with a count: a site that loses ``withheld=`` fails, and so does one that gains it unrecorded."""
+    from collections import Counter
+
+    calls = _secret_carrying_http_detail_calls()
+    kept = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if has)
+    assert kept == Counter(
+        {
+            ("src/api/diagnostics/p0.py", "p0_validation_start"): 1,
+            ("src/api/diagnostics/release_run.py", "release_run_resume"): 1,
+            ("src/api/diagnostics/release_run.py", "release_run_start"): 1,
+            ("src/api/ingestion.py", "ingest_email_endpoint"): 1,
+            ("src/api/safety.py", "encrypted_backup"): 1,
+            ("src/api/unlock.py", "_close_after_checkpoint"): 1,
+            ("src/api/unlock.py", "_file_opens_with"): 1,
+            ("src/api/unlock.py", "_unlock_locked"): 1,
+            ("src/api/unlock.py", "encrypt_db"): 1,
+        }
+    )
+    lacking = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if not has)
+    assert set(lacking) == {
+        ("src/api/backup_v2.py", name)
+        for name in ("_stage_upload", "import_queue_start", "restore_legacy_path", "volume_backup_restore", "volume_backup_start", "volume_backup_verify")
+    } | {("src/api/diagnostics/release_run.py", "release_run_start"), ("src/api/ingestion.py", "_mailbox_pull_worker")}
 
 
 # --- the helpers the api guard trusts BY NAME are pinned default-deny ------------------------------------------------------------------

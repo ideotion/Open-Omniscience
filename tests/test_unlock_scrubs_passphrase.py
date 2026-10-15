@@ -117,13 +117,14 @@ def test_any_other_failure_of_the_finish_is_still_not_a_409(failing_unlock):
 class _CheckpointConn:
     """A verify connection whose write-back of the recovered log fails with the words it is given."""
 
-    def __init__(self, says: str) -> None:
+    def __init__(self, says: str, error=RuntimeError) -> None:
         self._says = says
+        self._error = error
         self.closed = False
 
     def execute(self, sql: str):
         if "wal_checkpoint" in sql:
-            raise RuntimeError(self._says)
+            raise self._error(self._says)
         return types.SimpleNamespace(fetchone=lambda: None)
 
     def close(self) -> None:
@@ -214,7 +215,7 @@ def test_a_short_key_that_encrypt_in_place_refused_is_answered_in_the_fixed_word
     from src.monitoring.secret_scrub import UNREADABLE_TEXT
 
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-plaintext")
-    monkeypatch.setattr(encrypt_tool, "dispose_engine", lambda: None, raising=False)
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: None)
 
     def refused(_passphrase):
         raise encrypt_tool.EncryptToolError("could not encrypt oo: the key is oo")
@@ -224,3 +225,15 @@ def test_a_short_key_that_encrypt_in_place_refused_is_answered_in_the_fixed_word
     with pytest.raises(HTTPException) as err:
         unlock_mod.encrypt_db(body)
     assert err.value.status_code == 400 and err.value.detail == UNREADABLE_TEXT
+
+
+def test_a_drivers_failure_at_the_checkpoint_names_its_class_once_and_none_of_its_words(caplog, monkeypatch):
+    """R136: a database driver's error is its class only, so the line says the class ONCE ("OperationalError (a database driver's text is
+    withheld)") and not "OperationalError: OperationalError ...", and follows it with none of the driver's words."""
+    import sqlite3
+
+    monkeypatch.setattr(connect_mod, "_passphrase", None)
+    record = _checkpoint_warning(caplog, _CheckpointConn(f"disk I/O error near PRAGMA key = '{_PASS}'", sqlite3.OperationalError), passphrase=_PASS)
+    text = record.getMessage()
+    assert text.count("OperationalError") == 1 and "disk I/O" not in text and _PASS not in caplog.text, text
+    assert "a database driver's text is withheld" in text
