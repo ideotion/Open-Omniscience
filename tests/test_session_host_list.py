@@ -5,7 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The Wikipedia, ORES and DuckDuckGo clients go through ``guarded_session`` / ``following_session``, whose ``requests`` sessions used to follow
 a redirect to whatever host the answer named, with no host check on the hop. ``GuardedSession.send`` is the method ``requests`` calls for the
-first request AND for every hop, so the list is checked there, on the URL the HTTP client will connect to.
+first request AND for every hop, so the list is checked there, on the URL the HTTP client will connect to. The five Wikidata loaders and the
+Hugging Face release check each build one fixed endpoint and carry a list of exactly its host (tested below, module by module).
 
 No network: a scripted adapter stands where the socket would be, so the real ``requests`` redirect machinery runs.
 """
@@ -238,7 +239,9 @@ def test_the_two_readings_baseline_passes(monkeypatch):
         ({"u3_host": None}, "host is not one"),  # urllib3 reads no host at all
         ({"up_hostname": None}, "host is not one"),  # urlparse reads no host at all
         ({"up_hostname": ""}, "host is not one"),
-        ({"u3_host": "de%2ewikipedia.org"}, "host is not one"),  # a percent in ONE reading only: the comparison refuses it by itself
+        # A percent in ONE reading only. Here the ``%2e`` eats the dot the ``.wikipedia.org`` suffix needs, so the comparison refuses; a percent
+        # elsewhere in a listed label (``x%41.wikipedia.org``) passes the comparison and only the percent clause below refuses it.
+        ({"u3_host": "de%2ewikipedia.org"}, "host is not one"),
         ({"up_hostname": "de%2ewikipedia.org"}, "host is not one"),
         ({"u3_port": 8443}, "port other than 443"),
         ({"up_port": 8443}, "port other than 443"),
@@ -456,10 +459,13 @@ def scripted(monkeypatch):
     wire = _Script()
     real = fetcher_mod.guarded_session
 
+    wire.sessions = []  # every session the module under test built, so a test can read the list it was given
+
     def build(**kw):
         s = real(**kw)
         s.mount("https://", wire)
         s.mount("http://", wire)
+        wire.sessions.append(s)
         return s
 
     monkeypatch.setattr(fetcher_mod, "guarded_session", build)
@@ -493,6 +499,7 @@ def test_a_wikidata_api_getter_refuses_a_redirect_off_its_host_and_follows_one_o
     scripted.routes[WIKIDATA_API_URL] = (302, "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q42&format=json&redirected=1")
     get(WIKIDATA_API_URL)
     assert len(scripted.sent) == 2, "a hop to its own host is followed"
+    assert {s.allowed_hosts for s in scripted.sessions} == {("www.wikidata.org",)}, "the getter's own session carries exactly the API host"
 
 
 def test_the_sparql_transport_refuses_a_redirect_off_its_host_and_follows_one_on_it(scripted):
@@ -507,7 +514,12 @@ def test_the_sparql_transport_refuses_a_redirect_off_its_host_and_follows_one_on
     scripted.routes[url] = (302, "https://evil.test/steal")
     with pytest.raises(RedirectRefused):
         run_query("FR", ["Q11032"])
-    assert scripted.sent == [url]
+    assert scripted.sent == [url], "the hop was refused before it was sent"
+    scripted.sent.clear()
+    scripted.routes[url] = (302, f"{WDQS_ENDPOINT}?redirected=1")
+    run_query("FR", ["Q11032"])
+    assert len(scripted.sent) == 2, "a hop to its own host is followed"
+    assert {s.allowed_hosts for s in scripted.sessions} == {("query.wikidata.org",)}, "the transport's own session carries exactly the WDQS host"
 
 
 def test_the_weights_digest_fetch_refuses_a_redirect_off_huggingface_and_says_so(scripted, monkeypatch):
@@ -520,28 +532,38 @@ def test_the_weights_digest_fetch_refuses_a_redirect_off_huggingface_and_says_so
             raise RuntimeError("no local Ollama in this test")
 
     monkeypatch.setattr(ollama, "OllamaClient", _NoOllama)
-    url = f"https://huggingface.co/api/models/{MINISTRAL_VLLM_MODEL}"
+    url = release_run.HF_MODEL_API_URL.format(model=MINISTRAL_VLLM_MODEL)
     scripted.routes[url] = (302, "https://evil.test/steal")
     out = release_run._weights_digest_proposal()
     assert out["hf"]["measured"] is False and "request refused" in out["hf"]["error"]
     assert "evil" not in out["hf"]["error"]
     assert scripted.sent == [url]
+    assert {s.allowed_hosts for s in scripted.sessions} == {("huggingface.co",)}, "the check's own session carries exactly the Hugging Face host"
 
 
-def test_every_endpoint_constant_passes_the_list_its_session_carries():
-    """The lists are the hosts of the URLs the code builds, and a constant that moves host without its list is caught here."""
+def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
+    """The lists are the hosts of the URLs the code builds: equal to them, not merely accepting them, so a list widened by one host
+    (a sibling, a CDN, a family) fails here, and so does an endpoint that moves host without its list."""
+    from urllib.parse import urlsplit
+
     from src.analytics import wikidata_rings
     from src.catalog import wikidata, wikidata_enrich
     from src.monitoring import release_run
 
-    refuse_unlisted_host(wikidata_rings.API_ENDPOINT, wikidata_rings.API_HOSTS)
-    refuse_unlisted_host(wikidata_enrich._API, wikidata_enrich.API_HOSTS)
-    refuse_unlisted_host(wikidata.WDQS_ENDPOINT, wikidata.WDQS_HOSTS)
-    refuse_unlisted_host("https://huggingface.co/api/models/x/y", release_run.HF_API_HOSTS)
-    for hosts in (wikidata_rings.API_HOSTS, wikidata_enrich.API_HOSTS, wikidata.WDQS_HOSTS, release_run.HF_API_HOSTS):
+    pairs = (
+        (wikidata_rings.API_HOSTS, wikidata_rings.API_ENDPOINT),
+        (wikidata_enrich.API_HOSTS, wikidata_enrich._API),
+        (wikidata.WDQS_HOSTS, wikidata.WDQS_ENDPOINT),
+        (release_run.HF_API_HOSTS, release_run.HF_MODEL_API_URL.format(model="x/y")),
+    )
+    for hosts, endpoint in pairs:
+        assert hosts == (urlsplit(endpoint).hostname,)
+        refuse_unlisted_host(endpoint, hosts)
         assert fetcher_mod._checked_hosts(hosts) == hosts
-    assert wikidata_rings.API_HOSTS == wikidata_enrich.API_HOSTS, "two modules state the one Wikidata API host"
-    # ... and a neighbour of each is refused, so a list that grew into a family would show up here:
+    # The QID label resolver (``src/api/source_management.py``) fetches ``wikidata_rings``'s URLs through the source-typing getter, which
+    # carries ``wikidata_enrich``'s list; the two modules state the one host, and this is what keeps them in step.
+    assert wikidata_rings.API_HOSTS == wikidata_enrich.API_HOSTS, "the source-typing getter also serves the QID label resolver's URLs"
+    # ... and a neighbour of each is refused, so a list that grew into a family would show up here too:
     for url, hosts in (
         ("https://query.wikidata.org/sparql", wikidata_rings.API_HOSTS),
         ("https://www.wikidata.org/w/api.php", wikidata.WDQS_HOSTS),
@@ -556,12 +578,17 @@ def test_every_endpoint_constant_passes_the_list_its_session_carries():
 _BULK = "bulk downloads from request-chosen mirrors that redirect between CDNs by design"
 #: Every module that builds a guarded session WITHOUT a host list: ``{path: (calls, why it has none)}``. Zero slack: a call that gains a
 #: list leaves this table, and a new call joins it with its reason. What is left here are URLs chosen by the request or the catalogue, or
-#: hosts that move; a session for a fixed endpoint names its list instead.
+#: hosts that move, plus one fixed endpoint not listed yet (the installer's release lookup on ``api.github.com``, in the row below); a
+#: session for a fixed endpoint otherwise names its list instead.
 UNLISTED_SESSIONS = {
     "src/geo/osm_downloads.py": (2, _BULK),
     "src/ingest/segmented_download.py": (2, _BULK),
     "src/wiki/dumps.py": (2, _BULK),
-    "src/llm/installer.py": (2, "release assets whose storage host moves (docs/SECURITY.md, local AI install); needs its own look"),
+    "src/llm/installer.py": (
+        2,
+        "the release lookup on api.github.com is a fixed endpoint not listed yet; the asset download follows a response-chosen URL to storage "
+        "whose host moves (docs/SECURITY.md, local AI install); needs its own look",
+    ),
     "src/stats/fetch.py": (1, "the statistics agencies' catalogue URLs: many hosts, none fixed"),
 }
 

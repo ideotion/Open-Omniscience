@@ -124,14 +124,16 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   **A fixed-endpoint session refuses a redirect to a host it does not talk to.** The
   Wikipedia/Wikimedia client, the ORES client, the DuckDuckGo search, the five Wikidata
   loaders (the country-catalogue SPARQL query, source typing, the entity cache, the place
-  gazetteer and the ring loader) and the Hugging Face release check each carry a host list
+  gazetteer and the ring loader) and the Hugging Face release check each carry a host list.
+  The first three are families that serve several endpoints
   (`src/wiki/client.py:WIKI_SESSION_HOSTS`, `src/wiki/ores.py:ORES_HOSTS`,
-  `src/services/duckduckgo.py:DuckDuckGoSearch.ALLOWED_HOSTS`,
-  `src/analytics/wikidata_rings.py:API_HOSTS`, `src/catalog/wikidata_enrich.py:API_HOSTS`,
-  `src/catalog/wikidata.py:WDQS_HOSTS`, `src/monitoring/release_run.py:HF_API_HOSTS`: exactly
-  the host of the one endpoint each builds, `www.wikidata.org`, `query.wikidata.org` or
-  `huggingface.co`), and the session checks the
-  whole URL against it **before every request, each redirect hop included**
+  `src/services/duckduckgo.py:DuckDuckGoSearch.ALLOWED_HOSTS`). The other four are each
+  **exactly the host of the one endpoint they build**, and a test pins the equality:
+  `src/analytics/wikidata_rings.py:API_HOSTS` and `src/catalog/wikidata_enrich.py:API_HOSTS`
+  (`www.wikidata.org`; the second also serves the QID label resolver, which fetches the first
+  module's URLs), `src/catalog/wikidata.py:WDQS_HOSTS` (`query.wikidata.org`) and
+  `src/monitoring/release_run.py:HF_API_HOSTS` (`huggingface.co`). The session checks the
+  whole URL against its list **before every request, each redirect hop included**
   (`src/safety/fetcher.py:refuse_unlisted_host`): https only, no user name or password, port
   443 only, no `%` in the host, and a listed host. The URL is read by **both** parsers the stack
   uses (`urllib3`'s and `urlparse`'s; `requests` 2.32.2 and later connects to the host
@@ -140,14 +142,19 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`.wikipedia.org` means any host under it, never the bare domain), written as a name of at
   least two labels. A refusal raises `RedirectRefused` before the request is sent and names
   the clause, never the address. **Not covered:** every other session built by
-  `guarded_session` or `following_session` without a list, which is the bulk downloads and
-  installs from request-chosen mirrors and CDNs (dumps, OSM, segmented downloads), the model
-  installer's release assets and the statistics agencies' catalogue URLs, where the host is
-  not fixed. `tests/test_session_host_list.py:UNLISTED_SESSIONS` pins each with its reason, so
-  a new one is a decision rather than an accident. The Wikidata and Hugging Face lists come from the
-  URLs the code builds, not from a live look at where those hosts redirect (the build sandbox
-  cannot reach them); a redirect they make to another host is refused loudly as a
-  `RedirectRefused`, never followed.
+  `guarded_session` or `following_session` without a list: the bulk downloads and installs from
+  request-chosen mirrors and CDNs (dumps, OSM, segmented downloads), the statistics agencies'
+  catalogue URLs (many hosts, none fixed), and the model installer, whose release lookup on
+  `api.github.com` is a fixed endpoint that has no list yet while its asset download follows a
+  URL the response names to storage whose host moves.
+  `tests/test_session_host_list.py:UNLISTED_SESSIONS` pins each with its reason, so a new one is a
+  decision rather than an accident. The Wikidata and Hugging Face lists come from the URLs the
+  code builds, not from a live look at where those hosts redirect (the build sandbox cannot
+  reach them), so a redirect they make to another host is never followed and fails the request
+  like any other failure. Not every loader names the cause: the country-catalogue query and the
+  release check carry the refusal text; the entity cache and the gazetteer count the request as
+  refused and the ring loader as an error; the source-typing pass skips that source without a
+  count of its own.
 
   **What an OpenTimestamps submission reveals** is your IP and timing, to the calendar
   operator — the *act of submitting*, not the content: only an opaque SHA-256 digest of

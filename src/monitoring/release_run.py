@@ -1481,8 +1481,10 @@ def _ores_probe() -> dict[str, Any]:
     }
 
 
-#: The hosts the weights-digest fetch below may talk to (``guarded_session(allowed_hosts=...)``): its one URL is on ``huggingface.co``, and a
-#: redirect hop anywhere else is refused before it is sent. A renamed repository redirects within the same host.
+#: The one URL the weights-digest fetch below requests, and the hosts its session may talk to (``guarded_session(allowed_hosts=...)``): a
+#: redirect hop anywhere else is refused before it is sent. Exactly the host of the URL; a test pins that the two are equal. Where the
+#: host redirects (a renamed repository, say) was not looked at, so a redirect off it fails the fetch loudly instead of being followed.
+HF_MODEL_API_URL = "https://huggingface.co/api/models/{model}"
 HF_API_HOSTS: tuple[str, ...] = ("huggingface.co",)
 
 
@@ -1498,7 +1500,7 @@ def _weights_digest_proposal() -> dict[str, Any]:
         from src.safety.fetcher import guarded_session
 
         s = guarded_session(allowed_hosts=HF_API_HOSTS)
-        r = s.get(f"https://huggingface.co/api/models/{MINISTRAL_VLLM_MODEL}", timeout=30)
+        r = s.get(HF_MODEL_API_URL.format(model=MINISTRAL_VLLM_MODEL), timeout=30)
         if getattr(r, "status_code", None) == 200:
             sha = str((r.json() or {}).get("sha") or "")
             out["hf"].update({"measured": True, "sha": sha, "basis": "GET /api/models/<repo> -> sha (the repo's commit)"})

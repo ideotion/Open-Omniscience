@@ -23,7 +23,7 @@ from src.catalog.normalize import to_entry
 
 WDQS_ENDPOINT = "https://query.wikidata.org/sparql"
 #: The hosts a session that fetches ``WDQS_ENDPOINT`` may talk to (``guarded_session(allowed_hosts=...)``): a redirect hop anywhere else
-#: is refused before it is sent. Exactly the endpoint's host; a test pins that the two agree.
+#: is refused before it is sent. Exactly the endpoint's host; a test pins that the two are equal.
 WDQS_HOSTS: tuple[str, ...] = ("query.wikidata.org",)
 
 
