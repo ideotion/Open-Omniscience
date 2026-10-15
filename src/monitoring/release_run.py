@@ -1483,7 +1483,7 @@ def _ores_probe() -> dict[str, Any]:
 
 #: The one URL the weights-digest fetch below requests, and the hosts its session may talk to (``guarded_session(allowed_hosts=...)``): a
 #: redirect hop anywhere else is refused before it is sent. Exactly the host of the URL; a test pins that the two are equal. Where the
-#: host redirects (a renamed repository, say) was not looked at, so a redirect off it fails the fetch loudly instead of being followed.
+#: host redirects (a renamed repository, say) was not looked at, so a redirect off it fails the fetch with a named refusal instead of being followed.
 HF_MODEL_API_URL = "https://huggingface.co/api/models/{model}"
 HF_API_HOSTS: tuple[str, ...] = ("huggingface.co",)
 

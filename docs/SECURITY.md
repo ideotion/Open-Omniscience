@@ -135,9 +135,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   Wikipedia/Wikimedia client, the ORES client, the DuckDuckGo search, the five Wikidata
   loaders (the country-catalogue SPARQL query, source typing, the entity cache, the place
   gazetteer and the ring loader) and the Hugging Face release check each carry a host list.
-  The first three are families that serve several endpoints
-  (`src/wiki/client.py:WIKI_SESSION_HOSTS`, `src/wiki/ores.py:ORES_HOSTS`,
-  `src/services/duckduckgo.py:DuckDuckGoSearch.ALLOWED_HOSTS`). The other four are each
+  The wiki list serves several endpoints (the Action API, pageviews and EventStreams;
+  `src/wiki/client.py:WIKI_SESSION_HOSTS`), and the ORES and DuckDuckGo lists
+  (`src/wiki/ores.py:ORES_HOSTS`, `src/services/duckduckgo.py:DuckDuckGoSearch.ALLOWED_HOSTS`)
+  are one endpoint each with a wider family suffix. The other four are each
   **exactly the host of the one endpoint they build**, and a test pins the equality:
   `src/analytics/wikidata_rings.py:API_HOSTS` and `src/catalog/wikidata_enrich.py:API_HOSTS`
   (`www.wikidata.org`; the second also serves the QID label resolver, which fetches the first
@@ -161,12 +162,13 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   decision rather than an accident. The Wikidata and Hugging Face lists come from the URLs the
   code builds, not from a live look at where those hosts redirect (the build sandbox cannot
   reach them), so a redirect they make to another host is never followed and fails the request
-  like any other failure. Each loader reports it in its own way, and none
-  swallows it: the country-catalogue query and the release check carry the refusal text; the
-  entity cache and the gazetteer count the request as refused and the ring loader as an error;
-  the source-typing pass counts the source (`sources_refused`, with the class name
-  `RedirectRefused` and no address, and the Diagnostics button shows "N refused" beside its
-  tally).
+  like any other failure. Each loader reports it in its own way: the
+  country-catalogue query and the release check carry the refusal text; the entity cache and the
+  gazetteer count the request as refused and the ring loader as an error; the source-typing pass
+  counts the source (`sources_refused`, with the class name `RedirectRefused` and no address, and
+  the Diagnostics button shows "N refused" beside its tally); the QID label resolver records it
+  as `DECLINED_UNRESOLVED`, the same as any failed lookup, because it does not yet tell a
+  refusal apart.
 
   **What an OpenTimestamps submission reveals** is your IP and timing, to the calendar
   operator — the *act of submitting*, not the content: only an opaque SHA-256 digest of
