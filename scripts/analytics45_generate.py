@@ -45,6 +45,7 @@ import os
 import sys
 import tempfile
 from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -58,8 +59,11 @@ A3 = {"en": "eng", "de": "deu", "fr": "fra", "es": "spa", "ar": "ara", "it": "it
 
 
 def _kib(n: int) -> str:
-    """The reader's size text: bytes below 1 KiB, else KiB with one decimal (so 9000 reads 8.8)."""
-    return str(n) if n < 1024 else f"{n / 1024:.1f}"
+    """The reader's size text: bytes below 1 KiB, else KiB with one decimal, ties rounded up as the page's ``toFixed``
+    does on an exact value (so 9000 reads 8.8 and 1280 reads 1.3). Sizes of 1 MiB or more are not drawn by this world."""
+    if n >= 1024 * 1024:
+        raise ValueError("the stand-in world holds no page of 1 MiB or more (the page's MB form is not modelled here)")
+    return str(n) if n < 1024 else str((Decimal(n) / 1024).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
 def _js_round(x: float) -> int:
@@ -67,27 +71,61 @@ def _js_round(x: float) -> int:
 
 
 def _install_socket_tripwire() -> None:
-    """Refuse every non-loopback connection or name lookup for the rest of this process."""
+    """Refuse every non-loopback connection or name lookup for the rest of this process.
+
+    Covers the TCP path ``requests`` uses (``connect``, ``connect_ex``, ``getaddrinfo``, ``gethostbyname``) and the UDP
+    send calls. A host is local only if it IS a loopback address or ``localhost`` (not merely a name that starts with one).
+    """
+    import ipaddress
     import socket
 
-    loopback = ("127.", "::1", "localhost")
-    real_connect, real_lookup = socket.socket.connect, socket.getaddrinfo
-
     def _is_local(host) -> bool:
-        return isinstance(host, str) and host.startswith(loopback)
+        if isinstance(host, bytes):
+            host = host.decode("ascii", "replace")
+        if not isinstance(host, str):
+            return False
+        if host == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+        except ValueError:
+            return False
 
-    def connect(self, address):
-        if self.family != socket.AF_UNIX and not _is_local(address[0]):
-            raise OSError(f"analytics45_generate: a connection to {address[0]!r} was refused; only the stand-in may answer")
-        return real_connect(self, address)
+    def refuse(what: str, host) -> None:
+        raise OSError(f"analytics45_generate: {what} {host!r} was refused; only the stand-in may answer")
+
+    def guarded(fn, what, take_host):
+        def wrapper(self, *a, **kw):
+            host = take_host(self, *a, **kw)
+            if host is not None and not _is_local(host):
+                refuse(what, host)
+            return fn(self, *a, **kw)
+        return wrapper
+
+    def addr_host(self, address, *_a, **_kw):
+        return None if self.family == socket.AF_UNIX else address[0]
+
+    def sendto_host(self, data, *a, **_kw):
+        return None if self.family == socket.AF_UNIX else a[-1][0]
+
+    for name in ("connect", "connect_ex"):
+        setattr(socket.socket, name, guarded(getattr(socket.socket, name), "a connection to", addr_host))
+    socket.socket.sendto = guarded(socket.socket.sendto, "a datagram to", sendto_host)  # type: ignore[method-assign]
+
+    real_lookup, real_byname = socket.getaddrinfo, socket.gethostbyname
 
     def lookup(host, *a, **kw):
         if not _is_local(host):
-            raise OSError(f"analytics45_generate: a name lookup for {host!r} was refused")
+            refuse("a name lookup for", host)
         return real_lookup(host, *a, **kw)
 
-    socket.socket.connect = connect  # type: ignore[method-assign]
+    def byname(host):
+        if not _is_local(host):
+            refuse("a name lookup for", host)
+        return real_byname(host)
+
     socket.getaddrinfo = lookup  # type: ignore[assignment]
+    socket.gethostbyname = byname  # type: ignore[assignment]
 
 
 def main() -> int:
@@ -241,7 +279,7 @@ def main() -> int:
                 rows.append({"edition": A3[c], "found": False})
         top = max(sizes.values()) if sizes else 0
         for r in rows:
-            r["bar"] = f"{_js_round(r['size'] * 100 / top)}%" if r["found"] and top else None
+            r["bar"] = f"{max(1, _js_round(r['size'] * 100 / top))}%" if r["found"] and top else None  # the page floors a bar at 1 %
         return {"qid": qid, "rows": rows}
 
     items: dict[str, dict] = {}

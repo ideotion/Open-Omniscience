@@ -26,8 +26,8 @@ documentation and was not reproduced. Other simplifications: one answer per wind
 
 An offline loopback app (`GET /api/system/network` answered `online:false` at the start of every browser context and at the end of every run) on that
 state; `scripts/analytics45_look.py --truth truth.json`: **80 runs** — 1440×900, 768×1024, 390×844, 360×800 and 320×568 × the 15 themes in English, plus
-Arabic at the first theme — each judging 28 checks (29 in Arabic), **2,325 in all**, against the PLAN (never against the lane): the suggestions by their
-numbers (Q42: 9 changes, found in 2 editions; Q34: 3, 4; Q7001: 2, 2; Q7002: 1, 1), the six-row table for Q34 (sizes 8.8 KB, 11.7 KB, 300 B, 500 B;
+Arabic at the first theme — each judging 29 checks (30 in Arabic), **2,325 in all** (75 × 29 + 5 × 30), against the PLAN (never against the lane): the first two suggestions by their
+numbers (Q42: 9 changes, found in 2 editions; Q34: 3, 4; the pytest test reads all four, with Q7001: 2, 2 and Q7002: 1, 1), the six-row table for Q34 (sizes 8.8 KB, 11.7 KB, 300 B, 500 B;
 changes 3, 0, unknown, unknown; bars 75 / 100 / 3 / 4 %; the two absences in words), the invalid and unknown items, all 50 rows of the `en` top list with
 their press counts (day / week, `not counted` for the bare «-»), **every option of the edition drop-down picked** (en, de, fr, es, ar: each read back
 from the control now on screen, the page rebuilds it on every pick — `rebuilt` is recorded — and the table it draws judged row by row), every drop-down
@@ -37,9 +37,9 @@ CSP event, and a console error, warning, page error or HTTP ≥ 400 failing the 
 ## Result
 
 **80 runs, 2,325 checks, 0 FAIL, 0 console lines (`console-all-80-runs.txt`: only the 80 headers), 0 requests off the loopback origin; the app's server log
-(12,057 lines) holds no error and one address, `127.0.0.1`** (`server-log-check.txt`). No defect found in the readers or the page on this state.
+(12,057 lines) holds no error and one address, `127.0.0.1`** (`server-log-check.txt`, a one-line count, not the log). No defect found in the readers or the page on this state.
 
-**The judges can fail.** (1) Run once against a copy of the plan with three values changed (a size, a press count, a suggestion's change count) the
+**The judges can fail.** (1) Run once by hand (not kept as a file) against a copy of the plan with three values changed (a size, a press count, a suggestion's change count) the
 look failed exactly those three checks. (2) `mutation_checks.py --truth` serves the page a broken copy of one file at a time: control passes, all four caught
 (`mutation-results.json`). (3) `tests/test_analytics45_generate.py` asks the real readers the same questions of the generated state, and mutating the
 stand-in's item answer or the plan's press count failed it.

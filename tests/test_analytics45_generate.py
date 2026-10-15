@@ -83,7 +83,8 @@ def test_the_divergence_reader_says_what_the_walk_stored(generated):
 def test_the_suggestions_are_the_plans_in_the_plans_order(generated):
     truth, got = generated
     items = [(c["qid"], c["changes_in_window"], c["editions_found"]) for c in got["cands"]["items"]]
-    assert items[: len(truth["suggestions"])] == [(s["qid"], s["changes"], s["found_in"]) for s in truth["suggestions"]]
+    assert truth["suggestions"], "the plan must make suggestions or this compares nothing"
+    assert items == [(s["qid"], s["changes"], s["found_in"]) for s in truth["suggestions"]], "the reader may add no candidate the plan did not make"
 
 
 def test_the_attention_reader_counts_the_press_the_plan_wrote(generated):
@@ -153,6 +154,20 @@ def test_the_generator_refuses_a_remote_connection_and_a_used_data_directory(tmp
     )
     done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=60)
     assert done.stdout.split() == ["refused", "True", "refused", "True", "loopback", "ok"], done.stdout + done.stderr
+    more = (
+        "import sys, socket; sys.path.insert(0, 'scripts'); import analytics45_generate as g; g._install_socket_tripwire()\n"
+        "for fn in (lambda: socket.socket().connect_ex(('93.184.216.34', 443)), lambda: socket.gethostbyname('example.org'),\n"
+        "           lambda: socket.getaddrinfo('localhost.evil.example', 80), lambda: socket.socket(type=socket.SOCK_DGRAM).sendto(b'x', ('93.184.216.34', 53))):\n"
+        "    try: fn()\n"
+        "    except OSError as e: print('refused' if 'analytics45_generate' in str(e) else 'OTHER')\n"
+        "    else: print('REACHED')\n"
+    )
+    done = subprocess.run([sys.executable, "-c", more], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert done.stdout.split() == ["refused"] * 4, done.stdout + done.stderr
+    # main() must install it before anything runs: deleting the call would leave the tests above green
+    src = (ROOT / "scripts" / "analytics45_generate.py").read_text(encoding="utf-8")
+    main_body = src.split("def main() -> int:", 1)[1]
+    assert main_body.index("_install_socket_tripwire()") < main_body.index("init_db()")
     (tmp_path / "x").write_text("a store someone uses")
     env = {**os.environ, "OO_DATA_DIR": str(tmp_path)}
     env.pop("DATABASE_URL", None)

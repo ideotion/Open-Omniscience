@@ -247,8 +247,6 @@ class World:
         for code, ranks in (("en", 11), ("de", 6), ("fr", 4)):
             per: dict[int, tuple[int, int]] = {}
             for rank in range(1, ranks + 1):
-                if code == "en" and rank == 12:
-                    continue
                 day = rng.choice((0, 1, 2, 3, 4))
                 per[rank] = (day, day + rng.choice((0, 0, 1, 2, 3)))
             if code == "en":

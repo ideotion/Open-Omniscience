@@ -75,6 +75,8 @@ def main() -> int:
     ap.add_argument("--truth", help="judge a GENERATED state (the JSON analytics45_generate.py printed) instead of the seeded one")
     ap.add_argument("--results", help="where to write the results JSON (default: mutation-results.json beside this file)")
     a = ap.parse_args()
+    if a.truth and not a.results:
+        ap.error("--truth needs --results: the default file is the committed record of the SEEDED look and must not be overwritten")
     report: dict = {"control": None, "mutations": []}
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
