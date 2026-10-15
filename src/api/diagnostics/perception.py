@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
@@ -111,7 +112,7 @@ def perception_extract_run(body: PerceptionExtractRunBody) -> JSONResponse:
         _, active_client = get_client_with_name()
         installed = active_client.list_installed()
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     if model not in installed:
         raise HTTPException(
             status_code=400,

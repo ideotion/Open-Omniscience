@@ -16,6 +16,7 @@ from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_article
+from src.monitoring.secret_scrub import http_detail
 from src.reporting.evidence import (
     BUNDLE_VERSION,
     ITEM_FIELDS,
@@ -49,7 +50,7 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
         try:
             ids = search_ids(db, req.query, exclude_quarantined=True)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
         articles = db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or query.")
@@ -62,7 +63,7 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     except (ValueError, OSError) as exc:
         # a key file that is there but unusable: say so, instead of a bare 500 (the review
         # screen names this state before the person gets here)
-        raise HTTPException(status_code=409, detail=f"The evidence signing key cannot be used: {exc}") from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc, "The evidence signing key cannot be used: ")) from exc
     return build_signed_bundle(articles, key, case_name=req.case_name)
 
 
@@ -126,7 +127,7 @@ def _selected_ids(req, db) -> list[int]:
         try:
             return list(search_ids(db, req.query, exclude_quarantined=True) or [])
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
     raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
 
@@ -138,7 +139,7 @@ def _select_articles(req, db) -> list:
         try:
             ids = search_ids(db, req.query, exclude_quarantined=True)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
         return db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
     raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 

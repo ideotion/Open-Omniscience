@@ -29,7 +29,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.monitoring.activity import activity_monitor
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 _LOG = logging.getLogger(__name__)
@@ -326,7 +326,7 @@ def set_egress_window(body: EgressWindowBody) -> dict:
                 "collector_running": ew.collector_running()
             }
         except ew.EgressWindowError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     ew.close_window()
     return ew.status(with_collector=True)
 

@@ -34,7 +34,7 @@ from src.monitoring import storage_events
 from src.monitoring.secret_scrub import (
     UNENCODABLE_PASSPHRASE,
     UNREADABLE_TEXT,
-    exception_text,
+    http_detail,
     log_failure,
     passphrase_bytes,
     same_passphrase,
@@ -254,7 +254,7 @@ def encrypt_db(body: EncryptBody) -> dict:
         try:
             reports = encrypt_all(body.passphrase)
         except EncryptToolError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)
         dispose_engine()  # next connection opens through the keyed factory
     _LOG.info("store encrypted in place")
@@ -454,7 +454,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
             log_failure(_LOG, "post-unlock startup upkeep failed", exc, level=logging.WARNING)
             # The DB is queryable (init_db ran synchronously) even if upkeep hiccuped,
             # so the corpus is usable — report ready rather than trap the user.
-            set_startup("ready", "", error=exception_text(exc, typed=False))
+            set_startup("ready", "", error=http_detail(exc))
 
     try:
         threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
@@ -462,7 +462,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
         # The upkeep is best-effort and the store is queryable: a thread that cannot be created must not
         # return a usable app to the lock screen (the caller clears the key on any failure here).
         log_failure(_LOG, "post-unlock startup upkeep could not be started", exc, level=logging.WARNING)
-        set_startup("ready", "", error=exception_text(exc, typed=False))
+        set_startup("ready", "", error=http_detail(exc))
 
 
 class _forensic_timer:
@@ -638,7 +638,7 @@ def _close_after_checkpoint(conn, passphrase: str | None) -> None:
         # the notice ends -- and the next thing the person meets is init_db on the same drive.
         # The driver's own message only (no SQL runs here, so it carries no statement), with the typed key out of
         # it BEFORE the first line is taken and cut: a driver's error can still quote what it was handed.
-        said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")
+        said = http_detail(exc, "", passphrase, withheld="its text is withheld")
         _LOG.warning(
             "the recovered log could not be written back into the database before the verify "
             "connection closed (%s: %s); close() will try again",
@@ -737,9 +737,7 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     except WrongPassphraseError as exc:
         raise HTTPException(
             status_code=403,
-            detail=exception_text(
-                exc, passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
-            ),
+            detail=http_detail(exc, "", passphrase, withheld="the passphrase does not open this file (or the file is damaged)"),
         ) from None
     conn.close()
 
@@ -781,9 +779,7 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             # the scrub's "text withheld" notice: a mistyped short key is the lock screen's commonest answer.
             raise HTTPException(
                 status_code=403,
-                detail=exception_text(
-                    exc, body.passphrase, typed=False, withheld="the passphrase does not open this file (or the file is damaged)"
-                ),
+                detail=http_detail(exc, "", body.passphrase, withheld="the passphrase does not open this file (or the file is damaged)"),
             ) from None
         finally:
             _end_recovery_notice(_recovery_token)

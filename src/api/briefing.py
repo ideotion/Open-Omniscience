@@ -23,6 +23,7 @@ from src.analytics.equivalence import _norm
 from src.briefing import draft as draft_store
 from src.briefing import service
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/briefing", tags=["briefing"])
 
@@ -220,7 +221,7 @@ def draft_add(body: DraftAdd) -> dict:
     try:
         return draft_store.add_card(body.card, note=body.note)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.delete("/draft/{card_id}")

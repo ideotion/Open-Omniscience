@@ -16,6 +16,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from src.monitoring.secret_scrub import http_detail
+
 router = APIRouter(prefix="/api/geo", tags=["geo"])
 
 
@@ -80,7 +82,7 @@ def osm_download_start(payload: StartRegion) -> dict:
     try:
         return get_manager().start(region.code, region.name)
     except ValueError as exc:  # path-unsafe code (defense in depth)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.get("/downloads/size")
@@ -121,7 +123,7 @@ def osm_download_resume(key: str = Query(..., description="region code of the do
     try:
         return get_manager().start(region.code, region.name)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.delete("/downloads")

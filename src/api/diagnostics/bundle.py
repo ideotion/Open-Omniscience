@@ -40,7 +40,7 @@ from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring import diagnostics_runs as _diag_runs
-from src.monitoring.secret_scrub import exception_text as _exception_text
+from src.monitoring.secret_scrub import http_detail, record_text as _record_text
 from src.monitoring.secret_scrub import log_failure
 from src.monitoring.secret_scrub import scrubbed_value as _scrubbed_value
 from src.utils.export_envelope import app_version, envelope
@@ -1555,15 +1555,15 @@ def _all_diag_err_str(exc: BaseException, *, typed: bool = False) -> str:
     """Render a member's exception for the envelope/error-file -- even a broken ``__str__``
     must still yield a marker (S8 lesson: a failed member must never be silently lost).
 
-    Written by ``secret_scrub.exception_text``, the one call every handler of this program writes a caught
-    exception through: the passphrases the process holds are taken out of the WHOLE text and the text is cut
+    Written by ``secret_scrub.record_text`` (the per-link rule: a database driver's error, or a wrapper that quotes one, is its
+    class only), over ``exception_text``, the one call every handler of this program writes a caught exception through: the passphrases the process holds are taken out of the WHOLE text and the text is cut
     afterwards (a cut that fell inside the passphrase would leave the part it kept, which a scrub of the cut
     text cannot see); an exception with a ``UnicodeError`` anywhere in its chain is the class and fixed words
     (its message names a character and its offset); a text that cannot be checked, or whose ``__str__`` raises,
     is the class and none of its words. A caller that does not name the class itself passes ``typed=True`` (``Name: text``): a
     ``UnicodeError``'s fixed words and a ``__str__`` that raises already carry their class in either form, so prefixing the
     class again in the caller would write it twice."""
-    return _exception_text(exc, typed=typed, limit=_ERR_STR_CHARS)
+    return _record_text(exc, typed=typed, limit=_ERR_STR_CHARS)
 
 
 # RATCHET (2026-07-17) + RUNTIME COVERAGE (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the
@@ -3898,14 +3898,14 @@ def all_diagnostics_volumes() -> JSONResponse:
     try:
         manifest = _ensure_volume_set(src)
     except dvol.VolumeRoomError as exc:
-        raise HTTPException(status_code=507, detail=str(exc)) from exc
+        raise HTTPException(status_code=507, detail=http_detail(exc)) from exc
     except OSError as exc:
         from src.analytics.keyword_log_scan import no_room_refusal
 
         # The same condition as the preflight's, found halfway instead of at the start (the
         # archive grew, or something else wrote): the same status, with what is still true.
         if no_room_refusal(exc, "splitting the archive") is None:
-            raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc
+            raise HTTPException(status_code=500, detail=http_detail(exc) or type(exc).__name__) from exc
         raise HTTPException(
             status_code=507,
             detail=(
@@ -3919,7 +3919,7 @@ def all_diagnostics_volumes() -> JSONResponse:
     except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500
         # No "could not split the archive" prefix here: the page puts its own, translated, before
         # whatever this says, and a caller of the endpoint knows what it asked.
-        raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc
+        raise HTTPException(status_code=500, detail=http_detail(exc) or type(exc).__name__) from exc
     # The same listing shape as a numbered keyword set (``files`` + ``download_base``), so the one
     # page routine that saves five files per click serves both; the manifest's own fields stay.
     files = [

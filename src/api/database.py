@@ -25,6 +25,7 @@ from starlette.background import BackgroundTask
 
 from src.api import served_cache
 from src.database.session import engine, get_db
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/database", tags=["database"])
 
@@ -404,7 +405,7 @@ def download_backup() -> FileResponse:
         backup_to(Path(tmp))
     except BackupError as exc:
         Path(tmp).unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
     return FileResponse(
         tmp,

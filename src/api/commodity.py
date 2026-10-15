@@ -25,6 +25,7 @@ from src.commodity.units import UnitError, convert_price
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import CommodityPrice
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/commodities", tags=["commodities"])
 
@@ -142,7 +143,7 @@ def list_prices(
                 price = convert_price(price, u, unit)
                 u = unit
             except UnitError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+                raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
         out.append(
             {
                 "observed_on": observed_on.isoformat(),
@@ -188,7 +189,7 @@ def correlation(
             # existed. Counts on a chart are figures, not a list of results.
             ids = search_ids(db, query, exclude_quarantined=True)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
         if not ids:
             article_counts: dict[date, int] = {}
         else:

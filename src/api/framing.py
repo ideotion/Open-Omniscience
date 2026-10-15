@@ -19,6 +19,7 @@ from src.database.fts import SearchQueryError, search_ids
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.models import Article
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/framing", tags=["framing"])
 
@@ -66,7 +67,7 @@ def framing(
                 try:
                     ids = search_ids(db, query, exclude_quarantined=True)
                 except SearchQueryError as exc:
-                    raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+                    raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
                 if not ids:
                     return {
                         "query": query,
@@ -130,4 +131,4 @@ def framing(
                 "capped": total_n > analyzed_n,
             }
     except StatementTimeout as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc

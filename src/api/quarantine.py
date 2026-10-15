@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from src.monitoring.secret_scrub import http_detail
+
 router = APIRouter(prefix="/api/quarantine", tags=["quarantine"])
 
 
@@ -49,7 +51,7 @@ def quarantine_start(
             write=write, include_prose_gate=include_prose_gate
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.get("/status")
@@ -74,7 +76,7 @@ def quarantine_action(action: str) -> dict:
         try:
             return mgr.resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     if action == "cancel":
         mgr.cancel()
         return mgr.status()

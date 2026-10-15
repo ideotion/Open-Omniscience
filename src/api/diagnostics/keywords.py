@@ -77,6 +77,7 @@ from src.database.maintenance import (
 )
 from src.database.models import KeywordSuperGroup, Source
 from src.database.read_snapshot import read_only_db
+from src.monitoring.secret_scrub import http_detail
 from src.utils.export_envelope import envelope
 
 from ._base import _MAX_KEYWORDS_PER_LANG, router
@@ -1033,9 +1034,9 @@ def keyword_log(
                     meta.update(fetch_meta(db, batch))
                     lang_sig.update(fetch_signatures(db, maps, batch))
     except StatementTimeout as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except ExportRefused as exc:
-        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status, detail=http_detail(exc)) from exc
     finally:
         if ranker is not None:
             ranker.close()
@@ -1091,7 +1092,7 @@ def keyword_log(
         # corpus-driven ring expansion + the translation-coverage self-check.
         ring_candidates = _ring_doc(ring_acc.result())
     except StatementTimeout as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
 
     digest_note = (
         f" DIGEST MODE: the per-keyword list is the top {_DIGEST_SAMPLE} keywords by "

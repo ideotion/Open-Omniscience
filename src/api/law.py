@@ -25,7 +25,7 @@ from src.catalog.countries import country_payload_iso3, country_query_forms
 from src.database.country_form import order_key
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 
 router = APIRouter(prefix="/api/law", tags=["law"])
 
@@ -793,7 +793,7 @@ def law_document_compare(
     try:
         return compare_payload(db, doc, a, b, part=part)
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=http_detail(exc)) from exc
 
 
 @router.get("/versions/search")

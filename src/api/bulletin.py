@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/bulletin", tags=["bulletin"])
 
@@ -114,7 +114,7 @@ def generate(
     try:
         period = resolve_period(cadence)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
 
     # The narration verdict is the model one, not the document one. A machine below
     # the bar still builds the edition; asking it to narrate is refused HERE, before
@@ -132,7 +132,7 @@ def generate(
             # A generated edition that could not be written is still a real answer:
             # return it with the failure stated rather than losing the work to a 500.
             edition["persisted"] = False
-            edition["persist_error"] = exception_text(exc, limit=300)
+            edition["persist_error"] = http_detail(exc, f"{type(exc).__name__}: ", limit=300)
     else:
         edition["persisted"] = False
     return edition
@@ -168,14 +168,14 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=404, detail="no such edition") from None
     except ValueError as exc:  # malformed JSON on disk — say so, never return {}
         raise HTTPException(
-            status_code=500, detail=f"edition unreadable: {exception_text(exc, typed=False)}"
+            status_code=500, detail=http_detail(exc, "edition unreadable: ")
         ) from None
 
 
 def _scope_mismatch_detail(exc) -> dict:
     """The 409 body for a paused run that is not the one asked for: the refusal's words through the one scrub, then the run's own state
     (its cursor, the paused edition and the way out), which the job builds itself and which holds no exception text."""
-    return {"reason": exception_text(exc, typed=False), **exc.state}
+    return {"reason": http_detail(exc), **exc.state}
 
 
 def _narrate_introduction(explicit: bool | None) -> bool:
@@ -265,7 +265,7 @@ def narrate_edition(
         # it is already happening, and how far along.
         raise HTTPException(
             status_code=409,
-            detail={"reason": exception_text(exc, typed=False), "status": _NARRATION_JOB.status()},
+            detail={"reason": http_detail(exc), "status": _NARRATION_JOB.status()},
         ) from None
 
 
@@ -410,7 +410,7 @@ def export_privacy_route(
         try:
             period = resolve_period(str((edition.get("period") or {}).get("cadence") or "weekly"))
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc)) from None
         from src.bulletin.evidence import _period_article_ids
 
         ids = _period_article_ids(db, period)
@@ -422,7 +422,7 @@ def export_privacy_route(
             db, edition, kind=kind, article_ids=ids, full_text=bool(full_text)
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
 
 
 @router.get("/editions/{filename}/render")
@@ -491,7 +491,7 @@ def render_edition(
     try:
         text = render(edition, fmt, tr=tr)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
 
     # The DOWNLOADED name is the report's own, not the record's: the record is
     # `20260810-OOS-weekly-<id>.json` and the document an operator keeps is
@@ -649,7 +649,7 @@ def publish(
         raise HTTPException(status_code=404, detail="no such edition") from None
     except OSError as exc:
         raise HTTPException(
-            status_code=500, detail=f"could not stamp the edition: {exception_text(exc, typed=False)}"
+            status_code=500, detail=http_detail(exc, "could not stamp the edition: ")
         ) from None
     return {
         "filename": filename,
@@ -680,7 +680,7 @@ def evidence_plan_route(
     try:
         period = resolve_period(cadence)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
     return evidence_plan(db, period, dest=dest or None)
 
 
@@ -706,7 +706,7 @@ def evidence_build_route(
     try:
         period = resolve_period(cadence)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
 
     if edition_file:
         try:
@@ -719,10 +719,10 @@ def evidence_build_route(
     try:
         return build_evidence_archive(db, edition, period, dest)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
     except OSError as exc:
         raise HTTPException(
-            status_code=500, detail=f"could not write the archive: {exception_text(exc, typed=False)}"
+            status_code=500, detail=http_detail(exc, "could not write the archive: ")
         ) from None
 
 

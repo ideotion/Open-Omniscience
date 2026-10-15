@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
@@ -107,7 +108,7 @@ def discover_sources_endpoint(
     try:
         result = discover_sources(db, codes, per_spec_limit=per_spec_limit)
     except RuntimeError as exc:  # the kill-switch up-front refusal
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     return JSONResponse({"mode": "discovery", **result})
 
 

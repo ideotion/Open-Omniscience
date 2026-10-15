@@ -39,7 +39,7 @@ from src.database.stand_in import (
     stand_in_article_ids,
 )
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 from src.utils.cache import SimpleCache
 
 _LOG = logging.getLogger("api.insights")
@@ -297,12 +297,12 @@ def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None)
     except StatementTimeout as exc:
         if on_timeout is not None:
             return on_timeout(exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except HeavyBusy as exc:
         if on_busy is not None:
             return on_busy(exc)
         raise HTTPException(
-            status_code=429, detail=str(exc), headers={"Retry-After": "2"}
+            status_code=429, detail=http_detail(exc), headers={"Retry-After": "2"}
         ) from exc
 
 
@@ -916,7 +916,7 @@ def insights_reindex_job(
             scope=scope, prune_after=prune_after, restart=restart
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.get("/reindex-job/status")
@@ -940,7 +940,7 @@ def insights_reindex_job_action(action: str) -> dict:
         try:
             return mgr.resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     if action == "cancel":
         mgr.cancel()
         return mgr.status()
@@ -1304,7 +1304,7 @@ def _lens_scope_or_400(db: Session, channel: str | None, place: str | None) -> d
     try:
         return lens_scope(db, channel=(channel or "").strip() or None, place_id=(place or "").strip() or None)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 def _intensity_with_titles(db: Session, intensity: dict) -> dict:
@@ -1460,7 +1460,7 @@ def insights_leads_view(
             cluster=cluster,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     view["generated_at"] = brief.get("generated_at")
     return view
 

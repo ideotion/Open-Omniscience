@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import WikiPage, WikiRevision
 from src.database.session import get_db
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure, record_text
 from src.wiki.client import WikiClient
 from src.wiki.ores import OresClient
 
@@ -46,7 +46,7 @@ def _validated_wiki(wiki: str) -> str:
     try:
         return validate_wiki_code(wiki)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 class AddPage(BaseModel):
@@ -267,7 +267,7 @@ def track_page(page_id: int, ores: bool = False, db: Session = Depends(get_db)) 
         db.rollback()
         raise HTTPException(
             status_code=502,
-            detail=f"Could not track '{page.title}': {type(exc).__name__}: {exc}",
+            detail=f"Could not track '{page.title}': {record_text(exc, typed=True)}",
         ) from exc
 
 
@@ -283,7 +283,7 @@ def track_now(
     except Exception as exc:  # noqa: BLE001 - never 500 the batch on one bad fetch
         db.rollback()
         raise HTTPException(
-            status_code=502, detail=f"Tracking failed: {type(exc).__name__}: {exc}"
+            status_code=502, detail=f"Tracking failed: {record_text(exc, typed=True)}"
         ) from exc
 
 
@@ -399,7 +399,7 @@ def page_compare(
     try:
         return compare_payload(db, page, a, b, part=part)
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=http_detail(exc)) from exc
 
 
 @router.post("/pages/{page_id}/versions/{version_id}/add-to-corpus")
@@ -426,7 +426,7 @@ def page_version_add_to_corpus(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="not-held") from exc
     except NothingToAdd as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 # ----------------------------- offline dumps -------------------------------- #
@@ -573,7 +573,7 @@ def dumps_start(payload: StartDump) -> dict:
             result["index_queued"] = True
         return result
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.post("/dumps/pause")
@@ -729,7 +729,7 @@ def dumps_index_build(payload: BuildDumpIndex) -> dict:
     try:
         return get_manager().start(wiki)
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.post("/dumps/index/cancel")

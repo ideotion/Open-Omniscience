@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, passphrase_bytes
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, http_detail, passphrase_bytes
 
 from ._base import router
 from .p0 import _p0_scrub
@@ -83,13 +83,13 @@ def release_run_start(body: ReleaseRunBody) -> JSONResponse:
     try:
         passphrase_bytes(body.passphrase)  # a lone surrogate: fixed words, before a job is made for it
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
     if body.profile not in PROFILES:
         raise HTTPException(status_code=400, detail=f"profile must be one of {PROFILES}")
     try:
         validate_dest_dir(body.dest_dir)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
     try:
         job = _RELEASE_RUN_JOB.start(**body.model_dump())
         return JSONResponse({"started": True, "job": _p0_scrub(job)})
@@ -132,7 +132,7 @@ def _status_payload() -> dict:
             st["resume"] = resume_preflight("", check_passphrase=False)
             st["resumable"] = True
         except ValueError as exc:
-            st["resume"] = {"reason": str(exc)}
+            st["resume"] = {"reason": http_detail(exc)}
     return _p0_scrub(st)
 
 
@@ -181,7 +181,7 @@ def release_run_resume(body: ResumeBody | None = None) -> JSONResponse:
     try:
         plan = resume_preflight(passphrase)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase, withheld=UNREADABLE_TEXT)) from None
     try:
         job = _RELEASE_RUN_JOB.start(resume=True, passphrase=passphrase)
         return JSONResponse({"started": True, "resume": _p0_scrub(plan), "job": _p0_scrub(job)})

@@ -652,6 +652,7 @@ _SCRUBBING_CALLS_OVER_SECRETS = {
     "scrubbed_value": (0, 1),  # a structure with each secret taken out of every string in it
     "traceback_text": (0, 1),  # the traceback of the exception, scrubbed
     "record_text": (0, 1),  # a driver's error as its class only, anything else scrubbed then cut
+    "http_detail": (0, 2),  # a request's detail (R136): record_text after the caller's literal prefix (the exception, the prefix, then the secrets)
     "record_traceback": (0, 1),  # the frames of every link, a driver's header as its class only, the rest scrubbed
     "log_failure": (2, 3),  # logs the whole chain, with each secret out of it (the logger, then the words)
     "restore_failure_text": (1, 2),  # merge: the sentence a failed restore is answered with (the action, then the exception)
@@ -1084,6 +1085,10 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
 #: unseen. The walk reads the names in :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`: a module that calls the
 #: passphrase something else is not seen.
 _NOT_GUARDED = {
+    "monitoring/secret_scrub.py": (
+        "The scrub itself: http_detail takes the secrets as arguments and its handler writes the exception's CLASS only (a failure of "
+        "record_text), which is the strictest text there is. tests/test_http_detail.py plants a passphrase in each shape it can arrive in."
+    ),
     "llm/vllm_lifecycle.py": (
         "Not a passphrase: `needle` there is the search term failure_excerpt looks for in a server's log; nothing it "
         "handles is a secret."

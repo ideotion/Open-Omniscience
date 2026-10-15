@@ -245,14 +245,14 @@ def test_the_handler_uses_its_exception_only_inside_the_scrubbing_helpers_and_re
             continue
         assert not (isinstance(node.func, ast.Attribute) and node.func.attr == "exception"), f"line {node.lineno}"
         assert not any(kw.arg == "exc_info" for kw in node.keywords), f"line {node.lineno}: exc_info"
-        if isinstance(node.func, ast.Name) and node.func.id in {"scrubbed", "log_failure", "unicode_note"}:
+        if isinstance(node.func, ast.Name) and node.func.id in {"scrubbed", "log_failure", "unicode_note", "is_driver_text", "http_detail"}:
             allowed |= {id(n) for n in ast.walk(node)}
             scrubbing += 1
         elif isinstance(node.func, ast.Name) and node.func.id == "type" and len(node.args) == 1:
             allowed.add(id(node.args[0]))  # its class, for the line that says the scrub could not run
     outside = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "exc" and id(n) not in allowed]
     assert not outside, f"the exception is used outside a scrub on lines {outside}"
-    assert scrubbing == 4, "the log line's words, the log record, the UnicodeError note and the response: the walk must not be left looking at nothing"
+    assert scrubbing == 6, "the log line's words, the log record, the UnicodeError note, the driver test, its class-only answer and the response: the walk must not be left looking at nothing"
     reads = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "held_passphrases"]
     assert not reads, f"the handler reads what the process holds itself, on lines {reads}"
 
@@ -285,3 +285,13 @@ def test_a_response_for_the_encode_error_itself_is_its_class_and_a_fixed_note(bo
     body = response.body.decode()
     assert response.status_code == 500 and "UnicodeEncodeError" in body, body
     assert "udcff" not in body and "position" not in body and "udcff" not in caplog.text and "position" not in caplog.text
+
+
+def test_a_database_drivers_error_is_answered_by_its_class_alone(both_held):
+    """R136: the screen that shows the answer is photographed; an engine's words (a statement, a fragment of a key) never are on it."""
+    import sqlite3
+
+    resp = _call(sqlite3.OperationalError("near \"PRAGMA key='fragment-of-a-key'\": syntax error"))
+    body = json.loads(resp.body)
+    assert resp.status_code == 500 and body["detail"].startswith("internal error: OperationalError")
+    assert "PRAGMA" not in resp.body.decode() and "fragment-of-a-key" not in resp.body.decode()

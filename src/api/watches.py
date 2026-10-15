@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/watches", tags=["watches"])
 
@@ -70,7 +71,7 @@ def create_watch(body: WatchBody, db: Session = Depends(get_db)) -> dict:
             filters=body.filters,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=http_detail(exc)) from exc
     db.commit()
     return {"id": w.id, "name": w.name, "query": w.query, "enabled": bool(w.enabled),
             "saved_search": w.threshold == 0}
@@ -83,7 +84,7 @@ def update_watch(watch_id: int, body: WatchPatch, db: Session = Depends(get_db))
     try:
         w = _update(db, watch_id, **body.model_dump(exclude_none=True))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=http_detail(exc)) from exc
     if w is None:
         raise HTTPException(status_code=404, detail="no such watch")
     db.commit()

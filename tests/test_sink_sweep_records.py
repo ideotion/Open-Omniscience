@@ -11,6 +11,7 @@ asked the failure's words (a response that is not stored) are the table below, c
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message;
 #: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
-         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "is_corruption"}
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "is_corruption"}
 MODULES = sorted(
     p.relative_to(ROOT).as_posix()
     for entry in ("src/scheduler", "src/wiki")
@@ -36,7 +37,7 @@ MODULES = sorted(
     if p.name != "repair.py" or p.parent.name != "database"
 ) + sorted(
     p.relative_to(ROOT).as_posix() for p in (ROOT / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py"
-) + ["src/api/unlock.py"]
+) + sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py"))
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
@@ -119,23 +120,10 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/backup/volume_job.py": {("VolumeBackupManager._run_backup", 'self._state, self._error = "error", refused.served_text'): 1},
 }
 
-#: Operator-facing text that nothing stores: the unlock answer and the start-up status the lock screen shows, a dump lookup's HTTP
+#: Operator-facing text that nothing stores: a dump lookup's HTTP
 #: answer, a tracker error that only reaches ``log_failure``, a malformed-query refusal. The words are scrubbed (``exception_text``);
 #: a record written from the same function is not in this table.
-_UNLOCK_DETAIL = "detail=exception_text("
 KEPT: dict[str, dict[tuple[str, str], int]] = {
-    "src/api/unlock.py": {
-        # One WARNING line (the class and the scrubbed FIRST line, never the statement or a trailing line): the log, not a record.
-        ("_close_after_checkpoint", 'said = exception_text(exc, passphrase, typed=False, withheld="its text is withheld")'): 1,
-        ("_finish_unlock", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
-        ("_finish_unlock._upkeep", 'set_startup("ready", "", error=exception_text(exc, typed=False))'): 1,
-        ("_file_opens_with", _UNLOCK_DETAIL): 1,
-        ("_unlock_locked", _UNLOCK_DETAIL): 1,
-        (
-            "encrypt_db",
-            "raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None",
-        ): 1,
-    },
     "src/wiki/dumpread.py": {
         ("find_page", 'return {"found": False, "reason": "block-unreadable", "error": exception_text(exc, typed=False),'): 1,
     },
@@ -456,12 +444,119 @@ _MONITORING_NOT_RECORDS: dict[str, dict[str, int]] = {
     },
 }
 
+#: ``src/api`` (R136). Every ``detail`` and every response or record field that carries a caught exception's text goes through
+#: ``http_detail`` / ``record_text`` (the per-link rule: a database driver's error, or a wrapper that quotes one, is its class only; every
+#: other exception keeps its words with the held passphrases taken out). What is left, line by line and counted: attributes of OUR OWN
+#: typed refusals (``exc.status``, ``exc.state``, ``exc.report``, ``exc.i18n``/``vars``: fixed words the code wrote), callbacks that hand the
+#: exception to the route's own response builder (read in that route's module), an exception stored to be re-raised on another thread, the
+#: errno-only classifiers (``no_room_refusal``, ``strerror``), ``isinstance`` and ``__cause__`` type reads, the frontend-error REPORT body
+#: (``err`` is a request model, not an exception; ``note_frontend_error`` scrubs it), ``_unreadable`` (logs through ``log_failure`` and
+#: answers a fixed dict) and the unhandled-exception handler's non-driver branch (its own withheld sentence, pinned by
+#: ``test_global_exception_handler_scrub``).
+_API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    'src/api/backup_v2.py': {
+        ('_alt_call', 'raise HTTPException(status_code=exc.status, detail=http_detail(exc))'): 1,
+    },
+    'src/api/boot_sequence.py': {
+        ('_timed', 'state = skipped.state'): 1,
+    },
+    'src/api/bulletin.py': {
+        ('_scope_mismatch_detail', 'return {"reason": http_detail(exc), **exc.state}'): 1,
+        ('narrate_edition', 'raise HTTPException(status_code=409, detail=_scope_mismatch_detail(exc))'): 1,
+    },
+    'src/api/database.py': {
+        ('vacuum', 'raise HTTPException(status_code=507, detail=exc.report["detail"])'): 1,
+    },
+    'src/api/diagnostics/bundle.py': {
+        ('_all_diagnostics_worker', 'error=_diag_runs.exc_line(exc),'): 1,
+        ('all_diagnostics_volumes', 'if no_room_refusal(exc, "splitting the archive") is None:'): 1,
+        ('all_diagnostics_volumes', 'f"written ({exc.strerror or type(exc).__name__}). The earlier set of files, if there "'): 1,
+        ('_run_nondb_member_bounded._run', 'box["error"] = exc'): 1,
+        ('_merged_member', 'cause = exc.__cause__ if isinstance(exc, HTTPException) else None'): 1,
+        ('_write_all_diagnostics_zip', 'cause = exc.__cause__ if isinstance(exc, HTTPException) else None'): 1,
+    },
+    'src/api/diagnostics/keywords.py': {
+        ('_keyword_parts', 'refusal = no_room_refusal(exc, "listing the parts")'): 1,
+        ('keyword_log', 'raise HTTPException(status_code=exc.status, detail=http_detail(exc))'): 1,
+    },
+    'src/api/diagnostics/qualification_merge.py': {
+        ('source_qualification_merge', 'return refuse(exc.i18n, **exc.vars)'): 2,
+    },
+    'src/api/diagnostics/system.py': {
+        ('report_frontend_error', 'err.kind,'): 1,
+        ('report_frontend_error', 'err.message,'): 1,
+        ('report_frontend_error', 'source=err.source,'): 1,
+        ('report_frontend_error', 'endpoint=err.endpoint,'): 1,
+        ('report_frontend_error', 'lineno=err.lineno,'): 1,
+        ('report_frontend_error', 'ui_lang=err.ui_lang,'): 1,
+    },
+    'src/api/heavy.py': {
+        ('run_heavy', 'fl.error = exc'): 1,
+        ('guarded_read', 'return on_timeout(exc)'): 1,
+        ('guarded_read', 'return on_busy(exc)'): 1,
+        ('run_heavy', 'if fl.error is not None:'): 1,
+        ('run_heavy', 'raise fl.error'): 1,
+    },
+    'src/api/insights.py': {
+        ('_deadlined', 'return on_timeout(exc)'): 1,
+        ('_deadlined', 'return on_busy(exc)'): 1,
+    },
+    'src/api/llm.py': {
+        ('bulk_llm._stream', 'if isinstance(res.error, LLMUnavailable):'): 1,
+        ('bulk_llm._stream', '"error": http_detail(res.error, limit=200)})'): 1,
+        ('bulk_llm._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
+    },
+    'src/api/main.py': {
+        ('rate_limit_exceeded_handler', 'retry_after = getattr(exc, "retry_after", None)'): 1,
+        ('rate_limit_exceeded_handler', 'limit = getattr(exc, "limit", None)'): 1,
+        ('unhandled_exception_handler', 'f"internal error: {exc}",'): 1,
+        ('monitor_requests', 'raise e'): 1,
+        ('_serve', 'note_fatal_exception(exc)'): 1,
+    },
+    'src/api/osm_lane.py': {
+        ('osm_view', 'return view(w, s, e, n)'): 1,
+    },
+    'src/api/startup_status.py': {
+        ('set_startup', '_state["error"] = error'): 1,
+    },
+    'src/api/wiki_lane.py': {
+        ('lane_status', 'return _unreadable("status", exc)'): 1,
+        ('lane_analytics', 'return _unreadable("analytics", exc)'): 1,
+        ('lane_divergence', 'return _unreadable("divergence", exc)'): 1,
+        ('lane_attention', 'return _unreadable("attention", exc)'): 1,
+        ('lane_counters_route', 'return _unreadable("counters", exc)'): 1,
+        ('lane_places', 'return _unreadable("places", exc)'): 1,
+        ('lane_sections', 'return _unreadable("sections", exc)'): 1,
+        ('lane_changes', 'return _unreadable("changes", exc)'): 1,
+        ('lane_revision_diff', 'return _unreadable("revision", exc)'): 1,
+    },
+}
+_API_NOT_RECORDS: dict[str, dict[str, int]] = {
+    'src/api/diagnostics_slots.py': {'getattr reaches function, a way round the scan of the log calls': 1},  # a module's function name
+    'src/api/main.py': {'getattr reaches name, a way round the scan of the log calls': 1},  # a signal's name
+    'src/api/search_filters.py': {'getattr reaches name, a way round the scan of the log calls': 1},  # a model field name
+    'src/api/source_io.py': {'getattr reaches sort_key, a way round the scan of the log calls': 1},  # a model column name
+}
+CLASSIFIED.update(_API_CLASSIFIED)
+NOT_RECORDS.update(_API_NOT_RECORDS)
 CLASSIFIED.update(_MONITORING_CLASSIFIED)
 NOT_RECORDS.update(_MONITORING_NOT_RECORDS)
 
 
 
+#: ``raise HTTPException(...) from exc`` in ``src/api`` (R136): the chain rides the HTTPException the route answers with, and nothing logs
+#: an HTTPException's chain (Starlette answers it; ``unhandled_exception_handler`` is for the exceptions that are NOT HTTPExceptions);
+#: the exc_info sinks are read by ``test_exception_sinks_scrub``. The ``from`` is taken off the scanned source, line for line, so every
+#: OTHER use of the exception on the raise (its detail) is still read.
+_RAISE_FROM = re.compile(r"(?<=[)\w\]\"]) from (?:exc|e|err|ex|None)[ \t]*$", re.M)
+
+
+def _api_chain_taken_off(rel: str, source: str) -> str:
+    return _RAISE_FROM.sub("", source) if rel.startswith("src/api/") else source
+
+
 def _found(rel: str, source: str) -> list[str]:
+    source = _api_chain_taken_off(rel, source)
     table = {k: v for k, v in KEPT.get(rel, {}).items() if v}
     lines = source.splitlines()
     tree = ast.parse(source)
@@ -532,3 +627,47 @@ def test_the_strict_reading_flags_each_spelling_a_record_must_not_carry(body):
 )
 def test_the_strict_reading_passes_the_class_and_the_log_failure_line(body):
     assert _leaks(_HANDLER.format(body=body), only_scrubbing=CALLS) == [], body
+
+
+def test_a_chain_on_an_api_raise_is_not_a_use_but_its_detail_still_is():
+    chained = "def f():\n    try:\n        g()\n    except Exception as exc:\n        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc\n"
+    assert _found("src/api/x.py", chained) == []
+    leaking = chained.replace("http_detail(exc)", "str(exc)")
+    assert _found("src/api/x.py", leaking), "the detail built from the exception is still reported"
+    assert _found("src/backup/x.py", chained), "outside src/api the chain is still read as a use"
+
+
+_API_RAISE = "def f():\n    try:\n        g()\n    except Exception as exc:\n        raise HTTPException(status_code=400, detail={detail}) from exc\n"
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "str(exc)",
+        'f"could not: {exc}"',
+        'f"could not: {exc!r}"',
+        '"could not: " + str(exc)',
+        '"could not: %s" % exc',
+        '"could not: {}".format(exc)',
+        "repr(exc)",
+        "str(exc)[:300]",
+        "exc.args[0]",
+        'f"{type(exc).__name__}: {exc}"',
+        '{"reason": str(exc)}',
+        "exception_text(exc, typed=False)",
+    ],
+)
+def test_an_api_detail_built_from_an_exception_outside_the_helper_is_reported(detail):
+    """R136's guard, with its negative controls: every spelling of an exception's text in a ``detail`` is a finding in ``src/api``."""
+    assert _found("src/api/x.py", _API_RAISE.format(detail=detail)), detail
+
+
+@pytest.mark.parametrize("detail", ["http_detail(exc)", 'http_detail(exc, "could not: ")', "http_detail(exc, limit=300)", '"a fixed sentence"'])
+def test_an_api_detail_through_the_helper_or_fixed_is_not_a_finding(detail):
+    assert _found("src/api/x.py", _API_RAISE.format(detail=detail)) == [], detail
+
+
+def test_the_sweep_reads_every_module_of_src_api():
+    read = {m for m in MODULES if m.startswith("src/api/")}
+    on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py")}
+    assert on_disk <= read, sorted(on_disk - read)

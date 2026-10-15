@@ -71,7 +71,7 @@ from src.config.kv_store import KvWriteRefused
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
-from src.monitoring.secret_scrub import log_failure, scrubbed, unicode_note
+from src.monitoring.secret_scrub import http_detail, is_driver_text, log_failure, scrubbed, unicode_note
 
 # Configure logging using shared config
 from src.utils.access_log import install_access_line_filter
@@ -1152,7 +1152,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
 async def settings_write_refused_handler(request: Request, exc: KvWriteRefused):
     """A settings save refused, with nothing written, because a restore is switching the corpus file: a 503 whose JSON ``detail`` the
     UI shows as for any refused save (its text is fixed and carries nothing from the engine), with a ``Retry-After``."""
-    return JSONResponse(status_code=503, content={"detail": str(exc)}, headers={"Retry-After": "30"})
+    return JSONResponse(status_code=503, content={"detail": http_detail(exc)}, headers={"Retry-After": "30"})
 
 
 @app.exception_handler(Exception)
@@ -1179,14 +1179,17 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         what = scrubbed(f"unhandled error on {request_phrase(request.method, request.scope)}")
         log_failure(logger, what, exc)
         note = unicode_note(exc)  # a UnicodeError names a character and its offset: the class and a fixed note instead
-        detail = (
-            f"internal error: {note}"
-            if note is not None
-            else scrubbed(
+        if note is not None:
+            detail = f"internal error: {note}"
+        elif is_driver_text(exc):
+            # R136: a database driver's error, or a wrapper quoting one, is its class only (http_detail); the branch below keeps
+            # the words of every other exception, with this handler's own fail-closed withheld sentence.
+            detail = http_detail(exc, "internal error: ")
+        else:
+            detail = scrubbed(
                 f"internal error: {exc}",
                 withheld="internal error (its text is withheld: the scrub could not run, or could not take a passphrase out of it)",
             )
-        )
     except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
         detail = "internal error (its text is withheld: the scrub could not run)"
@@ -1802,7 +1805,7 @@ def _query_articles(
         try:
             _fo = field_only_where(query, near_default=adv.near, exact=adv.exact)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid search query: ")) from exc
         if _fo is not None:
             from sqlalchemy import text as _sql_text
 
@@ -1819,7 +1822,7 @@ def _query_articles(
                 near_default=adv.near, exact=adv.exact,
             )
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid search query: ")) from exc
         if _timer is not None:
             _timer.phase("fts")
 

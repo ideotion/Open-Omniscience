@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
+from src.monitoring.secret_scrub import http_detail
 from src.verification.metadata import ImageError, extract_image_metadata
 
 router = APIRouter(prefix="/api/verify", tags=["verification"])
@@ -31,5 +32,5 @@ async def image_metadata(file: UploadFile) -> dict:
     try:
         meta = extract_image_metadata(data)
     except ImageError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     return {"filename": file.filename, **meta.to_dict()}

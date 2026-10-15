@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
@@ -330,9 +331,9 @@ def ir_eval(
         else:
             out = evaluate_against_corpus(db, gold, k=k)
     except GoldSetError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"bad weights: {exc}") from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc, "bad weights: ")) from exc
 
     payload = {"kind": "ir-eval", "n_queries": len(gold), "k": k, "result": out}
     headers = {}
@@ -374,4 +375,4 @@ def gold_builder_save(body: _GoldBuilderSaveBody) -> dict:
     try:
         return build_and_save_gold_set(body.path, body.queries)
     except (GoldSetError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
