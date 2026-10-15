@@ -1154,7 +1154,7 @@ def _fts_insert_suspended(con: sqlite3.Connection):
         # find -- creating one here would add indexing to a corpus that had none.
         yield False
         return
-    con.execute(f"DROP TRIGGER {_FTS_INSERT_TRIGGER}")
+    con.execute(f"DROP TRIGGER main.{_FTS_INSERT_TRIGGER}")
     finished = False
     try:
         yield True
@@ -1325,10 +1325,10 @@ def _fts_index_merged_articles(
         progress["done"] = 0
         progress["phase"] = "indexing"
     con.execute(
-        "INSERT INTO article_fts(article_fts, rank) VALUES('hashsize', ?)",
+        "INSERT INTO main.article_fts(article_fts, rank) VALUES('hashsize', ?)",
         (_fts_hash_mb() * 1024 * 1024,),
     )
-    con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 0)")
+    con.execute("INSERT INTO main.article_fts(article_fts, rank) VALUES('automerge', 0)")
     try:
         for i in range(0, len(ids), _FTS_BULK_BATCH):
             chunk = ids[i:i + _FTS_BULK_BATCH]
@@ -1342,9 +1342,9 @@ def _fts_index_merged_articles(
         # Restore the defaults whatever happened, so a corpus is never left with
         # automerge disabled or an outsized hash budget -- either would change
         # every later ingest silently.
-        con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 4)")
+        con.execute("INSERT INTO main.article_fts(article_fts, rank) VALUES('automerge', 4)")
         con.execute(
-            "INSERT INTO article_fts(article_fts, rank) VALUES('hashsize', ?)",
+            "INSERT INTO main.article_fts(article_fts, rank) VALUES('hashsize', ?)",
             (1024 * 1024,),
         )
         if progress is not None:
@@ -1519,13 +1519,13 @@ def _insert_window(
         if not _SAFE_KEY_NAME.fullmatch(key_column or ""):
             raise ValueError(f"unsafe key column {key_column!r}")
         cur = con.execute(
-            'INSERT INTO merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            'INSERT INTO main.merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f'SELECT ?, ?, rowid, "{key_column}" FROM "{table}" WHERE rowid > ?',
             (batch_id, table, wm),
         )
     else:
         cur = con.execute(
-            f'INSERT INTO merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f'INSERT INTO main.merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
             (batch_id, table, wm),
         )
@@ -1953,7 +1953,7 @@ def merge_corpus(
         results: dict[str, DomainResult] = {}
 
         cur = con.execute(
-            "INSERT INTO merge_batches (imported_at, artifact_kind, origin_fingerprint,"
+            "INSERT INTO main.merge_batches (imported_at, artifact_kind, origin_fingerprint,"
             " app_version, alembic_rev, manifest_json, source_digest, status)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -2074,7 +2074,7 @@ def merge_corpus(
             if _inserted and _carried >= _inserted:
                 status = _STATUS_REINDEXED
         con.execute(
-            "UPDATE merge_batches SET counts_json = ?, status = ? WHERE id = ?",
+            "UPDATE main.merge_batches SET counts_json = ?, status = ? WHERE id = ?",
             (json.dumps(counts), status, batch_id),
         )
         con.execute("COMMIT")
@@ -2521,7 +2521,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
             "carried": prov,
         }
         con.execute(
-            "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id,"
+            "INSERT INTO main.metadata_alternates (batch_id, table_name, identity, local_row_id,"
             " fields, provenance, origin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
             (batch_id, table, identity_json, local_id, fields_json, json.dumps(tag), origin, now),
         )
@@ -2637,7 +2637,7 @@ def _merge_fetch_history(con, batch_id, results) -> None:
     # against the PRE-statement table) cannot see.
     r.new = _insert_tracked(
         con, batch_id, "feed_fetch_state",
-        f"INSERT OR IGNORE INTO feed_fetch_state (source_id, {cols})"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f"INSERT OR IGNORE INTO main.feed_fetch_state (source_id, {cols})"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" SELECT ms.new, {icols}"
         " FROM inc.feed_fetch_state i JOIN temp.map_sources ms ON ms.old = i.source_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM feed_fetch_state t WHERE {key})",
@@ -2677,7 +2677,7 @@ def _merge_keyword_categories(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "keyword_categories",
-        "INSERT INTO keyword_categories (name, description, color, is_active, created_at, updated_at)"
+        "INSERT INTO main.keyword_categories (name, description, color, is_active, created_at, updated_at)"
         " SELECT i.name, i.description, i.color, i.is_active, i.created_at, i.updated_at"
         " FROM inc.keyword_categories i"
         " WHERE NOT EXISTS (SELECT 1 FROM keyword_categories m WHERE m.name = i.name)",
@@ -2689,7 +2689,7 @@ def _merge_keyword_categories(con, batch_id, results) -> None:
     )
     # Parent links for freshly inserted categories (self-FK remap).
     con.execute(
-        "UPDATE keyword_categories SET parent_id ="
+        "UPDATE main.keyword_categories SET parent_id ="
         " (SELECT mp.new FROM inc.keyword_categories i"
         "   JOIN temp.map_kwcat mc ON mc.old = i.id"
         "   JOIN temp.map_kwcat mp ON mp.old = i.parent_id"
@@ -2900,7 +2900,7 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "sources",
-        "INSERT INTO sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
+        "INSERT INTO main.sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
         " reliability_score, language, region, country, source_type, update_frequency,"
         " cacheability, status, qualified_at, qualification_criteria_version,"
         " catalog_baseline)"
@@ -2944,7 +2944,7 @@ def _merge_sources(con, batch_id, results) -> None:
     # judged the source itself -- in particular a local 'disqualified' can never be laundered
     # to 'qualified' by an incoming corpus.
     con.execute(
-        "UPDATE sources SET"
+        "UPDATE main.sources SET"
         "  status = (SELECT i.status FROM inc.sources i WHERE i.domain = sources.domain),"
         "  qualified_at = (SELECT i.qualified_at FROM inc.sources i"
         "                  WHERE i.domain = sources.domain),"
@@ -2971,7 +2971,7 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     g.new = _insert_tracked(
         con, batch_id, "source_groups",
-        "INSERT INTO source_groups (name, description, color, is_tag_based, tag_pattern,"
+        "INSERT INTO main.source_groups (name, description, color, is_tag_based, tag_pattern,"
         " priority, rate_limit_ms, enabled, created_at, updated_at)"
         " SELECT i.name, i.description, i.color, i.is_tag_based, i.tag_pattern,"
         " i.priority, i.rate_limit_ms, i.enabled, i.created_at, i.updated_at"
@@ -2984,7 +2984,7 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     g.new += _insert_tracked(
         con, batch_id, "source_group_association",
-        "INSERT INTO source_group_association (source_id, group_id, added_at)"
+        "INSERT INTO main.source_group_association (source_id, group_id, added_at)"
         " SELECT ms.new, mg.new, i.added_at FROM inc.source_group_association i"
         " JOIN temp.map_sources ms ON ms.old = i.source_id"
         " JOIN temp.map_groups mg ON mg.old = i.group_id"
@@ -2996,7 +2996,7 @@ def _merge_sources(con, batch_id, results) -> None:
     m = DomainResult()
     m.new = _insert_tracked(
         con, batch_id, "source_metadata",
-        "INSERT INTO source_metadata (source_id, language, country, region, city, timezone,"
+        "INSERT INTO main.source_metadata (source_id, language, country, region, city, timezone,"
         " robots_txt_url, robots_allowed, crawl_delay, sitemap_url, favicon_url, logo_url,"
         " contact_email, social_twitter, social_facebook, social_linkedin, alexa_rank,"
         " last_checked, notes)"
@@ -3038,7 +3038,7 @@ def _merge_sources(con, batch_id, results) -> None:
     q = DomainResult()
     q.new = _insert_tracked(
         con, batch_id, "source_qualification_attempts",
-        "INSERT INTO source_qualification_attempts"
+        "INSERT INTO main.source_qualification_attempts"
         " (source_id, attempted_at, verdict, criteria_version)"
         " SELECT ms.new, i.attempted_at, i.verdict, i.criteria_version"
         " FROM inc.source_qualification_attempts i"
@@ -3207,7 +3207,7 @@ def _adopt_article_metadata(con) -> dict:
         " FROM inc.articles i WHERE i.hash = m.hash"
         " AND i.id > ? AND i.id <= ? AND (" + " OR ".join(guards) + ")"
     )
-    update_sql = "UPDATE articles AS m SET " + ", ".join(sets) + where  # nosec B608 - every fragment is built from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
+    update_sql = "UPDATE main.articles AS m SET " + ", ".join(sets) + where  # nosec B608 - every fragment is built from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
     count_sql = (
         "SELECT " + ", ".join(counts_sql)  # nosec B608 - column names come from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
         + " FROM articles m JOIN inc.articles i ON i.hash = m.hash"
@@ -3298,7 +3298,7 @@ def _merge_articles(con, batch_id, results) -> None:
         r.conflicts.append({"hash": row[0], "incoming_title": row[1], "kept": "local"})
     r.new = _insert_tracked(
         con, batch_id, "articles",
-        "INSERT INTO articles (url, canonical_url, source_id, title, content,"  # nosec B608 - every fragment is a literal; _WINDOW_MARK is a module constant replaced by a bound-parameter clause, never input
+        "INSERT INTO main.articles (url, canonical_url, source_id, title, content,"  # nosec B608 - every fragment is a literal; _WINDOW_MARK is a module constant replaced by a bound-parameter clause, never input
         " compressed_content, published_at, language, hash, created_at, updated_at, region,"
         " country, author, word_count, reading_time, sentiment_score, sentiment_label,"
         # 2026-08-03 (the AST column diff): three groups added to the model AFTER this
@@ -3414,7 +3414,7 @@ def _merge_keywords(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "keywords",
-        "INSERT INTO keywords (term, normalized_term, language, frequency, category_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.keywords (term, normalized_term, language, frequency, category_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " is_ngram, ngram_size, is_entity, entity_type, relevance_score, extractor,"
         " created_at, updated_at)"
         " SELECT i.term, i.normalized_term, i.language, i.frequency, mc.new,"
@@ -3462,7 +3462,7 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
         # windowed shapes cannot disagree.
         r.new += _insert_tracked(
             con, batch_id, table,
-            f"INSERT OR IGNORE INTO {table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f"INSERT OR IGNORE INTO main.{table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f" SELECT ma.new, mk.new, {icols} FROM inc.{table} i"
             " JOIN temp.map_articles ma ON ma.old = i.article_id"
             " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
@@ -3875,7 +3875,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         # (keyword_id, article_id) index takes runs of neighbouring entries instead of a
         # scatter across the whole B-tree.
         cur = con.execute(
-            "INSERT INTO keyword_mentions (keyword_id, article_id, count, first_offset,"
+            "INSERT INTO main.keyword_mentions (keyword_id, article_id, count, first_offset,"
             " observed_on, country, city, language, source_id, extractor, created_at)"
             " SELECT ck.new, w.new, im.count, im.first_offset, w.observed_on, w.country,"
             " NULL, w.language, w.source_id, 'baseline', ?"
@@ -3886,7 +3886,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         )
         out["mentions"] += int(cur.rowcount or 0)
         cur = con.execute(
-            "INSERT INTO article_mentioned_places (article_id, name, country, kind,"
+            "INSERT INTO main.article_mentioned_places (article_id, name, country, kind,"
             " mentions, snippet, lat, lon, note, extractor, created_at)"
             " SELECT w.new, p.name, p.country, p.kind, p.mentions, p.snippet, p.lat, p.lon,"
             " p.note, p.extractor, ?"
@@ -3896,7 +3896,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         )
         out["places"] += int(cur.rowcount or 0)
         cur = con.execute(
-            "INSERT INTO article_entities (article_id, name, entity_class, mentions,"
+            "INSERT INTO main.article_entities (article_id, name, entity_class, mentions,"
             " snippet, note, extractor, created_at)"
             " SELECT w.new, e.name, e.entity_class, e.mentions, e.snippet, e.note,"
             " e.extractor, ?"
@@ -3918,7 +3918,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " JOIN temp.carry_kw ck ON ck.old = im.keyword_id GROUP BY ck.new"
         )
         con.execute(
-            "UPDATE keywords SET"
+            "UPDATE main.keywords SET"
             " mention_count = mention_count"
             "  + (SELECT d.m FROM temp.carry_delta d WHERE d.kid = keywords.id),"
             " article_count = article_count"
@@ -3926,7 +3926,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " WHERE id IN (SELECT kid FROM temp.carry_delta)"
         )
         con.execute(
-            "INSERT INTO article_index_stamps (article_id, engine, inputs, stamped_at)"
+            "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at)"
             " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w",
             (engine, now),
         )
@@ -4017,7 +4017,7 @@ def _merge_curation(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "keyword_family_overrides",
-        "INSERT INTO keyword_family_overrides (normalized_term, family_key, canonical_label,"
+        "INSERT INTO main.keyword_family_overrides (normalized_term, family_key, canonical_label,"
         " kind, created_at)"
         " SELECT i.normalized_term, i.family_key, i.canonical_label, i.kind, i.created_at"
         " FROM inc.keyword_family_overrides i"
@@ -4034,7 +4034,7 @@ def _merge_curation(con, batch_id, results) -> None:
     )
     s.new = _insert_tracked(
         con, batch_id, "keyword_supergroups",
-        "INSERT INTO keyword_supergroups (name, color, created_at)"
+        "INSERT INTO main.keyword_supergroups (name, color, created_at)"
         " SELECT i.name, i.color, i.created_at FROM inc.keyword_supergroups i"
         " WHERE NOT EXISTS (SELECT 1 FROM keyword_supergroups m WHERE m.name = i.name)",
     )
@@ -4052,7 +4052,7 @@ def _merge_curation(con, batch_id, results) -> None:
         # it arrives as a different, entirely legal member kind. `_supergroup_totals` then
         # takes the family branch and the super-group silently stops spanning languages,
         # which is the one capability the super-ring model exists to provide.
-        "INSERT INTO keyword_supergroup_members (supergroup_id, normalized_term, ring_id,"
+        "INSERT INTO main.keyword_supergroup_members (supergroup_id, normalized_term, ring_id,"
         " created_at)"
         " SELECT mg.new, i.normalized_term, i.ring_id, i.created_at"
         " FROM inc.keyword_supergroup_members i JOIN temp.map_sg mg ON mg.old = i.supergroup_id"
@@ -4071,7 +4071,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "external_sources",
-        "INSERT INTO external_sources (domain, name, url, source_type, credibility_score,"
+        "INSERT INTO main.external_sources (domain, name, url, source_type, credibility_score,"
         " political_bias, country, language, description, founded_year, alexa_rank,"
         " social_media_followers, is_verified, last_verified_at, created_at, updated_at,"
         # 2026-08-03 (the AST column diff): `discovered_via` IS the Q4a ruling -- which
@@ -4099,7 +4099,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     sa.new = _insert_tracked(
         con, batch_id, "source_articles",
-        "INSERT INTO source_articles (source_id, url, title, published_at, author, summary,"
+        "INSERT INTO main.source_articles (source_id, url, title, published_at, author, summary,"
         " content_hash, word_count, sentiment_score, is_accessible, last_accessed_at,"
         " created_at, updated_at)"
         " SELECT me.new, i.url, i.title, i.published_at, i.author, i.summary,"
@@ -4144,7 +4144,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     li.new = _insert_tracked(
         con, batch_id, "article_links",
-        "INSERT INTO article_links (article_id, url, normalized_url, link_text, position,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.article_links (article_id, url, normalized_url, link_text, position,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " link_type, classification, external_source_id, source_article_id, is_followable,"
         " is_working, last_checked_at, redirect_url, http_status, created_at, updated_at)"
         " SELECT ma.new, i.url, i.normalized_url, i.link_text, i.position,"
@@ -4184,7 +4184,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     rel.new = _insert_tracked(
         con, batch_id, "article_source_relationships",
-        "INSERT INTO article_source_relationships (article_id, source_id, source_article_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.article_source_relationships (article_id, source_id, source_article_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " link_id, relationship_type, time_delta_days, is_temporal_anomaly, confidence_score,"
         " notes, created_at, updated_at)"
         " SELECT ma.new, me.new, msa.new, NULL, i.relationship_type, i.time_delta_days,"
@@ -4252,7 +4252,7 @@ def _capture_alternates(
     # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
     # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
     con.execute(
-        "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
+        "INSERT INTO main.metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
         " provenance, origin, status, created_at)"
         f" SELECT :batch, :table, json_object({ident}),"
         f" (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key}), json_object({fields}), {tag},"
@@ -4309,7 +4309,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         # `prompt_text` added 2026-08-03 (the AST column diff): the verbatim prompt is the
         # provenance of an AI output. `prompt_version` alone is a label -- it says which
         # revision, not what was actually asked -- so no AI text should be shown without it.
-        "INSERT INTO article_analyses (article_id, kind, result, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.article_analyses (article_id, kind, result, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " prompt_text, created_at)"
         " SELECT ma.new, i.kind, i.result, i.model, i.prompt_version, i.prompt_text,"
         " i.created_at"
@@ -4351,7 +4351,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     # actually landed (rowid watermark), so an ignored row is correctly not counted.
     md.new = _insert_tracked(
         con, batch_id, "article_mentioned_dates",
-        "INSERT OR IGNORE INTO article_mentioned_dates (article_id, mentioned_on, precision,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.article_mentioned_dates (article_id, mentioned_on, precision,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " snippet, confidence, extractor, status, created_at)"
         " SELECT ma.new, i.mentioned_on, i.precision, i.snippet, i.confidence, i.extractor,"
         " i.status, i.created_at"
@@ -4373,7 +4373,7 @@ def _merge_wiki(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "wiki_pages",
-        "INSERT INTO wiki_pages (wiki, title, pageid, watched, category, baseline_revid,"
+        "INSERT INTO main.wiki_pages (wiki, title, pageid, watched, category, baseline_revid,"
         " baseline_text, last_revid, last_checked_at, missing, wiki_categories, created_at,"
         # 2026-08-03 (the AST column diff): the living-source payload. `baseline_text` is
         # the FIRST version seen; `latest_text` is the one the reader actually shows (the
@@ -4401,7 +4401,7 @@ def _merge_wiki(con, batch_id, results) -> None:
     )
     rev.new = _insert_tracked(
         con, batch_id, "wiki_revisions",
-        "INSERT INTO wiki_revisions (page_id, revid, parent_revid, timestamp, editor,"
+        "INSERT INTO main.wiki_revisions (page_id, revid, parent_revid, timestamp, editor,"
         " editor_anon, comment, size, delta_bytes, tags, minor, bot, diff, ores_damaging,"
         " ores_goodfaith, ores_provenance, flagged, flag_reasons, created_at,"
         # 2026-08-03 (the AST column diff): the maintainer ruled per-revision FULL TEXT
@@ -4430,7 +4430,7 @@ def _merge_law(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "law_documents",
-        "INSERT INTO law_documents (jurisdiction, title, url, official_url, category,"
+        "INSERT INTO main.law_documents (jurisdiction, title, url, official_url, category,"
         " consolidated, watched, baseline_text, baseline_hash, last_hash, last_size,"
         " last_checked_at, last_status, created_at,"
         # 2026-08-03 (the AST column diff). `language` is the LANGUAGE OF THE LAW, which
@@ -4473,7 +4473,7 @@ def _merge_law(con, batch_id, results) -> None:
     )
     rev.new = _insert_tracked(
         con, batch_id, "law_revisions",
-        "INSERT INTO law_revisions (document_id, observed_at, content_hash, size, delta_bytes,"
+        "INSERT INTO main.law_revisions (document_id, observed_at, content_hash, size, delta_bytes,"
         " diff, flagged, flag_reasons, created_at,"
         # 2026-08-03 (the AST column diff): as wiki_revisions above -- the stored full
         # text is what makes a past version of a law readable at all.
@@ -4526,7 +4526,7 @@ def _merge_law(con, batch_id, results) -> None:
         # that the parser folds into a single constant with nothing interpolated. A marker
         # bandit never reports is silently inert and prints "nosec encountered, but no
         # failed test" — clutter that teaches the next reader the wrong rule.
-        "UPDATE law_revisions SET diff_base_revision_id = ("
+        "UPDATE main.law_revisions SET diff_base_revision_id = ("
         "  SELECT mr.new FROM temp.map_law_rev mr"
         "  JOIN inc.law_revisions ir ON ir.diff_base_revision_id = mr.old"
         "  JOIN temp.map_law_rev self ON self.old = ir.id"
@@ -4559,7 +4559,7 @@ def _merge_law(con, batch_id, results) -> None:
     )
     summ.new = _insert_tracked(
         con, batch_id, "law_revision_summaries",
-        "INSERT INTO law_revision_summaries (revision_id, summary, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.law_revision_summaries (revision_id, summary, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " prompt_text, created_at)"
         " SELECT mr.new, i.summary, i.model, i.prompt_version, i.prompt_text, i.created_at"
         " FROM inc.law_revision_summaries i"
@@ -4608,7 +4608,7 @@ def _merge_watches(con, batch_id, results) -> None:
     )
     w.new = _insert_tracked(
         con, batch_id, "watches",
-        "INSERT INTO watches (name, query, threshold, window_days, enabled, created_at,"
+        "INSERT INTO main.watches (name, query, threshold, window_days, enabled, created_at,"
         " last_evaluated_at, last_matched_at, last_seen_ids, filters)"
         " SELECT i.name, i.query, i.threshold, i.window_days, i.enabled, i.created_at,"
         " i.last_evaluated_at, i.last_matched_at, i.last_seen_ids, i.filters"
@@ -4635,7 +4635,7 @@ def _merge_watches(con, batch_id, results) -> None:
     )
     wm.new = _insert_tracked(
         con, batch_id, "watch_matches",
-        "INSERT INTO watch_matches (watch_id, matched_at, n_articles, new_articles, article_ids)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.watch_matches (watch_id, matched_at, n_articles, new_articles, article_ids)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " SELECT mw.new, i.matched_at, i.n_articles, i.new_articles, i.article_ids"
         " FROM inc.watch_matches i JOIN temp.map_watches mw ON mw.old = i.watch_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM watch_matches t WHERE {wm_key})",
@@ -4692,7 +4692,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     )
     p.new = _insert_tracked(
         con, batch_id, "ai_custom_prompt",
-        "INSERT INTO ai_custom_prompt (label, output_kind, prompt_text, run_on_ingest,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.ai_custom_prompt (label, output_kind, prompt_text, run_on_ingest,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " enabled, created_at)"
         " SELECT i.label, i.output_kind, i.prompt_text, i.run_on_ingest, i.enabled,"
         " i.created_at FROM inc.ai_custom_prompt i"
@@ -4722,7 +4722,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     # check against the pre-statement table) cannot see.
     k.new = _insert_tracked(
         con, batch_id, "ai_keyword",
-        "INSERT OR IGNORE INTO ai_keyword (article_id, term, kind, language, model,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.ai_keyword (article_id, term, kind, language, model,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " prompt_version, confirmed, evidence, created_at)"
         " SELECT ma.new, i.term, i.kind, i.language, i.model, i.prompt_version,"
         " i.confirmed, i.evidence, i.created_at"
@@ -4757,7 +4757,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     )
     tr.new = _insert_tracked(
         con, batch_id, "keyword_translations",
-        "INSERT OR IGNORE INTO keyword_translations (term, source_lang, target_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.keyword_translations (term, source_lang, target_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " text, model, prompt_version, created_at)"
         " SELECT i.term, i.source_lang, i.target_lang, i.text, i.model, i.prompt_version,"
         " i.created_at FROM inc.keyword_translations i"
@@ -4793,7 +4793,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         )
         tt.new = _insert_tracked(
             con, batch_id, "article_title_translations",
-            "INSERT OR IGNORE INTO article_title_translations (article_id, source_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "INSERT OR IGNORE INTO main.article_title_translations (article_id, source_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " target_lang, title, summary, model, prompt_version, created_at)"
             " SELECT ma.new, i.source_lang, i.target_lang, i.title, i.summary, i.model,"
             " i.prompt_version, i.created_at FROM inc.article_title_translations i"
@@ -4846,7 +4846,7 @@ def _merge_places(con, batch_id, results) -> None:
         )
         wd.new = _insert_tracked(
             con, batch_id, "wikidata_items",
-            "INSERT OR IGNORE INTO wikidata_items (qid, status, resolved_qid, labels_json,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "INSERT OR IGNORE INTO main.wikidata_items (qid, status, resolved_qid, labels_json,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " descriptions_json, claims_json, lastrevid, fetched_at)"
             " SELECT i.qid, i.status, i.resolved_qid, i.labels_json, i.descriptions_json,"
             " i.claims_json, i.lastrevid, i.fetched_at FROM inc.wikidata_items i"
@@ -4871,7 +4871,7 @@ def _merge_places(con, batch_id, results) -> None:
         )
         pl.new = _insert_tracked(
             con, batch_id, "places",
-            "INSERT OR IGNORE INTO places (id, qid, kind, name, names_json, country,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "INSERT OR IGNORE INTO main.places (id, qid, kind, name, names_json, country,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " country_alpha3, admin_path_json, geometry_ref, lat, lon, population,"
             " gazetteer_vintage, article_id, as_of)"
             " SELECT i.id, i.qid, i.kind, i.name, i.names_json, i.country, i.country_alpha3,"
@@ -4912,7 +4912,7 @@ def _merge_statistics(con, batch_id, results) -> None:
     )
     fig.new = _insert_tracked(
         con, batch_id, "stat_figures",
-        "INSERT OR IGNORE INTO stat_figures (agency, series_id, ref_area, time_period,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.stat_figures (agency, series_id, ref_area, time_period,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " value, unit, methodology_ref, adjustment, base_year, extracted_at, created_at)"
         " SELECT i.agency, i.series_id, i.ref_area, i.time_period, i.value, i.unit,"
         " i.methodology_ref, i.adjustment, i.base_year, i.extracted_at, i.created_at"
@@ -4949,7 +4949,7 @@ def _merge_statistics(con, batch_id, results) -> None:
     )
     sub.new = _insert_tracked(
         con, batch_id, "stat_subscriptions",
-        "INSERT OR IGNORE INTO stat_subscriptions (source, indicator, country, dataset,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.stat_subscriptions (source, indicator, country, dataset,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " params_json, agency, interval_days, enabled, created_at, last_fetched_at, last_status)"
         " SELECT i.source, i.indicator, i.country, i.dataset, i.params_json, i.agency,"
         " i.interval_days, i.enabled, i.created_at, i.last_fetched_at, i.last_status"
@@ -4983,7 +4983,7 @@ def _merge_hazard_details(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "hazard_event_details",
-        "INSERT OR IGNORE INTO hazard_event_details (article_id, provider, event_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.hazard_event_details (article_id, provider, event_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " event_type, severity, magnitude, lat, lon, place, event_time, source_url,"
         " created_at, updated_at)"
         " SELECT ma.new, i.provider, i.event_id, i.event_type, i.severity, i.magnitude,"
@@ -5016,7 +5016,7 @@ def _merge_keyword_tags(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "keyword_tags",
-        "INSERT OR IGNORE INTO keyword_tags (keyword_id, axis, tag, source, created_at)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.keyword_tags (keyword_id, axis, tag, source, created_at)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " SELECT mk.new, i.axis, i.tag, i.source, i.created_at"
         " FROM inc.keyword_tags i JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM keyword_tags t WHERE {key})",
@@ -5066,7 +5066,7 @@ def _merge_markets(con, batch_id, results) -> None:
     # id per identity group, same tie-break convention as `_merge_keywords`.
     r.new = _insert_tracked(
         con, batch_id, "commodity_prices",
-        "INSERT INTO commodity_prices (symbol, market, observed_on, price, currency, unit,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.commodity_prices (symbol, market, observed_on, price, currency, unit,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " source, created_at)"
         " SELECT i.symbol, i.market, i.observed_on, i.price, i.currency, i.unit, i.source,"
         " i.created_at FROM inc.commodity_prices i"
@@ -5092,7 +5092,7 @@ def _merge_markets(con, batch_id, results) -> None:
     )
     er.new = _insert_tracked(
         con, batch_id, "market_extraction_rules",
-        "INSERT INTO market_extraction_rules (source_id, category, symbol, label, url,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.market_extraction_rules (source_id, category, symbol, label, url,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " selector, attribute, value_regex, currency, unit, market, enabled, last_run_at,"
         " last_status, created_at, updated_at)"
         " SELECT ms.new, i.category, i.symbol, i.label, i.url, i.selector, i.attribute,"
@@ -5113,7 +5113,7 @@ def _merge_rule_tables(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "link_classification_rules",
-        "INSERT INTO link_classification_rules (rule_name, pattern, classification_type,"
+        "INSERT INTO main.link_classification_rules (rule_name, pattern, classification_type,"
         " priority, is_active, created_at, updated_at)"
         " SELECT i.rule_name, i.pattern, i.classification_type, i.priority, i.is_active,"
         " i.created_at, i.updated_at FROM inc.link_classification_rules i"
@@ -5127,7 +5127,7 @@ def _merge_rule_tables(con, batch_id, results) -> None:
     )
     r.new += _insert_tracked(
         con, batch_id, "source_credibility_rules",
-        "INSERT INTO source_credibility_rules (rule_name, factor, weight, min_value,"
+        "INSERT INTO main.source_credibility_rules (rule_name, factor, weight, min_value,"
         " max_value, is_inverse, is_active, created_at, updated_at)"
         " SELECT i.rule_name, i.factor, i.weight, i.min_value, i.max_value, i.is_inverse,"
         " i.is_active, i.created_at, i.updated_at FROM inc.source_credibility_rules i"
@@ -5146,7 +5146,7 @@ def _merge_source_candidates(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "source_candidates",
-        "INSERT INTO source_candidates (domain, suggested_name, channel, evidence, status,"
+        "INSERT INTO main.source_candidates (domain, suggested_name, channel, evidence, status,"
         " first_seen, last_seen)"
         " SELECT i.domain, i.suggested_name, i.channel, i.evidence, i.status,"
         " i.first_seen, i.last_seen FROM inc.source_candidates i"
@@ -5440,7 +5440,7 @@ def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
     con = db_connect(working, check_same_thread=False)
     try:
         con.execute(
-            "UPDATE merge_batches SET report_json = ? WHERE id = ?",
+            "UPDATE main.merge_batches SET report_json = ? WHERE id = ?",
             (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
         )
         con.commit()
@@ -5518,7 +5518,7 @@ def _carry_live_settings(working: Path) -> dict:
             changed = [r for r in settings if have.get(r[0]) != r[1]]
             for key, value, updated_at in changed:
                 dst.execute(
-                    "INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?) "
+                    "INSERT INTO main.app_state (key, value, updated_at) VALUES (?, ?, ?) "
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
                     (key, value, updated_at),
                 )
@@ -6172,7 +6172,7 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
             all_ok = True
             problems_acc: list[str] = []
             insert = (
-                "INSERT OR IGNORE INTO custody_imported_entries"
+                "INSERT OR IGNORE INTO main.custody_imported_entries"
                 " (chain_id, seq, item_id, item_hash, action, actor, metadata_json,"
                 "  prev_entry_hash, entry_hash, signature_json, timestamp_json,"
                 "  verified, verify_note, imported_at)"
@@ -6598,7 +6598,7 @@ def mark_reindex_complete(batch_id: int) -> None:
     try:
         with session_scope() as session:
             session.execute(
-                text("UPDATE merge_batches SET status = :s WHERE id = :b"),
+                text("UPDATE main.merge_batches SET status = :s WHERE id = :b"),
                 {"s": _STATUS_REINDEXED, "b": int(batch_id)},
             )
         clear_reindex_cursor()

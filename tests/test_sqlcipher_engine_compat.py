@@ -59,11 +59,13 @@ def test_the_installed_engine_writes_into_a_store_the_other_engine_made_and_read
         con.close()
 
 
-
 def test_the_ci_floor_leg_tells_the_tests_it_is_the_floor():
     """The floor-leg guards in ``test_poisoned_connection.py`` and ``test_database_verify_pages.py`` skip unless the job exports
     ``OO_EXPECT_SQLCIPHER_ENGINE``; this fails if the workflow stops exporting it, or the floor entry stops being named ``floor``."""
     ci = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     job = ci.split("  sqlcipher-engines:", 1)[1].split("\n  # ", 1)[0]
     assert re.search(r"-\s*\{engine: floor, spec: \"sqlcipher3==", job), "the floor matrix entry is not named `floor`"
-    assert "OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}" in job, "the job no longer exports the engine it runs"
+    steps = [s for s in re.split(r"\n      - ", job) if "python -m pytest" in s]
+    assert len(steps) == 1, "the job has no single step that runs pytest"
+    env = steps[0].split("run:", 1)[0]  # the step's own `env:` block, which precedes its `run:`
+    assert "OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}" in env, "the step that runs pytest no longer exports the engine it runs"
