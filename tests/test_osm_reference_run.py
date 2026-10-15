@@ -250,6 +250,34 @@ def test_the_floor_is_a_labelled_guess_until_a_measured_report_replaces_it():
     assert "GUESS" in pf5["floor_basis"] and pf5["needed_bytes"] == pf["needed_bytes"]
 
 
+def test_a_big_share_country_is_warned_by_name_with_the_measured_worst_case():
+    """Liechtenstein's 2013 extract settled at 6.0 x its own bytes and a Dutch city's at 7.5 x, so 2 x the CONTINENT file is
+    plenty for France in Europe and not for the United States in North America (a 14 GB file: about 105 GB of osm.db and
+    28 GB of node locations against a floor of 30). A refusal at the worst case would turn France away from any disk under
+    270 GB, so the floor stays a labelled guess and the worst case WARNS, from the measured ratios, naming the way to refuse."""
+    pf = R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB)
+    assert pf["ok"] is True and pf["needed_bytes"] == 2 * 14 * GB + 2 * GB, "the refusal floor is unchanged"
+    assert pf["worst_case_bytes"] == int((7.5 + 2.0) * 14 * GB) + 2 * GB, "7.5 x for osm.db plus 2 x for the location file"
+    assert pf["warning"] and str(pf["worst_case_bytes"]) in pf["warning"] and "6 to 7.5" in pf["warning"]
+    assert "--min-free-gb" in pf["warning"]
+    # A small file has no location file (pyosmium keeps them in memory below 512 MiB): only the 7.5 x counts.
+    small = R.preflight(extract_bytes=100 * 1024 * 1024, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB)
+    assert small["worst_case_bytes"] == int(7.5 * 100 * 1024 * 1024) + 2 * GB and small["warning"] is None
+    # Enough disk for the worst case: no warning. A measured report or an override replaces the guess: no warning either.
+    assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=400 * GB, reserve_bytes=2 * GB)["warning"] is None
+    prior = {"inputs": {"extract": {"bytes": 1 * GB}},
+             "phases": [{"name": "ingest", "status": "ok", "peak_data_dir_bytes": 3 * GB}]}
+    assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB,
+                       prior_report=prior)["warning"] is None
+    assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB,
+                       min_free_override=10 * GB)["warning"] is None
+    # The history phase writes into the same store after the ingest: the worst case doubles.
+    hist = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=400 * GB, reserve_bytes=2 * GB)
+    assert hist["worst_case_bytes"] == 2 * int(9.5 * 14 * GB) + 2 * GB
+    # A refusal stays by name: the floor itself is not met.
+    assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=20 * GB, reserve_bytes=2 * GB)["ok"] is False
+
+
 def test_free_disk_falling_below_the_reserve_stops_the_child_cleanly_and_ends_the_run(tmp_path):
     probe = _Probe(free=100 * GB, free_after=1 * GB, after_calls=4)
     specs = _scripted("import time; time.sleep(120)", "slow") + _scripted("print('never')", "second")

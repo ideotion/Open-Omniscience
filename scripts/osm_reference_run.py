@@ -141,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
     code = {"ok": 0, "failed": 1, "interrupted": 3}.get(report["status"], 2)
     try:
         phases = ", ".join(f"{p['name']}={p['status']} {p['wall_seconds']}s" for p in report["phases"]) or "none started"
+        if (report.get("preflight") or {}).get("warning"):
+            print(f"warning: {report['preflight']['warning']}")
         print(f"status: {report['status']}  ({phases})")
         if report.get("reason"):
             print(f"reason: {report['reason']}")

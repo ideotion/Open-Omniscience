@@ -47,6 +47,9 @@ _LOG = logging.getLogger("osm.places")
 NAME_KINDS: tuple[str, ...] = ("poi", "place", "admin")
 TYPE_WORDS = {"n": "node", "w": "way", "r": "relation"}
 BATCH = 5000
+#: Rows of ``osm_objects`` read at once while the name and address indexes are built: about 20 MB a page, so the build's
+#: memory is this and not the country's size.
+READ_PAGE = 50_000
 
 GEOCODER_SCOPE = "Addresses outside your OpenStreetMap countries are not located."
 GEOCODER_METHOD = (
@@ -141,21 +144,30 @@ def build_search_index(alpha3: str) -> dict:
                 s.execute(text("INSERT INTO osm_addresses (address, alpha3, object_id) VALUES (:t, :a, :i)"), ab)
                 ab.clear()
 
-        for oid, otype, kind, lat, lon, name, names_json, hn, street, place, pc, city in s.execute(query).all():
-            if kind in NAME_KINDS and not (kind == "admin" and otype != "r"):
-                label = _names_text(name, names_json)
-                if label:
-                    nb.append({"t": label, "a": alpha3, "i": oid})
-                    names += 1
-            addr = _address(hn, street, place, pc, city)
-            if addr:
-                if lat is None or lon is None:
-                    no_point += 1
-                else:
-                    ab.append({"t": addr, "a": alpha3, "i": oid})
-                    addresses += 1
-            if len(nb) + len(ab) >= BATCH:
-                flush()
+        # A page at a time, by id: the country's objects are tens of millions on a large country, and reading them all
+        # with ``.all()`` held every row at once (measured 2026-10-15: 0.8 GB of a 2.2 GB peak at 2.9 M objects, growing
+        # with the count, on a VM that has 3.5 GB).
+        last = -1
+        while True:
+            page = s.execute(query.where(t.c.id > last).order_by(t.c.id).limit(READ_PAGE)).all()
+            if not page:
+                break
+            last = page[-1][0]
+            for oid, otype, kind, lat, lon, name, names_json, hn, street, place, pc, city in page:
+                if kind in NAME_KINDS and not (kind == "admin" and otype != "r"):
+                    label = _names_text(name, names_json)
+                    if label:
+                        nb.append({"t": label, "a": alpha3, "i": oid})
+                        names += 1
+                addr = _address(hn, street, place, pc, city)
+                if addr:
+                    if lat is None or lon is None:
+                        no_point += 1
+                    else:
+                        ab.append({"t": addr, "a": alpha3, "i": oid})
+                        addresses += 1
+                if len(nb) + len(ab) >= BATCH:
+                    flush()
         flush()
         row = s.query(OsmSearchIndex).filter_by(alpha3=alpha3).one_or_none() or OsmSearchIndex(alpha3=alpha3)
         row.basis_ingest, row.names, row.addresses, row.addresses_no_point = basis, names, addresses, no_point
@@ -256,8 +268,12 @@ def search_names(q: str, limit: int = 8) -> dict:
             return empty
         sc, sp = _scope_sql(live)
         total = s.execute(text(f"SELECT count(*) FROM osm_names WHERE osm_names MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+        # A notable object (a place, an administrative area) leads, then FTS5's own rank. Rank alone is wrong for a name
+        # search: BM25 favours the SHORTEST document, and a town carrying its name in five languages is a long one, so on a
+        # real extract (Liechtenstein, 2013) a post office called "Vaduz" outranked the capital, which came 16th of 16.
         ids = [r[0] for r in s.execute(
-            text(f"SELECT object_id FROM osm_names WHERE osm_names MATCH :m AND {sc} ORDER BY rank LIMIT :n"),  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+            text("SELECT osm_names.object_id FROM osm_names JOIN osm_objects o ON o.id = osm_names.object_id "  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+                 f"WHERE osm_names MATCH :m AND osm_names.{sc} ORDER BY o.notable DESC, osm_names.rank LIMIT :n"),
             {"m": m, "n": int(limit), **sp},
         )]
         rows = {r.id: r for r in s.execute(
