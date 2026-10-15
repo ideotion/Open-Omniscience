@@ -132,7 +132,9 @@ def generate(
             # A generated edition that could not be written is still a real answer:
             # return it with the failure stated rather than losing the work to a 500.
             edition["persisted"] = False
-            edition["persist_error"] = http_detail(exc, f"{type(exc).__name__}: ", limit=300)
+            said = http_detail(exc, limit=300)
+            # the class leads, once: a driver's text already is its class
+            edition["persist_error"] = said if said.startswith(type(exc).__name__) else f"{type(exc).__name__}: {said}"
     else:
         edition["persisted"] = False
     return edition

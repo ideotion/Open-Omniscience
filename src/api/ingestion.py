@@ -33,7 +33,7 @@ from src.ingest.email import (
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import http_detail, scrub_and_reraise
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, http_detail, scrub_and_reraise
 from src.safety.fetcher import following_fetcher
 
 _LOG = logging.getLogger("api.ingestion")
@@ -176,7 +176,7 @@ def ingest_email_endpoint(
                 use_ssl=req.use_ssl,
             )
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
-            raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
 

@@ -671,3 +671,59 @@ def test_the_sweep_reads_every_module_of_src_api():
     read = {m for m in MODULES if m.startswith("src/api/")}
     on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py")}
     assert on_disk <= read, sorted(on_disk - read)
+
+
+# --- ``withheld=`` is a FIXED sentence ----------------------------------------------------------------------------------------------
+# ``exception_text``/``record_text``/``http_detail`` return ``withheld`` UNSCRUBBED exactly when the scrub fails, so a ``withheld`` made
+# from the exception would write the words of the failure at the one moment nothing can check them.
+
+
+def _withheld_values(source: str) -> list[ast.expr]:
+    return [
+        kw.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        for kw in node.keywords
+        if kw.arg == "withheld"
+    ]
+
+
+def _is_fixed(value: ast.expr) -> bool:
+    if isinstance(value, ast.Constant):
+        return isinstance(value.value, str) or value.value is None
+    return isinstance(value, ast.Name) and value.id.lstrip("_").isupper()
+
+
+#: Where the value is only PASSED THROUGH the helpers' own signatures (the caller's fixed sentence, or the class name the scrub
+#: itself derives): ``secret_scrub.py`` and nowhere else.
+_WITHHELD_PASS_THROUGH = "src/monitoring/secret_scrub.py"
+
+
+def test_every_withheld_argument_in_src_is_a_literal_or_a_module_constant():
+    bad: list[str] = []
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == _WITHHELD_PASS_THROUGH:
+            continue
+        for value in _withheld_values(path.read_text(encoding="utf-8")):
+            if not _is_fixed(value):
+                bad.append(f"{rel}:{value.lineno}: {ast.unparse(value)}")
+    assert bad == [], "withheld= must be a fixed sentence (a literal or an UPPER_CASE constant), never made from the exception"
+
+
+@pytest.mark.parametrize(
+    "value, fixed",
+    [
+        ('"its text is withheld"', True),
+        ("UNREADABLE_TEXT", True),
+        ("_UNCHECKED", True),
+        ('f"{type(exc).__name__}"', False),
+        ("str(exc)", False),
+        ("sentence", False),
+        ('"a " + str(exc)', False),
+        ('"{}".format(exc)', False),
+    ],
+)
+def test_the_withheld_guard_tells_a_fixed_sentence_from_one_made_of_the_exception(value, fixed):
+    (node,) = _withheld_values(f"http_detail(exc, withheld={value})")
+    assert _is_fixed(node) is fixed

@@ -203,3 +203,24 @@ def test_a_short_wrong_key_at_the_lock_screen_is_answered_in_the_messages_fixed_
     assert longer.value.status_code == 403
     assert longer.value.detail == f"the passphrase does not open {path.name} (or the file is damaged)"
     assert held == [], "a refused key is never held"
+
+
+def test_a_short_key_that_encrypt_in_place_refused_is_answered_in_the_fixed_words(monkeypatch):
+    """The 400 of ``/encrypt-db`` for a key under the floor of what can be taken out of a text says the fixed unreadable-text sentence,
+    not the failure's words. MUTATION TARGET: the ``withheld=`` of that ``detail``."""
+    from fastapi import HTTPException
+
+    from src.database import encrypt_tool
+    from src.monitoring.secret_scrub import UNREADABLE_TEXT
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-plaintext")
+    monkeypatch.setattr(encrypt_tool, "dispose_engine", lambda: None, raising=False)
+
+    def refused(_passphrase):
+        raise encrypt_tool.EncryptToolError("could not encrypt oo: the key is oo")
+
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", refused)
+    body = unlock_mod.EncryptBody(passphrase="oo", confirm="oo", consent=True)
+    with pytest.raises(HTTPException) as err:
+        unlock_mod.encrypt_db(body)
+    assert err.value.status_code == 400 and err.value.detail == UNREADABLE_TEXT

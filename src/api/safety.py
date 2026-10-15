@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.monitoring.secret_scrub import http_detail, scrub_and_reraise
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, http_detail, scrub_and_reraise
 from src.safety import settings as safety_settings
 
 _LOG = logging.getLogger("api.safety")
@@ -127,7 +127,7 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
             # BackupError includes the encrypted-store refusal (an encrypted corpus
             # must use the streaming encrypted backup, not this decrypt-to-plaintext
             # path) — surface it as a clean 400, never an ungraceful 500.
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
     return StreamingResponse(
         io.BytesIO(blob),
         media_type="application/octet-stream",

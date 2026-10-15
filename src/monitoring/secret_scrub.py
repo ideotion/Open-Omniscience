@@ -772,7 +772,12 @@ def http_detail(
     that is written. EVERY ``detail`` in ``src/api`` that carries an exception goes through this one call: the screen it is shown on
     is photographed and shared, so a text that is not stored is still a place a passphrase must not be. Never raises."""
     try:
-        said = record_text(exc, *secrets, limit=limit, typed=False, withheld=withheld)
+        if any(is_driver_error(link) for link in _reachable(exc)):
+            # R136: a driver's error ANYWHERE in the chain makes this the class only, whatever the wrapper's own words say
+            said = f"{type(exc).__qualname__} (a database driver's text is withheld)"
+            said = said if limit is None else said[:limit]
+        else:
+            said = record_text(exc, *secrets, limit=limit, typed=False, withheld=withheld)
     except Exception:  # noqa: BLE001 - nothing of the exception's words survives a failure here
         said = _class_only(exc)
     return f"{prefix}{said}"

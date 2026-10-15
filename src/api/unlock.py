@@ -636,14 +636,15 @@ def _close_after_checkpoint(conn, passphrase: str | None) -> None:
         # WARNING, not DEBUG: a write-back that fails (a full drive, an I/O error) is invisible
         # otherwise -- close() then fails the same way silently, the verify reports success and
         # the notice ends -- and the next thing the person meets is init_db on the same drive.
-        # The driver's own message only (no SQL runs here, so it carries no statement), with the typed key out of
-        # it BEFORE the first line is taken and cut: a driver's error can still quote what it was handed.
+        # A database driver's error is its class only (R136: the words of an engine can quote what it was handed, so "disk full" and
+        # "I/O error" are no longer told apart here; the class is), and any other keeps its words with the typed key out of them
+        # BEFORE the first line is taken and cut.
         said = http_detail(exc, "", passphrase, withheld="its text is withheld")
+        name = type(exc).__name__
         _LOG.warning(
             "the recovered log could not be written back into the database before the verify "
-            "connection closed (%s: %s); close() will try again",
-            type(exc).__name__,
-            (said.splitlines() or [""])[0][:200],
+            "connection closed (%s); close() will try again",
+            (said if said.startswith(name) else f"{name}: {said}").splitlines()[0][:200],
         )
     conn.close()
 
