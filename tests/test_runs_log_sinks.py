@@ -996,6 +996,76 @@ def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
     assert unguarded == set(), f"a built slot's module the log guard does not read: {sorted(unguarded)}"
 
 
+#: The two helpers :data:`_SLOT_PRODUCER_SCRUBS` excuses BY NAME for ``storage_events.py``, with the one parameter that holds the caught
+#: exception, the calls it may be an argument of and the attributes it may be read for. The exemption above trusts the name, so a
+#: body that later handed the message on (``str(exc)``, ``exc.args``, an f-string, an alias) would be excused without a test failing:
+#: this reads the BODIES, default-deny.
+_CLASS_ONLY_HELPERS: dict[str, tuple[str, frozenset[str], frozenset[str]]] = {
+    "_label": ("exc", frozenset({"type", "isinstance"}), frozenset({"errno"})),
+    "_internal_failure": ("exc", frozenset({"_label", "log_failure"}), frozenset()),
+}
+
+
+def _ways_a_helper_uses_its_exception(source: str) -> dict[str, list[str]]:
+    """For each helper of :data:`_CLASS_ONLY_HELPERS` in ``storage_events.py``'s source: the uses of its exception parameter that are
+    not one of the allowed shapes (as an argument of an allowed call, or an allowed attribute), as ``line: text``. A helper that is
+    not defined exactly once is reported too."""
+    tree = ast.parse(source)
+    lines = source.splitlines()
+    out: dict[str, list[str]] = {}
+    for name, (param, calls, attrs) in _CLASS_ONLY_HELPERS.items():
+        defs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name]
+        if len(defs) != 1:
+            out[name] = [f"defined {len(defs)} times"]
+            continue
+        parents = {child: node for node in ast.walk(defs[0]) for child in ast.iter_child_nodes(node)}
+        bad: list[str] = []
+        for node in ast.walk(defs[0]):
+            if not (isinstance(node, ast.Name) and node.id == param):
+                continue
+            up = parents.get(node)
+            if isinstance(up, ast.Call) and node in up.args and isinstance(up.func, ast.Name) and up.func.id in calls:
+                continue
+            if isinstance(up, ast.Attribute) and up.value is node and up.attr in attrs and isinstance(up.ctx, ast.Load):
+                continue
+            bad.append(f"{node.lineno}: {lines[node.lineno - 1].strip()}")
+        if bad:
+            out[name] = bad
+    return out
+
+
+def test_the_storage_events_helpers_the_log_guard_excuses_by_name_hand_on_the_class_and_never_the_message():
+    """MUTATION TARGET: the bodies of ``_label`` and ``_internal_failure``. The slot-producer guard counts a call to either as a
+    scrub, so what makes them one is read here."""
+    source = (ROOT / "src/monitoring/storage_events.py").read_text(encoding="utf-8")
+    assert _ways_a_helper_uses_its_exception(source) == {}
+    assert set(_CLASS_ONLY_HELPERS) == _SLOT_PRODUCER_SCRUBS["src/monitoring/storage_events.py"], "the table and this check name the same helpers"
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("    name = type(exc).__name__\n", "    name = str(exc)\n"),
+        ("    return f\"{name} {named}\" if named else name\n", "    return f\"{name}: {exc}\"\n"),
+        ("    code = exc.errno if isinstance(exc, OSError) else None\n", "    code = exc.errno if isinstance(exc, OSError) else exc.args\n"),
+        ("    named = errno.errorcode.get(code) if isinstance(code, int) else None\n",
+         "    named = errno.errorcode.get(code) if isinstance(code, int) else repr(exc)\n"),
+        ("    _LAST_INTERNAL_FAILURE = f\"{what}: {_label(exc)}\"\n", "    _LAST_INTERNAL_FAILURE = f\"{what}: {exc}\"\n"),
+        ("    _LAST_INTERNAL_FAILURE = f\"{what}: {_label(exc)}\"\n", "    held = exc\n    _LAST_INTERNAL_FAILURE = f\"{what}: {_label(held)}\"\n"),
+        ("    log_failure(_LOG, f\"storage events: {what}\", exc, level=logging.DEBUG)\n",
+         "    _LOG.debug(\"storage events: %s\", what, exc_info=exc)\n    log_failure(_LOG, f\"storage events: {what}\", exc, level=logging.DEBUG)\n"),
+    ],
+    ids=["str-as-name", "fstring-of-exc", "args-fallback", "repr-fallback", "stored-raw", "aliased", "traceback-logged"],
+)
+def test_a_helper_that_starts_handing_on_the_message_is_reported(old, new):
+    source = (ROOT / "src/monitoring/storage_events.py").read_text(encoding="utf-8")
+    assert source.count(old) == 1, "the mutation target moved: update the case"
+    planted = source.replace(old, new)
+    found = _ways_a_helper_uses_its_exception(planted)
+    # default-deny: ``exc_info=exc`` is a keyword argument, not an argument of an allowed call, so it is reported too
+    assert found, new
+
+
 def _qualified_names(tree: ast.AST) -> dict[int, str]:
     """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``,
     ``Class.method``): a class is part of the name, so a method of another class that happens to share a

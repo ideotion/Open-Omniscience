@@ -25,7 +25,6 @@ import json
 import sqlite3
 import threading
 import time
-from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -42,6 +41,10 @@ def journal(tmp_path, monkeypatch):
     path = tmp_path / "storage_events.json"
     monkeypatch.setattr(se, "_path", lambda: path)
     monkeypatch.setattr(se, "FLUSH_DELAY_S", 0.02)
+    from src.database import writer
+
+    # The watchdog tests set the module's "hold the journal was last opened for"; restored to what it was after each test.
+    monkeypatch.setattr(writer, "_JOURNALED_HOLD", None)
     se.reset_for_tests()
     yield path
     se.reset_for_tests()
@@ -364,6 +367,12 @@ def test_the_member_always_carries_its_method_its_caveat_and_the_state_of_its_fi
 #  The slot's budget is a measurement at full retention
 # --------------------------------------------------------------------------- #
 _NAME = "n" * 400  # past the cut
+# The page reading with every field it can carry at once (src/monitoring/page_reading.py ``compact``): the widest numbers a 64 KiB-page
+# store could produce. Both sources' fields are the same set, so this is the largest the ``open`` event's ``pages`` can be.
+_PAGES_AT_THE_WIDEST = {
+    "source": "header-bytes", "state": "read", "pages_in_file": 123_456_789, "pages_in_header": 123_000_000, "difference": 456_789,
+    "page_size": 65536, "header_valid": True, "trailing_bytes": 65535, "file_bytes": 8_090_000_000_000, "wal_bytes": 22_345_678_901,
+}
 
 
 def _fill_like_the_hooks(long_names: bool) -> None:
@@ -401,7 +410,7 @@ def _fill_like_the_hooks(long_names: bool) -> None:
                                                   "verify", "wal_replay", "pool_warm", "indexes")]
     steps = [{"step": f"ensure_something_{k}", "ms": 400.5 - k} for k in range(40)]
     for _ in range(se.KEEP["open"] + 4):
-        se.note_open("unlock", total_ms=4321.0, phases=phases, wal_bytes_before=987_654_321,
+        se.note_open("unlock", total_ms=4321.0, phases=phases, wal_bytes_before=987_654_321, pages=_PAGES_AT_THE_WIDEST,
                      init_db={"total_ms": 1500.5, "process_call": 2, "earlier_complete_calls": 0, "complete": True, "steps": steps})
     for _ in range(se.KEEP["pool_timeout"] + 4):
         se.note_pool_timeout(
@@ -414,7 +423,7 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 38,578 bytes with ordinary names and 83,288 with every name at the cut (a byte or two either way: every event carries the process id),
+    every kind, with the events the hooks write. Measured 40,928 bytes with ordinary names and 85,638 with every name at the cut (a byte or two either way: every event carries the process id),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 90,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
     from src.api import diagnostics_slots as slots
 
@@ -849,7 +858,7 @@ def test_a_long_hold_is_opened_by_the_watchdog_updated_on_each_sample_and_closed
         time.sleep(0.05)
         writer.watchdog_tick(gate, warned)
         (e,) = _events("gate_hold")
-        assert e["seconds"] >= first_seconds and _member()["kinds"]["gate_hold"]["total"] == 1, "updated, not a second entry"
+        assert e["seconds"] > first_seconds and _member()["kinds"]["gate_hold"]["total"] == 1, "updated, not a second entry"
     (e,) = _events("gate_hold")
     assert e["open"] is False and "ended_at" in e and e["seconds"] >= 0.1
     assert e["holder"] == "field-writer"
@@ -1332,6 +1341,7 @@ def test_a_thread_holding_a_pooled_connection_and_named_with_the_passphrase_is_s
         assert MARKER not in json.dumps(write_gate_report(), default=str)
         member = bundle._member_bytes(bundle._contention_member())
         assert MARKER.encode() not in member and b"oo-osm-" in member, "the name is there, the passphrase is not"
+        assert "pool connection invalidated: held by oo-osm-" in caplog.text, "positive control: the line WAS logged (a throttled line passes the next check vacuously)"
         assert MARKER not in caplog.text, "the line logged for the invalidation"
     finally:
         let_go.set()
@@ -1693,15 +1703,40 @@ def test_the_gate_report_keeps_the_sampled_route_when_the_release_finds_none(jou
     assert e["route"] == "POST /api/x" and e["seconds"] == 61.0 and e["open"] is False
 
 
-def test_a_reset_of_a_journal_nothing_touched_never_resolves_the_data_directory(monkeypatch):
+def test_a_reset_never_resolves_the_data_directory_again_whether_or_not_the_journal_was_touched(journal, monkeypatch):
     """On a marked drive that has gone missing, resolving the data directory is itself a signal to the volume monitor, which pauses
-    collection for the rest of the process: the suite's isolation fixture runs this reset after EVERY test, so a test that merely
-    walked past (the data-volume tests) must not cause it."""
-    se.reset_for_tests()
+    collection for the rest of the process: the suite's isolation fixture runs this reset after EVERY test, so neither a test that
+    merely walked past (the data-volume tests) nor one that wrote the journal while the folder was still there may cause it. The reset
+    removes the files the journal remembers it touched (the coordinator's low 4 on #1384: the touched case still resolved)."""
+    se.record("gate_hold", {"n": 1}, key="k")
+    se.flush()
+    assert journal.exists()
     resolved: list[int] = []
-    monkeypatch.setattr(se, "_path", lambda: resolved.append(1) or Path("/nonexistent/storage_events.json"))
+
+    def gone():
+        resolved.append(1)
+        raise OSError(errno.ENOENT, "the folder went away")
+
+    monkeypatch.setattr(se, "_path", gone)
     se.reset_for_tests()
+    assert resolved == [] and not journal.exists(), "removed by the path it used, with no new resolution"
+    se.reset_for_tests()  # an untouched journal as well
     assert resolved == []
+
+
+def test_a_file_the_journal_could_not_read_is_removed_by_the_reset_like_any_other_it_touched(journal, monkeypatch):
+    """The coordinator's low 5 on #1384, decided: a read the I/O error outlasted names the file, so a reset removes it (a test's planted
+    file must not outlive the test and be read as an earlier process's by the next). Production never resets."""
+    journal.write_text(
+        json.dumps({"schema": se.SCHEMA, "since": "2026-10-13T00:00:00+00:00", "kinds": {"guard": {"total": 1, "events": []}}}),
+        encoding="utf-8",
+    )
+    _unreadable_for_now(monkeypatch, journal)
+    se.record("guard", {"n": 1})
+    assert _wait_until(lambda: se._READ_FAILURES >= 1)
+    assert journal.exists()
+    se.reset_for_tests()
+    assert not journal.exists()
 
 
 def test_a_reset_of_a_journal_that_was_written_removes_its_file(journal):

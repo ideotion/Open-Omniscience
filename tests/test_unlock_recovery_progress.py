@@ -454,12 +454,14 @@ def test_the_verify_connection_is_checkpointed_through_execute_before_it_closes(
     assert wal.stat().st_size >= 2 * _MIB
     unlock(PassphraseBody(passphrase=_KEY))
     kinds = [o[0] for o in order]
-    assert kinds == ["execute", "execute", "close"], order
+    assert kinds == ["execute"] * 4 + ["close"], order
+    # the page reading (src/monitoring/page_reading.py) is taken off this connection BEFORE the checkpoint folds the log into the file
+    assert [o[1] for o in order[:2]] == ["PRAGMA page_size", "PRAGMA page_count"]
     # the checkpoint never waits for a reader: the timeout is zeroed BEFORE it
-    assert order[0][1] == "PRAGMA busy_timeout = 0"
-    assert order[1][1] == "PRAGMA wal_checkpoint(TRUNCATE)"
+    assert order[2][1] == "PRAGMA busy_timeout = 0"
+    assert order[3][1] == "PRAGMA wal_checkpoint(TRUNCATE)"
     # when close() ran there was nothing left in the log for it to hold the GIL over
-    assert order[2][1] == 0, f"{order[2][1]} bytes of log were still there when close() ran"
+    assert order[4][1] == 0, f"{order[4][1]} bytes of log were still there when close() ran"
 
 
 def test_a_reader_holding_the_log_does_not_make_the_unlock_wait(crashed_store):

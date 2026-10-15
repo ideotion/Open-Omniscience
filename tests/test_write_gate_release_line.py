@@ -161,3 +161,18 @@ def test_a_broken_threshold_read_never_breaks_a_release(monkeypatch):
     gate = WriterGate()
     _hold(gate, 0.02, "oo-quiet")
     assert gate.stats()["held"] is False and gate.stats()["grants"] == 1
+
+
+def test_a_holder_named_with_the_passphrase_has_it_taken_out_of_the_release_line(monkeypatch, caplog):
+    """A thread's name can be chosen by a request (``oo-osm-{code}``, ``served-cache-{key}``): the line is a log sink, so the name
+    passes the scrub the journal's holders pass."""
+    from src.database import connect as connect_mod
+
+    secret = "MARKER-passphrase-4711-correct-horse"
+    monkeypatch.setattr(connect_mod, "_passphrase", secret)
+    gate = WriterGate()
+    with caplog.at_level(logging.WARNING, logger=writer._LOG.name):
+        _hold(gate, 0.25, f"worker-{secret}")
+    lines = [r for r in caplog.records if r.getMessage().startswith("write gate released after")]
+    assert len(lines) == 1 and "worker-" in lines[0].getMessage(), "the line is still written, with the name's other words"
+    assert secret not in caplog.text
