@@ -188,8 +188,13 @@ _OWN_METHOD = "own-tag-check"
 #: PROTECTS: each sentence is cut at ``DETAIL_CHARS`` like every detail line and the half that matters (the pages were NOT checked, or
 #: where the finding came from) is its end, so each stays under that (pinned by a test).
 _TAG_MISMATCH = "the page check's method did not match this file's first page, so no page was called damaged and the pages were not checked"
+_TAG_MISMATCH_LATER = (
+    "the first page matched but every page after it that was read failed, so the check cannot tell damage from a mismatch and the pages were not checked"
+)
 _TAG_NO_KEY = "no passphrase is held here to check the pages' tags with, so the pages were not checked"
-_TAG_ON_BIG_FILE = "found by the app's own page check: the file is longer than 4 GiB, where the engine's check cannot be used"
+_TAG_WHY_OWN = "the file is longer than 4 GiB, where the engine's check cannot be used"
+_TAG_ON_BIG_FILE = f"found by the app's own page check: {_TAG_WHY_OWN}"
+_TAG_USED_OWN = f"the app's own page check was used: {_TAG_WHY_OWN}"
 _TAG_CLEAN = "no page of the file failed its authentication check (the app's own check; the file is longer than 4 GiB)"
 
 #: What a damaged answer is filed as when the SECOND read, on a new connection, did not repeat it (a verdict must be measured, R100; a read that
@@ -592,7 +597,7 @@ def _tag_pass(
     if state == page_auth.STATE_STOPPED:
         return entry(VERDICT_UNCHECKED, [_SQLITE_REASONS[9]], **more)
     if state == page_auth.STATE_MISMATCH:
-        return entry(VERDICT_UNCHECKED, [_TAG_MISMATCH], **more)
+        return entry(VERDICT_UNCHECKED, [_TAG_MISMATCH_LATER if found.get("mismatch_on") == page_auth.MISMATCH_LATER_PAGES else _TAG_MISMATCH], **more)
     if state == page_auth.STATE_NO_KEY:
         return entry(VERDICT_UNCHECKED, [_TAG_NO_KEY], **more)
     if state != page_auth.STATE_CHECKED:
@@ -609,7 +614,7 @@ def _tag_pass(
     if unread:
         return entry(
             VERDICT_UNCHECKED,
-            [f"the page check could not read {unread} page(s) ({how}) and so did not check the file to the end", _TAG_ON_BIG_FILE],
+            [f"the page check could not read {unread} page(s) ({how}) and so did not check the file to the end", _TAG_USED_OWN],
             **counts,
             **more,
         )
@@ -640,7 +645,7 @@ def _page_pass(path: Path, *, opener: Opener | None = None, cancel: threading.Ev
 
     if cancel is not None and cancel.is_set():
         return entry(VERDICT_UNCHECKED, [_SQLITE_REASONS[9]])
-    if not cipher_check_present():
+    if not cipher_check_present():  # also gates the own check past 4 GiB: a build without the pragma is not one it was measured on
         return entry(
             VERDICT_UNCHECKED,
             ["this build of SQLCipher has no page-authentication check (PRAGMA cipher_integrity_check), so the pages were not checked"],
@@ -985,7 +990,8 @@ def stop() -> None:
     """Stop the running check (the app is shutting down): the table in hand ends at the next look of the progress
     handler, no further table is started, and the file's entry stays ``running`` so the next start reads it again.
 
-    A page pass in flight is ONE call into the C library that no progress handler reaches, and the thread that waits in it is a
+    A page pass in flight is ONE call into the C library that no progress handler reaches (the app's own tag check of a file longer than
+    4 GiB is not: it looks for this stop before every chunk and before every page of a chunk it reads page by page), and the thread that waits in it is a
     daemon, so a quit does not wait for it to end: the attempt the pass cost is given back HERE, at the stop, because nothing after
     the call would ever run (three quits that landed in the pass would otherwise spend the file's three attempts and skip the check
     until the next unexpected stop, with no finding recorded). A kill, which cannot say anything, still counts as the one unfinished

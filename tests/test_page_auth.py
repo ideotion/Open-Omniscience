@@ -198,7 +198,7 @@ def test_a_file_of_4_kib_pages_reads_its_page_size_and_agrees_with_the_engine(ba
 def test_a_page_1_that_fails_is_a_mismatch_never_a_finding(copy):
     _flip(copy, 1)
     found = page_auth.check_path(copy, PAGE)
-    assert found["state"] == page_auth.STATE_MISMATCH, found
+    assert found["state"] == page_auth.STATE_MISMATCH and found["mismatch_on"] == page_auth.MISMATCH_FIRST_PAGE, found
 
 
 def test_pages_2_to_9_that_all_fail_beside_a_good_page_1_are_a_mismatch(copy):
@@ -206,8 +206,10 @@ def test_pages_2_to_9_that_all_fail_beside_a_good_page_1_are_a_mismatch(copy):
         _flip(copy, page)
     found = page_auth.check_path(copy, PAGE)
     assert found["state"] == page_auth.STATE_MISMATCH, found
+    assert found["mismatch_on"] == page_auth.MISMATCH_LATER_PAGES, "page 1 held: the record must not say the first page did not match"
     _flip(copy, 2 + page_auth.CALIBRATION_PAGES - 1)  # back: one of them holds again
-    assert page_auth.check_path(copy, PAGE)["state"] == page_auth.STATE_CHECKED
+    again = page_auth.check_path(copy, PAGE)
+    assert again["state"] == page_auth.STATE_CHECKED and again["mismatch_on"] is None
 
 
 def test_a_wrong_key_is_a_mismatch(copy):
@@ -217,6 +219,7 @@ def test_a_wrong_key_is_a_mismatch(copy):
     finally:
         connect_mod.set_passphrase(PASSPHRASE)
     assert found["state"] == page_auth.STATE_MISMATCH and found["failing"] >= 1, found
+    assert found["mismatch_on"] == page_auth.MISMATCH_FIRST_PAGE, found
 
 
 def test_no_passphrase_held_is_no_key_and_judges_nothing(copy):
@@ -393,6 +396,27 @@ def test_a_stop_asked_for_in_the_middle_ends_the_pass_at_the_next_chunk(copy, mo
     _flaky(monkeypatch, 10**6, "eio", hook=lambda n: stop.set() if n == 4 else None)  # a bad page far past the file: reads are real
     found = page_auth.check_path(copy, PAGE, cancel=stop)
     assert found["state"] == page_auth.STATE_STOPPED and 0 < found["examined"] < _pages(copy), found
+
+
+def test_a_stop_asked_for_while_a_chunk_is_read_page_by_page_ends_it_at_the_next_page(copy, monkeypatch):
+    """A drive that fails reads one slow page at a time: the loop that goes over a bad chunk page by page is the one a stop must reach.
+    The chunk is 40 pages with an unreadable page 25 in it (the whole-chunk read falls short, so the pages are read one by one); the
+    stop lands during the fourth of those reads, and the pass must end there and not at the end of the chunk."""
+    monkeypatch.setattr(page_auth, "CHUNK_BYTES", 40 * PAGE)
+    stop = threading.Event()
+    # reads: 1 the salt, 2 the calibration pages, 3 the whole chunk (short), 4.. page 10, 11, 12, 13 ...
+    _flaky(monkeypatch, 25, "short", hook=lambda n: stop.set() if n == 7 else None)
+    found = page_auth.check_path(copy, PAGE, cancel=stop)
+    assert found["state"] == page_auth.STATE_STOPPED, found
+    assert found["examined"] < 25, f"the pass went on to the end of the chunk after the stop: {found}"
+    assert found["unread"] == 0, "the stop came before the bad page was reached"
+
+
+def test_a_list_of_no_pages_still_counts_every_failing_page(copy):
+    _flip(copy, 20)
+    _flip(copy, 30)
+    found = page_auth.check_path(copy, PAGE, keep=0)
+    assert found["state"] == page_auth.STATE_CHECKED and found["failing"] == 2 and found["pages"] == [], found
 
 
 # --------------------------------------------------------------------------- #
@@ -660,14 +684,17 @@ def test_the_key_is_zeroed_when_the_pass_is_stopped(copy, monkeypatch):
 
 def test_the_key_is_zeroed_when_the_pass_raises_with_the_key_in_the_message(copy, monkeypatch):
     held = _Held(monkeypatch)
+    seen: list[str] = []
 
     def boom(key, *args, **kwargs):
-        raise RuntimeError(f"{MARKER} {bytes(key).hex()}")
+        seen.append(bytes(key).hex())  # the TAG key, as the test saw it when the exception was made
+        raise RuntimeError(f"{MARKER} {seen[-1]}")
 
     monkeypatch.setattr(page_auth, "hmac", types.SimpleNamespace(new=boom, compare_digest=hmac.compare_digest))
     found = page_auth.check_path(copy, PAGE)
     assert found["state"] == page_auth.STATE_UNREADABLE and found["failure"] == "RuntimeError", found
-    assert MARKER not in repr(found) and held.snapshots and held.snapshots[-1].hex() not in repr(found)
+    assert len(seen) == 1 and any(bytes.fromhex(seen[0])), "the exception carried the real tag key: the test is vacuous otherwise"
+    assert MARKER not in repr(found) and seen[0] not in repr(found) and held.snapshots[-1].hex() not in repr(found)
     held.assert_all_zero()
 
 
@@ -708,3 +735,86 @@ def test_the_module_has_no_logger_thread_or_traceback_to_carry_a_key_in():
     assert not banned, banned
     threads = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and ast.unparse(n.value) == "threading" and n.attr != "Event"]
     assert not threads, "threading is imported for its Event type only"
+
+
+# --------------------------------------------------------------------------- #
+#  no copy of the key that the zeroing cannot reach (R134 (1): "no copies beyond what hmac needs")
+# --------------------------------------------------------------------------- #
+def test_hmac_is_given_the_very_bytearray_that_is_wiped_and_no_module_name_keeps_a_copy(copy, monkeypatch):
+    held = _Held(monkeypatch)
+    given: list[object] = []
+    snapshots: list[bytes] = []
+    real_new = hmac.new
+
+    def spy(key, *args, **kwargs):
+        given.append(key)
+        snapshots.append(bytes(key))
+        return real_new(key, *args, **kwargs)
+
+    monkeypatch.setattr(page_auth, "hmac", types.SimpleNamespace(new=spy, compare_digest=hmac.compare_digest))
+    assert page_auth.check_path(copy, PAGE)["state"] == page_auth.STATE_CHECKED
+    assert len(given) == 1 and len(held.keys) == 1, "one key, used once"
+    assert given[0] is held.keys[0] and isinstance(given[0], bytearray), "hmac was given a copy, which nothing zeroes"
+    secret = snapshots[0]
+    assert any(secret)
+    for name, value in vars(page_auth).items():
+        if isinstance(value, (bytes, bytearray)):
+            assert secret not in bytes(value) and PASSPHRASE.encode() not in bytes(value), f"page_auth.{name} holds a secret"
+        elif isinstance(value, str):
+            assert secret.hex() not in value and PASSPHRASE not in value, f"page_auth.{name} holds a secret"
+
+
+_SECRET_NAMES = {"key", "password", "encryption_key", "held"}  # the names this module gives the passphrase and what is derived from it
+_COPIERS = {"bytes", "str", "bytearray", "memoryview", "repr", "ascii", "format", "list", "tuple", "int", "bin", "hex"}
+_TEXT_FORMS = {"hex", "decode", "tobytes", "tolist", "__bytes__"}
+
+
+def _root(node: ast.AST) -> str | None:
+    while isinstance(node, (ast.Attribute, ast.Subscript, ast.Starred)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def _copies_of_a_secret(source: str) -> list[str]:
+    """Every place ``source`` makes a copy of, or keeps, a name that holds a secret: a ``bytes``/``str``/... of it, its ``.hex()``, an
+    f-string of it, a ``global``, or an attribute or item that is assigned from it."""
+    found: list[str] = []
+    for n in ast.walk(ast.parse(source)):
+        if isinstance(n, (ast.Global, ast.Nonlocal)):
+            found.append(f"{n.lineno}: a {type(n).__name__.lower()} statement")
+        elif isinstance(n, ast.Call):
+            func = n.func
+            if isinstance(func, ast.Name) and func.id in _COPIERS and any(_root(a) in _SECRET_NAMES for a in n.args):
+                found.append(f"{n.lineno}: {func.id}() of a secret")
+            elif isinstance(func, ast.Attribute) and func.attr in _TEXT_FORMS and _root(func.value) in _SECRET_NAMES:
+                found.append(f"{n.lineno}: .{func.attr}() of a secret")
+        elif isinstance(n, ast.FormattedValue) and _root(n.value) in _SECRET_NAMES:
+            found.append(f"{n.lineno}: a secret in an f-string")
+        elif isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None:
+            targets = n.targets if isinstance(n, ast.Assign) else [n.target]
+            if any(isinstance(t, (ast.Attribute, ast.Subscript)) for t in targets) and any(
+                isinstance(x, ast.Name) and x.id in _SECRET_NAMES for x in ast.walk(n.value)
+            ):
+                found.append(f"{n.lineno}: a secret stored on an attribute or an item")
+    return found
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "def f(key):\n    return bytes(key)\n",
+        "def f(key):\n    return key.hex()\n",
+        "def f(key):\n    return str(key[:8])\n",
+        "def f(password):\n    return f'{password}'\n",
+        "def f(encryption_key):\n    global _KEPT\n    _KEPT = 1\n",
+        "def f(self, key):\n    self.k = key\n",
+        "def f(held):\n    return bytearray(held)\n",
+        "def f(key):\n    return key.decode('latin-1')\n",
+    ],
+)
+def test_the_copy_guard_can_fail(snippet):
+    assert _copies_of_a_secret(snippet), snippet
+
+
+def test_the_module_makes_no_copy_of_a_secret_the_zeroing_cannot_reach():
+    assert _copies_of_a_secret(Path(page_auth.__file__).read_text(encoding="utf-8")) == []

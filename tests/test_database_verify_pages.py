@@ -918,7 +918,8 @@ _CHECKED = {
 @pytest.mark.parametrize(
     ("found", "verdict", "needle"),
     [
-        ({**_CHECKED, "state": "mismatch", "failing": 1, "pages": [1]}, VERDICT_UNCHECKED, "did not match this file's first page"),
+        ({**_CHECKED, "state": "mismatch", "failing": 1, "pages": [1], "mismatch_on": "first-page"}, VERDICT_UNCHECKED, "did not match this file's first page"),
+        ({**_CHECKED, "state": "mismatch", "failing": 8, "pages": list(range(2, 10)), "mismatch_on": "later-pages"}, VERDICT_UNCHECKED, "the first page matched"),
         ({**_CHECKED, "state": "no-key", "examined": 0}, VERDICT_UNCHECKED, "no passphrase is held"),
         ({**_CHECKED, "state": "stopped", "examined": 12}, VERDICT_UNCHECKED, "the check was stopped"),
         ({**_CHECKED, "state": "unreadable", "failure": "OSError EIO"}, VERDICT_UNCHECKED, "OSError EIO"),
@@ -977,6 +978,52 @@ def test_a_missing_passphrase_is_named_and_the_connection_is_closed_before_the_r
     assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == [verify._TAG_NO_KEY] and con.closed == 1, entry
 
 
+def test_a_calibration_that_fails_after_a_good_first_page_does_not_say_the_first_page_did_not_match(healthy, monkeypatch):
+    """Pages 2 to 9 all failing beside a good page 1 is ``unchecked`` too (R134 (2)), but the record's words must be true of it: page 1
+    DID match, and the same file under 4 GiB is ``damaged`` with those pages named by the pragma."""
+    _past_the_limit(monkeypatch, healthy)
+    for page in range(2, 2 + verify.page_auth.CALIBRATION_PAGES):
+        with open(healthy, "r+b") as fh:
+            fh.seek((page - 1) * PAGE + 100)
+            byte = fh.read(1)
+            fh.seek((page - 1) * PAGE + 100)
+            fh.write(bytes([byte[0] ^ 0xFF]))
+    entry = verify.confirm_encrypted_damage(healthy)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == [verify._TAG_MISMATCH_LATER], entry
+    assert "first page did not match" not in " ".join(entry["detail"]) and "second_read" not in entry
+
+
+def test_the_stop_reaches_the_own_check_through_the_page_pass(healthy, monkeypatch):
+    """The stop given to the page pass must be the one the own check looks at: it is set after the pass has opened its connection (so
+    the early look at the top of the pass has already gone by) and before the file is read, and no page may be judged."""
+    _past_the_limit(monkeypatch, healthy)
+    stop = threading.Event()
+    con = _PragmaCon()
+
+    def opener(path):
+        stop.set()
+        return con
+
+    entry = verify.confirm_encrypted_damage(healthy, opener=opener, cancel=stop)
+    assert entry["verdict"] == VERDICT_UNCHECKED and entry["detail"] == [verify._SQLITE_REASONS[9]] and "pages_checked" not in entry, entry
+    assert entry["method"] == "own-tag-check" and con.closed == 1
+
+
+def test_the_connection_is_closed_before_the_own_check_reads_the_file(healthy, monkeypatch):
+    """``_tag_pass`` opens its connection only to read the cipher settings; the long read must not hold it (no snapshot is pinned)."""
+    _past_the_limit(monkeypatch, healthy)
+    con = _PragmaCon()
+    open_when_read: list[int] = []
+
+    def read(*args, **kwargs):
+        open_when_read.append(1 - con.closed)
+        return _CHECKED
+
+    monkeypatch.setattr(verify.page_auth, "check_path", read)
+    verify.confirm_encrypted_damage(healthy, opener=lambda p: con)
+    assert open_when_read == [0], "the connection was still open when the file was read"
+
+
 def test_a_connection_that_cannot_be_opened_is_classified_as_any_pass_is(healthy, monkeypatch):
     _past_the_limit(monkeypatch, healthy)
 
@@ -998,9 +1045,10 @@ def test_a_stop_asked_for_before_the_pass_ends_it_before_anything_is_opened(heal
 
 def test_the_reasons_the_own_check_gives_survive_the_cut_to_a_detail_line():
     """``entry()`` cuts every detail at ``DETAIL_CHARS``; the half of each sentence that matters is its end."""
-    for reason in (verify._TAG_MISMATCH, verify._TAG_NO_KEY, verify._TAG_ON_BIG_FILE, verify._TAG_CLEAN):
+    for reason in (verify._TAG_MISMATCH, verify._TAG_MISMATCH_LATER, verify._TAG_NO_KEY, verify._TAG_ON_BIG_FILE, verify._TAG_USED_OWN, verify._TAG_CLEAN):
         assert len(reason) < verify.DETAIL_CHARS, reason
-    assert verify._TAG_MISMATCH.endswith("were not checked") and verify._TAG_NO_KEY.endswith("were not checked")
+    for reason in (verify._TAG_MISMATCH, verify._TAG_MISMATCH_LATER, verify._TAG_NO_KEY):
+        assert reason.endswith("were not checked"), reason
 
 
 def test_a_file_that_crossed_4_gib_while_the_pragma_ran_drops_its_rows_and_is_answered_by_the_own_check(healthy, monkeypatch):

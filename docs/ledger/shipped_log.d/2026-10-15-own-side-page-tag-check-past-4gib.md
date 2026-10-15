@@ -11,6 +11,6 @@ the limit; the pragma path below 2^32 is unchanged.
 - **Key hygiene:** derived key held in a bytearray, passphrase reference dropped at once, every secret buffer wiped in a `finally` on every path; errors are class + errno name only; tests plant a marker passphrase and the derived key bytes
   and assert neither reaches logs, `app_errors`, the storage-events journal, the Diagnostics zip or an exception text.
 - **Measured on a healthy 4,375,658,496-byte store:** the pragma gives 4,925 false rows in 10.9 s; the own check is `ok` over 267,068 pages in 8.4–8.7 s warm (17.2 s cold), 53 MB peak RSS; 8 inverted bytes (65,536–65,538, 262,144–262,146,
-  267,000, 267,069) → 7 named (one past the end), second read agreed, 16.4 s.
+  267,000, 267,069) → 7 named (the eighth is the lock-byte page, which is never judged), second read agreed, 16.4 s.
 - **Tests:** `tests/test_page_auth.py` (engine parity, calibration, unread vs failing, stop, boundary via a virtual file and a real sparse file, lock-byte page, zeroing spy, AST guard on imports/calls); verify-side mapping and sink tests in
   `tests/test_database_verify_pages.py`; 38 mutants (28 + 10), all killed. Also carried: two positional-only-default plants in `tests/test_runs_log_sinks.py`.

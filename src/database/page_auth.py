@@ -37,15 +37,16 @@ the same ``finally``; the tag key lives in a ``bytearray`` that :func:`check_pat
 path. The key is never given to a thread, a logger, a record or an exception, and it never leaves this module's frames except into
 ``hmac``. WHAT PYTHON DOES NOT LET US WIPE, said and not hidden: the immutable ``bytes`` objects the standard library hands back
 (the two PBKDF2 outputs) and the UTF-8 copy ``bytearray(str, "utf-8")`` makes on its way in cannot be zeroed from Python, and OpenSSL's
-own HMAC state is released, not wiped. That is inside the threat model (CLAUDE.md): at-rest encryption protects a copied or seized
+own HMAC state, which OpenSSL frees and this module neither wipes nor relies on being wiped. That is inside the threat model (CLAUDE.md): at-rest encryption protects a copied or seized
 file, never a compromised running session, and a session that can read this process's freed memory can read the holder the
 passphrase already sits in. What the zeroing buys is that no long-lived copy of the key is OURS to leave behind. It only VERIFIES
 tags: it adds no decryption and no recovery path for a lost passphrase (CLAUDE.md: no recovery, no decryption alternative).
 
 LIMITS, THE PRAGMA'S TOO. It reads the MAIN file only, so a page whose newest copy is in a leftover ``-wal`` is checked at its older,
 valid state (or at a torn one: a page the engine was in the middle of writing can fail once, which is what the second read of R100
-is for). A trailing fragment shorter than a page is reported (``trailing_bytes``) and not counted: SQLite ignores it. Measured: about
-690 MB/s on one thread with 16 KiB pages (HMAC-SHA512 is the cost; the read is sequential, 4 MiB at a time), memory one chunk.
+is for). A trailing fragment shorter than a page is reported (``trailing_bytes``) and not counted: SQLite ignores it. Measured on a
+healthy 4,375,658,496-byte store with 16 KiB pages: 8.4 to 8.7 s with the file in the page cache (about 500 MB/s), 17.2 s cold (about
+250 MB/s); one thread, HMAC-SHA512 is the cost, the read is sequential, 4 MiB at a time, memory one chunk.
 """
 from __future__ import annotations
 
@@ -106,6 +107,12 @@ STATE_MISMATCH = "mismatch"
 STATE_STOPPED = "stopped"
 STATE_UNREADABLE = "unreadable"
 STATE_NO_KEY = "no-key"
+
+#: WHICH calibration disagreed, on a ``mismatch`` result (``mismatch_on``): the file's first page failed its tag (the method does not fit
+#: this file), or the first page held and every page examined after it failed (the method fits, and the caller cannot tell a run of bad
+#: pages from a method that does not). Two different sentences in the record, because only one of them is about the first page.
+MISMATCH_FIRST_PAGE = "first-page"
+MISMATCH_LATER_PAGES = "later-pages"
 
 #: Opens the file for the raw read (no SQLite, no key): a name tests replace with a file whose reads fail, because a drive that fails
 #: to read cannot be made on demand.
@@ -199,7 +206,7 @@ class _Tally:
         self.failing += 1
         if len(self.lowest) < self.keep:
             heapq.heappush(self.lowest, -number)
-        elif number < -self.lowest[0]:
+        elif self.lowest and number < -self.lowest[0]:  # ``keep`` of 0 lists none and still counts every one
             heapq.heapreplace(self.lowest, -number)
 
     def not_read(self, exc: BaseException | None = None) -> None:
@@ -302,9 +309,12 @@ def _scan(
     return True
 
 
-def _result(state: str, tally: _Tally, *, file_bytes: int = 0, pages_in_file: int = 0, trailing: int = 0, failure: str | None = None) -> dict[str, Any]:
+def _result(
+    state: str, tally: _Tally, *, file_bytes: int = 0, pages_in_file: int = 0, trailing: int = 0, failure: str | None = None, mismatch_on: str | None = None
+) -> dict[str, Any]:
     return {
         "state": state,
+        "mismatch_on": mismatch_on,
         "failing": tally.failing,
         "pages": tally.pages(),
         "unread": tally.unread,
@@ -321,12 +331,12 @@ def _judge(handle: Any, size: int, page_size: int, key: bytearray, cancel: threa
     pages = size // page_size
     trailing = size - pages * page_size
 
-    def answer(state: str, held: _Tally) -> dict[str, Any]:
-        return _result(state, held, file_bytes=size, pages_in_file=pages, trailing=trailing)
+    def answer(state: str, held: _Tally, mismatch_on: str | None = None) -> dict[str, Any]:
+        return _result(state, held, file_bytes=size, pages_in_file=pages, trailing=trailing, mismatch_on=mismatch_on)
 
     tally = _Tally(keep)
     if pages < 1:
-        return answer(STATE_MISMATCH, tally)
+        return answer(STATE_MISMATCH, tally, MISMATCH_FIRST_PAGE)  # there is no first page to match
     base = hmac.new(key, digestmod="sha512")
     buf = bytearray(max(1, CHUNK_BYTES // page_size) * page_size)
     calibration_last = min(pages, 1 + CALIBRATION_PAGES)
@@ -339,7 +349,7 @@ def _judge(handle: Any, size: int, page_size: int, key: bytearray, cancel: threa
     after = calibration.examined - 1
     after_failing = calibration.failing - (1 if page_one_failed else 0)
     if page_one_failed or (after >= 2 and after_failing == after):
-        return answer(STATE_MISMATCH, calibration)
+        return answer(STATE_MISMATCH, calibration, MISMATCH_FIRST_PAGE if page_one_failed else MISMATCH_LATER_PAGES)
     tally.merge(calibration)
     first, last = window if window is not None else (1, pages)
     first, last = max(first, calibration_last + 1), min(last, pages)
@@ -358,7 +368,7 @@ def check_path(
 ) -> dict[str, Any]:
     """Check every page of the main file at ``path`` against its authentication tag. Never raises. The result's ``state`` is
     ``checked`` (``failing`` is the count of pages that failed, ``pages`` the lowest ``keep`` numbers, ``unread`` the pages the drive
-    would not give, ``examined`` the pages judged), ``mismatch`` (the calibration disagreed: the pass says nothing about the file),
+    would not give, ``examined`` the pages judged), ``mismatch`` (the calibration disagreed: the pass says nothing about the file; ``mismatch_on`` says which way),
     ``stopped``, ``unreadable`` (``failure`` is a class and an errno name) or ``no-key`` (this process holds no passphrase).
     ``window`` is ``(first, last)`` page numbers (1-based) to check besides the calibration pages, which are always judged; the
     default is the whole file. The key is derived here, held in a ``bytearray`` and zeroed in a ``finally`` on every path."""
