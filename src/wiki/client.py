@@ -23,6 +23,14 @@ WIKI_USER_AGENT = (
 )
 
 
+#: The hosts the wiki client's session talks to. That one session carries the MediaWiki API (``{code}.wikipedia.org``,
+#: :func:`mediawiki.api_endpoint`), the pageviews API (``wikimedia.org``, the bare domain: ``pageviews.PAGEVIEWS_HOST``) and the
+#: EventStreams stream (``stream.wikimedia.org``), plus the rest of the Wikimedia family they redirect between. A request or a
+#: redirect hop to any other host is refused (``src.safety.fetcher.refuse_unlisted_host``): every endpoint is fixed, so a hop
+#: elsewhere is not the service's own.
+WIKI_SESSION_HOSTS = ("wikimedia.org", ".wikimedia.org", ".wikipedia.org")
+
+
 class WikiClient:
     def __init__(
         self,
@@ -57,7 +65,7 @@ class WikiClient:
             return self._session
         from src.safety.fetcher import following_session
 
-        return following_session("wiki", self._user_agent)
+        return following_session("wiki", self._user_agent, allowed_hosts=WIKI_SESSION_HOSTS)
 
     @session.setter
     def session(self, value) -> None:

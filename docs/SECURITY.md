@@ -121,6 +121,20 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`src/services/duckduckgo.py:DuckDuckGoSearch._unwrap_search_redirect`) — so the
   host is never fetched and never registered as a source.
 
+  **A fixed-endpoint session refuses a redirect to a host it does not talk to.** The
+  Wikipedia/Wikimedia client, the ORES client and the DuckDuckGo search each carry a host
+  list (`src/wiki/client.py:WIKI_SESSION_HOSTS`, `src/wiki/ores.py:ORES_HOSTS`,
+  `src/services/duckduckgo.py:DuckDuckGoSearch.ALLOWED_HOSTS`), and the session checks the
+  whole URL against it **before every request, each redirect hop included**
+  (`src/safety/fetcher.py:refuse_unlisted_host`): https only, no user name or password, port
+  443 only, no `%` in the host, and the host must read the same under both URL parsers the
+  stack uses. An entry is an exact host or a leading-dot suffix (`.wikipedia.org` means any
+  host under it, never the bare domain). A refusal raises `RedirectRefused` before the request
+  is sent and names the clause, never the address. Sessions built without a list (the dump,
+  OSM and model downloads and the statistics sources, which redirect between CDNs by design)
+  are listed in `tests/test_session_host_list.py:UNLISTED_SESSIONS`, so a new one is a
+  decision rather than an accident.
+
   **What an OpenTimestamps submission reveals** is your IP and timing, to the calendar
   operator — the *act of submitting*, not the content: only an opaque SHA-256 digest of
   your content is sent, never the content itself. Route it over Tor if you are a source

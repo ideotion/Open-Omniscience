@@ -60,6 +60,9 @@ class DuckDuckGoSearch:
     """
 
     BASE_URL = "https://html.duckduckgo.com/html/"
+    #: The hosts the search talks to: DuckDuckGo's own. A request or a redirect hop to any other host is refused
+    #: (``src.safety.fetcher.refuse_unlisted_host``); the result links it parses are never fetched here.
+    ALLOWED_HOSTS = ("duckduckgo.com", ".duckduckgo.com")
     USER_AGENT = "Mozilla/5.0 (compatible; OpenOmniscience/1.0; +https://github.com/ideotion/Open-Omniscience)"
 
     # Rate limiting
@@ -137,7 +140,7 @@ class DuckDuckGoSearch:
         # session; per-request headers carry only Accept/Accept-Language.
         from src.safety.fetcher import guarded_session
 
-        session = guarded_session(user_agent=cls.USER_AGENT)
+        session = guarded_session(user_agent=cls.USER_AGENT, allowed_hosts=cls.ALLOWED_HOSTS)
         try:
             logger.info(f"Searching DuckDuckGo for: {query}")
             response = session.post(cls.BASE_URL, data=params, headers=headers, timeout=30)

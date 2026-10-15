@@ -16,12 +16,14 @@ import hashlib
 import os
 import re
 import threading
+from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urlparse
 
 import requests
+from urllib3.util import parse_url
 
-from src.ingest import DEFAULT_USER_AGENT, EthicalFetcher, kill_switch_active
+from src.ingest import DEFAULT_USER_AGENT, BlockedTarget, EthicalFetcher, kill_switch_active
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
 
 # The SOCKS proxy schemes requests[socks]/PySocks understand. Shared by the
@@ -75,6 +77,64 @@ READ_FAILED_REFUSAL = (
 )
 
 
+class RedirectRefused(requests.exceptions.RequestException):
+    """A request, or one hop of a redirect chain, aimed somewhere a session with a host list may not go.
+
+    A ``RequestException`` so every caller that already handles "this request failed" handles it, and NOT a ``ConnectionError``: nothing
+    was sent, and a retry sends the same refused request again. ``reason`` is one of the fixed sentences below, never the URL or the
+    host: the address comes from a server's ``Location`` header (the text of whoever answered), so it is not echoed into a log line,
+    a record or a message."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"request refused: {reason}")
+        self.reason = reason
+
+
+def _checked_hosts(allowed: Iterable[str] | None) -> tuple[str, ...] | None:
+    """A host list as the session stores it, or ``None`` for no policy. Each entry is a host (``ores.wikimedia.org``) or a leading-dot
+    suffix (``.wikipedia.org``: any host UNDER it, never the bare domain). A malformed entry is a programming error and raises, as
+    does an empty list, which would refuse every request: say ``None`` for a session that follows no list."""
+    if allowed is None:
+        return None
+    hosts = tuple(allowed)
+    if not hosts:
+        raise ValueError("an empty host list would refuse every request; pass None for a session with no list")
+    for entry in hosts:
+        body = entry[1:] if entry.startswith(".") else entry
+        if not body or entry != entry.lower() or not all(c.isascii() and (c.isalnum() or c in ".-") for c in body) or body.startswith((".", "-")) or ".." in body:
+            raise ValueError(f"not a host or a leading-dot suffix: {entry!r}")
+    return hosts
+
+
+def refuse_unlisted_host(url: str, allowed: tuple[str, ...]) -> None:
+    """Raise :class:`RedirectRefused` unless ``url`` is an https URL to a listed host, read the way the HTTP client will read it.
+
+    The host is the one ``urllib3`` parses out of the string, because that is the host the connection is made to; ``urlparse`` is
+    asked as well and the two must agree (``EthicalFetcher._refuse_parser_mismatch``: a backslash or whitespace in the authority, a
+    ``%`` in the host and two readings of one name are refused outright). A user name or password, a port other than 443 and a scheme
+    other than https are refused too: no endpoint a session with a list talks to redirects there, so a hop that does is not one of
+    its own. ``allowed`` holds hosts and leading-dot suffixes (:func:`_checked_hosts`)."""
+    try:
+        EthicalFetcher._refuse_parser_mismatch(url)
+    except BlockedTarget as exc:
+        raise RedirectRefused(str(exc)) from None  # a fixed sentence of that function, never the URL
+    parsed = parse_url(url)
+    if (parsed.scheme or "").lower() != "https":
+        raise RedirectRefused("the scheme is not https")
+    if parsed.auth:
+        raise RedirectRefused("the URL carries a user name or a password")
+    if parsed.port not in (None, 443):
+        raise RedirectRefused("the URL names a port other than 443")
+    host = parsed.host or ""  # urllib3 has lower-cased it, which is the name the connection is made to
+    for entry in allowed:
+        if entry.startswith("."):
+            if host.endswith(entry) and len(host) > len(entry):  # any host UNDER the domain: not the domain, not an empty label
+                return
+        elif host == entry:
+            return
+    raise RedirectRefused("the host is not one this client talks to")
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -106,6 +166,10 @@ class GuardedSession(requests.Session):
     transport_proxy: str | None = None
     #: Set when protected mode has no usable proxy: every request is refused with it.
     transport_refusal: str | None = None
+    #: The hosts this session may talk to (:func:`_checked_hosts`), or ``None`` for no list, which is every session built without
+    #: one. Checked in :meth:`send`, the method ``requests`` itself calls for the first request AND for each redirect hop
+    #: (``resolve_redirects`` calls ``self.send``, not ``self.request``), so a hop to another host is refused before it is sent.
+    allowed_hosts: tuple[str, ...] | None = None
 
     def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
         # NOTE for anyone writing a test here: this reads the MODULE-LEVEL
@@ -132,6 +196,11 @@ class GuardedSession(requests.Session):
             with socket_exemption():
                 return self._send(method, url, *args, **kwargs)
         return self._send(method, url, *args, **kwargs)
+
+    def send(self, request, **kwargs) -> requests.Response:  # type: ignore[override]
+        if self.allowed_hosts is not None:
+            refuse_unlisted_host(request.url or "", self.allowed_hosts)
+        return super().send(request, **kwargs)
 
     def _send(self, method, url, *args, **kwargs) -> requests.Response:
         """The transport decision, taken AFTER the kill switch: airplane mode is the
@@ -284,6 +353,7 @@ def guarded_session(
     user_agent: str = DEFAULT_USER_AGENT,
     isolation_token: str | None = None,
     egress_purpose: str | None = None,
+    allowed_hosts: Iterable[str] | None = None,
 ) -> GuardedSession:
     """Build a kill-switch-aware session that honours the protected-mode proxy.
 
@@ -305,8 +375,19 @@ def guarded_session(
     ``egress_purpose`` opts THIS session into an operator-consented egress window
     (``src.ingest.egress_window``). Omitted -- the default, and every existing
     caller -- the session refuses under the kill switch exactly as before.
+
+    ``allowed_hosts`` gives the session a list of the hosts it may talk to (hosts and
+    leading-dot suffixes, :func:`_checked_hosts`): a request, or a redirect hop, to any
+    other host is refused with :class:`RedirectRefused` before it is sent. Omitted -- the
+    default, and every existing caller -- the session follows no list, as before.
     """
-    return _session_for(load_settings(), user_agent=user_agent, isolation_token=isolation_token, egress_purpose=egress_purpose)
+    return _session_for(
+        load_settings(),
+        user_agent=user_agent,
+        isolation_token=isolation_token,
+        egress_purpose=egress_purpose,
+        allowed_hosts=allowed_hosts,
+    )
 
 
 def _session_for(
@@ -315,12 +396,14 @@ def _session_for(
     user_agent: str = DEFAULT_USER_AGENT,
     isolation_token: str | None = None,
     egress_purpose: str | None = None,
+    allowed_hosts: Iterable[str] | None = None,
 ) -> GuardedSession:
     """``guarded_session`` built from the settings ``settings`` and no other read: a caller that keys a cache on a snapshot builds the
     session from that same snapshot, or a setting that flips between two reads caches a session of one transport under the key of
     the other."""
     s = GuardedSession()
     s.egress_purpose = egress_purpose
+    s.allowed_hosts = _checked_hosts(allowed_hosts)  # before the early return below: the list holds in transparent mode too
     s.headers["User-Agent"] = user_agent
     if not settings.is_protected:
         return s
@@ -435,21 +518,25 @@ def following_fetcher(owner: str) -> EthicalFetcher:
         return held[1]
 
 
-def following_session(owner: str, user_agent: str) -> GuardedSession:
+def following_session(owner: str, user_agent: str, *, allowed_hosts: Iterable[str] | None = None) -> GuardedSession:
     """The long-lived guarded session of one API client, rebuilt whenever the transport changes (``following_fetcher``'s twin for the
     clients that talk to a service's API and follow its own etiquette instead of ``robots.txt``: the MediaWiki and ORES clients).
 
     ``guarded_session`` decides the transport once, when it is built, so a client that keeps its session keeps the transport it was
     built with: a switch to protected mode in Settings would reach it only after a restart. Build it on first use (never at import:
-    it reads the settings store) and ask here for it on every request."""
+    it reads the settings store) and ask here for it on every request.
+
+    ``allowed_hosts`` is the client's host list (``guarded_session``); it is part of the key, so a session built with another list is
+    another session."""
     s = load_settings()
-    key = (*_transport_key(s), user_agent)
+    hosts = _checked_hosts(allowed_hosts)
+    key = (*_transport_key(s), hosts, user_agent)
     name = f"session/{owner}"
     with _FOLLOWING_LOCK:
         held = _FOLLOWING.get(name)
         if getattr(s, "read_failed", False) and held is not None and held[0][-1] == user_agent:
             return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
         if held is None or held[0] != key:
-            held = (key, _session_for(s, user_agent=user_agent))
+            held = (key, _session_for(s, user_agent=user_agent, allowed_hosts=hosts))
             _FOLLOWING[name] = held
         return held[1]
