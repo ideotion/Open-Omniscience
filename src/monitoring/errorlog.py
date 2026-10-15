@@ -188,7 +188,10 @@ class _JsonlErrorHandler(logging.Handler):
                 # A UnicodeError names a character and its offset, a piece of a key that no scrub knows: the class and the
                 # frames only (also when it is the cause of another error or a member of an exception group).
                 raw_tb = record_traceback(record.exc_info[1]) if record.exc_info[1] is not None else ""
-                flag_tb = "".join(traceback.format_exception(*record.exc_info))
+                try:
+                    flag_tb = "".join(traceback.format_exception(*record.exc_info))
+                except Exception:  # noqa: BLE001 - an unreadable chain: the flags are read off the stored text instead
+                    flag_tb = ""
             else:
                 # A handler that holds a passphrase logs through ``secret_scrub.log_failure``, which writes the
                 # traceback as TEXT with the secrets out of it (a record's ``exc_info`` carries the message as raised)
