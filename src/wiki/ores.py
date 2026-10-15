@@ -21,6 +21,10 @@ from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 ORES_ENDPOINT = "https://ores.wikimedia.org/v3/scores"
+#: The hosts the scoring client talks to: ``ores.wikimedia.org`` and any other host under ``wikimedia.org`` (a replacement endpoint, if
+#: the service moves, would have to be one: see ``ORES_AS_OF`` for what has and has not been confirmed). A request or a redirect hop to
+#: any other host is refused (``src.safety.fetcher.refuse_unlisted_host``).
+ORES_HOSTS = (".wikimedia.org",)
 PROVENANCE = "ores:damaging,goodfaith"
 ORES_USER_AGENT = f"OpenOmniscienceBot/{OO_VERSION} (+https://github.com/ideotion/Open-Omniscience)"
 
@@ -128,7 +132,7 @@ class OresClient:
             return self._session
         from src.safety.fetcher import following_session
 
-        return following_session("ores", self._user_agent)
+        return following_session("ores", self._user_agent, allowed_hosts=ORES_HOSTS)
 
     @session.setter
     def session(self, value) -> None:

@@ -57,7 +57,7 @@ from typing import Any
 from sqlalchemy import select
 
 from src.monitoring.secret_scrub import log_failure
-from src.safety.fetcher import NetworkBlocked, TransportUnavailable
+from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 from src.wiki import history
 from src.wiki.history import retry_after_of
 from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST
@@ -156,7 +156,7 @@ def refusal_token(exc: BaseException) -> str:
     line to retry.
 
     CLASSIFIED BY SHAPE, WITHOUT IMPORTING ``requests``. This module opens no socket, and
-    importing an HTTP library for three exception types would put it on the socket-importer
+    importing an HTTP library for these few exception types would put it on the socket-importer
     allowlist (``tests/test_network_consent.py``) that exists to list the modules that CAN
     reach the network. Every ``requests`` exception is an ``OSError`` (its base class derives
     from ``IOError``), an HTTP refusal is the one carrying a response with a status, and a
@@ -166,6 +166,10 @@ def refusal_token(exc: BaseException) -> str:
         return PAUSED_NETWORK_OFF
     if isinstance(exc, TransportUnavailable):
         return PAUSED_TRANSPORT_UNAVAILABLE
+    if isinstance(exc, RedirectRefused):
+        # This app refused to follow the wiki to a host outside the session's list; nothing was sent. A refusal, not a dropped
+        # connection (which is what the ``OSError`` below would call it).
+        return WAIT_REFUSED
     status = _http_status(exc)
     if status is not None:
         return WAIT_SERVICE_BUSY if status in _BUSY_STATUSES else WAIT_REFUSED
