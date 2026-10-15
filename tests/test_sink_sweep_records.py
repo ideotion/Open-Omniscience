@@ -355,6 +355,12 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_allocator', 'return _unavailable(exc)'): 1,
         ('_environment', 'return _unavailable(exc)'): 1,
     },
+    'src/monitoring/page_reading.py': {  # failure_label: the class and the errno name, never the message or the path (src/database/damage.py)
+        ('_error', 'return failure_label(exc)'): 1,
+        ('_wal_state', 'return None, _error(exc)'): 1,
+        ('read_header', 'out["error"] = _error(exc)'): 1,
+        ('from_connection', 'out["error"] = _error(exc)'): 1,
+    },
     'src/monitoring/p0_validation.py': {  # _exception_text is record_text with the passphrase handed in
         ('_check_backup', 'verr = _exception_text(exc, passphrase)'): 1,
         ('_check_backup', 'err = _exception_text(exc, passphrase)'): 1,
