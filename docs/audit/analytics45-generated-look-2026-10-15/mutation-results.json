@@ -1,0 +1,51 @@
+{
+ "control": {
+  "exit": 0,
+  "failed": []
+ },
+ "mutations": [
+  {
+   "name": "changes cell draws 0 for an unknown count",
+   "width": "1440x900",
+   "exit": 1,
+   "expected_check": "changes [",
+   "failed_checks": [
+    "changes [3, 0, None, None] (None = unknown, never 0 for an edition nothing was recorded for)"
+   ],
+   "caught": true
+  },
+  {
+   "name": "edition drop-down no longer reloads the table",
+   "width": "1440x900",
+   "exit": 1,
+   "expected_check": "the run completed",
+   "failed_checks": [
+    "the run completed"
+   ],
+   "caught": true
+  },
+  {
+   "name": "edition drop-down redrawn showing the old edition",
+   "width": "1440x900",
+   "exit": 1,
+   "expected_check": "edition drop-down: de picked",
+   "failed_checks": [
+    "edition drop-down: de picked; the control on screen (a NEW one when the page redrew it: rebuilt is recorded) reads de now and 700 ms later; the table changed to 30 rows; one request",
+    "edition drop-down: all 5 options picked (en, de, fr, es, ar); each read back from the control on screen and its table judged against the plan",
+    "every drop-down in the panel picked and read back from the control now on screen (1 of them)"
+   ],
+   "caught": true
+  },
+  {
+   "name": "phone-width table rules removed",
+   "width": "360x800",
+   "exit": 1,
+   "expected_check": "fits its frame",
+   "failed_checks": [
+    "the table fits its frame: the last column (changes) is not cut off and needs no sideways scroll (headroom in px)",
+    "the attention table fits its frame: the last column (articles in 7 days) is not cut off (headroom in px)"
+   ],
+   "caught": true
+  }
+ ]
+}

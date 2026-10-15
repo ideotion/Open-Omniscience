@@ -43,7 +43,7 @@ _SELECTED = '''e === pick ? " selected" : ""'''
 
 MUTATIONS = [
     {"name": "changes cell draws 0 for an unknown count", "file": "app-living.js", "old": _UNKNOWN_CELL, "new": "`0`",
-     "width": "1440x900", "expect": "changes 3, 0, then unknown"},
+     "width": "1440x900", "expect": "changes 3, 0, then unknown", "expect_generated": "changes ["},
     {"name": "edition drop-down no longer reloads the table", "file": "app-living.js", "old": _HANDLER,
      "new": 'if (e.target && e.target.id === "wiki-att-edition") { /* mutated: no reload */ }',
      "width": "1440x900", "expect": "the run completed"},
@@ -54,8 +54,10 @@ MUTATIONS = [
 ]
 
 
-def run_look(url: str, width: str, serve: tuple[str, Path] | None, out: Path) -> tuple[int, list[str]]:
+def run_look(url: str, width: str, serve: tuple[str, Path] | None, out: Path, truth: str | None = None) -> tuple[int, list[str]]:
     cmd = [sys.executable, str(LOOK), "--url", url, "--out", str(out), "--width", width, "--theme", "ink", "--lang", "en"]
+    if truth:
+        cmd += ["--truth", truth]
     if serve:
         cmd += ["--serve", f"{serve[0]}={serve[1]}"]
     done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -70,12 +72,14 @@ def run_look(url: str, width: str, serve: tuple[str, Path] | None, out: Path) ->
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--url", required=True)
+    ap.add_argument("--truth", help="judge a GENERATED state (the JSON analytics45_generate.py printed) instead of the seeded one")
+    ap.add_argument("--results", help="where to write the results JSON (default: mutation-results.json beside this file)")
     a = ap.parse_args()
     report: dict = {"control": None, "mutations": []}
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
-        rc, failed = run_look(a.url, "1440x900", None, tmpd / "control")
+        rc, failed = run_look(a.url, "1440x900", None, tmpd / "control", a.truth)
         report["control"] = {"exit": rc, "failed": failed}
         ok &= rc == 0 and not failed
         for i, m in enumerate(MUTATIONS):
@@ -91,12 +95,13 @@ def main() -> int:
                 continue
             path = tmpd / f"mut{i}-{m['file']}"
             path.write_text(mutated, encoding="utf-8")
-            rc, failed = run_look(a.url, m["width"], (m["file"], path), tmpd / f"mut{i}")
-            caught = rc != 0 and any(m["expect"] in c for c in failed)
+            rc, failed = run_look(a.url, m["width"], (m["file"], path), tmpd / f"mut{i}", a.truth)
+            expect = m["expect_generated"] if a.truth and "expect_generated" in m else m["expect"]
+            caught = rc != 0 and any(expect in c for c in failed)
             ok &= caught
-            report["mutations"].append({"name": m["name"], "width": m["width"], "exit": rc, "expected_check": m["expect"],
+            report["mutations"].append({"name": m["name"], "width": m["width"], "exit": rc, "expected_check": expect,
                                         "failed_checks": failed, "caught": caught})
-    (HERE / "mutation-results.json").write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
+    Path(a.results or HERE / "mutation-results.json").write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
     print(json.dumps({"control_exit": report["control"]["exit"], "caught": [m.get("caught") for m in report["mutations"]]}))
     return 0 if ok else 1
 
