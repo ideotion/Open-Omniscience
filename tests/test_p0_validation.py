@@ -1085,10 +1085,6 @@ def test_no_function_that_holds_the_passphrase_writes_a_caught_exception_any_way
 #: unseen. The walk reads the names in :data:`_SECRET_NAMES` and :data:`_SECRET_ATTRIBUTES`: a module that calls the
 #: passphrase something else is not seen.
 _NOT_GUARDED = {
-    "monitoring/secret_scrub.py": (
-        "The scrub itself: http_detail takes the secrets as arguments and its handler writes the exception's CLASS only (a failure of "
-        "record_text), which is the strictest text there is. tests/test_http_detail.py plants a passphrase in each shape it can arrive in."
-    ),
     "llm/vllm_lifecycle.py": (
         "Not a passphrase: `needle` there is the search term failure_excerpt looks for in a server's log; nothing it "
         "handles is a secret."
