@@ -265,9 +265,10 @@ class World:
         start = 0
         if params.get("gapcontinue"):
             want = str(params["gapcontinue"]).replace("_", " ")
-            start = next((i for i, p in enumerate(titles) if p.title == want), None)
-            if start is None:
+            found = next((i for i, p in enumerate(titles) if p.title == want), None)
+            if found is None:
                 return {"error": {"code": "badcontinue", "info": "the stand-in does not hold that title"}}
+            start = found
         limit = int(params.get("gaplimit", WINDOW))
         window = titles[start : start + limit]
         shown = []
