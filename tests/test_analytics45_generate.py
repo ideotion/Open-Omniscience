@@ -110,9 +110,12 @@ def test_the_walk_stopped_mid_pass_in_en_and_never_ran_in_es(generated):
 
 # ---- the stand-in itself ------------------------------------------------------------------ #
 def test_the_world_is_seeded_and_the_measured_shares_hold_exactly():
+    from datetime import UTC, datetime
+
     from src.testing.wiki_standin import PLAN, World
 
-    a, b = World(7), World(7)
+    now = datetime(2026, 10, 15, 12, 0, 0, tzinfo=UTC)  # the world reads the clock once; two worlds built across a second tick differ
+    a, b = World(7, now=now), World(7, now=now)
     assert [p.title for p in a.pages["de"]] == [p.title for p in b.pages["de"]] and a.sse_text() == b.sse_text()
     assert [p.title for p in World(8).pages["de"]] != [p.title for p in a.pages["de"]]
     for code, (total, share, _src) in PLAN.items():
