@@ -5,8 +5,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The Wikipedia, ORES and DuckDuckGo clients go through ``guarded_session`` / ``following_session``, whose ``requests`` sessions used to follow
 a redirect to whatever host the answer named, with no host check on the hop. ``GuardedSession.send`` is the method ``requests`` calls for the
-first request AND for every hop, so the list is checked there, on the URL the HTTP client will connect to. The five Wikidata loaders and the
-Hugging Face release check each build one fixed endpoint and carry a list of exactly its host (tested below, module by module).
+first request AND for every hop, so the list is checked there, on the URL the HTTP client will connect to. The five Wikidata loaders, the
+Hugging Face release check and the Ollama installer's release lookup each build one fixed endpoint and carry a list of exactly its host
+(tested below, module by module).
 
 No network: a scripted adapter stands where the socket would be, so the real ``requests`` redirect machinery runs.
 """
@@ -568,10 +569,16 @@ def test_the_installer_release_lookup_refuses_a_redirect_off_its_host_and_follow
     assert installer._default_get_json(url) == {}
     assert installer_scripted.sent == [url, "https://api.github.com/repositories/1/releases/latest"]
     assert {s.allowed_hosts for s in installer_scripted.sessions} == {("api.github.com",)}, "the lookup's own session carries exactly the API host"
+    # ... and the same host over plain http is refused by the scheme clause, so the sentence says "somewhere", not "another host":
+    installer_scripted.sent.clear()
+    installer_scripted.routes[url] = (302, "http://api.github.com/repos/ollama/ollama/releases/latest")
+    with pytest.raises(installer.InstallerRedirectRefused):
+        installer._default_get_json(url)
+    assert installer_scripted.sent == [url]
 
 
 def test_any_other_failure_of_the_release_lookup_is_not_called_a_refusal(installer_scripted):
-    """Only a refusal by the host list is named as one; a server error and a dropped connection keep the failure they always were."""
+    """Only a refusal by the host list is named as one; a server error, a dropped connection and a timeout keep the failure they always were."""
     from src.llm import installer
 
     installer_scripted.routes[installer.GITHUB_LATEST_RELEASE] = (500, None)
@@ -586,6 +593,14 @@ def test_any_other_failure_of_the_release_lookup_is_not_called_a_refusal(install
     with pytest.raises(requests.ConnectionError) as dropped:
         installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
     assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused)
+
+    def _slow(request, **kwargs):
+        raise requests.Timeout("the answer was slow")
+
+    installer_scripted.send = _slow
+    with pytest.raises(requests.Timeout) as slow:
+        installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
+    assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused)
 
 
 @pytest.mark.parametrize(
@@ -623,7 +638,7 @@ def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_h
     assert isinstance(cause, installer.InstallerRedirectRefused)
     assert cause.__cause__ is None and cause.__context__ is None, "no chain behind it: a traceback chain is a sink"
     seen = [caught.value.detail, caplog.text, "".join(traceback.format_exception(caught.value))]
-    seen += [str(r.exc_info) + str(r.exc_text) for r in caplog.records]
+    seen += [str(r.exc_info) + str(r.exc_text) + str(getattr(r, "scrubbed_traceback", "")) for r in caplog.records]  # the attribute errorlog writes out
     for text in seen:
         assert "exfil" not in text and "secret" not in text and "invalid" not in text
     ours = [r for r in caplog.records if r.name == "src.llm.installer"]

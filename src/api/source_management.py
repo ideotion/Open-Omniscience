@@ -433,7 +433,7 @@ def resolve_qid_names(
 
     It renames nothing on its own: the resolved labels come back for review beside the
     declines, because a name is an identity field and identity fields are evidence, not fact.
-    A lookup Wikidata answered with a redirect to another host is refused, not followed, and
+    A lookup Wikidata answered with a redirect to an address the client does not follow is refused, not followed, and
     comes back as its own decline reason (``redirect_refused``) with a count
     (``lookups_refused``) and the class name (``refusal``), never an address.
     """

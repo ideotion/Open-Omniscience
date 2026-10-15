@@ -93,7 +93,7 @@ class InstallerRedirectRefused(InstallerVerificationError):
     """
 
     MESSAGE = (
-        "GitHub's release lookup was redirected to another host. The app does not follow that, so nothing was "
+        "GitHub's release lookup was redirected somewhere this app does not follow. Nothing was "
         "downloaded and nothing was run. Install Ollama from https://ollama.com/download."
     )
 
@@ -419,7 +419,7 @@ def _default_get_json(url: str) -> dict:
     except RedirectRefused:
         # Only the class name is logged, and the exception raised below is raised OUTSIDE this block, so it has neither a cause nor a
         # context: nothing the refused hop carried can ride a traceback into a log or a response.
-        logger.warning("Ollama installer: the release lookup was redirected off its host and the redirect was refused (%s)", RedirectRefused.__name__)
+        logger.warning("Ollama installer: the release lookup's redirect was refused (%s)", RedirectRefused.__name__)
         refused = True
     if refused:
         raise InstallerRedirectRefused()

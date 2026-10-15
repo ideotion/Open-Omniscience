@@ -51,7 +51,7 @@ _BARE_QID = re.compile(r"^\s*[Qq]\d+\s*$")
 DECLINED_UNRESOLVED = "label_not_resolved"
 DECLINED_NO_LABEL = "wikidata_has_no_label"
 DECLINED_REFUSED = "network_refused"
-#: Wikidata answered with a redirect to another host and the request was refused rather than
+#: Wikidata answered with a redirect to an address this client does not follow (another host, plain http, another port) and the request was refused rather than
 #: followed (``RedirectRefused``): not "could not reach Wikidata" and not "no label", because a
 #: person has to look at where the answer pointed and a retry would be refused the same way.
 DECLINED_REDIRECT_REFUSED = "redirect_refused"
@@ -116,7 +116,8 @@ def resolve_labels(
     import time
 
     from src.ingest import kill_switch_active
-    from src.safety.fetcher import RedirectRefused
+    from src.ingest.airplane import AirplaneModeError
+    from src.safety.fetcher import NetworkBlocked, RedirectRefused
 
     active = kill_switch or kill_switch_active
     napper = sleep if sleep is not None else time.sleep
@@ -131,18 +132,24 @@ def resolve_labels(
     declined: dict[str, str] = {}
     requests = 0
     refused = 0
-    for i, qid in enumerate(dict.fromkeys(q.strip().upper() for q in qids if q)):
-        if active():
-            # Checked again BETWEEN rows: an operator can engage airplane mode during a run
-            # that sleeps ten seconds per request, and a start-only check would keep going.
-            for remaining in list(qids)[i:]:
-                declined.setdefault(str(remaining).strip().upper(), DECLINED_REFUSED)
-            break
+    order = list(dict.fromkeys(q.strip().upper() for q in qids if q))  # one row per Q-id, in the order asked
+    for i, qid in enumerate(order):
         if i:
             napper(interval_s)  # R8: <= 1 request / 10 s, BEFORE the request, never after
+        if active():
+            # Checked again BETWEEN rows, AFTER the sleep: an operator can engage airplane mode during a run
+            # that sleeps ten seconds per request, and a check before the sleep would let the next fetch find out.
+            for remaining in order[i:]:
+                declined.setdefault(remaining, DECLINED_REFUSED)
+            break
         try:
             payload = fetch(wbentities_url(qid, tuple(langs)))
             requests += 1
+        except (NetworkBlocked, AirplaneModeError):
+            # The kill switch engaged between the check above and the socket: named as the kill switch, for this row and the rest.
+            for remaining in order[i:]:
+                declined.setdefault(remaining, DECLINED_REFUSED)
+            break
         except RedirectRefused:
             # Counted and named as itself: it is not a failed lookup (the host answered) and a retry is refused the same way.
             declined[qid] = DECLINED_REDIRECT_REFUSED
@@ -173,7 +180,7 @@ def resolve_labels(
             "Q-id and never under a guess. 'Could not reach Wikidata' and 'Wikidata has no "
             "label' are recorded as different reasons, because a later pass can act on the "
             "first and only a person can act on the second. A request Wikidata answered with a "
-            "redirect to another host is refused, not followed, and is recorded as its own "
+            "redirect to an address this client does not follow (another host, plain http, another port) is refused, not followed, and is recorded as its own "
             "reason with a count."
         ),
     }
@@ -215,7 +222,7 @@ def admit_or_decline(
             if reason == DECLINED_REDIRECT_REFUSED:
                 detail = (
                     "The name is a bare Wikidata identifier. Wikidata answered the lookup "
-                    "with a redirect to another host, which is refused rather than followed, "
+                    "with a redirect to an address this client does not follow (another host, plain http or another port), which is refused rather than followed, "
                     "so no label was resolved and admitting the row would put an identifier "
                     "in the catalogue where a name belongs. The row is left for a later "
                     "pass, not discarded."
