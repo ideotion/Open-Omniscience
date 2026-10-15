@@ -9,7 +9,8 @@
  * no map, so ooMap is never called); a test that only greps the source passed anyway. This one fails when the
  * empty state stops carrying the caveat.
  *
- * Run by tests/test_ring_caveat_i18n.py (and standalone: `node tests/ring_caveat_node_test.js`).
+ * Run by tests/test_ring_caveat_i18n.py, which hands over the two sentences the endpoint sends in RING_COUNTRY_CAVEAT
+ * and RING_COUNTRY_METHOD (the test refuses to start without them, so run it through that wrapper).
  *
  * Open Omniscience - Global Intelligence Platform for Investigative Journalism
  * Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -29,9 +30,10 @@ const CODES = fs.readdirSync(path.join(STATIC, "locales")).filter((f) => f.endsW
 // The caveat of a ring that has mention rows: handed over by tests/test_ring_caveat_i18n.py from
 // src/analytics/queries.py (_RING_COUNTRY_CAVEAT), so the fixtures carry the sentence the endpoint really sends.
 const STANDARD = process.env.RING_COUNTRY_CAVEAT || "";
+const METHOD = process.env.RING_COUNTRY_METHOD || "";
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 
-if (!STANDARD) { console.error("FAIL: RING_COUNTRY_CAVEAT is not set (run tests/test_ring_caveat_i18n.py)"); process.exit(1); }
+if (!STANDARD || !METHOD) { console.error("FAIL: RING_COUNTRY_CAVEAT / RING_COUNTRY_METHOD is not set (run tests/test_ring_caveat_i18n.py)"); process.exit(1); }
 let passed = 0;
 function assert(cond, msg) { if (!cond) { console.error("FAIL: " + msg); process.exit(1); } }
 function test(name, fn) {
@@ -71,7 +73,7 @@ async function render(payload, code, opts) {
   const drawn = [];
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
+    "let _ringMapLast = null; let _ringSeq = 0; let _ringCleared = false; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
   const fn = run({ OOI18N: opts.noTf ? { t } : { t, tf } }, opts.noTf ? { t } : { t, tf }, (id) => els[id] || null, ESC,
     async () => payload, (c) => c, async (host, o) => { drawn.push(o); }, (a, b) => a + b, (x) => x, (x) => x,
     () => "", () => {});
@@ -82,7 +84,7 @@ async function render(payload, code, opts) {
 const REPAINT = extract("repaintRingMapFromCache", "function repaintRingMapFromCache(", INS);
 
 // A reader's session: one set of elements and one _ringMapLast, so a language switch can repaint what is on screen.
-function session(code, apiFn) {
+function session(code, apiFn, ooMapFn) {
   const map = {};
   const load = (c) => { Object.keys(map).forEach((k) => delete map[k]); if (c !== "en") Object.assign(map, LOCALE(c)); };
   load(code);
@@ -91,8 +93,8 @@ function session(code, apiFn) {
   const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
-  const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, async () => {},
+    "let _ringMapLast = null; let _ringSeq = 0; let _ringCleared = false; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
+  const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, ooMapFn || (async () => {}),
     (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
   return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
            switchTo: (c) => load(c), host: () => els["sg-ringmap"].innerHTML };
@@ -112,7 +114,6 @@ const NONE = {
   caveat_i18n: "No indexed keywords in this group yet for your corpus.", caveat_vars: {},
 };
 // The populated shapes carry what the endpoint always sends: label, method and the standard caveat.
-const METHOD = "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.";
 const UNLOCATED_ONLY = {
   found: true, ring_id: "news-media", label: "News media", n_keywords: 3, languages: ["en"], n_countries: 0,
   countries_listed: 0, truncated: false, countries: [{ country: null, articles: 4, mentions: 9 }],
@@ -191,6 +192,114 @@ const NO_MENTIONS = {
     sess.switchTo("fr"); sess.repaint();
     await new Promise((r) => setImmediate(r));
     assert(!sess.host().includes("hidden") && sess.host() === before, "the previous group came back: " + sess.host());
+  });
+  await test("a draw that failed is not redrawn by a language switch (the host shows the error, not the payload)", async () => {
+    let attempts = 0;
+    const sess = session("en", async () => LOCATED, async () => { attempts += 1; throw new Error("map failed"); });
+    await sess.show("news-media");
+    const before = sess.host();
+    assert(before.includes("map failed") && attempts === 1, before);
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(sess.host() === before, "the failed draw was redrawn: " + sess.host());
+    assert(attempts === 1, "the failed draw was attempted again (" + attempts + " draws)");
+  });
+  await test("an answer that arrives after a newer pick is dropped, and a language switch redraws the newer group", async () => {
+    const waiting = {};
+    const NEWER = Object.assign({}, LOCATED, { ring_id: "second", label: "Second group" });
+    const sess = session("en", (url) => new Promise((resolve) => { waiting[url.split("ring_id=")[1]] = resolve; }),
+      async (host, o) => { host.innerHTML = "drawn:" + o.aria; });
+    const first = sess.show("first"), second = sess.show("second");
+    waiting.second(NEWER); await second;
+    assert(sess.host().includes("drawn:Second group"), "the newer pick did not draw: " + sess.host());
+    const shown = sess.host();
+    waiting.first(Object.assign({}, LOCATED, { ring_id: "first", label: "First group" })); await first;
+    assert(sess.host() === shown, "the slow answer of the older pick painted over the newer one: " + sess.host());
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(!sess.host().includes("First group"), "a language switch redrew the older pick: " + sess.host());
+  });
+  await test("a late ERROR of an older pick does not replace the newer group either", async () => {
+    const waiting = {};
+    const sess = session("en", (url) => new Promise((resolve, reject) => { waiting[url.split("ring_id=")[1]] = { resolve, reject }; }),
+      async (host, o) => { host.innerHTML = "drawn:" + o.aria; });
+    const first = sess.show("first"), second = sess.show("second");
+    waiting.second.resolve(Object.assign({}, LOCATED, { ring_id: "second", label: "Second group" })); await second;
+    waiting.first.reject(new Error("slow failure")); await first;
+    assert(sess.host().includes("drawn:Second group") && !sess.host().includes("slow failure"), "a late error replaced the newer group: " + sess.host());
+    sess.switchTo("fr"); sess.repaint();
+    await new Promise((r) => setImmediate(r));
+    assert(sess.host().includes("drawn:Second group"), "the newer group stopped being redrawable after the late error: " + sess.host());
+  });
+  // ooMap awaits its own geometry loads: a draw that is still inside it when a newer pick draws (or the picker is
+  // cleared) must not leave its map in the host. The stub holds every ooMap call until the test releases it.
+  const held = () => {
+    const calls = [];
+    return { calls, ooMap: (host, o) => new Promise((resolve, reject) => {
+      calls.push({ aria: o.aria, release: () => { host.innerHTML = "drawn:" + o.aria; resolve(); }, fail: () => reject(new Error("late failure")) });
+    }) };
+  };
+  const tick = () => new Promise((r) => setImmediate(r));
+  const GA = Object.assign({}, LOCATED, { ring_id: "a", label: "Group A" });
+  const GB = Object.assign({}, LOCATED, { ring_id: "b", label: "Group B" });
+  await test("an older pick still inside ooMap when a newer pick draws leaves the newer group in the host", async () => {
+    const h = held();
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? GA : GB), h.ooMap);
+    const a = sess.show("a"); await tick();
+    const b = sess.show("b"); await tick();
+    assert(h.calls.length === 2, "both picks should be inside ooMap: " + h.calls.length);
+    h.calls[1].release(); await b;
+    h.calls[0].release(); await tick();
+    // the older draw's stale tail puts the newer group back; release that redraw too
+    for (let i = 2; i < h.calls.length; i++) h.calls[i].release();
+    await a;
+    assert(sess.host() === "drawn:Group B — 1 countries", "the older pick's map was left in the host: " + sess.host());
+    sess.switchTo("fr"); sess.repaint(); await tick();
+    for (let i = 3; i < h.calls.length; i++) h.calls[i].release();
+    await tick();
+    assert(sess.host().includes("Group B"), "the cache stopped holding the newer group: " + sess.host());
+  });
+  await test("a picker cleared while a draw is inside ooMap ends with an empty host", async () => {
+    const h = held();
+    const sess = session("en", async () => GA, h.ooMap);
+    const a = sess.show("a"); await tick();
+    await sess.show("");
+    h.calls[0].release(); await a;
+    assert(sess.host() === "", "the cleared picker was painted by a draw that finished late: " + sess.host());
+  });
+  await test("a language-switch repaint of an older group that fails late does not replace the newer group", async () => {
+    const h = held();
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? GA : GB), h.ooMap);
+    const first = sess.show("a"); await tick();
+    h.calls[0].release(); await first;
+    sess.switchTo("fr"); sess.repaint(); await tick();
+    const b = sess.show("b"); await tick();
+    h.calls[2].release(); await b;
+    h.calls[1].fail(); await tick();
+    assert(sess.host().includes("Group B") && !sess.host().includes("late failure"), "a late error of the repaint replaced the newer group: " + sess.host());
+  });
+  await test("a language-switch repaint still inside ooMap when another group is picked does not stay on screen", async () => {
+    const h = held();
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? GA : GB), h.ooMap);
+    const first = sess.show("a"); await tick();
+    h.calls[0].release(); await first;
+    sess.switchTo("fr"); sess.repaint(); await tick();
+    assert(h.calls.length === 2, "the repaint should be inside ooMap: " + h.calls.length);
+    const b = sess.show("b"); await tick();
+    h.calls[2].release(); await b;
+    h.calls[1].release(); await tick();
+    for (let i = 3; i < h.calls.length; i++) h.calls[i].release();
+    await tick();
+    assert(sess.host().includes("Group B") && !sess.host().includes("Group A"), "the repaint of the older group stayed on screen: " + sess.host());
+  });
+  await test("a late answer after the picker was cleared draws nothing", async () => {
+    const waiting = {};
+    const sess = session("en", (url) => new Promise((resolve) => { waiting.r = resolve; }),
+      async (host, o) => { host.innerHTML = "drawn:" + o.aria; });
+    const pending = sess.show("first");
+    await sess.show("");
+    waiting.r(LOCATED); await pending;
+    assert(sess.host() === "", "a cleared picker was painted by a late answer: " + sess.host());
   });
   await test("the 'all hidden' and the 'nothing indexed' states read differently (R111 T2)", async () => {
     const a = (await render(HIDDEN, "en")).host, b = (await render(NONE, "en")).host;
