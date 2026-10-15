@@ -212,7 +212,8 @@ async function run() {
     // nothing cached (no group on screen, or another one is still loading / was not found): nothing to redraw
     make(hostWith(false), null)();
     make(hostWith(true), null)();
-    assert(calls.length === 0, "redrew a ring map that holds no payload");
+    make(null, last)();  // no host element on the page: nothing to redraw into
+    assert(calls.length === 0, "redrew a ring map that holds no payload or no host");
     // a cached EMPTY payload (no svg: the empty state, which carries the translated caveat) redraws too, so a
     // language switch does not leave the caveat in the previous language
     make(hostWith(false), last)();

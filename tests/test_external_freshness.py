@@ -127,6 +127,9 @@ def test_sqlcipher3_range_in_pyproject_matches_the_registry_and_keeps_its_ceilin
     assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the sqlcipher3 floor"
     assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified version is below the floor"
     assert not R._ver_ge(str(entry["pin"]["verified"]), m.group(2)), "the verified version is not below the ceiling"
+    assert m.group(2) == str(entry["pin"]["ceiling"]), (
+        "pyproject and the registry disagree on the sqlcipher3 ceiling; lifting it is the qualification's last step, in both places"
+    )
 
 
 def test_duckdb_version_coupling_holds_when_installed():

@@ -472,6 +472,10 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         "መካከል", "ራሷን", "በላይ", "በመቶ", "በበኩሉ", "በተጨማሪ", "በተጨማሪም", "በዚሁ", "በዚህ", "ብሏል", "ተናግረዋል", "ነበር",
         "አምስት", "አንድ", "እነዚህን", "እንደ", "እንዲሁም", "ከ43", "ከ80", "ከዚህ", "ውስጥ", "ዘጠኝ", "ይህም", "ይህንን", "ይሆናል",
         "ድረስ",
+        # stoplist batch 8 (2026-10-14, R131 follow-up, Japanese): the attribution and announcement tails the triage called
+        # noise twice and batch 6 left out as over-cautious (the same kind as the kept と述べた); evidence in
+        # configs/stopwords_extra/PROVENANCE.md.
+        "としています", "とコメント", "と強調", "と指摘", "と指摘した", "と振り返った", "と振り返り", "と振り返る", "と語る", "と説明", "を発表", "を発表せず",
     })
     assert added_since_migration <= _EXTRA_STOPWORDS, (
         "a declared post-migration addition is missing from the data files"

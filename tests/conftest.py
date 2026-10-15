@@ -478,4 +478,7 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
     yield
     seen = list(kv_store.STRICT_VIOLATIONS)
     kv_store.STRICT_VIOLATIONS.clear()
-    assert not seen, f"a settings write was entered holding the single-writer gate {len(seen)} time(s) (see kv_store.kv_set_json)"
+    assert not seen, (
+        f"a settings write was entered holding the single-writer gate {len(seen)} time(s) (see kv_store.kv_set_json); the list is "
+        "process-global, so fix the CALLER each entry names, which may belong to a thread another test left running:\n  " + "\n  ".join(seen)
+    )

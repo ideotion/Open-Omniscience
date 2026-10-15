@@ -825,16 +825,19 @@ def test_apply_refuses_another_spelling_of_a_twice_read_language_and_writes_noth
     assert not list((tmp_path / "extra").glob("*.yml"))
 
 
-def test_a_row_in_another_spelling_of_the_runs_language_stops_the_file_rather_than_being_skipped(tmp_path, monkeypatch):
-    # the dissent in "kor" must not be dropped as another language's row: zzlatin would be batched on the "ko" vote alone
-    rows = [("ko", "zzlatin", "N", "fn", "H", "reader-a", "repeat_agreed"), ("kor", "zzlatin", "K", "fn", "H", "reader-b", "")]
+@pytest.mark.parametrize("lang,other", [("ko", "kor"), ("vi", "vie"), ("tl", "tgl"), ("as", "asm"), ("tl", "fil"),
+                                        ("ko", "ko-KR"), ("vi", "vi_vn"), ("tl", "TGL")])
+def test_a_row_in_another_spelling_of_the_runs_language_stops_the_file_rather_than_being_skipped(
+        tmp_path, monkeypatch, lang, other):
+    # the dissent in the other spelling must not be dropped as another language's row: zzlatin would be batched on
+    # the first vote alone
+    rows = [(lang, "zzlatin", "N", "fn", "H", "reader-a", "repeat_agreed"), (other, "zzlatin", "K", "fn", "H", "reader-b", "")]
     with pytest.raises(SystemExit, match="under another spelling"):
-        _apply(tmp_path, monkeypatch, "ko", "zzlatin\n", rows, [_kw("zzlatin", "ko", 500, sources=50)], batch_id="ko-1")
+        _apply(tmp_path, monkeypatch, lang, "zzlatin\n", rows, [_kw("zzlatin", lang, 500, sources=50)], batch_id="x-1")
     assert not list((tmp_path / "extra").glob("*.yml"))
-    for spelling_ in ("ko-KR", "ko_kr", "KOR"):
-        f = _verdict_file(tmp_path, (spelling_, "zzlatin", "K", "fn", "H", "reader-b", ""))
-        with pytest.raises(SystemExit, match="under another spelling"):
-            sb.read_verdicts(f, "ko")
+    f = _verdict_file(tmp_path, (other, "zzlatin", "K", "fn", "H", "reader-b", ""))
+    with pytest.raises(SystemExit, match="under another spelling"):
+        sb.read_verdicts(f, lang)
 
 
 def test_a_different_language_that_only_looks_alike_is_still_skipped_not_refused(tmp_path):
@@ -848,13 +851,14 @@ def test_a_different_language_that_only_looks_alike_is_still_skipped_not_refused
     assert set(sb.read_verdicts(g, "pt")) == {"zzlatin"}
 
 
-def test_a_hand_review_row_in_another_spelling_stops_the_file_too(tmp_path):
+@pytest.mark.parametrize("lang,other", [("ko", "kor"), ("vi", "vie"), ("tl", "tgl"), ("as", "asm"), ("tl", "fil"), ("ko", "ko-kr")])
+def test_a_hand_review_row_in_another_spelling_stops_the_file_too(tmp_path, lang, other):
     f = tmp_path / "hand.tsv"
-    f.write_text("kor\t사이트\n", "utf-8")
+    f.write_text(f"{other}\tzzword\n", "utf-8")
     with pytest.raises(SystemExit, match="under another spelling"):
-        sb.read_hand_reviewed(f, "ko")
-    f.write_text("ja\t사이트\n", "utf-8")
-    assert sb.read_hand_reviewed(f, "ko") == frozenset()
+        sb.read_hand_reviewed(f, lang)
+    f.write_text("ja\tzzword\n", "utf-8")
+    assert sb.read_hand_reviewed(f, lang) == frozenset()
 
 
 def test_the_hand_review_file_is_never_overwritten_by_the_json_report(tmp_path):

@@ -38,17 +38,25 @@ def test_every_template_is_keyed_in_every_locale_with_its_placeholder_intact():
             assert have == re.findall(r"\{(\w+)\}", template), f"{path.name} changes the placeholders of {template[:50]!r}"
 
 
+LOCALE_FREE_TESTS = 12
+
+
 def test_the_rendered_states_carry_the_caveat_in_every_locale():
     """showRingMap, extracted from the shipped source, run with the real locale files and the real tf()
     (tests/ring_caveat_node_test.js), for every locale in the directory: the empty state (which draws no map) shows
     the translated sentence with its count, the two causes read differently, a missing tf falls back to the plain
-    sentence, a language switch repaints the empty state in the new language (and never resurrects a group no longer on screen), an unlocated-only payload and a ring with no mention rows keep the translated standard caveat, and a
+    sentence, a language switch repaints the empty state in the new language (and never resurrects a group no longer on screen, nor paints a slow answer of an older pick over a newer one), an unlocated-only payload and a ring with no mention rows keep the translated standard caveat, and a
     located payload hands it to the map. The payloads carry the endpoint's own sentence (``_RING_COUNTRY_CAVEAT``)."""
     locales = sorted(p.stem for p in LOCALES.glob("*.json"))
     assert len(locales) >= 12
     proc = subprocess.run(["node", str(ROOT / "tests" / "ring_caveat_node_test.js")],
                           capture_output=True, text=True, check=False,
-                          env={**os.environ, "RING_COUNTRY_CAVEAT": queries._RING_COUNTRY_CAVEAT})
+                          env={**os.environ, "RING_COUNTRY_CAVEAT": queries._RING_COUNTRY_CAVEAT,
+                               "RING_COUNTRY_METHOD": queries._RING_COUNTRY_METHOD})
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    # five rendered shapes per locale, plus the four locale-free checks (the two language-switch repaints among them): a loop that ran zero times fails here
-    assert f"{5 * len(locales) + 4} passed" in proc.stdout, proc.stdout
+    # five rendered shapes per locale plus the locale-free checks (the language-switch repaints and the ordering cases
+    # among them). The total is pinned exactly: a loop that ran for fewer locales, or a deleted locale-free test,
+    # changes it. Adding a locale-free test means raising LOCALE_FREE_TESTS.
+    counted = re.search(r"^(\d+) passed$", proc.stdout, re.M)
+    assert counted, proc.stdout
+    assert int(counted.group(1)) == 5 * len(locales) + LOCALE_FREE_TESTS, proc.stdout
