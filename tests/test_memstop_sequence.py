@@ -254,21 +254,83 @@ def test_anything_in_flight_is_recorded_at_start_and_waited_for_a_bounded_time(s
     assert "shutdown" in calls, "the stop is not held hostage by it"
 
 
-def test_the_scheduler_hold_is_read_before_the_stops_own_pause(stop, monkeypatch):
-    """A bare scheduler hold (a volume restore or a data-drive move takes it) is in the start snapshot; the pause's own hold,
-    set afterwards, is not mistaken for one."""
+class _Sched:
+    def __init__(self, held):
+        self.held = held
+
+    def holds_exclusive(self):
+        return self.held
+
+    def is_running(self):
+        return True
+
+
+@pytest.mark.parametrize("before", [False, True])
+def test_the_scheduler_hold_is_read_before_the_stops_own_pause(stop, monkeypatch, before):
+    """The pause sets the scheduler's hold itself. The start snapshot must show what was held BEFORE it: False when nothing was (the
+    stop's own hold is not mistaken for an operation's), True when a restore or a move held it. Fails if the snapshot moves
+    after the pause."""
     from src.scheduler import runner
 
-    class _Sched:
-        held = True
-        def holds_exclusive(self): return self.held
-        def is_running(self): return False
-
-    sched = _Sched()
+    sched = _Sched(before)
     monkeypatch.setattr(runner, "get_scheduler", lambda: sched)
     monkeypatch.setattr(runner, "pause_for_exclusive_operation", lambda timeout=10.0: setattr(sched, "held", True) or True)
     rec = memstop.execute(DECISION, _Guard())
-    assert rec["in_flight_at_start"]["scheduler_hold"] is True and rec["loop_still_running"] is False
+    assert rec["in_flight_at_start"]["scheduler_hold"] is before
+    assert rec["loop_still_running"] is True, "a loop still alive after the pause is recorded as alive"
+
+
+def test_the_wait_is_counted_in_elapsed_time_not_in_polls(stop, monkeypatch):
+    """A slow poll (each sleep overshoots to 25 s) must end the 60 s bound after three polls, not after sixty."""
+    calls, _d, _data = stop
+    clock = _FakeTime(monkeypatch)
+    monkeypatch.setattr(memstop.time, "sleep", lambda s: (clock.slept.append(s), setattr(clock, "now", clock.now + 25.0)))
+    _quiet(monkeypatch, gate_held=True)
+    rec = memstop.execute(DECISION, _Guard())
+    assert len(clock.slept) == 3 and rec["exclusive"]["waited_s"] == 75.0 and "shutdown" in calls
+
+
+def test_a_record_still_over_the_bound_after_the_first_cut_is_cut_to_its_identity_and_says_so(stop):
+    _c, _d, data = stop
+    record = {"kind": "memory-stop", "session_id": "sess-1", "pid": 1, "at": "t", "uptime_s": 1.0,
+              "decision": {"n": 1}, "steps": {f"s{i}": {"ok": True, "pad": "p" * 100} for i in range(200)},
+              "in_flight_at_start": {"pad": "q" * 3000}}
+    written = memstop._write(record)
+    assert written <= memstop.RECORD_MAX_BYTES
+    got = memstop.read_record("sess-1")
+    assert {"steps", "in_flight_at_start"} <= set(got["cut"]["left_out"]) and "steps" not in got and got["decision"] == {"n": 1}
+
+
+def test_a_record_that_cannot_be_statted_or_parsed_reads_as_unreadable_not_absent(stop, monkeypatch):
+    _c, _d, data = stop
+    assert memstop.read_record("sess-1") is None, "no file: absent"
+    (data / "memory_stop.json").write_text("{not json")
+    assert memstop.read_record("sess-1") == {"unreadable": True, "error": "JSONDecodeError", "attributed": False}
+    real = type(memstop._path())
+
+    def denied(self, *a, **k):
+        raise PermissionError("secret path text")
+
+    monkeypatch.setattr(real, "stat", denied)
+    got = memstop.read_record("sess-1")
+    assert got == {"unreadable": True, "error": "PermissionError", "attributed": False}
+
+
+def test_a_file_that_grew_after_the_stat_is_not_read_whole(stop, monkeypatch):
+    _c, _d, data = stop
+    f = data / "memory_stop.json"
+    f.write_text(json.dumps({"session_id": "sess-1"}))
+    f.write_text("x" * (memstop.RECORD_MAX_BYTES * 20))
+    real_stat = type(f).stat
+    small = real_stat(f)
+
+    class _S:
+        st_size = 10
+
+    monkeypatch.setattr(type(f), "stat", lambda self, *a, **k: _S() if self.name == "memory_stop.json" else real_stat(self, *a, **k))
+    got = memstop.read_record("sess-1")
+    assert got["oversize"] is True and got["bytes_on_disk"] == memstop.RECORD_MAX_BYTES + 1 and got["bytes_read"] == 0
+    assert small.st_size > memstop.RECORD_MAX_BYTES
 
 
 def test_the_forced_snapshot_that_was_not_taken_is_not_recorded_as_ok(stop, monkeypatch):

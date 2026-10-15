@@ -205,9 +205,21 @@ def test_the_window_holds_readings_for_its_span_only(monkeypatch):
 
 
 def test_a_window_set_below_the_minimum_is_raised_to_it(monkeypatch):
-    """A one-second window (twenty readings 0.05 s apart) would stop the app on a passing dip; the minimum raises it, and says so."""
+    """A one-second window (twenty readings 0.05 s apart) would stop the app on a passing dip; the minimum raises it (the raised window is the one in the criterion's answer)."""
     calls: list = []
     monkeypatch.setenv("OO_MEM_STOP_WINDOW_S", "1")
     g, clock = _guard(monkeypatch, calls)
     _feed(g, clock, 12, 48.0, step=0.05)
     assert g.engaged and calls == []
+
+
+def test_a_thread_that_cannot_start_runs_the_stop_on_the_callers_thread(monkeypatch):
+    calls: list = []
+    g, clock = _guard(monkeypatch, calls)
+
+    def cannot(*a, **k):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(memguard.threading.Thread, "start", cannot)
+    _feed(g, clock, 330, 48.0)
+    assert len(calls) == 1, "the stop still ran, once, on the sampling thread"

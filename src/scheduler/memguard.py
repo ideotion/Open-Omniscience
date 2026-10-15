@@ -286,6 +286,7 @@ class MemoryGuard:
         # Read before the lock is taken: the environment is not work to do while a sampler waits on it.
         stop_window = max(STOP_MIN_WINDOW_S, _env_float("OO_MEM_STOP_WINDOW_S", STOP_WINDOW_S))
         stop_floor = _env_float("OO_MEM_STOP_AVAIL_MB", STOP_AVAIL_MB)
+        stop_on = self.stop_enabled()
         with self._lock:
             prev_swap = self._last_proc_swap
             if proc_swap_mb is not None:
@@ -340,7 +341,7 @@ class MemoryGuard:
                 else:
                     self._under = 0
                 if self._engaged:
-                    stop_decision = self._note_stall_locked(mem_avail_mb, rss_mb, mem_total_mb, stop_window, stop_floor)
+                    stop_decision = self._note_stall_locked(mem_avail_mb, rss_mb, mem_total_mb, stop_window, stop_floor, stop_on)
             engaged = self._engaged
         # Log OUTSIDE the lock (skeptic nit: the jsonl error handler does file
         # I/O; workers' admit() checks must never queue behind a log write).
@@ -366,12 +367,12 @@ class MemoryGuard:
         return os.getenv("OO_MEM_STOP", "1") != "0"
 
     def _note_stall_locked(
-        self, avail: float | None, rss: float | None, total: float | None, window: float, floor: float
+        self, avail: float | None, rss: float | None, total: float | None, window: float, floor: float, stop_on: bool
     ) -> dict | None:
         """Fold one engaged sample into the stall window and, when the criterion holds for the first time, claim the one stop.
         Caller holds the lock and runs the stop OUTSIDE it. The window is pruned by TIME (older than the window), so what it
         holds is bounded by how often readings arrive, not by a count."""
-        if avail is None or not self.stop_enabled():
+        if avail is None or not stop_on:
             return None
         now = time.monotonic()
         self._stall.append((now, avail))
@@ -400,9 +401,14 @@ class MemoryGuard:
             except Exception as exc:  # noqa: BLE001 - a failed stop leaves the pause in force
                 log_failure(_LOG, "memory guard: the clean stop failed", exc, level=logging.WARNING)
 
-        t = threading.Thread(target=_go, name="oo-memory-stop", daemon=True)
-        self._stop_thread = t
-        t.start()
+        try:
+            t = threading.Thread(target=_go, name="oo-memory-stop", daemon=True)
+            self._stop_thread = t
+            t.start()
+        except Exception as exc:  # noqa: BLE001 - "can't start new thread" is plausible at the memory floor: the stop still runs
+            log_failure(_LOG, "memory guard: the stop's thread could not start; running it on this one", exc, level=logging.WARNING)
+            self._stop_thread = None
+            _go()
 
     def raw_pressure(
         self,

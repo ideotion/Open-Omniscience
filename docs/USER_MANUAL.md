@@ -2093,8 +2093,10 @@ Before it stops, it keeps what it knows: a snapshot of what every thread was
 doing, a line in the session ledger, and `memory_stop.json` beside your data
 (numbers and step names, at most 8 KB). Then it ends through the same path as
 the power button. Your saved data is not touched; it first waits up to a minute
-for an import, restore, move or write that is in progress to finish (and records
-if one still was), and what could not finish in that time is not finished.
+for an import run, a background job holding the corpus, or a database write in
+progress to finish (a restore or a data-drive move is recorded as in progress but
+not waited for as such), says in the record if one still was, and whatever could
+not finish in that time is not finished.
 While it runs, the task
 manager says *"The app is stopping itself because memory stayed exhausted"*.
 At the next start the System tab's **Sessions** row reads *"Stopped itself —

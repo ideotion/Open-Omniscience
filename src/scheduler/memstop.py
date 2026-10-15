@@ -7,7 +7,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 WHY. The guard's pause stops NEW work; the memory the process already holds does not return. On the recorded 2026-09-30 plateau the
 machine sat at 64 MB or less for 12 minutes and the kernel then killed the process with no trace of why. A stop the app chooses
 keeps the evidence, ends the work through the path the power button uses (workers reaped, the pool disposed, SIGTERM to self, the
-lifespan's own shutdown), and tells the person at the next start. Nothing in the corpus is touched.
+lifespan's own shutdown), and tells the person at the next start. The saved data is not touched; work that was in progress and could not finish is not finished.
 
 THE CRITERION is ``memguard.stall_decision`` (pure, replayed against the recorded series); this module is only the sequence
 that runs once it holds. ONE SHOT per process. EVERY STEP IS ISOLATED: a step that fails is logged and the rest still run,
@@ -49,6 +49,8 @@ PAUSE_TIMEOUT_S = 10.0
 #: the user's data, and the normal shutdown path rolls an unfinished transaction back, so the wait is a courtesy to a write that is
 #: nearly done, not a condition. What bounds it: the teardown needs room on a machine that is already at the floor.
 EXCLUSIVE_WAIT_S = 60.0
+#: Why a second: the wait is a courtesy bounded by a minute, so a finer poll buys nothing and a coarser one overshoots a write that
+#: ends early by up to that much.
 EXCLUSIVE_POLL_S = 1.0
 #: What the record may hold, so a reader (and the bundle) can count on its size: the file is read back through
 #: :func:`read_record`, which keeps only these keys and states how many bytes it read.
@@ -73,12 +75,14 @@ RECORD_KEYS = (
 #: ``read_record`` accepts for the identity fields: a record that is not this code's is read as little as it can be.
 RECORD_KIND = "memory-stop"
 AT_MAX_CHARS = 40
+#: A ledger session id is a stamp and a pid (``20261015T205421Z-3705``, 21 characters); 80 leaves room for a longer pid and still refuses
+#: a value that is text.
 SESSION_ID_MAX_CHARS = 80
 
 #: The most bytes the record may be, written and read. What it protects: the record rides the Diagnostics zip inside the
 #: session-forensics member (zips stay under 4 MB, R119), and a stop is written on a machine at the floor, where a large write is
-#: the one that does not finish. The largest record this code writes with every field full measures about 2 KB
-#: (``tests/test_memstop_sequence.py``); the bound leaves room for the guard's reason and the step list to grow, not for text.
+#: the one that does not finish. The test ``test_the_record_stays_within_its_stated_size_at_its_largest`` fills every field and asserts the record
+#: is within the bound (about 2 KB when it was written); the bound leaves room for the guard's reason and the step list to grow, not for text.
 RECORD_MAX_BYTES = 8192
 
 #: The most characters of the guard's own sentence ("only 48 MB of system memory available"): one line built from readings.
@@ -203,7 +207,9 @@ def _busy(state: dict[str, Any]) -> bool:
 def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
     """Run the clean stop ONCE. Returns the record, or ``None`` when a stop had already begun in this process.
 
-    Called by the guard, outside its lock, on the thread that fed it the sample. Never raises."""
+    Called by the guard, outside its lock, on its own thread (``oo-memory-stop``). That thread is a daemon: the final write after the
+    shutdown request may be lost if the interpreter exits first, which is why the in-flight facts and the wait are written BEFORE
+    the shutdown step. Never raises."""
     global _STARTED
     with _LOCK:
         if _STARTED:
@@ -285,9 +291,11 @@ def execute(decision: dict[str, Any], guard: Any) -> dict[str, Any] | None:
 
     record["loop_still_running"] = _step(record, "loop_check", _loop_alive)
 
-    # 3b. Anything in flight that the pause cannot stop (an import run, a restore, a data-drive move, a lease, a write holding the
-    # gate): its transaction is the user's data. Wait for it to close, bounded, and say what happened; then the NORMAL shutdown
-    # path runs (an unfinished transaction is rolled back, the pool disposed, nothing forced).
+    # 3b. Anything in flight that the pause cannot stop (an import run's window, a corpus lease, a write holding the gate): its
+    # transaction is the user's data. Wait for it to close, bounded, and say what happened; then the NORMAL shutdown path runs (an
+    # unfinished transaction is rolled back, the pool disposed, nothing forced). The scheduler's own hold (a volume restore or a
+    # data-drive move takes it) is RECORDED at the start but not waited for: once the pause has run that hold is the stop's own, so it
+    # cannot be told apart from the operation's. Such an operation writes under the gate or a lease, which the wait does cover.
     def _exclusive() -> None:
         started = _clock()
         while _clock() - started < EXCLUSIVE_WAIT_S and _busy(in_flight(own_hold=False)):
@@ -325,6 +333,11 @@ def reset_for_tests() -> None:
         _STARTED = False
 
 
+def _unreadable(error_class: str) -> dict[str, Any]:
+    """A record that is there and cannot be read or parsed: said, with the exception's CLASS only (never its text), never as absent."""
+    return {"unreadable": True, "error": error_class, "attributed": False}
+
+
 def read_record(session_id: str | None) -> dict[str, Any] | None:
     """The record of the stop that ended session ``session_id``, through the allow-list (:data:`RECORD_KEYS`), with the size read
     named (``bytes_read``); ``None`` when there is none, it is another session's, or it cannot be read. A record belongs to a
@@ -333,8 +346,10 @@ def read_record(session_id: str | None) -> dict[str, Any] | None:
     be made large by what it reads. Never raises."""
     try:
         size = _path().stat().st_size
-    except OSError:
-        return None
+    except FileNotFoundError:
+        return None  # the one case that means "no record"
+    except OSError as exc:
+        return _unreadable(type(exc).__name__)
     try:
         if not session_id:
             return None
@@ -342,9 +357,10 @@ def read_record(session_id: str | None) -> dict[str, Any] | None:
             # Not a record this code wrote, and not parsed: the size is the one fact said about it. It names no session, so it
             # can never read as this one's.
             return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": size}
-        raw = _path().read_bytes()[: RECORD_MAX_BYTES + 1]
+        with open(_path(), "rb") as fh:
+            raw = fh.read(RECORD_MAX_BYTES + 1)  # at most the bound plus one byte, whatever the file has grown to since the stat
         if len(raw) > RECORD_MAX_BYTES:
-            return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": len(raw)}
+            return {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": max(size, len(raw))}
         got = json.loads(raw.decode("utf-8"))
         if not isinstance(got, dict) or got.get("session_id") != session_id:
             return None
@@ -361,5 +377,7 @@ def read_record(session_id: str | None) -> dict[str, Any] | None:
             out["cut"] = {k: cut.get(k) for k in ("left_out", "because")}
         out["bytes_read"] = len(raw)
         return out
-    except Exception:  # noqa: BLE001 - a diagnostic never fails its caller
+    except FileNotFoundError:
         return None
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never fails its caller; an unreadable record is said, not dropped
+        return _unreadable(type(exc).__name__)
