@@ -17,6 +17,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime
 
 import pytest
 
@@ -514,6 +515,30 @@ def test_the_heaviest_member_fits_its_budget_with_three_previous_tails_and_cuts_
     assert all(len(t["minutes"]) == v.PREVIOUS_TAIL_KEEP for t in tails)
 
 
+def test_the_member_rows_do_not_depend_on_the_date_the_real_clock_reads(hist, monkeypatch):
+    """The same heaviest history, built once with the real clock frozen a second before midnight UTC and once a
+    second after (asked for when the budget test above failed in a job that ran across midnight; the cause was the
+    flush race pinned below, not the date). Every row, log hour and tail comes from the injected clock; the real
+    one is read only for the stamp of a write (checked against the frozen clock below) and for a session's start (not
+    compared), so the tables are the same on both sides."""
+    names = [f"src.module{i:02d}.sub" for i in range(25)]
+    keys = ("fine", "coarse", "logs", "minutes", "previous_sessions", "gaps", "clock_steps", "clock_stepped_back")
+    seen = []
+    for stamp in ("2026-10-13T23:59:59+00:00", "2026-10-14T00:00:01+00:00"):
+        frozen = datetime.fromisoformat(stamp).timestamp()
+        monkeypatch.setattr(time, "time", lambda frozen=frozen: frozen)
+        v.reset_for_tests()
+        v._path().unlink(missing_ok=True)
+        v.start()
+        m = _full_history_with_three_tails(hist, monkeypatch, names)
+        assert len(m["fine"]) >= v.FINE_KEEP - 1 and len(m["coarse"]) >= v.COARSE_KEEP - 1, stamp
+        assert m["clock_stepped_back"] == 0 and len(m["previous_sessions"]) == v.PREVIOUS_SESSIONS_KEEP, stamp
+        seen.append({k: m.get(k) for k in keys})
+        for tail in seen[-1]["previous_sessions"]:
+            assert tail.pop("last_flush_at") == v._iso(frozen)  # the one stamp that is the real clock's
+    assert seen[0] == seen[1]
+
+
 def test_a_failing_reading_never_raises_into_the_tick_and_the_member_still_serves(hist, monkeypatch):
     def boom():
         raise RuntimeError("psutil fell over")
@@ -549,6 +574,84 @@ def test_the_flush_is_atomic_and_throttled_to_the_interval(hist, monkeypatch):
     v._LAST_FLUSH = time.monotonic() - v.FLUSH_S - 1  # the interval has passed
     v.tick(now=float(HOUR0 + 300))
     assert writes == [1]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows refuses to rename over a file another thread has open for reading, which the reader below would cause")
+def test_flushes_that_overlap_never_tear_the_file_and_the_next_start_loads_the_history(hist):
+    """The cause of a CI failure of the budget test above (a run on PR 1381 met 15 five-minute rows where it had
+    written 577, with no clock step recorded). ``flush`` writes ``vitals_history.json.tmp`` and renames it over the file,
+    and two flushes that overlap (the liveness thread's first-tick flush, a clean end's, the exit hook's, a thread
+    a test left running) wrote the SAME temporary name: the second truncated what the first was still writing, or
+    renamed it away, a file read at that moment was torn, and ``start`` reads a damaged file as none and answers
+    with an empty history. Two threads flush in a loop while this one reads the file exactly as ``start`` does;
+    without ``_FLUSH_LOCK`` flushes fail on any host (FileNotFoundError, counted) and, on a host with more than
+    one CPU, loads of the file read it torn."""
+    for k in range(v.FINE_KEEP):
+        v.tick(now=float(HOUR0 + v.FINE_S * k))
+    expected = len(v._FINE)
+    assert expected >= v.FINE_KEEP - 1
+    v.flush()  # the file holds the whole history before the writers start: the first tick wrote an empty one
+    stop = threading.Event()
+
+    def flusher() -> None:
+        while not stop.is_set():
+            v.flush()
+
+    writers = [threading.Thread(target=flusher, daemon=True) for _ in range(2)]
+    for w in writers:
+        w.start()
+    torn = 0
+    try:
+        for _ in range(300):
+            got = v._load()  # what ``start`` reads first
+            if got is None or len(got["fine"]) != expected:
+                torn += 1
+    finally:
+        stop.set()
+        for w in writers:
+            w.join(10)
+    assert not any(w.is_alive() for w in writers)
+    assert torn == 0, f"{torn} of 300 loads of the file met a torn or partial write"
+    assert "flush_failures" not in v._ERRORS, v._ERRORS
+    _restart(float(HOUR0 + v.FINE_S * v.FINE_KEEP + 1000))
+    assert len(v._FINE) == expected, "the next start began a fresh history"
+
+
+def test_a_flush_that_waited_for_the_lock_across_a_reset_writes_nothing(hist, monkeypatch):
+    """Finding of the read: ``flush`` checked ``_STARTED`` before it took the lock, so a flush that waited behind
+    another one while the recorder was reset snapshotted an EMPTY recorder and wrote it over the file, and the
+    next ``start`` loaded no rows. The check is repeated under the lock, in the same hold as the snapshot. The
+    lock is replaced by one that says when a flush is waiting for it, so the order is not left to timing."""
+    for k in range(40):
+        v.tick(now=float(HOUR0 + v.FINE_S * k))
+    v.flush()
+    rows = len(v._load()["fine"])
+    assert rows >= 39
+
+    class Gate:
+        def __init__(self) -> None:
+            self.waiting, self.go = threading.Event(), threading.Event()
+            self.inner = threading.RLock()
+
+        def __enter__(self) -> None:
+            self.waiting.set()
+            assert self.go.wait(10)
+            self.inner.acquire()
+
+        def __exit__(self, *_exc: object) -> None:
+            self.inner.release()
+
+    gate = Gate()
+    monkeypatch.setattr(v, "_FLUSH_LOCK", gate)
+    waiter = threading.Thread(target=v.flush, daemon=True)
+    waiter.start()
+    assert gate.waiting.wait(10)  # the flush has passed its first check and stands at the lock
+    v.reset_for_tests()  # what a restart does to the recorder
+    gate.go.set()
+    waiter.join(10)
+    assert not waiter.is_alive()
+    got = v._load()
+    assert got is not None and len(got["fine"]) == rows, "the waiting flush wrote an empty recorder over the file"
 
 
 def test_nothing_in_the_member_is_an_article_an_address_or_a_term(hist):
@@ -1899,7 +2002,9 @@ def test_a_step_across_ticks_without_a_reading_blames_the_clock_only_from_the_mi
     if recorded:
         assert m["clock_steps"][0]["was"] == v._iso(a_wall) and m["clock_steps"][0]["forward_s"] == 700
     assert "a step of 600 s or more in between is not lost" in m["method"]
-    assert "strictly between the two stamps of a step that spans ticks without a boot-time reading" in m["method"]
+    assert "a step the list no longer holds, which had been recorded" in m["method"]
+    assert "a recorded step whose two stamps both lie outside the gap, which is then strictly between them" in m["method"]
+    assert "a step that spans ticks without a boot-time reading" in m["method"]
 
 
 def test_a_session_without_any_reading_never_compares(hist):
