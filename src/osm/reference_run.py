@@ -317,7 +317,7 @@ def preflight(
     if ok and ratio is None and min_free_override is None and free_bytes < worst:
         warning = (f"free disk is {free_bytes} bytes; if this country is most of the {extract_bytes}-byte extract the run can need "
                    f"{worst} (osm.db at {OSM_DB_PER_PBF_BYTE_LOW:g} to {OSM_DB_PER_PBF_BYTE_HIGH:g} times the country's own bytes, "
-                   f"settled sizes of two small real extracts scaled up, plus the node-location file for a large one"
+                   f"settled sizes of two small real extracts scaled up, NOT measured at this size, plus the node-location file for a large one"
                    f"{', and the history phase adds its own footprint (counted twice here)' if history_bytes else ''}). "
                    f"It starts: the sampler stops it cleanly if the disk reaches the reserve. Pass --min-free-gb to refuse instead")
     return {

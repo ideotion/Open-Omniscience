@@ -250,11 +250,11 @@ def test_the_floor_is_a_labelled_guess_until_a_measured_report_replaces_it():
     assert "GUESS" in pf5["floor_basis"] and pf5["needed_bytes"] == pf["needed_bytes"]
 
 
-def test_a_big_share_country_is_warned_by_name_with_the_measured_worst_case():
+def test_a_big_share_country_is_warned_by_name_with_the_extrapolated_worst_case():
     """Liechtenstein's 2013 extract settled at 6.0 x its own bytes and a Dutch city's at 7.5 x, so 2 x the CONTINENT file is
     plenty for France in Europe and not for the United States in North America (a 14 GB file: about 105 GB of osm.db and
     42 GB of node locations against a floor of 30). A refusal at the worst case would turn France away from any disk under
-    about 300 GB, so the floor stays a labelled guess and the worst case WARNS, from the measured ratios, naming the way to refuse."""
+    about 300 GB, so the floor stays a labelled guess and the worst case WARNS, from the two small files' ratios scaled up, naming the way to refuse."""
     pf = R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB)
     assert pf["ok"] is True and pf["needed_bytes"] == 2 * 14 * GB + 2 * GB, "the refusal floor is unchanged"
     assert pf["worst_case_bytes"] == int((7.5 + 3.0) * 14 * GB) + 2 * GB, "7.5 x for osm.db plus 3 x for the location file"
@@ -1097,6 +1097,23 @@ def test_a_refused_preflight_still_writes_the_report_the_command_names(tmp_path)
     data = json.loads(rep.read_text("utf-8"))
     assert data["status"] == "refused-preflight" and data["preflight"]["ok"] is False
     assert not list((tmp_path / "w").glob("oo-osm-reference-run-*"))
+
+
+def test_the_command_prints_the_worst_case_warning_before_the_run_starts(tmp_path, monkeypatch):
+    """The CLI hands run() an ``on_preflight`` that prints the warning: deleting that wiring would leave the warning in the
+    report only, read after the hours it was meant to precede."""
+    report = {"status": "ok", "phases": [], "store": {"deleted": True}}
+
+    def fake_run(**kw):
+        kw["on_preflight"]({"ok": True, "warning": "W-WORST-CASE"})
+        return report, None
+
+    monkeypatch.setattr(R, "run", fake_run)
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 0 and "warning: W-WORST-CASE" in out and out.index("warning:") < out.index("status:")
+    monkeypatch.setattr(R, "run", lambda **kw: (kw["on_preflight"]({"ok": True, "warning": None}), (report, None))[1])
+    rc, out = _cli("--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w"))
+    assert rc == 0 and "warning:" not in out
 
 
 def test_the_exit_code_survives_a_closed_terminal(tmp_path, monkeypatch):
