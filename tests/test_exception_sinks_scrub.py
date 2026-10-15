@@ -190,8 +190,8 @@ _FORMATTERS = frozenset({"format_exception", "format_exc", "print_exc", "print_e
 #: with its reason, and an entry that no longer formats one has to come out. Found by a sweep of ``src/`` on 2026-10-06 that
 #: turned up the fatal exception's record and the newsletter import's journal line (fixed above) beside ``runlog.run``.
 _FORMATS_ITS_OWN = {
+    "monitoring/errorlog.py": "the error journal formats the traceback as raised to read two booleans off it (locked, interrupted) and stores only record_traceback's text",
     "monitoring/secret_scrub.py": "the helpers themselves: traceback_text and log_failure format the exception and take every secret out of the text they return",
-    "monitoring/errorlog.py": "the error journal's handler scrubs the traceback of every record it keeps, with the held passphrases, before it cuts it",
 }
 
 

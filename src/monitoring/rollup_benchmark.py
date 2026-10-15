@@ -77,9 +77,9 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
                 "reason": "duckdb not installed (the optional [columnar] extra)"}
 
     # -- corpus context (so the numbers are interpretable) ------------------------------- #
-    from src.database.models import Article, Keyword
-
     from sqlalchemy import func
+
+    from src.database.models import Article, Keyword
 
     corpus = {
         "articles": int(session.query(func.count(Article.id)).scalar() or 0),

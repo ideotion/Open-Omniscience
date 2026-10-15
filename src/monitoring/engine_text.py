@@ -43,9 +43,9 @@ def engine_text(exc: BaseException, limit: int | None = None, *, typed: bool = F
     """The words of ``exc`` (``typed``: ``Name: the words``) with every held passphrase out of the whole text,
     then cut to ``limit``."""
     try:
-        from src.monitoring.secret_scrub import exception_text
+        from src.monitoring.secret_scrub import record_text
 
-        return exception_text(exc, limit=limit, typed=typed)
+        return record_text(exc, limit=limit, typed=typed)
     except Exception:  # noqa: BLE001 - the scrub could not be loaded: the class is all that is written
         out = f"<{type(exc).__name__}: text withheld, it could not be checked for the passphrase>"
         return out if limit is None else out[:limit]

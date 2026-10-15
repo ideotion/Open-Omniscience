@@ -44,7 +44,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger("monitoring.ai_check")
 
@@ -105,7 +105,7 @@ def _step(name: str, fn: Callable[[], Any], *, monotonic=time.monotonic) -> dict
             "step": name,
             "ok": False,
             "seconds": round(monotonic() - t0, 3),
-            "error": exception_text(exc, limit=300),
+            "error": record_text(exc, limit=300, typed=True),
         }
 
 
@@ -224,7 +224,7 @@ def _gate_lines(perception: dict | None) -> dict | None:
     try:
         gates = gate_languages_from_report(perception) or {}
     except Exception as exc:  # noqa: BLE001 - report the gap, never guess a verdict
-        return {"error": exception_text(exc, limit=200)}
+        return {"error": record_text(exc, limit=200, typed=True)}
     cleared = sorted(k for k, v in gates.items() if v.get("active") is True)
     refused = sorted(k for k, v in gates.items() if v.get("active") is False)
     unmeasured = sorted(k for k, v in gates.items() if v.get("active") is None)
@@ -659,7 +659,7 @@ def _live_selftests() -> dict:
                 "failed_checks": sorted(k for k, v in checks.items() if v is False),
             }
         except Exception as exc:  # noqa: BLE001 - one broken harness is not five
-            out[name] = {"error": exception_text(exc, limit=200)}
+            out[name] = {"error": record_text(exc, limit=200, typed=True)}
     return out
 
 
@@ -691,7 +691,7 @@ def run_and_persist_ai_check(ctx=None, **kwargs) -> dict:
         out["path"] = str(path)
         out["filename"] = path.name
     except OSError as exc:
-        out["persist_error"] = exception_text(exc, limit=200)
+        out["persist_error"] = record_text(exc, limit=200, typed=True)
     return out
 
 
@@ -702,14 +702,14 @@ def last_ai_check_report() -> dict:
     try:
         files = sorted(_dir().glob("oo-ai-check-*.json"))
     except OSError as exc:
-        return {"available": False, "reason": exception_text(exc, limit=200)}
+        return {"available": False, "reason": record_text(exc, limit=200, typed=True)}
     if not files:
         return {"available": False, "reason": "no AI check has been run on this machine yet"}
     newest = files[-1]
     try:
         out = json.loads(newest.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - a corrupt artifact is a fact, not a crash
-        return {"available": False, "reason": exception_text(exc, limit=200)}
+        return {"available": False, "reason": record_text(exc, limit=200, typed=True)}
     out["available"] = True
     out["filename"] = newest.name
     return out

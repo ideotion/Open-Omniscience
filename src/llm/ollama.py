@@ -21,6 +21,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from src.monitoring.secret_scrub import record_text
+
 # Real, currently-existing Ollama tags suitable for CPU-only single-user use.
 # (The previous catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)
 #
@@ -385,7 +387,8 @@ def bounded_error(exc: BaseException, limit: int = 300) -> str:
     a reason to protect.
     """
     head = f"{type(exc).__name__}: "
-    return head + reason_first(str(exc), max(1, limit - len(head)))
+    # The words go through the one scrub BEFORE they are cut (a cut can split a held passphrase); a database driver is its class only.
+    return head + reason_first(record_text(exc, typed=False), max(1, limit - len(head)))
 
 
 #: Phrases a backend uses when a prompt does not fit its context window. Matched

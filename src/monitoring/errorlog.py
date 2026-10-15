@@ -37,8 +37,8 @@ from src.monitoring.request_label import (
 from src.monitoring.secret_scrub import (
     TRACEBACK_ATTRIBUTE,
     protect_handlers,
+    record_traceback,
     scrubbed,
-    unicode_withheld_traceback,
 )
 from src.paths import data_dir
 
@@ -183,12 +183,12 @@ class _JsonlErrorHandler(logging.Handler):
                 "message": scrubbed(raw_message)[:500],
             }
             raw_tb = ""
+            flag_tb = ""  # the words AS RAISED, read for two booleans and never stored: a driver's class-only record would lose them
             if record.exc_info and record.exc_info[0] is not None:
                 # A UnicodeError names a character and its offset, a piece of a key that no scrub knows: the class and the
                 # frames only (also when it is the cause of another error or a member of an exception group).
-                raw_tb = unicode_withheld_traceback(record.exc_info[1]) or "".join(
-                    traceback.format_exception(*record.exc_info)
-                )
+                raw_tb = record_traceback(record.exc_info[1]) if record.exc_info[1] is not None else ""
+                flag_tb = "".join(traceback.format_exception(*record.exc_info))
             else:
                 # A handler that holds a passphrase logs through ``secret_scrub.log_failure``, which writes the
                 # traceback as TEXT with the secrets out of it (a record's ``exc_info`` carries the message as raised)
@@ -198,7 +198,7 @@ class _JsonlErrorHandler(logging.Handler):
                     raw_tb = attached
             if raw_tb:
                 entry["traceback_tail"] = scrubbed(raw_tb)[-1500:]
-            entry.update(_flags(raw_message, raw_tb))
+            entry.update(_flags(raw_message, flag_tb or raw_tb))
         except Exception:  # noqa: BLE001 - the log must never break the app
             return
         _append(entry)

@@ -734,6 +734,11 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
     the whole string, and engine text can quote fragments of a statement); any other exception keeps its words, scrubbed with
     every secret handed in and every passphrase the process holds (:func:`exception_text`), then cut. Never raises."""
     try:
+        if not is_driver_error(exc):
+            try:
+                _text_and_notes(exc)
+            except Exception:  # noqa: BLE001 - a text that cannot be read quotes nothing: exception_text withholds it by class
+                return exception_text(exc, *secrets, limit=limit, typed=typed)
         if is_driver_error(exc) or quotes_a_driver(exc):
             out = _driver_line(exc) if typed else f"{type(exc).__qualname__} (a database driver's text is withheld)"
             return out if limit is None else out[:limit]
