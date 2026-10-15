@@ -104,12 +104,16 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   way through. The refusal is at the download only — the serve side discloses the cached
   revision and never blocks a start, so an install that predates the pin keeps working.
 - **sqlcipher3** (`sqlcipher3-driver`) — the at-rest encryption driver; the damage lane
-  (`src/database/damage.py`, the page pass) is built on how SQLCipher 4.12 reports page damage,
-  and 4.19 (`sqlcipher3` 0.6.4) reports it differently, so `pyproject.toml` carries a
-  ceiling (`<0.6.4`). To lift it: qualify the new release (run `tests/test_poisoned_connection.py`
-  and `tests/test_database_verify_pages.py` on it; decide per failure whether the app or only the
-  test's encoding of the old report is out of date; never loosen a test to pass), then move the
-  pyproject range, the registry `{floor, verified}` and `requirements.lock` together.
+  (`src/database/damage.py`, the page pass) is built on how the bundled SQLCipher reports page
+  damage. 4.12 (`sqlcipher3` 0.6.2 and 0.6.3) and 4.19 (0.6.4) report it differently and both are
+  qualified; `pyproject.toml` carries a ceiling (`<0.6.5`, the first release not qualified). The
+  `sqlcipher-engines` CI job runs `tests/test_poisoned_connection.py` and
+  `tests/test_database_verify_pages.py` on the floor (blocking) and on the newest release
+  (observation), so a new release is one red leg there. To lift the ceiling: qualify the new
+  release (decide per failure whether the app or only the test's encoding of the old report is out
+  of date; never loosen a test to pass), then move the pyproject range, the registry
+  `{floor, verified, ceiling}`, `requirements.lock` (regenerate its hash block from PyPI) and the
+  `sqlcipher-smoke` pin together.
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
   Dependabot bump; re-pin to the new SHA with its tag comment.
