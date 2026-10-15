@@ -206,9 +206,9 @@ def _scrubbed_thread(name: Any) -> Any:
     if not isinstance(name, str):
         return name
     try:
-        from src.monitoring.secret_scrub import scrubbed
+        from src.monitoring.secret_scrub import scrubbed_name
 
-        return scrubbed(name)
+        return scrubbed_name(name)
     except Exception:  # noqa: BLE001 - a name that cannot be checked is not shown
         return "(name withheld)"
 
