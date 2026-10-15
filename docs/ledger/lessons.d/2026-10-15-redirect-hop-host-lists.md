@@ -20,12 +20,12 @@ A host check belongs in `send`, where the first request and every hop both pass.
 4. **requests re-quotes a hop's Location, so a percent test must survive that.** `requote_uri` unquotes unreserved escapes: `x%41.wikipedia.org` arrives as `xA.wikipedia.org`, a legitimate listed host, so an end-to-end hop test with
    `%41` proves nothing. `%2B` survives requoting and reaches the check; the unquoted form is tested by calling the check directly.
 5. **Make an opt-in list a decision, not an accident.** `allowed_hosts` defaults to `None` (every other caller unchanged), and an AST ratchet pins every `guarded_session` / `following_session` call WITHOUT a list in a table with its
-   count, zero slack, so a new unlisted session fails a test and says why. The sessions left out are bulk downloads and installs from request-chosen hosts (which redirect between CDNs by design) and six fixed API endpoints that are
-   the open remainder (rule 7); each needs its own look at where it really redirects.
+   count, zero slack, so a new unlisted session fails a test and says why. The sessions left out are bulk downloads and installs from request-chosen hosts (which redirect between CDNs by design) and six fixed API endpoints (rule 7;
+   listed afterwards by PR #1394, from the URLs the code builds and not from a live look at where they redirect).
 6. **A mutation matrix must prove its baseline first.** One run against a red baseline reported every mutant killed, because every mutant failed for the unrelated reason. The matrix (a scratch script, not committed: about 40 text
    substitutions over `fetcher.py`, the three clients and `walk.py`, each run against `tests/test_session_host_list.py`) runs the unmutated tests first and refuses to score unless they are green.
 7. **A table of exceptions carries a reason per row, and the reasons get read.** The first `UNLISTED_SESSIONS` had one comment, "they redirect between CDNs by design", and the independent read found it false for six of the eleven rows (five
-   Wikidata loaders and the Hugging Face release check are fixed API endpoints, the shape this change fixed). Each row now says why it has no list, so the open remainder is visible instead of folded into a reassuring sentence. The scanner behind
+   Wikidata loaders and the Hugging Face release check are fixed API endpoints, the shape this change fixed). Each row now says why it has no list, so what is left unlisted is visible instead of folded into a reassuring sentence. The scanner behind
    the table is itself tested on eight ways of building a session without a list (an explicit `allowed_hosts=None`, an aliased import, `functools.partial`, `GuardedSession()`, `_session_for`) because it first counted one of them.
 8. **A list entry must be a name of at least two labels.** `.org` as a suffix entry would open a whole TLD; a bare string passed as a list is a tuple of characters; a trailing dot or an all-numeric last label is not a name. `_checked_hosts` refuses all
    of these when the session is built. It does not consult the public suffix list (`.co.uk` passes): the lists are constants a reader approves.
