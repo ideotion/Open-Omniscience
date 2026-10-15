@@ -516,7 +516,7 @@ artifacts:
     upstream: https://pypi.org/project/sqlcipher3/ (https://github.com/coleifer/sqlcipher3)
     check_upstream: "pypi.org/pypi/sqlcipher3/json - compare info.version; 0.6.4 was the newest on 2026-10-13 and is NOT qualified"
     license: zlib (the wrapper); SQLCipher is BSD-3-Clause-style (Zetetic)
-    pin: {floor: "0.6.2", verified: "0.6.3"}
+    pin: {floor: "0.6.2", verified: "0.6.3", ceiling: "0.6.4"}  # ceiling = the first release NOT qualified (pyproject says <ceiling)
     refresh: >
       qualify the new version (docs/ledger/OPEN_QUEUE.md, the 0.6.4 entry): run tests/test_poisoned_connection.py and
       tests/test_database_verify_pages.py on it, decide for each failure whether the app's classification or only the

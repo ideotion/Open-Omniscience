@@ -244,12 +244,13 @@ def _data_drive_on_disk_error(context) -> None:
     """A disk error on the corpus asks the data-drive watchdog to look NOW (R86) rather
     than at its next 2 s tick. Observes only: the error still propagates unchanged."""
     msg = str(getattr(context, "original_exception", "") or "").lower()
-    if not any(m in msg for m in _DISK_GONE):
+    hit = next((m for m in _DISK_GONE if m in msg), None)
+    if hit is None:
         return
     try:
         from src.safety.data_volume import MONITOR
 
-        MONITOR.poke(f"database error: {msg[:120]}")
+        MONITOR.poke(f"database error: {hit}")  # our own marker, never the driver's words
     except Exception:  # noqa: BLE001 - an observer never replaces the real error
         pass
 
