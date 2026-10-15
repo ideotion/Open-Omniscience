@@ -202,3 +202,12 @@ def test_the_window_holds_readings_for_its_span_only(monkeypatch):
     monkeypatch.setenv("OO_MEM_STOP_AVAIL_MB", "64")
     _feed(g, clock, 120, 200.0)  # engaged (below 256) but above the floor: nothing stalls
     assert calls == [] and len(g._stall) <= 30 / 1.5 + 2
+
+
+def test_a_window_set_below_the_minimum_is_raised_to_it(monkeypatch):
+    """A one-second window (twenty readings 0.05 s apart) would stop the app on a passing dip; the minimum raises it, and says so."""
+    calls: list = []
+    monkeypatch.setenv("OO_MEM_STOP_WINDOW_S", "1")
+    g, clock = _guard(monkeypatch, calls)
+    _feed(g, clock, 12, 48.0, step=0.05)
+    assert g.engaged and calls == []
