@@ -5,7 +5,7 @@ corpus**) were walked on 2026-10-12 on rows `analytics45_seed.py` wrote straight
 (`docs/audit/analytics45-look-2026-10-12/`). This is the same walk on a state the **app's own code** wrote.
 
 **Every row here is a stand-in's. Nothing in this folder is a measurement of Wikipedia, and it does not close row F's clause «render from real
-rows»** (`RELEASE_0.5_GATE.md` §1c item 4). It shows that the readers draw what the walk code stores, on a state about 1,000 times richer than the seed.
+rows»** (`RELEASE_0.5_GATE.md` §1c item 4). It shows that the readers draw what the walk code stores.
 
 ## How the state was made
 
