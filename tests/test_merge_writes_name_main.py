@@ -121,7 +121,7 @@ class _Scan:
         self.tree = ast.parse(source)
         self.defs: list[ast.AST] = [n for n in ast.walk(self.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
         self.parent: dict[ast.AST, ast.AST] = {c: p for p in ast.walk(self.tree) for c in ast.iter_child_nodes(p)}
-        self.module_assigns = self._assigns(self.tree.body)
+        self.module_assigns = self._assigns([n for n in self.tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))])
         #: helper name -> {parameter name: its positional index, or None when keyword-only}: the parameters that reach an execute call
         self.passthrough: dict[str, dict[str, int | None]] = {}
         self.problems: list[str] = []
@@ -148,9 +148,7 @@ class _Scan:
         params = {name for name, _ in self._params(fn)}
         if isinstance(node, ast.Name):
             if node.id in params:
-                # a parameter the body REASSIGNS (`sql = sql.replace(...)`, `sql = "DELETE FROM " + t`) is no longer what the caller
-                # passed, so it is not a pass-through: it is read from its assignments at the helper itself
-                return None if node.id in self._assigns(fn.body) else {node.id}
+                return {node.id}
             if node.id in seen:
                 return None
             pool = self._assigns(fn.body).get(node.id)
@@ -226,7 +224,11 @@ class _Scan:
             if node.id in seen:
                 return None
             pool = self._assigns(fn.body).get(node.id) if fn is not None else None  # type: ignore[attr-defined]
-            if pool is None and node.id not in params:
+            scope = fn
+            while pool is None and node.id not in params and scope is not None:  # a closure reads the enclosing functions, then the module
+                scope = self._func_of(scope)
+                pool = self._assigns(scope.body).get(node.id) if scope is not None else self.module_assigns.get(node.id)  # type: ignore[attr-defined]
+            if pool is None and fn is None:
                 pool = self.module_assigns.get(node.id)
             if not pool:
                 return None
@@ -256,7 +258,10 @@ class _Scan:
         for call in (n for n in ast.walk(self.tree) if isinstance(n, ast.Call)):
             fn = self._func_of(call)
             for arg in self._sql_args(call):
-                if self._origin_params(arg, fn) is None:
+                origin = self._origin_params(arg, fn)
+                # a parameter the body REASSIGNS (`sql = sql.replace(...)`, `if flag: sql = "SELECT 1"`, one inside a nested def) is still what
+                # the caller passed, on some path, so it stays a pass-through; AND the helper's own assignments are read at the helper
+                if origin is None or (fn is not None and any(n in self._assigns(fn.body) for n in origin)):
                     self._check(call, arg)
         # 3. a string anywhere that starts like a write
         for node in ast.walk(self.tree):
@@ -421,6 +426,9 @@ def test_the_scan_sees_the_real_module_s_writes():
         # a helper that REASSIGNS the parameter it executes is no pass-through
         'def run(con, sql):\n    sql = sql.replace("main.", "")\n    con.execute(sql)\ndef f(con):\n    run(con, "DELETE FROM main.t")',
         'def run(con, t):\n    sql = "DELETE FROM " + t\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
+        # a parameter reassigned on SOME path stays a pass-through: the caller's text can still reach execute
+        'def run(con, sql, flag):\n    if flag:\n        sql = "SELECT 1"\n    con.execute(sql)\ndef f(con, v):\n    run(con, f"{v} FROM t", False)',
+        'def run(con, sql):\n    def g():\n        sql = "SELECT 1"\n        return sql\n    g()\n    con.execute(sql)\ndef f(con, v):\n    run(con, f"{v} FROM t")',
         # *args and **kwargs that could carry the statement are not resolvable
         'def f(con, args):\n    con.execute(*args)',
         'def f(con, kw):\n    con.execute(**kw)',
@@ -473,6 +481,14 @@ def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
         'def run(con, sql, /):\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
         'def f(con, x):\n    con.execute("DELETE FROM main.t" if x else "DELETE FROM temp.t")',
         'def f(con):\n    con.executescript("SELECT 1; " + "DELETE FROM main.t")',
+        # each wrapper the reader sees through, with a statement that is a read: removing the clause makes it unreadable
+        'from sqlalchemy import text\ndef f(s):\n    s.execute(text("SELECT 1"))',
+        'from sqlalchemy import text\ndef f(s):\n    s.execute(text("SELECT :a").bindparams(a=1))',
+        'def f(con):\n    con.execute("SELECT %s" % 1)',
+        'def f(con):\n    sql = "SELECT 1"\n    con.execute(sql)',
+        'def f(con):\n    sql = "SELECT 1"\n    def g():\n        con.execute(sql)\n    g()',
+        'SQL = "SELECT 1"\ndef f(con):\n    con.execute(SQL)',
+        'def run(con, sql, flag):\n    if flag:\n        sql = "SELECT 1"\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 2", False)',
     ],
 )
 def test_the_scan_passes_the_qualified_and_the_read_shapes(snippet):
@@ -490,6 +506,10 @@ def test_the_fts_bulk_indexer_the_merge_calls_names_main():
     source = textwrap.dedent(inspect.getsource(fts._index_rows))
     assert source.count("main.article_fts") >= 2 and "main.article_fts_norm" in source
     assert _scan(source) == []
+    # `rebuild_index` runs on a fresh connection BEFORE the attach today; it names main too, so moving the attach earlier stays safe
+    rebuild = textwrap.dedent(inspect.getsource(fts.rebuild_index))
+    assert "main.article_fts_norm" in rebuild and _scan(rebuild) == []
+    assert _classify(fts.REBUILD_MARK) == [] and fts.REBUILD_MARK.startswith("INSERT INTO main.article_fts")
 
 
 def _corpus(path: Path):
