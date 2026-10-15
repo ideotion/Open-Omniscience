@@ -588,22 +588,19 @@ def _log_long_release(holder: str | None, held: float) -> None:
     (``max_hold_s``), so every other length was lost. This line is the length of every hold at or past the threshold (and at least
     ``_RELEASE_LINE_FLOOR_S``, so a threshold set under one second does not make every millisecond hold speak).
 
-    Only the holder's thread name and the seconds are written: no exception, no statement, no engine text, so a hold that ended in an
-    error says no more than one that did not. Never raises."""
+    Only the holder's thread name (with the passphrases the process holds taken out of it: a name can be chosen by a request) and the
+    seconds are written: no exception, no statement, no engine text, so a hold that ended in an error says no more than one that did not.
+    Never raises."""
     with suppress(Exception):
         if held >= _watchdog_threshold_s():
-            _LOG.warning("write gate released after %.1fs by %r", held, scrubbed_name(holder))
+            _LOG.warning("write gate released after %.1fs by %r", held, _scrubbed_name(holder))
 
 
 def _scrubbed_name(name: str | None) -> str | None:
     """A thread name as the diagnostics may show it: the passphrases the process holds taken out. A name is a code constant or a
     catalogue/request key, so none is expected to carry one; this keeps it true if one ever does. Never raises."""
-    if name is None:
-        return None
     try:
-        from src.monitoring.secret_scrub import scrubbed
-
-        return scrubbed(name)
+        return scrubbed_name(name)  # the one helper (secret_scrub); None stays None
     except Exception:  # noqa: BLE001 - a name that cannot be checked is not shown
         return "(name withheld)"
 
@@ -732,7 +729,7 @@ def watchdog_tick(gate: WriterGate, warned_since: float | None) -> float | None:
     _LOG.warning(
         "write gate held %.1fs by %r (waiters=%s, queued=%s) -- stack:\n%s",
         held_for,
-        scrubbed_name(holder),
+        _scrubbed_name(holder),
         s.get("waiters"),
         s.get("queued"),
         _holder_stack(ident),

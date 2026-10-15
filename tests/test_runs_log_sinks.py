@@ -996,6 +996,203 @@ def test_the_module_of_every_built_slot_is_read_by_the_log_guard():
     assert unguarded == set(), f"a built slot's module the log guard does not read: {sorted(unguarded)}"
 
 
+#: The two helpers :data:`_SLOT_PRODUCER_SCRUBS` excuses BY NAME for ``storage_events.py``. The exemption trusts the name, so a body that
+#: later handed the message on (``str(exc)``, ``exc.args``, an f-string, an alias, a traceback, a number that is really a path) would be
+#: excused without a test failing: this reads the BODIES, default-deny. ``param`` is the parameter that holds the caught exception,
+#: ``calls`` the calls it may be a positional argument of, ``stores`` the only names the body may bind.
+_CLASS_ONLY_HELPERS: dict[str, dict] = {
+    "_label": {"param": "exc", "calls": frozenset({"type", "isinstance"}), "stores": frozenset({"name", "code", "named"})},
+    "_internal_failure": {
+        "param": "exc",
+        "calls": frozenset({"_label", "log_failure"}),
+        "stores": frozenset({"_INTERNAL_FAILURES", "_LAST_INTERNAL_FAILURE"}),
+    },
+}
+#: What the bodies lean on, with how many times each name is bound at MODULE scope: the helpers once (their own ``def``), the two
+#: imports once, and the builtins the bodies call never, so a module-level ``_label = repr`` or ``type = ...`` is reported.
+_CLASS_ONLY_BINDINGS = {"_label": 1, "_internal_failure": 1, "log_failure": 1, "errno": 1, "type": 0, "isinstance": 0, "str": 0, "repr": 0}
+#: Ways to reach the exception being handled without naming it: the traceback module, ``sys.exc_info()``, ``sys.exception()``.
+_EXC_ROUTES = frozenset({"traceback", "exc_info", "exception", "format_exc", "print_exc", "format_exception", "last_value"})
+
+
+def _bound_at_module_scope(tree: ast.Module) -> dict[str, int]:
+    """How many times each name is bound at module scope: defs, classes, imports, assignment targets, loop and ``with`` targets, walrus
+    targets and ``except ... as`` names, not entering a function, lambda or class body."""
+    counts: dict[str, int] = {}
+
+    def bind(name: str) -> None:
+        counts[name] = counts.get(name, 0) + 1
+
+    stack: list[ast.AST] = list(tree.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bind(node.name)
+            continue
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                bind((a.asname or a.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                bind(a.asname or a.name)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bind(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bind(node.id)
+        stack.extend(ast.iter_child_nodes(node))
+    return counts
+
+
+def _ways_a_helper_uses_its_exception(source: str) -> dict[str, list[str]]:
+    """For each helper of :data:`_CLASS_ONLY_HELPERS` in ``storage_events.py``'s source: what its body does with the exception that is
+    not one of the allowed shapes, as ``line: text`` (or a sentence). Default-deny: the exception parameter may appear only as a
+    positional argument of an allowed call, or as ``.errno`` on the right of a plain assignment whose name is then only used as the
+    operand of ``isinstance(..., int)`` or ``errno.errorcode.get(...)``; no other name may be bound, nothing may be defined or
+    imported inside, and nothing may reach the exception being handled by another road (``traceback``, ``sys.exc_info()``)."""
+    tree = ast.parse(source)
+    lines = source.splitlines()
+    out: dict[str, list[str]] = {}
+
+    def at(node: ast.AST) -> str:
+        return f"{getattr(node, 'lineno', 0)}: {lines[getattr(node, 'lineno', 1) - 1].strip()}"
+
+    bound = _bound_at_module_scope(tree)
+    for name, want in _CLASS_ONLY_BINDINGS.items():
+        if bound.get(name, 0) != want:
+            out.setdefault("<module>", []).append(f"{name} is bound {bound.get(name, 0)} times at module scope, expected {want}")
+    for name, rule in _CLASS_ONLY_HELPERS.items():
+        param, calls, stores = rule["param"], rule["calls"], rule["stores"]
+        defs = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name]
+        if len(defs) != 1:
+            out.setdefault(name, []).append(f"defined {len(defs)} times at module level")
+            continue
+        fn = defs[0]
+        bad = out.setdefault(name, [])
+        args = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)]
+        if param not in args:
+            bad.append(f"the exception parameter {param!r} is not a parameter of {name} (found {args})")
+        if fn.args.defaults or any(d is not None for d in fn.args.kw_defaults):
+            # a default can rebind a name the body relies on (``type=str``, ``_label=repr``) without a store anywhere in the body
+            bad.append(f"{at(fn)} (a parameter default: the helpers take none, and a default can stand in for a name the body calls)")
+        if fn.decorator_list:
+            bad.append(f"{name} is decorated")
+        parents = {child: node for node in ast.walk(fn) for child in ast.iter_child_nodes(node)}
+        tainted: set[str] = set()
+        uses = 0
+        for node in ast.walk(fn):
+            if isinstance(node, (ast.Lambda, ast.Import, ast.ImportFrom, ast.ClassDef, ast.AsyncFunctionDef)) or (
+                isinstance(node, ast.FunctionDef) and node is not fn
+            ):
+                bad.append(f"{at(node)} (defines or imports inside the body)")
+            if isinstance(node, ast.ExceptHandler) and node.name:
+                bad.append(f"{at(node)} (binds the handled exception)")
+            if isinstance(node, ast.Name) and node.id in _EXC_ROUTES or isinstance(node, ast.Attribute) and node.attr in _EXC_ROUTES:
+                bad.append(f"{at(node)} (reaches the handled exception another way)")
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id not in stores:
+                bad.append(f"{at(node)} (binds {node.id!r})")
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == param:
+                up = node
+                while not isinstance(up, ast.stmt):
+                    up = parents[up]
+                if node.attr == "errno" and isinstance(up, ast.Assign) and len(up.targets) == 1 and isinstance(up.targets[0], ast.Name):
+                    tainted.add(up.targets[0].id)
+                    uses += 1
+                else:
+                    bad.append(at(node))
+                continue
+            if isinstance(node, ast.Name) and node.id == param and isinstance(node.ctx, ast.Load):
+                uses += 1
+                up2 = parents.get(node)
+                if isinstance(up2, ast.Attribute):
+                    continue  # judged on the attribute above
+                if isinstance(up2, ast.Call) and node in up2.args and isinstance(up2.func, ast.Name) and up2.func.id in calls:
+                    continue
+                bad.append(at(node))
+        if param in args and uses == 0:
+            bad.append(f"the exception parameter {param!r} is never used")
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Name) and node.id in tainted and isinstance(node.ctx, ast.Load):
+                up3 = parents.get(node)
+                is_int_test = (
+                    isinstance(up3, ast.Call) and isinstance(up3.func, ast.Name) and up3.func.id == "isinstance"
+                    and len(up3.args) == 2 and up3.args[0] is node and ast.unparse(up3.args[1]) == "int"
+                )
+                is_name_lookup = isinstance(up3, ast.Call) and ast.unparse(up3.func) == "errno.errorcode.get" and up3.args == [node]
+                if not (is_int_test or is_name_lookup):
+                    bad.append(f"{at(node)} (the errno value is used for something other than a type test or a name lookup)")
+        if not bad:
+            del out[name]
+    return out
+
+
+def test_the_storage_events_helpers_the_log_guard_excuses_by_name_hand_on_the_class_and_never_the_message():
+    """MUTATION TARGET: the bodies of ``_label`` and ``_internal_failure``. The slot-producer guard counts a call to either as a
+    scrub, so what makes them one is read here."""
+    source = (ROOT / "src/monitoring/storage_events.py").read_text(encoding="utf-8")
+    assert _ways_a_helper_uses_its_exception(source) == {}
+    assert set(_CLASS_ONLY_HELPERS) == _SLOT_PRODUCER_SCRUBS["src/monitoring/storage_events.py"], "the table and this check name the same helpers"
+
+
+def _swap(old: str, new: str):
+    def apply(source: str) -> str:
+        assert source.count(old) == 1, f"the mutation target moved: {old!r}"
+        return source.replace(old, new)
+
+    return apply
+
+
+def _whole_label(new_def: str):
+    def apply(source: str) -> str:
+        # bounded by the parser, not by a guessed delimiter (tests/test_source_slicing_discipline.py counts the hand-rolled slices)
+        (fn,) = [n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == "_label"]
+        lines = source.splitlines(keepends=True)
+        return "".join(lines[: fn.lineno - 1]) + new_def + "".join(lines[fn.end_lineno :])
+
+    return apply
+
+
+_FAILURE_LINE = '    _LAST_INTERNAL_FAILURE = f"{what}: {_label(exc)}"\n'
+_PLANTED_BODIES = {
+    "str-as-name": _swap("    name = type(exc).__name__\n", "    name = str(exc)\n"),
+    "fstring-of-exc": _swap('    return f"{name} {named}" if named else name\n', '    return f"{name}: {exc}"\n'),
+    "args-fallback": _swap("    code = exc.errno if isinstance(exc, OSError) else None\n", "    code = exc.errno if isinstance(exc, OSError) else exc.args\n"),
+    "repr-fallback": _swap(
+        "    named = errno.errorcode.get(code) if isinstance(code, int) else None\n",
+        "    named = errno.errorcode.get(code) if isinstance(code, int) else repr(exc)\n",
+    ),
+    "stored-raw": _swap(_FAILURE_LINE, '    _LAST_INTERNAL_FAILURE = f"{what}: {exc}"\n'),
+    "aliased": _swap(_FAILURE_LINE, '    held = exc\n    _LAST_INTERNAL_FAILURE = f"{what}: {_label(held)}"\n'),
+    "traceback-logged": _swap(
+        '    log_failure(_LOG, f"storage events: {what}", exc, level=logging.DEBUG)\n',
+        '    _LOG.debug("storage events: %s", what, exc_info=exc)\n    log_failure(_LOG, f"storage events: {what}", exc, level=logging.DEBUG)\n',
+    ),
+    "renamed-parameter": _whole_label("def _label(err: BaseException) -> str:\n    return str(err)\n"),
+    "traceback-module": _swap(_FAILURE_LINE, '    _LAST_INTERNAL_FAILURE = f"{what}: {traceback.format_exc()}"\n'),
+    "sys-exception": _swap(_FAILURE_LINE, '    _LAST_INTERNAL_FAILURE = f"{what}: {sys.exception()}"\n'),
+    "errno-as-text": _swap('    return f"{name} {named}" if named else name\n', '    return f"{name} {exc.errno}"\n'),
+    "errno-value-escapes": _swap('    return f"{name} {named}" if named else name\n', '    return f"{name} {named} {code}"\n'),
+    "shadowed-type": _swap("    name = type(exc).__name__\n", "    type = lambda e: str(e)\n    name = type(exc)\n"),
+    "default-rebinds-type": _swap("def _label(exc: BaseException) -> str:\n", "def _label(exc: BaseException, type=str) -> str:\n"),
+    "default-rebinds-label": _swap(
+        "def _internal_failure(what: str, exc: BaseException) -> None:\n", "def _internal_failure(what: str, exc: BaseException, _label=repr) -> None:\n"
+    ),
+    "keyword-default-rebinds-label": _swap(
+        "def _internal_failure(what: str, exc: BaseException) -> None:\n", "def _internal_failure(what: str, exc: BaseException, *, _label=repr) -> None:\n"
+    ),
+    "module-level-rebind": lambda source: source + "\n_label = repr\n",
+    "module-level-type": lambda source: source + "\ntype = lambda e: str(e)\n",
+}
+
+
+@pytest.mark.parametrize("planted", sorted(_PLANTED_BODIES))
+def test_a_helper_that_starts_handing_on_the_message_is_reported(planted):
+    source = (ROOT / "src/monitoring/storage_events.py").read_text(encoding="utf-8")
+    found = _ways_a_helper_uses_its_exception(_PLANTED_BODIES[planted](source))
+    assert found, f"{planted}: not reported"
+
+
 def _qualified_names(tree: ast.AST) -> dict[int, str]:
     """For every line of a function, the dotted name of the innermost function that holds it (``outer.inner``,
     ``Class.method``): a class is part of the name, so a method of another class that happens to share a

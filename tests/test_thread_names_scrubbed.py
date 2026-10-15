@@ -153,7 +153,7 @@ def _raw_thread_names(rel: str) -> list[str]:
     def wrapped(node: ast.AST) -> bool:
         cur = parents.get(id(node))
         while cur is not None:
-            if isinstance(cur, ast.Call) and getattr(cur.func, "id", getattr(cur.func, "attr", "")) == "scrubbed_name":
+            if isinstance(cur, ast.Call) and getattr(cur.func, "id", getattr(cur.func, "attr", "")) in {"scrubbed_name", "_scrubbed_name"}:
                 return True
             cur = parents.get(id(cur))
         return False
@@ -204,5 +204,5 @@ def test_the_guard_sees_the_forms_it_claims_to(tmp_path, monkeypatch):
 
 def test_the_write_gate_holder_lines_are_scrubbed():
     text = (ROOT / "src/database/writer.py").read_text(encoding="utf-8")
-    assert 'by %r", held, scrubbed_name(holder))' in text
-    assert "        scrubbed_name(holder),\n        s.get(\"waiters\")," in text
+    assert 'by %r", held, _scrubbed_name(holder))' in text
+    assert "        _scrubbed_name(holder),\n        s.get(\"waiters\")," in text

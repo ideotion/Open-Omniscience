@@ -266,6 +266,9 @@ _WAL_AT_BOOT: dict[str, Any] | None = None
 # A reading taken by ``take_boot_wal_reading`` before the lifespan runs, for the start (``serve``) that opens the store itself
 # before the lifespan can: ``record_session_start`` uses it instead of probing again.
 _EARLY_WAL: dict[str, Any] | None = None
+# The database file's size in pages against its header's, read at boot with the -wal (PR B; src/monitoring/page_reading.py).
+_PAGES_AT_BOOT: dict[str, Any] | None = None
+_EARLY_PAGES: dict[str, Any] | None = None
 # When THIS process stamped itself running, and the monotonic reading beside it.
 #
 # Deliberately in-process rather than read back from session_state.json: that file is
@@ -299,12 +302,13 @@ def take_boot_wal_reading() -> None:
     before the server's lifespan runs, and that connection makes a new -wal or deletes the leftover one, so a reading taken in the
     lifespan describes this process; call this first thing in ``serve``, before anything that can open the store. A server started
     by ``python -m uvicorn`` opens nothing before its lifespan and needs no call. Never raises."""
-    global _EARLY_WAL
+    global _EARLY_WAL, _EARLY_PAGES
     try:
         _EARLY_WAL = wal_state_before_open()
     except Exception as exc:  # noqa: BLE001 - a reading that cannot be taken is taken again in the lifespan
         _EARLY_WAL = None
         _LOG.warning("the early boot -wal reading could not be taken (%s); the lifespan takes it", type(exc).__name__)
+    _EARLY_PAGES = pages_state_before_open()
 
 
 def record_session_start() -> dict[str, Any] | None:
@@ -319,13 +323,16 @@ def record_session_start() -> dict[str, Any] | None:
     caller has to remember, and it also survives the case a reorder inside
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
-    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL
+    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL, _PAGES_AT_BOOT, _EARLY_PAGES
     global _SESSION_STARTED_AT, _SESSION_STARTED_MONO
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
     boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
     _EARLY_WAL = None
     _WAL_AT_BOOT = boot_reading
+    # The size in pages, from the file's own bytes, at the same moment and for the same reason: no connection exists yet.
+    _PAGES_AT_BOOT = _EARLY_PAGES if _EARLY_PAGES is not None else pages_state_before_open()
+    _EARLY_PAGES = None
     prev = _read_state()
     if not _PREV_LOADED:
         _PREV_AT_BOOT = prev
@@ -375,6 +382,23 @@ def record_session_start() -> dict[str, Any] | None:
     except Exception as exc:  # noqa: BLE001 - the ledger never breaks a boot
         log_failure(_LOG, "session ledger: boot record failed", exc, level=logging.DEBUG)
     return prev
+
+
+def pages_state_before_open() -> dict[str, Any]:
+    """The store file's size in pages against its header's, from the file's own bytes (no engine). Never raises; see
+    ``src.monitoring.page_reading`` for what each ``state`` means and why a difference is a fact and not a verdict."""
+    from src.monitoring import page_reading
+
+    try:
+        return page_reading.read_header(data_dir() / _DB_NAME)
+    except Exception as exc:  # noqa: BLE001 - a reading that cannot be taken is a reading that says so (the data folder may be missing)
+        return {"source": "header-bytes", "state": "unreadable", "error": type(exc).__name__}
+
+
+def pages_at_boot() -> dict[str, Any] | None:
+    """This boot's page reading (``record_session_start`` takes it before any connection can exist), or ``None`` if the boot read
+    never ran. It describes the file the PREVIOUS session left, like ``wal_at_boot``."""
+    return _PAGES_AT_BOOT
 
 
 def wal_at_boot() -> dict[str, Any] | None:

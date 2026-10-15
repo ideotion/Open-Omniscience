@@ -323,6 +323,22 @@ def test_the_watchdog_warns_once_per_hold_and_names_the_holder(monkeypatch, capl
     assert again == first, "the second tick started a new hold that never happened"
 
 
+def test_a_holder_named_with_the_passphrase_has_it_taken_out_of_the_watchdog_line(monkeypatch, caplog):
+    from src.database import connect as connect_mod
+
+    secret = "MARKER-passphrase-4711-correct-horse"
+    monkeypatch.setattr(connect_mod, "_passphrase", secret)
+    monkeypatch.setenv("OO_WRITE_GATE_WARN_S", "0.05")
+    gate = WriterGate()
+    with _Holder(gate, name=f"worker-{secret}"):
+        time.sleep(0.1)
+        with caplog.at_level("WARNING", logger="database.writer"):
+            watchdog_tick(gate, None)
+    warnings = [r for r in caplog.records if "write gate held" in r.getMessage()]
+    assert len(warnings) == 1 and "worker-" in warnings[0].getMessage()
+    assert secret not in caplog.text
+
+
 def test_the_watchdog_is_silent_below_the_threshold_and_on_a_free_gate(monkeypatch, caplog):
     """The negative twin: a watchdog that warned about every hold would name
     every ordinary write and teach the operator to ignore it."""

@@ -73,7 +73,7 @@ async function render(payload, code, opts) {
   const drawn = [];
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; let _ringSeq = 0; let _ringCleared = false; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
+    "let _ringMapLast = null; let _ringSeq = 0; let _ringHostNote = ''; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
   const fn = run({ OOI18N: opts.noTf ? { t } : { t, tf } }, opts.noTf ? { t } : { t, tf }, (id) => els[id] || null, ESC,
     async () => payload, (c) => c, async (host, o) => { drawn.push(o); }, (a, b) => a + b, (x) => x, (x) => x,
     () => "", () => {});
@@ -93,11 +93,11 @@ function session(code, apiFn, ooMapFn) {
   const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
     "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
-    "let _ringMapLast = null; let _ringSeq = 0; let _ringCleared = false; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
+    "let _ringMapLast = null; let _ringSeq = 0; let _ringHostNote = ''; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
   const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, ooMapFn || (async () => {}),
     (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
   return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
-           switchTo: (c) => load(c), host: () => els["sg-ringmap"].innerHTML };
+           switchTo: (c) => load(c), host: () => els["sg-ringmap"].innerHTML, detail: () => els["sg-ringmap-detail"].innerHTML };
 }
 
 const HIDDEN = {
@@ -277,6 +277,41 @@ const NO_MENTIONS = {
     h.calls[2].release(); await b;
     h.calls[1].fail(); await tick();
     assert(sess.host().includes("Group B") && !sess.host().includes("late failure"), "a late error of the repaint replaced the newer group: " + sess.host());
+  });
+  // The newer pick has not drawn a map: it is still loading, found nothing, or failed. The older draw that finishes
+  // late must not leave its map in the host; the host shows what the newer pick put there.
+  for (const [name, newerApi, expected] of [
+    ["is still loading", () => new Promise(() => {}), "Loading"],
+    ["found nothing", async () => ({ found: false }), "No cross-country coverage"],
+    ["failed", async () => { throw new Error("newer failed"); }, "newer failed"],
+  ]) {
+    await test("an older draw finishing late does not leave its map over a newer pick that " + name, async () => {
+      const h = held();
+      const sess = session("en", (url) => (url.endsWith("=a") ? Promise.resolve(GA) : newerApi()), h.ooMap);
+      const a = sess.show("a"); await tick();
+      const b = sess.show("b"); await tick();
+      h.calls[0].release(); await a;
+      assert(sess.host().includes(expected) && !sess.host().includes("drawn:"), "the older map stayed over the newer state: " + sess.host());
+      assert(sess.detail() === "" || !sess.detail().includes("FR"), "the older draw wrote its detail: " + sess.detail());
+      if (name !== "is still loading") await b;
+      sess.switchTo("fr"); sess.repaint(); await tick();
+      assert(!sess.host().includes("drawn:"), "a language switch brought the older map back: " + sess.host());
+    });
+  }
+  await test("a stale draw never writes its detail: the newer group's table stays", async () => {
+    const h = held();
+    const FR = Object.assign({}, GA, { countries: [{ country: "FR", articles: 4, mentions: 9 }] });
+    const DE = Object.assign({}, GB, { countries: [{ country: "DE", articles: 5, mentions: 7 }] });
+    const sess = session("en", (url) => Promise.resolve(url.endsWith("=a") ? FR : DE), h.ooMap);
+    const a = sess.show("a"); await tick();
+    const b = sess.show("b"); await tick();
+    h.calls[1].release(); await b;
+    assert(sess.detail().includes("DE") && !sess.detail().includes("FR"), "the newer table is not on screen: " + sess.detail());
+    h.calls[0].release(); await tick();
+    assert(!sess.detail().includes("FR"), "the stale draw wrote its table before the newer group was repainted: " + sess.detail());
+    for (let i = 2; i < h.calls.length; i++) h.calls[i].release();
+    await a;
+    assert(sess.detail().includes("DE") && !sess.detail().includes("FR"), "the stale draw replaced the newer group's table: " + sess.detail());
   });
   await test("a language-switch repaint still inside ooMap when another group is picked does not stay on screen", async () => {
     const h = held();

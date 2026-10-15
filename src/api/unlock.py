@@ -53,6 +53,11 @@ _MIN_PASSPHRASE = 8
 
 #: Held for the whole passphrase check and the open that follows it (see ``unlock``).
 _UNLOCK_ONE_AT_A_TIME = threading.Lock()
+#: How many passphrases this process refused through ``_unlock_locked``. A refused key's connection checkpoints the ``-wal`` into the file
+#: and deletes it, so the page reading an unlock takes afterwards describes the file after that and not the one the last session left;
+#: the reading carries this number so a difference of 0 after a typo is not read as a healthy previous end. Written and read under
+#: ``_UNLOCK_ONE_AT_A_TIME`` only.
+_REFUSED_ATTEMPTS = 0
 
 
 def main_db_path() -> Path | None:
@@ -367,7 +372,7 @@ def startup_status() -> dict:
     return get_startup()
 
 
-def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None) -> None:
+def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None, pages: dict | None = None) -> None:
     """Open the engine on the now-available key, make the DB queryable, and run the
     slow startup upkeep IN THE BACKGROUND.
 
@@ -384,6 +389,12 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
     always ``absent``, whatever the previous session had left. A caller that has no
     reading (a fresh store) passes None and the timer says so rather than inventing
     one.
+
+    ``pages`` is the file's size in pages against the database the engine counts, read
+    off the verify connection before anything wrote (``src.monitoring.page_reading``):
+    the engine's own ``PRAGMA page_count`` (``pages_in_database``, not the header's)
+    beside the file's length, kept on the ``open`` line of the storage-events journal.
+    A fresh store has none.
 
     On a large encrypted corpus the upkeep (bounded ANALYZE + catalog seeding + full
     COUNTs that decrypt every page + a cache warm) took long enough to freeze the
@@ -407,7 +418,7 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
     # BEFORE the first connection (a large WAL predicts recovery time inside it) and
     # time the synchronous phases, so "why was unlock slow" answers itself in the
     # next diagnostics export instead of needing the maintainer's stopwatch.
-    _t = _forensic_timer(wal_state=wal_state)
+    _t = _forensic_timer(wal_state=wal_state, pages=pages)
     if verify_ms is not None:
         from src.monitoring.forensics import UNLOCK_VERIFY_PHASE
 
@@ -459,10 +470,12 @@ class _forensic_timer:
     connection, and persists the record via forensics.record_unlock_timing.
     Every step is best-effort: a forensics failure never touches the unlock."""
 
-    def __init__(self, wal_state: dict | None = None) -> None:
+    def __init__(self, wal_state: dict | None = None, pages: dict | None = None) -> None:
         import time as _time
 
         self._time = _time
+        # The size in pages against the database the engine counts, read by the caller off its verify connection (``page_reading``), or None.
+        self._pages = pages
         self._t0 = _time.monotonic()
         self._last = self._t0
         self._phases: list[dict] = []
@@ -517,7 +530,12 @@ class _forensic_timer:
             total_ms = round((self._time.monotonic() - self._t0) * 1000 + self._caller_ms, 1)
             # The last ten openings, one line each (the whole step record stays in ``last_unlock`` and the sentinel, once).
             storage_events.note_open(
-                "unlock", total_ms=total_ms, phases=self._phases, wal_bytes_before=self._wal, init_db=self._init_db
+                "unlock",
+                total_ms=total_ms,
+                phases=self._phases,
+                wal_bytes_before=self._wal,
+                init_db=self._init_db,
+                pages=self._pages,
             )
             record_unlock_timing(
                 {
@@ -727,7 +745,9 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
 
 
 def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
+    global _REFUSED_ATTEMPTS
     from src.database.connect import WrongPassphraseError, connect, set_passphrase
+    from src.monitoring import page_reading
 
     # The key typed into this request is not held until the verify below has accepted it, so no net that reads what the
     # process holds can know it, and an engine's error can quote the statement that carried it: whatever escapes the block (a
@@ -748,8 +768,14 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         _verify_t0 = time.monotonic()
         try:
             conn = connect(p, key=body.passphrase, check_same_thread=False)
+            # The size in pages against the database's, off the connection that just proved the key and before anything writes or
+            # checkpoints through it: the encrypted header cannot be read from the file's bytes, so this is where an encrypted
+            # store can be read at all. It describes the file the last session left unless a key was REFUSED first (each refusal
+            # folds the log into the file), which the reading says. Never raises; a fact (counts only), not a verdict.
+            _pages = page_reading.from_connection(conn, p, refused_before=_REFUSED_ATTEMPTS)
             _close_after_checkpoint(conn, passphrase=body.passphrase)
         except WrongPassphraseError as exc:
+            _REFUSED_ATTEMPTS += 1
             # A wrong key under the floor of what can be taken out of a text (src/monitoring/secret_scrub.py,
             # MIN_SECRET_CHARS) withholds the message whole, so the withheld text is the message's fixed words, not
             # the scrub's "text withheld" notice: a mistyped short key is the lock screen's commonest answer.
@@ -764,7 +790,10 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
         _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
         set_passphrase(body.passphrase)
         try:
-            _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
+            _said = page_reading.line_of(_pages)
+            if _said:
+                _LOG.warning("unlock: %s", _said)
+            _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms, pages=_pages)
         except Exception:
             # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
             # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
