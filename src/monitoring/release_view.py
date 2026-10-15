@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.monitoring.secret_scrub import scrubbed_value
+
 #: A class name, a step name, a serve's name: what a code identifier looks like. Anything else is not copied as a name.
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,79}$")
 #: The most characters of a step's ``skipped`` (words of the code's own, that a step writes: ``this process has pages in swap``).
@@ -99,6 +101,10 @@ def scrub_marks(marks: Any) -> tuple[dict[str, Any] | None, str | None]:
                     snap = {**snap, "guard": guard}
                 clean.append(snap)
             out[key] = clean
-        return out, None
+        # Thread names in the snapshots are request-chosen text, and an older build's sidecar kept them as they were.
+        cleaned = scrubbed_value(out)
+        if not isinstance(cleaned, dict):
+            raise ValueError("the marks could not be checked")
+        return cleaned, None
     except Exception as exc:  # noqa: BLE001 - a diagnostic never fails its caller
         return None, type(exc).__name__

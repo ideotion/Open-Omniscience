@@ -75,7 +75,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed_name
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -477,7 +477,7 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(t, dict) or t.get("waiting") or t.get("sampler"):
             continue
         stack = t.get("stack") or []
-        name = tokenise_paths(str(t.get("name") or "?"))
+        name = tokenise_paths(scrubbed_name(str(t.get("name") or "?")) or "?")
         frame = tokenise_paths(str(stack[0])) if stack else None
         threads.append({
             "name": _cut_text(name, _THREAD_NAME_MAX),
