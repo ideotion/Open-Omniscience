@@ -123,11 +123,11 @@ def build_search_index(alpha3: str) -> dict:
     # The unary plus keeps SQLite off ``ix_osm_objects_country_kind``: with that index it looks up every row of the country
     # and sorts them to keep one page, so a page costs the whole remainder (measured, EXPLAIN QUERY PLAN: the index plus a
     # temp b-tree for ORDER BY; the lane never runs ANALYZE). Without it the rowid drives the scan in id order.
-    country = literal_column(f"+{t.name}.country_alpha3")
+    country_col: Any = literal_column(f"+{t.name}.country_alpha3")
     query = select(
         t.c.id, t.c.osm_type, t.c.kind, t.c.lat, t.c.lon, _col("name"), t.c.names,
         _col("addr:housenumber"), _col("addr:street"), _col("addr:place"), _col("addr:postcode"), _col("addr:city"),
-    ).where(country == alpha3)
+    ).where(country_col == alpha3)
     names = addresses = no_point = 0
     with store.lane_session("osm") as s:
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
