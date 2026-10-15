@@ -88,11 +88,14 @@ def test_a_name_written_by_an_older_build_is_withheld_even_when_no_passphrase_is
     assert session_history._pressure_record(new)["threads"][0]["name"].startswith("oo-dump-")
 
 
-def test_both_snapshot_writers_stamp_and_scrub_their_names(held):
+def test_both_snapshot_writers_stamp_and_scrub_their_names(held, monkeypatch):
     """Behavioural: the heavy and the light snapshot each carry the stamp, and the name of a thread that holds the passphrase
     is scrubbed in what they build (a source count would pass with the stamp set on the wrong object)."""
     from src.monitoring import session_hwm
 
+    # The light writer skips a thread that is waiting, and this one is: without this it would never hold the name and its half of the
+    # test would pass whatever the writer did with it.
+    monkeypatch.setattr(session_hwm, "_is_waiting", lambda line: False)
     stop = threading.Event()
     t = threading.Thread(target=stop.wait, name=f"oo-dump-{MARKER}", daemon=True)
     t.start()
@@ -106,7 +109,8 @@ def test_both_snapshot_writers_stamp_and_scrub_their_names(held):
     for snap in (heavy, light):
         assert snap.get("names_scrubbed") is True
         assert MARKER not in json.dumps(snap)
-    assert any(str(e.get("name", "")).startswith("oo-dump-") for e in heavy["threads"]), "the thread was seen"
+    for snap in (heavy, light):
+        assert any(str(e.get("name", "")).startswith("oo-dump-") for e in snap["threads"]), "the thread was seen"
 
 
 @pytest.mark.parametrize(

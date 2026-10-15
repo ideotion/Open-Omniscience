@@ -68,6 +68,25 @@ def _articles_to_reindex(session, article_model) -> int:
     return max(0, int(session.query(article_model.id).count()) - stand_in_article_count(session))
 
 
+
+def _is_pool_timeout(exc: BaseException) -> bool:
+    """``True`` when ``exc``, or any exception it chains, is SQLAlchemy's connection-pool timeout (``QueuePool limit ... connection
+    timed out``). Judged by class, never by words, because the words of a driver error are not kept."""
+    try:
+        from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+        seen: set[int] = set()
+        link: BaseException | None = exc
+        while link is not None and id(link) not in seen:
+            if isinstance(link, PoolTimeout):
+                return True
+            seen.add(id(link))
+            link = link.__cause__ or link.__context__
+    except Exception:  # noqa: BLE001 - a chain that cannot be read is not a timeout
+        return False
+    return False
+
+
 class ReindexJobManager:
     """ONE pausable server-side whole-corpus re-index at a time. Progress is a CURSOR
     (the last article id processed), persisted to ``data_dir()`` so a resume survives
@@ -86,6 +105,9 @@ class ReindexJobManager:
         self._parked = False  # yielding to an exclusive operation (a restore owns the machine)
         self._tally: dict[str, int] = {}  # reindexed / failed / pruned / kept_curated
         self._error: str | None = None
+        # Whether the failure was the connection pool timing out. Classified where it happens: the record keeps a driver error by class
+        # only, so the release run could no longer recognise it from the words.
+        self._pool_timeout = False
         self._cancelled = False
         self._scope = "full"  # "full" (keywords + when/where/who + sentiment) | "keywords"
         self._prune_after = False  # chain prune_orphan_keywords at the end (the cleanup flow)
@@ -228,6 +250,7 @@ class ReindexJobManager:
             if _cursor <= 0:
                 self._tally = {}
             self._error = None
+            self._pool_timeout = False
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
             self._extractor = _extractor
@@ -417,6 +440,7 @@ class ReindexJobManager:
             with self._lock:
                 self._state = "error"
                 self._error = engine_text(exc)
+                self._pool_timeout = _is_pool_timeout(exc)
                 self._save()
 
     def _yield_to_exclusive(self) -> None:
@@ -531,6 +555,7 @@ class ReindexJobManager:
                 "scope": self._scope,
                 "prune_after": self._prune_after,
                 "error": self._error,
+                "pool_timeout": self._pool_timeout,
                 "running": self._alive(),
                 # A parked job is running and making no progress ON PURPOSE. Without
                 # this the task manager shows "running" with a frozen counter, which

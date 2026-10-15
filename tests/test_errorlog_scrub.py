@@ -461,3 +461,31 @@ def test_a_report_longer_than_the_journals_cut_has_the_passphrase_out_before_the
     for secret in (HELD, ENV):
         for shape in _shapes(secret):
             assert shape not in raw, (shape, raw)
+
+
+def test_a_drivers_words_are_not_in_the_stored_tail_even_when_a_wrapper_quotes_them(journal):
+    """The tail the journal stores goes through ``record_traceback``: a driver's last line (and a wrapper's quote of it) is its class
+    only, the frames stay. ``traceback_text`` would keep the driver's words, scrubbed only for the held keys."""
+    import sqlite3
+
+    fragment = "no such table: hunter2Zq8Lm_tbl"
+    try:
+        try:
+            raise sqlite3.OperationalError(fragment)
+        except sqlite3.OperationalError as inner:
+            raise RuntimeError(f"could not read: {inner}") from inner
+    except RuntimeError as exc:
+        journal.error("failed", exc_info=exc)
+    (entry,) = errorlog.recent_errors()
+    assert "hunter2Zq8Lm_tbl" not in json.dumps(entry)
+    assert "Traceback (most recent call last)" in entry["traceback_tail"], "the frames are kept"
+    assert "OperationalError" in entry["traceback_tail"]
+
+
+def test_a_record_whose_exc_info_cannot_be_formatted_is_still_written_with_its_flags_from_the_stored_text(journal):
+    """``logging`` accepts ``exc_info=(ValueError, "s", None)`` and ``traceback.format_exception`` raises on it; without the guard the
+    record would be dropped (an absence with no reason)."""
+    record = logging.LogRecord("tests.errorlog_scrub", logging.ERROR, __file__, 1, "it failed", None, (ValueError, "s", None))
+    journal.handlers[0].emit(record)  # straight to the journal's handler: another handler's formatting of the same record would raise
+    entries = errorlog.recent_errors()
+    assert len(entries) == 1 and entries[0]["message"] == "it failed"

@@ -941,7 +941,7 @@ def _wait_job(ctx: Any, run: _Run, label: str, mgr: Any, out: dict[str, Any]) ->
                 f" ({st.get('percent')} %)" if st.get("percent") is not None else "")
         ctx.set_progress(detail=f"row 5: {label} -- {what}")
         err = str(st.get("error") or "")
-        if (state == "error" and any(t in err for t in _POOL_TIMEOUT_TEXT)
+        if (state == "error" and (st.get("pool_timeout") is True or any(t in err for t in _POOL_TIMEOUT_TEXT))
                 and resumed < len(POOL_RETRY_DELAYS_S) and not ctx.stopping):
             delay = POOL_RETRY_DELAYS_S[resumed]
             retries.append({"what": f"{label} job", "attempt": resumed + 1, "waited_s": delay, "at": _now_iso(),
