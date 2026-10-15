@@ -148,7 +148,9 @@ class _Scan:
         params = {name for name, _ in self._params(fn)}
         if isinstance(node, ast.Name):
             if node.id in params:
-                return {node.id}
+                # a parameter the body REASSIGNS (`sql = sql.replace(...)`, `sql = "DELETE FROM " + t`) is no longer what the caller
+                # passed, so it is not a pass-through: it is read from its assignments at the helper itself
+                return None if node.id in self._assigns(fn.body) else {node.id}
             if node.id in seen:
                 return None
             pool = self._assigns(fn.body).get(node.id)
@@ -398,6 +400,27 @@ def test_the_scan_sees_the_real_module_s_writes():
         'def run(con, sql, /):\n    con.execute(sql)\ndef f(con):\n    run(con, "DELETE FROM t")',
         'class A:\n    @classmethod\n    def run(cls, con, sql):\n        con.execute(sql)\ndef f(con):\n    A.run(con, "DELETE FROM t")',
         'class A:\n    def run(self, con, sql):\n        con.execute(sql)\ndef f(con, a):\n    a.run(con, sql="DELETE FROM t")',
+        # each clause of the reader on its own, with a BUILT statement (an f-string starting with a placeholder, which no literal-write
+        # check can see), so that removing the clause is seen: the helper by keyword, by position, keyword-only, positional-only,
+        # classmethod and self-method; the aliases of the execute family; the wrappers and conditionals around the text
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, v):\n    run(con, sql=f"{v} FROM t")',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, v):\n    run(con, f"{v} FROM t")',
+        'def run(con, *, sql):\n    con.execute(sql)\ndef f(con, v):\n    run(con, sql=f"{v} FROM t")',
+        'def run(con, sql, /):\n    con.execute(sql)\ndef f(con, v):\n    run(con, f"{v} FROM t")',
+        'class A:\n    @classmethod\n    def run(cls, con, sql):\n        con.execute(sql)\ndef f(con, v):\n    A.run(con, f"{v} FROM t")',
+        'class A:\n    def run(self, con, sql):\n        con.execute(sql)\ndef f(con, a, v):\n    a.run(con, f"{v} FROM t")',
+        'def f(con, v):\n    getattr(con, "execute")(f"{v} FROM t")',
+        'def f(con, v):\n    con.exec_driver_sql(f"{v} FROM t")',
+        'def f(con, v):\n    con.executemany(f"{v} FROM t", [])',
+        'def f(con, v):\n    con.executescript(f"{v} FROM t")',
+        'from sqlalchemy import text\ndef f(s, v):\n    s.execute(text(f"{v} FROM t"))',
+        'from sqlalchemy import text\ndef f(s, v):\n    s.execute(text(f"{v} FROM t").bindparams(a=1))',
+        'def f(con, v, x):\n    con.execute(f"{v} FROM t" if x else "SELECT 1")',
+        'def f(con, v):\n    sql = f"{v} FROM t"\n    con.execute(sql)',
+        'def f(con, v):\n    con.execute("SELECT 1; " + f"{v} FROM t")',
+        # a helper that REASSIGNS the parameter it executes is no pass-through
+        'def run(con, sql):\n    sql = sql.replace("main.", "")\n    con.execute(sql)\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        'def run(con, t):\n    sql = "DELETE FROM " + t\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
         # *args and **kwargs that could carry the statement are not resolvable
         'def f(con, args):\n    con.execute(*args)',
         'def f(con, kw):\n    con.execute(**kw)',
@@ -446,6 +469,10 @@ def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
         'def f(con):\n    con.execute("ANALYZE main.t")',
         'def f(con):\n    con.execute("PRAGMA main.optimize")',
         'def f(con):\n    getattr(con, "execute")("DELETE FROM main.t")',
+        # readable shapes that a clause removed from the reader would turn into a failure (positional-only parameter, conditional)
+        'def run(con, sql, /):\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
+        'def f(con, x):\n    con.execute("DELETE FROM main.t" if x else "DELETE FROM temp.t")',
+        'def f(con):\n    con.executescript("SELECT 1; " + "DELETE FROM main.t")',
     ],
 )
 def test_the_scan_passes_the_qualified_and_the_read_shapes(snippet):

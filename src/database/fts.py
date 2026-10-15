@@ -858,7 +858,7 @@ _REBUILD_BATCH = 500
 
 #: The statement every full rebuild starts with. FTS5's own ``'rebuild'`` is never run
 #: any more, so this is what a probe looks for to tell whether a rebuild happened.
-REBUILD_MARK = "INSERT INTO article_fts(article_fts) VALUES ('delete-all')"
+REBUILD_MARK = "INSERT INTO main.article_fts(article_fts) VALUES ('delete-all')"
 
 
 def _dbapi(con):
@@ -912,7 +912,7 @@ def rebuild_index(con) -> int:
     caps = _store_caps(con)
     _run(con, REBUILD_MARK)
     if caps:
-        _run(con, "DELETE FROM article_fts_norm")
+        _run(con, "DELETE FROM main.article_fts_norm")
     # The first page has no lower bound: a rowid may be 0 or negative, and a keyset that
     # started from "> 0" would silently leave those out of the rebuilt index.
     last: int | None = None

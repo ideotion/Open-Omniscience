@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.database.connect import connect
 
@@ -65,9 +66,9 @@ def test_the_ci_floor_leg_tells_the_tests_it_is_the_floor():
     ci = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     job = ci.split("  sqlcipher-engines:", 1)[1].split("\n  # ", 1)[0]
     assert re.search(r"-\s*\{engine: floor, spec: \"sqlcipher3==", job), "the floor matrix entry is not named `floor`"
-    steps = [s for s in re.split(r"\n      - ", job) if "python -m pytest" in s]
+    steps = [st for st in yaml.safe_load(ci)["jobs"]["sqlcipher-engines"]["steps"] if "python -m pytest" in str(st.get("run", ""))]
     assert steps, "the job has no step that runs pytest"
-    for step in steps:  # every pytest step of the job, wherever its `env:` sits in the step: a job-level export would not count
-        assert "OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}" in step, (
-            f"a step that runs pytest no longer exports the engine it runs: {step.strip().splitlines()[0]!r}"
+    for step in steps:  # the `env:` MAPPING of every pytest step: a job-level export, a comment or the `run:` text would not count
+        assert (step.get("env") or {}).get("OO_EXPECT_SQLCIPHER_ENGINE") == "${{ matrix.engine }}", (
+            f"a step that runs pytest no longer exports the engine it runs in its env: {step.get('name')!r}"
         )

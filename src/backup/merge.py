@@ -1475,7 +1475,7 @@ def _new_row_samples(
         for row in _q(
             con,
             f"SELECT {expr} FROM merged_rows r"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-            f' JOIN "{table}" m ON m.rowid = r.row_id'
+            f' JOIN main."{table}" m ON m.rowid = r.row_id'
             " WHERE r.batch_id = ? AND r.table_name = ?"
             f" ORDER BY r.row_id LIMIT {_SAMPLE_LIMIT}",
             (batch_id, table),
