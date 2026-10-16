@@ -341,13 +341,30 @@ def law_coverage_report(
     # look healthy while covering almost nothing.
     untracked = sorted(set(enum_by_country) - tracked_countries)
     unchecked = {"state": "unchecked", "reason": catalog_error}
+    # The usual keys stay, null: a figure that was not looked up is not a zero (an absent key would read as one).
+    unchecked_extraction = {
+        **unchecked,
+        **dict.fromkeys(
+            (
+                "pdf_extractor_available", "ocr_available", "tracked_documents_whose_url_ends_pdf", "tracked_documents",
+                "catalog_sources_with_a_declared_format_list", "catalog_sources_publishing_pdf_only", "catalog_sources",
+                "method", "caveat",
+            )
+        ),
+    }
+    unchecked_enumeration = {
+        **unchecked,
+        **dict.fromkeys(
+            ("countries_with_an_official_count", "figures", "countries_enumerated_but_untracked", "untracked", "method", "caveat")
+        ),
+    }
     return {
         "documents": total_docs,
         "baselined": total_baselined,
         "catalog": {"readable": catalog_error is None, "error": catalog_error},
         "jurisdictions": jurisdictions,
-        "extraction": unchecked if catalog_error else _pdf_reach(session, catalog),
-        "enumeration": unchecked if catalog_error else {
+        "extraction": unchecked_extraction if catalog_error else _pdf_reach(session, catalog),
+        "enumeration": unchecked_enumeration if catalog_error else {
             "countries_with_an_official_count": len(enum_by_country),
             "figures": sum(len(v) for v in enum_by_country.values()),
             "countries_enumerated_but_untracked": len(untracked),

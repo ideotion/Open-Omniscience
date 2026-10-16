@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -581,6 +582,8 @@ def test_a_file_that_cannot_be_put_back_is_named_in_the_report_too(tmp_path, mon
     calls = {"n": 0}
 
     def flaky(src, dst):
+        if str(dst).endswith(".json"):  # the report is not a target
+            return real(src, dst)
         calls["n"] += 1
         if calls["n"] >= 2:  # the second rename dies, and so does every put-back after it
             raise OSError("disk went away")
@@ -627,13 +630,126 @@ def test_an_unreadable_or_unparsable_target_ends_the_run_with_a_report_and_exit_
 def test_temporaries_a_killed_run_left_are_swept_and_counted(tmp_path, monkeypatch):
     report = tmp_path / "r.json"
     mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(report))
-    (tmp_path / "configs" / ".a.yml.k3j2x1.tmp").write_text("half", encoding="utf-8")
-    (tmp_path / "configs" / ".other.yml.zz.tmp").write_text("not ours", encoding="utf-8")
+    cfg = tmp_path / "configs"
+    (cfg / ".a.yml.k3j2x1ab.tmp").write_text("half", encoding="utf-8")  # mkstemp-shaped, from a killed run
+    (cfg / ".other.yml.zzzzzzzz.tmp").write_text("not ours", encoding="utf-8")
+    (cfg / ".a.yml.notshaped.tmp").write_text("not mkstemp's", encoding="utf-8")
+    young = cfg / ".a.yml.abcdefgh.tmp"
+    young.write_text("a run going on now", encoding="utf-8")
+    future = time.time() + 3600
+    os.utime(young, (future, future))
     assert mod.main() == 0
-    assert json.loads(report.read_text(encoding="utf-8"))["stale_temporaries_removed"] == [".a.yml.k3j2x1.tmp"]
-    assert (tmp_path / "configs" / ".other.yml.zz.tmp").exists(), "only the targets' own temporaries are swept"
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["stale_temporaries_removed"] == [".a.yml.k3j2x1ab.tmp"]
+    assert (cfg / ".other.yml.zzzzzzzz.tmp").exists() and (cfg / ".a.yml.notshaped.tmp").exists(), "only the targets' own"
+    assert young.exists(), "a temporary newer than this run's start belongs to a run still going"
     # a second run is a no-op (idempotent: the way out of a crash between two renames)
     assert mod.main() == 0
+
+
+def test_a_temporary_that_cannot_be_removed_is_counted_not_raised(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(report))
+    stale = tmp_path / "configs" / ".a.yml.k3j2x1ab.tmp"
+    stale.write_text("half", encoding="utf-8")
+    real = Path.unlink
+
+    def refuse(self, *a, **k):
+        if self.name == stale.name:
+            raise PermissionError("held")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    assert mod.main() == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["stale_temporaries_not_removed"] == [stale.name]
+
+
+def test_an_unwritable_report_path_ends_the_run_before_any_file_is_touched(tmp_path, monkeypatch, capsys):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(tmp_path / "no-such-dir" / "r.json"))
+    before = _bytes(tmp_path)
+    assert mod.main() == 2
+    assert _bytes(tmp_path) == before and "REPORT NOT WRITTEN" in capsys.readouterr().err
+
+
+def test_the_temporaries_go_even_when_the_put_back_is_interrupted(tmp_path, monkeypatch):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write")
+    real = os.replace
+    calls = {"n": 0}
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("disk went away")
+        return real(src, dst)
+
+    def interrupted(path, data):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(mod.os, "replace", flaky)
+    monkeypatch.setattr(mod, "_write_one", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        mod.main()
+    assert not list((tmp_path / "configs").glob(".*.tmp")), "an interrupt during the put-back left a temporary behind"
+
+
+def test_a_syntax_error_or_a_wrong_shape_in_a_law_catalogue_is_the_same_named_error(tmp_path):
+    from src.law import catalog as law_catalog
+
+    for body in ("sources: [unclosed\n", "- just\n- a list\n", "sources: {a: 1}\n", "documents: oops\n"):
+        target = tmp_path / "law.yml"
+        target.write_text(body, encoding="utf-8")
+        with pytest.raises(law_catalog.LawCatalogUnreadable, match="law.yml could not be read") as info:
+            law_catalog._read_catalog_yaml(target)
+        assert "unclosed" not in str(info.value) and str(tmp_path) not in str(info.value), "class only, never the text"
+    target.write_text("", encoding="utf-8")  # an empty file is an empty catalogue, as it always was
+    assert law_catalog._read_catalog_yaml(target) == {"sources": [], "documents": []}
+
+
+def test_both_boot_sites_seed_the_law_catalogue_through_the_helper_and_say_so_on_the_startup_status(monkeypatch):
+    src = (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert len(re.findall(r"^\s+_seed_law_catalogue\(session, seed_legal_sources, register_documents\)$", src, re.M)) == 2
+    assert "register_documents(session)" not in src.replace("        register_documents(session)\n    except LawCatalogUnreadable", ""), (
+        "a boot site calls register_documents itself again"
+    )
+    from src.api import main as api_main
+    from src.api import startup_status
+
+    _unreadable(monkeypatch)
+    monkeypatch.setitem(startup_status._state, "notes", [])
+
+    def seed(_s):
+        from src.law.catalog import load_legal_catalog
+
+        load_legal_catalog()
+
+    api_main._seed_law_catalogue(object(), seed, lambda _s: None)
+    notes = startup_status.get_startup()["notes"]
+    assert len(notes) == 1 and "Law sources and documents were not seeded" in notes[0] and "PermissionError" in notes[0]
+
+
+def test_the_release_runs_law_probe_records_the_named_error(monkeypatch):
+    from src.monitoring import release_run
+
+    _unreadable(monkeypatch)
+    out = release_run._law_probe()
+    assert set(out) == {"error"} and "LawCatalogUnreadable" in out["error"] and "PermissionError" in out["error"]
+
+
+def test_the_unchecked_coverage_objects_keep_their_usual_keys_as_null(monkeypatch):
+    from src.database.models import Base
+    from src.law.coverage import law_coverage_report
+
+    _unreadable(monkeypatch)
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as session:
+        report = law_coverage_report(session)
+    assert set(report["enumeration"]) == {
+        "state", "reason", "countries_with_an_official_count", "figures", "countries_enumerated_but_untracked",
+        "untracked", "method", "caveat",
+    }
+    assert all(v is None for k, v in report["enumeration"].items() if k not in ("state", "reason"))
+    assert report["extraction"]["tracked_documents"] is None and report["extraction"]["state"] == "unchecked"
 
 
 @pytest.mark.parametrize("error", [PermissionError("denied"), UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")])

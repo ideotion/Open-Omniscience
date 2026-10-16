@@ -50,8 +50,9 @@ def law_jurisdiction(value):
 
 
 class LawCatalogUnreadable(RuntimeError):
-    """A catalogue file that is there but could not be read. Unreadable is not absent: only a missing file reads as
-    an empty catalogue, any other read error ends the load with this, named by the file and the error's class."""
+    """A catalogue file that is there and cannot be used: it could not be read, is not valid YAML, or is not shaped like
+    a catalogue. Unreadable is not absent: only a missing file reads as an empty catalogue, and every other failure
+    ends the load with this, named by the file and the error's CLASS only (never a path, a line or the file's text)."""
 
 
 def _read_catalog_yaml(path: Path) -> dict:
@@ -61,7 +62,14 @@ def _read_catalog_yaml(path: Path) -> dict:
         return {"sources": [], "documents": []}
     except (OSError, UnicodeError) as exc:
         raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({type(exc).__name__})") from None
-    data = yaml.safe_load(raw) or {}
+    try:
+        data = yaml.safe_load(raw) or {}
+    except yaml.YAMLError as exc:
+        raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({type(exc).__name__})") from None
+    if not isinstance(data, dict) or any(
+        not isinstance(data.get(key, []), list) for key in ("sources", "documents")
+    ):
+        raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read (it is not shaped like a catalogue)")
     sources = [
         s
         for s in data.get("sources", [])

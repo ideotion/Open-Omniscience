@@ -41,7 +41,9 @@ How it stays safe, in the order it matters:
   or power loss between two renames cannot be undone by the process that died: it leaves a mix of old and new files,
   and the way out is to run the script again, which finishes the set because the rewrite is idempotent (the targets
   are also tracked in git). Temporary files a crash left beside the targets (``.<name>.*.tmp``) are swept at the next
-  start and counted in the report. Not preserved by the replace, and accepted: owner and group, extended attributes,
+  start and counted in the report (only mkstemp-shaped files older than this run; one that cannot be removed is counted
+  as failed). A residual window is accepted: a target edited between its last re-read and its rename is overwritten, and
+  a rollback puts back the bytes this run read. Not preserved by the replace, and accepted: owner and group, extended attributes,
   and a symlinked target (it becomes a regular file); the mode is kept.
 * After writing it PARSES the old and the new text and proves they differ ONLY in country/jurisdiction
   values, and that each differing value satisfies ``normalize_country(new) == normalize_country(old)``:
@@ -61,6 +63,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -244,14 +247,23 @@ class ChangedSinceRead(RuntimeError):
         self.name = name
 
 
-def sweep_stale_temporaries(paths: list[Path]) -> list[str]:
-    """Remove the ``.<name>.*.tmp`` files a killed run left beside the targets; returns what was removed."""
-    removed = []
+def sweep_stale_temporaries(paths: list[Path], started: float) -> tuple[list[str], list[str]]:
+    """Remove the ``.<name>.<8 characters>.tmp`` files a killed run left beside the targets (the shape ``mkstemp``
+    makes, and only those older than this run's start, so a run going on right now keeps its own). Returns
+    ``(removed, could_not_remove)``; an unlink error is counted, never raised."""
+    removed: list[str] = []
+    failed: list[str] = []
     for path in paths:
+        shape = re.compile(rf"^\.{re.escape(path.name)}\.[A-Za-z0-9_]{{8}}\.tmp$")
         for stale in sorted(path.parent.glob(f".{path.name}.*.tmp")):
-            stale.unlink(missing_ok=True)
-            removed.append(stale.name)
-    return removed
+            try:
+                if not shape.match(stale.name) or stale.stat().st_mtime >= started:
+                    continue
+                stale.unlink(missing_ok=True)
+                removed.append(stale.name)
+            except OSError:
+                failed.append(stale.name)
+    return removed, failed
 
 
 def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
@@ -315,9 +327,24 @@ def _write_one(path: Path, data: bytes) -> None:
     _fsync_dir(path.parent)
 
 
-def _write_report(path: str | None, report: dict) -> None:
-    if path:
-        Path(path).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+def _write_report(path: str | None, report: dict) -> bool:
+    """Write the report beside its path and rename it into place; False (said on stderr) when that cannot be done."""
+    if not path:
+        return True
+    target = Path(path)
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+            os.replace(tmp_name, target)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
+    except OSError as exc:
+        print(f"REPORT NOT WRITTEN ({type(exc).__name__}): {target.name} could not be written", file=sys.stderr)
+        return False
+    return True
 
 
 def main() -> int:
@@ -326,12 +353,22 @@ def main() -> int:
     ap.add_argument("--report", help="write a JSON report of every value looked at")
     args = ap.parse_args()
 
-    report: dict = {"files": {}, "unplaced": [], "left": [], "refused": None, "stale_temporaries_removed": []}
+    started = time.time()
+    report: dict = {
+        "files": {}, "unplaced": [], "left": [], "refused": None,
+        "stale_temporaries_removed": [], "stale_temporaries_not_removed": [],
+    }
+    if not _write_report(args.report, report):  # an unwritable report path ends the run BEFORE any file is touched
+        print("nothing was changed", file=sys.stderr)
+        return 2
     would_change = 0
     if args.write:
-        report["stale_temporaries_removed"] = sweep_stale_temporaries([ROOT / rel for rel in TARGETS])
-        if report["stale_temporaries_removed"]:
-            print(f"removed {len(report['stale_temporaries_removed'])} temporary file(s) a killed run left behind")
+        removed, not_removed = sweep_stale_temporaries([ROOT / rel for rel in TARGETS], started)
+        report["stale_temporaries_removed"], report["stale_temporaries_not_removed"] = removed, not_removed
+        if removed:
+            print(f"removed {len(removed)} temporary file(s) a killed run left behind")
+        if not_removed:
+            print(f"could not remove {len(not_removed)} temporary file(s) a killed run left behind", file=sys.stderr)
     # PROVE EVERY FILE FIRST, write after: a refusal on the last file must not leave the first ones rewritten.
     planned: list[tuple[str, str, str, list[dict]]] = []
     for rel in TARGETS:
@@ -387,7 +424,9 @@ def main() -> int:
         print("left as written (not a recognised country code):")
         for u in report["unplaced"]:
             print(f"  {u['file']}: {u['key']}: {u['value']}")
-    _write_report(args.report, report)
+    if not _write_report(args.report, report):
+        print("the files were written as reported above; only the report is missing", file=sys.stderr)
+        return 2
     return 0 if (not left and (args.write or would_change == 0)) else 1
 
 
