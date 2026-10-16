@@ -1,0 +1,64 @@
+"""Which native libraries a session ran on (the SIGABRT question: which library?). A fake maps file; nothing real is read for the lists.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+"""
+
+from __future__ import annotations
+
+import json
+
+from src.monitoring import native_libs as nl
+
+
+def _maps(tmp_path, paths):
+    f = tmp_path / "maps"
+    f.write_text("\n".join(f"7f00-7f01 r-xp 00000000 08:01 1 {p}" for p in paths) + "\n")
+    return f
+
+
+def test_only_base_names_are_kept_never_a_directory_or_a_user(tmp_path):
+    f = _maps(tmp_path, ["/home/alice/.venv/lib/python3.13/site-packages/lxml/etree.cpython-313-x86_64-linux-gnu.so", "/usr/lib/libxml2.so.2.12.9", "/usr/lib/libunrelated.so.1"])
+    got = nl._mapped(f)
+    assert got["files"] == ["etree.cpython-313-x86_64-linux-gnu.so", "libxml2.so.2.12.9"]
+    assert "alice" not in json.dumps(got) and "/" not in json.dumps(got["files"])
+    assert got["mapped_total"] == 3 and got["matched"] == 2 and got["listed"] == 2
+
+
+def test_an_unreadable_maps_file_is_named_not_empty(tmp_path):
+    assert nl._mapped(tmp_path / "missing") == {"unreadable": "absent (the file does not exist)"}
+
+
+def test_the_name_list_stops_at_its_byte_budget_and_says_how_many_matched(tmp_path, monkeypatch):
+    f = _maps(tmp_path, [f"/usr/lib/libxml{i}.so.{i}" for i in range(2000)])
+    got = nl._mapped(f)
+    assert got["matched"] == 2000 and got["listed"] < 2000 and got["listed"] == len(got["files"])
+    assert len(json.dumps(got["files"], separators=(",", ":"))) <= nl._FILES_BYTES
+    # the worst case of the whole reading, every family present at the budget: well under 8 KB
+    assert len(json.dumps({"runtime": nl._runtime_versions(), "installed": {n: "9.9.9" for n in nl._DISTRIBUTIONS}, "mapped": got}, separators=(",", ":"))) < 8000
+
+
+def test_the_runtime_library_versions_are_read_from_the_loaded_library():
+    r = nl.read()
+    assert r["runtime"]["sqlite_library"] and "mapped" in r and "installed" in r
+
+
+def test_a_passphrase_in_a_file_name_is_taken_out(tmp_path, monkeypatch):
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(connect, "_passphrase", "name-key-Zq7!rt")
+    ss.forget_held()
+    got = nl._mapped(_maps(tmp_path, ["/x/libxml-name-key-Zq7!rt.so"]))
+    assert "name-key-Zq7!rt" not in json.dumps(got)
+
+
+def test_the_sentinel_and_the_report_carry_the_libraries(tmp_path, monkeypatch):
+    """MUTATION TARGETS: the two lines in ``forensics.py`` that add them."""
+    from src.monitoring import forensics
+
+    monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
+    monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
+    forensics.record_session_start()
+    assert "mapped" in json.loads((tmp_path / "session_state.json").read_text())["native_libs"]
+    assert "previous_session_native_libs" in forensics.previous_session_report()

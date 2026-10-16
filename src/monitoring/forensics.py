@@ -376,6 +376,12 @@ def record_session_start() -> dict[str, Any] | None:
     # The kernel's kill counters at this start (question 22). The NEXT start compares its reading with this one, so a kill between two
     # starts is counted even where no log can be read. Integers and named absences only (``oom_counters.py``).
     try:
+        from src.monitoring.native_libs import read as _read_native_libs
+
+        state["native_libs"] = _read_native_libs()
+    except Exception as exc:  # noqa: BLE001 - a missing reading never breaks a boot
+        log_failure(_LOG, "session sentinel: native libraries unavailable", exc, level=logging.DEBUG)
+    try:
         from src.monitoring.oom_counters import read as _read_oom_counters
 
         _OOM_AT_BOOT = _read_oom_counters()
@@ -787,6 +793,8 @@ def previous_session_report() -> dict[str, Any]:
     # (a stop that finished reads "clean", one the kernel cut short reads "during shutdown"). Numbers and step names only.
     out["memory_stop"] = previous_memory_stop()
     out["oom_counters"] = _oom_counters_between(prev)
+    # The libraries the previous session ran on, for reading a crash trace that names only Python frames (``native_libs.py``).
+    out["previous_session_native_libs"] = (prev or {}).get("native_libs") or {"unreadable": "the previous session's sentinel holds no reading"}
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
