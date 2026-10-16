@@ -91,17 +91,26 @@ def _convert_code_list(items: list) -> list:
     return out if changed else items
 
 
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
 def _convert_keyed(mapping: dict) -> dict:
     out: dict = {}
     changed = False
     for key, value in mapping.items():
         new_key = wire_code(key)
+        if new_key in out:
+            if _is_number(out[new_key]) and _is_number(value):
+                out[new_key] = out[new_key] + value  # two spellings of one country add up
+                changed = True
+                continue
+            # Values that cannot be added (objects, booleans) are not merged and not dropped: the later one keeps the
+            # spelling it came with, so both stay visible.
+            new_key = key
         if new_key is not key:
             changed = True
-        if new_key in out and isinstance(out[new_key], int | float) and isinstance(value, int | float):
-            out[new_key] = out[new_key] + value  # two spellings of one country add up
-        else:
-            out[new_key] = value
+        out[new_key] = value
     return out if changed else mapping
 
 

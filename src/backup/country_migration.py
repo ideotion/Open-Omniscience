@@ -398,7 +398,13 @@ def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
         partial.unlink(missing_ok=True)
         raise MigrationRefused(_ALREADY_THERE.format(dest=dest)) from None
     except OSError:
-        if _path_exists(dest):
+        try:
+            there = _path_exists(dest)
+        except Exception:
+            # The question itself failed (refused by class inside the helper): no ``.partial`` is left behind either way.
+            partial.unlink(missing_ok=True)
+            raise
+        if there:
             partial.unlink(missing_ok=True)
             raise MigrationRefused(_ALREADY_THERE.format(dest=dest)) from None
         try:

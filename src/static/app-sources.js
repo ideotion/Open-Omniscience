@@ -640,7 +640,10 @@
     // coverage→sources jump). If the facets list hasn't loaded the value yet, no-op.
     function srcMselCheck(id, value) {
       const det = $(id); if (!det) return false;
-      const cb = [...det.querySelectorAll(".msel-list input")].find(c => c.value === value);
+      // The country picker is compared through the key (the facet and the coverage rollup may speak
+      // different forms); every other picker compares the value as it is.
+      const same = id === "src-msel-country" ? (c) => ooCountryKey(c.value) === ooCountryKey(value) : (c) => c.value === value;
+      const cb = [...det.querySelectorAll(".msel-list input")].find(same);
       if (cb) { cb.checked = true; updateMselSummary(id); return true; }
       return false;
     }

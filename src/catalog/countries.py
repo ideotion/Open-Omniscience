@@ -1123,7 +1123,9 @@ def country_payload_iso2(value: str | None) -> str | None:
     raw = (value or "").strip()
     if not raw:
         return None
-    return normalize_country(raw)
+    code = normalize_country(raw)
+    # ``int`` (Q303's four) has no alpha-2: three letters in a field documented as alpha-2 would be a guess.
+    return code if code and len(code) == 2 else None
 
 
 def country_query_forms(value: str | None) -> list[str]:

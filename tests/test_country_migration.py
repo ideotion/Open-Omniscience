@@ -861,3 +861,28 @@ def test_the_unfinished_message_says_how_to_put_the_safety_copy_back():
     text = cf.unfinished_message("interrupted", "/tmp/x/copy.db")
     assert "/tmp/x/copy.db" in text
     assert "copy that file over the store file" in text and "-wal and -shm" in text
+
+
+def test_a_failed_existence_check_in_the_fallback_still_leaves_no_partial(tmp_path, monkeypatch):
+    """The Opus read's L7: the link fails with something other than "exists", then the question "is the final name taken?" itself
+    fails. The half-named file must go either way, and the refusal the helper raised is not swallowed."""
+    import errno
+
+    a = _new_store(tmp_path / "a.db", articles=12)
+    dest = tmp_path / "bk" / "plain.db"
+
+    def no_link(src, dst, *args, **kwargs):
+        raise OSError(errno.EPERM, "no hard links here")
+
+    def unanswerable(path, *args, **kwargs):
+        raise cm.MigrationRefused("cannot tell whether the copy's final name is taken (OSError)")
+
+    monkeypatch.setattr(cm.os, "link", no_link)
+    monkeypatch.setattr(cm, "_path_exists", unanswerable)
+    con = _live(a)
+    try:
+        with pytest.raises(cm.MigrationRefused):
+            cm.take_verified_backup(con, a, dest)
+    finally:
+        con.close()
+    assert not dest.exists() and not list(dest.parent.glob("*.partial"))

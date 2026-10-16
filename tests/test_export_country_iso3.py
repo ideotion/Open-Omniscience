@@ -300,3 +300,23 @@ def test_the_articles_export_carries_no_country_at_all():
         "the articles export grew a country column; Q304 says it carries the alpha-3 "
         "(through `country_payload`), and Q313 allows one country column only"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  The Opus read's M2 / L2: the four codes that are not ISO countries
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(("country", "alpha3"), [("eu", "INT"), ("int", "WLD"), ("eu", "XKX")])
+def test_two_columns_that_name_different_non_iso_codes_are_a_conflict_not_agreement(country, alpha3):
+    """``to_iso3`` answers None for ``eu``/``int``/``xk``/``an`` and for any unknown code, and None == None read as agreement: the
+    operator's edit was dropped without a word."""
+    rows, errors = parse_sources_csv(f"name,domain,country,country_iso3\nX,x.example,{country},{alpha3}\n")
+
+    assert rows == [] and len(errors) == 1 and "disagree" in errors[0], (country, alpha3)
+
+
+@pytest.mark.parametrize(("alpha3", "stored"), [("EUU", "eu"), ("INT", "int"), ("ANT", "an"), ("XKX", "xk")])
+def test_a_previous_release_alpha3_for_a_non_iso_code_is_still_read(alpha3, stored):
+    """Values the 0.4 export itself wrote: an unreadable ``country`` beside them must not discard them (``to_iso2`` refused all four)."""
+    rows, errors = parse_sources_csv(f"name,domain,country,country_iso3\nX,x.example,floop,{alpha3}\n")
+
+    assert errors == [] and rows[0]["country"] == stored

@@ -829,7 +829,11 @@
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
           if (_govSubtabs) _govSubtabs.select("countries");
           const cs = $("gov-country");
-          if (cs) { cs.value = iso; if (cs.value === iso) loadGovCountry(iso); }
+          // The picker's option values are the payload's `country` (alpha-3); the map hands over its own
+          // polygon key (alpha-2). Compare in the picker's form, or no option matches and the grid keeps
+          // showing the PREVIOUS country under the click.
+          const want = ooCountryCode(iso);
+          if (cs) { cs.value = want; if (cs.value === want) loadGovCountry(want); }
         },
       });
       _govMapLast = {meta, data};

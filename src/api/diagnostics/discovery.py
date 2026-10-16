@@ -155,14 +155,15 @@ def discover_world_sources(
         raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
     codes = None
     if countries:
-        from src.catalog.countries import ISO_3166_1_ALPHA2
+        from src.catalog.countries import ISO_3166_1_ALPHA2, to_iso2
 
-        codes = [c.strip().lower() for c in countries.split(",") if c.strip()]
+        # Both spellings, like discover-sources: ``KEN`` and ``ke`` name one country.
+        codes = [to_iso2(c.strip()) or c.strip().lower() for c in countries.split(",") if c.strip()]
         bad = [c for c in codes if c not in ISO_3166_1_ALPHA2]
         if not codes or bad:
             raise HTTPException(
                 status_code=400,
-                detail=f"countries must be ISO-2 codes, e.g. ke,ng,br (unrecognised: {bad})",
+                detail=f"countries must be ISO alpha-2 or alpha-3 codes, e.g. ke,ng,br or KEN,NGA,BRA (unrecognised: {bad})",
             )
     try:
         return JSONResponse(

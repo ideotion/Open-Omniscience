@@ -17,7 +17,7 @@ from __future__ import annotations
 import csv
 import io
 
-from src.catalog.countries import normalize_country, to_iso2, to_iso3
+from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
 
@@ -177,22 +177,22 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
         # one in a form we understand. So the fall-back is keyed on the RESULT ("is
         # there a country now?"), never on which column happened to be present.
         if "country" not in out and iso3_raw:
-            # Through `to_iso2`, not `normalize_country`. The claim this comment used
-            # to make -- that `normalize_country("DEU")` is None -- was measured and
-            # TRUE until S04-05 taught that function the alpha-3 forms; either call
-            # now answers `de`. `to_iso2` is kept because it is the narrower one: this
-            # column is declared to hold an alpha-3, so reading it with the alpha-3
-            # converter says what the column means, and both fail closed on an
+            # Through `normalize_country`: it reads the alpha-3 forms AND Q303's four
+            # (`EUU`, `INT`, `XKX`, `ANT`), which `to_iso2` refuses because they are not ISO
+            # countries -- values the 0.4 export itself wrote -- and both fail closed on an
             # aggregate or an unknown code.
-            cc = to_iso2(iso3_raw)
+            cc = normalize_country(iso3_raw)
             if cc:
                 out["country"] = cc
-        if iso3_raw and "country" in out and to_iso3(out["country"]) != to_iso3(iso3_raw):
+        if iso3_raw and "country" in out and normalize_country(out["country"]) != normalize_country(iso3_raw):
             # TWO STATEMENTS OF ONE FACT THAT DISAGREE. Refused by name: picking
             # `country` would discard an edit the operator made in the other column,
             # and picking `country_iso3` would discard the one they made here. Compared
-            # through to_iso3 on BOTH sides, so `fr` vs `FRA` is agreement, not a
-            # conflict -- the recorded "normalise on both sides of a comparison" rule.
+            # through normalize_country on BOTH sides, so `fr` vs `FRA` is agreement, not a
+            # conflict -- and so `eu` vs `INT` is NOT: an unreadable side is None, and
+            # `country` is readable here, so a column that cannot be read never reads as
+            # agreement (the old to_iso3 pair compared None with None for the four non-ISO
+            # codes and let the operator's edit vanish).
             errors.append(
                 f"row {i}: country {out['country']!r} and country_iso3 {iso3_raw!r} "
                 "disagree; correct one of them (they are the same fact in two forms)"

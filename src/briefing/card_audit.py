@@ -516,9 +516,13 @@ def observe_producers(session) -> list[ProducerOutcome]:
     surfaced set matches ``run_all``'s exactly).
     """
     from src.briefing.card import Card
-    from src.briefing.registry import _REGISTRY, _deadline_expired, _release_transaction, _wal_guard
-
-    from src.briefing.registry import _drain_pending
+    from src.briefing.registry import (
+        _REGISTRY,
+        _deadline_expired,
+        _drain_pending,
+        _release_transaction,
+        _wal_guard,
+    )
 
     out: list[ProducerOutcome] = []
     for name, producer in list(_REGISTRY):
@@ -1900,7 +1904,10 @@ def card_audit_worker(ctx, **kwargs) -> dict:
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = _report_path(stamp)
-    path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    # A file is not a response: the report speaks the wire form too.
+    from src.api.country_wire import to_wire
+
+    path.write_text(json.dumps(to_wire(report), indent=2, default=str), encoding="utf-8")
     return {
         "path": str(path),
         "filename": path.name,

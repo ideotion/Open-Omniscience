@@ -494,3 +494,49 @@ def test_the_key_walk_would_notice_a_score_key():
     keys = _all_keys({"rows": [{"credibility_score": 1}, {"reliability_score": 7}, {"country_rank": 2}]})
     bad = sorted(k for k in keys if k not in _EXEMPT and any(w in k.lower() for w in _FORBIDDEN))
     assert bad == ["credibility_score"]
+
+
+# --------------------------------------------------------------------------- #
+#  5. The Opus read's L3-L5 and H1/H2 (front-end lookups that compared two forms)
+# --------------------------------------------------------------------------- #
+def test_two_spellings_whose_values_cannot_be_added_are_both_kept():
+    """L5. ``{"uk": {...}, "gb": {...}}`` used to keep only the second, and booleans were summed into ``{"GBR": 2}``."""
+    from src.api.country_wire import to_wire
+
+    out = to_wire({"jurisdictions": {"uk": {"n": 1}, "gb": {"n": 2}}})["jurisdictions"]
+    assert out == {"GBR": {"n": 1}, "gb": {"n": 2}}, out
+    flags = to_wire({"jurisdictions": {"uk": True, "gb": True}})["jurisdictions"]
+    assert flags == {"GBR": True, "gb": True}, flags
+    assert to_wire({"jurisdictions": {"uk": 1, "gb": 2}})["jurisdictions"] == {"GBR": 3}
+
+
+def test_an_alpha2_field_never_carries_a_three_letter_code():
+    """L4. ``int`` has no alpha-2; a field documented as alpha-2 for external programs must not hold three letters."""
+    from src.catalog.countries import country_payload_iso2
+
+    assert country_payload_iso2("int") is None
+    assert [country_payload_iso2(c) for c in ("FRA", "eu", "uk", "xk")] == ["fr", "eu", "gb", "xk"]
+
+
+def test_the_discovery_endpoints_both_accept_alpha3():
+    """L3. ``discover-world`` still refused ``KEN`` while its sibling accepted it."""
+    src = (_ROOT / "src" / "api" / "diagnostics" / "discovery.py").read_text(encoding="utf-8")
+    assert src.count("to_iso2(c.strip())") == 2, "one of the two discovery endpoints stopped converting alpha-3"
+
+
+def test_the_governments_map_click_compares_in_the_pickers_form():
+    """H1. The picker's option values are the payload's alpha-3 `country`; the map hands over its alpha-2 polygon key. Comparing
+    them raw matched no option and left the PREVIOUS country's grid under the click."""
+    js = (_ROOT / "src" / "static" / "app-gov-law.js").read_text(encoding="utf-8")
+    at = js.index("onCountry: (iso) =>")
+    body = js[at : at + 900]
+    assert "ooCountryCode(iso)" in body and "cs.value = want" in body and "cs.value === want" in body, body
+    assert "cs.value = iso" not in body
+
+
+def test_the_sources_country_picker_is_matched_through_the_key():
+    """H2. The coverage rollup and the facet list may speak different forms; the jump from Coverage must still tick the box."""
+    from tests.js_source_helper import function_body, read_static
+
+    body = function_body(read_static("app-sources.js"), "srcMselCheck")
+    assert "ooCountryKey(c.value) === ooCountryKey(value)" in body and '"src-msel-country"' in body

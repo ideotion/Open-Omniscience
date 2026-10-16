@@ -2089,7 +2089,7 @@
         else v = r[dim.id];
         if (v != null && isFinite(v)) {
           values[key] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: key, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[r.country]) });
+          if (r.lat != null && r.lon != null) points.push({ iso2: key, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[key]) });
         }
       });
       const nWith = Object.keys(values).length;
