@@ -695,3 +695,45 @@ def test_log_failure_hands_the_error_log_the_scrubbed_traceback_as_an_attribute_
     assert tb.startswith("Traceback (most recent call last)") and tb.rstrip().endswith("yyyy")
     assert PASS not in tb and f"the key {ss.REDACTED} did not open the header" in tb
     assert record.exc_info is None and record.exc_text is None
+
+
+def test_a_non_driver_whose_text_cannot_be_read_is_its_class_only_in_a_record_and_a_traceback():
+    """B1: a wrapper that quotes a driver and whose text fails to read once must NOT be re-read by ``exception_text`` (which skips
+    the driver-quote check): the record is the class only, and a traceback does not claim a driver said it."""
+    import sqlite3
+
+    from src.monitoring import secret_scrub as ss
+
+    class Weird(Exception):
+        def __str__(self):
+            raise RuntimeError("cannot read")
+
+    class NoNotes(Exception):
+        @property
+        def __notes__(self):
+            raise RuntimeError("cannot read")
+
+    frag = "no such table: hunter2" + "Zq8Lm_tbl"  # built, so that the test's own source line (a frame) does not carry it
+    for make in (lambda: Weird("x"), lambda: NoNotes("w " + frag)):
+        try:
+            try:
+                raise sqlite3.OperationalError(frag)
+            except sqlite3.OperationalError as inner:
+                w = make()
+                raise w from inner
+        except Exception as exc:  # noqa: BLE001
+            out = ss.record_text(exc)
+            tb = ss.record_traceback(exc)
+        assert "hunter2Zq8Lm_tbl" not in out and "hunter2Zq8Lm_tbl" not in tb
+    assert ss.record_text(NoNotes("a")) == ss._class_only(NoNotes("a"))
+    assert "a database driver's words" not in ss._last_line(NoNotes("database is locked"))
+
+
+def test_the_ui_walk_scrubs_page_errors_where_it_keeps_them():
+    """The behavioural test is skipped without a browser; this reads the one line that keeps a page error (L3), so the scrub cannot go
+    unseen in an environment that cannot drive Chromium."""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src/monitoring/ui_walk_playwright.py"
+    text = src.read_text(encoding="utf-8")
+    assert "self._pageerrors.append(tokenise_paths(record_text(exc, typed=False)))" in text

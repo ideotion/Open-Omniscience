@@ -92,8 +92,8 @@ def _error_text(exc: BaseException) -> str:
     is the class and a fixed note: its text names a character), the paths in it tokenised, and only then cut."""
     try:
         from src.monitoring.path_tokens import tokenise_paths
-        from src.monitoring.secret_scrub import exception_text
+        from src.monitoring.secret_scrub import record_text
 
-        return tokenise_paths(exception_text(exc))[:_ERROR_TEXT_MAX]
+        return tokenise_paths(record_text(exc, typed=True))[:_ERROR_TEXT_MAX]
     except Exception:  # noqa: BLE001 - the member never raises
         return type(exc).__name__

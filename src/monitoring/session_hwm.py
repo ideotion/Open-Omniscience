@@ -79,7 +79,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure, scrubbed_name
+from src.monitoring.secret_scrub import log_failure, record_text, scrubbed_name
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -1254,7 +1254,7 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                     # first failure of a session is a WARNING and every one is counted in the marks, because
                     # "no light snapshot" must not read the same as "never near the line".
                     log_failure(_LOG, "light pressure snapshot failed", exc, level=logging.DEBUG)
-                    said = exception_text(exc, typed=False)  # through the one scrub, THEN cut to its first line
+                    said = record_text(exc, typed=False)  # through the one scrub, THEN cut to its first line
                     first = said.splitlines()[0][:160] if said else ""
                     light_failure = f"{type(exc).__name__}: {first}"
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the

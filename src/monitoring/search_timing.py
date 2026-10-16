@@ -37,7 +37,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.monitoring import unlock_marker
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -752,7 +752,7 @@ def run_search_timing_selftest() -> dict:
         _walk_no_score(rep)
     except AssertionError as exc:
         no_score = False
-        check("no_score_field", False, exception_text(exc, typed=False))
+        check("no_score_field", False, record_text(exc, typed=False))
     if no_score:
         check("no_score_field", True)
 

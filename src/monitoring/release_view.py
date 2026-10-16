@@ -32,11 +32,18 @@ NAME_WITHHELD = "<thread name withheld: written by a build that did not scrub it
 
 
 def vouched_names(snap: Any) -> Any:
-    """The snapshot with every thread name replaced by :data:`NAME_WITHHELD` unless the snapshot carries :data:`NAMES_STAMP`."""
-    if not isinstance(snap, dict) or snap.get(NAMES_STAMP) is True or not isinstance(snap.get("threads"), list):
+    """The snapshot with every thread name replaced by :data:`NAME_WITHHELD` unless the snapshot carries :data:`NAMES_STAMP`.
+
+    Fails closed on every shape it did not expect: a ``threads`` that is not a list is dropped (and said: ``threads_withheld``), and a
+    list entry that is not a dict (a bare string IS a name) becomes a withheld entry. Only a snapshot with no ``threads`` at all, or
+    one stamped ``True`` exactly, is returned as it came."""
+    if not isinstance(snap, dict) or snap.get(NAMES_STAMP) is True or "threads" not in snap or snap["threads"] is None:
         return snap
-    threads = [{**t, "name": NAME_WITHHELD} if isinstance(t, dict) and "name" in t else t for t in snap["threads"]]
-    return {**snap, "threads": threads}
+    threads = snap["threads"]
+    if not isinstance(threads, list):
+        return {**snap, "threads": [], "threads_withheld": NAME_WITHHELD}
+    kept = [{**t, "name": NAME_WITHHELD} if isinstance(t, dict) and "name" in t else (t if isinstance(t, dict) else {"name": NAME_WITHHELD}) for t in threads]
+    return {**snap, "threads": kept}
 
 
 def _class_only(value: Any) -> str:

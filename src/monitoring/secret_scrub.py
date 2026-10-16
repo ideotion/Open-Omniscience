@@ -734,6 +734,11 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
     the whole string, and engine text can quote fragments of a statement); any other exception keeps its words, scrubbed with
     every secret handed in and every passphrase the process holds (:func:`exception_text`), then cut. Never raises."""
     try:
+        if not is_driver_error(exc):
+            try:
+                _text_and_notes(exc)
+            except Exception:  # noqa: BLE001 - a text that cannot be read cannot be checked for a quoted driver: the class only
+                return _class_only(exc)
         if is_driver_error(exc) or quotes_a_driver(exc):
             out = _driver_line(exc) if typed else f"{type(exc).__qualname__} (a database driver's text is withheld)"
             return out if limit is None else out[:limit]
@@ -744,6 +749,9 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
 
 #: A text longer than this is not read for a quoted run: it is taken to quote the driver (fail closed), so no cut can hide a piece.
 _QUOTE_READ_LIMIT = 200_000
+#: What a quoted run must be to count: long enough that two unrelated messages do not share one by chance (an ordinary word or a
+#: short phrase is shorter: "database is locked" is 18 characters, so a run of 12 is already most of a driver's one-line message), short enough that a cut or re-quoted piece of a driver's text still holds
+#: one. A shorter run catches more transformed quotes at the cost of withholding more honest messages; this one protects the first.
 _QUOTE_RUN = 12
 
 
@@ -807,7 +815,13 @@ def _printed_links(exc: BaseException) -> list[BaseException]:
 
 def _last_line(link: BaseException, chain: Iterable[BaseException] | None = None) -> str:
     """The line a link's print ends with, as a RECORD keeps it: a driver's (or one that quotes a driver's) as its class only."""
-    if is_driver_error(link) or quotes_a_driver(link, chain):
+    if is_driver_error(link):
+        return _driver_line(link)
+    try:
+        _text_and_notes(link)
+    except Exception:  # noqa: BLE001 - a text that cannot be read: the class says what failed, and does not claim a driver said it
+        return _class_only(link)
+    if quotes_a_driver(link, chain):
         return _driver_line(link)
     return "".join(traceback.format_exception_only(link)).rstrip("\n")
 

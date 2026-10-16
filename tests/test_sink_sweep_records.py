@@ -34,6 +34,8 @@ MODULES = sorted(
     # ``repair.py`` is the WAL thread's (its exc_info allowance is the last one in tests/data/exc_info_allowlist.json) and has its own
     # PR in flight; it joins this reading when that PR lands.
     if p.name != "repair.py" or p.parent.name != "database"
+) + sorted(
+    p.relative_to(ROOT).as_posix() for p in (ROOT / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py"
 ) + ["src/api/unlock.py"]
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
@@ -311,6 +313,151 @@ _DATABASE_NOT_RECORDS: dict[str, dict[str, int]] = {
     'src/database/writer.py': {'the traceback module is imported': 1},
 }
 NOT_RECORDS.update(_DATABASE_NOT_RECORDS)
+_MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    'src/monitoring/boots.py': {  # _error_text is record_text (a driver by class, the paths tokenised, then cut)
+        ('diagnostics_member', 'return {"error": _error_text(exc)}'): 1,
+    },
+    'src/monitoring/diagnostics_runs.py': {  # exc_line is record_text; tidy_error scrubs the whole text and cuts last (a driver by class only); a non-exception error is a string already written
+        ('tidy_error', 'text = exc_line(error) if isinstance(error, BaseException) else str(error)'): 2,
+        ('end_run', 'if error:'): 1,
+        ('end_run', 'rec["error"] = tidy_error(error)'): 1,
+        ('_append', '_LOG.debug("diagnostics runs: could not write the record: %s", tidy_error(err))'): 1,
+        ('diagnostics_member', '"reason": tidy_error(exc_line(exc), MEMBER_REASON_CHARS),'): 1,
+    },
+    'src/monitoring/engine_text.py': {  # is_pool_timeout walks the chain by CLASS and returns a bool: no text of any link is read
+        ('is_pool_timeout', 'link: BaseException | None = exc'): 1,
+    },
+    'src/monitoring/exit_evidence.py': {  # tidy_error (record_text underneath); the fatal trace is record_traceback
+        ('arm_crash_trace', 'reason = tidy_error(exc, _ARM_REASON_CHARS)'): 1,
+        ('note_fatal_exception', '_LOG.debug("could not record the fatal exception: %s", tidy_error(err))'): 1,
+    },
+    'src/monitoring/forensics.py': {  # _why/_why-like helpers go through tidy_error (record_text underneath)
+        ('_why', 'return tidy_error(exc, _REASON_CHARS)  # an exception is written by ``exc_line``, which never raises'): 1,
+        ('previous_session_report', 'out["earlier_unclean_ends"] = {"available": False, "reason": _why(exc)}'): 1,
+        ('_exit_evidence_report', 'out["unavailable"] = _why(exc)'): 1,
+    },
+    'src/monitoring/integrity.py': {  # _budget_spent is a bool classifier (statement deadline expired and "interrupt" in the text); the text goes nowhere
+        ('_budget_spent', 'return deadline_expired(session) and "interrupt" in str(exc).lower()'): 1,
+        ('_scalar', 'if _budget_spent(session, exc):'): 1,
+        ('corpus_integrity', 'if _budget_spent(session, exc):'): 2,
+    },
+    'src/monitoring/keyword_write_cost.py': {  # engine_text is record_text (a driver by class only)
+        ('_cut_reason', 'return f"stopped before the sample finished, by the {why} ({engine_text(exc)})"'): 1,
+        ('keyword_write_cost', 'cut = _cut_reason(exc)'): 1,
+        ('keyword_write_cost', '_LOG.debug("keyword write cost unavailable: %s", engine_text(exc, typed=True))'): 1,
+        ('keyword_write_cost', 'out["reason"] = f"unreadable: {engine_text(exc, 200)}"'): 1,
+        ('_write_rate', 'out[key] = {"available": False, "reason": f"stopped by the {why} ({engine_text(exc)})"}'): 1,
+        ('_write_rate', 'out[key] = {"available": False, "reason": f"unreadable: {engine_text(exc, 160)}"}'): 1,
+    },
+    'src/monitoring/llm_bench.py': {  # bounded_error scrubs through record_text before its cut (no database call can raise in the bench)
+        ('_one_call', '"error": bounded_error(exc, 200),'): 1,
+    },
+    'src/monitoring/machine_record.py': {  # _unavailable writes the class name and nothing else
+        ('_build', 'out["app_version"] = _unavailable(exc)'): 1,
+        ('_build', 'out["code"] = _unavailable(exc)'): 1,
+        ('_process', 'out["started_at"] = _unavailable(exc)'): 1,
+        ('_sqlcipher_version', 'return _unavailable(exc)'): 1,
+        ('_libc', 'return _unavailable(exc)'): 1,
+        ('_memory', 'out["reading_vs_now"] = _unavailable(exc)'): 1,
+        ('_memory', 'out["available_now_mb"] = _unavailable(exc)'): 1,
+        ('_allocator', 'return _unavailable(exc)'): 1,
+        ('_environment', 'return _unavailable(exc)'): 1,
+    },
+    'src/monitoring/page_reading.py': {  # failure_label: the class and the errno name, never the message or the path (src/database/damage.py)
+        ('_error', 'return failure_label(exc)'): 1,
+        ('_wal_state', 'return None, _error(exc)'): 1,
+        ('read_header', 'out["error"] = _error(exc)'): 1,
+        ('from_connection', 'out["error"] = _error(exc)'): 1,
+    },
+    'src/monitoring/p0_validation.py': {  # _exception_text is record_text with the passphrase handed in
+        ('_check_backup', 'verr = _exception_text(exc, passphrase)'): 1,
+        ('_check_backup', 'err = _exception_text(exc, passphrase)'): 1,
+        ('_check_backup', '"error": _exception_text(exc, passphrase),'): 1,
+        ('_check_restore', 'f"the staged restore probe did not complete: {_exception_text(exc, passphrase)}",'): 1,
+    },
+    'src/monitoring/recursive_loop.py': {  # _failure_text is record_text, paths tokenised before the cut
+        ('recursive_loop_report', 'row["error"] = _failure_text(exc)'): 2,
+    },
+    'src/monitoring/release_run.py': {  # _PhaseError.status/.partial are the phase's own fields (the text is record_text above); _is_pool_timeout is a classifier
+        ('_run_phase', 'ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", why[:400], result=exc.partial)'): 3,
+        ('_retrying', 'if delay is None or not _is_pool_timeout(exc) or ctx.stopping:'): 1,
+    },
+    'src/monitoring/release_run_fresh_restore.py': {  # _error_text is record_text with the passphrase handed in
+        ('main', 'result["error"] = _error_text(exc, passphrase)'): 1,
+    },
+    'src/monitoring/storage.py': {  # failure_text is the damage lane's class-only label (never a part of the driver's message)
+        ('storage_composition', 'out["reason"] = f"sqlite_master unreadable: {failure_text(exc)}"'): 1,
+        ('storage_composition', 'f"compile flag in this SQLite/SQLCipher build, or the walk met a damaged page): {failure_text(exc)}"'): 1,
+    },
+    'src/monitoring/storage_events.py': {  # _label is the class and the errno NAME only; the "error" field is a label made by the caller (type(exc).__name__)
+        ('_label', 'code = exc.errno if isinstance(exc, OSError) else None'): 1,
+        ('_internal_failure', '_LAST_INTERNAL_FAILURE = f"{what}: {_label(exc)}"'): 1,
+        ('note_checkpoint', '"error": error,'): 1,
+        ('_flusher', '_internal_failure("the writer thread ended", exc)'): 1,
+        ('flush', '_internal_failure("flush", exc)'): 1,
+        ('record', '_internal_failure("record", exc)'): 1,
+        ('update', '_internal_failure("update", exc)'): 1,
+        ('end', '_internal_failure("end", exc)'): 1,
+        ('note_checkpoint', '_internal_failure("note_checkpoint", exc)'): 1,
+        ('note_open', '_internal_failure("note_open", exc)'): 1,
+        ('note_pool_timeout', '_internal_failure("note_pool_timeout", exc)'): 1,
+        ('diagnostics_member', 'return {"error": _label(exc)}'): 1,
+        ('_read_file', 'return {}, None, f"unreadable ({_label(exc)})", True'): 1,
+        ('_read_file', 'last = f"unreadable ({_label(exc)})"'): 1,
+        ('_read_file', 'return {}, None, f"unreadable ({_label(exc)})", False'): 1,
+        ('_read_file', 'how = "unreadable (not this journal)" if isinstance(exc, ValueError) else f"unreadable ({_label(exc)})"'): 1,
+        ('_write', '_LAST_WRITE_FAILURE = _label(exc)'): 1,
+        ('_flusher_loop', '_internal_failure("flusher", exc)'): 1,
+    },
+    'src/monitoring/ui_walk_playwright.py': {  # the import error is raised again as the cause of a refusal and never written to a record
+        ('<module>', '_IMPORT_ERROR: Exception | None = _exc'): 1,
+    },
+    'src/monitoring/vitals_history.py': {  # _reason is the class plus an OSError's strerror (an OS word, never a driver's); _debug_failure goes through log_failure; _note_error stores only _reason
+        ('_reason', 'if isinstance(exc, OSError) and exc.strerror:'): 1,
+        ('_reason', 'reason += f": {exc.strerror}"'): 1,
+        ('_note_error', '_ERRORS[f"last_{what}_error"] = {"at": _iso(time.time()), "error": _reason(exc)}'): 1,
+        ('_slow_readings', '_debug_failure("vitals history: the data folder could not be read", err)'): 1,
+        ('tick', '_note_error("tick", exc)'): 1,
+        ('tick', '_debug_failure("vitals history tick failed", exc)'): 1,
+        ('flush', '_debug_failure("vitals history flush failed", err)'): 1,
+        ('diagnostics_member', 'return {"available": False, "error": _reason(exc)}'): 1,
+        ('start', '_debug_failure("vitals history: could not read the previous file", err)'): 1,
+        ('flush', '_note_error("flush", exc)'): 1,
+    },
+}
+_MONITORING_NOT_RECORDS: dict[str, dict[str, int]] = {
+    'src/monitoring/activity_ledger.py': {
+        'getattr reaches name, a way round the scan of the log calls': 2,
+    },
+    # the traceback as raised is read at one line for two booleans (locked, interrupted) and never stored; the stored tail is record_traceback's
+    'src/monitoring/errorlog.py': {
+        'the traceback module is imported': 1,
+        'format_exception() writes the traceback': 1,
+        'sys.exc_info() reads the exception being handled': 5,
+        'getattr reaches TRACEBACK_ATTRIBUTE, a way round the scan of the log calls': 1,
+    },
+    'src/monitoring/llm_bench.py': {
+        'getattr reaches field, a way round the scan of the log calls': 1,
+    },
+    'src/monitoring/recursive_loop.py': {
+        'getattr reaches fn_name, a way round the scan of the log calls': 1,
+    },
+    'src/monitoring/session_hwm.py': {
+        'getattr reaches name, a way round the scan of the log calls': 1,
+    },
+    'src/monitoring/slowquery.py': {
+        'conn.info is kept as a name, a log call the scan cannot read': 2,
+    },
+    'src/monitoring/ui_walk.py': {
+        'r.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/monitoring/windows_locks.py': {
+        'proc.info is kept as a name, a log call the scan cannot read': 2,
+    },
+}
+
+CLASSIFIED.update(_MONITORING_CLASSIFIED)
+NOT_RECORDS.update(_MONITORING_NOT_RECORDS)
 
 
 

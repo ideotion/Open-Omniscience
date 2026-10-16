@@ -605,7 +605,7 @@ _TRACEBACK_CALLS = {
 }
 #: The calls a handler's bound exception may be handed to: each writes it through the one scrub, or asks for its class.
 #: ``forensics._why`` is ``tidy_error`` with the report's own cut.
-_SCRUBBING_CALLS = {"tidy_error", "exc_line", "exception_text", "traceback_text", "log_failure", "type", "isinstance", "_why"}
+_SCRUBBING_CALLS = {"tidy_error", "exc_line", "exception_text", "record_text", "record_traceback", "traceback_text", "log_failure", "type", "isinstance", "_why"}
 
 
 def _call_name(call: ast.Call) -> str | None:

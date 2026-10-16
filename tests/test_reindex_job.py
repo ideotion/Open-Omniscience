@@ -518,3 +518,34 @@ def test_a_paused_run_still_bumps_at_the_end(env, monkeypatch):
     assert reasons[0] == "reindex_job:start"
     assert reasons[-1] == "reindex_job:end"
     assert len(reasons) == 2
+
+
+def test_a_pool_timeout_is_classified_where_it_happens_not_read_back_from_the_words(env, monkeypatch):
+    """The record keeps a driver's error by class only, so the release run (row 5's auto-resume) cannot find "QueuePool limit" in
+    it. The job says it was the pool timing out in a field of its own; this drives the REAL error path, not a faked status."""
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    from src.analytics import store
+
+    Session, tmp = env
+    _seed(Session, 3)
+
+    def boom(*a, **k):
+        raise PoolTimeout("QueuePool limit of size 5 overflow 10 reached, connection timed out, timeout 30.00")
+
+    monkeypatch.setattr(store, "reindex_all_batch", boom)
+    mgr = _new_mgr(tmp)
+    mgr.start(_session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+    st = mgr.status()
+    assert st["state"] == "error" and st["pool_timeout"] is True
+    assert "QueuePool" not in (st["error"] or ""), "the driver's words are not kept"
+
+    def other(*a, **k):
+        raise ValueError("an ordinary failure")
+
+    monkeypatch.setattr(store, "reindex_all_batch", other)
+    mgr2 = _new_mgr(tmp)
+    mgr2.start(_session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr2)
+    assert mgr2.status()["state"] == "error" and mgr2.status()["pool_timeout"] is False

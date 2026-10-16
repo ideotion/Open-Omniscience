@@ -31,7 +31,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ def _check_host_robots(fetcher, host: str) -> dict:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - one host must not stop the sweep
         rec["robots"] = "unreachable"
-        rec["error"] = exception_text(exc, limit=200, typed=False)
+        rec["error"] = record_text(exc, limit=200, typed=False)
     return rec
 
 
@@ -218,7 +218,7 @@ def run_feed_preflight(
             records.append({**t, **verdict})
             calendar_checked += 1
         except Exception as exc:  # noqa: BLE001
-            records.append({**t, "status": "error", "error": exception_text(exc, limit=200, typed=False)})
+            records.append({**t, "status": "error", "error": record_text(exc, limit=200, typed=False)})
 
     market_checked = 0
     if progress is not None:
@@ -238,7 +238,7 @@ def run_feed_preflight(
             rec["bytes"] = len(body.encode("utf-8", "ignore"))
         except Exception as exc:  # noqa: BLE001
             rec["status"] = "unreachable"
-            rec["error"] = exception_text(exc, limit=200, typed=False)
+            rec["error"] = record_text(exc, limit=200, typed=False)
         records.append(rec)
         market_checked += 1
 

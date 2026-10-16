@@ -75,9 +75,9 @@ def _failure_text(exc: BaseException) -> str:
     """What a self-test row says of a failure: ``Name: its words`` with every held passphrase out of the whole text (the scrub
     fails closed to the class) and the paths in it tokenised BEFORE the cut at 300 (a cut inside a path would leave a fragment tokenising cannot recognise). The row rides ``selftests.json`` in the bundle."""
     from src.monitoring.path_tokens import tokenise_paths
-    from src.monitoring.secret_scrub import exception_text
+    from src.monitoring.secret_scrub import record_text
 
-    return tokenise_paths(exception_text(exc))[:300]
+    return tokenise_paths(record_text(exc, typed=True))[:300]
 
 
 def _selftest_passed(log) -> bool | None:
