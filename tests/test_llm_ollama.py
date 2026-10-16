@@ -513,3 +513,20 @@ def test_a_backend_that_echoes_the_held_passphrase_never_puts_it_in_the_llm_erro
     text = ollama._http_error_text(exc)
     assert key not in text
     assert "failed" in text  # the rest of the server's reason is kept
+
+
+def test_a_key_that_straddles_the_cut_or_holds_whitespace_is_taken_out_before_the_reason_is_folded_and_cut(monkeypatch):
+    """The reason is scrubbed BEFORE the fold and the cut: a key whose first characters sit before the 400-character limit, and a key
+    that holds a tab, both leave nothing of themselves in the error."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
+    for key in ("hunter2-correct-horse-9f3a", "tab\there-and  two-spaces-9f3a"):
+        monkeypatch.setattr(connect, "_passphrase", key)
+        ss.forget_held()
+        body = "x" * (ollama._ERR_BODY_MAX - 10) + key + "y" * 30
+        response = httpx.Response(500, request=request, text=body)
+        exc = httpx.HTTPStatusError("boom", request=request, response=response)
+        text = ollama._http_error_text(exc)
+        assert key not in text and key[:10] not in text

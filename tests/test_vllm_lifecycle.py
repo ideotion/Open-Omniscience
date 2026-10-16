@@ -1999,3 +1999,20 @@ def test_a_held_passphrase_in_the_installers_error_or_output_is_taken_out_where_
     blob = V._history_path().read_text(encoding="utf-8")
     assert key not in blob
     assert "an unrelated line" in blob  # only the held key is taken out
+
+
+def test_a_key_that_straddles_a_cut_is_taken_out_before_the_line_or_the_error_is_cut(monkeypatch):
+    """Each captured line and the error are scrubbed BEFORE their cuts, so a key that starts before the cut leaves no prefix."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "hunter2-correct-horse-9f3a"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    line = "z" * (V._OUTPUT_LINE_CHARS - 10) + key
+    error = "e" * (500 - 10) + key
+    V.record_install_attempt(
+        version="0.26.0", phase="pip", outcome="error", exit_code=1, error=error, output_tail=[line], output_lines_total=1
+    )
+    blob = V._history_path().read_text(encoding="utf-8")
+    assert key[:10] not in blob

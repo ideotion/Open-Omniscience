@@ -640,7 +640,8 @@ def record_install_attempt(
     if _history_disabled:
         return
     try:
-        kept = [str(ln)[:_OUTPUT_LINE_CHARS] for ln in (output_tail or [])][-_OUTPUT_TAIL_LINES:]
+        # each line is scrubbed BEFORE it is cut: a cut inside a key keeps its first characters
+        kept = [scrubbed(str(ln))[:_OUTPUT_LINE_CHARS] for ln in (output_tail or [])][-_OUTPUT_TAIL_LINES:]
         total = int(output_lines_total) if output_lines_total is not None else len(kept)
         record = {
             "at": time.time(),
@@ -648,7 +649,7 @@ def record_install_attempt(
             "phase": str(phase),
             "outcome": str(outcome),
             "exit_code": exit_code,
-            "error": (str(error)[:500] if error else None),
+            "error": (scrubbed(str(error))[:500] if error else None),
             "resolver": (str(resolver) if resolver else None),
             "fallback_fired": fallback_fired,
             "started_at": (float(started_at) if started_at is not None else None),
@@ -3385,7 +3386,7 @@ def run_model_download_job(
             path = line.split(" ", 1)[1].strip()
             continue
         tail.append(line)
-        ctx.set_progress(detail=line[:200])
+        ctx.set_progress(detail=scrubbed(line)[:200])
     if exit_code != 0 or path is None:
         raise VllmLifecycleError(
             f"downloading {model} failed"
@@ -3678,7 +3679,7 @@ def run_install_job(
                     continue
                 lines_total += 1
                 tail.append(line)
-                ctx.set_progress(detail=f"venv: {line[:120]}")
+                ctx.set_progress(detail=f"venv: {scrubbed(line)[:120]}")
             if venv_exit_code is None:
                 msg = (
                     "creating the vLLM venv produced no exit status -- refusing to "
@@ -3737,7 +3738,7 @@ def run_install_job(
                 continue
             lines_total += 1
             tail.append(line)
-            ctx.set_progress(detail=line[:200])
+            ctx.set_progress(detail=scrubbed(line)[:200])
         if exit_code is None:
             msg = (
                 f"{resolver} install vllm=={version} produced no exit status -- refusing "

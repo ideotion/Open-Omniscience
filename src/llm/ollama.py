@@ -338,7 +338,9 @@ def _http_reason(exc: httpx.HTTPStatusError) -> str:
                 body = str(err)
     except ValueError:
         pass  # a non-JSON body is still the server's own words -- keep it verbatim
-    body = " ".join(body.split())
+    # scrubbed BEFORE the whitespace is folded and BEFORE the cut: a fold rewrites a key that holds a tab or a run of spaces, and a cut
+    # that lands inside a key keeps its first characters
+    body = " ".join(scrubbed(body).split())
     return body[:_ERR_BODY_MAX] + "…" if len(body) > _ERR_BODY_MAX else body
 
 
