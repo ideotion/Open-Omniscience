@@ -173,7 +173,7 @@ def test_no_batch_handed_to_duckdb_is_larger_than_the_batch_size(session, monkey
 
     monkeypatch.setattr(columnar, "_bulk_insert", spy)
     columnar.build_keyword_daily(_con(), session, batch_size=100)
-    stage = [n for t, n in seen if t == "keyword_daily_stage"]
+    stage = [n for t, n in seen if t.startswith("keyword_daily_stage")]
     meta = [n for t, n in seen if t == "keyword_meta"]
     assert sum(stage) == 120 * 10 and max(stage) <= 100 and len(stage) >= 12
     assert sum(meta) == 119 and max(meta) <= 100 and len(meta) >= 2
@@ -255,7 +255,10 @@ def test_on_batch_is_called_after_every_batch_of_both_streams_and_can_stop_the_b
     columnar.build_keyword_daily(_con(), session, batch_size=50, on_batch=hook)
     assert {s for s, _ in calls} == {"mentions", "aggregate", "keywords"}
     stages = [s for s, _ in calls]
-    assert stages.count("aggregate") == 1, "the final GROUP BY is announced once, before it runs"
+    agg = [d for s, d in calls if s == "aggregate"]
+    assert agg[0] == 0 and agg == sorted(agg) and agg[-1] == 200, \
+        "the aggregate is announced before it runs, then once per shard with the rows aggregated so far"
+    assert len(agg) == 1 + columnar.plan_build_shards(200, 1000)["shards"]
     assert stages.index("aggregate") > max(i for i, s in enumerate(stages) if s == "mentions")
     assert stages.index("aggregate") < min(i for i, s in enumerate(stages) if s == "keywords")
     assert [d for s, d in calls if s == "mentions"] == sorted(d for s, d in calls if s == "mentions")
@@ -338,6 +341,37 @@ def test_a_guard_that_engages_mid_build_stops_it_swaps_nothing_and_leaves_no_mar
     assert stopped["guard_reason"] == "available 90 MB" and stopped["stage"] == "aggregate"
     assert rollup_serve._STATE["con"] is previous, "a stopped build must not replace the serving rollup"
     assert rollup_marker.read() is None, "a build that ended by a path Python saw leaves no marker"
+
+
+def test_a_shard_that_runs_out_of_memory_is_a_duckdb_limit_stop_that_swaps_nothing_in_and_names_the_cut(
+        serve_env, session, monkeypatch):
+    _seed(session, keywords=60, mentions_per=10)
+
+    class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    def always_out_of_memory(*_a, **_k):
+        raise OutOfMemoryException("Out of Memory Error: engine words that must not be kept")
+
+    monkeypatch.setattr(columnar, "_aggregate_stage", always_out_of_memory)
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "aggregate"
+    assert stopped["shards"] >= 1 and stopped["shard"] == 0 and stopped["rows_done"] == 600
+    assert "engine words" not in repr(stopped), "the engine's own text is not carried"
+    assert rollup_serve._STATE["con"] is previous and rollup_marker.read() is None
+
+
+def test_a_finished_build_reports_how_it_was_cut_and_what_it_cost(serve_env, session):
+    _seed(session, keywords=30, mentions_per=4)
+    rollup_serve._STATE["last_build"] = None
+    assert rollup_serve.status()["last_build"] is None
+    assert rollup_serve._build_inmemory_and_swap() is None
+    lb = rollup_serve.status()["last_build"]
+    assert lb["shards"] >= 1 and lb["shard_splits"] == 0 and lb["streamed_mentions"] == 120
+    assert lb["predicted_peak_mib"] > 0 and lb["observed_mib"] >= 0 and lb["duckdb_limit_mb"] > 0
+    assert lb["keyword_daily_rows"] == rollup_serve._STATE["rows"] and lb["build_s"] >= 0
 
 
 def test_a_build_with_a_quiet_guard_swaps_in_and_clears_its_marker(serve_env, session):

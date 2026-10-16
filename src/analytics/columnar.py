@@ -875,6 +875,8 @@ _KEYWORD_DAILY_DDL = (
     "CREATE OR REPLACE TABLE keyword_daily ("
     "keyword_id BIGINT, day DATE, mentions BIGINT, articles_on_day BIGINT)"
 )
+# The same table under the name the full build fills before it swaps it in (see ``build_keyword_daily``).
+_KEYWORD_DAILY_BUILDING_DDL = _KEYWORD_DAILY_DDL.replace("TABLE keyword_daily (", "TABLE keyword_daily_building (")
 # Metadata projection so the windowed serve resolves term/kind/language in DuckDB (a JOIN
 # on the rollup) instead of a second round-trip to the canonical store. ``is_entity`` +
 # ``entity_type`` are carried verbatim so the ``kind`` filter reproduces ``_apply_kind``.
@@ -957,6 +959,91 @@ _STAGE_TYPES = ("BIGINT", "VARCHAR", "BIGINT", "BIGINT")
 _META_TYPES = ("BIGINT", "VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN", "VARCHAR", "VARCHAR")
 
 
+# -- how the full build fits a memory limit (2026-10-16) ------------------------------------------------------ #
+#
+# An in-memory DuckDB table is NOT compressed (the same 12 M staged rows were 76 MB in a file and 659 MB resident),
+# and the old build held ALL of them in one stage table while one GROUP BY with COUNT(DISTINCT) ran over it: on a
+# 12 M-mention corpus that was about 581 MB of stage plus a hash table the size of the stage again, against a limit
+# of 957 MiB (1,004 MB) that an encrypted corpus cannot spill past. It stopped there every boot.
+#
+# The build now stages each mention into one of ``shards`` small tables by ``keyword_id % shards`` (a rollup row is
+# one keyword on one day, so a shard holds whole groups and the shards are independent), aggregates them one at a
+# time into the rollup and DROPS each stage as soon as it is aggregated. What is resident at once is then the
+# stages not yet aggregated plus the rollup rows made so far (their sum stays about constant), plus ONE shard's hash
+# table instead of the whole corpus'. ``plan_build_shards`` derives the shard count from the limit; nothing is a
+# fixed size.
+#
+# THE MEASUREMENTS (DuckDB 1.5.6, offload off, a seeded corpus of 12,000,000 mentions / 1,500,000 keywords /
+# 10,386,404 rollup rows, stage columns INTEGER/DATE/BIGINT/INTEGER; the peak of ``duckdb_memory()`` sampled every
+# 20 ms, 2 threads): the peak was 957 MiB (the limit, out of memory) at 1 shard, 957 at 2, 754 at 4, 615 at 8, 546
+# at 16 and 578 at 32. That fits ``peak = base + aggregate / shards + overhead * shards`` with base 477 MiB
+# (40 bytes a mention: the stage and the rollup rows resident together), aggregate 1,108 MiB (92 bytes a mention:
+# the hash table of the whole corpus at once, which a shard holds 1/shards of) and about 2 MiB of overhead a table.
+# One thread and four threads gave 539 and 604 MiB at 16 shards, so the model is not made for one thread count.
+_MIB = 1024 * 1024
+_BUILD_RESIDENT_BYTES_PER_ROW = 40
+_BUILD_AGGREGATE_BYTES_PER_ROW = 92
+_BUILD_TABLE_OVERHEAD_MIB = 2.0
+#: The share of the limit the plan aims to stay under. WHAT IT PROTECTS: a corpus whose shape differs from the one
+#: the constants were measured on (more rollup rows per mention, longer distinct sets) and the memory DuckDB
+#: holds that the table sizes do not show, which a plan aimed AT the limit would turn into a stop at the wall.
+_BUILD_FIT_FRACTION = 0.70
+#: How many times one shard that still runs out of memory is halved before the build gives up (2 ** 4 = 16 parts).
+_BUILD_MAX_SPLIT = 16
+
+
+def predicted_build_peak_mib(rows: int, shards: int) -> float:
+    """What the model above predicts the build's DuckDB peak to be for ``rows`` mentions cut into ``shards``."""
+    rows = max(0, int(rows))
+    return (rows * _BUILD_RESIDENT_BYTES_PER_ROW / _MIB + rows * _BUILD_AGGREGATE_BYTES_PER_ROW / _MIB / max(1, shards)
+            + _BUILD_TABLE_OVERHEAD_MIB * max(1, shards))
+
+
+def plan_build_shards(rows: int, limit_mb: float) -> dict:
+    """The number of stage shards for a build of about ``rows`` mentions under a DuckDB limit of ``limit_mb`` (MB, as
+    the budget states it), and what the model predicts for it.
+
+    The smallest count whose predicted peak is under ``_BUILD_FIT_FRACTION`` of the limit, never more than the
+    count past which another table costs more than it saves (``sqrt(aggregate / overhead)``). ``fits`` is False
+    when even that count is predicted over the line: the build is still run (the model is a plan, the engine's
+    own limit is the verdict) and a stop is recorded with the count it used."""
+    import math
+
+    limit_mib = float(limit_mb) * 1_000_000 / _MIB
+    rows = max(0, int(rows))
+    agg = rows * _BUILD_AGGREGATE_BYTES_PER_ROW / _MIB
+    k_best = max(1, math.isqrt(int(agg / _BUILD_TABLE_OVERHEAD_MIB)))
+    target = limit_mib * _BUILD_FIT_FRACTION
+    k = 1
+    while k < k_best and predicted_build_peak_mib(rows, k) > target:
+        k += 1
+    peak = predicted_build_peak_mib(rows, k)
+    return {"shards": k, "predicted_peak_mib": round(peak, 1), "limit_mib": round(limit_mib, 1),
+            "fits": peak <= target, "rows_hint": rows}
+
+
+_INT32_MAX = 2**31 - 1
+
+
+def _aggregate_stage(con, stage: str, shards: int, parts: int, residue: int) -> int:
+    """Aggregate ``stage`` (or the part of it where ``(keyword_id // shards) % parts == residue``) into
+    ``keyword_daily_building``. A part that runs out of memory is halved and each half tried again, up to
+    ``_BUILD_MAX_SPLIT`` parts; past that the engine's error is raised. Returns how many times it split."""
+    where = "" if parts == 1 else f" WHERE (keyword_id // {shards}) % {parts} = {residue}"
+    try:
+        con.execute(
+            "INSERT INTO keyword_daily_building "
+            "SELECT keyword_id, day, SUM(cnt) AS mentions, COUNT(DISTINCT article_id) AS articles_on_day "
+            f"FROM {stage}{where} GROUP BY keyword_id, day"  # nosec B608 - the stage name is built from an int in this module
+        )
+        return 0
+    except Exception as exc:  # noqa: BLE001 - only the engine's own limit is retried
+        if type(exc).__name__ != "OutOfMemoryException" or parts >= _BUILD_MAX_SPLIT:
+            raise
+    return (1 + _aggregate_stage(con, stage, shards, parts * 2, residue)
+            + _aggregate_stage(con, stage, shards, parts * 2, residue + parts))
+
+
 def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_batch=None) -> dict:
     """(Re)build ``keyword_daily`` + ``keyword_meta`` — the FULL streamed build (D2).
 
@@ -972,6 +1059,10 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     watermark (see the PR-D / W2 correction below), so ``last_mention_id`` never
     under-reports the table's true max id. Returns a small tally. The canonical store is
     unchanged; this is a disposable table.
+
+    MEMORY (2026-10-16): the aggregate is SHARDED by ``keyword_id % shards`` and each stage is dropped as it is
+    aggregated, with the shard count derived from the memory limit (``plan_build_shards``, measured in the note
+    above it): the single GROUP BY over one stage table was what stopped the build at DuckDB's limit.
 
     MEMORY (2026-10-06, the VMs' crash loop): nothing here may grow with the corpus. Mentions
     stage ``batch_size`` rows at a time, and the keyword projection is read the same way (a
@@ -1096,90 +1187,158 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
 
     # -- capture the scan boundary ONCE, before the loop begins (see the docstring's
     # PR-D / W2 correction) -- a concurrent re-index's rewrite can never land inside it.
-    scan_bound = session.execute(_sql("SELECT MAX(created_at) FROM keyword_mentions")).scalar()
+    # One MAX per column on purpose: SQLite answers a lone MAX from an index, three in one SELECT scan the table.
+    # ``created_at`` is read FIRST: it is the boundary, and the sizing reads that follow are of rows that exist at it.
+    maxima = {
+        col: session.execute(_sql(f"SELECT MAX({col}) FROM keyword_mentions")).scalar()  # nosec B608 - col is one of four constants
+        for col in ("created_at", "id", "keyword_id", "article_id")
+    }
+    scan_bound = maxima["created_at"]
 
-    # -- stream mentions -> DuckDB staging (dates kept as text; cast in the GROUP BY) ---- #
-    con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
-                "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
-    streamed = 0
-    max_streamed_id = 0
+    # -- size the stage (see "how the full build fits a memory limit" above). Read AFTER the boundary: a row that
+    # exists at the boundary is counted by every one of these, one that arrives later is not streamed at all. ----- #
+    rows_hint = int(maxima["id"] or 0)
+    max_ref = max(int(maxima["keyword_id"] or 0), int(maxima["article_id"] or 0))
+    id_type = "INTEGER" if max_ref <= _INT32_MAX else "BIGINT"  # half the bytes a row while the ids allow it
+    stage_types = (id_type, "DATE", "BIGINT", id_type)
+    from src.config.memory_budget import budget
 
-    def _absorb(chunk: list) -> None:
-        """Stage one batch and advance the watermark. Shared by both phases."""
-        nonlocal streamed, max_streamed_id
-        dated_rows = [
-            (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
-            for r in chunk if r[2] is not None
-        ]
-        _bulk_insert(con, "keyword_daily_stage", _STAGE_TYPES, dated_rows)
-        streamed += len(dated_rows)
-        # The watermark tracks the MAX id seen across the WHOLE batch (dated or
-        # not) -- ordering is by (created_at, id), so the LAST row in a batch is
-        # not necessarily the one with the largest raw id (see the docstring).
-        max_streamed_id = max(max_streamed_id, max(int(r[0]) for r in chunk))
+    limit_mb = float(budget()["duckdb_memory_limit_mb"])
+    plan = plan_build_shards(rows_hint, limit_mb)
+    shards = plan["shards"]
+    stage_names = [f"keyword_daily_stage_{j}" for j in range(shards)]
 
-    def _drain(sql: str, params: dict, advance) -> None:
-        """Run one keyset loop to exhaustion. ``advance`` reads the last row and
-        returns the next batch's cursor params."""
-        while True:
-            result = session.execute(_sql(sql), params)
-            chunk = result.fetchall()
-            # Close -- never just commit -- to actually release: see the docstring's
-            # empirical finding. Closing resets the DBAPI cursor, which is what
-            # actually frees the WAL read-mark; a bare commit with the cursor still
-            # open does not.
-            result.close()
-            if not chunk:
-                break
-            _absorb(chunk)
-            if on_batch is not None:
-                on_batch("mentions", streamed)
-            params = {**params, **advance(chunk[-1])}
-            # Release the transaction this batch's read+insert opened before the next
-            # (already-closed) batch query -- the keyset-pagination fix (see docstring).
-            session.commit()
+    def _drop_build_tables() -> None:
+        for name in (*stage_names, "keyword_daily_building"):
+            try:
+                con.execute(f"DROP TABLE IF EXISTS {name}")  # nosec B608 - names are built in this function
+            except Exception:  # noqa: BLE001 - cleanup must not hide the error that got us here
+                pass
 
-    # -- PHASE A: the NULL-created_at rows (see the docstring's PHASE SPLIT note).
-    # Ordered by id alone, which is safe HERE and only here: no insert path can add a
-    # row to this phase mid-scan, so the set can only shrink, and a shrinking set has
-    # neither the double-count nor the reuse-drop direction. A re-indexed row that changed
-    # leaves the phase (it is stamped now); one that did not keeps its NULL and stays in it. No upper bound is
-    # needed for the same reason -- and none is available, since MAX(created_at) says
-    # nothing about rows that have none.
-    _drain(
-        "SELECT id, keyword_id, observed_on, count, article_id "
-        "FROM keyword_mentions WHERE created_at IS NULL AND id > :cursor_id "
-        "ORDER BY id LIMIT :batch_size",
-        {"cursor_id": 0, "batch_size": batch_size},
-        lambda last: {"cursor_id": int(last[0])},
-    )
+    try:
+        # -- stream mentions -> DuckDB staging (dates parsed to DATE on the way in) ---- #
+        for name in stage_names:
+            con.execute(f"CREATE OR REPLACE TABLE {name} "  # nosec B608 - constants and ints from this function
+                        f"(keyword_id {id_type}, day DATE, cnt BIGINT, article_id {id_type})")
+        streamed = 0
+        max_streamed_id = 0
 
-    # -- PHASE B: every dated row at or before the boundary, in (created_at, id)
-    # order. A row-value keyset rather than the OR-expansion, because that is what
-    # ix_mention_created_id can serve as a SEARCH; the empty-string sentinel sorts
-    # below every real timestamp, so it is the "before the first row" lower bound.
-    if scan_bound is not None:
+        def _absorb(chunk: list) -> None:
+            """Stage one batch and advance the watermark. Shared by both phases."""
+            nonlocal streamed, max_streamed_id
+            dated_rows = [
+                (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
+                for r in chunk if r[2] is not None
+            ]
+            if shards == 1:
+                _bulk_insert(con, stage_names[0], stage_types, dated_rows)
+            else:
+                parts: list[list] = [[] for _ in range(shards)]
+                for row in dated_rows:
+                    parts[row[0] % shards].append(row)
+                for name, part in zip(stage_names, parts, strict=True):
+                    _bulk_insert(con, name, stage_types, part)
+            streamed += len(dated_rows)
+            # The watermark tracks the MAX id seen across the WHOLE batch (dated or
+            # not) -- ordering is by (created_at, id), so the LAST row in a batch is
+            # not necessarily the one with the largest raw id (see the docstring).
+            max_streamed_id = max(max_streamed_id, max(int(r[0]) for r in chunk))
+
+        def _drain(sql: str, params: dict, advance) -> None:
+            """Run one keyset loop to exhaustion. ``advance`` reads the last row and
+            returns the next batch's cursor params."""
+            while True:
+                result = session.execute(_sql(sql), params)
+                chunk = result.fetchall()
+                # Close -- never just commit -- to actually release: see the docstring's
+                # empirical finding. Closing resets the DBAPI cursor, which is what
+                # actually frees the WAL read-mark; a bare commit with the cursor still
+                # open does not.
+                result.close()
+                if not chunk:
+                    break
+                _absorb(chunk)
+                if on_batch is not None:
+                    on_batch("mentions", streamed)
+                params = {**params, **advance(chunk[-1])}
+                # Release the transaction this batch's read+insert opened before the next
+                # (already-closed) batch query -- the keyset-pagination fix (see docstring).
+                session.commit()
+
+        # -- PHASE A: the NULL-created_at rows (see the docstring's PHASE SPLIT note).
+        # Ordered by id alone, which is safe HERE and only here: no insert path can add a
+        # row to this phase mid-scan, so the set can only shrink, and a shrinking set has
+        # neither the double-count nor the reuse-drop direction. A re-indexed row that changed
+        # leaves the phase (it is stamped now); one that did not keeps its NULL and stays in it. No upper bound is
+        # needed for the same reason -- and none is available, since MAX(created_at) says
+        # nothing about rows that have none.
         _drain(
-            "SELECT id, keyword_id, observed_on, count, article_id, created_at "
-            "FROM keyword_mentions "
-            "WHERE created_at IS NOT NULL AND created_at <= :bound "
-            "AND (created_at, id) > (:cursor_ts, :cursor_id) "
-            "ORDER BY created_at, id LIMIT :batch_size",
-            {"bound": scan_bound, "cursor_ts": "", "cursor_id": 0,
-             "batch_size": batch_size},
-            lambda last: {"cursor_ts": last[5], "cursor_id": int(last[0])},
+            "SELECT id, keyword_id, observed_on, count, article_id "
+            "FROM keyword_mentions WHERE created_at IS NULL AND id > :cursor_id "
+            "ORDER BY id LIMIT :batch_size",
+            {"cursor_id": 0, "batch_size": batch_size},
+            lambda last: {"cursor_id": int(last[0])},
         )
 
-    if on_batch is not None:
-        on_batch("aggregate", streamed)  # the GROUP BY is the build's peak: record it before it runs
-    con.execute(_KEYWORD_DAILY_DDL)
-    con.execute(
-        "INSERT INTO keyword_daily "
-        "SELECT keyword_id, CAST(day AS DATE) AS day, SUM(cnt) AS mentions, "
-        "COUNT(DISTINCT article_id) AS articles_on_day "
-        "FROM keyword_daily_stage GROUP BY keyword_id, CAST(day AS DATE)"
-    )
-    con.execute("DROP TABLE keyword_daily_stage")
+        # -- PHASE B: every dated row at or before the boundary, in (created_at, id)
+        # order. A row-value keyset rather than the OR-expansion, because that is what
+        # ix_mention_created_id can serve as a SEARCH; the empty-string sentinel sorts
+        # below every real timestamp, so it is the "before the first row" lower bound.
+        if scan_bound is not None:
+            _drain(
+                "SELECT id, keyword_id, observed_on, count, article_id, created_at "
+                "FROM keyword_mentions "
+                "WHERE created_at IS NOT NULL AND created_at <= :bound "
+                "AND (created_at, id) > (:cursor_ts, :cursor_id) "
+                "ORDER BY created_at, id LIMIT :batch_size",
+                {"bound": scan_bound, "cursor_ts": "", "cursor_id": 0,
+                 "batch_size": batch_size},
+                lambda last: {"cursor_ts": last[5], "cursor_id": int(last[0])},
+            )
+
+        if on_batch is not None:
+            on_batch("aggregate", 0)  # the shard aggregation is the build's peak: record it before it runs
+        # Into a table of its own, swapped in at the end: a shard that fails leaves the rollup that was there untouched
+        # and a half-filled one never exists under the served name. Each stage is dropped as soon as it is aggregated.
+        splits = 0
+        aggregated = 0
+        observed_mib = 0.0
+
+        def _observe_mib() -> float:
+            try:
+                return float(con.execute("SELECT sum(memory_usage_bytes) / 1048576.0 FROM duckdb_memory()").fetchone()[0])
+            except Exception:  # noqa: BLE001 - a diagnostics reading, never a reason to fail the build
+                return 0.0
+
+        observed_mib = _observe_mib()  # all stages resident: the first of the two peaks
+        con.execute(_KEYWORD_DAILY_BUILDING_DDL)
+        for j, name in enumerate(stage_names):
+            in_stage = int(con.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])  # nosec B608
+            try:
+                splits += _aggregate_stage(con, name, shards, 1, 0)
+            except Exception as exc:  # noqa: BLE001 - only the engine's limit becomes a decline
+                if type(exc).__name__ != "OutOfMemoryException":
+                    raise
+                raise BuildDeclined("duckdb-limit", {
+                    "stage": "aggregate", "rows_done": streamed, "duckdb_limit_mb": limit_mb,
+                    "shards": shards, "shard": j, "split": _BUILD_MAX_SPLIT,
+                }) from None
+            con.execute(f"DROP TABLE {name}")  # nosec B608
+            aggregated += in_stage
+            observed_mib = max(observed_mib, _observe_mib())
+            if on_batch is not None:
+                on_batch("aggregate", aggregated)
+        con.execute("BEGIN TRANSACTION")
+        try:
+            con.execute("DROP TABLE IF EXISTS keyword_daily")
+            con.execute("ALTER TABLE keyword_daily_building RENAME TO keyword_daily")
+            con.execute("COMMIT")
+        except BaseException:
+            con.execute("ROLLBACK")
+            raise
+    except BaseException:
+        _drop_build_tables()
+        raise
     daily_rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
     if on_batch is not None:
         on_batch("keywords", 0)  # the GROUP BY is over: the keywords stage (and its rate) starts here
@@ -1221,6 +1380,12 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         "keyword_daily_rows": int(daily_rows),
         "keyword_meta_rows": meta_rows,
         "last_mention_id": max_streamed_id,
+        # How the aggregate was sized and what it did (counts and MiB; ``observed_mib`` is DuckDB's own total read at
+        # the boundaries between shards, so a peak INSIDE a shard is not in it).
+        "shards": shards,
+        "shard_splits": splits,
+        "predicted_peak_mib": plan["predicted_peak_mib"],
+        "observed_mib": round(observed_mib, 1),
         # The boundary phase B stopped at (``MAX(created_at)`` read once, before the scan; None when no
         # mention had a ``created_at``). A comparison against the live table must stop at the same one:
         # a row committed after it is left out of this build on purpose, so counting it on the live side

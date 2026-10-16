@@ -104,6 +104,9 @@ _STATE: dict = {
     # rollup re-runs the verdicts, so a diagnostics run's own ``exclusive-hold`` hid the reason the boot's build
     # stopped (the 2026-10-16 bundle: declined after 921 s, reason lost). None == no such decline yet.
     "last_decline": None,
+    # How the last FINISHED in-memory build ran: the shard count it used, what the model predicted for it, DuckDB's own
+    # total read between shards, and how long it took (see ``columnar.plan_build_shards``). None until one finishes.
+    "last_build": None,
     # The offload folder of the connection in "con" (None when it has none): removed when that
     # connection is replaced.
     "spill": None,
@@ -198,6 +201,7 @@ def status() -> dict:
         last_skip = _STATE["last_skip"]
         stopped = dict(_STATE["stopped"]) if _STATE["stopped"] else None
         last_decline = dict(_STATE["last_decline"]) if _STATE["last_decline"] else None
+        last_build = dict(_STATE["last_build"]) if _STATE.get("last_build") else None
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
@@ -226,6 +230,8 @@ def status() -> dict:
         # and not replaced by the same reason being found again (``repeats`` counts that). Separate from
         # ``last_skip`` on purpose: that one is whatever declined most recently.
         "last_decline": last_decline,
+        # How the last build that finished was cut and what it cost, to be read against ``build_budget``.
+        "last_build": last_build,
         # The numbers a build is held to, so a stop can be read against them: DuckDB's limit for this tier and
         # whether it may offload to disk (it may not for an encrypted corpus, so the limit is a wall there).
         "build_budget": _build_budget(),
@@ -235,7 +241,7 @@ def status() -> dict:
 #: The fields of a decline that go into another report's row (the boot step's): codes and numbers a reader compares
 #: against the budget. Free text of the engine is never among them.
 _DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
-                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats")
+                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split")
 
 
 def decline_detail() -> dict:
@@ -319,8 +325,10 @@ def _build_inmemory_and_swap() -> dict | None:
             # the token's second element IS the newest mention id (read in this same session already)
             total_hint = int(token[1]) if token and len(token) > 1 and token[1] is not None else None
             skip: dict | None
+            tally: dict = {}
+            build_started = time.monotonic()
             try:
-                columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
+                tally = columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
             except columnar.BuildDeclined as stop:
                 skip = {"reason": stop.reason, "at": time.time(), **stop.detail}
             except Exception as exc:  # noqa: BLE001
@@ -359,6 +367,13 @@ def _build_inmemory_and_swap() -> dict | None:
         _STATE["bind"] = built_bind
         _STATE["token"] = token
         _STATE["pending"] = False
+        _STATE["last_build"] = {
+            "at": time.time(), "build_s": round(time.monotonic() - build_started, 1),
+            "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
+            "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
+            "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
+            "duckdb_limit_mb": _duckdb_limit_mb(),
+        }
         old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
             try:
@@ -547,7 +562,9 @@ def _current_mention_count() -> int | None:
 #: DuckDB settings it opens with). A stop kept on disk says what THAT code could not do on this machine; once the app
 #: version or this number differs the record is released, or a stop recorded before a fix would keep the rollup off
 #: after the upgrade until the limit grew. A kept record from before this field existed has neither, so it is released too.
-BUILD_CODE_VERSION = 1
+#: 2 (2026-10-16): the aggregate is sharded and each stage dropped as it is aggregated (``columnar.plan_build_shards``);
+#: every stop kept by version 1 was the single GROUP BY meeting the limit and is released.
+BUILD_CODE_VERSION = 2
 
 #: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. WHAT IT PROTECTS:
 #: repeated stop/retry cycles near the limit (each a ~15-minute scan that ends at the same wall). The wall is
@@ -1047,6 +1064,7 @@ def _build_and_swap() -> str:
                     "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
                     "mentions_total": stopped.get("mentions_total"), "rows_done": stopped.get("rows_done"),
                     "mentions_count": stopped.get("mentions_count"),
+                    "shards": stopped.get("shards"), "shard": stopped.get("shard"), "split": stopped.get("split"),
                     "offload_allowed": _build_budget().get("offload_allowed"),
                 })
                 _LOG.warning(

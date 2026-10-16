@@ -46,6 +46,10 @@ _FIELDS: dict[str, tuple[type, ...]] = {
     "rows_done": (int,),
     "mentions_count": (int,),
     "checked_at": (int, float),
+    # how the sharded aggregate was cut when it stopped: shards, the shard it stopped in, the parts it had been halved to
+    "shards": (int,),
+    "shard": (int,),
+    "split": (int,),
     # whether DuckDB could spill when it stopped (False: the limit was a wall); a later process where it may releases
     "offload_allowed": (bool,),
     # which code stopped it: a record is evidence about THAT build only (see ``rollup_serve.BUILD_CODE_VERSION``)

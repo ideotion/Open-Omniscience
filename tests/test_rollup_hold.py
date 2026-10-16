@@ -303,3 +303,24 @@ def test_offload_that_was_allowed_at_the_stop_is_not_a_release(monkeypatch):
     _stop(monkeypatch)
     _restart()
     assert _build_attempts(monkeypatch)[1] == "declined"
+
+
+def test_a_stop_from_the_sharded_aggregate_keeps_how_it_was_cut(monkeypatch, _env):
+    _stop(monkeypatch, shards=6, shard=2, split=16)
+    rec = json.loads(_env.read_text(encoding="utf-8"))
+    assert (rec["shards"], rec["shard"], rec["split"]) == (6, 2, 16)
+    assert rollup_serve.status()["stopped"]["shards"] == 6
+    assert rollup_serve.decline_detail()["shards"] == 6, "the boot row names the cut it stopped at"
+
+
+def test_a_stop_kept_by_the_single_pass_build_is_released_by_the_sharded_one(monkeypatch, _env):
+    """Every stop version 1 recorded was the one GROUP BY meeting the limit; the build that cuts it is not bound by it."""
+    from src import __version__
+
+    rollup_hold.write({"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 1005.0,
+                       "app_version": __version__, "build_code": 1, "mentions_count": 12_000_000})
+    _restart()
+    assert rollup_serve.BUILD_CODE_VERSION >= 2
+    calls, outcome = _build_attempts(monkeypatch)
+    assert outcome == "built" and calls == [1]
+    assert not _env.exists()
