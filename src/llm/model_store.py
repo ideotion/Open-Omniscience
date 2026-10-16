@@ -44,7 +44,7 @@ import os
 import shutil
 from pathlib import Path
 
-from src.monitoring.secret_scrub import HELD_ENV_VARS, log_failure
+from src.monitoring.secret_scrub import HELD_ENV_VARS, log_failure, record_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger("llm.model_store")
@@ -480,7 +480,7 @@ def prepare_ollama_pull() -> dict:
             out.update({"dest": str(app), "arranged": True, "started_daemon": False})
             return out
     except Exception as exc:  # noqa: BLE001 - arranging is best-effort, pulling is not
-        out["reason"] = f"could not arrange the store for this pull ({type(exc).__name__}: {exc})"
+        out["reason"] = f"could not arrange the store for this pull ({record_text(exc, typed=True)})"
         return out
 
     # A daemon we did not start is serving. Measure where it reads rather than assuming
@@ -633,7 +633,7 @@ def migrate_ollama_store(
                 out["bytes"] += b_dst.stat().st_size
                 copied_files.append(b_src)
     except (OSError, PermissionError) as exc:
-        out["reason"] = f"copy failed: {exc}"
+        out["reason"] = f"copy failed: {record_text(exc)}"
         return out
 
     out["ok"] = True

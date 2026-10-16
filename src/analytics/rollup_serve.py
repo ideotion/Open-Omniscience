@@ -69,7 +69,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from src.config.power_profiles import rollup_serve_ttl_s
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -256,7 +256,7 @@ def _build_inmemory_and_swap() -> dict | None:
                     raise
                 # DuckDB reached its memory limit and may not offload: the bound held, so decline.
                 skip = {"reason": "duckdb-limit", "at": time.time(),
-                        "duckdb_limit_mb": _duckdb_limit_mb(), "error": str(exc)[:200]}
+                        "duckdb_limit_mb": _duckdb_limit_mb(), "error": record_text(exc, limit=200)}
             else:
                 skip = None
             if skip is not None:

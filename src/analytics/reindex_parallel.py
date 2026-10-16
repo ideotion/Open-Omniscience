@@ -86,7 +86,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.analytics.extract import ExtractedTerm
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -471,7 +471,7 @@ def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
         }
     except Exception as exc:  # noqa: BLE001 - degrades to inline, never to "none found"
         log_failure(_LOG, "pooled when/where/who extraction failed", exc, level=logging.WARNING)
-        return {"__www_error__": str(exc)}
+        return {"__www_error__": record_text(exc)}
 
 
 def _worker_compute(
@@ -494,7 +494,7 @@ def _worker_compute(
         score, label = score_article(content, sentiment_lang)
         return article_id, terms, score, label, None, _extract_www(content, language, www_ctx)
     except Exception as exc:  # noqa: BLE001 - isolate one bad article, never the batch
-        return article_id, [], None, None, str(exc), None
+        return article_id, [], None, None, record_text(exc), None
 
 
 # --------------------------------------------------------------------------- #
@@ -522,7 +522,7 @@ def _compute_one(
         return ArticleDerivatives(article_id, terms, score, label)
     except Exception as exc:  # noqa: BLE001 - one bad article's precompute must not abort the batch
         log_failure(_LOG, f"precompute failed for article {article_id}", exc, level=logging.WARNING)
-        return ArticleDerivatives(article_id, [], None, None, error=str(exc))
+        return ArticleDerivatives(article_id, [], None, None, error=record_text(exc))
 
 
 def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:

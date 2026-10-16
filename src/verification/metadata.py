@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from PIL import Image, UnidentifiedImageError
 from PIL.ExifTags import GPSTAGS, TAGS
 
+from src.monitoring.secret_scrub import record_text
+
 
 class ImageError(ValueError):
     """The bytes could not be read as an image."""
@@ -77,7 +79,7 @@ def extract_image_metadata(data: bytes) -> ImageMetadata:
         img = Image.open(io.BytesIO(data))
         img.load()
     except (UnidentifiedImageError, OSError) as exc:
-        raise ImageError(f"not a readable image: {exc}") from exc
+        raise ImageError(f"not a readable image: {record_text(exc)}") from exc
 
     exif_raw = img.getexif()
     exif: dict = {}

@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from src.catalog.countries import country_payload_iso2
 from src.database.models import StatSubscription
+from src.monitoring.secret_scrub import record_text
 
 Getter = Callable[[str], Any]
 
@@ -177,7 +178,7 @@ def refresh_due(
         except Exception as exc:  # noqa: BLE001 - best-effort; record + continue
             errors += 1
             s.last_fetched_at = now_dt
-            s.last_status = f"error: {str(exc)[:160]}"
+            s.last_status = f"error: {record_text(exc, limit=160)}"
     session.flush()
     return {"checked": len(due), "refreshed": refreshed, "stored": stored,
             "skipped_offline": 0, "errors": errors}

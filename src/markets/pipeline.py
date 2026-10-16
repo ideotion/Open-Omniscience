@@ -29,7 +29,7 @@ from src.ingest import (
 )
 from src.ingest.pipeline import IngestResult, store_fetched
 from src.markets.extract import extract_price
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -72,14 +72,14 @@ def run_rule(
     try:
         fetched = fetcher.fetch(rule.url, require_html=True)
     except RobotsDisallowed as exc:
-        _record(rule, f"blocked_robots: {exc}")
-        return RuleOutcome(rule.id, rule.symbol, "blocked_robots", reason=str(exc))
+        _record(rule, f"blocked_robots: {record_text(exc)}")
+        return RuleOutcome(rule.id, rule.symbol, "blocked_robots", reason=record_text(exc))
     except RobotsUnavailable as exc:
-        _record(rule, f"robots_unavailable: {exc}")
-        return RuleOutcome(rule.id, rule.symbol, "robots_unavailable", reason=str(exc))
+        _record(rule, f"robots_unavailable: {record_text(exc)}")
+        return RuleOutcome(rule.id, rule.symbol, "robots_unavailable", reason=record_text(exc))
     except FetchError as exc:
-        _record(rule, f"fetch_failed: {exc}")
-        return RuleOutcome(rule.id, rule.symbol, "fetch_failed", reason=str(exc))
+        _record(rule, f"fetch_failed: {record_text(exc)}")
+        return RuleOutcome(rule.id, rule.symbol, "fetch_failed", reason=record_text(exc))
 
     # Best-effort raw capture into the corpus (only stores if a real article body
     # is present; pure data pages simply yield extract_failed, which is fine).
@@ -152,7 +152,7 @@ def run_rules(
         except Exception as exc:  # noqa: BLE001 - one bad rule must not abort the batch
             log_failure(_LOG, f"market rule {rule.id} failed", exc, level=logging.WARNING)
             session.rollback()
-            outcome = RuleOutcome(rule.id, rule.symbol, "error", reason=str(exc))
+            outcome = RuleOutcome(rule.id, rule.symbol, "error", reason=record_text(exc))
         tally[outcome.status] = tally.get(outcome.status, 0) + 1
         outcomes.append(outcome.to_dict())
     return {

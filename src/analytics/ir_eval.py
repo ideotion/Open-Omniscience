@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import record_text
+
 _METRICS = ("ndcg", "mrr", "recall", "precision", "ap")
 
 
@@ -270,7 +272,7 @@ def load_gold_set(path) -> list[GoldQuery]:
     except FileNotFoundError as exc:
         raise GoldSetError(f"gold set not found: {p}") from exc
     except json.JSONDecodeError as exc:
-        raise GoldSetError(f"gold set is not valid JSON: {exc}") from exc
+        raise GoldSetError(f"gold set is not valid JSON: {record_text(exc)}") from exc
     if not isinstance(data, dict) or not isinstance(data.get("queries"), list):
         raise GoldSetError("gold set must be an object with a 'queries' list")
     out: list[GoldQuery] = []

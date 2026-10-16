@@ -53,7 +53,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.versioned.lanes import KINDS, lane
 
 _LOG = logging.getLogger("versioned.budget")
@@ -452,7 +452,7 @@ def storage_report(session) -> dict[str, Any]:
     try:
         table = load_table()
     except BudgetTableError as exc:
-        table, table_error = None, str(exc)
+        table, table_error = None, record_text(exc)
 
     try:
         settings = load_settings()
