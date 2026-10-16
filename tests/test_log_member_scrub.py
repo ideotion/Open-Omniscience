@@ -291,3 +291,24 @@ def test_a_field_test_step_that_fails_does_not_record_the_key(monkeypatch, tmp_p
     ft._run_step("probe", boom)
     raw = (tmp_path / "field_test.jsonl").read_text(encoding="utf-8")
     assert _KEY not in raw and "probe" in raw and "false" in raw
+
+
+def test_the_single_file_backup_carries_older_import_reports_scrubbed(tmp_path, monkeypatch):
+    """``import_reports/*.json`` ride the single-file backup; a report an older build wrote holds an engine's error text. MUTATION TARGET:
+    the ``scrubbed_copy`` of the reports in ``_collect_members``."""
+    from src.backup import artifact
+
+    monkeypatch.setattr(artifact, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.backup.sqlite_backup.live_db_path", lambda: tmp_path / "live.db")
+    monkeypatch.setattr(artifact, "snapshot_sqlite", lambda _src, dest: Path(dest).write_bytes(b""))
+    d = tmp_path / "import_reports"
+    d.mkdir()
+    old = {"kind": "restore", "errors": [{"msg": f"near '{_KEY}' syntax", "esc": json.dumps(_KEY)[1:-1]}]}
+    (d / "restore-20260101T000000Z-ab.json").write_text(json.dumps(old, indent=2), encoding="utf-8")
+    out = tmp_path / "stage"
+    out.mkdir()
+    members = [m for m in artifact._collect_members(False, out) if m.role == "import_reports"]
+    assert [m.name for m in members] == ["import_reports/restore-20260101T000000Z-ab.json"]
+    staged = members[0].path.read_text(encoding="utf-8")
+    assert _KEY not in staged and json.loads(staged)["kind"] == "restore"
+    assert _KEY in (d / "restore-20260101T000000Z-ab.json").read_text(encoding="utf-8"), "the live report is not rewritten"

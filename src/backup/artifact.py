@@ -480,7 +480,13 @@ def _collect_members(
     reports = base / _IMPORT_REPORTS_DIR
     if reports.is_dir():
         for p in sorted(reports.rglob("*.json")):
-            members.append(Member(str(p.relative_to(base)), "import_reports", p))
+            # A report of what an import did carries the error text of what failed: written scrubbed by this build, but a report an older
+            # build left can hold a passphrase an engine quoted, and a backup (possibly unencrypted) is where it would leave the install.
+            # Staged line by line through the scrub, like the logs; size and sha are taken on the staged copy.
+            rel = str(p.relative_to(base))
+            staged_report = tmp_dir / rel
+            scrubbed_copy(p, staged_report)
+            members.append(Member(rel, "import_reports", staged_report))
     editions = base / _BULLETIN_EDITIONS_DIR
     if editions.is_dir():
         for p in sorted(editions.rglob("*.json")):
@@ -618,9 +624,9 @@ def write_volume_backup(
     include_newsletters: bool = True,
     volume_size: int | None = None,
     parity_fraction: float = 0.1,
-    should_stop: "Callable[[], bool] | None" = None,
-    progress_cb: "Callable[[dict], None] | None" = None,
-    include_blobs: "Iterable[str] | None" = None,
+    should_stop: Callable[[], bool] | None = None,
+    progress_cb: Callable[[dict], None] | None = None,
+    include_blobs: Iterable[str] | None = None,
 ) -> dict:
     """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
     server-side directory ``dest_dir``.
