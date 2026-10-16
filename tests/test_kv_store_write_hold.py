@@ -149,7 +149,9 @@ def test_an_interrupt_inside_the_slot_neither_leaks_a_count_nor_releases_another
     """The count is one ``add`` and the release an idempotent ``discard`` of the write's own token: an interrupt that lands after
     the add leaves nothing counted (a leaked count would make every later hold refuse to start until a restart), and one that lands
     before it releases nothing (a decrement of a write that was never counted would let a hold start with another save still
-    writing the old file). MUTATION TARGET: a plain integer incremented in one statement and flagged in a second."""
+    writing the old file). This pins the contract of the set (a plain integer fails it by a TypeError, not by an ordering); the
+    window that really leaks under signals is the release's lock, pinned by the test below. MUTATION TARGETS: ``discard`` replaced
+    by ``clear``, or the release removed."""
     other = object()  # another settings write in flight on another thread
     flight = _InterruptedAdd(after=after)
     flight.update({other})
@@ -159,6 +161,40 @@ def test_an_interrupt_inside_the_slot_neither_leaks_a_count_nor_releases_another
     assert set(flight) == {other}, "the interrupted write left a count, or released one that was not its own"
     with pytest.raises(kv_store.KvWriteBusy), kv_store.hold_writes(0):
         pass  # the other write is still waited for
+
+
+class _InterruptedEnter:
+    """``kv_store._hold`` whose Nth ``with`` entry raises KeyboardInterrupt, as a signal delivered inside ``Condition.__enter__`` (Python
+    code in CPython 3.13, measured with real signals) does: before the body of the ``with`` runs."""
+
+    def __init__(self, real, *, fail_on):
+        self._real, self._fail_on, self._entries = real, fail_on, 0
+
+    def __enter__(self):
+        self._entries += 1
+        if self._entries == self._fail_on:
+            raise KeyboardInterrupt
+        return self._real.__enter__()
+
+    def __exit__(self, *exc):
+        return self._real.__exit__(*exc)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def test_an_interrupt_as_the_release_takes_the_lock_does_not_leave_the_write_counted(store, monkeypatch):
+    """The release is a lock-free ``discard`` BEFORE the lock is taken to wake a hold: an interrupt delivered while ``with _hold`` is
+    entered (the second entry of a slot, the first being the count) used to arrive before the decrement and leave the write counted
+    for ever, so every later hold refused to start until a restart (about 5 % of interrupted writes with real signals on CPython 3.13).
+    MUTATION TARGET: the ``discard`` moved back inside ``with _hold``."""
+    monkeypatch.setattr(kv_store, "_hold", _InterruptedEnter(kv_store._hold, fail_on=2))
+    with pytest.raises(KeyboardInterrupt), kv_store._write_slot():
+        pass
+    assert not kv_store._inflight, "the write stayed counted after its body ended"
+    monkeypatch.undo()
+    with kv_store.hold_writes(0):  # and a restore's hold starts at once
+        assert kv_store._hold_by == threading.get_ident()
 
 
 def test_a_delete_is_held_too(store):

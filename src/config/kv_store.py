@@ -97,10 +97,12 @@ class KvWriteBusy(RuntimeError):
 _hold = threading.Condition()  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
 #: One token per settings write between its start and its end (they may be waiting for the gate). A SET and not a count: a write is
-#: counted by ONE call (``add``) and released by an idempotent one (``discard``), so an exception that arrives between any two
-#: statements of the slot (a signal handler's KeyboardInterrupt on the main thread) can neither leave a write counted for ever (the
-#: hold would then refuse to start until the process restarts) nor release one that was never counted (the hold would start with a
-#: save still writing the old file).
+#: counted by ONE call (``add``, under ``_hold``, with the hold check) and released by ONE lock-free call (``discard``, a no-op for a
+#: token that was never added), then ``_hold`` is taken only to wake a waiting hold. The release takes no lock because
+#: ``Condition.__enter__`` is Python code: a KeyboardInterrupt delivered there (measured on CPython 3.13 with real signals, about 5 % of
+#: interrupted writes) used to arrive before the decrement and leave the write counted for ever, so every later hold refused to start
+#: until a restart. An interrupt can still leave ``_hold``'s own lock taken (the same ``with`` hazard, pre-existing): on the main
+#: thread, KeyboardInterrupt is best effort here, and the served app's main thread is uvicorn's, which handles SIGINT itself.
 _inflight: set[object] = set()
 
 
@@ -160,10 +162,9 @@ def _write_slot() -> Iterator[int]:
             epoch = _epoch
         yield epoch
     finally:
-        if token in _inflight:  # one read; only this thread ever adds or removes its own token
-            with _hold:
-                _inflight.discard(token)
-                _hold.notify_all()
+        _inflight.discard(token)  # one C call, no lock: an interrupt lands before it or after it, never inside; no-op if never added
+        with _hold:  # only to wake a hold that is waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
+            _hold.notify_all()
 
 
 _REFUSED_TEXT = (
