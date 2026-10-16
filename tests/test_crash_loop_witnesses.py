@@ -582,3 +582,30 @@ def test_a_cut_dump_shows_the_crashing_thread_and_the_top_of_every_other_thread(
     few = ee._trace_report(body, ee.Path("c.log"), 120)
     assert few["threads_not_listed"] > 0 and f"{few['threads_not_listed']} of 50 other threads are not listed" in few["cut_note"]
     assert len(few["lines"]) <= 120
+
+
+def _dump(tag: str, crash_frames: int, labelled: bool = True) -> list[str]:
+    body = ["Fatal Python error: Aborted", ""]
+    for i in range(30):
+        body += [f"Thread 0x{i:016x} (most recent call first):"] + [f'  File "/app/src/w.py", line {j} in idle{i}' for j in range(40)] + [""]
+    label = "Current thread" if labelled else "Thread"
+    body += [f"{label} 0x00007f (most recent call first):"] + [f'  File "/app/src/c.py", line {j} in {tag}' for j in range(crash_frames)]
+    return body
+
+
+def test_each_earlier_end_keeps_its_own_crashing_thread_whole(dd):
+    recs = _session(1, pid=601, signal="SIGABRT") + _session(2, pid=602, signal="SIGABRT")
+    text = "".join("\n" + _header(pid, n) + "\n" + "\n".join(_dump(tag, 90)) + "\n" for pid, n, tag in ((601, 1, "crash_one"), (602, 2, "crash_two")))
+    _trace_log(dd, text)
+    rows = {r["pid"]: r["trace"] for r in ee.earlier_unclean_ends(None, records=recs)["sessions"]}
+    for pid, tag, other in ((601, "crash_one", "crash_two"), (602, "crash_two", "crash_one")):
+        t = rows[pid]
+        assert sum(f"in {tag}" in ln for ln in t["lines"]) == 90 and not any(other in ln for ln in t["lines"])
+        assert t["crashing_thread"].startswith("Current thread") and t["lines_kept"] == len(t["lines"]) < t["lines_total"]
+
+
+def test_a_dump_that_names_no_current_thread_says_so_and_does_not_pick_one(dd):
+    t = ee._trace_report(_dump("busiest", 90, labelled=False), ee.Path("c.log"), 120)
+    assert t["crashing_thread"] is None and "none is named" in t["crashing_thread_reason"]
+    assert "no thread is marked as the crashing one" in t["cut_note"]
+    assert not any(ln.startswith("Current thread") for ln in t["lines"])

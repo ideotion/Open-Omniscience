@@ -565,12 +565,13 @@ def _without_torn_starts(body: list[str]) -> list[str] | None:
     return out
 
 
-def _fair_lines(ordered: list[str], max_lines: int) -> tuple[list[str], dict[str, Any] | None]:
+def _fair_lines(ordered: list[str], max_lines: int, crashing: bool = True) -> tuple[list[str], dict[str, Any] | None]:
     """The lines a report keeps of a dump (``ordered`` has the crashing thread's block first) and, when it cut anything, the counts and
     the rule of the cut. A dump that fits is kept whole. Otherwise: whatever precedes the first thread, then the crashing thread's block
     (whole while it fits in the room), then every other thread to its first lines (its top frames), so a dump of 50 workers shows what
     each was doing and not only the first few. Threads the room cannot reach are COUNTED as not listed. The cut shrinks what is printed,
-    never what is counted (``lines_total`` is the log's own)."""
+    never what is counted (``lines_total`` is the log's own). ``crashing`` is False when the dump labels no thread "Current thread": then
+    NO block is called the crashing one, and every thread shares the room alike."""
     if len(ordered) <= max_lines:
         return ordered, None
     heads = [i for i, ln in enumerate(ordered) if _THREAD_HEAD.match(ln)]
@@ -583,8 +584,11 @@ def _fair_lines(ordered: list[str], max_lines: int) -> tuple[list[str], dict[str
     pre = ordered[: heads[0]]
     ends = heads[1:] + [len(ordered)]
     blocks = [ordered[h:e] for h, e in zip(heads, ends, strict=True)]
-    kept = pre + blocks[0][: max(max_lines - len(pre), 0)]
-    rest = blocks[1:]
+    if crashing:
+        kept = pre + blocks[0][: max(max_lines - len(pre), 0)]
+        rest = blocks[1:]
+    else:
+        kept, rest = list(pre), blocks
     room = max_lines - len(kept)
     takes: list[int] = []
     if rest and room > 0:
@@ -605,8 +609,10 @@ def _fair_lines(ordered: list[str], max_lines: int) -> tuple[list[str], dict[str
     listed = len(takes)
     omitted = len(rest) - listed
     note = (
-        f"{len(kept)} of {len(ordered)} lines are kept: the crashing thread's block first, then each other thread's first lines (its top "
-        "frames); " + (f"{omitted} of {len(rest)} other threads are not listed" if omitted else "every other thread is listed")
+        f"{len(kept)} of {len(ordered)} lines are kept: "
+        + ("the crashing thread's block first, then each other thread's first lines (its top frames); " if crashing
+           else "no thread is marked as the crashing one, so every thread's first lines (its top frames) are kept alike; ")
+        + (f"{omitted} of {len(rest)} {'other ' if crashing else ''}threads are not listed" if omitted else "every thread is listed")
     )
     return kept, {"lines_kept": len(kept), "threads_total": len(blocks), "threads_not_listed": omitted, "cut_note": note}
 
@@ -635,13 +641,23 @@ def _trace_report(
         (ln.strip() for ln in body if ln.startswith(("Fatal Python error", "Uncaught exception"))),
         body[0].strip(),
     )
-    kept, cut = _fair_lines(ordered, max_lines)
+    current = next((ln for ln in body if ln.startswith("Current thread")), None)
+    kept, cut = _fair_lines(ordered, max_lines, crashing=current is not None)
     out: dict[str, Any] = {
         "summary": _trace_line(head),
         "lines": [_trace_line(ln) for ln in kept],
         "lines_total": len(body),
         "source": Path(source).name,
     }
+    # Which thread aborted is what faulthandler labels "Current thread"; without that label nothing says, and the busiest thread is
+    # never offered in its place (an earlier reading took it for the one that aborted).
+    if current is not None:
+        out["crashing_thread"] = _trace_line(current.strip())
+    else:
+        out["crashing_thread"] = None
+        out["crashing_thread_reason"] = (
+            "the dump marks no thread as the current one (an uncaught exception, or a dump without that label), so none is named"
+        )
     if cut:
         out.update(cut)
     return out
