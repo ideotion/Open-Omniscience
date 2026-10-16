@@ -80,6 +80,10 @@ def test_continuous_mode_runs_passes_back_to_back():
         settings_provider=lambda: SchedulerSettings(continuous=True, interval_minutes=60),
     )
     sched._continuous_gap_s = 0.01  # tiny gap so the test sees many passes fast
+    # The loop's first idle window runs REAL off-peak maintenance (seconds on a busy database): throttle it as if it had
+    # just run, so the 5 s below measure the passes and not the maintenance.
+    sched._maint_interval_s = 1e9
+    sched._last_maint = time.monotonic()
     try:
         assert sched.start() is True
         deadline = time.time() + 5
