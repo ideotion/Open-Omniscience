@@ -162,3 +162,33 @@ def test_a_one_feed_per_site_backup_still_merges_into_a_legacy_store(tmp_path):
         lambda s: (_src(s, "bbc.com", "https://bbc.com/en"), _src(s, "dw.com", "https://dw.com/rss")),
     )
     assert [r[0] for r in _rows(working)] == ["bbc.com", "dw.com"]
+
+
+# --- R148: a feed the local outlet does not hold lands as a new sibling, with the outlet's verdict, and is reported ---
+def test_an_unmatched_feed_lands_as_a_sibling_takes_the_outlets_verdict_and_is_listed(tmp_path):
+    """R148 (coordinator, 2026-10-16): the sibling is created, takes the outlet's measured verdict (never laundered to
+    the qualified another instance gave it), and the merge report lists it with its reason and counts it."""
+    from src.database.models import SourceQualificationAttempt
+
+    staged, working = tmp_path / "staged.db", tmp_path / "working.db"
+    with _corpus(staged)() as s:
+        # an old domain-keyed backup: one feed per domain, a feed this store does not hold, judged QUALIFIED elsewhere
+        _src(s, "dw.com", "https://dw.com/old-feed", status="qualified")
+        s.commit()
+    with _corpus(working)() as s:
+        _src(s, "dw.com", "https://dw.com/en", status="disqualified")
+        _src(s, "dw.com", "https://dw.com/de", status="unqualified")
+        s.commit()
+    report, _batch = merge_corpus(staged, working, _META)
+
+    rows = {r[1]: r for r in _rows(working)}
+    assert "f:dw.com/old-feed" in rows  # created: the extra sibling
+    assert rows["f:dw.com/old-feed"][2] == "disqualified"  # the outlet's verdict, not the incoming qualified
+    with _corpus(working)() as s:
+        sib = s.query(Source).filter_by(rss_url="https://dw.com/old-feed").one()
+        assert "inherited" in [a.verdict for a in s.query(SourceQualificationAttempt).filter_by(source_id=sib.id)]
+    sources = report["sources"]
+    assert sources["added_as_sibling"] == 1
+    entry = sources["siblings"][0]
+    assert entry["domain"] == "dw.com" and entry["verdict_inherited"] is True
+    assert entry["reason"] == "feed not present locally, added under outlet dw.com https://dw.com/en"  # the oldest local row names the outlet

@@ -607,9 +607,15 @@ class DomainResult:
     note: str = ""
     samples: list[str] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
+    # Sources the merge added as a NEW FEED under an outlet this store already holds (R148), each with its reason.
+    siblings_total: int = 0
+    siblings: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         d: dict = {"new": self.new, "duplicate": self.duplicate, "conflict": self.conflict}
+        if self.siblings_total:
+            d["added_as_sibling"] = self.siblings_total
+            d["siblings"] = self.siblings[:_SAMPLE_LIMIT]
         if self.deferred:
             d["deferred"] = self.deferred
         if self.note:
@@ -2814,6 +2820,80 @@ def _refuse_feeds_a_legacy_store_cannot_hold(con) -> None:
         )
 
 
+def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -> list[int]:
+    """R148: an incoming source whose feed matches none of the feeds this store holds for its domain is ADDED as a
+    new sibling feed under that outlet (never mapped onto the oldest local row, which would file its articles under
+    the wrong feed). Two things follow from it, both done HERE, before anything reads the incoming stamps:
+
+    * the sibling receives the OUTLET's measured verdict (R145 (2)): its stamp becomes the oldest local row's measured
+      ``qualified`` / ``disqualified`` (a catalogue-curated stamp is provenance, not a verdict, and is not handed on),
+      so a locally disqualified outlet is never laundered back into collection by a sibling another instance judged,
+      and the qualification tally reads what actually lands (``temp.sib_verdict``, read through ``COALESCE``);
+    * the report lists each one with its reason and counts it.
+
+    Returns the incoming ids whose verdict was taken from the outlet, for the ``inherited`` attempt rows written after
+    the id map exists."""
+    cur = curated_version.replace("'", "''")
+    rows = _q(
+        con,
+        "SELECT i.id, i.domain, i.rss_url, i.status,"  # nosec B608 - constant-only text and the module's own curated-version constant
+        " (SELECT o.name FROM main.sources o WHERE o.domain = i.domain ORDER BY o.id LIMIT 1),"
+        " (SELECT o.id FROM main.sources o WHERE o.domain = i.domain AND o.status IN ('qualified', 'disqualified')"
+        f"   AND NOT (o.status = 'qualified' AND COALESCE(o.qualification_criteria_version, '') = '{cur}')"
+        "   ORDER BY o.id LIMIT 1)"
+        " FROM inc.sources i"
+        f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {same})"
+        "   AND EXISTS (SELECT 1 FROM main.sources o WHERE o.domain = i.domain)"
+        " ORDER BY i.id",
+    )
+    # The incoming copy is never written (the staged file is read-only by convention, and a write that names no
+    # ``main.`` is what ``test_merge_writes_name_main`` forbids): the override rides in a temp table the INSERT and the
+    # qualification tally read through ``COALESCE``.
+    con.execute("DROP TABLE IF EXISTS temp.sib_verdict")
+    con.execute("CREATE TEMP TABLE sib_verdict (old INTEGER PRIMARY KEY, status TEXT, qualified_at TEXT, criteria TEXT)")
+    inherited: list[int] = []
+    for inc_id, domain, feed, status, outlet, verdict_src in rows:
+        takes = False
+        if verdict_src is not None:
+            o = con.execute(
+                "SELECT status, qualified_at, qualification_criteria_version FROM main.sources WHERE id = ?",
+                (verdict_src,),
+            ).fetchone()
+            if o[0] != status:
+                con.execute(
+                    "INSERT INTO temp.sib_verdict (old, status, qualified_at, criteria) VALUES (?, ?, ?, ?)",
+                    (inc_id, o[0], o[1] if o[0] == "qualified" else None, o[2] if o[0] == "qualified" else None),
+                )
+                inherited.append(inc_id)
+                takes = True
+        r.siblings_total += 1
+        if len(r.siblings) < _SAMPLE_LIMIT:
+            r.siblings.append({
+                "domain": domain, "incoming_feed": feed, "outlet": outlet, "verdict_inherited": takes,
+                "reason": f"feed not present locally, added under outlet {outlet}",
+            })
+    return inherited
+
+
+def _record_inherited_sibling_verdicts(con, batch_id: int, inc_ids: list[int]) -> None:
+    """The ``inherited`` attempt row (the same one the shipped overlay writes) for each sibling that took the outlet's
+    verdict, tracked in the batch so an undo of the restore takes it away with the source."""
+    if not inc_ids:
+        return
+    from src.catalog.qualification import CRITERIA_VERSION, VERDICT_INHERITED
+
+    con.execute("DROP TABLE IF EXISTS temp.sib_inherit")
+    con.execute("CREATE TEMP TABLE sib_inherit (old INTEGER PRIMARY KEY)")
+    con.executemany("INSERT INTO temp.sib_inherit (old) VALUES (?)", [(i,) for i in inc_ids])
+    _insert_tracked(
+        con, batch_id, "source_qualification_attempts",
+        "INSERT INTO main.source_qualification_attempts (source_id, attempted_at, verdict, criteria_version)"
+        " SELECT ms.new, ?, ?, ? FROM temp.map_sources ms JOIN temp.sib_inherit s ON s.old = ms.old",
+        (datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds"), VERDICT_INHERITED, CRITERIA_VERSION),
+    )
+    con.execute("DROP TABLE IF EXISTS temp.sib_inherit")
+
+
 def _merge_sources(con, batch_id, results) -> None:
     _refuse_feeds_a_legacy_store_cannot_hold(con)
     r = DomainResult()
@@ -2912,6 +2992,7 @@ def _merge_sources(con, batch_id, results) -> None:
         "((m.status = 'unqualified' AND i.status <> 'unqualified')"
         f" OR ({_local_curated} AND {_incoming_measured} AND NOT {_local_newer_judging}))"
     )
+    sibling_ids = _plan_sibling_feeds(con, _SAME, r, CURATED_CRITERIA_VERSION)
     con.execute("DROP TABLE IF EXISTS temp.qual_landed")
     con.execute(
         "CREATE TEMP TABLE qual_landed"
@@ -2919,9 +3000,11 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     con.execute(
         "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
-        " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
-        " 'introduced' FROM inc.sources i"
-        " WHERE i.status <> 'unqualified'"
+        " SELECT i.domain, COALESCE(sv.status, i.status),"
+        " CASE WHEN sv.old IS NULL THEN i.qualification_criteria_version ELSE sv.criteria END,"
+        " CASE WHEN sv.old IS NULL THEN i.qualified_at ELSE sv.qualified_at END,"
+        " 'introduced' FROM inc.sources i LEFT JOIN temp.sib_verdict sv ON sv.old = i.id"
+        " WHERE COALESCE(sv.status, i.status) <> 'unqualified'"
         f"   AND NOT EXISTS (SELECT 1 FROM sources m WHERE {_SAME})"
     )
     # The domains about to ADOPT a verdict (they exist here and were never judged, or carry
@@ -2964,9 +3047,11 @@ def _merge_sources(con, batch_id, results) -> None:
         " catalog_baseline, feed_key)"
         " SELECT i.name, i.domain, i.rss_url, i.rate_limit_ms, i.enabled, i.priority, i.tags,"
         " i.reliability_score, i.language, i.region, i.country, i.source_type,"
-        " i.update_frequency, i.cacheability, i.status, i.qualified_at,"
-        " i.qualification_criteria_version, i.catalog_baseline, oo_feed_key(i.rss_url)"
-        " FROM inc.sources i"
+        " i.update_frequency, i.cacheability, COALESCE(sv.status, i.status),"
+        " CASE WHEN sv.old IS NULL THEN i.qualified_at ELSE sv.qualified_at END,"
+        " CASE WHEN sv.old IS NULL THEN i.qualification_criteria_version ELSE sv.criteria END,"
+        " i.catalog_baseline, oo_feed_key(i.rss_url)"
+        " FROM inc.sources i LEFT JOIN temp.sib_verdict sv ON sv.old = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {_SAME})",
     )
     r.samples = _new_row_samples(con, batch_id, "sources", "m.domain")
@@ -3021,6 +3106,7 @@ def _merge_sources(con, batch_id, results) -> None:
         con, "map_sources",
         f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",
     )
+    _record_inherited_sibling_verdicts(con, batch_id, sibling_ids)
 
     g = DomainResult()
     g.duplicate = _count(
