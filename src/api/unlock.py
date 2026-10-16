@@ -25,6 +25,8 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -227,6 +229,38 @@ def doctor() -> dict:
     }
 
 
+#: How long the encryption waits for work already in flight on the corpus (a drain, a re-index batch: ``corpus_lease``) before it
+#: refuses, naming it. The restore's figure for the same wait (``repair.QUIESCE_S``, the lease module's own default); the
+#: alternative to waiting is a file swap under a connection that would go on writing to the replaced file.
+ENCRYPT_QUIESCE_S = 180.0
+
+
+@contextmanager
+def _alone_with_the_library() -> Iterator[None]:
+    """Hold the machine for the whole of an encryption in place: ``owns_the_machine()`` is true from before the pool is disposed
+    until after the keyed pool is back, and nothing that was already writing is still doing so.
+
+    Encrypting swaps the corpus file (``os.replace``) under the write gate, and the gate does not reach the storage guard's drain
+    (its checkpoint opens a connection to the live path, and since the passive step needs no gate it can start while a writer
+    holds it). A drain that opened a connection to the plaintext path between the swap and the keyed dispose would leave a log of
+    the old file beside the new one. So: the exclusive window (``drain_if_due`` declines while it is open, the collection loop
+    stands aside, as for a restore), then a wait for the leases of work already in flight, refused by name when it does not end.
+    The window is opened BEFORE the wait: the drain asks again once it holds its lease, so one of the two always sees the other."""
+    from src.database.corpus_lease import wait_for_quiescence
+    from src.scheduler.runner import exclusive_window
+
+    with exclusive_window():
+        held = wait_for_quiescence(ENCRYPT_QUIESCE_S)
+        if held:
+            raise HTTPException(
+                status_code=409,
+                detail="another job is still writing to the library ("
+                + ", ".join(held)
+                + f") after waiting {ENCRYPT_QUIESCE_S:.0f} s; nothing was encrypted",
+            )
+        yield
+
+
 @router.post("/encrypt-db")
 def encrypt_db(body: EncryptBody) -> dict:
     """One-way encryption of an EXISTING plaintext store (snapshot first,
@@ -249,7 +283,7 @@ def encrypt_db(body: EncryptBody) -> dict:
         raise HTTPException(status_code=400, detail="passphrases do not match")
     # The key typed into this request is not held until the store is encrypted, so the nets that read what the process holds
     # cannot know it, and an engine's error can quote the statement that carried it: what escapes the block is converted.
-    with scrub_and_reraise(_LOG, "encrypt in place failed", body.passphrase):
+    with scrub_and_reraise(_LOG, "encrypt in place failed", body.passphrase), _alone_with_the_library():
         dispose_engine()
         try:
             reports = encrypt_all(body.passphrase)

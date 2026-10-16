@@ -1601,9 +1601,11 @@ class StorageGuard:
         TRUNCATE is busy.
 
         Returns the drain record when one ran (``{"error": <type>}`` for one that failed). Never while an exclusive operation owns the
-        machine (an import, a restore's swap: the drain opens connections to the live corpus
-        and must not do so between a restore's dispose and its replace), and under a corpus
-        lease, so a restore that starts during a drain waits for it. At most one drain runs at a
+        machine (an import, a restore's swap, an encryption in place: the drain opens connections to the live corpus
+        and must not do so between a dispose and a replace), and under a corpus
+        lease, so a restore that starts during a drain waits for it. The machine is asked about twice: here, cheaply, and again
+        once the lease is held (:meth:`_run_drain`), so an exclusive operation that opens its window and then waits for the
+        leases is always seen by one of the two. At most one drain runs at a
         time (an in-flight flag taken under the guard's lock, so two callers cannot both pass the
         cadence check). A busy write gate (bounded at 30 s by the guard's own drain,
         :func:`_default_drain`) delays only the caller: the supervisor calls this on a thread of its
@@ -1639,9 +1641,17 @@ class StorageGuard:
         """The drain a caller has claimed (:meth:`drain_if_due`): lease, checkpoint, the stamp
         when it ends, record and the pin report. ``_drain_inflight`` is the caller's to release."""
         from src.database.corpus_lease import corpus_lease
+        from src.scheduler.runner import owns_the_machine
 
+        owned = False
         try:
             with corpus_lease("storage-guard-drain"):
+                # Asked AGAIN, now the lease is held: the first answer (in :meth:`drain_if_due`) is older than this lease. An
+                # exclusive operation that opens its window and then waits for the leases (an encryption in place, a restore's
+                # swap) either finds this one and waits for it, or this read finds its window: lease first, then ask.
+                if owns_the_machine():
+                    owned = True
+                    return None
                 rec = self._drain()
             self.clear_failure("the drain")  # a failure after this success is news again
         except Exception as exc:  # noqa: BLE001 - the drain's own thread must not die of it
@@ -1651,9 +1661,11 @@ class StorageGuard:
             # Paced from when the drain ENDED, however it ended: one that queued 30 s on the write
             # gate must not be followed five seconds later by the next (the permanent waiter this
             # cadence exists to prevent), and one that raised past the ``except`` (a
-            # ``BaseException``) must not leave the cadence unstamped either.
-            with self._lock:
-                self._last_drain_mono = self._clock()
+            # ``BaseException``) must not leave the cadence unstamped either. A drain that never
+            # ran (the machine was owned) is not a drain, and stamps nothing.
+            if not owned:
+                with self._lock:
+                    self._last_drain_mono = self._clock()
         # TRUNCATE came back busy: a reader holds the log. The gate was busy: a WRITER held the
         # write gate for the whole bounded wait and TRUNCATE never ran. Different facts.
         pinned = isinstance(rec, dict) and rec.get("busy") == 1
