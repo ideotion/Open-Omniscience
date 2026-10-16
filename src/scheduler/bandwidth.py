@@ -74,7 +74,7 @@ class _AdjustableSemaphore:
         with self._lock:
             if self._active > 0:
                 self._active -= 1
-            self._cond.notify()
+            self._cond.notify_all()  # not notify(): a stale entry in the waiter list (an interrupted wait) would swallow the one wake
 
     def set_permits(self, n: int) -> None:
         with self._lock:

@@ -129,7 +129,7 @@ class _Slots:
         with self._lock:
             if key in self._held:
                 del self._held[key]
-                self._cond.notify()
+                self._cond.notify_all()  # not notify(): a stale entry in the waiter list (an interrupted wait) would swallow the one wake
 
     @property
     def held(self) -> int:
