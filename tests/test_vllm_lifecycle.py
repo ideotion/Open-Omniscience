@@ -2143,3 +2143,47 @@ def test_the_bundle_scrubs_a_failed_log_an_older_build_left_raw_on_the_disk(monk
     out = V.newest_failed_start_log(limit=100)
     assert out["available"] is True
     assert _KEY[:10] not in (out.get("text") or "") + (out.get("head") or "") + (out.get("tail") or "")
+
+
+def test_the_live_server_log_is_scrubbed_before_its_head_and_tail_are_cut(monkeypatch):
+    """``server_log_tail`` checks the log whole and THEN cuts: a key that straddles the start of the tail (or the end of the head) leaves
+    no prefix in either half."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    limit, head_limit = 100, 50
+    # the tail starts at size - limit: put the key across that point, and another across the head's end
+    body = "h" * (head_limit - 10) + _KEY + "m" * 200 + "t" * (limit - 10) + _KEY + "e" * 10
+    V.server_log_path().write_text(body, encoding="utf-8")
+    out = V.server_log_tail(limit=limit, head_limit=head_limit)
+    assert out["available"] is True
+    shown = (out.get("head") or "") + (out.get("tail") or "")
+    assert _KEY[:10] not in shown and _KEY[-10:] not in shown
+
+
+def test_a_log_too_large_to_be_checked_whole_is_not_shown(monkeypatch):
+    """The reason is stated, and none of the text is shown."""
+    monkeypatch.setattr(V, "_LOG_SCRUB_MAX_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("x" * 500, encoding="utf-8")
+    out = V.server_log_tail()
+    assert out["available"] is False and "cannot be checked" in out["reason"] and "tail" not in out
+
+
+def test_the_failure_excerpt_window_is_scrubbed_where_the_log_is_read(monkeypatch):
+    """Arbitration, activation and the backend only ever see the excerpt: the key is taken out of the log before the window is cut."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(f"loading\nRuntimeError: bad config {_KEY} end\nmore\n", encoding="utf-8")
+    out = V.failure_excerpt(limit=40)
+    assert out["available"] is True
+    assert _KEY[:10] not in (out.get("excerpt") or "")
+
+
+def test_a_journal_line_an_older_build_wrote_raw_is_scrubbed_when_it_is_read(monkeypatch):
+    """The install and start journals are served to the UI and the bundle: a line already on the disk is read through the scrub."""
+    _hold_key(monkeypatch)
+    V._history_path().parent.mkdir(parents=True, exist_ok=True)
+    V._history_path().write_text(json.dumps({"at": 1, "error": f"old {_KEY} line"}) + "\n", encoding="utf-8")
+    V._start_history_path().parent.mkdir(parents=True, exist_ok=True)
+    V._start_history_path().write_text(json.dumps({"at": 1, "excerpt": f"old {_KEY} line"}) + "\n", encoding="utf-8")
+    assert _KEY not in json.dumps(V.install_history()) and _KEY not in json.dumps(V.start_history())

@@ -173,6 +173,8 @@ def server_log_path() -> Path:
 # bundle showed precisely that -- 29,855 bytes of log, the last 8,000 kept, and the
 # reason the server died sitting in the 21,855 that were thrown away.
 _LOG_HEAD_BYTES = 8000
+#: The most of the live server log that is read to be checked for the passphrase WHOLE before it is cut.
+_LOG_SCRUB_MAX_BYTES = 16_000_000
 _LOG_TAIL_BYTES = 8000
 
 
@@ -189,20 +191,26 @@ def server_log_tail(*, limit: int = _LOG_TAIL_BYTES, head_limit: int = _LOG_HEAD
     try:
         if not p.is_file():
             return {"available": False, "reason": "no server log yet (never started here)"}
-        size = p.stat().st_size
         with p.open("rb") as fh:
-            if size <= limit:
-                return {
-                    "available": True,
-                    "path": str(p),
-                    "bytes": size,
-                    "truncated": False,
-                    "elided_bytes": 0,
-                    "tail": fh.read().decode("utf-8", errors="replace"),
-                }
-            head = fh.read(min(head_limit, max(0, size - limit)))
-            fh.seek(size - limit)
-            tail = fh.read()
+            raw = fh.read(_LOG_SCRUB_MAX_BYTES + 1)
+        if len(raw) > _LOG_SCRUB_MAX_BYTES:
+            # Stated, never silently cut: the text is checked whole BEFORE it is cut (a key that straddles the cut keeps its start
+            # otherwise), and a log this large is not read whole.
+            return {"available": False, "reason": f"the server log is larger than {_LOG_SCRUB_MAX_BYTES // 1_000_000} MB, so it is not shown: it cannot be checked for the passphrase whole"}
+        # scrubbed on READ, before the head/tail cut: the live log is the server's own output and can echo a path, a URL or a config line
+        raw = scrubbed(raw.decode("utf-8", errors="replace")).encode("utf-8")
+        size = len(raw)
+        if size <= limit:
+            return {
+                "available": True,
+                "path": str(p),
+                "bytes": size,
+                "truncated": False,
+                "elided_bytes": 0,
+                "tail": raw.decode("utf-8", errors="replace"),
+            }
+        head = raw[: min(head_limit, max(0, size - limit))]
+        tail = raw[size - limit :]
         elided = size - len(head) - limit
         return {
             "available": True,
@@ -364,7 +372,8 @@ def failure_excerpt(*, limit: int = 900) -> dict:
     except OSError as exc:
         return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
 
-    text = raw.decode("utf-8", errors="replace")
+    # scrubbed where it is read, before any window is cut: arbitration, activation and the backend only ever pass scrubbed text along
+    text = scrubbed(raw.decode("utf-8", errors="replace"))
     lines = text.splitlines()
     def _hit(kind: str, idx: int, advice: str = "") -> dict:
         out = {
@@ -708,7 +717,7 @@ def install_history() -> list[dict]:
             except ValueError:
                 continue
             if isinstance(rec, dict):
-                out.append(rec)
+                out.append(_scrub_history(rec))  # a line an older build wrote is read through the scrub too
         return out[-_ATTEMPTS_CAP:]
     except OSError:
         return []
@@ -1752,7 +1761,7 @@ def start_history(limit: int | None = None) -> list[dict]:
         except ValueError:
             continue  # a torn tail line is skipped, never fatal
         if isinstance(rec, dict):
-            out.append(rec)
+            out.append(_scrub_history(rec))  # a line an older build wrote is read through the scrub too
     return out[-limit:] if limit else out
 
 
