@@ -97,6 +97,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import scrubbed_name
+
 _LOG = logging.getLogger(__name__)
 
 SCHEMA = 1
@@ -766,7 +768,7 @@ class DamageRegistry:
                 # The first of its kind in this process. What belongs to the CALLING thread is taken here (a
                 # context variable does not follow into another thread); the rest, including the one read of
                 # an earlier session's record, is gathered and written off it.
-                thread_name = threading.current_thread().name
+                thread_name = scrubbed_name(threading.current_thread().name) or ""
                 endpoint = _endpoint()
                 self._single_flight(
                     ("record", file_key, scope, shape),
@@ -1566,7 +1568,7 @@ class DamageRegistry:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
             return
         found = {"code": SQLITE_CORRUPT, "name": "SQLITE_CORRUPT", "message": "the per-table check reported damage"}
-        thread_name = threading.current_thread().name
+        thread_name = scrubbed_name(threading.current_thread().name) or ""
         self._single_flight(
             ("record", file_key, scope, shape),
             lambda: self._record_new(

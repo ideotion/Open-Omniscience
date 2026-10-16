@@ -305,7 +305,7 @@ def test_a_supergroup_ring_member_stays_a_ring_after_the_merge(tmp_path):
 # --------------------------------------------------------------------------- #
 #  The guard that closes the class: AST-level column completeness
 # --------------------------------------------------------------------------- #
-_INSERT = re.compile(r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE | re.DOTALL)
+_INSERT = re.compile(r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(?:main\.)?(\w+)\s*\(([^)]*)\)", re.IGNORECASE | re.DOTALL)
 
 
 def _insert_columns() -> dict[str, set[str]]:

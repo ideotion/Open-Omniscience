@@ -16,6 +16,7 @@ hold.
 from __future__ import annotations
 
 import bz2
+import re
 from pathlib import Path
 
 import pytest
@@ -392,7 +393,7 @@ def test_the_merge_carries_the_version_anchor():
             continue
         for sub in ast.walk(node):
             if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
-                if "INSERT INTO articles" in sub.value:
+                if re.search(r"INSERT INTO (?:main\.)?articles\b", sub.value):
                     found = True
         # The statement is built from adjacent literals the parser folds, so join
         # every string constant in the function and require BOTH halves.

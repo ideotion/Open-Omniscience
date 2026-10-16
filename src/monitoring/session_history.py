@@ -75,7 +75,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed_name
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -456,12 +456,13 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
     written, and ``cut`` says what it left out (threads, then the release record, then the guard block, and how many names or
     frames were cut short); the cut's own text is counted before it is written."""
     from src.monitoring.path_tokens import tokenise_paths
-    from src.monitoring.release_view import allow_listed
+    from src.monitoring.release_view import allow_listed, vouched_names
 
     snaps = hwm.get("pressure")
     snap = snaps[-1] if isinstance(snaps, list) and snaps and isinstance(snaps[-1], dict) else None
     if snap is None:
         return None
+    snap = vouched_names(snap)  # a snapshot an older build wrote kept its thread names raw
     out: dict[str, Any] = {k: snap[k] for k in ("why", "at", "avail_mb", "total_mb", "rss_mb", "swap_used_mb") if k in snap}
     blocks = (snap.get("memory") or {}).get("py_alloc_blocks") if isinstance(snap.get("memory"), dict) else None
     if blocks is not None:
@@ -477,7 +478,7 @@ def _pressure_record(hwm: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(t, dict) or t.get("waiting") or t.get("sampler"):
             continue
         stack = t.get("stack") or []
-        name = tokenise_paths(str(t.get("name") or "?"))
+        name = tokenise_paths(scrubbed_name(str(t.get("name") or "?")) or "?")
         frame = tokenise_paths(str(stack[0])) if stack else None
         threads.append({
             "name": _cut_text(name, _THREAD_NAME_MAX),
