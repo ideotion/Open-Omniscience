@@ -14,10 +14,11 @@ register on one router in that order.
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 

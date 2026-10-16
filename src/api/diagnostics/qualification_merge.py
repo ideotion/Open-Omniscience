@@ -18,9 +18,9 @@ wants two copies of.
 from __future__ import annotations
 
 from fastapi import Depends, File, Form, UploadFile
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.session import get_db
 
 from ._base import router

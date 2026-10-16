@@ -35,20 +35,17 @@ EXPORT_COLUMNS: list[str] = [
     "rate_limit_ms",
     "enabled",
     "reliability_score",
-    # Q313 = a (2026-09-15): for ONE release a CSV carries the country in BOTH forms,
-    # so an operator's spreadsheet, and anything downstream of it, keeps working across
-    # the alpha-2 -> alpha-3 storage move (Q301 = c; the storage half is 0.5 / S05-02).
-    # `country` stays the old, stored form and is what an import reads; `country_iso3`
-    # is derived from it on the way out. The OLD column is what drops in 0.5, not this
-    # one -- so nothing downstream has to change twice.
-    "country_iso3",
 ]
 
-#: Columns an IMPORT reads. Identical to the export set minus `country_iso3`, which is
-#: DERIVED: two columns for one fact would let a spreadsheet arrive saying `fr` in one
-#: and `DEU` in the other, and picking a winner silently is how an edit gets discarded.
-#: `parse_sources_csv` refuses that row by name instead.
-IMPORT_COLUMNS: list[str] = [c for c in EXPORT_COLUMNS if c != "country_iso3"]
+#: Q313 (S05-02 S2): the export carries ONE country column -- `country`, alpha-3. The
+#: transitional second column (`country_iso3`, 0.4) and the old alpha-2 value are gone
+#: from the OUTPUT; `parse_sources_csv` still reads `country_iso3` on the way IN, forever,
+#: because a sheet exported by 0.4 must import (the same promise the restore path makes
+#: to old backups). A file carrying both spellings that disagree is refused by name.
+LEGACY_IMPORT_COLUMNS: tuple[str, ...] = ("country_iso3",)
+
+#: Columns an IMPORT reads: what the export writes, plus the legacy column above.
+IMPORT_COLUMNS: list[str] = list(EXPORT_COLUMNS)
 
 # Integer columns and their (lo, hi) clamps; out-of-range -> reported as an error.
 _INT_FIELDS = {
@@ -81,7 +78,7 @@ def template_csv() -> str:
             "domain": "example.com",
             "rss_url": "https://example.com/feed.xml",
             "source_type": "news",
-            "country": "us",
+            "country": "USA",
             "language": "en",
             "region": "north-america",
             "tags": "politics,world",
@@ -105,9 +102,8 @@ def template_csv() -> str:
             "reliability_score": 8,
         },
     ]
-    # The TEMPLATE documents what an import READS. `country_iso3` is derived on export
-    # and refused on import when it disagrees with `country`, so offering an operator a
-    # blank column to fill in would be offering them a way to be refused.
+    # The TEMPLATE documents what an import READS: one `country` column, alpha-3 (an
+    # alpha-2, a name or a slug is read too). The legacy `country_iso3` is not offered.
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=IMPORT_COLUMNS, extrasaction="ignore")
     writer.writeheader()
@@ -131,9 +127,10 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
 
     # Case-insensitive header -> canonical column.
     colmap = {raw: raw.strip().lower() for raw in reader.fieldnames}
-    # `country_iso3` is read too -- not to be stored, but so a row where the two
-    # country columns DISAGREE can be refused rather than silently resolved.
-    known = set(EXPORT_COLUMNS)
+    # The LEGACY `country_iso3` is read too (a sheet exported by 0.4 carries it) -- not
+    # to be stored, but so a row where the two country columns DISAGREE can be refused
+    # rather than silently resolved.
+    known = set(EXPORT_COLUMNS) | set(LEGACY_IMPORT_COLUMNS)
 
     rows: list[dict] = []
     errors: list[str] = []

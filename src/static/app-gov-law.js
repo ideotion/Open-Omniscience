@@ -806,8 +806,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const values = {}, names = {};
       (data.by_country || []).forEach(r => {
-        if (r.value != null) values[r.country] = r.value;
-        names[r.country] = ooRegionName(r.country);
+        // The map keys on alpha-2; the payload's `country` is alpha-3 (Q304).
+        const key = ooCountryKey(r.country);
+        if (r.value != null) values[key] = r.value;
+        names[key] = ooRegionName(r.country);
       });
       await ooMap(host, {
         values, names,

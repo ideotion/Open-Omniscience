@@ -1,4 +1,4 @@
-"""The JSON boundary: ``country_iso3`` beside ``country``, and both spellings in.
+"""The JSON boundary: ``country`` is alpha-3 on the wire, and both spellings come in.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -35,6 +35,7 @@ import pytest
 
 from src.catalog.countries import (
     country_display_code,
+    country_payload,
     country_payload_iso3,
     country_query_forms,
 )
@@ -161,35 +162,34 @@ def api(monkeypatch, tmp_path):
         yield client
 
 
-def test_law_rows_carry_both_country_fields_beside_the_stored_value(api) -> None:
+def test_law_rows_carry_alpha3_country_and_jurisdiction_and_no_companion_field(api) -> None:
     """A law row holds TWO country-shaped facts that are not the same claim:
     ``jurisdiction`` is the legal system, ``country`` is where the document comes
     from. Q303 gives ``uk`` the alpha-3 ``GBR``, so the two legitimately differ on
-    one row and a single field would have to pick a winner."""
+    one row. Since S05-02 S2 BOTH are alpha-3 on the wire and the transitional
+    ``*_iso3`` companions are gone (one fact, one field)."""
     api.post("/api/law/seed")
     docs = api.get("/api/law/documents").json()["documents"]
     assert docs, "seeding produced no documents; this test would assert nothing"
     for d in docs:
-        assert "country" in d and "country_iso3" in d
-        assert "jurisdiction" in d and "jurisdiction_iso3" in d
-        assert d["country_iso3"] == country_payload_iso3(d["country"])
-        assert d["jurisdiction_iso3"] == country_payload_iso3(d["jurisdiction"])
-        # The stored value is UNCHANGED beside it — this is a boundary, not a
-        # migration, and the 0.5 storage half is what moves the column.
-        if d["country"]:
-            assert len(d["country"]) <= 8
-    assert any(d["jurisdiction_iso3"] for d in docs), (
-        "every jurisdiction resolved to null — the assertions above would then be "
-        "comparing None to None and proving nothing"
+        assert "country_iso3" not in d and "jurisdiction_iso3" not in d, "the old companion fields came back"
+        assert "jurisdiction" in d and "country" in d
+        # Already in wire form: converting again changes nothing (idempotent), and a
+        # resolvable value is the alpha-3, not the stored alpha-2.
+        assert country_payload(d["jurisdiction"]) == d["jurisdiction"]
+        assert d["country"] is None or country_payload(d["country"]) == d["country"]
+    assert any(len(d["jurisdiction"]) == 3 and d["jurisdiction"].isupper() for d in docs), (
+        "no jurisdiction came back as an uppercase alpha-3 -- the flip did not reach the wire, and the "
+        "assertions above would be comparing a value to itself"
     )
 
 
 def test_the_jurisdiction_filter_accepts_the_alpha3_it_displays(api) -> None:
     api.post("/api/law/seed")
     docs = api.get("/api/law/documents").json()["documents"]
-    stored = next((d["jurisdiction"] for d in docs if d.get("jurisdiction_iso3")), None)
-    assert stored, "no jurisdiction resolved; nothing to round-trip"
-    shown = country_payload_iso3(stored)
+    shown = next((d["jurisdiction"] for d in docs if len(d["jurisdiction"]) == 3), None)
+    assert shown, "no jurisdiction resolved; nothing to round-trip"
+    stored = (country_query_forms(shown) or [shown])[0]
     by_stored = api.get("/api/law/documents", params={"jurisdiction": stored}).json()
     by_shown = api.get("/api/law/documents", params={"jurisdiction": shown}).json()
     assert by_stored["documents"], f"the stored spelling {stored!r} stopped matching"
@@ -201,7 +201,7 @@ def test_the_jurisdiction_filter_accepts_the_alpha3_it_displays(api) -> None:
     )
 
 
-def test_source_rows_carry_country_iso3(api) -> None:
+def test_source_rows_carry_one_alpha3_country(api) -> None:
     """Seeded with rows that SPAN the interesting cases rather than skipped when the
     fixture DB is empty: an ordinary country, the one stored spelling that is not its
     own alpha-2, a non-ISO code, and no country at all. A skip here would have read as
@@ -220,12 +220,12 @@ def test_source_rows_carry_country_iso3(api) -> None:
     assert set(seen) == set(wanted), f"the seeded rows did not come back: {sorted(seen)}"
     for domain, cc in wanted.items():
         r = seen[domain]
-        assert "country_iso3" in r, f"{domain}: no country_iso3 beside country"
-        assert r["country"] == cc, "the stored spelling must ride unchanged beside it"
-        assert r["country_iso3"] == country_payload_iso3(cc)
-    assert seen["b.example"]["country_iso3"] == "GBR"
-    assert seen["c.example"]["country_iso3"] == "EUU"
-    assert seen["d.example"]["country_iso3"] is None, "no country must not become a code"
+        assert "country_iso3" not in r, f"{domain}: the transitional companion field came back"
+        assert r["country"] == country_payload(cc), "`country` IS the alpha-3 on the wire (Q304)"
+    assert seen["a.example"]["country"] == "FRA"
+    assert seen["b.example"]["country"] == "GBR"
+    assert seen["c.example"]["country"] == "EUU"
+    assert seen["d.example"]["country"] is None, "no country must not become a code"
 
 
 def test_the_source_country_filter_accepts_the_alpha3_it_displays(api) -> None:
@@ -250,14 +250,12 @@ def test_the_source_country_filter_accepts_the_alpha3_it_displays(api) -> None:
     )
 
 
-def test_the_export_and_the_screen_agree_about_one_row() -> None:
-    """``source_io`` used plain ``to_iso3``, so an export said "no alpha-3" for a code
-    the UI displays two panels away. Two answers to one fact; pinned so it cannot
-    drift apart again."""
-    from src.api.source_io import _iso3
-
+def test_the_payload_and_the_screen_agree_about_one_row() -> None:
+    """The export once used plain ``to_iso3``, so it said "no alpha-3" for a code the UI
+    displays two panels away. Two answers to one fact; pinned so it cannot drift apart
+    again -- for every code the store holds, the wire's value IS the screen's."""
     for code in ("fr", "uk", "eu", "int", "xk", "an"):
-        assert _iso3(code) == country_payload_iso3(code) == country_display_code(code)
+        assert country_payload(code) == country_payload_iso3(code) == country_display_code(code)
 
 
 # --------------------------------------------------------------------------- #

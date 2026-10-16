@@ -776,3 +776,88 @@ def test_a_listing_ordered_by_country_comes_back_in_the_same_order_in_both_forms
     assert orders["alpha2"] == orders["alpha3"] == [None, "at", "au", "ch", "cn", "de", "gb", "uk"]
     keys = [cf.order_key(v, i) for i, v in enumerate(["b", None, "a"])]
     assert [k[2] for k in sorted(keys)] == [1, 2, 0], "NULL first, then the value, as ORDER BY does"
+
+
+# --------------------------------------------------------------------------- #
+#  Folded from the coordinator's read of the B1 fold (CHECK-2 lows 1, 4, 5), carried by B2
+# --------------------------------------------------------------------------- #
+def test_a_dangling_link_where_the_journalled_copy_was_is_not_a_copy(tmp_path):
+    """LOW 1. The journal check asks "is the copy still THERE", and a link to nowhere is not a copy: followed (``stat``) it
+    reads absent, so the resume refuses ("its safety copy is gone") instead of going on to report a verified copy that is
+    not there. The no-replace check asks "is this NAME taken", and there a dangling link IS taken (``lstat``)."""
+    link = tmp_path / "copy.db"
+    os.symlink(tmp_path / "nowhere.db", link)
+    assert cm._path_exists(link, follow=True) is False
+    assert cm._path_exists(link) is True
+
+
+def test_a_resume_whose_journalled_copy_is_a_dangling_link_refuses(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    _kill_child(db, tmp_path / "bk", "between-windows", 3)
+    for f in list((tmp_path / "bk").glob("*.db")):
+        f.unlink()
+        os.symlink(tmp_path / "nowhere.db", f)
+    with pytest.raises(cm.MigrationRefused, match="safety copy is gone"):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+
+
+def test_the_refusal_for_a_resume_does_not_tell_the_operator_to_pass_a_backup_folder(tmp_path, monkeypatch):
+    """The journal check's own advice: a resume has no ``--backup-dir`` to change."""
+
+    def broken(path, *args, **kwargs):
+        raise PermissionError(13, "no")
+
+    monkeypatch.setattr(cm.os, "stat", broken)
+    with pytest.raises(cm.MigrationRefused) as caught:
+        cm._path_exists(tmp_path / "x", follow=True, hint="Put the safety copy back where the journal says it was.")
+    assert "PermissionError" in str(caught.value) and "Put the safety copy back" in str(caught.value)
+    assert "--backup-dir" not in str(caught.value) and caught.value.__cause__ is None
+
+
+class _RaisingCon:
+    """A connection whose catalogue read fails the way a damaged or locked file's does."""
+
+    def execute(self, *args, **kwargs):
+        raise sqlite3.DatabaseError("disk I/O error")
+
+
+def test_unreadable_is_not_absent_for_the_journal_and_the_form_marker():
+    """LOW 5. Both readers ask the schema whether ``app_state`` exists; a read that FAILS must raise, not answer "no journal" or
+    "alpha-2" (which would let a half-migrated store be opened as a finished one)."""
+    with pytest.raises(sqlite3.DatabaseError):
+        cm.read_journal(_RaisingCon())
+    with pytest.raises(sqlite3.DatabaseError):
+        cf.read_form_in(_RaisingCon(), "main")
+
+
+def test_a_copy_that_cannot_be_published_under_its_final_name_is_refused_by_class_and_leaves_no_partial(tmp_path, monkeypatch):
+    """LOW 5 (the cosmetic half): on a file system with no hard links the fallback renames; when that rename fails the half-named
+    file is removed and the operator gets the class, not a raw traceback."""
+    import errno
+
+    a = _new_store(tmp_path / "a.db", articles=12)
+    dest = tmp_path / "bk" / "plain.db"
+
+    def no_link(src, dst, *args, **kwargs):
+        raise OSError(errno.EPERM, "no hard links here")
+
+    def no_replace(src, dst, *args, **kwargs):
+        raise OSError(errno.EXDEV, "cross-device")
+
+    monkeypatch.setattr(cm.os, "link", no_link)
+    monkeypatch.setattr(cm.os, "replace", no_replace)
+    con = _live(a)
+    try:
+        with pytest.raises(cm.MigrationRefused) as caught:
+            cm.take_verified_backup(con, a, dest)
+    finally:
+        con.close()
+    assert "OSError" in str(caught.value) and "cross-device" not in str(caught.value)
+    assert caught.value.__cause__ is None and not dest.exists() and not list(dest.parent.glob("*.partial"))
+
+
+def test_the_unfinished_message_says_how_to_put_the_safety_copy_back():
+    """LOW 4. "Can be put back" with no step is an instruction nobody can follow: there is no restore command for a raw copy."""
+    text = cf.unfinished_message("interrupted", "/tmp/x/copy.db")
+    assert "/tmp/x/copy.db" in text
+    assert "copy that file over the store file" in text and "-wal and -shm" in text

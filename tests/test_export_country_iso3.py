@@ -1,24 +1,28 @@
-"""Exports carry the country in BOTH forms for one release (Q313 = a, gate row K).
+"""The export carries ONE country column, alpha-3 (Q313 = a, gate row B / S05-02 S2).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-THE SHAPE, and why it is not symmetrical. ``country`` is the STORED form and is what an
-import reads; ``country_iso3`` is DERIVED from it on the way out. Two independently
-editable columns for one fact would let a spreadsheet arrive saying ``fr`` in one and
-``DEU`` in the other, and picking a winner silently is how an operator's edit gets
-discarded -- so a disagreement is refused BY NAME instead.
+THE SHAPE. Through 0.4 an export carried the country in BOTH forms for one release: the
+stored alpha-2 in ``country`` and a derived ``country_iso3`` beside it (Q313 = a), so an
+operator's spreadsheet kept working across the move. This is the release that collapses
+the pair: ``country`` now carries the alpha-3 and the second column is gone from the
+OUTPUT. The old alpha-2 value is what dropped, as the ruling said; the surviving header
+is ``country`` (Q304: "``country`` becomes alpha-3 everywhere"), proposed in the PR body
+because Q313 names the value that goes, not the header that stays.
+
+THE IMPORT KEEPS READING THE OLD COLUMN, FOREVER. A sheet exported by 0.4 carries
+``country`` = ``fr`` and ``country_iso3`` = ``FRA``; it must import (the same promise the
+restore path makes to old backups). A row where the two disagree is still refused BY
+NAME -- picking a winner silently is how an operator's edit gets discarded.
 
 MEASURED SCOPE, so nobody later reads this file as covering more than it does. Two
-surfaces in the tree emit a source's country: the sources CSV (``/api/catalog/export.csv``)
-and the sources JSON listing (``/api/catalog/sources``) -- Q313 = a names "CSV/JSON
-exports" and both are here. The YAML/JSON export at ``/api/sources/export`` carries no
-country at all, neither branch of ``/api/articles/export`` emits one, and the
-qualification overlay does not either. Diagnostics payloads are explicitly OUT: Q313
-switches those "in the same release as storage", which is 0.5.
-``test_every_export_that_carries_country_carries_both_forms`` pins the PROPERTY rather
-than that list, so the next export to grow a country column cannot ship with only the
-old form.
+surfaces in the tree emit a source's country: the sources CSV
+(``/api/catalog/export.csv``) and the sources JSON listing (``/api/catalog/sources``).
+The YAML/JSON export at ``/api/sources/export`` carries no country at all, neither
+branch of ``/api/articles/export`` emits one, and the qualification overlay does not
+either. Every other JSON payload leaves through the wire boundary
+(``src/api/country_wire.py``; ``tests/test_country_wire.py``).
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ import pytest
 from src.catalog.csv_io import (
     EXPORT_COLUMNS,
     IMPORT_COLUMNS,
+    LEGACY_IMPORT_COLUMNS,
     parse_sources_csv,
     template_csv,
     write_csv,
@@ -46,49 +51,51 @@ def _rows(text: str) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-#  The export carries both
+#  The export carries one column, alpha-3
 # --------------------------------------------------------------------------- #
-def test_the_sources_csv_carries_both_country_columns():
-    text = write_csv([{"name": "X", "domain": "x.example", "country": "fr",
-                       "country_iso3": "FRA"}])
+def test_the_sources_csv_has_exactly_one_country_column():
+    text = write_csv([{"name": "X", "domain": "x.example", "country": "FRA"}])
 
     header = _header(text)
-    assert "country" in header and "country_iso3" in header
-    row = _rows(text)[0]
-    assert (row["country"], row["country_iso3"]) == ("fr", "FRA")
-
-
-def test_the_export_endpoint_derives_the_alpha3_column(client_sources):
-    """Derived from the stored value at the row builder, so the two can never disagree
-    in an export -- there is one fact and one place it is read from."""
-    text = client_sources
-    row = next(r for r in _rows(text) if r["domain"] == "iso3.example")
-    assert (row["country"], row["country_iso3"]) == ("fr", "FRA")
+    assert header.count("country") == 1
+    assert "country_iso3" not in header and "country_iso3" not in EXPORT_COLUMNS
+    assert _rows(text)[0]["country"] == "FRA"
 
 
 @pytest.fixture()
-def client_sources(tmp_path):
+def exported_text():
     from src.api.source_io import _source_to_row
     from src.database.models import Source
 
-    src = Source(name="Z", domain="iso3.example", country="fr")
-    return write_csv([_source_to_row(src)])
+    return write_csv([
+        _source_to_row(Source(name="Z", domain="iso3.example", country="fr")),
+        _source_to_row(Source(name="U", domain="uk.example", country="uk")),
+        _source_to_row(Source(name="E", domain="eu.example", country="eu")),
+    ])
 
 
-def test_an_unconvertible_country_yields_NO_alpha3_rather_than_a_guess():
-    """``to_iso3`` fails closed. An aggregate or a junk code has no alpha-3, and an
-    empty cell is the honest answer -- inventing one would be the fabrication this
-    project refuses everywhere else."""
+def test_the_export_row_builder_writes_the_alpha3(exported_text):
+    """Chosen at the row builder, because a CSV is not a JSON response and never passes
+    the wire boundary -- so this is the one place the export's form is decided."""
+    got = {r["domain"]: r["country"] for r in _rows(exported_text)}
+    assert got == {"iso3.example": "FRA", "uk.example": "GBR", "eu.example": "EUU"}
+
+
+def test_an_unrecognised_country_is_kept_as_stored_and_an_empty_one_stays_empty():
+    """The export is not a place to lose data. A value with no alpha-3 travels as the
+    store holds it (the migration itself refuses to drop it, R100) and nothing is
+    invented for a source with no country. An aggregate is NOT promoted to a nation."""
     from src.api.source_io import _source_to_row
     from src.database.models import Source
 
     text = write_csv([
         _source_to_row(Source(name="A", domain="a.example", country="WLD")),
         _source_to_row(Source(name="B", domain="b.example", country=None)),
+        _source_to_row(Source(name="C", domain="c.example", country="floop")),
     ])
 
-    got = {r["domain"]: r["country_iso3"] for r in _rows(text)}
-    assert got == {"a.example": "", "b.example": ""}
+    got = {r["domain"]: r["country"] for r in _rows(text)}
+    assert got == {"a.example": "WLD", "b.example": "", "c.example": "floop"}
 
 
 # --------------------------------------------------------------------------- #
@@ -128,10 +135,7 @@ def _listing_client(tmp_path):
     return app, TestClient(app)
 
 
-def test_the_sources_LISTING_carries_both_forms(tmp_path):
-    """The JSON half of Q313 = a. The listing is the payload that carries a source's
-    country out of the app in JSON, and S04-05 reads it -- so it gains the derived form
-    in the SAME release as the CSV, from the same converter."""
+def test_the_sources_LISTING_carries_one_alpha3_country(tmp_path):
     app, client = _listing_client(tmp_path)
     try:
         with client:
@@ -139,29 +143,38 @@ def test_the_sources_LISTING_carries_both_forms(tmp_path):
     finally:
         app.dependency_overrides.clear()
 
-    assert (rows["alpha.test"]["country"], rows["alpha.test"]["country_iso3"]) == ("fr", "FRA")
-    assert rows["bulk.test"]["country_iso3"] is None, "an aggregate was given an alpha-3"
-    assert rows["nowhere.test"]["country_iso3"] is None
+    assert rows["alpha.test"]["country"] == "FRA"
+    assert all("country_iso3" not in r for r in rows.values()), "the companion field came back"
+    assert rows["bulk.test"]["country"] == "WLD", "an aggregate was given an alpha-3 it does not have"
+    assert rows["nowhere.test"]["country"] is None
 
 
 # --------------------------------------------------------------------------- #
 #  The import contract
 # --------------------------------------------------------------------------- #
-def test_the_template_documents_only_what_an_import_READS():
-    """Offering an operator a blank ``country_iso3`` column to fill in would be
-    offering them a way to be refused."""
+def test_the_template_documents_only_what_an_import_is_OFFERED():
+    """The legacy column is READ, never offered: handing an operator a blank column that
+    can only get them refused would be a trap."""
     assert "country_iso3" not in _header(template_csv())
     assert "country_iso3" not in IMPORT_COLUMNS
-    assert "country_iso3" in EXPORT_COLUMNS
+    assert "country_iso3" in LEGACY_IMPORT_COLUMNS
+    assert _rows(template_csv())[0]["country"] == "USA"
 
 
 def test_an_export_round_trips_through_the_import():
-    """The property that matters for a one-release dual column: an operator exports,
-    changes nothing, re-imports, and their data is unchanged."""
-    text = write_csv([{"name": "X", "domain": "x.example", "country": "fr",
-                       "country_iso3": "FRA"}])
+    """An operator exports, changes nothing, re-imports, and their data is unchanged:
+    the alpha-3 in the file is read back to the form the app speaks inside."""
+    text = write_csv([{"name": "X", "domain": "x.example", "country": "FRA"}])
 
     rows, errors = parse_sources_csv(text)
+
+    assert errors == []
+    assert rows == [{"name": "X", "domain": "x.example", "country": "fr"}]
+
+
+def test_a_sheet_exported_by_the_previous_release_still_imports():
+    """THE PROMISE: 0.4 wrote ``country`` = ``fr`` and ``country_iso3`` = ``FRA``."""
+    rows, errors = parse_sources_csv("name,domain,country,country_iso3\nX,x.example,fr,FRA\n")
 
     assert errors == []
     assert rows == [{"name": "X", "domain": "x.example", "country": "fr"}]
@@ -182,19 +195,17 @@ def test_the_two_columns_disagreeing_is_refused_BY_NAME():
 def test_the_same_country_in_two_forms_is_AGREEMENT_not_a_conflict():
     """The negative-space twin. A comparison that normalised only one side would refuse
     every export it just produced -- the recorded "normalise on both sides" rule."""
-    rows, errors = parse_sources_csv(
-        "name,domain,country,country_iso3\nX,x.example,fr,FRA\n"
-    )
-
-    assert errors == []
-    assert rows[0]["country"] == "fr"
+    for country, iso3 in (("fr", "FRA"), ("FRA", "FRA"), ("FR", "fra")):
+        rows, errors = parse_sources_csv(
+            f"name,domain,country,country_iso3\nX,x.example,{country},{iso3}\n"
+        )
+        assert errors == [], (country, iso3)
+        assert rows[0]["country"] == "fr"
 
 
 def test_only_the_alpha3_column_is_honoured_when_it_is_the_only_one_given():
-    """Through ``to_iso2``, not ``normalize_country``: measured,
-    ``normalize_country("DEU")`` is None, because it resolves codes, NAMES and slugs and
-    alpha-3 is none of the three. Getting this wrong would silently drop the operator's
-    only statement of the country."""
+    """An old sheet an operator trimmed down to ``country_iso3`` alone. Getting this
+    wrong would silently drop the operator's only statement of the country."""
     rows, errors = parse_sources_csv("name,domain,country_iso3\nX,x.example,DEU\n")
 
     assert errors == []
@@ -202,11 +213,8 @@ def test_only_the_alpha3_column_is_honoured_when_it_is_the_only_one_given():
 
 
 def test_an_UNREADABLE_country_falls_back_to_the_alpha3_column():
-    """The branch an ``elif`` would have swallowed. ``country`` is dropped when it does
-    not resolve (pre-existing behaviour, unchanged); if the fall-back were keyed on
-    "was a country column present" rather than on "is there a country NOW", this row
-    would end up with no country at all although the operator stated one in a form the
-    app reads perfectly."""
+    """The branch an ``elif`` would have swallowed: the fall-back is keyed on "is there a
+    country NOW", not on "was a country column present"."""
     rows, errors = parse_sources_csv(
         "name,domain,country,country_iso3\nX,x.example,Freedonia,DEU\n"
     )
@@ -219,8 +227,7 @@ def test_an_UNREADABLE_country_falls_back_to_the_alpha3_column():
 
 
 def test_an_unreadable_country_with_an_unreadable_alpha3_yields_no_country():
-    """The negative-space twin: the fall-back must not invent a country either. Both
-    columns fail closed, so the honest result is no country, not a guess."""
+    """The negative-space twin: the fall-back must not invent a country either."""
     rows, errors = parse_sources_csv(
         "name,domain,country,country_iso3\nX,x.example,Freedonia,ZZZ\n"
     )
@@ -239,17 +246,10 @@ def test_an_aggregate_in_the_alpha3_column_yields_no_country():
 # --------------------------------------------------------------------------- #
 #  The property, not the list
 # --------------------------------------------------------------------------- #
-def test_every_export_that_carries_country_carries_both_forms():
-    """Pinned as a PROPERTY over the module that OWNS the catalog's two exports, so the
-    next payload added there cannot ship with only the old form. Parsed, not listed: a
-    list of today's two row builders would be complete exactly once.
-
-    SCOPE, measured rather than assumed. 78 dict literals in ``src/`` carry a
-    ``"country"`` key -- analytics rollups, map features, geo lookups, the briefing
-    recipes. Q313 = a moves "CSV/JSON exports" now and says diagnostics payloads switch
-    "in the same release as storage", which is 0.5; widening this guard to all 78 would
-    be building S05-02 early and would drag surfaces Q313 never named. The catalog
-    export module is the surface Q313 names, so that is what is pinned."""
+def test_every_country_the_source_export_module_emits_goes_through_the_one_helper():
+    """Pinned as a PROPERTY over the module that owns the catalog's exports: every dict
+    literal there that carries a ``country`` builds it with ``country_payload``, so the
+    next row builder added to it cannot ship the stored alpha-2. Parsed, not listed."""
     import ast
     import pathlib
 
@@ -260,41 +260,36 @@ def test_every_export_that_carries_country_carries_both_forms():
     for node in ast.walk(tree):
         if not isinstance(node, ast.Dict):
             continue
-        keys = {k.value for k in node.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)}
-        if "country" not in keys:
-            continue
-        checked += 1
-        if "country_iso3" not in keys:
-            offenders.append(node.lineno)
+        for key, value in zip(node.keys, node.values, strict=True):
+            if isinstance(key, ast.Constant) and key.value == "country":
+                checked += 1
+                if not (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Name)
+                    and value.func.id == "country_payload"
+                ):
+                    offenders.append(key.lineno)
     assert checked >= 2, (
         f"the guard found only {checked} payload(s) carrying a country in source_io.py; "
         "it is looking in the wrong place and an empty search passes for free"
     )
-    assert not offenders, (
-        f"payloads at src/api/source_io.py lines {offenders} carry `country` without "
-        "`country_iso3` (Q313 = a keeps both forms for one release)"
-    )
+    assert not offenders, f"src/api/source_io.py lines {offenders} carry `country` without `country_payload`"
 
 
-def test_the_import_reader_is_NOT_where_the_alpha3_column_is_stored():
-    """The other half of the one-fact rule: the derived column never reaches the DB.
-    ``upsert_sources`` writes what ``parse_sources_csv`` returns, and that parser
-    RESOLVES the alpha-3 into ``country`` rather than passing it through -- so a stored
-    row can never carry two country columns that disagree."""
+def test_the_import_reader_is_NOT_where_the_legacy_column_is_stored():
+    """The one-fact rule: the legacy column never reaches the DB. ``upsert_sources`` writes
+    what ``parse_sources_csv`` returns, and that parser RESOLVES the alpha-3 into
+    ``country`` rather than passing it through."""
     rows, errors = parse_sources_csv("name,domain,country_iso3\nX,x.example,DEU\n")
 
     assert errors == []
-    assert "country_iso3" not in rows[0], (
-        "the parser passed the derived column through to the writer; storage would then "
-        "hold two editable copies of one fact (that flip is 0.5, S05-02)"
-    )
+    assert "country_iso3" not in rows[0]
 
 
 def test_the_articles_export_carries_no_country_at_all():
-    """MEASURED, not assumed. This is the reason Q313's "CSV/JSON exports" touches one
-    exporter rather than several -- and if a future change adds a country to the
-    articles export, this guard reddens and points at Q313 rather than letting it ship
-    with one form."""
+    """MEASURED, not assumed. If a future change adds a country to the articles export,
+    this guard reddens and points at Q313/Q304 rather than letting it ship in the
+    stored form."""
     import inspect
 
     from src.api.main import export_articles
@@ -302,6 +297,6 @@ def test_the_articles_export_carries_no_country_at_all():
     body = inspect.getsource(export_articles)
     assert '"Language"' in body, "the CSV header moved; re-anchor this guard"
     assert '"Country"' not in body and "a.country" not in body, (
-        "the articles export grew a country column; Q313 = a says an export carrying "
-        "`country` carries `country_iso3` beside it for this release"
+        "the articles export grew a country column; Q304 says it carries the alpha-3 "
+        "(through `country_payload`), and Q313 allows one country column only"
     )

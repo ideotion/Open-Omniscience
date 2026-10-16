@@ -44,7 +44,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     HTMLResponse,
-    JSONResponse,
     PlainTextResponse,
     RedirectResponse,
     StreamingResponse,
@@ -61,6 +60,8 @@ from sqlalchemy.sql.operators import ColumnOperators
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
+from src.api.country_wire import CountryWireResponse
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.api.search_filters import AdvancedSearch, advanced_search_params, result_ordering
 from src.catalog.provenance import (
     NEWSLETTER_DOMAINS,
@@ -718,7 +719,14 @@ async def lifespan(app: FastAPI):
 
 
 # Initialize FastAPI app
-app = FastAPI(title="Open Omniscience API", version=APP_VERSION, lifespan=lifespan)
+# `default_response_class`: every JSON payload leaves in its WIRE country form (alpha-3, Q304);
+# Python inside keeps speaking alpha-2. One boundary, src/api/country_wire.py.
+app = FastAPI(
+    title="Open Omniscience API",
+    version=APP_VERSION,
+    lifespan=lifespan,
+    default_response_class=CountryWireResponse,
+)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter(

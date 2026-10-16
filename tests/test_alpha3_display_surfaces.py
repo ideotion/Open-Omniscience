@@ -207,11 +207,8 @@ _PY_SURFACES: tuple[tuple[str, str, str], ...] = (
     ),
     ("src/stats/store.py", '**area_classification(f["ref_area"])', "a minerals row's area kind"),
     ("src/stats/store.py", "cell.update(area_classification(r.ref_area))", "a stat-map cell's area kind"),
-    ("src/api/source_io.py", "country_payload_iso3(country)", "the source export's country_iso3"),
-    ("src/api/law.py", "country_payload_iso3(doc.country)", "a law row's country_iso3"),
-    ("src/api/law.py", "country_payload_iso3(doc.jurisdiction)", "a law row's jurisdiction_iso3"),
-    ("src/api/timemap.py", "country_payload_iso3(", "a timemap signal's country_iso3"),
-    ("src/api/source_management.py", "country_payload_iso3(s.country)", "a source row's country_iso3"),
+    ("src/api/source_io.py", "country_payload(s.country)", "the source export's one alpha-3 country column"),
+    ("src/api/country_wire.py", "country_payload_iso3(raw)", "the wire boundary's alpha-3 for every JSON payload"),
     ("src/catalog/csv_io.py", "language_storage_code(out[\"language\"])", "the CSV language column, both forms in"),
 )
 

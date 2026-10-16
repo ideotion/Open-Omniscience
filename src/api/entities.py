@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import country_param
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 
@@ -110,7 +111,7 @@ def resolve_place(body: _Mention, db: Session = Depends(get_db)) -> dict:
     """
     from src.entities.places import _gazetteer, gazetteer_entry, materialise
 
-    city, reason = gazetteer_entry(body.name, (body.country or "").lower() or None, body.kind)
+    city, reason = gazetteer_entry(body.name, country_param(body.country), body.kind)
     if reason is not None:
         return {"place_id": None, "reason": reason}
     _i, meta = _gazetteer()

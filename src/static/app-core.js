@@ -171,6 +171,15 @@
       return "";
     }
 
+    // THE KEY a map or a lookup table uses for a payload's `country` (S05-02 S2). The JSON
+    // now carries alpha-3 (Q304) while the polygons, the `names`/`values` tables and
+    // Intl.DisplayNames key on alpha-2, so a surface that indexed by `r.country` raw would
+    // have drawn nothing and said nothing. An unreadable value keeps its own lowercased
+    // text rather than collapsing to "" -- two junk codes must not share one empty key.
+    function ooCountryKey(value) {
+      return ooCountryAlpha2(value) || String(value == null ? "" : value).trim().toLowerCase();
+    }
+
     // UPPERCASE alpha-3 -- what goes ON SCREEN. An unreadable value comes back
     // stripped but otherwise unchanged, matching the server helper's contract:
     // legacy or junk data stays VISIBLE rather than being masked by a fabricated

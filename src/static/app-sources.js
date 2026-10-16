@@ -53,12 +53,14 @@
         // "top values" list and its <title> tooltip, and a tooltip IS the hover
         // Q302 puts the name in. The CODE goes on the drawn label and the ranked
         // table, where a code can be read and a hover can carry the name.
-        names[r.country] = ooRegionName(r.country, r.name);
+        // Keyed on alpha-2, the map's own key; the payload's `country` is alpha-3 (Q304).
+        const key = ooCountryKey(r.country);
+        names[key] = ooRegionName(r.country, r.name);
         const v = r.articles;
         if (v != null && isFinite(v) && v > 0) {
-          values[r.country] = v;
+          values[key] = v;
           if (r.lat != null && r.lon != null) {
-            points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: names[r.country] });
+            points.push({ iso2: key, lat: r.lat, lon: r.lon, value: v, label: names[key] });
           }
         }
       });

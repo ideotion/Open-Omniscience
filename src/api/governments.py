@@ -71,7 +71,11 @@ def _latest_by_country(figs: list[dict], *, year: str | None = None) -> tuple[li
         prev = by_country.get(iso2)
         # keep the most recent period per country (when no specific year is asked)
         if prev is None or period > str(prev["year"]):
-            by_country[iso2] = {"country": iso2, "iso3": iso3, "value": f.get("value"), "year": period}
+            # `country` reads alpha-3 on the wire (Q304); `country_iso2` rides beside it because
+            # the choropleth, FRED and the OECD key on alpha-2 -- an external contract.
+            by_country[iso2] = {
+                "country": iso2, "country_iso2": iso2, "iso3": iso3, "value": f.get("value"), "year": period,
+            }
     return list(by_country.values()), years
 
 
@@ -276,6 +280,7 @@ def country_data(iso: str, history: int = 30, db: Session = Depends(get_db)) -> 
     # "unknown" rather than being promoted to a nation.
     return {
         "country": iso3,
+        "country_iso2": to_iso2(iso3),
         "iso2": to_iso2(iso3),
         "kind": classify_ref_area(iso3),
         **body,

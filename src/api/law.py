@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.catalog.countries import country_payload_iso3, country_query_forms
+from src.catalog.countries import country_query_forms
 from src.database.country_form import order_key
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
@@ -115,13 +115,10 @@ def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict
         # stated -- never guessed. Absent for most pre-S4b rows (honestly None).
         "language": doc.language,
         "country": doc.country,
-        # Both alpha-3 forms, because a law row carries TWO country-shaped facts and
-        # they are not the same claim: `jurisdiction` is the legal system the document
-        # belongs to (`uk`, `eu`, `int`), `country` is the catalogue's own assertion
-        # about where it comes from. Q303 names GBR for the `uk` jurisdiction, which is
-        # why the two can legitimately differ on one row.
-        "country_iso3": country_payload_iso3(doc.country),
-        "jurisdiction_iso3": country_payload_iso3(doc.jurisdiction),
+        # `jurisdiction` (the legal system: `uk`, `eu`, `int`) and `country` (the
+        # catalogue's own assertion about where it comes from) are two different claims
+        # that can differ on one row; the wire layer (src/api/country_wire.py) turns both
+        # into their alpha-3 (Q303: `uk` reads GBR), so there is no `*_iso3` beside them.
         "has_baseline": doc.baseline_text is not None,
         "last_checked_at": doc.last_checked_at.isoformat() if doc.last_checked_at else None,
         "last_status": doc.last_status,
@@ -295,9 +292,15 @@ def add_law_document(body: _AddDocumentBody, db: Session = Depends(get_db)) -> d
     unreachable URL is still STORED (so it can be retried later) but its honest
     ``last_status`` is returned — never silently dropped, never fabricated."""
     jurisdiction = body.jurisdiction.strip().lower()
+    # Matched through EVERY spelling of the typed jurisdiction (`gbr`, `GBR`, `uk`): a
+    # payload shows GBR for a row stored as `uk`, an operator re-adds what they read,
+    # and an exact-spelling match would file a second row for the same document.
     dup = (
         db.query(LawDocument)
-        .filter_by(jurisdiction=jurisdiction, url=body.url)
+        .filter(
+            LawDocument.jurisdiction.in_(country_query_forms(jurisdiction) or [jurisdiction]),
+            LawDocument.url == body.url,
+        )
         .first()
     )
     if dup is not None:

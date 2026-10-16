@@ -1076,6 +1076,56 @@ def country_payload_iso3(value: str | None) -> str | None:
     return SPECIAL_ALPHA3.get(code) or to_iso3(code)
 
 
+def country_param(value: str | None) -> str | None:
+    """A country REQUEST parameter, in the form the app speaks inside: lowercase alpha-2.
+
+    S05-02 S2 ("every parameter accepts both forms through ``normalize_country``"): ``fr``,
+    ``FR``, ``FRA``, ``fra`` and ``France`` all answer ``fr``, so a filter bound against a
+    column read back as alpha-2 matches whichever spelling the caller typed -- and a cache
+    key built from the result is ONE key for them, not four. An unrecognised value comes
+    back stripped and lowercased, which matches nothing: a parameter is never guessed into
+    a country it did not name. Empty is ``None``.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    return normalize_country(raw) or raw.lower()
+
+
+def country_payload(value: str | None) -> str | None:
+    """The ``country`` a JSON/CSV payload carries (Q304 = a, S05-02 S2): uppercase alpha-3.
+
+    Replaces the stored alpha-2 in every payload, and it is deliberately NOT
+    :func:`country_payload_iso3`'s fail-closed rule. That field was a DERIVED companion
+    beside the real value, so ``None`` meant "no alpha-3 exists for this"; this one IS
+    the value, and answering ``None`` for a code the store really holds would report
+    "this source has no country" -- a different claim, and the data loss the migration
+    itself refuses (an unmappable value is kept and counted, never dropped). So an
+    unrecognised code travels as stored (stripped, otherwise unchanged) and an aggregate
+    that slipped into a country column is not laundered into a nation: neither is
+    given an alpha-3 it does not have. Empty is ``None``.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    return country_payload_iso3(raw) or raw
+
+
+def country_payload_iso2(value: str | None) -> str | None:
+    """The lowercase alpha-2 an EXTERNAL contract needs beside ``country`` (Q304 = a).
+
+    FRED/OECD ids, the OSM ``ISO3166-1:alpha2`` tag, the DB-IP table and a GeoJSON
+    choropleth key all speak alpha-2. Fails closed through :func:`normalize_country`: a
+    code with no alpha-2 gets ``None`` (a field another program reads must not carry a
+    guess), and ``uk`` answers ``gb``. Lowercase, the form the rest of the app and the
+    map's polygon keys already use.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    return normalize_country(raw)
+
+
 def country_query_forms(value: str | None) -> list[str]:
     """Every STORED spelling one filter input could legitimately mean.
 

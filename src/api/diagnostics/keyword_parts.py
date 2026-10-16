@@ -17,9 +17,10 @@ import json
 import os
 
 from fastapi import HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 
 from src.analytics.keyword_log_export import PARTS_DIR_PREFIX
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.monitoring import diagnostics_runs as _diag_runs
 
 from ._base import router
