@@ -60,6 +60,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, LawDocument
+from src.monitoring.secret_scrub import record_text
 from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
 
 # Chrome this project has actually seen survive into a stored legal document (maintainer
@@ -208,7 +209,7 @@ def _structured_section() -> dict:
         )
     except (AdapterRefusal, OSError) as exc:
         # A diagnostic that cannot run its own check says so; it never reports a pass.
-        selftest.update(ok=False, error=f"{type(exc).__name__}: {exc}")
+        selftest.update(ok=False, error=record_text(exc, typed=True))
 
     return {
         "adapters": [FORMAT],

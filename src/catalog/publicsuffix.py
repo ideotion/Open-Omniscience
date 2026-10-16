@@ -51,6 +51,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.monitoring.secret_scrub import record_text
+
 # The vintage of the vendored snapshot (the external-artifact registry pins this
 # constant; tests/test_external_freshness.py fails if it is not registered).
 PUBLIC_SUFFIX_LIST_AS_OF = "2026-09-07"
@@ -173,7 +175,7 @@ def _load() -> _Rules:
         except OSError as exc:
             _CACHE = _Rules(
                 frozenset(), frozenset(), frozenset(), frozenset(), False,
-                f"the vendored Public Suffix List could not be read: {exc}",
+                f"the vendored Public Suffix List could not be read: {record_text(exc)}",
             )
             return _CACHE
         digest = hashlib.sha256(data).hexdigest()

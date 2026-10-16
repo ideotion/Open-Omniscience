@@ -49,6 +49,7 @@ from pathlib import Path
 
 from src.ai_layer import triage as T
 from src.jobs import progress_state as _progress_state
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger("ai_layer.triage_job")
 
@@ -230,7 +231,7 @@ def run_keyword_triage_job(
             )
         except LLMUnavailable as exc:
             state = "error"
-            error_msg = str(exc)[:300]
+            error_msg = record_text(exc, limit=300)
             break
         pb = out["parsed"]
         rec = T.batch_record(
@@ -356,7 +357,10 @@ def run_progressive_triage_job(
     from src.database.session import session_scope
     from src.llm.activation import recover_backend
     from src.llm.backend import outage_detail, outage_reason
-    from src.llm.ollama import LLMError, is_context_overflow  # LLMUnavailable IS-A LLMError; catching the base catches both
+    from src.llm.ollama import (  # LLMUnavailable IS-A LLMError; catching the base catches both
+        LLMError,
+        is_context_overflow,
+    )
 
     if session_factory is None:
         session_factory = session_scope
@@ -488,7 +492,7 @@ def run_progressive_triage_job(
                 err = (
                     f"stopped after {consecutive_failures} consecutive local-model "
                     f"failures ({batches_completed} batches completed, "
-                    f"{totals['verdicts_out']} verdicts so far): {str(exc)[:200]}"
+                    f"{totals['verdicts_out']} verdicts so far): {record_text(exc, limit=200)}"
                     # The backend's own reason BESIDE the raw error, not instead of it:
                     # "connection refused" says what happened, "vLLM installed but its
                     # server is not running" says what to DO about it.
@@ -673,5 +677,5 @@ def last_keyword_triage_report() -> dict:
         return {
             "schema": KEYWORD_TRIAGE_RUN_SUMMARY_SCHEMA,
             "available": False,
-            "error": str(exc)[:300],
+            "error": record_text(exc, limit=300),
         }

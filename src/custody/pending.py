@@ -45,7 +45,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -223,7 +223,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             try:
                 read = _columns_for(need, session_factory)
             except Exception as exc:  # noqa: BLE001 - those entries wait for the next drain
-                read, read_error = None, f"{type(exc).__name__}: {exc}"[:200]
+                read, read_error = None, record_text(exc, typed=True, limit=200)
                 log_failure(_LOG, "custody: owed entries' columns could not be read yet", exc, level=logging.DEBUG)
         if prefs is None:
             # Only the actor name comes from here, so an unreadable setting (the settings

@@ -290,3 +290,20 @@ def test_plaintext_report_carries_the_loud_acceptance_caveat(tmp_path):
                     backup_passphrase="bp")
     assert "plaintext_caveat" not in rep2
     assert rep2["corpus"]["encrypted"] is True
+
+
+def test_a_row_count_failure_never_carries_the_passphrase_it_was_opened_with(tmp_path, monkeypatch):
+    """The key given to connect() is scrubbed out of the failure's words even when it is not one the process holds."""
+    import src.database.connect as dbconnect
+    import src.testing.corpus_gen as corpus_gen
+    from src.testing.scale_bench import corpus_fingerprint
+
+    key = "hunter2-correct-horse-9f3a"
+
+    def boom(*a, **kw):
+        raise RuntimeError(f"cannot open with key {key}")
+
+    monkeypatch.setattr(dbconnect, "connect", boom)
+    monkeypatch.setattr(corpus_gen, "is_synthetic", lambda *a, **kw: None)
+    out = corpus_fingerprint(tmp_path / "nope.db", passphrase=key)
+    assert "row_counts_error" in out and key not in out["row_counts_error"]

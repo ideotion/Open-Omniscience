@@ -54,7 +54,7 @@ from pathlib import Path
 
 from src.ai_layer import bench_batch as BB
 from src.llm.ollama import bounded_error
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger("ai_layer.model_bench")
 
@@ -1171,7 +1171,7 @@ def run_model_bench(
                     "model": model,
                     "backend": backend,
                     "status": "error",
-                    "detail": f"could not hand the GPU to {backend} for this model: {exc}"[:300],
+                    "detail": f"could not hand the GPU to {backend} for this model: {record_text(exc)}"[:300],
                 }
                 continue
             if switch_note and switch_note.get("ready") is False:

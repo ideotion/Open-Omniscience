@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def auto_snapshot_due(
             records, failures = fetch_hazards(source="all", fetcher=fetcher)
     except Exception as exc:  # noqa: BLE001 - a bad relay must not break the collect pass
         log_failure(_LOG, "hazard snapshot fetch failed", exc, level=logging.WARNING)
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": record_text(exc, typed=True)}
 
     if not records:
         return {

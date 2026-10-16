@@ -34,6 +34,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import record_text
+
 #: The documented Linux removal for an Ollama installed by its own script. NOT run by
 #: this app — see the module docstring — and carried here so the UI can show the
 #: operator exactly what to type rather than sending them to search for it.
@@ -162,7 +164,7 @@ def _vllm_state() -> dict:
         installed = vllm_lifecycle.is_installed()
         running = vllm_lifecycle.is_running()
     except Exception as exc:  # noqa: BLE001 - an unreadable backend is not an installed one
-        return {"backend": "vllm", "installed": False, "error": str(exc)[:200]}
+        return {"backend": "vllm", "installed": False, "error": record_text(exc, limit=200)}
     return {
         "backend": "vllm",
         "installed": bool(installed),
@@ -184,7 +186,7 @@ def _ollama_state() -> dict:
         binary = ollama_lifecycle.binary_path()
         ours = ollama_lifecycle.owns_daemon()
     except Exception as exc:  # noqa: BLE001
-        return {"backend": "ollama", "installed": False, "error": str(exc)[:200]}
+        return {"backend": "ollama", "installed": False, "error": record_text(exc, limit=200)}
     return {
         "backend": "ollama",
         "installed": bool(installed),
@@ -238,7 +240,7 @@ def _rmtree(path: Path) -> dict:
     except FileNotFoundError:
         return {"path": str(path), "removed": True, "note": "already gone"}
     except OSError as exc:
-        return {"path": str(path), "removed": False, "error": str(exc)[:200]}
+        return {"path": str(path), "removed": False, "error": record_text(exc, limit=200)}
 
 
 def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
@@ -282,7 +284,7 @@ def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
                 if state.get("running") or vllm_lifecycle.process_alive():
                     stopped = vllm_lifecycle.stop()
             except Exception as exc:  # noqa: BLE001
-                stopped = {"stopped": False, "reason": str(exc)[:200]}
+                stopped = {"stopped": False, "reason": record_text(exc, limit=200)}
             if state.get("running") and not stopped.get("stopped"):
                 kept.append(
                     {

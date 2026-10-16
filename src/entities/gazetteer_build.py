@@ -53,6 +53,7 @@ import yaml
 
 from src.analytics.wikidata_rings import API_HOSTS, LANGS
 from src.entities.wikidata_items import BATCH_MAX, batches, entities_url, is_qid, parse_entities
+from src.monitoring.secret_scrub import record_text
 
 #: The descriptive User-Agent Wikimedia's policy asks for: what it is, where it lives, who to tell.
 USER_AGENT = (
@@ -401,9 +402,9 @@ def _reraise_refusal(exc: BaseException) -> None:
     from src.safety.fetcher import NetworkBlocked, TransportUnavailable
 
     if isinstance(exc, NetworkBlocked):
-        raise AirplaneRefusal(f"network refused: {exc}") from None
+        raise AirplaneRefusal(f"network refused: {record_text(exc)}") from None
     if isinstance(exc, TransportUnavailable):
-        raise TransportRefusal(f"the operator's transport is unavailable: {exc}") from None
+        raise TransportRefusal(f"the operator's transport is unavailable: {record_text(exc)}") from None
 
 
 def _asks_to_wait(res: GetResult) -> bool:

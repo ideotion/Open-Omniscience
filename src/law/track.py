@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from src.database.models import LawDocument, LawRevision
 from src.database.write import is_integrity_error
 from src.law.model import mint_lane_key
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
 from src.wiki.flagging import flag_revision
 
@@ -304,13 +304,13 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         # simply won't set raw_content, and the HTML path is unchanged.
         result = fetcher.fetch(doc.url, require_html=False, keep_bytes=True)
     except FetchError as exc:
-        doc.last_status = f"fetch error: {exc}"
+        doc.last_status = f"fetch error: {record_text(exc)}"
         session.commit()
-        return {"document_id": doc.id, "status": "error", "detail": str(exc)}
+        return {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
     except Exception as exc:  # noqa: BLE001 - record, never crash the batch
-        doc.last_status = f"error: {exc}"
+        doc.last_status = f"error: {record_text(exc)}"
         session.commit()
-        return {"document_id": doc.id, "status": "error", "detail": str(exc)}
+        return {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
 
     text, reason, parsed = _document_text(result, retrieved_on=now.date().isoformat())
     # Kept for the extractor-change check below. Only HTML has chrome to strip, so a

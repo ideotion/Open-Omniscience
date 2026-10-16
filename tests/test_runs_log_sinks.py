@@ -734,7 +734,7 @@ def _leaks(
                     if (
                         words_kept is not None
                         and isinstance(call, ast.Call)
-                        and _call_name(call) in _WORDS_KEPT_CALLS
+                        and (_call_name(call) in _WORDS_KEPT_CALLS or (_call_name(call) == "record_text" and "record_text" not in (only_scrubbing or ())))
                         and use in call.args
                     ):
                         if id(use) not in counted:  # a handler inside a handler is walked twice
@@ -798,11 +798,11 @@ _SWEEP_WORDS_KEPT: dict[str, dict[tuple[str, str], int]] = {
         ("narrate_edition", "raise HTTPException(status_code=409, detail=_scope_mismatch_detail(exc)) from None"): 1,
     },
     # The folder the operator just chose cannot be written: the plan is answered to them and not saved.
-    "src/bulletin/evidence.py": {("evidence_plan", 'out["destination_error"] = exception_text(exc, limit=300)'): 1},
+    "src/bulletin/evidence.py": {("evidence_plan", 'out["destination_error"] = record_text(exc, limit=300, typed=True)'): 1},
     # The refusal of a diff the operator asked for; the exception is the module's own ``CardAuditDiffError`` (fixed words, a file name and
     # the class). Nothing in src calls it yet.
     "src/briefing/card_audit_diff.py": {
-        ("diff_latest_card_audits", 'return {"available": False, "reason": exception_text(exc, typed=False), "saved_runs": names}'): 1
+        ("diff_latest_card_audits", 'return {"available": False, "reason": record_text(exc), "saved_runs": names}'): 1
     },
 }
 
@@ -846,7 +846,7 @@ def test_the_strict_reading_flags_what_a_record_must_not_carry(snippet, flagged)
         # the same words written into a RECORD of a module that does keep some: not a line the table holds
         ("src/api/bulletin.py", "edition['gate_error'] = exception_text(exc)"),
         ("src/bulletin/evidence.py", "out['archive_error'] = exception_text(exc, limit=300)"),
-        ("src/briefing/card_audit_diff.py", "return {'available': False, 'reason': exception_text(exc)}"),
+        ("src/briefing/card_audit_diff.py", "return {'available': False, 'reason': record_text(exc)}"),
     ],
     ids=["no-table", "record-in-api", "record-in-evidence", "record-in-diff"],
 )
@@ -858,13 +858,13 @@ def test_the_words_kept_table_excuses_lines_not_modules(rel, body):
 def test_an_allowance_that_no_longer_matches_a_use_is_reported():
     """The table cannot outlive the code it excuses: the source of a module is read with its excused line turned into a class."""
     source = (ROOT / "src/bulletin/evidence.py").read_text(encoding="utf-8")
-    assert 'out["destination_error"] = exception_text' in source
-    found = _sweep_leaks("src/bulletin/evidence.py", source.replace('out["destination_error"] = exception_text', 'out["destination_error"] = type'))
+    assert 'out["destination_error"] = record_text' in source
+    found = _sweep_leaks("src/bulletin/evidence.py", source.replace('out["destination_error"] = record_text', 'out["destination_error"] = type'))
     assert any("kept 0 time(s)" in f and "table excuses 1" in f for f in found), found
 
 
 def test_a_second_use_in_a_function_the_table_excuses_once_is_reported():
-    line = 'out["destination_error"] = exception_text(exc, limit=300)'
+    line = 'out["destination_error"] = record_text(exc, limit=300, typed=True)'
     source = (ROOT / "src/bulletin/evidence.py").read_text(encoding="utf-8")
     assert source.count(line) == 1
     assert _sweep_leaks("src/bulletin/evidence.py", source) == []

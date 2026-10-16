@@ -31,7 +31,7 @@ from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from src.llm.ollama import GenerationResult, reason_first, total_ram_gb
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -1110,7 +1110,7 @@ def outage_detail(
     if resolver_reason:
         return f"{resolver_reason} — {tail}" if tail else str(resolver_reason)
     if isinstance(error, BaseException):
-        text = str(error).strip()
+        text = record_text(error).strip()  # a database driver's error is its class only; the retry line is shown
         # An exception whose str() is empty (a bare ``raise SomeError``) still has a
         # TYPE, and "ReadTimeout" is a far better clue than "hiccup".
         # REASON-FIRST, not a head cut. See `reason_first` for the field report: a

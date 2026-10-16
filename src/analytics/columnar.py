@@ -95,7 +95,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure, passphrase_bytes
+from src.monitoring.secret_scrub import log_failure, passphrase_bytes, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -479,7 +479,7 @@ def secure_crypto_available() -> bool:
         # SURFACE the cause (audit BUG-1) — never swallow it silently. The persisted store
         # still degrades to in-memory (behaviour unchanged); but now a red CI lane / an
         # operator can see WHY via the WARNING log + secure_crypto_reason().
-        _LAST_CRYPTO_ERROR = f"{type(exc).__name__}: {exc}"
+        _LAST_CRYPTO_ERROR = record_text(exc, typed=True)
         log_failure(_LOG, "secure_crypto_available: the verified httpfs did not LOAD offline (persisted store -> in-memory)", exc, level=logging.WARNING)
         return False
 

@@ -54,7 +54,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 from src.osm.changes import tag_changes
 from src.osm.geometry import Border
 from src.osm.pbf import Header, Node, Relation, Way
@@ -371,7 +371,7 @@ def ingest_history(
         report.status = "complete"
     except Exception as exc:
         report.status = "failed"
-        report.error = exception_text(exc)  # as src/osm/ingest.py: a child that holds the store's passphrase
+        report.error = record_text(exc, typed=True)  # as src/osm/ingest.py: a child that holds the store's passphrase
         _LOG.warning("the %s history cut from %s failed: %s", alpha2, path.name, report.error)
         raise
     finally:

@@ -74,7 +74,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, scrubbed
+from src.monitoring.secret_scrub import record_text, scrubbed
 
 SCHEMA_VERSION = 1
 MARKER = ".oo-osm-reference-run"
@@ -614,7 +614,7 @@ def run_phase(
                                     start_new_session=True, preexec_fn=_pdeathsig_preexec())  # noqa: PLW1509
         except (OSError, subprocess.SubprocessError, UnicodeError) as exc:  # UnicodeError: an env value the locale cannot encode
             res.status, res.reason = "failed", scrub(
-                f"the phase could not be started ({exception_text(exc, *secrets_)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
+                f"the phase could not be started ({record_text(exc, *secrets_, typed=True)})", secrets_=secrets_, run_dir=run_dir, roots=roots)
             res.wall_seconds = round(time.monotonic() - t0, 3)
             res.disk_free_after_bytes = probe.free_disk(run_dir)
             return res
@@ -1154,7 +1154,7 @@ def _run(
                 "name": g_out.name, "bytes": g_out.stat().st_size,
                 "sha256": hashlib.sha256(g_out.read_bytes()).hexdigest()}
     except Exception as exc:  # noqa: BLE001 - the run's own failure is a result: recorded, store removed, report written
-        note = scrub(f"the runner itself failed: {exception_text(exc, passphrase)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
+        note = scrub(f"the runner itself failed: {record_text(exc, passphrase, typed=True)}", secrets_=secrets_, run_dir=run_dir, roots=roots)
         if report["status"] == "ok":
             report["status"], report["reason"] = "failed", note
         else:  # what happened first (a signal, a guard's stop) stays the status; this is added to it

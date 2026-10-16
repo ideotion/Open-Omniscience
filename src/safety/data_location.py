@@ -43,6 +43,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import record_text
+
 #: The subfolder created inside a folder the operator picks, so pointing the app at a
 #: drive root (or at a folder they already keep other things in) leaves ONE named
 #: directory behind rather than scattering keys/ custody/ corpus across it.
@@ -140,7 +142,7 @@ def preflight(raw: str) -> dict[str, Any]:
         return {
             "usable": False,
             "reason_code": "cannot_create",
-            "reason": f"could not create {target}: {exc}",
+            "reason": f"could not create {target}: {record_text(exc)}",
             "input": raw,
             "path": str(target),
         }
@@ -272,7 +274,7 @@ def persist(raw: str) -> dict[str, Any]:
         # A folder chosen again keeps its id: same folder, same drive, same answer.
         volume_id = read_marker_id(target) or write_marker(target)
     except OSError as exc:
-        return {"saved": False, "reason": f"could not write the drive marker in {target}: {exc}", **pre}
+        return {"saved": False, "reason": f"could not write the drive marker in {target}: {record_text(exc)}", **pre}
     env = env_file_path()
     kept = [
         ln
@@ -301,7 +303,7 @@ def persist(raw: str) -> dict[str, Any]:
         os.replace(tmp, env)
     except OSError as exc:
         tmp.unlink(missing_ok=True)
-        return {"saved": False, "reason": f"could not write {env}: {exc}", **pre}
+        return {"saved": False, "reason": f"could not write {env}: {record_text(exc)}", **pre}
 
     return {
         "saved": True,

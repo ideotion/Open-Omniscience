@@ -65,7 +65,7 @@ import threading
 import time
 from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger("llm.activation")
 
@@ -112,14 +112,14 @@ def _candidates() -> dict:
             "running": bool(vllm_lifecycle.is_running()),
         }
     except Exception as exc:  # noqa: BLE001 - a probe must never break the plan
-        out["vllm"] = {"installed": False, "running": False, "probe_error": str(exc)}
+        out["vllm"] = {"installed": False, "running": False, "probe_error": record_text(exc)}
     try:
         out["ollama"] = {
             "installed": bool(ollama_lifecycle.is_installed()),
             "running": bool(ollama_lifecycle.is_running()),
         }
     except Exception as exc:  # noqa: BLE001
-        out["ollama"] = {"installed": False, "running": False, "probe_error": str(exc)}
+        out["ollama"] = {"installed": False, "running": False, "probe_error": record_text(exc)}
     return out
 
 
@@ -460,7 +460,7 @@ def ensure_running(
     except Exception as exc:  # noqa: BLE001 - a launch failure is a sentence, not a 500
         out["started"] = False
         out["ready"] = False
-        out["detail"] = str(exc)
+        out["detail"] = record_text(exc)
         out["error"] = True
         log_failure(_LOG, f"activation of {backend} failed", exc, level=logging.INFO)
     return out

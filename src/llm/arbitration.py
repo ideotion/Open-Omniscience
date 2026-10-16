@@ -34,6 +34,8 @@ import logging
 import os
 import time
 
+from src.monitoring.secret_scrub import record_text
+
 _LOG = logging.getLogger("llm.arbitration")
 
 #: How long to wait for a stopped/released backend's memory to actually come back. The
@@ -212,7 +214,7 @@ def hand_gpu_to(
     try:
         out["started"] = _start(backend, model)
     except Exception as exc:  # noqa: BLE001 - a failed start is the finding
-        out["started"] = {"error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+        out["started"] = {"error": record_text(exc, limit=300, typed=True)}
     started = out["started"] if isinstance(out["started"], dict) else {}
     # A start that REFUSED has nothing to wait for. Polling for five minutes against a
     # server we were told we may not stop would turn one honest sentence into a

@@ -83,13 +83,13 @@ def test_the_error_is_scrubbed_through_the_helpers_of_secret_scrub(both_held, mo
     """MUTATION TARGET: the call. The scrub is the one the rest of the commit uses, not a copy of it, and it is handed no
     secret of its own when the job was started with none (the held ones it takes out itself)."""
     seen = []
-    real = ss.exception_text
+    real = ss.record_text
 
     def spy(exc, *secrets, **kwargs):
         seen.append(secrets)
         return real(exc, *secrets, **kwargs)
 
-    monkeypatch.setattr("src.jobs.background.exception_text", spy)
+    monkeypatch.setattr("src.jobs.background.record_text", spy)
 
     def boom(ctx):
         raise RuntimeError("x")
@@ -135,7 +135,7 @@ def test_the_secrets_a_job_was_started_with_are_taken_out_of_its_error_and_its_l
 
 def test_a_secret_is_found_by_the_name_a_job_is_handed_it_under_and_a_string_that_is_not_one_is_left_alone(both_held):
     seen = []
-    real = ss.exception_text
+    real = ss.record_text
 
     def spy(exc, *secrets, **kwargs):
         seen.append(secrets)
@@ -146,8 +146,8 @@ def test_a_secret_is_found_by_the_name_a_job_is_handed_it_under_and_a_string_tha
 
     import src.jobs.background as bg
 
-    original = bg.exception_text
-    bg.exception_text = spy
+    original = bg.record_text
+    bg.record_text = spy
     try:
         _run_with(
             boom,
@@ -161,7 +161,7 @@ def test_a_secret_is_found_by_the_name_a_job_is_handed_it_under_and_a_string_tha
             nested={"passphrase": "not read: only the top level is"},
         )
     finally:
-        bg.exception_text = original
+        bg.record_text = original
     assert [sorted(secrets) for secrets in seen] == [sorted((KEY, MAILBOX, "k-" + KEY))]
 
 
@@ -172,7 +172,7 @@ def test_an_error_whose_scrub_cannot_run_is_published_and_logged_as_its_class_al
     def broken(*args, **kwargs):
         raise ValueError("the scrub broke")
 
-    monkeypatch.setattr("src.jobs.background.exception_text", broken)
+    monkeypatch.setattr("src.jobs.background.record_text", broken)
     monkeypatch.setattr("src.jobs.background.log_failure", broken)
 
     def boom(ctx, passphrase):

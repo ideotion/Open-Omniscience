@@ -36,6 +36,7 @@ from src.database.models import CommodityPrice
 from src.database.write import run_write_with_retry
 from src.ingest import EthicalFetcher, FetchError
 from src.markets.extract import parse_number
+from src.monitoring.secret_scrub import record_text
 
 # Values that mean "no observation" in common official feeds (FRED uses ".").
 _MISSING = {"", ".", "na", "n/a", "null", "nan"}
@@ -74,7 +75,7 @@ def parse_series_csv(
         di = _col_index(header, date_column, 0)
         vi = _col_index(header, value_column, 1 if len(header) > 1 else 0)
     except ValueError as exc:
-        return ParsedSeries(errors=[str(exc)])
+        return ParsedSeries(errors=[record_text(exc)])
 
     points: list[tuple[date, float]] = []
     errors: list[str] = []
@@ -200,7 +201,7 @@ def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
     """
     from src.ingest import RobotsDisallowed, RobotsUnavailable
 
-    msg = f"{type(exc).__name__}: {exc}"
+    msg = record_text(exc, typed=True)
     low = str(exc).lower()
     if isinstance(exc, RobotsDisallowed):
         return (
@@ -274,7 +275,7 @@ def import_feed(
             if retryable and attempts <= 1:
                 time.sleep(1.5)
                 continue
-            detail = str(exc) if isinstance(exc, FetchError) else f"{type(exc).__name__}: {exc}"
+            detail = record_text(exc) if isinstance(exc, FetchError) else record_text(exc, typed=True)
             return FeedImportResult(
                 symbol,
                 "fetch_failed",
@@ -293,7 +294,7 @@ def import_feed(
         return FeedImportResult(
             symbol,
             "parse_failed",
-            detail=f"{type(exc).__name__}: {exc}",
+            detail=record_text(exc, typed=True),
             verdict="parse-failed",
             verdict_note="the feed was fetched but its content was not a usable series",
             attempts=attempts,
@@ -319,7 +320,7 @@ def import_feed(
     except Exception as exc:  # noqa: BLE001 - keep the session usable for the rest of the batch
         session.rollback()
         return FeedImportResult(
-            symbol, "parse_failed", detail=f"store error: {type(exc).__name__}: {exc}"
+            symbol, "parse_failed", detail=f"store error: {record_text(exc, typed=True)}"
         )
     return FeedImportResult(
         symbol,

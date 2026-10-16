@@ -45,7 +45,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.entities.items import cached_item, item_payload
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -281,7 +281,7 @@ def _notable_pass(session, should_stop) -> dict:
         return {**got, "indexed": sorted(indexed)}
     except Exception as exc:  # noqa: BLE001 - reported in the job's result, never silent
         log_failure(_LOG, "places: the OSM lane's pass failed", exc, level=logging.WARNING)
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": record_text(exc, typed=True)}
 
 
 def _names(place) -> dict[str, str]:

@@ -44,7 +44,7 @@ from src.ingest.segmented_download import (
     segmented_fetch,
 )
 from src.monitoring import secret_scrub
-from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, log_failure, scrubbed
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, log_failure, record_text, scrubbed
 
 _LOG = logging.getLogger(__name__)
 
@@ -582,7 +582,7 @@ class OsmDownloadManager:
             entry.status = "error"
             # The text the page shows is the engine's own words, minus any passphrase this process holds (a UnicodeError
             # is written by class alone: its message names a letter and an offset).
-            entry.error = exception_text(exc, typed=False)
+            entry.error = record_text(exc)
             failure = exc
         if failure is not None:
             # Saved and logged AFTER the handler: a save that fails (a full disk is the likely reason a download just failed) then
