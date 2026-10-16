@@ -214,11 +214,12 @@ def restore_legacy_path(
     from pathlib import Path as _Path
 
     p = _Path(path)
-    with storage_events.run_path_checked("import", via="single-file"):
-        is_file = p.is_file()
-    if not is_file:
-        storage_events.run_refused("import", "not-a-file", via="single-file")
-        raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
+    with (
+        storage_events.run_path_checked("import", via="single-file"),
+        storage_events.run_refused_if_raised("import", "not-a-file", HTTPException, via="single-file"),
+    ):
+        if not p.is_file():
+            raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
     # The passphrase handed in is not held by the process (a backup's own), so the nets that read what it holds cannot know it,
     # and an engine's error can quote the statement that carried it: what escapes the block is converted.
     with scrub_and_reraise(_LOG, "legacy restore failed", passphrase):
@@ -235,9 +236,9 @@ def restore_legacy_path(
                 storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="memory")
                 raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
             try:
-                data = p.read_bytes()
+                with storage_events.run_ended_if_raised(note, "error", OSError):
+                    data = p.read_bytes()
             except OSError as exc:
-                storage_events.run_ended(note, "error", failure=type(exc).__name__)
                 raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
             try:
                 staged = _stage_upload(data, passphrase or None)

@@ -111,6 +111,70 @@ KEEP: dict[str, int] = {
     "run_verify": 10,
 }
 
+#: THE LONGEST ARE KEPT TOO, NOT ONLY THE NEWEST. For the kinds below ``KEEP`` is split: the ``n`` longest events by the named field, and
+#: the rest of the cap for the newest. WHAT THIS PROTECTS: the one event a reader most needs. The 16 Oct 2026 bundles kept the newest 20
+#: gate holds and the longest of the session (219.6 s) was not among them, because a stream of newer, shorter holds had pushed it out;
+#: the rule "the newest N" shows the lead-up to a crash and hides the worst stall of the week. Both guarantees hold at once: the ``n``
+#: longest AND the cap minus ``n`` newest are always kept (a repeat of both is counted once, and the spare room goes to the next newest),
+#: so the kept list never exceeds ``KEEP`` and the slot's measured width does not change. ``picked_by`` on a kept event says why it is
+#: there (``longest``, ``newest`` or ``both``). ``checkpoint`` has its own notable lane for the slow ones and the run kinds have their own
+#: rule (a run still open is never pushed out), so neither is split.
+LONGEST: dict[str, tuple[str, int]] = {
+    "gate_hold": ("seconds", 10),
+    "guard": ("seconds", 5),
+    "pool_timeout": ("waited_s", 5),
+    "open": ("total_ms", 5),
+}
+
+
+def _length(event: dict[str, Any], field: str) -> float | None:
+    """The number an event is ranked by, or None (absent, or not a number: a bool is not a duration)."""
+    value = event.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return None
+    return float(value)
+
+
+def _select(kind: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The events of ``kind`` the journal keeps out of ``events`` (oldest first), in the same order: at most ``KEEP[kind]``. A kind in
+    :data:`LONGEST` keeps its ``n`` longest (ties go to the newer) and the cap minus ``n`` newest, then fills what is left with the next
+    newest; any other kind keeps the newest. Idempotent: selecting what was selected changes nothing."""
+    cap = KEEP[kind]
+    if len(events) <= cap:
+        return list(events)
+    rule = LONGEST.get(kind)
+    if rule is None:
+        return list(events[-cap:])
+    field, n_long = rule
+    n_new = cap - n_long
+    keep = set(range(len(events) - n_new, len(events)))
+    measured = [i for i in range(len(events)) if _length(events[i], field) is not None]
+    for i in sorted(measured, key=lambda j: (-(_length(events[j], field) or 0.0), -j))[:n_long]:
+        keep.add(i)
+    i = len(events) - 1
+    while len(keep) < cap and i >= 0:  # the room the overlap left goes to the next newest
+        keep.add(i)
+        i -= 1
+    return [events[i] for i in sorted(keep)]
+
+
+def _picked_by(kind: str, kept: list[dict[str, Any]]) -> list[str | None]:
+    """Why each event of a kept list is there, from the list alone: ``longest`` (among the ``n`` longest of it), ``newest`` (among the
+    cap minus ``n`` newest, or the next newest that filled the room) or ``both``. None for a kind with no rule."""
+    rule = LONGEST.get(kind)
+    if rule is None:
+        return [None] * len(kept)
+    field, n_long = rule
+    n_new = KEEP[kind] - n_long
+    measured = [i for i in range(len(kept)) if _length(kept[i], field) is not None]
+    longest = set(sorted(measured, key=lambda j: (-(_length(kept[j], field) or 0.0), -j))[:n_long])
+    out: list[str | None] = []
+    for i in range(len(kept)):
+        newest = i >= len(kept) - n_new
+        out.append("both" if i in longest and newest else "longest" if i in longest else "newest")
+    return out
+
+
 #: A checkpoint that took this long is notable whatever its rows say. WHAT IT PROTECTS: the notable list's meaning. Five seconds is
 #: three orders of magnitude over a healthy TRUNCATE on a drained log (milliseconds) and well under the pool's 30 s timeout.
 NOTABLE_CHECKPOINT_S = 5.0
@@ -271,7 +335,7 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
     if not isinstance(kinds, dict) or data.get("schema") != SCHEMA:
         raise ValueError("not this journal")
     earlier: dict[str, dict[str, Any]] = {}
-    for kind, cap in KEEP.items():
+    for kind in KEEP:
         entry = kinds.get(kind)
         if not isinstance(entry, dict):
             continue
@@ -283,7 +347,7 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
             if e.get("open") and e.get("proc") != _PROC:
                 e["open"] = False
                 e["ended"] = "the process ended while this was open; its end was not recorded"
-        earlier[kind] = {"total": total, "events": events[-cap:]}
+        earlier[kind] = {"total": total, "events": _select(kind, events)}
     since = data.get("since")
     return earlier, since if isinstance(since, str) else None
 
@@ -356,10 +420,10 @@ def _combined_locked() -> tuple[dict[str, dict[str, Any]], str | None]:
     """What the journal holds: the file's events then this process's, the newest ``KEEP`` of each kind, and the running totals of both.
     Caller holds the lock."""
     kinds: dict[str, dict[str, Any]] = {}
-    for kind, cap in KEEP.items():
+    for kind in KEEP:
         old = _EARLIER.get(kind) or _empty_kind()
         new = _STATE.get(kind) or _empty_kind()
-        kinds[kind] = {"total": old["total"] + new["total"], "events": [*old["events"], *new["events"]][-cap:]}
+        kinds[kind] = {"total": old["total"] + new["total"], "events": _select(kind, [*old["events"], *new["events"]])}
     return kinds, _SINCE_FILE or _SINCE
 
 
@@ -549,6 +613,15 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
             entry["events"].append(event)
             if key is not None:
                 _OPEN[(kind, key)] = event
+            if kind in LONGEST and len(entry["events"]) > KEEP[kind]:
+                # The longest are kept beside the newest (see LONGEST); an event that is not kept is forgotten, open or not (an open hold
+                # is the newest, so it is always kept).
+                kept = _select(kind, entry["events"])
+                kept_ids = {id(e) for e in kept}
+                for gone in [e for e in entry["events"] if id(e) not in kept_ids]:
+                    for k in [k for k, v in _OPEN.items() if v is gone]:
+                        _OPEN.pop(k, None)
+                entry["events"] = kept
             while len(entry["events"]) > KEEP[kind]:
                 # A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one
                 # long backup would otherwise evict its open record, and its end would be lost. The oldest event that is not live
@@ -983,6 +1056,35 @@ def run_path_checked(what: str, *, via: str | None = None) -> Iterator[None]:
         raise
 
 
+@contextmanager
+def run_refused_if_raised(
+    what: str, reason: str, exc_type: type[BaseException] | tuple[type[BaseException], ...], *, via: str | None = None
+) -> Iterator[None]:
+    """Around the ONE statement that refuses a start by raising ``exc_type`` (the ``if not path.is_dir(): raise ...`` of a start): the
+    refusal is recorded (``reason``, a key of :data:`RUN_REFUSALS`, and the way in) and the exception goes on unchanged. The checking
+    statement stays as it was written, byte for byte, which is why this is a wrapper and not a call inside its branch: code scanning
+    fingerprints a path check by its own text and the text that follows it, so a line added there makes an old finding a new one."""
+    try:
+        yield
+    except exc_type:
+        run_refused(what, reason, via=via)
+        raise
+
+
+@contextmanager
+def run_ended_if_raised(
+    note: RunNote | None, outcome: str, exc_type: type[BaseException] | tuple[type[BaseException], ...], *, reason: str | None = None
+) -> Iterator[None]:
+    """Around the ONE statement whose ``exc_type`` failure ends the run under ``note`` (the read of the file being restored): the run is
+    closed with ``outcome``, the CLASS NAME of the failure (never its message) and, if given, a key of :data:`RUN_REFUSALS`, and the
+    exception goes on unchanged for the caller's own handler. A wrapper for the same reason as :func:`run_refused_if_raised`."""
+    try:
+        yield
+    except exc_type as exc:
+        run_ended(note, outcome, failure=type(exc).__name__, reason=reason)
+        raise
+
+
 # ---------------------------------------------------------------------------------------------------------------------------------
 #  The Diagnostics member (the slot contract: ``(max_bytes) -> dict``, never raises, counts and names the cut)
 # ---------------------------------------------------------------------------------------------------------------------------------
@@ -990,7 +1092,9 @@ _METHOD = (
     "Events recorded at the sites that already measure them (the write gate's release and its 15-second watchdog, the storage "
     "guard's transitions, the checkpoint sites, the unlock and the boot, the pool's timeout) and kept in a small file written by a "
     "background thread at most once a second. 'total' counts every event since 'since', across restarts; 'kept' is what the file "
-    "holds (the newest, the cap is 'keep'); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
+    "holds (the newest, the cap is 'keep'; for 'gate_hold', 'guard', 'pool_timeout' and 'open' the cap is split by 'keep_rule': the "
+    "longest by the named field AND the newest, each event saying why it is there in 'picked_by': 'longest', 'newest' or 'both', so a "
+    "long hold is not pushed out by a stream of shorter, newer ones); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
     "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
     "shown. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
     "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
@@ -1019,15 +1123,17 @@ _CAVEAT = (
 )
 
 
-def _for_member(event: dict[str, Any]) -> dict[str, Any]:
+def _for_member(event: dict[str, Any], picked_by: str | None = None) -> dict[str, Any]:
     out = {k: v for k, v in event.items() if k != "proc"}
     out["session"] = "this" if event.get("proc") == _PROC else "earlier"
+    if picked_by is not None:
+        out["picked_by"] = picked_by
     return out
 
 
 def diagnostics_member(max_bytes: int) -> dict[str, Any]:
-    """The journal as one Diagnostics member. Over ``max_bytes`` the OLDEST events of the largest kind go first and the member
-    says how many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut."""
+    """The journal as one Diagnostics member. Over ``max_bytes`` the OLDEST events of the largest kind go first (an event kept as one of
+    the longest goes last) and the member says how many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut."""
     try:
         budget = max(1024, int(max_bytes))
         _ensure_loaded()
@@ -1036,7 +1142,8 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             kinds: dict[str, Any] = {}
             for kind, cap in KEEP.items():
                 entry = combined[kind]
-                events = [_for_member(e) for e in entry["events"]]
+                tags = _picked_by(kind, entry["events"])
+                events = [_for_member(e, tag) for e, tag in zip(entry["events"], tags, strict=True)]
                 kinds[kind] = {
                     "keep": cap,
                     "total": entry["total"],
@@ -1044,6 +1151,9 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                     "dropped": entry["total"] - len(events),
                     "events": events,
                 }
+                if kind in LONGEST:
+                    field, n_long = LONGEST[kind]
+                    kinds[kind]["keep_rule"] = {"longest": n_long, "by": field, "newest": cap - n_long}
             file_state = {
                 "read_at_first_use": _READ_STATE,
                 "history_loaded": _LOADED,
@@ -1070,7 +1180,9 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             biggest = max(kinds, key=lambda k: _size(kinds[k]["events"]))
             if not kinds[biggest]["events"]:
                 return {"omitted": "max_bytes is below the member's fixed part", "needs_at_least_bytes": _size(out)}
-            kinds[biggest]["events"].pop(0)
+            # The oldest goes first, but a "longest" one is the last to go: it is the event the zip is kept for (see LONGEST).
+            events = kinds[biggest]["events"]
+            events.pop(next((i for i, e in enumerate(events) if e.get("picked_by") not in ("longest", "both")), 0))
             kinds[biggest]["kept"] -= 1
             out["dropped_to_fit"][biggest] = out["dropped_to_fit"].get(biggest, 0) + 1
         return out

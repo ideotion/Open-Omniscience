@@ -105,11 +105,12 @@ class Slot:
 #:   * ``storage-events`` 125,000: MEASURED at the journal's full retention (``storage_events.KEEP``: 20 holds of the write gate, 10 each
 #:     of guard engagements, checkpoints, notable checkpoints, store opens, pool timeouts and the three run kinds: the volume backup, restore and
 #:     verification, the legacy single-file restores, the newsletter folder imports and the folder backups, restores and verifications of the large data) with the events the hooks write, the checkpoints with the reader snapshot ``hygiene`` hands every one of
-#:     them, each run with EVERY field it can carry at once at a large value and the seconds of a run of more than a day (963 bytes raw with the process id, 945 as the member shows it; a real run is 146 to 299): 77,140
-#:     bytes with ordinary names, 121,850 with every thread, route and frame name at the 160-character cut (the longest ``_clean`` lets
-#:     through), of which 4,241 is the fixed part, the member's own text (each figure moves by a byte or two with the width of the process id every event carries). 125,000 is
-#:     2.6 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The gate holds carry the phase, its sample counts, the holder thread's CPU and switch counts and the machine's memory (4,920 bytes over the 20). The hard ceiling is 100 events at
-#:     ``MAX_EVENT_BYTES`` (3,000), 300 KB, and a member over its budget drops the OLDEST events of its largest kind and says how
+#:     them, each run with EVERY field it can carry at once at a large value and the seconds of a run of more than a day (963 bytes raw with the process id, 945 as the member shows it; a real run is 146 to 299): 78,634
+#:     bytes with ordinary names, 123,344 with every thread, route and frame name at the 160-character cut (the longest ``_clean`` lets
+#:     through), of which 4,735 is the fixed part, the member's own text (each figure moves by a byte or two with the width of the process id every event carries). The keep rule
+#:     (the longest beside the newest) added 1,494 to each: 494 to the fixed part (its sentence in the method and a ``keep_rule`` line for each of the four kinds it splits) and 1,000 for the ``picked_by`` of the 50 events of those kinds; the longest are kept beside the newest, so the cap does not move. 125,000 is
+#:     1.3 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The gate holds carry the phase, its sample counts, the holder thread's CPU and switch counts and the machine's memory (4,920 bytes over the 20). The hard ceiling is 100 events at
+#:     ``MAX_EVENT_BYTES`` (3,000), 300 KB, and a member over its budget drops the OLDEST events of its largest kind (one kept as a longest goes last) and says how
 #:     many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut. ``test_the_storage_events_budget_holds_a_full_journal``
 #:     rebuilds both measurements and holds them to this number.
 #:   * ``keyword-pipeline`` 60,000, the one not built yet, is its owner's FIRST ESTIMATE, to be replaced by a
