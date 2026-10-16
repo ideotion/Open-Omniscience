@@ -251,3 +251,19 @@ def test_the_release_runs_session_forensics_block_is_scrubbed_where_it_enters(tm
     out = rr._collect(_Ctx(), run)
     shown = json.dumps(out["session_forensics"])
     assert _KEY not in shown and "run-pass-planted-77" not in shown and "oom (cmd" in shown, "the held passphrase AND the run's own are taken out"
+
+
+def test_a_scheduler_run_report_is_scrubbed_where_it_is_recorded_and_where_it_is_read(monkeypatch, tmp_path):
+    """The run's result carries free text; record_run takes the held passphrase out as it writes, and recent_runs checks a line an older
+    build left raw."""
+    from src.scheduler import runlog
+
+    monkeypatch.setattr(runlog, "_runs_path", lambda: tmp_path / "scheduler_runs.jsonl")
+    runlog.record_run({"ok": True, "result": {"failures": [f"fetch failed for https://x/?k={_KEY}"]}, "error": None})
+    raw = (tmp_path / "scheduler_runs.jsonl").read_text(encoding="utf-8")
+    assert _KEY not in raw and "fetch failed" in raw, "the line is kept, the key is not"
+    with (tmp_path / "scheduler_runs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ok": False, "result": {"note": f"older build wrote {_KEY}"}}) + "\n")
+    rows = runlog.recent_runs()
+    assert len(rows) == 2 and _KEY not in json.dumps(rows)
+    assert any("older build wrote" in json.dumps(r) for r in rows)

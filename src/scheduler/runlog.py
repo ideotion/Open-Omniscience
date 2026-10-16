@@ -19,7 +19,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed_value
 
 _LOG = logging.getLogger(__name__)
 
@@ -37,6 +37,8 @@ def record_run(report: dict) -> None:
     try:
         path = _runs_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+        # the run's result carries free text (a per-source failure line, an engine message): the held passphrase is taken out as it enters the file
+        report = scrubbed_value(report)
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(report, sort_keys=True, default=str) + "\n")
     except Exception as exc:  # noqa: BLE001 - the log must never break a scrape
@@ -53,7 +55,9 @@ def recent_runs(limit: int = 20) -> list[dict]:
         lines = path.read_text("utf-8").splitlines()[-_MAX_RUNS_READ:]
         for line in lines:
             try:
-                rows.append(json.loads(line))
+                # a line written by an older build is raw on the disk: it is checked as it is read too
+                row = scrubbed_value(json.loads(line))
+                rows.append(row if isinstance(row, dict) else {"withheld": row})
             except json.JSONDecodeError:
                 continue  # a torn line (crash mid-write) is skipped, not fatal
     except Exception as exc:  # noqa: BLE001
