@@ -90,6 +90,24 @@ class RedirectRefused(requests.exceptions.RequestException):
         self.reason = reason
 
 
+#: What a fetch through a guarded session raises when it fails for a reason of its own (as opposed to a refusal): a ``requests`` failure
+#: (a server error, a dropped connection, a timeout, a redirect loop) or the ``ValueError`` that ``requests`` and urllib3 raise for an
+#: address or a ``Location`` they cannot read. The refusals (:class:`RedirectRefused`, :class:`TransportUnavailable`, :class:`NetworkBlocked`)
+#: are named before this tuple wherever it is caught.
+FETCH_FAILURES: tuple[type[BaseException], ...] = (requests.exceptions.RequestException, ValueError)
+
+
+def failure_words(exc: BaseException) -> str:
+    """The only words of a failed fetch that may reach a response, a log line or a record: ``HTTP <status>`` for an HTTP error answer,
+    otherwise the exception's CLASS NAME, never its text. The text of a ``requests`` failure quotes the address it was fetching, query
+    included, and a signed storage URL carries its signature there."""
+    response = getattr(exc, "response", None) if isinstance(exc, requests.exceptions.HTTPError) else None
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599:
+        return f"HTTP {status}"
+    return type(exc).__name__
+
+
 def _listable(entry: str) -> bool:
     """Whether ``entry`` is a host name or a leading-dot suffix a list may hold: lower-case ASCII labels (letters, digits, hyphens
     inside a label), at least two of them (a single label is a whole TLD, or no domain at all), no empty label (so no trailing dot and

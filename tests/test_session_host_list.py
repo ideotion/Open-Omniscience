@@ -580,30 +580,33 @@ def test_the_installer_release_lookup_refuses_a_redirect_off_its_host_and_follow
     assert installer_scripted.sent == [url]
 
 
-def test_any_other_failure_of_the_release_lookup_is_not_called_a_refusal(installer_scripted):
-    """Only a refusal by the host list is named as one; a server error, a dropped connection and a timeout keep the failure they always were."""
+def test_any_other_failure_of_the_release_lookup_is_a_fetch_failure_and_not_called_a_refusal(installer_scripted):
+    """Only a refusal by the host list is named as one; a server error, a dropped connection and a timeout are a fetch failure (R142): their own
+    fixed sentence and the status code or the class name, never the text of the failure."""
     from src.llm import installer
 
     installer_scripted.routes[installer.GITHUB_LATEST_RELEASE] = (500, None)
-    with pytest.raises(requests.HTTPError) as caught:
+    with pytest.raises(installer.InstallerFetchFailed) as caught:
         installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
     assert not isinstance(caught.value, installer.InstallerRedirectRefused)
+    assert isinstance(caught.value, installer.InstallerVerificationError), "the route that maps a verification failure maps this one too"
+    assert caught.value.why == "HTTP 500" and str(caught.value) == installer.InstallerFetchFailed.LOOKUP.format(why="HTTP 500")
 
     def _dropped(request, **kwargs):
         raise requests.ConnectionError("the connection dropped")
 
     installer_scripted.send = _dropped
-    with pytest.raises(requests.ConnectionError) as dropped:
+    with pytest.raises(installer.InstallerFetchFailed) as dropped:
         installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
-    assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused)
+    assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused) and dropped.value.why == "ConnectionError"
 
     def _slow(request, **kwargs):
         raise requests.Timeout("the answer was slow")
 
     installer_scripted.send = _slow
-    with pytest.raises(requests.Timeout) as slow:
+    with pytest.raises(installer.InstallerFetchFailed) as slow:
         installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
-    assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused)
+    assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused) and slow.value.why == "Timeout"
 
 
 RELEASE_DOWNLOAD_URL = "https://github.com/ollama/ollama/releases/download/v0.1.0/install.sh"
@@ -737,30 +740,31 @@ def test_the_whole_install_check_runs_through_the_real_redirect_machinery(instal
     assert not isinstance(caught.value, installer.InstallerRedirectRefused) and "checksum mismatch" in str(caught.value)
 
 
-def test_any_other_failure_of_the_download_is_not_called_a_refusal(installer_scripted):
-    """Only a refusal by the host list is named as one; a missing file, a dropped connection and a timeout keep the failure they always were."""
+def test_any_other_failure_of_the_download_is_a_fetch_failure_and_not_called_a_refusal(installer_scripted):
+    """A missing file, a dropped connection and a timeout are a fetch failure with the download's own sentence, and not a refusal."""
     from src.llm import installer
 
     installer_scripted.routes[RELEASE_DOWNLOAD_URL] = (404, None)
-    with pytest.raises(requests.HTTPError) as caught:
+    with pytest.raises(installer.InstallerFetchFailed) as caught:
         installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
     assert not isinstance(caught.value, installer.InstallerRedirectRefused)
+    assert caught.value.why == "HTTP 404" and str(caught.value) == installer.InstallerFetchFailed.DOWNLOAD.format(why="HTTP 404")
 
     def _dropped(request, **kwargs):
         raise requests.ConnectionError("the connection dropped")
 
     installer_scripted.send = _dropped
-    with pytest.raises(requests.ConnectionError) as dropped:
+    with pytest.raises(installer.InstallerFetchFailed) as dropped:
         installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
-    assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused)
+    assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused) and dropped.value.why == "ConnectionError"
 
     def _slow(request, **kwargs):
         raise requests.Timeout("the answer was slow")
 
     installer_scripted.send = _slow
-    with pytest.raises(requests.Timeout) as slow:
+    with pytest.raises(installer.InstallerFetchFailed) as slow:
         installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
-    assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused)
+    assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused) and slow.value.why == "Timeout"
 
 
 @pytest.mark.parametrize("stage", ["lookup", "download"])
@@ -813,6 +817,121 @@ def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_h
     assert [r.levelno for r in ours] == [logging.WARNING] and ours[0].getMessage().endswith("(RedirectRefused)"), "the class name is logged, once"
     assert ("download" in ours[0].getMessage()) is download, "the line names the stage that was refused"
     assert ours[0].exc_info is None
+
+
+SIG = "PLANTEDSIG0123456789"
+#: The storage address the release redirects to, as GitHub signs it: the signature is in the query.
+SIGNED_STORAGE_URL = f"https://release-assets.githubusercontent.com/github-production-release-asset/1/install.sh?sig={SIG}&se=2026-10-16T12%3A00%3A00Z&sp=r"
+SIGNED_LOOKUP_URL = f"https://api.github.com/repositories/1/releases/latest?sig={SIG}"
+
+
+def _failing_hop(wire, installer, stage):
+    """Aim the stage's request at a second address (a followed redirect) carrying a planted signature, and return that address."""
+    if stage == "download":
+        wire.bodies[installer.GITHUB_LATEST_RELEASE] = _release_json(RELEASE_DOWNLOAD_URL)
+        wire.routes[RELEASE_DOWNLOAD_URL] = (302, SIGNED_STORAGE_URL)
+        return SIGNED_STORAGE_URL
+    wire.routes[installer.GITHUB_LATEST_RELEASE] = (301, SIGNED_LOOKUP_URL)
+    return SIGNED_LOOKUP_URL
+
+
+def _fail_at(wire, failing_url, make):
+    """Make the wire raise ``make(url)`` for the failing hop only, so the redirect before it is followed first."""
+    real = wire.send
+
+    def _send(request, **kwargs):
+        if request.url == failing_url:
+            raise make(request.url)
+        return real(request, **kwargs)
+
+    wire.send = _send
+
+
+@pytest.mark.parametrize("stage", ["lookup", "download"])
+@pytest.mark.parametrize(
+    ("kind", "why"),
+    [
+        ("404", "HTTP 404"),
+        ("503", "HTTP 503"),
+        ("connection", "ConnectionError"),
+        ("timeout", "Timeout"),
+        ("truncated", "ChunkedEncodingError"),
+        ("bad location", "ValueError"),
+    ],
+)
+def test_a_failed_installer_fetch_after_a_followed_redirect_says_only_the_status_or_the_class(installer_scripted, caplog, stage, kind, why):
+    """R142: the signed address a failure quotes reaches neither the 502 detail, nor the log, nor a traceback chain, at either stage.
+
+    The planted signature rides the SECOND address (the redirect target), because that is where a storage URL lives; every failure text
+    below quotes it, so a stage that put ``str(exc)`` anywhere would show it."""
+    import logging
+    import traceback
+
+    from fastapi import HTTPException
+
+    from src.api.llm import llm_install_prepare
+    from src.llm import installer
+
+    download = stage == "download"
+    hop = _failing_hop(installer_scripted, installer, stage)
+    if kind in ("404", "503"):
+        installer_scripted.routes[hop] = (int(kind), None)
+    elif kind == "connection":
+        _fail_at(installer_scripted, hop, lambda url: requests.ConnectionError(f"HTTPSConnectionPool: Max retries exceeded with url: {url}"))
+    elif kind == "timeout":
+        _fail_at(installer_scripted, hop, lambda url: requests.Timeout(f"Read timed out fetching {url}"))
+    elif kind == "truncated":
+        _fail_at(installer_scripted, hop, lambda url: requests.exceptions.ChunkedEncodingError(f"Connection broken fetching {url}"))
+    else:  # a Location that requests cannot read: its failure quotes the address it could not parse
+        first = RELEASE_DOWNLOAD_URL if download else installer.GITHUB_LATEST_RELEASE
+        installer_scripted.routes[first] = (302, f"https://[::1/x?sig={SIG}")
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(HTTPException) as caught:
+        llm_install_prepare()
+    assert caught.value.status_code == 502
+    sentence = installer.InstallerFetchFailed.DOWNLOAD if download else installer.InstallerFetchFailed.LOOKUP
+    assert caught.value.detail == sentence.format(why=why)
+    cause = caught.value.__cause__
+    assert isinstance(cause, installer.InstallerFetchFailed) and not isinstance(cause, installer.InstallerRedirectRefused)
+    assert cause.__cause__ is None and cause.__context__ is None, "no chain behind it: a traceback chain is a sink"
+    seen = [caught.value.detail, caplog.text, "".join(traceback.format_exception(caught.value)), repr(cause)]
+    seen += [str(r.exc_info) + str(r.exc_text) + str(getattr(r, "scrubbed_traceback", "")) for r in caplog.records]  # the attribute errorlog writes out
+    for text in seen:
+        assert SIG not in text and "release-assets" not in text and "sig=" not in text and "api.github.com/repositories" not in text
+    ours = [r for r in caplog.records if r.name == "src.llm.installer"]
+    assert [r.levelno for r in ours] == [logging.WARNING] and ours[0].getMessage().endswith(f"({why})"), "the status or class is logged, once"
+    assert ("download" in ours[0].getMessage()) is download, "the line names the stage that failed"
+    assert ours[0].exc_info is None
+
+
+def test_a_lookup_answer_that_is_not_json_is_a_fetch_failure_by_class_name(installer_scripted, caplog):
+    import logging
+
+    from src.llm import installer
+
+    installer_scripted.bodies[installer.GITHUB_LATEST_RELEASE] = b"<html>sign in to continue</html>"
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(installer.InstallerFetchFailed) as caught:
+        installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
+    assert caught.value.why == "JSONDecodeError" and "sign in" not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert "sign in" not in caplog.text
+
+
+def test_failure_words_are_a_status_or_a_class_name_and_nothing_else():
+    from src.safety.fetcher import failure_words
+
+    def _http(status):
+        err = requests.HTTPError("404 Client Error: Not Found for url: https://x.example/?sig=SECRET")
+        err.response = SimpleNamespace(status_code=status)
+        return err
+
+    assert failure_words(_http(404)) == "HTTP 404"
+    for odd in (None, True, "404", 99, 600, 12.5):  # not a status: the class name, never the text
+        assert failure_words(_http(odd)) == "HTTPError"
+    assert failure_words(requests.HTTPError("no response attached: https://x.example/?sig=SECRET")) == "HTTPError"
+    assert failure_words(requests.ConnectionError("https://x.example/?sig=SECRET")) == "ConnectionError"
+    assert failure_words(ValueError("https://x.example/?sig=SECRET")) == "ValueError"
 
 
 def test_each_fetcher_keeps_its_own_timeout_and_asks_for_the_install_window(installer_scripted):

@@ -119,6 +119,30 @@ class InstallerRedirectRefused(InstallerVerificationError):
         super().__init__(self.DOWNLOAD_MESSAGE if download else self.MESSAGE)
 
 
+class InstallerFetchFailed(InstallerVerificationError):
+    """One of the install's two fetches failed for a reason of its own after the host list let it through: an HTTP error answer, a dropped
+    connection, a timeout, a redirect loop, an address ``requests`` could not read, or an answer that was not JSON (R142).
+
+    A subclass, so the route that maps a verification failure to 502 maps this one too and a person is told that nothing was run. Its text
+    is a fixed sentence plus ``why``, which is only ``HTTP <status>`` or an exception CLASS NAME (``src.safety.fetcher.failure_words``):
+    the text of the failure itself quotes the address being fetched, and the download's address is a signed storage URL whose signature
+    is in the query. Raised outside the ``except`` block that saw the failure, so it has neither a cause nor a context.
+    """
+
+    LOOKUP = (
+        "GitHub's Ollama release lookup failed ({why}). Nothing was run and nothing was installed. "
+        "Install Ollama from https://ollama.com/download."
+    )
+    DOWNLOAD = (
+        "GitHub's Ollama installer download failed ({why}). Nothing was run and nothing was installed. "
+        "Install Ollama from https://ollama.com/download."
+    )
+
+    def __init__(self, *, download: bool, why: str) -> None:
+        self.why = why
+        super().__init__((self.DOWNLOAD if download else self.LOOKUP).format(why=why))
+
+
 # --------------------------------------------------------------------------- #
 #  Environment probes
 # --------------------------------------------------------------------------- #
@@ -429,21 +453,34 @@ def run_installer(path: str) -> Iterator[str]:
 def _get_within(url: str, hosts: tuple[str, ...], *, timeout: int, download: bool) -> Any:
     """GET ``url`` on a session held to ``hosts`` (checked on the first request and on every redirect hop), and return the response.
 
-    The one place the two fetchers refuse: only the class name is logged, and the exception raised below is raised OUTSIDE the
-    ``except`` block, so it has neither a cause nor a context: nothing the refused address carried can ride a traceback into a log or a
-    response. Any other failure (a server error, a dropped connection, a timeout) is NOT a refusal and passes through as it always did.
+    The one place the two fetchers refuse or fail, and each says so in its own words: a refusal by the host list is
+    :class:`InstallerRedirectRefused`, any other failure of the fetch (an HTTP error answer, a dropped connection, a timeout, a redirect
+    loop, an address ``requests`` cannot read) is :class:`InstallerFetchFailed` with ``HTTP <status>`` or the exception's class name and
+    nothing else. Only those words are logged, and both exceptions are raised OUTSIDE the ``except`` block, so they have neither a cause
+    nor a context: the address a failure quotes (the download's is a signed storage URL, signature in the query) cannot ride a traceback
+    into a log or a response. A missing transport (``TransportUnavailable``) and the kill switch (``NetworkBlocked``) are neither: each
+    is named by its own fixed text and carries no address, so they pass through.
     """
     from src.ingest.egress_window import PURPOSE_AI_INSTALL
-    from src.safety.fetcher import RedirectRefused, guarded_session, refuse_unlisted_host
+    from src.safety.fetcher import (
+        FETCH_FAILURES,
+        RedirectRefused,
+        TransportUnavailable,
+        failure_words,
+        guarded_session,
+        refuse_unlisted_host,
+    )
 
     session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL, allowed_hosts=hosts)
     refused = False
+    failure: str | None = None
     try:
         # The address is held to the list HERE as well as in the session: ``requests`` rejects one it cannot read (no scheme, ``https:///x``,
         # a port over 65535) before the session's own check runs, with an error whose text quotes the address, and the address is a value the
         # release response chose. Read here, such an address is a refusal like any other.
         refuse_unlisted_host(url, hosts)
         resp = session.get(url, timeout=timeout)
+        resp.raise_for_status()
     except RedirectRefused:
         logger.warning(
             "Ollama installer: the %s was refused (%s)",
@@ -451,21 +488,40 @@ def _get_within(url: str, hosts: tuple[str, ...], *, timeout: int, download: boo
             RedirectRefused.__name__,
         )
         refused = True
+    except TransportUnavailable:
+        raise
+    except FETCH_FAILURES as exc:
+        failure = failure_words(exc)
     if refused:
         raise InstallerRedirectRefused(download=download)
+    if failure is not None:
+        raise _fetch_failed(download, failure)
     return resp
 
 
+def _fetch_failed(download: bool, why: str) -> InstallerFetchFailed:
+    """Log that one of the two fetches failed, in the words :func:`~src.safety.fetcher.failure_words` allows, and return the exception to
+    raise. Built by the caller OUTSIDE its ``except`` block."""
+    logger.warning("Ollama installer: the %s failed (%s)", "download" if download else "release lookup", why)
+    return InstallerFetchFailed(download=download, why=why)
+
+
 def _default_get_json(url: str) -> dict:
+    from src.safety.fetcher import failure_words
+
     resp = _get_within(url, GITHUB_API_HOSTS, timeout=30, download=False)
-    resp.raise_for_status()
-    return resp.json()
+    failure: str | None = None
+    try:
+        body: dict = resp.json()
+    except ValueError as exc:  # an answer that is not JSON; the class name is all that is kept
+        failure = failure_words(exc)
+    if failure is not None:
+        raise _fetch_failed(False, failure)
+    return body
 
 
 def _default_get_bytes(url: str) -> bytes:
-    resp = _get_within(url, GITHUB_ASSET_HOSTS, timeout=120, download=True)
-    resp.raise_for_status()
-    return resp.content
+    return _get_within(url, GITHUB_ASSET_HOSTS, timeout=120, download=True).content
 
 
 def install_status() -> dict:
