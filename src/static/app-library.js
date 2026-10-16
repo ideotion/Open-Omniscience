@@ -312,6 +312,14 @@
           t("Not counted: the keyword-mention count stopped ({why}) at {t}; it is tried again after {m} min.")
             .replace("{why}", why).replace("{t}", clock(f.at)).replace("{m}", String(Math.round((f.retry_after_s || 0) / 60))));
       }
+      // A counted figure says WHEN it was counted: the count is a slow scan, so it is carried between counts (never recounted more
+      // often than ten times its own duration) and the hover bubble states the age rather than letting it read as live.
+      if (fig.keyword_mentions_computed_at) {
+        return tile(num(fig.avg_keywords_per_article), label,
+          t("Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.")
+            .replace("{t}", clock(fig.keyword_mentions_computed_at))
+            .replace("{m}", String(Math.max(1, Math.round((fig.keyword_mentions_recount_after_s || 0) / 60)))));
+      }
       return tile(num(fig.avg_keywords_per_article), label);
     }
     function _paintLibraryOverview(host, d, fig) {

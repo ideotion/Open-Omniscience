@@ -31,8 +31,10 @@ def setup_module(_module):
 @pytest.fixture(autouse=True)
 def _clean_cache():
     served_cache.invalidate()
+    dbmod._MENTIONS_MEMO.clear()
     yield
     served_cache.invalidate()
+    dbmod._MENTIONS_MEMO.clear()
 
 
 def _wait(pred, timeout=10.0):
@@ -222,3 +224,76 @@ def test_the_background_count_runs_under_a_statement_deadline_that_can_be_set(mo
     assert seen == [7.0] and out["keyword_mentions"] == 3 and out["keyword_mentions_state"] == "counted"
     monkeypatch.delenv("OO_FIGURES_COUNT_DEADLINE_S")
     assert dbmod._count_deadline_s() == dbmod._FIGURES_COUNT_DEADLINE_S == 300.0
+
+
+def _count_spy(monkeypatch, value=12):
+    calls: list[int] = []
+
+    def count(_db):
+        calls.append(1)
+        return value
+
+    monkeypatch.setattr(dbmod, "_mentions_count", count)
+    return calls
+
+
+def test_a_finished_count_is_carried_for_ten_times_its_duration_then_counted_again(monkeypatch):
+    _seed_article()
+    calls = _count_spy(monkeypatch)
+    clock = [1_000_000.0]
+    monkeypatch.setattr(dbmod, "_now_s", lambda: clock[0])
+    s = SessionLocal()
+    try:
+        first = dbmod._compute_figures_counted(s, dbmod.datetime.now(dbmod.UTC))
+        assert first["keyword_mentions"] == 12 and first["keyword_mentions_computed_at"]
+        dbmod._MENTIONS_MEMO["duration_s"] = 55.0  # the field corpus's measured count
+        assert dbmod._FIGURES_COUNT_DUTY_FACTOR == 10
+        clock[0] += 549  # inside 10 x 55 s
+        inside = dbmod._compute_figures_counted(s, dbmod.datetime.now(dbmod.UTC))
+        assert inside["keyword_mentions"] == 12 and inside["keyword_mentions_state"] == "counted"
+        assert inside["keyword_mentions_computed_at"] == first["keyword_mentions_computed_at"]
+        assert inside["keyword_mentions_recount_after_s"] == 550
+        assert len(calls) == 1, "a count inside its window was repeated"
+        clock[0] += 2  # 551 s: past the window
+        dbmod._compute_figures_counted(s, dbmod.datetime.now(dbmod.UTC))
+    finally:
+        s.close()
+    assert len(calls) == 2
+
+
+def test_a_stale_entry_inside_the_window_refreshes_the_cheap_figures_and_starts_no_count(monkeypatch):
+    _seed_article()
+    calls = _count_spy(monkeypatch)
+    ticks = iter(range(1, 1000))
+    monkeypatch.setattr(served_cache, "change_probe", lambda: next(ticks))  # writes keep landing: only the window holds the count
+    s = SessionLocal()
+    try:
+        dbmod.library_figures(s)
+        assert _wait(lambda: (_entry("db:figures") or {}).get("payload", {}).get("keyword_mentions_state") == "counted")
+        built = _entry("db:figures")["built_at"]
+        with served_cache._LOCK:
+            served_cache._CACHE["db:figures"]["checked_at"] -= 120  # stale against the 60 s interval
+            served_cache._CACHE["db:figures"]["built_at"] -= 120
+        dbmod._MENTIONS_MEMO["duration_s"] = 55.0
+        out = dbmod.library_figures(s)
+        assert _wait(lambda: _entry("db:figures")["built_at"] > built - 119)  # the background refresh stored a new entry
+        time.sleep(0.2)
+        after = dbmod.library_figures(s)
+    finally:
+        s.close()
+    assert len(calls) == 1, "a stale entry inside the count's window started a scan"
+    assert out["keyword_mentions"] == 12 and after["keyword_mentions"] == 12
+    assert after["keyword_mentions_computed_at"] and after["keyword_mentions_state"] == "counted"
+
+
+def test_a_count_made_over_another_database_is_not_carried(monkeypatch):
+    _seed_article()
+    calls = _count_spy(monkeypatch)
+    s = SessionLocal()
+    try:
+        dbmod._compute_figures_counted(s, dbmod.datetime.now(dbmod.UTC))
+        dbmod._MENTIONS_MEMO["bind"] = object()
+        dbmod._compute_figures_counted(s, dbmod.datetime.now(dbmod.UTC))
+    finally:
+        s.close()
+    assert len(calls) == 2

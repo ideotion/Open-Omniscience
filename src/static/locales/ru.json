@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "Число каталогизированных источников, чья страна = каждая область ISO-2 (статьи = собранные из них). Только подсчёты, без оценки.",
   "Count per region": "Посчитать по регионам",
   "Count this coordinated network as one voice (reversible, stays flagged)": "Считать эту скоординированную сеть одним голосом (обратимо, пометка сохраняется)",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "Подсчитано в {t}; подсчёт всех упоминаний ключевых слов медленный, поэтому он повторяется не чаще чем раз в {m} мин.",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "Считается самим каналом Википедии — отдельно от счётчика статей: страница, за которой следит этот канал, не является статьёй в вашем корпусе, если её текст не был сохранён. «Сегодня» означает с местной полуночи.",
   "Counted by when this machine stored them, not by the edit's own date.": "Подсчитаны по времени сохранения на этом устройстве, а не по дате самой правки.",
   "Counted only: its text was not stored.": "Только подсчитано: текст не сохранён.",

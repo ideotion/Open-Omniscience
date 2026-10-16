@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import contextlib
 import tempfile
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -214,6 +216,62 @@ _FIGURES_COUNT_DEADLINE_S = 300.0
 _FIGURES_FAILURE_WINDOW_S = 900
 
 
+#: A finished count is carried, not repeated, for this many times its own measured duration. It protects the collectors' CPU on a
+#: 2-core box: the COUNT is one scan, so repeating it every ``factor x duration`` caps its duty cycle at ``1 / factor`` of one core
+#: (10 -> at most 10 %; with the 55 s measured on the field corpus, one count per ~9 min). The cheap figures keep their own 60 s
+#: interval; only the COUNT waits. The window is longer than ``_FIGURES_TTL_S`` only when the count is slower than 6 s.
+_FIGURES_COUNT_DUTY_FACTOR = 10
+
+_MENTIONS_LOCK = threading.Lock()
+#: The last finished count: {"bind", "count", "articles", "duration_s", "finished_at" (epoch s)}. In memory only, so after a restart
+#: the first count runs at once and is measured again; bound to the database it was counted over, so another database never
+#: inherits it.
+_MENTIONS_MEMO: dict = {}
+
+
+def _now_s() -> float:
+    return time.time()
+
+
+def _carried_mentions(db: Session) -> dict | None:
+    """The previous count, when it is still inside its cost-proportional window and was counted over this database; else None."""
+    with _MENTIONS_LOCK:
+        memo = dict(_MENTIONS_MEMO)
+    if not memo:
+        return None
+    try:
+        if db.get_bind() is not memo["bind"]:
+            return None
+    except Exception:  # noqa: BLE001 - any doubt about the database -> count again
+        return None
+    window = _FIGURES_COUNT_DUTY_FACTOR * memo["duration_s"]
+    return memo if _now_s() - memo["finished_at"] < window else None
+
+
+def _remember_mentions(db: Session, count: int, articles: int, duration_s: float) -> dict | None:
+    try:
+        bind = db.get_bind()
+    except Exception:  # noqa: BLE001 - without a bind the count cannot be told apart from another database's
+        return None
+    memo = {"bind": bind, "count": count, "articles": articles, "duration_s": duration_s, "finished_at": _now_s()}
+    with _MENTIONS_LOCK:
+        _MENTIONS_MEMO.clear()
+        _MENTIONS_MEMO.update(memo)
+    return memo
+
+
+def _mentions_fields(memo: dict) -> dict:
+    """The count's payload fields, with WHEN it was counted and how long it is carried: the ratio uses the article count of that
+    moment, not today's, so the two figures describe the same instant."""
+    return {
+        "keyword_mentions": memo["count"],
+        "avg_keywords_per_article": round(memo["count"] / memo["articles"], 1) if memo["articles"] else None,
+        "keyword_mentions_state": "counted",
+        "keyword_mentions_computed_at": datetime.fromtimestamp(memo["finished_at"], UTC).isoformat(timespec="seconds"),
+        "keyword_mentions_recount_after_s": int(_FIGURES_COUNT_DUTY_FACTOR * memo["duration_s"]),
+    }
+
+
 def _count_deadline_s() -> float:
     import os
 
@@ -284,13 +342,24 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
 
     A count that cannot finish is a NAMED failure, not a missing number and not a retry on the next poll: the payload carries
     ``keyword_mentions_state: "failed"`` with the kind (``statement-deadline`` or the exception's class), the deadline, when it
-    happened and the window before it is tried again, and the entry stands for that window (``__ttl_s__``)."""
+    happened and the window before it is tried again, and the entry stands for that window (``__ttl_s__``).
+
+    COST-PROPORTIONAL RECOUNT: a finished count is carried, with ``keyword_mentions_computed_at``, for
+    ``_FIGURES_COUNT_DUTY_FACTOR`` times its own measured duration, so a stale entry inside that window recomputes the cheap
+    figures and starts no scan."""
     from src.database.maintenance import StatementTimeout, statement_deadline
 
     out = _cheap_figures(db, now)
     if not out["articles"]:
         return out
+    carried = _carried_mentions(db)
+    if carried is not None:
+        # Inside the window: refresh the cheap figures (they were just recomputed above) and carry the previous count, stamped
+        # with when it was counted. A stale entry here starts NO scan.
+        out.update(_mentions_fields(carried))
+        return out
     deadline = _count_deadline_s()
+    started = time.monotonic()
     try:
         with statement_deadline(db, deadline):
             n_mentions = _mentions_count(db)
@@ -310,9 +379,14 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
         with contextlib.suppress(Exception):
             db.rollback()  # the interrupted statement leaves the transaction unusable for the next caller of this session
         return out
-    out["keyword_mentions"] = n_mentions
-    out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
-    out["keyword_mentions_state"] = "counted"
+    memo = _remember_mentions(db, n_mentions, out["articles"], max(time.monotonic() - started, 0.001))
+    if memo is None:
+        out["keyword_mentions"] = n_mentions
+        out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
+        out["keyword_mentions_state"] = "counted"
+        out["keyword_mentions_computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    else:
+        out.update(_mentions_fields(memo))
     return out
 
 

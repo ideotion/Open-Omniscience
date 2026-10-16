@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "Nombre de sources cataloguées dont le pays = chaque zone ISO-2 (articles = ceux collectés auprès d'elles). Des décomptes uniquement, aucun score.",
   "Count per region": "Compter par région",
   "Count this coordinated network as one voice (reversible, stays flagged)": "Compter ce réseau coordonné comme une seule voix (réversible, reste signalé)",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "Compté à {t} ; compter chaque occurrence de mot-clé est lent, donc le comptage n'est répété qu'au plus toutes les {m} min.",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "Compté par la voie Wikipédia elle-même, séparément de votre nombre d'articles : une page que cette voie suit n'est pas un article de votre corpus, à moins que son texte n'ait été stocké. « Aujourd'hui » signifie depuis minuit, heure locale.",
   "Counted by when this machine stored them, not by the edit's own date.": "Comptées selon le moment où cette machine les a stockées, pas selon la date propre de la modification.",
   "Counted only: its text was not stored.": "Compté seulement : son texte n'a pas été stocké.",

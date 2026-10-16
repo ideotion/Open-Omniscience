@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "عدد المصادر المُفهرسة التي بلدها = كل منطقة ISO-2 (المقالات = ما جُمع منها). أعداد فقط، بلا درجات.",
   "Count per region": "الإحصاء حسب المنطقة",
   "Count this coordinated network as one voice (reversible, stays flagged)": "احسب هذه الشبكة المنسَّقة صوتاً واحداً (قابل للتراجع، ويبقى مُعلَّماً)",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "عُدّ عند {t}؛ عدّ كل ذكر للكلمات المفتاحية بطيء، لذلك لا يُعاد أكثر من مرة كل {m} دقيقة.",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "يُحسب بواسطة مسار ويكيبيديا نفسه، بمعزل عن عدد مقالاتك: الصفحة التي يتابعها هذا المسار ليست مقالة في مجموعتك ما لم يُخزَّن نصها. تعني «اليوم» منذ منتصف الليل بالتوقيت المحلي.",
   "Counted by when this machine stored them, not by the edit's own date.": "معدودةً حسب وقت تخزين هذا الجهاز لها، لا حسب تاريخ التعديل نفسه.",
   "Counted only: its text was not stored.": "معدود فقط: لم يُخزَّن نصه.",

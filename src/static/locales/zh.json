@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "国家 = 各 ISO-2 地区的已编目来源数量（文章 = 从这些来源收集的文章）。仅为计数，不打分。",
   "Count per region": "按地区统计",
   "Count this coordinated network as one voice (reversible, stays flagged)": "把这个协同网络算作一个声音（可撤销，仍保留标记）",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "统计于 {t}；统计所有关键词提及次数较慢，因此最多每 {m} 分钟重复一次。",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "由维基百科通道自行计数，与你的条目数分开统计：只要该通道所关注页面的正文未被存储，它就不算作你语料库中的条目。“今天”指自本地午夜零点起。",
   "Counted by when this machine stored them, not by the edit's own date.": "按本机存储的时间计数，而非按编辑本身的日期。",
   "Counted only: its text was not stored.": "仅计数：其文本未存储。",

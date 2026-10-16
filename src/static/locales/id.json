@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "Jumlah sumber terkatalog yang negaranya = tiap wilayah ISO-2 (artikel = yang dikumpulkan darinya). Hanya hitungan, tanpa skor.",
   "Count per region": "Hitung per wilayah",
   "Count this coordinated network as one voice (reversible, stays flagged)": "Hitung jaringan terkoordinasi ini sebagai satu suara (dapat dibatalkan, tetap ditandai)",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "Dihitung pada {t}; menghitung setiap sebutan kata kunci itu lambat, jadi diulang paling sering setiap {m} menit.",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "Dihitung oleh jalur Wikipedia itu sendiri, terpisah dari jumlah artikel Anda: halaman yang diikuti jalur ini bukan artikel dalam korpus Anda kecuali teksnya telah disimpan. “Hari ini” berarti sejak tengah malam waktu setempat.",
   "Counted by when this machine stored them, not by the edit's own date.": "Dihitung menurut waktu mesin ini menyimpannya, bukan menurut tanggal suntingan itu sendiri.",
   "Counted only: its text was not stored.": "Hanya dihitung: teksnya tidak disimpan.",

@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "国 = 各 ISO-2 地域であるカタログ登録ソースの数（記事 = それらから収集したもの）。件数のみで、スコアはありません。",
   "Count per region": "地域別に数える",
   "Count this coordinated network as one voice (reversible, stays flagged)": "この連携ネットワークを1つの声として数える（取り消し可能、フラグは残ります）",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "{t} に集計。キーワード言及の総数の集計は重いため、{m} 分に1回を超えて繰り返しません。",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "Wikipediaレーン自身がカウントしたもので、記事数とは別に数えます。このレーンがフォローするページは、本文が保存されない限り、あなたのコーパスの記事にはなりません。「今日」とは現地時間の午前0時からを指します。",
   "Counted by when this machine stored them, not by the edit's own date.": "編集自体の日付ではなく、このマシンが保存した時点で数えています。",
   "Counted only: its text was not stored.": "カウントのみ: テキストは保存されていません。",

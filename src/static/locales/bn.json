@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "প্রতিটি ISO-2 এলাকার দেশ-বিশিষ্ট তালিকাভুক্ত উৎসের সংখ্যা (নিবন্ধ = সেগুলো থেকে সংগৃহীত)। শুধু গণনা, কোনো স্কোর নেই।",
   "Count per region": "অঞ্চল ধরে গুনুন",
   "Count this coordinated network as one voice (reversible, stays flagged)": "এই সমন্বিত নেটওয়ার্ককে একটি কণ্ঠ হিসেবে গণনা করুন (প্রত্যাবর্তনযোগ্য, চিহ্নিত থাকে)",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "{t}-এ গণনা হয়েছে; প্রতিটি কীওয়ার্ড উল্লেখ গণনা ধীর, তাই এটি {m} মিনিটের কম ব্যবধানে পুনরায় চলে না।",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "উইকিপিডিয়া লেন নিজে যা গুনেছে, আপনার নিবন্ধ-সংখ্যা থেকে আলাদাভাবে: এই লেন যে পাতা অনুসরণ করে, তার লেখা সংরক্ষিত না হলে তা আপনার কর্পাসে নিবন্ধ নয়। “আজ” মানে স্থানীয় মধ্যরাত থেকে।",
   "Counted by when this machine stored them, not by the edit's own date.": "এই মেশিন কখন সেগুলো সংরক্ষণ করেছে সেই অনুযায়ী গোনা, সম্পাদনার নিজস্ব তারিখ অনুযায়ী নয়।",
   "Counted only: its text was not stored.": "শুধু গোনা হয়েছে: এর পাঠ্য সংরক্ষণ করা হয়নি।",

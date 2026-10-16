@@ -1173,6 +1173,7 @@
   "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.": "Count of catalogued sources whose country = each ISO-2 area (articles = those collected from them). Counts only, no score.",
   "Count per region": "Count per region",
   "Count this coordinated network as one voice (reversible, stays flagged)": "Count this coordinated network as one voice (reversible, stays flagged)",
+  "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.": "Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.",
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.",
   "Counted by when this machine stored them, not by the edit's own date.": "Counted by when this machine stored them, not by the edit's own date.",
   "Counted only: its text was not stored.": "Counted only: its text was not stored.",
