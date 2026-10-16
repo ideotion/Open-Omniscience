@@ -20,7 +20,8 @@ import io
 from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
-from src.database.source_lookup import source_for_domain
+from src.database.feed_key import feed_key
+from src.database.source_lookup import match_import
 from src.monitoring.secret_scrub import record_text
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -274,17 +275,23 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     created = updated = 0
     kept_stored: list[str] = []
     errors: list[str] = []
-    existing = {d: sid for sid, d in session.query(Source.id, Source.domain).all()}
+    # A source is its domain AND its feed: a sheet row is an EDIT of the row it matches (``match_import``) and a new
+    # feed of a registered domain is a new sibling row. Matching on the domain alone made every row of a sheet that
+    # exports thirty feeds of one outlet overwrite the first.
+    by_domain: dict[str, list[tuple[int, str]]] = {}
+    for sid, d, fk in session.query(Source.id, Source.domain, Source.feed_key).order_by(Source.id).all():
+        by_domain.setdefault(d, []).append((sid, fk or ""))
 
     for row in rows:
         domain = row["domain"]
-        is_update = domain in existing
+        match = match_import(by_domain.get(domain, []), feed_key(row.get("rss_url")))
+        is_update = match is not None
         try:
             # begin_nested() issues a SAVEPOINT and flushes at block exit; an error
             # there auto-rolls-back to the savepoint (this row only) and re-raises.
             with session.begin_nested():
                 if is_update:
-                    src = source_for_domain(session, domain)
+                    src = session.get(Source, match)
                     if src is None:   # the scan above saw it; a row removed since is this row's error, not a crash
                         raise LookupError(f"no source row for {domain!r}")
                     for k, v in row.items():
@@ -312,7 +319,7 @@ def upsert_sources(session, rows: list[dict]) -> dict:
             if is_update:
                 updated += 1
             else:
-                existing[domain] = -1
+                by_domain.setdefault(domain, []).append((-1, feed_key(row.get("rss_url"))))
                 created += 1
         except Exception as exc:  # noqa: BLE001 - one bad row must not abort the batch
             errors.append(f"{domain}: {record_text(exc)}")

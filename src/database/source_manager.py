@@ -48,7 +48,7 @@ from src.database.models import (
     get_session,
     source_group_association,
 )
-from src.database.source_lookup import source_for_domain
+from src.database.source_lookup import source_for_domain, source_for_feed, source_for_import
 from src.database.stand_in import not_a_stand_in_source
 
 # Import logging config
@@ -177,10 +177,11 @@ class SourceManager:
         Returns:
             The created Source object
         """
-        # Check if source already exists
-        existing = source_for_domain(self.session, domain)
+        # Check if source already exists: the same domain AND the same feed. A second feed of a registered domain
+        # is a new source of that outlet (row J), never "already there".
+        existing = source_for_feed(self.session, domain, kwargs.get("rss_url"))
         if existing:
-            logger.warning(f"Source with domain {domain} already exists")
+            logger.warning(f"Source with domain {domain} and this feed already exists")
             return existing
 
         source_data = {
@@ -992,8 +993,13 @@ class SourceManager:
             if not domain:
                 continue
 
-            # Check if source already exists
-            existing = source_for_domain(self.session, domain)
+            # Check if the source already exists: this feed, or the domain's feed-less row that gains it.
+            existing = source_for_feed(self.session, domain, source_data.get("rss_url"))
+            if existing is None and source_data.get("rss_url"):
+                bare = [r for r in self.session.query(Source).filter(Source.domain == domain).order_by(Source.id) if not r.rss_url]
+                existing = bare[0] if bare else None
+            if existing is None and not source_data.get("rss_url"):
+                existing = source_for_domain(self.session, domain)
             if existing:
                 # Update existing source with new information
                 if source_data.get("rss_url") and not existing.rss_url:
@@ -1052,7 +1058,7 @@ class SourceManager:
                 skipped += 1
                 continue
 
-            existing = source_for_domain(self.session, domain)
+            existing = source_for_import(self.session, domain, source_data.get("rss_url"))
             if existing:
                 # Update existing source
                 existing.name = source_data.get("name", existing.name)

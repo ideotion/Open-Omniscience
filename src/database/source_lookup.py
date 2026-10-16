@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from src.database.feed_key import feed_key
 from src.database.models import Source
 
 
@@ -27,3 +28,37 @@ def sources_for_domain(session: Session, domain: str | None) -> list[Source]:
     if not domain:
         return []
     return session.query(Source).filter(Source.domain == domain).order_by(Source.id).all()
+
+
+def source_for_feed(session: Session, domain: str | None, rss_url: str | None) -> Source | None:
+    """The source with exactly this ``(domain, feed)``, or ``None``. For an explicit ADD: a second feed of a registered
+    domain is not "already there", it is a sibling, so only the identical feed counts as a duplicate."""
+    if not domain:
+        return None
+    return (
+        session.query(Source)
+        .filter(Source.domain == domain, Source.feed_key == feed_key(rss_url))
+        .order_by(Source.id)
+        .first()
+    )
+
+
+def match_import(rows: list[tuple[int, str]], fk: str) -> int | None:
+    """Which of a domain's ``(id, feed_key)`` rows an imported record is -- an EDIT, never an add: the identical feed;
+    else the domain's only row (a changed feed URL is the same source, as the seeder and the restore merge read it);
+    else, for a record with no feed, the oldest row. ``None`` means a feed this domain does not hold yet: a sibling."""
+    for sid, key in rows:
+        if (key or "") == fk:
+            return sid
+    if len(rows) == 1:
+        return rows[0][0]
+    if not fk and rows:
+        return rows[0][0]
+    return None
+
+
+def source_for_import(session: Session, domain: str | None, rss_url: str | None) -> Source | None:
+    """The source an imported record (YAML, CSV) updates, per :func:`match_import`, or ``None`` when it is a new feed."""
+    rows = sources_for_domain(session, domain)
+    sid = match_import([(r.id, r.feed_key or "") for r in rows], feed_key(rss_url))
+    return next((r for r in rows if r.id == sid), None) if sid is not None else None
