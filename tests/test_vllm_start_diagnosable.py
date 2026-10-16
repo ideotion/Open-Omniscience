@@ -311,3 +311,20 @@ def test_the_status_payload_carries_the_outcome(gpu8, monkeypatch):
     """It has to reach the operator and the bundle, not just exist as a function."""
     monkeypatch.setattr(V, "_proc", _Proc(code=3))
     assert V.status()["start_outcome"]["state"] == "exited"
+
+
+def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8, monkeypatch, tmp_path):
+    """When the scrubbed copy fails nothing is preserved, and the start record keeps the reason in place of a path."""
+    monkeypatch.setattr(V, "_proc", _Proc(code=1))
+    monkeypatch.setattr(V, "_exits_noted", set())  # the exit of this pid is journalled once per process
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")  # its journal line must not reach other tests' start history
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("some log\n", encoding="utf-8")
+
+    def broken(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(V.os, "replace", broken)
+    V.start_outcome()
+    record = [h for h in V.start_history() if h.get("event") == "exited"][-1]
+    assert record["full_log"] is None and "raw copy is never made" in record["full_log_reason"]

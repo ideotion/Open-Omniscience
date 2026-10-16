@@ -912,7 +912,7 @@ def start_outcome() -> dict:
             excerpt = failure_excerpt(limit=_JOURNAL_EXCERPT_CHARS)
         except Exception:  # noqa: BLE001 - a log read must never break a status probe
             excerpt = {}
-        preserved = _preserve_failed_log(pid, code) if code != 0 else None
+        preserved, preserve_reason = _preserve_failed_log_result(pid, code) if code != 0 else (None, None)
         _record_start_attempt({
             "at": time.time(),
             "event": "exited",
@@ -922,6 +922,7 @@ def start_outcome() -> dict:
             "advice": excerpt.get("advice"),
             "excerpt": excerpt.get("excerpt"),
             "full_log": preserved,
+            "full_log_reason": preserve_reason,
         })
         if preserved:
             out["preserved_log_path"] = preserved
@@ -1598,7 +1599,7 @@ def failed_start_log_dir() -> Path:
     return data_dir() / "vllm_failed_starts"
 
 
-def _preserve_failed_log(pid: int | None, returncode: int) -> str | None:
+def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str | None, str | None]:
     """Copy the server log of a start that just FAILED, before the next start truncates it.
 
     ``server.log`` is opened ``"wb"`` per start, so each failure destroys the evidence of
@@ -1608,7 +1609,13 @@ def _preserve_failed_log(pid: int | None, returncode: int) -> str | None:
     bounded window is not enough.
 
     Best-effort and bounded: never raises, keeps only the newest few, and returns the
-    path it wrote so the status payload can name it.
+    path it wrote so the status payload can name it, with a reason when it kept nothing.
+
+    THE COPY IS SCRUBBED, line by line, as it is written: a server log can echo a path, a
+    URL or a config line that holds a key, and this file is carried in the Diagnostics
+    bundle. It is written to a temporary name and renamed into place, so a failure part
+    way leaves nothing under the preserved name -- NEVER a raw copy and never a half-clean
+    one. A line the scrub cannot check is replaced whole by its withheld marker.
 
     ITS ONE BOUND, stated rather than left to be rediscovered: the copy happens when the
     exit is first OBSERVED, so a death nobody polled between and the next start is still
@@ -1618,19 +1625,36 @@ def _preserve_failed_log(pid: int | None, returncode: int) -> str | None:
     try:
         src_path = server_log_path()
         if not src_path.is_file() or src_path.stat().st_size == 0:
-            return None
+            return None, None
         dest_dir = failed_start_log_dir()
         dest_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
         dest = dest_dir / f"{stamp}-pid{pid or 0}-rc{returncode}.log"
-        dest.write_bytes(src_path.read_bytes())
+        tmp = dest_dir / (dest.name + ".tmp")
+        try:
+            with src_path.open("rb") as src, tmp.open("w", encoding="utf-8", newline="\n") as out:
+                for raw_line in src:
+                    line = raw_line.decode("utf-8", errors="replace")
+                    body = line.rstrip("\r\n")
+                    out.write(scrubbed(body) + line[len(body):])
+            os.replace(tmp, dest)
+        finally:
+            tmp.unlink(missing_ok=True)
         kept = sorted(dest_dir.glob("*.log"))
         for stale in kept[:-_FAILED_LOG_KEEP]:
             stale.unlink(missing_ok=True)
-        return str(dest)
+        return str(dest), None
     except Exception as exc:  # noqa: BLE001 - preserving evidence must never break a probe
         log_failure(_LOG, "could not preserve the failed vLLM server log", exc, level=logging.INFO)
-        return None
+        return None, _PRESERVE_FAILED_REASON
+
+
+_PRESERVE_FAILED_REASON = "the server log was not kept: copying it with the passphrase taken out failed, and a raw copy is never made instead"
+
+
+def _preserve_failed_log(pid: int | None, returncode: int) -> str | None:
+    """The path :func:`_preserve_failed_log_result` wrote, or ``None``."""
+    return _preserve_failed_log_result(pid, returncode)[0]
 
 
 def failed_start_logs() -> list[dict]:
@@ -1672,6 +1696,9 @@ def newest_failed_start_log(*, limit: int = _BUNDLED_FAILED_LOG_BYTES) -> dict:
         raw = newest.read_bytes()
     except OSError as exc:
         return {"available": False, "reason": f"could not read {newest}: {record_text(exc)}"}
+    # Scrubbed on READ as well as on copy: a log kept by an older build is raw on the disk, and the passphrase may have changed since
+    # a newer one was copied. The whole text goes through BEFORE it is cut, so a key that straddles the cut leaves no prefix.
+    raw = scrubbed(raw.decode("utf-8", errors="replace")).encode("utf-8")
     out: dict = {"available": True, "path": str(newest), "bytes": len(raw)}
     if len(raw) <= limit:
         out["text"] = raw.decode("utf-8", errors="replace")

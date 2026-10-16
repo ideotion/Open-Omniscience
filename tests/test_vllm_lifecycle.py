@@ -2106,3 +2106,40 @@ def test_the_start_journal_takes_the_held_passphrase_out_of_the_server_log_excer
     V._record_start_attempt({"event": "exited", "excerpt": "boom: " + _KEY + " in the config", "server_args": {"model": _KEY}})
     blob = V._start_history_path().read_text(encoding="utf-8")
     assert _KEY not in blob and "boom" in blob
+
+
+def test_a_preserved_failed_log_is_copied_with_the_held_passphrase_taken_out(monkeypatch):
+    """The copy is scrubbed line by line as it is written: the preserved file (carried in the Diagnostics bundle) never holds the key."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(f"starting\nloading from /home/u/{_KEY}/weights\nTHE ACTUAL CAUSE\n", encoding="utf-8")
+    kept = V._preserve_failed_log(7, 1)
+    assert kept is not None
+    body = Path(kept).read_text(encoding="utf-8")
+    assert _KEY not in body and "THE ACTUAL CAUSE" in body and "starting" in body
+
+
+def test_a_preserved_log_that_cannot_be_scrubbed_is_not_kept_and_never_copied_raw(monkeypatch):
+    """Fail closed: when the scrub or the write fails, NOTHING is preserved (no raw copy, no half-clean file, no temporary file) and the
+    caller is given the reason."""
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(f"first\n{_KEY}\nlast\n", encoding="utf-8")
+
+    def broken(text, *a, **k):
+        raise RuntimeError("scrub unavailable")
+
+    monkeypatch.setattr(V, "scrubbed", broken)
+    path, reason = V._preserve_failed_log_result(7, 1)
+    assert path is None and reason
+    assert not list(V.failed_start_log_dir().glob("*")), "nothing is left behind, not even a temporary file"
+    assert V.failed_start_logs() == []
+
+
+def test_the_bundle_scrubs_a_failed_log_an_older_build_left_raw_on_the_disk(monkeypatch):
+    """A log preserved before logs were scrubbed on copy is raw on the disk; the reader takes the key out before it cuts the text."""
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    (V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log").write_text("a" * 40 + _KEY + "b" * 90, encoding="utf-8")  # the 50-byte head cut lands inside the key
+    _hold_key(monkeypatch)
+    out = V.newest_failed_start_log(limit=100)
+    assert out["available"] is True
+    assert _KEY[:10] not in (out.get("text") or "") + (out.get("head") or "") + (out.get("tail") or "")
