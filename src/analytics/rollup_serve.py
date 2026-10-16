@@ -549,7 +549,8 @@ def _current_mention_count() -> int | None:
 #: after the upgrade until the limit grew. A kept record from before this field existed has neither, so it is released too.
 BUILD_CODE_VERSION = 1
 
-#: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. The wall is
+#: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. WHAT IT PROTECTS:
+#: repeated stop/retry cycles near the limit (each a ~15-minute scan that ends at the same wall). The wall is
 #: the limit against the corpus, and a re-index drain under a longer stoplist or one pruned article moves the count by
 #: a handful of mentions while the same ~15-minute scan would stop at the same wall: a release per mention would be the
 #: rescan loop again. What the build needs is not measured at a stop (only that it did not fit), so this is a
