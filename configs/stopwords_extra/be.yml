@@ -1,5 +1,5 @@
 stopwords:
-  # batch be-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 63 of 63)
+  # batch be-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 61 of 61)
   - аднак
   - ажно
   - акрамя
@@ -30,7 +30,6 @@ stopwords:
   - нашай
   - нядзелю
   - паводле
-  - пад
   - падчас
   - паміж
   - пасля
@@ -58,7 +57,6 @@ stopwords:
   - якім
   - якіх
   - якія
-  - яму
   - яны
   - яшчэ
   - ўсё

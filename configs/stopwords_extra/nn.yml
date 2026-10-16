@@ -1,5 +1,5 @@
 stopwords:
-  # batch nn-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 42 of 42)
+  # batch nn-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 41 of 41)
   - aamallerede
   - aartunallerede
   - alvsvågallerede
@@ -7,7 +7,6 @@ stopwords:
   - annonsørinnhald
   - blitt
   - bvaallerede
-  - deira
   - ditt
   - drønenallerede
   - fordi

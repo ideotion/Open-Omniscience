@@ -1,10 +1,9 @@
 stopwords:
-  # batch fa-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 26 of 26)
+  # batch fa-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 24 of 24)
   - اینان
   - بالای
   - برچسبها
   - بهعنوان
-  - ترین
   - تمامی
   - جمعه
   - دوشنبه
@@ -14,7 +13,6 @@ stopwords:
   - شهريور
   - شهریور
   - شهریورماه
-  - طبق
   - میتواند
   - میلیارد
   - میلیون

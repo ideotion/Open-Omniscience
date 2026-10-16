@@ -1408,7 +1408,8 @@ def test_a_planted_temporary_path_is_refused_and_never_written_through(tmp_path,
     extra = _ko_dir(tmp_path)
     victim = tmp_path / "victim.txt"
     if planted == "dangling":
-        # a link whose target does not exist: ``Path.exists()`` is False for it, so only the symlink check refuses it
+        # a link whose target does not exist: ``Path.exists()`` is False for it, so the symlink check is what names it; the
+        # exclusive open would also refuse it, with a different message, which is why the message is matched below
         (extra / "ko.yml.tmp").symlink_to(victim)
     else:
         victim.write_text("keep me", "utf-8")
