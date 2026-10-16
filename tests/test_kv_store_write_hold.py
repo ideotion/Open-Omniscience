@@ -146,12 +146,12 @@ class _InterruptedAdd(set):
 
 @pytest.mark.parametrize("after", [True, False], ids=["after the write was counted", "before the write was counted"])
 def test_an_interrupt_inside_the_slot_neither_leaks_a_count_nor_releases_another_writes(store, monkeypatch, after):
-    """The count is one ``add`` and the release an idempotent ``discard`` of the write's own token: an interrupt that lands after
-    the add leaves nothing counted (a leaked count would make every later hold refuse to start until a restart), and one that lands
-    before it releases nothing (a decrement of a write that was never counted would let a hold start with another save still
-    writing the old file). This pins the contract of the set (a plain integer fails it by a TypeError, not by an ordering); the
-    window that really leaks under signals is the release's lock, pinned by the test below. MUTATION TARGETS: ``discard`` replaced
-    by ``clear``, or the release removed."""
+    """The count is one ``add`` and the release one lock-free ``remove`` of the write's own token (a KeyError for a token never counted is
+    caught): an interrupt that lands after the add leaves nothing counted (a leaked count would make every later hold refuse to start
+    until a restart), and one that lands before it releases nothing (a decrement of a write that was never counted would let a hold
+    start with another save still writing the old file). This pins the contract of the set (a plain integer fails it by a TypeError,
+    not by an ordering); the window that really leaks under signals is the release's lock, pinned by the test below. MUTATION TARGETS:
+    ``remove`` replaced by ``clear``, or the release removed."""
     other = object()  # another settings write in flight on another thread
     flight = _InterruptedAdd(after=after)
     flight.update({other})
@@ -184,15 +184,15 @@ class _InterruptedEnter:
 
 
 def test_an_interrupt_as_the_release_takes_the_lock_does_not_leave_the_write_counted(store, monkeypatch):
-    """The release is a lock-free ``discard`` BEFORE the lock is taken to wake a hold: an interrupt delivered while ``with _hold`` is
+    """The release is a lock-free ``remove`` BEFORE the lock is taken to wake a hold: an interrupt delivered while ``with _hold`` is
     entered (the second entry of a slot, the first being the count) used to arrive before the decrement and leave the write counted
     for ever, so every later hold refused to start until a restart (about 5 % of interrupted writes with real signals on CPython 3.13).
-    MUTATION TARGET: the ``discard`` moved back inside ``with _hold``."""
-    monkeypatch.setattr(kv_store, "_hold", _InterruptedEnter(kv_store._hold, fail_on=2))
-    with pytest.raises(KeyboardInterrupt), kv_store._write_slot():
-        pass
-    assert not kv_store._inflight, "the write stayed counted after its body ended"
-    monkeypatch.undo()
+    MUTATION TARGET: the release moved back inside ``with _hold``."""
+    with monkeypatch.context() as patched:  # not monkeypatch.undo(): that would also revert the store fixture's DATABASE_URL
+        patched.setattr(kv_store, "_hold", _InterruptedEnter(kv_store._hold, fail_on=2))
+        with pytest.raises(KeyboardInterrupt), kv_store._write_slot():
+            pass
+        assert not kv_store._inflight, "the write stayed counted after its body ended"
     with kv_store.hold_writes(0):  # and a restore's hold starts at once
         assert kv_store._hold_by == threading.get_ident()
 

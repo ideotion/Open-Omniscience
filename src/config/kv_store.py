@@ -97,12 +97,14 @@ class KvWriteBusy(RuntimeError):
 _hold = threading.Condition()  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
 #: One token per settings write between its start and its end (they may be waiting for the gate). A SET and not a count: a write is
-#: counted by ONE call (``add``, under ``_hold``, with the hold check) and released by ONE lock-free call (``discard``, a no-op for a
+#: counted by ONE call (``add``, under ``_hold``, with the hold check) and released by ONE lock-free call (``remove``; a KeyError, caught, for a
 #: token that was never added), then ``_hold`` is taken only to wake a waiting hold. The release takes no lock because
 #: ``Condition.__enter__`` is Python code: a KeyboardInterrupt delivered there (measured on CPython 3.13 with real signals, about 5 % of
 #: interrupted writes) used to arrive before the decrement and leave the write counted for ever, so every later hold refused to start
-#: until a restart. An interrupt can still leave ``_hold``'s own lock taken (the same ``with`` hazard, pre-existing): on the main
-#: thread, KeyboardInterrupt is best effort here, and the served app's main thread is uvicorn's, which handles SIGINT itself.
+#: until a restart. An interrupt can still leave ``_hold``'s own lock taken (the same ``with`` hazard, pre-existing): every later
+#: settings save and every restore hold then blocks at ``with _hold:`` until the process restarts. That needs a KeyboardInterrupt on
+#: the MAIN thread (a CLI script that saves settings there; the served app's main thread is uvicorn's, which handles SIGINT itself), so
+#: it is best effort here, and the lock is taken only when there is a hold to wake, to keep that exposure as small as it can be.
 _inflight: set[object] = set()
 
 
@@ -162,9 +164,13 @@ def _write_slot() -> Iterator[int]:
             epoch = _epoch
         yield epoch
     finally:
-        _inflight.discard(token)  # one C call, no lock: an interrupt lands before it or after it, never inside; no-op if never added
-        with _hold:  # only to wake a hold that is waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
-            _hold.notify_all()
+        try:
+            _inflight.remove(token)  # one C call, no lock: an interrupt lands before it or after it, never inside
+        except KeyError:  # never counted (the holder passing through, a refused write): nothing to wake
+            pass
+        else:
+            with _hold:  # only to wake a hold waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
+                _hold.notify_all()
 
 
 _REFUSED_TEXT = (
