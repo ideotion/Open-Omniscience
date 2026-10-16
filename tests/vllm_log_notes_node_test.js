@@ -33,4 +33,6 @@ const why = vllmLogNotes({ start_outcome: { preserved_log_reason: "REASON-TEXT" 
 assert(why.length === 1 && why[0].indexOf("REASON-TEXT") !== -1, "the reason there is no copy is named");
 const both = vllmLogNotes({ start_outcome: { preserved_log_path: "/p", preserved_log_reason: "R" } });
 assert(both.length === 1 && both[0].indexOf("/p") !== -1, "a path wins over a reason");
+const pend = vllmLogNotes({ start_outcome: { preserved_log_reason: "STILL-COPYING", preserved_log_pending: true } });
+assert(pend.length === 1 && pend[0] === "STILL-COPYING", "a copy in progress is said as it is, not as 'no copy'");
 console.log("VLLM LOG NOTES OK");

@@ -2068,6 +2068,7 @@
       if (lg.tail_note) out.push(String(lg.tail_note));
       if (lg.held_back_note) out.push(String(lg.held_back_note));
       if (o.preserved_log_path) out.push(t("A complete copy of this failed start, with the passphrase taken out:") + " " + o.preserved_log_path);
+      else if (o.preserved_log_pending) out.push(String(o.preserved_log_reason));
       else if (o.preserved_log_reason) out.push(t("No complete copy of this failed start:") + " " + o.preserved_log_reason);
       return out;
     }

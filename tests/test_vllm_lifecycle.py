@@ -2464,3 +2464,44 @@ def test_an_unfinished_last_line_of_a_running_servers_log_is_held_back(monkeypat
     assert _KEY[:8] not in json.dumps(V.failure_excerpt(limit=2000))
     monkeypatch.setattr(V, "process_alive", lambda: False)
     assert "loading" in V.server_log_tail()["tail"], "a finished log is shown whole"
+
+
+def test_start_notes_an_unpolled_exit_and_waits_for_its_copy_before_it_truncates_the_log(monkeypatch):
+    """The old server exited and nobody polled: start() itself notes it, and the copy reads the log BEFORE the new start opens it "wb"."""
+    V.venv_python().parent.mkdir(parents=True, exist_ok=True)
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V._write_marker("0.25.1")
+    monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192})
+    monkeypatch.setattr(V, "is_running", lambda: False)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("the old server's reason\n", encoding="utf-8")
+
+    class _Dead:
+        pid = 31337
+
+        def poll(self):
+            return 1
+
+    class _Live:
+        pid = 31338
+
+        def poll(self):
+            return None
+
+    seen = {}
+
+    def slow_copy(pid, code):
+        import time as _t
+
+        _t.sleep(0.3)  # long enough that a start which did not wait would have truncated the log by now
+        seen["log_at_copy"] = V.server_log_path().read_text(encoding="utf-8")
+        return "/kept.log", None
+
+    monkeypatch.setattr(V, "_proc", _Dead())
+    monkeypatch.setattr(V, "_exits_noted", set())
+    monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
+    monkeypatch.setattr(V, "_preserve_failed_log_result", slow_copy)
+    V.start("my/model", popen=lambda argv, **kw: _Live())
+    assert seen["log_at_copy"] == "the old server's reason\n"
+    assert 31337 in V._exits_noted

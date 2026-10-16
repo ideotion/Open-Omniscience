@@ -1039,18 +1039,19 @@ def start_outcome() -> dict:
     failure that is where the reason is: EngineCore is a child of the API server, so it
     prints its traceback first and the parent's stack follows it.
     """
-    if _proc is None:
+    proc = _proc
+    if proc is None:
         return {
             "state": "not-started",
             "detail": "no vLLM server was started by this process",
         }
-    code = _proc.poll()
+    code = proc.poll()
     if code is None:
         if is_running():
-            return {"state": "ready", "detail": "the server is answering", "pid": _proc.pid}
+            return {"state": "ready", "detail": "the server is answering", "pid": proc.pid}
         return {
             "state": "starting",
-            "pid": _proc.pid,
+            "pid": proc.pid,
             "detail": (
                 "the server process is alive but not answering yet -- a model load takes "
                 "tens of seconds; this is the normal path, not a failure"
@@ -1081,40 +1082,43 @@ def start_outcome() -> dict:
     # TRANSITION is a journal, not a side effect; it is the only place an exit is
     # reliably observed, and the per-pid guard means calling this a hundred times writes
     # one line. Never raises (the recorder swallows), so a read stays a read.
-    pid = getattr(_proc, "pid", None)
-    if pid is not None and pid not in _exits_noted:
-        _exits_noted.add(pid)
-        _exit_preserved[pid] = (None, _COPY_PENDING_REASON if code != 0 else None)
-        excerpt = {}
-        try:
-            # 1200, not the 400 this used to pass: the excerpt is the ONE record that
-            # survives the next start truncating the log, and a bounded window that
-            # stops before the traceback is a record of everything except the answer.
-            excerpt = failure_excerpt(limit=_JOURNAL_EXCERPT_CHARS)
-        except Exception:  # noqa: BLE001 - a log read must never break a status probe
+    pid = getattr(proc, "pid", None)
+    with _exit_lock:
+        if pid is not None and pid not in _exits_noted:
+            _exits_noted.add(pid)
+            _exit_preserved[pid] = (None, _COPY_PENDING_REASON if code != 0 else None)
             excerpt = {}
-        copying = code != 0
-        _record_start_attempt({
-            "at": time.time(),
-            "event": "exited",
-            "pid": pid,
-            "returncode": code,
-            "signature": excerpt.get("signature"),
-            "advice": excerpt.get("advice"),
-            "excerpt": excerpt.get("excerpt"),
-            "full_log": None,
-            "full_log_reason": _COPY_PENDING_REASON if copying else None,
-        })
-        if copying:
-            _start_exit_copy(pid, code)
-        else:
-            _exit_preserved[pid] = (None, None)
+            try:
+                # 1200, not the 400 this used to pass: the excerpt is the ONE record that
+                # survives the next start truncating the log, and a bounded window that
+                # stops before the traceback is a record of everything except the answer.
+                excerpt = failure_excerpt(limit=_JOURNAL_EXCERPT_CHARS)
+            except Exception:  # noqa: BLE001 - a log read must never break a status probe
+                excerpt = {}
+            copying = code != 0
+            _record_start_attempt({
+                "at": time.time(),
+                "event": "exited",
+                "pid": pid,
+                "returncode": code,
+                "signature": excerpt.get("signature"),
+                "advice": excerpt.get("advice"),
+                "excerpt": excerpt.get("excerpt"),
+                "full_log": None,
+                "full_log_reason": _COPY_PENDING_REASON if copying else None,
+            })
+            if copying:
+                _start_exit_copy(pid, code)
+            else:
+                _exit_preserved[pid] = (None, None)
     if pid is not None and pid in _exit_preserved:
         kept_path, kept_reason = _exit_preserved[pid]
         if kept_path:
             out["preserved_log_path"] = kept_path
         elif kept_reason:
             out["preserved_log_reason"] = kept_reason
+            if kept_reason == _COPY_PENDING_REASON:
+                out["preserved_log_pending"] = True
     return out
 
 
@@ -1742,6 +1746,8 @@ def vram_fit(model: str, vram_mb: int | None) -> dict:
 #: Exits already journalled, keyed by pid, so a probe called many times records a
 #: transition ONCE. Process-local: a restart re-reads the file, never re-writes it.
 _exits_noted: set[int] = set()
+#: Held while an exit is noted and its copy registered, and by `start()` from noting the old server's exit to installing the new one.
+_exit_lock = threading.RLock()
 #: pid -> (preserved path, reason it was not kept), so every later poll of the same exit still says where the log is or why it is not.
 _exit_preserved: dict[int, tuple[str | None, str | None]] = {}
 
@@ -2416,21 +2422,27 @@ def start(
     # invisible: a gated/misspelled HF repo, a missing token, or a CUDA OOM all ended
     # as "not running" with no explanation anywhere in the app. Opened in "wb" so each
     # start describes the CURRENT attempt and the file cannot grow without bound.
-    log_fh = None
-    _wait_for_exit_copies()
-    try:
-        server_log_path().parent.mkdir(parents=True, exist_ok=True)
-        log_fh = server_log_path().open("wb")
-    except OSError:  # noqa: BLE001 - losing the log must never block the start itself
+    # ONE LOCK from noting the old server's exit to the new one being installed: a poll that noted the exit AFTER this start truncated the
+    # log would copy the new server's log under the old one's name, and a copy this start did not wait for would read a log being truncated.
+    with _exit_lock:
+        old = _proc
+        if old is not None and old.poll() is not None:
+            start_outcome()  # an exit nobody polled is noted (and its copy started) now, before the log is opened "wb"
+        _wait_for_exit_copies()
         log_fh = None
-    out = log_fh or subprocess.DEVNULL
-    # HF_HOME points the server's weight cache at the app's own model folder
-    # (2026-08-04 maintainer ask). vLLM downloads and reads weights through
-    # huggingface_hub, which honours it, so this is the whole mechanism -- and it must
-    # be the SAME answer ``hf_cache_dir()`` gives, or a probe and a download would
-    # disagree about where the weights are.
-    proc = run(argv, stdout=out, stderr=subprocess.STDOUT, env=_server_env())  # noqa: S603
-    _proc = proc
+        try:
+            server_log_path().parent.mkdir(parents=True, exist_ok=True)
+            log_fh = server_log_path().open("wb")
+        except OSError:  # noqa: BLE001 - losing the log must never block the start itself
+            log_fh = None
+        out = log_fh or subprocess.DEVNULL
+        # HF_HOME points the server's weight cache at the app's own model folder
+        # (2026-08-04 maintainer ask). vLLM downloads and reads weights through
+        # huggingface_hub, which honours it, so this is the whole mechanism -- and it must
+        # be the SAME answer ``hf_cache_dir()`` gives, or a probe and a download would
+        # disagree about where the weights are.
+        proc = run(argv, stdout=out, stderr=subprocess.STDOUT, env=_server_env())  # noqa: S603
+        _proc = proc
     _record_start_attempt({
         "at": time.time(),
         "event": "spawned",

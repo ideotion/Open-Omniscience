@@ -32,6 +32,13 @@ import src.llm.vllm_lifecycle as V
 from tests.js_source_helper import app_js
 
 
+@pytest.fixture(autouse=True)
+def _no_stray_copy_threads():
+    """A failed log's copy runs on a thread: none may outlive its test and write into the next one's journal."""
+    yield
+    V._wait_for_exit_copies()
+
+
 @pytest.fixture()
 def gpu8(monkeypatch, tmp_path):
     """An 8 GB CUDA card, vLLM installed, nothing running — the maintainer's machine."""
@@ -438,3 +445,44 @@ def test_a_start_waits_for_a_pending_copy_before_truncating_the_log(monkeypatch)
     V._wait_for_exit_copies()
     order.append("truncate")
     assert order == ["copied", "truncate"]
+
+
+def test_two_probes_of_one_exit_journal_it_once_and_start_one_copy(gpu8, monkeypatch, tmp_path):
+    import threading
+
+    monkeypatch.setattr(V, "_proc", _Proc(code=1, pid=991))
+    monkeypatch.setattr(V, "_exits_noted", set())
+    monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
+    copies = []
+    monkeypatch.setattr(V, "_preserve_failed_log_result", lambda pid, code: copies.append(pid) or ("/k.log", None))
+    go = threading.Barrier(6)
+
+    def probe():
+        go.wait(10)
+        V.start_outcome()
+
+    ts = [threading.Thread(target=probe) for _ in range(6)]
+    [t.start() for t in ts]
+    [t.join(10) for t in ts]
+    V._wait_for_exit_copies()
+    assert copies == [991]
+    assert len([r for r in V.start_history() if r.get("event") == "exited"]) == 1
+
+
+def test_a_pending_copy_is_flagged_so_the_page_does_not_call_it_missing(gpu8, monkeypatch, tmp_path):
+    monkeypatch.setattr(V, "_proc", _Proc(code=1, pid=992))
+    monkeypatch.setattr(V, "_exits_noted", set())
+    monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
+    import threading
+
+    release = threading.Event()
+    monkeypatch.setattr(V, "_preserve_failed_log_result", lambda pid, code: (release.wait(10), ("/k.log", None))[1])
+    out = V.start_outcome()
+    assert out["preserved_log_pending"] is True
+    release.set()
+    V._wait_for_exit_copies()
+    assert "preserved_log_pending" not in V.start_outcome()
