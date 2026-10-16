@@ -35,7 +35,7 @@ def test_the_name_list_stops_at_its_byte_budget_and_says_how_many_matched(tmp_pa
     assert got["matched"] == 2000 and got["listed"] < 2000 and got["listed"] == len(got["files"])
     assert len(json.dumps(got["files"], separators=(",", ":"))) <= nl._FILES_BYTES
     # the worst case of the whole reading, every family present at the budget: well under 8 KB
-    assert len(json.dumps({"runtime": nl._runtime_versions(), "installed": {n: "9.9.9" for n in nl._DISTRIBUTIONS}, "mapped": got}, separators=(",", ":"))) < 8000
+    assert len(json.dumps({"runtime": nl._runtime_versions(), "installed": dict.fromkeys(nl._DISTRIBUTIONS, "9.9.9"), "mapped": got}, separators=(",", ":"))) < 8000
 
 
 def test_the_runtime_library_versions_are_read_from_the_loaded_library():

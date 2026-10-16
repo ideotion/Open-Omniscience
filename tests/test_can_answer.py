@@ -125,13 +125,13 @@ def test_the_three_blocks_together_stay_within_the_stated_worst_case(tmp_path):
     reading = {
         "vmstat": {"oom_kill": big},
         "cgroup": {"version": 2, "path": "/" + "u" * oc._PATH_CLIP, "id": big,
-                   "values": {k: big for k in oc._V2_VALUES}, "events": {k: big for k in oc._V2_EVENTS}},
+                   "values": dict.fromkeys(oc._V2_VALUES, big), "events": dict.fromkeys(oc._V2_EVENTS, big)},
     }
     between = oc.compare(reading, reading, same_boot=True)
     counters = {"previous_session_start": reading, "this_session_start": reading, "between": between, "note": "n" * 400}
     names = [f"libxml{'x' * 60}{i}.so" for i in range(400)]
     f = tmp_path / "maps"
     f.write_text("\n".join(f"7f00-7f01 r-xp 00000000 08:01 1 /x/{n}" for n in names) + "\n")
-    libs = {"runtime": nl._runtime_versions(), "installed": {n: "9.9.99.9" for n in nl._DISTRIBUTIONS}, "mapped": nl._mapped(f)}
+    libs = {"runtime": nl._runtime_versions(), "installed": dict.fromkeys(nl._DISTRIBUTIONS, "9.9.99.9"), "mapped": nl._mapped(f)}
     sizes = {k: len(json.dumps(v, separators=(",", ":"))) for k, v in (("oom_counters", counters), ("native_libs", libs))}
     assert sizes["oom_counters"] < 5000 and sizes["native_libs"] < 8000, sizes

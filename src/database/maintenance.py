@@ -1838,7 +1838,7 @@ _DEADLINE_KEY = "_oo_statement_deadline_at"
 #: The enclosing block's progress handler, kept beside its expiry so that a nested block can put it back when it exits.
 #: The progress handler each ``statement_deadline`` block armed on a session, so a nested block's exit can re-arm its enclosing one. Kept
 #: here and not in ``session.info`` (which the records guard reads as a log name): a weak map, so a session that goes takes its entry.
-_CHECKS: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
+_CHECKS: weakref.WeakKeyDictionary[Any, Any] = weakref.WeakKeyDictionary()
 
 
 def _checks_get(session):
