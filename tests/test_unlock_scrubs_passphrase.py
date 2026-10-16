@@ -228,7 +228,7 @@ def test_a_short_key_that_encrypt_in_place_refused_is_answered_in_the_fixed_word
 
 
 def test_a_drivers_failure_at_the_checkpoint_names_its_class_once_and_none_of_its_words(caplog, monkeypatch):
-    """R136: a database driver's error is its class only, so the line says the class ONCE ("OperationalError (a database driver's text is
+    """R140: a database driver's error is its class only, so the line says the class ONCE ("OperationalError (a database driver's text is
     withheld)") and not "OperationalError: OperationalError ...", and follows it with none of the driver's words."""
     import sqlite3
 

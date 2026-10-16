@@ -787,7 +787,7 @@ def test_the_sweep_reads_the_whole_bulletin_directory():
 
 #: STRICT: a record of these modules keeps the exception's CLASS (``type``) and a log line goes through ``log_failure``; nothing else
 #: may be handed a caught exception, except where the person who just asked is told the words (the scrub keeps the sentence and takes
-#: the held passphrase out of it): the evidence plan's folder check (a route's refusal goes through ``http_detail``, R136, which is a
+#: the held passphrase out of it): the evidence plan's folder check (a route's refusal goes through ``http_detail``, R140, which is a
 #: scrubbing call here: a driver's error is its class, any other keeps its scrubbed words). Each such site is a line of
 #: :data:`_SWEEP_WORDS_KEPT`, keyed like :data:`_BUNDLE_ALLOWED`: a record written from one of those functions (``edition["x"] =
 #: exception_text(exc)``) is a line the table does not hold.

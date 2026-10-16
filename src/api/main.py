@@ -1182,7 +1182,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         if note is not None:
             detail = f"internal error: {note}"
         elif is_driver_text(exc):
-            # R136: a database driver's error, or a wrapper quoting one, is its class only (http_detail); the branch below keeps
+            # R140: a database driver's error, or a wrapper quoting one, is its class only (http_detail); the branch below keeps
             # the words of every other exception, with this handler's own fail-closed withheld sentence.
             detail = http_detail(exc, "internal error: ")
         else:

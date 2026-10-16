@@ -444,7 +444,7 @@ _MONITORING_NOT_RECORDS: dict[str, dict[str, int]] = {
     },
 }
 
-#: ``src/api`` (R136). Every ``detail`` and every response or record field that carries a caught exception's text goes through
+#: ``src/api`` (R140). Every ``detail`` and every response or record field that carries a caught exception's text goes through
 #: ``http_detail`` / ``record_text`` (the per-link rule: a database driver's error, or a wrapper that quotes one, is its class only; every
 #: other exception keeps its words with the held passphrases taken out). What is left, line by line and counted: attributes of OUR OWN
 #: typed refusals (``exc.status``, ``exc.state``, ``exc.report``, ``exc.i18n``/``vars``: fixed words the code wrote), callbacks that hand the
@@ -544,7 +544,7 @@ NOT_RECORDS.update(_MONITORING_NOT_RECORDS)
 
 
 
-#: ``raise HTTPException(...) from exc`` in ``src/api`` (R136): the chain rides the HTTPException the route answers with, and nothing logs
+#: ``raise HTTPException(...) from exc`` in ``src/api`` (R140): the chain rides the HTTPException the route answers with, and nothing logs
 #: an HTTPException's chain (Starlette answers it; ``unhandled_exception_handler`` is for the exceptions that are NOT HTTPExceptions);
 #: the exc_info sinks are read by ``test_exception_sinks_scrub``. The ``from`` is taken off the scanned source, line for line, so every
 #: OTHER use of the exception on the raise (its detail) is still read.
@@ -658,7 +658,7 @@ _API_RAISE = "def f():\n    try:\n        g()\n    except Exception as exc:\n   
     ],
 )
 def test_an_api_detail_built_from_an_exception_outside_the_helper_is_reported(detail):
-    """R136's guard, with its negative controls: every spelling of an exception's text in a ``detail`` is a finding in ``src/api``."""
+    """R140's guard, with its negative controls: every spelling of an exception's text in a ``detail`` is a finding in ``src/api``."""
     assert _found("src/api/x.py", _API_RAISE.format(detail=detail)), detail
 
 

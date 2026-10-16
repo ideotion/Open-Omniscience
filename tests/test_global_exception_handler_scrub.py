@@ -288,7 +288,7 @@ def test_a_response_for_the_encode_error_itself_is_its_class_and_a_fixed_note(bo
 
 
 def test_a_database_drivers_error_is_answered_by_its_class_alone(both_held):
-    """R136: the screen that shows the answer is photographed; an engine's words (a statement, a fragment of a key) never are on it."""
+    """R140: the screen that shows the answer is photographed; an engine's words (a statement, a fragment of a key) never are on it."""
     import sqlite3
 
     resp = _call(sqlite3.OperationalError("near \"PRAGMA key='fragment-of-a-key'\": syntax error"))

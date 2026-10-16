@@ -636,7 +636,7 @@ def _close_after_checkpoint(conn, passphrase: str | None) -> None:
         # WARNING, not DEBUG: a write-back that fails (a full drive, an I/O error) is invisible
         # otherwise -- close() then fails the same way silently, the verify reports success and
         # the notice ends -- and the next thing the person meets is init_db on the same drive.
-        # A database driver's error is its class only (R136: the words of an engine can quote what it was handed, so "disk full" and
+        # A database driver's error is its class only (R140: the words of an engine can quote what it was handed, so "disk full" and
         # "I/O error" are no longer told apart here; the class is), and any other keeps its words with the typed key out of them
         # BEFORE the first line is taken and cut.
         said = http_detail(exc, "", passphrase, withheld="its text is withheld")

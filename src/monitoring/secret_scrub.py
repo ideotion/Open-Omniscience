@@ -765,7 +765,7 @@ def is_driver_text(exc: BaseException) -> bool:
 def http_detail(
     exc: BaseException, prefix: str = "", *secrets: str | None, limit: int | None = None, withheld: str | None = None
 ) -> str:
-    """The ``detail`` of an HTTP error that carries a caught exception's text (R136): ``prefix`` (a literal the caller wrote) and then
+    """The ``detail`` of an HTTP error that carries a caught exception's text (R140): ``prefix`` (a literal the caller wrote) and then
     what :func:`record_text` keeps of ``exc`` (``withheld``: the caller's own words for a text the scrub cannot make clean). A database driver's error, a wrapper that quotes one, anywhere in the chain, or a
     ``UnicodeError`` is its CLASS only; any other exception keeps its words (the prose a refusal means the user to read), with every
     secret handed in and every passphrase the process holds taken out BEFORE any cut. When the scrub cannot run, the class is all
@@ -773,7 +773,7 @@ def http_detail(
     is photographed and shared, so a text that is not stored is still a place a passphrase must not be. Never raises."""
     try:
         if any(is_driver_error(link) for link in _reachable(exc)):
-            # R136: a driver's error ANYWHERE in the chain makes this the class only, whatever the wrapper's own words say
+            # R140: a driver's error ANYWHERE in the chain makes this the class only, whatever the wrapper's own words say
             said = f"{type(exc).__qualname__} (a database driver's text is withheld)"
             said = said if limit is None else said[:limit]
         else:

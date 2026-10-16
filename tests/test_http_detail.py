@@ -1,4 +1,4 @@
-"""``secret_scrub.http_detail``: the one call every HTTP ``detail`` that carries an exception goes through (R136)."""
+"""``secret_scrub.http_detail``: the one call every HTTP ``detail`` that carries an exception goes through (R140)."""
 from __future__ import annotations
 
 import sqlite3
@@ -49,7 +49,7 @@ def test_a_chained_driver_cause_decides_for_a_wrapper_whose_own_text_is_clean(he
     except _Wrapper as exc:
         out = http_detail(exc)
     assert PASS not in out
-    assert "restore stopped" not in out and "_Wrapper" in out, "the driver in the chain makes it the class only (R136), words included"
+    assert "restore stopped" not in out and "_Wrapper" in out, "the driver in the chain makes it the class only (R140), words included"
 
 
 def test_any_other_exception_keeps_its_words_with_the_passphrase_taken_out(held):
@@ -94,7 +94,7 @@ def test_the_class_only_branch_is_what_keeps_the_drivers_words_out(held, monkeyp
     assert "pw_fragment_7" in http_detail(exc), "the control: without the rule the words pass"
 
 
-# --- the chain walk: each link a traceback print can reach decides (R136) --------------------------------------------------------------
+# --- the chain walk: each link a traceback print can reach decides (R140) --------------------------------------------------------------
 
 
 def _driver(text=f"no such table: {PASS}"):
