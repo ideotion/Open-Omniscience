@@ -2675,6 +2675,7 @@ def bulk_llm(
                                         "aborted": True, "reason": http_detail(res.error, limit=200)})
                             return
                         failed += 1
+                        assert res.error is not None  # a not-ok result always carries its error
                         yield emit({"event": "item", "i": pos, "total": total,
                                     "article_id": aid, "title": title, "status": "failed",
                                     "error": http_detail(res.error, limit=200)})

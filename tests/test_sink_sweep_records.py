@@ -503,6 +503,7 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/api/llm.py': {
         ('bulk_llm._stream', 'if isinstance(res.error, LLMUnavailable):'): 1,
+        ('bulk_llm._stream', 'assert res.error is not None  # a not-ok result always carries its error'): 1,
         ('bulk_llm._stream', '"error": http_detail(res.error, limit=200)})'): 1,
         ('bulk_llm._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
     },
