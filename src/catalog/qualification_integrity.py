@@ -1117,7 +1117,6 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     documentation asks a user to run this.
     """
     from src.config.kv_store import kv_set_json
-    from src.database.models import Source
     from src.database.session import session_scope
 
     idx = _read_repair_index(strict=True)   # raises rather than rewrite an index it could not read
