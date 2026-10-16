@@ -194,6 +194,16 @@ plus the 256 MiB the phase holds before it (`reach_bytes`, up to 1,688 MiB; the 
 the room read from this machine, as a warning (it starts; the kernel may kill it in the node pass if the file's ids span as far) or "unchecked" with the reason when no limit could be read. The 8 bytes per tracked id are named and not counted, because
 they are known only after the cut.
 
+**The OSM-only gazetteer at 16 x, and the guard on the real path.** `osm_reference_run.py --gazetteer osm-only` on the 16 x composite in the
+3.5 GiB / 2-core envelope, with the guard in place: ingest ok in 1,335 s wall (the earlier 642 s run was on a quieter machine; this one shared it
+with test suites, so read it as an upper figure), peak 823 MB, the same `osm.db` size (1,462,594,696 B). The gazetteer phase took **1.04 s**
+and peaked at **141 MB**: 288 `place=*` objects read, 288 entries written (4 x the 72 of the 4 x composite, so it scales with the places and
+nothing else), 40,888 bytes, no Wikidata tag in the composite, so the join plan is 0 requests. The guard's record in that run: `sparse_mem_array`
+for 18,492,628 locations (295,882,048 B settled), room 3,570,827,264 B from `cgroup_v1`, `max_locations_in_memory` 91,927,552, so the cut used
+about a fifth of what the guard allows and the check cost nothing measurable. The room notes show the walk up the envelope's nested cgroups.
+What this does NOT say: how many real places (and QIDs, so how many 10-second Wikidata requests) a country carries; that is the operator's
+`--plan` on the kept store, and the synthetic tiles repeat one city's places.
+
 ## What stays open until a real run
 
 - **Time and memory on the real 2-core VM** (above: the cut's memory no longer grows with the country in this sandbox; whether it holds at a hundred times the size is the run's to say). This sandbox's CPU is not that machine's.
