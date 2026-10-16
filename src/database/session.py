@@ -597,9 +597,10 @@ def init_db() -> None:
     # rebuild carries the columns that exist and needs the rest present) and BEFORE the seeder, which asks
     # whether the store can hold several feeds of one domain. Additive column + backfill, then one
     # cascade-proof table rebuild; a refusal is logged by class and the store keeps one feed per domain.
-    _init_step("ensure_source_composite_key")
+    _init_step("import:source_identity")
     from src.database.source_identity import ensure_source_composite_key
 
+    _init_step("ensure_source_composite_key")
     ensure_source_composite_key(engine)
 
     # R71 (b): the natural key of a restored text-keyed row (places, Wikidata items).
