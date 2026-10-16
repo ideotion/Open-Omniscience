@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import sqlite3
 import subprocess
 import sys
