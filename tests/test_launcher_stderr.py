@@ -357,3 +357,24 @@ def test_only_the_newest_earlier_ends_are_looked_up_for_a_launcher_record(dd):
         recs += _session(i, pid=900 + i, signal="SIGABRT")
     out = ee.earlier_unclean_ends(None, records=recs)["sessions"]
     assert ["launcher_stderr" in r for r in out] == [True] * ee.STDERR_ROWS_SHOWN + [False] * (len(out) - ee.STDERR_ROWS_SHOWN)
+
+
+@posix_only
+def test_a_pid_file_of_a_dead_launcher_is_swept_at_the_next_launch_and_a_live_one_is_not(tmp_path):
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\nexit 0\n")
+    diag = root / "data" / "diagnostics"
+    diag.mkdir(parents=True)
+    gone = subprocess.Popen(["true"])
+    gone.wait()
+    alive = subprocess.Popen(["sleep", "30"])
+    try:
+        dead_file, live_file, odd_file = diag / f".launcher_stderr.{gone.pid}.pid", diag / f".launcher_stderr.{alive.pid}.pid", diag / ".launcher_stderr.notapid.pid"
+        for f in (dead_file, live_file, odd_file):
+            f.write_text("1\n", encoding="utf-8")
+        _run_launcher(root, env)
+        assert not dead_file.exists(), "the launcher that wrote this one is gone: its file is swept now, not after a day"
+        assert live_file.exists(), "a launcher that is still running keeps its file"
+        assert odd_file.exists(), "a name that is not a pid is left to the day-old rule"
+    finally:
+        alive.kill()
+        alive.wait()

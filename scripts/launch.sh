@@ -261,7 +261,20 @@ if [ "${OO_EPHEMERAL:-}" != "1" ] && command -v awk >/dev/null 2>&1 && command -
     STDERR_PIDFILE="$_dd/diagnostics/.launcher_stderr.$$.pid"
     { : >> "$STDERR_RECORD"; } 2>/dev/null || STDERR_RECORD=""
     { : > "$STDERR_PIDFILE"; } 2>/dev/null || STDERR_RECORD=""
-    # pid files left by a launcher that was killed outright
+    # pid files left by a launcher that was killed outright: a file named for a launcher pid that no longer runs is removed now. Where
+    # /proc exists it is the test of "runs" (kill -0 also fails for another user's live process); a pid that has been reused by another
+    # process keeps its file, and the day-old rule below clears it.
+    for _f in "$_dd/diagnostics"/.launcher_stderr.*.pid; do
+        [ -e "$_f" ] || continue
+        _p="${_f##*/.launcher_stderr.}"; _p="${_p%.pid}"
+        case "$_p" in ''|*[!0-9]*) continue ;; esac
+        [ "$_p" = "$$" ] && continue
+        if [ -d /proc/self ]; then
+            [ -d "/proc/$_p" ] || rm -f "$_f" 2>/dev/null || true
+        else
+            kill -0 "$_p" 2>/dev/null || rm -f "$_f" 2>/dev/null || true
+        fi
+    done
     find "$_dd/diagnostics" -maxdepth 1 -name '.launcher_stderr.*.pid' -mtime +1 -exec rm -f {} + 2>/dev/null || true
     # Bounded: the newest 100 lines are five full launches of a crash loop.
     if [ -n "$STDERR_RECORD" ] && [ "$({ wc -l < "$STDERR_RECORD"; } 2>/dev/null || echo 0)" -gt 100 ]; then
