@@ -81,6 +81,58 @@ def test_the_facet_holds_places_only_and_nothing_outside_the_border(osm_lane_dir
     assert not P.search_names("outside")["items"], "the cafe beyond the border was indexed"
 
 
+def test_a_notable_place_leads_the_matches_however_long_its_names_are(osm_lane_dir):
+    """Found on a real extract: BM25 prefers the shortest document, so a town named in five languages (a long
+    document) came 16th of 16 behind a post office with the same name, and the omnibar shows only the first three.
+    On the fixture the village (node 8, notable, one more name than the cafe or the bakery) came fifth of six."""
+    ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    found = P.search_names("fixture", limit=50)
+    notable = [it["object"] for it in found["items"] if it["notable"]]
+    assert set(notable) == {"relation/100", "node/8"}, "the fixture's two notable matches"
+    assert set(_objects(found)[: len(notable)]) == set(notable), (
+        "a notable match sat behind a plain one: " + str([(it["object"], it["notable"]) for it in found["items"]])
+    )
+    top_two = P.search_names("fixture", limit=2)
+    assert {it["object"] for it in top_two["items"]} == {"relation/100", "node/8"}, "the first two rows are not the notable ones"
+    assert top_two["total"] == found["total"], "the count of matches must not depend on the page size"
+
+
+def test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_rows(osm_lane_dir, monkeypatch):
+    """A 2.9 M-object country peaked at 2.2 GB, 0.8 GB of it ``.all()`` over every object while the index was built, and
+    that grows with the count on a VM that has 3.5 GB. Pages of two rows must read the table in several statements and
+    leave the same index as one big page."""
+    from sqlalchemy import event
+
+    from src.versioned import store
+
+    ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    whole = {q: _objects(P.search_names(q, limit=50)) for q in ("fixture", "cafe", "fixtureville")}
+    counts = P.build_search_index("ZZZ")
+    monkeypatch.setattr(P, "READ_PAGE", 2)
+    reads: list[str] = []
+    first: list[tuple] = []
+    eng = store.lane_engine("osm")
+
+    def spy(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT") and "osm_objects" in statement and "LIMIT" in statement.upper():
+            reads.append(statement)
+            first or first.append((statement, parameters))
+
+    event.listen(eng, "before_cursor_execute", spy)
+    try:
+        paged_counts = P.build_search_index("ZZZ")
+    finally:
+        event.remove(eng, "before_cursor_execute", spy)
+    assert len(reads) >= 4, f"the objects were read in {len(reads)} statement(s), not a page at a time"
+    # The rowid must drive each page. Through ``ix_osm_objects_country_kind`` SQLite looks up every row of the country and
+    # sorts them to keep one page, so the build costs the square of the country (measured 2026-10-15: the lane runs no ANALYZE).
+    with eng.connect() as c:
+        plan = " | ".join(r[-1] for r in c.exec_driver_sql("EXPLAIN QUERY PLAN " + first[0][0], first[0][1]))
+    assert "USE TEMP B-TREE FOR ORDER BY" not in plan and "ix_osm_objects_country_kind" not in plan, plan
+    assert paged_counts == counts, "paging changed what was indexed"
+    assert {q: _objects(P.search_names(q, limit=50)) for q in whole} == whole
+
+
 def test_a_query_is_never_read_as_fts_syntax(osm_lane_dir):
     ingest.ingest_country(FIXTURE, "ZZ", reader="python")
     for q in ('fixture" OR "x', "NEAR(cafe", "cafe*", "-cafe", "AND"):

@@ -378,6 +378,68 @@ def test_a_snippet_is_parts_around_the_match_never_offsets(lane):
     assert all(set(p) == {"text", "hit"} for p in snip)
 
 
+_DRIVER_WORDS = "zq-driver-words"
+_STATEMENT = "SELECT zq_secret_column FROM t WHERE v = ?"
+_BOUND = {"v": "zq-bound-value"}
+
+
+def _driver_error(code):
+    cls = type("DatabaseError", (Exception,), {"__module__": "sqlite3"})
+    exc = cls(_DRIVER_WORDS)
+    exc.sqlite_errorcode = code
+    return exc
+
+
+@pytest.mark.parametrize(
+    "fault, raises",
+    [
+        # SQLCipher 4.19 answers a damaged page with the real code-11 error, where 4.12 answered an empty MemoryError: both end the search
+        (lambda: OperationalError("SELECT 1", {}, _driver_error(11)), True),
+        (lambda: MemoryError(), True),
+        # a wrong key (26), a lock (5) and a text the decompressor cannot read are not the lane's damage: the hit stands without a snippet
+        (lambda: OperationalError("SELECT 1", {}, _driver_error(26)), False),
+        (lambda: OperationalError("SELECT 1", {}, _driver_error(5)), False),
+        (lambda: ValueError("unreadable text"), False),
+    ],
+)
+def test_a_snippet_read_that_hits_damage_ends_the_search_and_any_other_fault_only_drops_the_snippet(lane, monkeypatch, fault, raises):
+    _warm(title="Dam", latest=(971, "The dam on the Vardar river failed.", T0))
+    _index()
+
+    def boom(*a, **k):
+        raise fault()
+
+    monkeypatch.setattr(S, "_indexed_body", boom)
+    if raises:
+        with pytest.raises((OperationalError, MemoryError)):
+            _search("Vardar")
+    else:
+        out = _search("Vardar")
+        assert out["total"] == 1 and out["items"][0]["snippet"] is None
+
+
+def test_the_route_answers_a_corruption_raised_by_a_snippet_read_with_the_fixed_unreadable_reason_and_no_driver_text(lane, monkeypatch, caplog):
+    """Through the REAL search(): a snippet read that raises a code-11 error ends it, the route answers the fixed reason, and neither the
+    response nor the log line carries a word of the driver's text, the statement or a bound value."""
+    import logging
+
+    from src.api.wiki_lane_search import search_lane
+
+    _warm(title="Dam", latest=(972, "The dam on the Vardar river failed.", T0))
+    _index()
+
+    def boom(*a, **k):
+        raise OperationalError(_STATEMENT, _BOUND, _driver_error(11))
+
+    monkeypatch.setattr(S, "_indexed_body", boom)
+    with caplog.at_level(logging.DEBUG):
+        out = search_lane("Vardar", limit=5)
+    assert out["available"] is False and out["reason"] == "lane-unreadable"
+    for blob in (repr(out), caplog.text):
+        assert not any(w in blob for w in ("zq-driver-words", "zq_secret_column", "zq-bound-value")), blob
+    assert any(r.levelno == logging.WARNING for r in caplog.records), "the failure is logged, class-only, at WARNING"
+
+
 def test_a_snippet_finds_the_word_through_case_accents_and_arabic_folding():
     parts = S.snippet("Le Café de Flore", ["cafe"])
     assert {"text": "Café", "hit": True} in parts

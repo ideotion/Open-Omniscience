@@ -567,6 +567,11 @@ def _same_process(boot: dict[str, Any], state: dict[str, Any]) -> bool:
         return False
 
 
+#: The reasons the app itself gives for a shutdown it has begun (``record_shutdown_phase(reason=...)`` call sites; the memory stop's is pinned
+#: equal by a test). An allow-list, so the ledger never carries a value the sentinel file happened to hold.
+_SHUTDOWN_REASONS = frozenset({"memory exhausted", "lifespan shutdown", "data drive disconnected"})
+
+
 def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] | None) -> dict[str, Any] | None:
     """Write the ``end`` record the previous session could not write for itself, when
     the ledger's last word on it is not already an end. Dated from the sentinel (a
@@ -596,6 +601,13 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
                     "basis": "no sentinel end and no liveness tick, so the end has no time",
                     "sentinel_state": state or None})
     if rec.get("clean") is not True:
+        # The reason the app gave for the shutdown it had begun (the sentinel keeps it): a stop the kernel cut short still says why
+        # it was ending. Only a phrase of the app's own vocabulary is carried.
+        said = (prev_state or {}).get("shutdown_reason")
+        if said is not None:
+            # A string of the app's own vocabulary is carried as it is; anything else (an unknown phrase, a non-string from a
+            # damaged sidecar) is said to be unrecognised, never dropped (every absence has a reason) and never copied.
+            rec["reason"] = said if isinstance(said, str) and said in _SHUTDOWN_REASONS else "unrecognised"
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen

@@ -1181,6 +1181,11 @@ _PLANTED_BODIES = {
     "keyword-default-rebinds-label": _swap(
         "def _internal_failure(what: str, exc: BaseException) -> None:\n", "def _internal_failure(what: str, exc: BaseException, *, _label=repr) -> None:\n"
     ),
+    # a POSITIONAL-ONLY default sits in the same ``defaults`` list as the others; planted so the guard on it is held by a test and not by the reading
+    "positional-only-default-rebinds-type": _swap("def _label(exc: BaseException) -> str:\n", "def _label(exc: BaseException, type=str, /) -> str:\n"),
+    "positional-only-default-rebinds-label": _swap(
+        "def _internal_failure(what: str, exc: BaseException) -> None:\n", "def _internal_failure(what: str, exc: BaseException, _label=repr, /) -> None:\n"
+    ),
     "module-level-rebind": lambda source: source + "\n_label = repr\n",
     "module-level-type": lambda source: source + "\ntype = lambda e: str(e)\n",
 }

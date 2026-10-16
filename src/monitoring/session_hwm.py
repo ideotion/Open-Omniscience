@@ -1199,7 +1199,12 @@ def previous_why() -> tuple[dict[str, Any] | None, str | None]:
     return _read_record_why()
 
 
-def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> None:
+def pressure_taken() -> int:
+    """How many heavy snapshots this session has taken: a caller that forced one reads it before and after to know one was."""
+    return int(_PRESSURE_TAKEN)
+
+
+def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, force_why: str | None = None) -> None:
     """Fold one reading into this session's high-water marks. Best-effort, throttled.
 
     ``phase`` is a free-text label of what the app was doing (the collector pass, the
@@ -1209,7 +1214,10 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
     ``may_snapshot_threads`` is for the session ledger's liveness thread alone. Under
     a burst that holds the GIL a snapshot measured 0.3-0.6 s, which that thread can
     spare and the collector's monitor -- which feeds the memory guard every 1.5 s, at
-    exactly that moment -- cannot."""
+    exactly that moment -- cannot.
+
+    ``force_why`` (with ``may_snapshot_threads``) takes a heavy snapshot NOW with that reason, whatever the throttles say: the clean
+    stop (``scheduler.memstop``) keeps the evidence before it releases anything."""
     global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
     try:
         readings = _readings()
@@ -1228,7 +1236,9 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
             burst = _burst_due(now)
             guard = _guard_view()
             rose = _guard_rose(guard)
-            if _pressure_due(readings, now):
+            if force_why:
+                pressure = _pressure_snapshot(readings, force_why, guard, stamp)
+            elif _pressure_due(readings, now):
                 pressure = _pressure_snapshot(readings, "memory short", guard, stamp)
             elif (held := _held_due(readings, guard, rose, now)) is not None:
                 pressure = _pressure_snapshot(readings, held, guard, stamp)

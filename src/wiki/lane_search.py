@@ -74,7 +74,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database import fts
+from src.database import damage, fts
 from src.database.fts import (
     NEAR_DEFAULT,
     SearchQueryError,
@@ -2030,6 +2030,11 @@ def search(
                 except MemoryError:
                     raise
                 except Exception as exc:  # noqa: BLE001 - a snippet must never fail the search
+                    if damage.is_corruption(exc):
+                        # SQLCipher 4.12 poisons a connection with an empty MemoryError (re-raised above); 4.19 answers the real
+                        # code-11 corruption error instead. Same fact, same handling: the connection is finished, and swallowing
+                        # it here only moved the failure to the session's close (a PendingRollbackError, after the hits were built).
+                        raise
                     # The hit stands without one: the list and the total are the index's
                     # answer, and a text that cannot be read back is the indexer's to report.
                     log_failure(_LOG, f"lane search: no snippet for entry {doc.id}", exc, level=logging.DEBUG)

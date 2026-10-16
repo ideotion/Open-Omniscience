@@ -238,6 +238,7 @@
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
+        if (typeof memoryStopNoticeOnce === "function") memoryStopNoticeOnce();
       } catch (e) { /* _noteReachable has already painted the pill honestly */ }
     }
 
