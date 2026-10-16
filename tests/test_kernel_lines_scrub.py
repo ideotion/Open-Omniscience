@@ -16,6 +16,7 @@ _PID = 4321
 
 @pytest.fixture(autouse=True)
 def _held(monkeypatch):
+    monkeypatch.delenv("OO_NO_KERNEL_LOG", raising=False)
     monkeypatch.setattr(connect, "_passphrase", _KEY)
     ss.forget_held()
     yield

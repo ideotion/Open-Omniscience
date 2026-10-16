@@ -212,3 +212,70 @@ def test_without_a_deadline_nothing_is_reported_not_run(db, monkeypatch):
     monkeypatch.setattr(bm, "_build_cases", lambda s: _cases(["a", "b"], []))
     out = run_benchmark(db, repeats=1)
     assert out["summary"]["cases_not_run"] == 0 and out["summary"]["deadline"]["active"] is False
+
+
+def test_the_case_that_opens_its_own_deadline_runs_after_the_trending_cases(db, monkeypatch):
+    from src.monitoring import benchmark as bm
+
+    ran: list[str] = []
+    monkeypatch.setattr(bm, "_build_cases", lambda s: _cases(["framing", "trending", "map_data", "trending_windows"], ran))
+    run_benchmark(db, repeats=1)
+    assert ran == ["map_data", "trending", "trending_windows", "framing"]
+
+
+def test_an_error_that_is_not_the_deadlines_keeps_its_text_even_after_the_deadline(db, monkeypatch):
+    import time as _t
+
+    from src.database.maintenance import _DEADLINE_KEY
+    from src.monitoring import benchmark as bm
+
+    db.info[_DEADLINE_KEY] = _t.monotonic() + 3600
+
+    def fn():
+        db.info[_DEADLINE_KEY] = _t.monotonic() - 1
+        raise KeyError("a real bug in the case")
+
+    monkeypatch.setattr(bm, "_build_cases", lambda s: [bm._Case("x", "x", fn)])
+    row = run_benchmark(db, repeats=1)["results"][0]
+    assert "real bug" in row["error"] and not row.get("stopped_by_deadline")
+
+
+def test_a_deadline_between_repeats_keeps_the_runs_taken_and_says_so(db, monkeypatch):
+    import time as _t
+
+    from src.database.maintenance import _DEADLINE_KEY
+    from src.monitoring import benchmark as bm
+
+    db.info[_DEADLINE_KEY] = _t.monotonic() + 3600
+    ran: list[str] = []
+
+    def first_run_passes_the_deadline():
+        db.info[_DEADLINE_KEY] = _t.monotonic() - 1
+
+    monkeypatch.setattr(bm, "_build_cases", lambda s: _cases(["a"], ran, on_first=first_run_passes_the_deadline))
+    out = run_benchmark(db, repeats=3)
+    row = out["results"][0]
+    assert ran == ["a"] and row["ok"] is True and row["stopped_by_deadline"] is True
+    assert row["runs_completed"] == 1 and row["runs_asked"] == 3
+    assert out["summary"]["cases_failed"] == 0 and out["summary"]["deadline"]["reached_after_ms"] is not None
+
+
+def test_an_interrupt_on_a_later_repeat_keeps_the_earlier_runs(db, monkeypatch):
+    import time as _t
+
+    from src.database.maintenance import _DEADLINE_KEY
+    from src.monitoring import benchmark as bm
+
+    db.info[_DEADLINE_KEY] = _t.monotonic() + 3600
+    calls = {"n": 0}
+
+    def fn():
+        calls["n"] += 1
+        if calls["n"] == 2:
+            db.info[_DEADLINE_KEY] = _t.monotonic() - 1
+            raise RuntimeError("interrupted")
+        return {"rows": [1]}
+
+    monkeypatch.setattr(bm, "_build_cases", lambda s: [bm._Case("a", "a", fn)])
+    row = run_benchmark(db, repeats=3)["results"][0]
+    assert row["ok"] is True and row["runs_completed"] == 1 and row["stopped_by_deadline"] is True
