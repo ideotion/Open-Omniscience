@@ -1878,41 +1878,64 @@ def backfill_keyword_counters(session: Session) -> dict:
     maintenance in :func:`index_article` ever drifts. Idempotent: it sets every
     keyword's counters to the live ``SUM(count)`` / ``COUNT(DISTINCT article_id)``
     and ZEROES keywords with no mentions, so a stale counter never lingers. Counts
-    only — no score. Returns a small tally."""
+    only — no score. Returns a small tally.
+
+    ONE SLICE AT A TIME (2026-10-16, write-gate holds). The first version zeroed the whole keyword table, wrote every keyword's counters
+    and committed once, so the single-writer gate was held for the whole of it: seconds on a young corpus, and a function of the number
+    of keywords on a real one (3 million on the field's store). The keywords are now walked in id-ordered slices of
+    ``_RECONCILE_SCAN_CHUNK``, each slice one covering-index range GROUP BY over the mentions and one hold of the gate for its zero
+    and its repair (a reader landing between the two would otherwise see the whole slice at zero), committed before the next slice
+    begins, so a writer waits for one slice and not for the table. A pass that stops between two slices leaves every earlier slice
+    exact and every later one as it was, which is the state the first version left on a crash, with less of it wrong. Unlike
+    :func:`reconcile_keyword_counters` this stamps nothing and keeps no watermark: it is the plain repopulation, and what it makes
+    exact is not claimed as verified."""
     from sqlalchemy import func
 
-    agg = {
-        kid: (int(m or 0), int(a or 0))
-        for kid, m, a in (
-            session.query(
-                KeywordMention.keyword_id,
-                func.sum(KeywordMention.count),
-                func.count(func.distinct(KeywordMention.article_id)),
-            ).group_by(KeywordMention.keyword_id)
-        )
-    }
-    # Zero everything first (one bulk UPDATE), then set the keywords that have
-    # mentions (one fast bulk-update by primary key).
-    session.query(Keyword).update(
-        {Keyword.mention_count: 0, Keyword.article_count: 0}, synchronize_session=False
-    )
-    # Gated explicitly: bulk_update_mappings is invisible to both write-gate hooks (C8).
-    # The preceding Query.update() IS gated (it fires do_orm_execute), so without this the
-    # two halves of one reconciliation ran on opposite sides of the gate.
     from src.database.writer import write_lock
 
-    with write_lock():
-        if agg:
-            session.bulk_update_mappings(
-                Keyword,
-                [
-                    {"id": kid, "mention_count": m, "article_count": a}
-                    for kid, (m, a) in agg.items()
-                ],
+    after_id = 0
+    with_mentions = 0
+    while True:
+        ids = [
+            kid
+            for (kid,) in session.query(Keyword.id)
+            .filter(Keyword.id > after_id)
+            .order_by(Keyword.id)
+            .limit(_RECONCILE_SCAN_CHUNK)
+        ]
+        if not ids:
+            break
+        lo, hi = after_id, ids[-1]
+        # Every keyword id in (lo, hi] is in ``ids`` (consecutive ordered ids), so the range filter is exactly this slice.
+        agg = {
+            kid: (int(m or 0), int(a or 0))
+            for kid, m, a in (
+                session.query(
+                    KeywordMention.keyword_id,
+                    func.sum(KeywordMention.count),
+                    func.count(func.distinct(KeywordMention.article_id)),
+                )
+                .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+                .group_by(KeywordMention.keyword_id)
             )
-        session.commit()
+        }
+        # Gated explicitly and as one unit: ``bulk_update_mappings`` is invisible to both write-gate hooks (C8), and the zero
+        # before it IS gated (it fires ``do_orm_execute``), so without this the two halves of one slice ran on opposite sides
+        # of the gate.
+        with write_lock():
+            session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
+                {Keyword.mention_count: 0, Keyword.article_count: 0}, synchronize_session=False
+            )
+            if agg:
+                session.bulk_update_mappings(
+                    Keyword,
+                    [{"id": kid, "mention_count": m, "article_count": a} for kid, (m, a) in agg.items()],
+                )
+            session.commit()
+        with_mentions += len(agg)
+        after_id = hi
     total = session.query(func.count(Keyword.id)).scalar() or 0
-    return {"keywords": int(total), "with_mentions": len(agg)}
+    return {"keywords": int(total), "with_mentions": with_mentions}
 
 
 # How long a reconcile stays trusted as `exact` before the envelope downgrades the
@@ -2290,6 +2313,19 @@ class _LanguageVotes:
         return None
 
 
+def _write_keyword_updates(session: Session, updates: list[dict]) -> None:
+    """Write one batch of keyword corrections by primary key under the single-writer gate, and commit it.
+
+    ``bulk_update_mappings`` fires NEITHER ``before_flush`` NOR ``do_orm_execute``, so it reaches SQLite outside the gate unless it is
+    taken by hand (C8, the long note on :func:`_write_keyword_languages`). The caller hands it at most ``_LANG_UPDATE_BATCH`` rows, which
+    is what bounds the hold."""
+    from src.database.writer import write_lock
+
+    with write_lock():
+        session.bulk_update_mappings(Keyword, updates)
+        session.commit()
+
+
 def _write_keyword_languages(session: Session, updates: list[dict]) -> None:
     """Write one batch of keyword-language corrections under the single-writer gate.
 
@@ -2554,14 +2590,11 @@ def reconcile_keyword_entity_status(session: Session) -> dict:
         if _fails_the_shape_check(term):
             updates.append({"id": int(kid), "is_entity": False, "entity_type": None})
             downgraded += 1
-    if updates:
-        # Gated explicitly: bulk_update_mappings fires NEITHER before_flush NOR
-        # do_orm_execute, so it reaches SQLite outside the single-writer gate (C8).
-        from src.database.writer import write_lock
-
-        with write_lock():
-            session.bulk_update_mappings(Keyword, updates)
-            session.commit()
+    # One hold of the gate per ``_LANG_UPDATE_BATCH`` rows (2026-10-16, write-gate holds): the first version wrote every downgrade in one
+    # hold, and the first pass after the acronym rule changes is the one that downgrades the most. Each row is its own correction, so a
+    # pass that stops between two batches leaves the earlier ones written and the next pass finds the rest.
+    for lo in range(0, len(updates), _LANG_UPDATE_BATCH):
+        _write_keyword_updates(session, updates[lo : lo + _LANG_UPDATE_BATCH])
     return {"checked": checked, "downgraded": downgraded}
 
 
