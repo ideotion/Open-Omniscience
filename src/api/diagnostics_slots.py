@@ -143,15 +143,18 @@ TOTAL_BUDGET_BYTES = 600_000
 #: build, 632 KB zipped; 629 KB by the crash read's own count): every member that existed then, a
 #: MEASUREMENT;
 #: ``OTHER_NEW_MEMBERS_BYTES``: the plan's section-4 budgets of the new members that are not slots
-#: (machine 20, selftests 4, storage 120, contention 200, session-forensics +125, release-run 150,
+#: (machine 20, selftests 4, storage 120, contention 200, session-forensics, release-run 150,
 #: wiki-lane-history 300 KB): an ESTIMATE, which the plan says it is, and it is the figure to replace
-#: when those members are measured;
+#: when those members are measured. The session-forensics part was +125 KB in the plan and is now the crash trace
+#: export's stated worst case after its cut grew from 60 lines to 400/400/120: (400 + 9 x 120) lines x 202 bytes a line
+#: = 298,960 bytes, counted whole as the member's increment (the 60 lines it replaces are already inside the measured
+#: figure below, so this is the safe side). The sum is 919,000 - 125,000 + 298,960 = 1,092,960;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 585,720 with all seven rows and the free room about 1.86 MB, so a row can grow by that much before
+#: 585,720 with all seven rows and the free room 1,623,784 bytes, so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
-OTHER_NEW_MEMBERS_BYTES = 919_000
+OTHER_NEW_MEMBERS_BYTES = 1_092_960
 HEADROOM_AT_LEAST_BYTES = 1_500_000
 
 
