@@ -17,6 +17,7 @@ never left out silently.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from importlib import metadata
@@ -82,7 +83,7 @@ def _mapped(maps: Path) -> dict[str, Any]:
     listed: list[str] = []
     spent = 2
     for n in matched:
-        spent += len(n) + 4  # the quotes, the comma and an escape's slack
+        spent += len(json.dumps(n)) + 1  # the bytes it serialises to (a replaced character is six), and the comma
         if spent > _FILES_BYTES:
             break
         listed.append(n)

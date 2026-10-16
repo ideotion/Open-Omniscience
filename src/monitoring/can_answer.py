@@ -42,16 +42,18 @@ def _kill_counters(report: dict[str, Any]) -> dict[str, str]:
     elif isinstance(cg, dict):
         cg_why = str(cg["unknown"])[:200]
     if machine_ok or cg_ok:
-        return _item(True, f"machine: {'counted' if machine_ok else machine_why}; cgroup: {'counted' if cg_ok else cg_why}")
+        scope = "" if cg_ok else " (host-wide only: it cannot say the victim was this app)"
+        return _item(True, f"machine: {'counted' if machine_ok else machine_why}; cgroup: {'counted' if cg_ok else cg_why}{scope}")
     return _item(False, f"machine: {machine_why}; cgroup: {cg_why}")
 
 
 def _memory_limit(report: dict[str, Any]) -> dict[str, str]:
-    start = (report.get("oom_counters") or {}).get("this_session_start")
+    # the PREVIOUS session's limit (the session the question is about), read at its start; a limit edited since is not this one
+    start = (report.get("oom_counters") or {}).get("previous_session_start")
     cg = start.get("cgroup") if isinstance(start, dict) else None
     values = cg.get("values") if isinstance(cg, dict) else None
     if not isinstance(values, dict):
-        why = cg.get("unreadable") if isinstance(cg, dict) else "no reading at this start"
+        why = cg.get("unreadable") if isinstance(cg, dict) else "the previous session left no reading at its start"
         return _item(False, f"the cgroup memory limit could not be read: {why}"[:240])
     limit = values.get("memory.max", values.get("memory.limit_in_bytes"))
     if isinstance(limit, (int, str)) and not isinstance(limit, bool):
@@ -60,11 +62,17 @@ def _memory_limit(report: dict[str, Any]) -> dict[str, str]:
 
 
 def _kernel_log(report: dict[str, Any]) -> dict[str, str]:
+    from src.monitoring.kernel_log import _SIGNATURES
+
     kernel = report.get("kernel_evidence")
     verdict = kernel.get("verdict") if isinstance(kernel, dict) else None
-    if verdict in (None, "not-read", "no-journal", "no-journalctl", "disabled"):
-        return _item(False, f"the kernel log was not read ({verdict or 'no verdict'})")
-    return _item(True, "the kernel log was read")
+    # ONLY the verdicts that mean a read happened: the two plain ones and the signature kinds. Anything else (not-read, unavailable,
+    # not-applicable, disabled, no-journal, no-journalctl, a verdict added later) is not evidence that the log was read.
+    read_verdicts = {"no-kernel-evidence", "kernel-lines-found", *(kind for kind, _pattern in _SIGNATURES)}
+    if verdict not in read_verdicts:
+        return _item(False, f"the kernel log was not read ({str(verdict) if verdict else 'no verdict'})"[:200])
+    unread = kernel.get("unread") if isinstance(kernel, dict) else None
+    return _item(True, "the kernel log was read" + (" in part: some sources could not be read (see kernel_evidence.unread)" if unread else ""))
 
 
 def _crash_trace(report: dict[str, Any]) -> dict[str, str]:
@@ -73,7 +81,9 @@ def _crash_trace(report: dict[str, Any]) -> dict[str, str]:
         return _item(False, "the previous session ended cleanly, so there is no crash to trace")
     trace = exit_seen.get("crash_trace") if isinstance(exit_seen, dict) else None
     if not isinstance(trace, dict):
-        return _item(False, "the previous session left no crash trace (a SIGKILL leaves none; nothing runs after it)")
+        if report.get("previous_session") in (None, "unknown") or not isinstance(exit_seen, dict) or "unavailable" in exit_seen:
+            return _item(False, "the crash trace could not be looked for (no previous sentinel, or the exit evidence could not be read)")
+        return _item(False, "the trace file holds no trace for the previous session")
     if trace.get("withheld"):
         return _item(False, "a crash trace exists but its text was withheld (" + str(trace.get("summary"))[:120] + ")")
     return _item(True, "a crash trace was kept for the previous session")
@@ -82,7 +92,7 @@ def _crash_trace(report: dict[str, Any]) -> dict[str, str]:
 def _native_libs(report: dict[str, Any]) -> dict[str, str]:
     libs = report.get("previous_session_native_libs")
     if isinstance(libs, dict) and isinstance(libs.get("mapped"), dict) and "files" in libs["mapped"]:
-        return _item(True, "the libraries the previous session ran on were recorded at its start")
+        return _item(True, "the libraries mapped at the previous session's start were recorded (libraries loaded later, such as at unlock, are covered only by the installed versions)")
     why = libs.get("unreadable") if isinstance(libs, dict) else None
     return _item(False, str(why or "the previous session's sentinel holds no native-library reading")[:200])
 

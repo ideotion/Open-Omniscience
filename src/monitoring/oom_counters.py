@@ -29,6 +29,8 @@ _V2_VALUES = ("memory.max", "memory.high", "memory.current", "memory.peak", "mem
 #: the keys of ``memory.events`` that bear on a kill or a limit.
 _V2_EVENTS = ("low", "high", "max", "oom", "oom_kill", "oom_group_kill")
 _V1_VALUES = ("memory.limit_in_bytes", "memory.usage_in_bytes", "memory.max_usage_in_bytes", "memory.failcnt")
+#: the cgroup path is kept to this many characters (it names the unit and can carry a uid): a report's size, not a count, is what this protects.
+_PATH_CLIP = 200
 _V1_OOM_CONTROL = ("under_oom", "oom_kill_disable", "oom_kill")
 
 
@@ -61,15 +63,24 @@ def _key_values(path: Path, wanted: tuple[str, ...]) -> dict[str, Any]:
         text = _read_text(path)
     except OSError as exc:
         return {"unreadable": _why(type(exc))}
-    found: dict[str, int] = {}
+    found: dict[str, Any] = {}
     for line in text.splitlines():
         parts = line.split()
         if len(parts) == 2 and parts[0] in wanted:
             try:
                 found[parts[0]] = int(parts[1])
             except ValueError:
-                found[parts[0]] = -1  # present and not a number; -1 is never a count
+                found[parts[0]] = {"unreadable": "unparseable (ValueError)"}  
     return {k: found.get(k, {"unreadable": "absent (the key is not listed)"}) for k in wanted}
+
+
+def _dir_id(path: Path) -> int | dict[str, str]:
+    """The cgroup directory's inode: the kernel's id for THIS instance of the cgroup. A unit or container that is killed and restarted
+    is recreated at the same path with its counters at zero, so the path alone cannot say it is the same cgroup."""
+    try:
+        return path.stat().st_ino
+    except OSError as exc:
+        return {"unreadable": _why(type(exc))}
 
 
 def _vmstat(proc: Path) -> dict[str, Any]:
@@ -84,7 +95,7 @@ def _vmstat(proc: Path) -> dict[str, Any]:
                 return {"oom_kill": int(parts[1])}
             except ValueError:
                 return {"oom_kill": {"unreadable": "unparseable (ValueError)"}}
-    return {"oom_kill": {"unreadable": "absent (this kernel lists no oom_kill counter; it is older than 4.13)"}}
+    return {"oom_kill": {"unreadable": "absent (this kernel lists no oom_kill counter in /proc/vmstat)"}}
 
 
 def _own_paths(proc: Path) -> tuple[str | None, str | None, str | None]:
@@ -117,7 +128,8 @@ def read(*, proc: Path | None = None, cgroup_root: Path | None = None) -> dict[s
             base = root / v2.lstrip("/")
             out["cgroup"] = {
                 "version": 2,
-                "path": v2,
+                "path": v2[:_PATH_CLIP],
+                "id": _dir_id(base),
                 "values": {name: _int_or_max(base / name) for name in _V2_VALUES},
                 "events": _key_values(base / "memory.events", _V2_EVENTS),
             }
@@ -125,12 +137,13 @@ def read(*, proc: Path | None = None, cgroup_root: Path | None = None) -> dict[s
             base = root / "memory" / v1.lstrip("/")
             out["cgroup"] = {
                 "version": 1,
-                "path": v1,
+                "path": v1[:_PATH_CLIP],
+                "id": _dir_id(base),
                 "values": {name: _int_or_max(base / name) for name in _V1_VALUES},
                 "events": _key_values(base / "memory.oom_control", _V1_OOM_CONTROL),
             }
         else:
-            out["cgroup"] = {"unreadable": "no memory cgroup in /proc/self/cgroup (v2 without memory.events, and no v1 memory line)"}
+            out["cgroup"] = {"unreadable": "no memory cgroup found for this process (no v2 memory.events under the cgroup mount for its path, and no v1 memory line)"}
     except Exception as exc:  # noqa: BLE001 - evidence-gathering never raises into a boot
         out["cgroup"] = {"unreadable": f"unparseable ({type(exc).__name__})"}
     return out
@@ -163,12 +176,18 @@ def compare(before: dict[str, Any] | None, after: dict[str, Any] | None, *, same
         out["cgroup"] = {"unknown": "no cgroup counters in one of the two readings (see each reading's cgroup.unreadable)"}
     elif (bc.get("version"), bc.get("path")) != (ac.get("version"), ac.get("path")):
         out["cgroup"] = {"unknown": "the two readings are of different cgroups"}
+    elif same_boot is not True:
+        out["cgroup"] = {"unknown": "the two readings are not known to share a machine boot, and a cgroup's counters restart with it"}
+    elif not isinstance(bc.get("id"), int) or bc.get("id") != ac.get("id"):
+        out["cgroup"] = {"unknown": "the cgroup directory is not the same instance in both readings (or its id could not be read): a restarted unit or container is recreated at the same path with its counters at zero"}
     else:
         be, ae = bc["events"], ac["events"]
+        v1 = bc.get("version") == 1
+        no_v1 = {"unknown": "cgroup v1 keeps no such counter in memory.oom_control"}
         out["cgroup"] = {
             "oom_kill": _delta(be.get("oom_kill"), ae.get("oom_kill")),
-            "oom": _delta(be.get("oom"), ae.get("oom")),
-            "max": _delta(be.get("max"), ae.get("max")),
+            "oom": no_v1 if v1 else _delta(be.get("oom"), ae.get("oom")),
+            "max": no_v1 if v1 else _delta(be.get("max"), ae.get("max")),
         }
     out["reading"] = (
         "the machine counter is every OOM kill on the host since boot (not only this app's); the cgroup counters are this app's cgroup "

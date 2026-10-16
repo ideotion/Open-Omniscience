@@ -57,8 +57,20 @@ def test_the_sentinel_and_the_report_carry_the_libraries(tmp_path, monkeypatch):
     """MUTATION TARGETS: the two lines in ``forensics.py`` that add them."""
     from src.monitoring import forensics
 
+    for name in ("_PREV_AT_BOOT", "_PREV_LOADED", "_WAL_AT_BOOT", "_PAGES_AT_BOOT", "_SESSION_STARTED_AT", "_SESSION_STARTED_MONO", "_OOM_AT_BOOT", "_BOOT_ID_AT_BOOT"):
+        monkeypatch.setattr(forensics, name, getattr(forensics, name), raising=False)  # restored at teardown: the start rewrites them
     monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
     monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
     forensics.record_session_start()
     assert "mapped" in json.loads((tmp_path / "session_state.json").read_text())["native_libs"]
     assert "previous_session_native_libs" in forensics.previous_session_report()
+
+
+def test_the_name_budget_counts_serialised_bytes_not_characters(tmp_path):
+    """A name the decoder replaced (U+FFFD) serialises to six bytes per character; the budget must count those."""
+    path = "/usr/lib/libxml-" + "\udcff" * 0
+    f = tmp_path / "maps"
+    names = [("libxml" + "\ufffd" * 70 + str(i) + ".so") for i in range(200)]
+    f.write_bytes(("\n".join(f"7f00-7f01 r-xp 00000000 08:01 1 /x/{n}" for n in names) + "\n").encode())
+    got = nl._mapped(f)
+    assert len(json.dumps(got["files"], separators=(",", ":"))) <= nl._FILES_BYTES and path

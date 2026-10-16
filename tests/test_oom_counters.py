@@ -56,7 +56,7 @@ def test_an_unreadable_counter_is_named_with_its_reason_and_is_never_zero(tmp_pa
 def test_a_vmstat_without_the_counter_names_the_kernel_age(tmp_path):
     proc, cg = _tree(tmp_path)
     (proc / "vmstat").write_text("nr_free_pages 5\n")
-    assert "4.13" in oc.read(proc=proc, cgroup_root=cg)["vmstat"]["oom_kill"]["unreadable"]
+    assert "no oom_kill counter" in oc.read(proc=proc, cgroup_root=cg)["vmstat"]["oom_kill"]["unreadable"]
 
 
 def test_where_there_is_no_cgroup_file_the_reading_says_so(tmp_path):
@@ -66,6 +66,55 @@ def test_where_there_is_no_cgroup_file_the_reading_says_so(tmp_path):
     assert r["cgroup"]["events"] == {"unreadable": "absent (the file does not exist)"}
     (proc / "self" / "cgroup").unlink()
     assert oc.read(proc=proc, cgroup_root=cg)["cgroup"] == {"unreadable": "absent (the file does not exist)"}
+
+
+def _restart_cgroup(cg: Path) -> None:
+    """A unit or container killed and restarted: the cgroup is recreated at the SAME path, with counters at zero."""
+    import shutil
+
+    d = cg / "app.slice" / "oo.service"
+    files = {p.name: p.read_text() for p in d.iterdir()}
+    shutil.rmtree(d)
+    d.mkdir(parents=True)
+    for name, text in files.items():
+        (d / name).write_text(text)
+    (d / "memory.events").write_text("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n")
+
+
+def test_a_recreated_cgroup_at_the_same_path_is_not_counted_as_zero_kills(tmp_path):
+    """MUTATION TARGET: the ``id`` comparison in ``compare``. Before and after both read 0, but they are two cgroups."""
+    proc, cg = _tree(tmp_path, events="low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n")
+    before = oc.read(proc=proc, cgroup_root=cg)
+    _restart_cgroup(cg)
+    after = oc.read(proc=proc, cgroup_root=cg)
+    # (a directory recreated in place can reuse an inode on some filesystems; force the case the kernel guarantees)
+    after["cgroup"]["id"] = before["cgroup"]["id"] + 1
+    got = oc.compare(before, after, same_boot=True)["cgroup"]
+    assert "not the same instance" in got["unknown"], got
+    assert "not known to share" in oc.compare(before, before, same_boot=None)["cgroup"]["unknown"]
+
+
+def test_an_unparseable_counter_is_named_not_stored_as_a_number(tmp_path):
+    proc, cg = _tree(tmp_path, events="low 0\nhigh 0\nmax 1\noom 2\noom_kill many\noom_group_kill 0\n")
+    ev = oc.read(proc=proc, cgroup_root=cg)["cgroup"]["events"]
+    assert ev["oom_kill"] == {"unreadable": "unparseable (ValueError)"} and "-1" not in json.dumps(ev)
+
+
+def test_a_cgroup_v1_reading_counts_oom_kill_and_names_the_counters_it_does_not_have(tmp_path):
+    proc, cg = tmp_path / "proc", tmp_path / "cg"
+    (proc / "self").mkdir(parents=True)
+    (proc / "vmstat").write_text("oom_kill 1\n")
+    (proc / "self" / "cgroup").write_text("5:cpu,cpuacct:/x\n4:memory:/docker/abc\n")
+    d = cg / "memory" / "docker" / "abc"
+    d.mkdir(parents=True)
+    (d / "memory.oom_control").write_text("oom_kill_disable 0\nunder_oom 0\noom_kill 2\n")
+    (d / "memory.limit_in_bytes").write_text("1000\n")
+    before = oc.read(proc=proc, cgroup_root=cg)
+    assert before["cgroup"]["version"] == 1 and before["cgroup"]["events"]["oom_kill"] == 2
+    after = json.loads(json.dumps(before))
+    after["cgroup"]["events"]["oom_kill"] = 3
+    got = oc.compare(before, after, same_boot=True)["cgroup"]
+    assert got["oom_kill"] == 1 and "no such counter" in got["oom"]["unknown"]
 
 
 def test_a_count_is_claimed_only_between_readings_of_one_boot_and_one_cgroup(tmp_path):
@@ -95,8 +144,8 @@ def test_the_worst_case_reading_is_small(tmp_path):
 def test_the_previous_sessions_report_carries_the_counters_and_the_kills_between(tmp_path, monkeypatch):
     from src.monitoring import forensics
 
-    before = {"vmstat": {"oom_kill": 4}, "cgroup": {"version": 2, "path": "/a", "events": {"oom_kill": 0, "oom": 0, "max": 0}}}
-    now = {"vmstat": {"oom_kill": 6}, "cgroup": {"version": 2, "path": "/a", "events": {"oom_kill": 1, "oom": 1, "max": 3}}}
+    before = {"vmstat": {"oom_kill": 4}, "cgroup": {"version": 2, "path": "/a", "id": 7, "events": {"oom_kill": 0, "oom": 0, "max": 0}}}
+    now = {"vmstat": {"oom_kill": 6}, "cgroup": {"version": 2, "path": "/a", "id": 7, "events": {"oom_kill": 1, "oom": 1, "max": 3}}}
     monkeypatch.setattr(forensics, "_OOM_AT_BOOT", now)
     monkeypatch.setattr(forensics, "_BOOT_ID_AT_BOOT", "boot-1")
     out = forensics._oom_counters_between({"oom_counters": before, "boot_id": "boot-1"})
@@ -111,6 +160,8 @@ def test_the_forensics_report_and_the_session_sentinel_carry_the_counters(tmp_pa
     there is no previous sentinel. MUTATION TARGETS: the two lines in ``forensics.py`` that add them."""
     from src.monitoring import forensics
 
+    for name in ("_PREV_AT_BOOT", "_PREV_LOADED", "_WAL_AT_BOOT", "_PAGES_AT_BOOT", "_SESSION_STARTED_AT", "_SESSION_STARTED_MONO", "_OOM_AT_BOOT", "_BOOT_ID_AT_BOOT"):
+        monkeypatch.setattr(forensics, name, getattr(forensics, name), raising=False)  # restored at teardown: the start rewrites them
     monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
     monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
     forensics.record_session_start()

@@ -16,8 +16,8 @@ _READ = {"vmstat": {"oom_kill": 1}, "cgroup": {"version": 2, "path": "/a", "valu
 def _full():
     return {
         "previous_session": "unclean-end",
-        "oom_counters": {"between": {"machine_oom_kill": 2, "cgroup": {"oom_kill": 1, "oom": 1, "max": 0}}, "this_session_start": _READ},
-        "kernel_evidence": {"verdict": "no-oom"},
+        "oom_counters": {"between": {"machine_oom_kill": 2, "cgroup": {"oom_kill": 1, "oom": 1, "max": 0}}, "previous_session_start": _READ, "this_session_start": _READ},
+        "kernel_evidence": {"verdict": "no-kernel-evidence"},
         "exit_evidence": {"crash_trace": {"summary": "Fatal Python error: Aborted", "lines": ["x"]}},
         "previous_session_native_libs": {"mapped": {"files": ["libxml2.so.2"]}},
     }
@@ -32,7 +32,7 @@ def test_a_report_with_every_witness_says_present_for_each_question():
 
 def test_each_missing_witness_is_named_with_its_reason():
     r = _full()
-    r["oom_counters"] = {"between": {"unknown": "no reading from the previous session's start"}, "this_session_start": {"vmstat": {}, "cgroup": {"unreadable": "absent (the file does not exist)"}}}
+    r["oom_counters"] = {"between": {"unknown": "no reading from the previous session's start"}, "previous_session_start": {"vmstat": {}, "cgroup": {"unreadable": "absent (the file does not exist)"}}}
     r["kernel_evidence"] = {"verdict": "no-journal"}
     out = assess(r)["q22_killed_or_stopped_on_its_limit"]
     assert out["evidence"] == "missing" and set(out["missing"]) == {"kill_counters", "memory_limit", "kernel_log"}
@@ -44,7 +44,7 @@ def test_a_sigkill_session_has_no_trace_and_the_reason_says_why():
     r = _full()
     r["exit_evidence"] = {"crash_trace": None}
     out = assess(r)["native_abort_which_library"]
-    assert out["items"]["crash_trace"]["evidence"] == "missing" and "SIGKILL" in out["items"]["crash_trace"]["reason"]
+    assert out["items"]["crash_trace"]["evidence"] == "missing" and "no trace for the previous session" in out["items"]["crash_trace"]["reason"]
     r["exit_evidence"] = {"crash_trace": {"withheld": True, "summary": "text withheld"}}
     assert assess(r)["native_abort_which_library"]["items"]["crash_trace"]["evidence"] == "missing"
 
@@ -80,3 +80,58 @@ def test_the_worst_case_block_is_small():
     r["exit_evidence"] = {"crash_trace": {"withheld": True, "summary": long}}
     r["previous_session_native_libs"] = {"unreadable": long}
     assert len(json.dumps(assess(r), separators=(",", ":"))) < 3000
+
+
+def test_only_the_verdicts_that_mean_a_read_happened_count_as_the_kernel_log_read():
+    for verdict in ("unavailable", "not-applicable", "not-read", "disabled", "no-journal", "no-journalctl", "something-new", None):
+        r = _full()
+        r["kernel_evidence"] = {"verdict": verdict}
+        assert assess(r)["q22_killed_or_stopped_on_its_limit"]["items"]["kernel_log"]["evidence"] == "missing", verdict
+    for verdict in ("no-kernel-evidence", "kernel-lines-found", "oom-kill", "native-fatal"):
+        r = _full()
+        r["kernel_evidence"] = {"verdict": verdict}
+        assert assess(r)["q22_killed_or_stopped_on_its_limit"]["items"]["kernel_log"]["evidence"] == "present", verdict
+
+
+def test_the_memory_limit_is_the_previous_sessions_not_this_ones():
+    r = _full()
+    r["oom_counters"]["previous_session_start"] = {"vmstat": {}, "cgroup": {"unreadable": "absent (the file does not exist)"}}
+    # this start has a readable limit, but the question is about the previous session
+    assert assess(r)["q22_killed_or_stopped_on_its_limit"]["items"]["memory_limit"]["evidence"] == "missing"
+
+
+def test_a_machine_only_count_is_labelled_host_wide():
+    r = _full()
+    r["oom_counters"]["between"]["cgroup"] = {"unknown": "no cgroup counters in one of the two readings"}
+    reason = assess(r)["q22_killed_or_stopped_on_its_limit"]["items"]["kill_counters"]["reason"]
+    assert "host-wide only" in reason
+
+
+def test_the_missing_trace_reason_offers_no_cause_unless_the_evidence_was_read():
+    r = _full()
+    r["exit_evidence"] = {"crash_trace": None}
+    assert "no trace for the previous session" in assess(r)["native_abort_which_library"]["items"]["crash_trace"]["reason"]
+    assert "SIGKILL" not in json.dumps(assess(r)["native_abort_which_library"])
+    r["previous_session"] = "unknown"
+    assert "could not be looked for" in assess(r)["native_abort_which_library"]["items"]["crash_trace"]["reason"]
+
+
+def test_the_three_blocks_together_stay_within_the_stated_worst_case(tmp_path):
+    """The figures sent to the slot table's owner: the counters block, the native-library block and this one, each at its worst."""
+    from src.monitoring import native_libs as nl
+    from src.monitoring import oom_counters as oc
+
+    big = 2**62
+    reading = {
+        "vmstat": {"oom_kill": big},
+        "cgroup": {"version": 2, "path": "/" + "u" * oc._PATH_CLIP, "id": big,
+                   "values": {k: big for k in oc._V2_VALUES}, "events": {k: big for k in oc._V2_EVENTS}},
+    }
+    between = oc.compare(reading, reading, same_boot=True)
+    counters = {"previous_session_start": reading, "this_session_start": reading, "between": between, "note": "n" * 400}
+    names = [f"libxml{'x' * 60}{i}.so" for i in range(400)]
+    f = tmp_path / "maps"
+    f.write_text("\n".join(f"7f00-7f01 r-xp 00000000 08:01 1 /x/{n}" for n in names) + "\n")
+    libs = {"runtime": nl._runtime_versions(), "installed": {n: "9.9.99.9" for n in nl._DISTRIBUTIONS}, "mapped": nl._mapped(f)}
+    sizes = {k: len(json.dumps(v, separators=(",", ":"))) for k, v in (("oom_counters", counters), ("native_libs", libs))}
+    assert sizes["oom_counters"] < 5000 and sizes["native_libs"] < 8000, sizes
