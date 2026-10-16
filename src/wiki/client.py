@@ -25,10 +25,12 @@ WIKI_USER_AGENT = (
 
 #: The hosts the wiki client's session talks to. That one session carries the MediaWiki API (``{code}.wikipedia.org``,
 #: :func:`mediawiki.api_endpoint`), the pageviews API (``wikimedia.org``, the bare domain: ``pageviews.PAGEVIEWS_HOST``) and the
-#: EventStreams stream (``stream.wikimedia.org``). The list is those three families and nothing wider: ``wikidata.org``,
-#: ``wiktionary.org`` and ``mediawiki.org`` are not on it. A request or a redirect hop to any other host is refused
+#: EventStreams stream (``stream.wikimedia.org``). The list is exactly those three and nothing wider (R143: a lane's list is never wider
+#: than the consent popup's Wikipedia lane, which names ``*.wikipedia.org``, ``wikimedia.org`` and ``stream.wikimedia.org`` for this
+#: session): no other host under ``wikimedia.org``, and ``wikidata.org``, ``wiktionary.org`` and ``mediawiki.org`` are not on it. The dumps
+#: and the ORES scores are other clients with their own sessions. A request or a redirect hop to any other host is refused
 #: (``src.safety.fetcher.refuse_unlisted_host``): every endpoint is fixed, so a hop elsewhere is not the service's own.
-WIKI_SESSION_HOSTS = ("wikimedia.org", ".wikimedia.org", ".wikipedia.org")
+WIKI_SESSION_HOSTS = (".wikipedia.org", "wikimedia.org", "stream.wikimedia.org")
 
 
 class WikiClient:

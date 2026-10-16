@@ -415,6 +415,51 @@ def test_an_edition_code_cannot_choose_the_host_the_wiki_client_calls(transparen
             refuse_unlisted_host(mw.api_endpoint(code), WIKI_SESSION_HOSTS)
 
 
+def test_the_wiki_clients_list_is_exactly_its_three_hosts_and_no_other_wikimedia_host(transparent):
+    """R143: the Action API's ``*.wikipedia.org``, the pageviews ``wikimedia.org`` and ``stream.wikimedia.org``, as the consent popup's
+    Wikipedia lane names them for this session. Every other host under ``wikimedia.org`` is refused, including as the target of a
+    redirect, so a list restored to the family (``.wikimedia.org``) fails here and nowhere else."""
+    from src.wiki.client import WIKI_SESSION_HOSTS
+
+    assert set(WIKI_SESSION_HOSTS) == {".wikipedia.org", "wikimedia.org", "stream.wikimedia.org"}
+    s, wire = _session({"https://wikimedia.org/api/rest_v1/x": (302, "https://api.wikimedia.org/core/v1/x")}, hosts=WIKI_SESSION_HOSTS)
+    with pytest.raises(RedirectRefused):
+        s.get("https://wikimedia.org/api/rest_v1/x")
+    assert wire.sent == ["https://wikimedia.org/api/rest_v1/x"], "the hop to api.wikimedia.org was refused before it was sent"
+    for elsewhere in (
+        "https://api.wikimedia.org/core/v1/x",
+        "https://upload.wikimedia.org/x",
+        "https://meta.wikimedia.org/w/api.php",
+        "https://commons.wikimedia.org/w/api.php",
+        "https://ores.wikimedia.org/v3/scores",  # the scores have their own client and their own list
+        "https://dumps.wikimedia.org/x",  # the dumps have their own session
+        "https://stream.wikimedia.org.evil.test/v2/stream",
+        "https://www.wikidata.org/w/api.php",
+    ):
+        _refused(lambda url=elsewhere: refuse_unlisted_host(url, WIKI_SESSION_HOSTS))
+
+
+def test_the_ores_list_is_exactly_the_host_of_its_endpoint(transparent):
+    """R143: ``ores.wikimedia.org`` and nothing else. A replacement endpoint (say LiftWing on ``api.wikimedia.org``) is refused until the
+    popup lane and this list both name it; a list restored to the family fails here and nowhere else."""
+    from urllib.parse import urlsplit
+
+    from src.wiki.ores import ORES_ENDPOINT, ORES_HOSTS
+
+    assert set(ORES_HOSTS) == {urlsplit(ORES_ENDPOINT).hostname}
+    s, wire = _session({f"{ORES_ENDPOINT}/enwiki/": (302, "https://api.wikimedia.org/service/lw/inference/v1/models/x:predict")}, hosts=ORES_HOSTS)
+    with pytest.raises(RedirectRefused):
+        s.get(f"{ORES_ENDPOINT}/enwiki/")
+    assert wire.sent == [f"{ORES_ENDPOINT}/enwiki/"]
+    for elsewhere in (
+        "https://api.wikimedia.org/service/lw/inference/v1/models/x:predict",
+        "https://stream.wikimedia.org/v2/stream/recentchange",
+        "https://wikimedia.org/api/rest_v1/x",
+        "https://ores.wikimedia.org.evil.test/v3/scores",
+    ):
+        _refused(lambda url=elsewhere: refuse_unlisted_host(url, ORES_HOSTS))
+
+
 def test_the_ores_clients_session_carries_its_list(transparent):
     from src.wiki.ores import ORES_ENDPOINT, ORES_HOSTS, OresClient
 
@@ -422,16 +467,27 @@ def test_the_ores_clients_session_carries_its_list(transparent):
     refuse_unlisted_host(f"{ORES_ENDPOINT}/enwiki/", ORES_HOSTS)
 
 
-def test_the_duckduckgo_list_covers_its_endpoint_and_its_own_bare_domain_and_nothing_else(transparent):
+def test_the_duckduckgo_list_is_exactly_its_endpoint_host(transparent):
+    """R143: ``html.duckduckgo.com`` and nothing else, as the consent popup's topic-discovery lane says. The bare domain and every other host
+    under it are refused, including as the target of a redirect, so a list restored to the family fails here and nowhere else."""
+    from urllib.parse import urlsplit
+
     from src.services.duckduckgo import DuckDuckGoSearch
 
-    s, wire = _session(
-        {DuckDuckGoSearch.BASE_URL: (302, "https://duckduckgo.com/html/")}, hosts=DuckDuckGoSearch.ALLOWED_HOSTS
-    )
-    assert s.post(DuckDuckGoSearch.BASE_URL, data={"q": "x"}).status_code == 200 and len(wire.sent) == 2
-    for elsewhere in ("https://duckduckgo.com.evil.test/", "https://evilduckduckgo.com/"):
-        with pytest.raises(RedirectRefused):
-            refuse_unlisted_host(elsewhere, DuckDuckGoSearch.ALLOWED_HOSTS)
+    assert set(DuckDuckGoSearch.ALLOWED_HOSTS) == {urlsplit(DuckDuckGoSearch.BASE_URL).hostname}
+    s, wire = _session({DuckDuckGoSearch.BASE_URL: (302, "https://duckduckgo.com/html/")}, hosts=DuckDuckGoSearch.ALLOWED_HOSTS)
+    with pytest.raises(RedirectRefused):
+        s.post(DuckDuckGoSearch.BASE_URL, data={"q": "x"})
+    assert wire.sent == [DuckDuckGoSearch.BASE_URL], "the hop to the bare domain was refused before it was sent"
+    for elsewhere in (
+        "https://duckduckgo.com/html/",
+        "https://lite.duckduckgo.com/lite/",
+        "https://links.duckduckgo.com/d.js",
+        "https://duckduckgo.com.evil.test/",
+        "https://evilduckduckgo.com/",
+        "https://html.duckduckgo.com.evil.test/",
+    ):
+        _refused(lambda url=elsewhere: refuse_unlisted_host(url, DuckDuckGoSearch.ALLOWED_HOSTS))
 
 
 def test_the_duckduckgo_search_asks_for_its_list():
@@ -1022,6 +1078,48 @@ def test_the_download_list_is_exactly_the_github_hosts_the_consent_popup_disclos
     # The other direction: the lookup's list must not accept the download's hosts.
     for host in installer.GITHUB_ASSET_HOSTS:
         _refused(lambda host=host: refuse_unlisted_host(f"https://{host}/x", installer.GITHUB_API_HOSTS))
+
+
+#: Each fixed-endpoint host list and the consent popup lane(s) that disclose its reach: ``(module, constant, lane ids)``. A list may be
+#: narrower than its lane (the lane also covers other code), never wider: the popup is what the person consented to.
+POPUP_LANE_LISTS = [
+    ("src.wiki.client", "WIKI_SESSION_HOSTS", ("wikipedia",)),
+    ("src.wiki.ores", "ORES_HOSTS", ("wikipedia",)),
+    ("src.catalog.wikidata", "WDQS_HOSTS", ("discovery",)),
+    ("src.catalog.wikidata_apply", "API_HOSTS", ("discovery", "entity-items")),
+    ("src.catalog.wikidata_enrich", "API_HOSTS", ("discovery", "entity-items")),
+    ("src.analytics.wikidata_rings", "API_HOSTS", ("keyword-rings",)),
+    ("src.analytics.ring_loader", "API_HOSTS", ("keyword-rings",)),
+    ("src.entities.items", "API_HOSTS", ("entity-items",)),
+    ("src.entities.gazetteer_build", "API_HOSTS", ("entity-items",)),
+    ("src.monitoring.release_run", "HF_API_HOSTS", ("ai",)),
+    ("src.services.duckduckgo", "DuckDuckGoSearch.ALLOWED_HOSTS", ("topic-discovery",)),
+]
+
+
+def _popup_lane_hosts(lane_ids) -> set[str]:
+    import json
+
+    from tests.js_source_helper import array_literal, read_static
+
+    lanes = {x["id"]: x for x in json.loads(array_literal(read_static("net-hosts.js"), "OO_NET_LANES"))}
+    return {host for lane_id in lane_ids for host in lanes[lane_id]["hosts"]}
+
+
+@pytest.mark.parametrize(("module", "name", "lane_ids"), POPUP_LANE_LISTS, ids=[f"{m}.{n}" for m, n, _ in POPUP_LANE_LISTS])
+def test_no_host_list_reaches_further_than_the_consent_popup_tells_the_person(module, name, lane_ids):
+    """The popup names the hosts a lane may reach (``src/static/net-hosts.js``); the code's list for that lane must be inside it. An exact
+    entry is a host the popup names; a leading-dot entry (``.wikipedia.org``) is a family the popup names with a star (``*.wikipedia.org``).
+    A list wider than its lane is the gap invariant #14e closes for the action itself: the person agreed to less than the request may do."""
+    import importlib
+
+    owner = importlib.import_module(module)
+    hosts = owner
+    for part in name.split("."):
+        hosts = getattr(hosts, part)
+    popup = _popup_lane_hosts(lane_ids)
+    wider = sorted(entry for entry in hosts if (f"*{entry}" if entry.startswith(".") else entry) not in popup)
+    assert not wider, f"{module}.{name} may reach {wider}, which the popup lane(s) {list(lane_ids)} do not name"
 
 
 def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():

@@ -60,9 +60,10 @@ class DuckDuckGoSearch:
     """
 
     BASE_URL = "https://html.duckduckgo.com/html/"
-    #: The hosts the search talks to: DuckDuckGo's own. A request or a redirect hop to any other host is refused
-    #: (``src.safety.fetcher.refuse_unlisted_host``); the result links it parses are never fetched here.
-    ALLOWED_HOSTS = ("duckduckgo.com", ".duckduckgo.com")
+    #: The host the search talks to: ``html.duckduckgo.com``, exactly the host of ``BASE_URL`` and the one the consent popup's topic
+    #: discovery lane names (R143), not the bare domain or any other host under it. A request or a redirect hop to any other host is
+    #: refused (``src.safety.fetcher.refuse_unlisted_host``); the result links it parses are never fetched here.
+    ALLOWED_HOSTS = ("html.duckduckgo.com",)
     USER_AGENT = "Mozilla/5.0 (compatible; OpenOmniscience/1.0; +https://github.com/ideotion/Open-Omniscience)"
 
     # Rate limiting

@@ -21,10 +21,11 @@ from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 ORES_ENDPOINT = "https://ores.wikimedia.org/v3/scores"
-#: The hosts the scoring client talks to: ``ores.wikimedia.org`` and any other host under ``wikimedia.org`` (a replacement endpoint, if
-#: the service moves, would have to be one: see ``ORES_AS_OF`` for what has and has not been confirmed). A request or a redirect hop to
-#: any other host is refused (``src.safety.fetcher.refuse_unlisted_host``).
-ORES_HOSTS = (".wikimedia.org",)
+#: The host the scoring client talks to: ``ores.wikimedia.org``, exactly the host of ``ORES_ENDPOINT`` and the one the consent popup's
+#: Wikipedia lane names for it (R143). A replacement endpoint, if the service moves (see ``ORES_AS_OF`` for what has and has not been
+#: confirmed), needs its own entry in that lane first, and then here. A request or a redirect hop to any other host is refused
+#: (``src.safety.fetcher.refuse_unlisted_host``).
+ORES_HOSTS = ("ores.wikimedia.org",)
 PROVENANCE = "ores:damaging,goodfaith"
 ORES_USER_AGENT = f"OpenOmniscienceBot/{OO_VERSION} (+https://github.com/ideotion/Open-Omniscience)"
 
