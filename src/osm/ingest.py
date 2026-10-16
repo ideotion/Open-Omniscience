@@ -97,6 +97,10 @@ class IngestReport:
     #: order (held in a side set at a Python set's cost, not 8 bytes). A file that lists its ids ascending says 0; anything else
     #: says so here (libosmium's own order puts negative ids first, so a file with negative ids reports them).
     id_sets: dict[str, int] = field(default_factory=dict)
+    #: Which index held the node locations while the ways were assembled, the rule that chose it and the bytes it holds
+    #: once settled (arithmetic from the entry size, not a sample, and not a peak: an index that grows holds more while it does):
+    #: the one place a node-dense extract below the file-size threshold would show.
+    location_index: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -113,6 +117,7 @@ class IngestReport:
             "search_index": self.search_index,
             "view_index": self.view_index,
             "id_sets": self.id_sets,
+            "location_index": self.location_index,
         }
 
 
@@ -315,6 +320,7 @@ def ingest_country(
         report.counts = counts
         report.id_sets = {"nodes": len(kept_nodes), "ways": len(kept_ways),
                           "out_of_order": kept_nodes.out_of_order + kept_ways.out_of_order}
+        report.location_index = locations.describe()
         report.blob = {"objects": kept, "q810_bytes": blob_q810, "extended_bytes": blob_ext}
         report.name = _country_name(report.border.get("relation_id"))
         report.status = "complete"

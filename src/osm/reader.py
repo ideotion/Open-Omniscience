@@ -63,6 +63,7 @@ class LocationStore(Protocol):
     def set(self, node_id: int, lat: float, lon: float) -> None: ...
     def get(self, node_id: int) -> tuple[float, float] | None: ...
     def close(self) -> None: ...
+    def describe(self) -> dict[str, Any]: ...
 
 
 class Extract(Protocol):
@@ -207,12 +208,28 @@ class _AdaptiveLocations:
         self._max = None if budget is None else budget // DICT_BYTES_PER_NODE
         self._d: dict[int, tuple[float, float]] | None = {} if budget is not None else None
         self._disk: _SqliteLocations | None = None if budget is not None else _SqliteLocations(workdir)
+        self._set_calls = 0
 
     @property
     def spilled(self) -> bool:
         return self._disk is not None
 
+    def describe(self) -> dict[str, Any]:
+        """Which store held the locations and what it cost, for the run record (no behaviour of its own)."""
+        in_memory = self._d is not None
+        return {
+            "index": "python_dict" if in_memory else "sqlite_file",
+            "rule": "memory budget unreadable: the file from the first node" if self.budget is None
+            else f"a dict while it fits {MEMORY_SHARE:.0%} of the memory available at the start, a file past that",
+            "budget_bytes": self.budget,
+            "nodes_set": self._set_calls,
+            # Stated, not sampled: DICT_BYTES_PER_NODE per held location (the dict's own cost; resident memory ran about 14% above it
+            # on the 16x composite, see the audit README); the file holds none.
+            "memory_bytes_settled": len(self._d) * DICT_BYTES_PER_NODE if self._d is not None else 0,
+        }
+
     def set(self, node_id: int, lat: float, lon: float) -> None:
+        self._set_calls += 1
         if self._d is not None:
             self._d[node_id] = (lat, lon)
             if self._max is not None and len(self._d) > self._max:
@@ -285,11 +302,20 @@ class _OsmiumLocations:
     WHICH box was cut says which country the operator chose.
     """
 
-    def __init__(self, workdir: Path, *, on_disk: bool) -> None:
+    #: What libosmium's sparse index holds per location: an 8-byte id and an 8-byte location, 16.0 bytes each once settled
+    #: (``docs/audit/osm-real-extract-2026-10-15/location_probe.py``). The in-memory variant is one growing vector, and while it
+    #: grows the process briefly holds the old buffer and the new one (that probe's peak was 1.7 times the settled figure at
+    #: 40 million locations), so the run record's figure is the SETTLED bytes, arithmetic from this constant, not a peak.
+    ENTRY_BYTES = 16
+
+    def __init__(self, workdir: Path, *, on_disk: bool, extract_bytes: int | None = None) -> None:
         import osmium.index
 
         self._file: Path | None = None
         self._map: Any
+        self._on_disk = on_disk
+        self._extract_bytes = extract_bytes
+        self._set_calls = 0
         if on_disk:
             workdir.mkdir(parents=True, exist_ok=True)
             self._file = workdir / "osm-locations.idx"
@@ -300,10 +326,26 @@ class _OsmiumLocations:
 
         self._loc = Location
 
+    def describe(self) -> dict[str, Any]:
+        """Which index was chosen, by which rule, and the bytes it holds (no behaviour of its own)."""
+        held = self._set_calls * self.ENTRY_BYTES
+        return {
+            "index": "sparse_file_array" if self._on_disk else "sparse_mem_array",
+            "rule": f"the extract file is {'above' if self._on_disk else 'at or below'} {PyosmiumExtract.ON_DISK_ABOVE} bytes "
+            "(the file's size, not its node count)",
+            "extract_bytes": self._extract_bytes,
+            "nodes_set": self._set_calls,
+            "entry_bytes": self.ENTRY_BYTES,
+            "memory_bytes_settled": 0 if self._on_disk else held,
+            "file_bytes_settled": held if self._on_disk else 0,
+        }
+
     def set(self, node_id: int, lat: float, lon: float) -> None:
+        self._set_calls += 1
         self._map.set(node_id, self._loc(lon, lat))
 
     def set_location(self, node_id: int, loc) -> None:
+        self._set_calls += 1
         self._map.set(node_id, loc)
 
     def get(self, node_id: int) -> tuple[float, float] | None:
@@ -441,7 +483,7 @@ class PyosmiumExtract:
 
     def location_store(self, workdir: Path) -> LocationStore:
         size = self.path.stat().st_size
-        return _OsmiumLocations(workdir, on_disk=size > self.ON_DISK_ABOVE)
+        return _OsmiumLocations(workdir, on_disk=size > self.ON_DISK_ABOVE, extract_bytes=size)
 
 
 def open_extract(path: str | Path, *, reader: str | None = None) -> Extract:
