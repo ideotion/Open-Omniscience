@@ -866,13 +866,16 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         healed = _heal_raw_triggers(conn)
         if healed:
             _LOG.info("FTS: the sync triggers now index Arabic folded and CJK segmented (%s)", ", ".join(healed))
-        if rebuild == "always" and existed and fts_tokenizer(conn) == "legacy":
-            # The explicit re-index is a full rebuild already; it is where an old index gets the current
-            # tokenizer. A normal boot never does (``auto``): that would be the corpus-sized cost at every upgrade.
-            conn.execute(text("DROP TABLE main.article_fts"))
-            existed = False
+        # The explicit re-index is a full rebuild already; it is where an old index gets the current tokenizer. A
+        # normal boot never does (``auto``): that would be the corpus-sized cost at every upgrade. The swap runs
+        # under a savepoint (``rebuild_with_current_tokenizer``): a bare DROP commits by itself under pysqlite, and a
+        # re-index that died after it would leave an empty index.
+        swap = rebuild == "always" and existed and fts_tokenizer(conn) == "legacy"
         for ddl in _FTS_DDL:
             conn.execute(text(ddl))
+        if swap:
+            rebuild_with_current_tokenizer(conn)
+            return "rebuilt"
         action = _decide_fts_rebuild(conn, rebuild, existed)
         if action == "rebuilt":
             rebuild_index(conn)
@@ -961,6 +964,12 @@ def rebuild_index(con) -> int:
         last = int(rows[-1][0])
 
 
+def _tokenizer_of(ddl) -> str:
+    """``"current"`` or ``"legacy"`` from an index's own ``CREATE VIRTUAL TABLE`` text (the one place that decides)."""
+    sql = str(ddl or "").lower()
+    return "current" if "categories" in sql and "m*" in sql else "legacy"
+
+
 def fts_tokenizer(con) -> str | None:
     """Which tokenizer the article index was created with: ``"current"``, ``"legacy"`` (every index made before 0.5),
     or ``None`` when there is no index. Read from the table's own DDL in ``sqlite_master``: the schema is the truth,
@@ -968,8 +977,7 @@ def fts_tokenizer(con) -> str | None:
     row = _run(con, "SELECT sql FROM sqlite_master WHERE type='table' AND name='article_fts'").fetchone()
     if row is None:
         return None
-    sql = str(row[0] or "").lower()
-    return "current" if "categories" in sql and "m*" in sql else "legacy"
+    return _tokenizer_of(row[0])
 
 
 def rebuild_with_current_tokenizer(con) -> dict:
@@ -992,8 +1000,13 @@ def rebuild_with_current_tokenizer(con) -> dict:
             _run(con, _article_fts_ddl())
         out = {"tokenizer_before": before, "tokenizer_after": fts_tokenizer(con), "indexed": rebuild_index(con)}
     except BaseException:
-        _run(con, "ROLLBACK TO oo_fts_tokenizer")
-        _run(con, "RELEASE oo_fts_tokenizer")
+        # SQLite can already have rolled the whole transaction back (a full disk, an I/O error): then there is no
+        # savepoint to return to, and that second error must not hide the one the caller needs.
+        try:
+            _run(con, "ROLLBACK TO oo_fts_tokenizer")
+            _run(con, "RELEASE oo_fts_tokenizer")
+        except Exception:  # noqa: BLE001
+            pass
         raise
     _run(con, "RELEASE oo_fts_tokenizer")
     return out
@@ -1174,7 +1187,7 @@ def fts_status(session: Session) -> dict:
       * ``present``      — ``article_fts`` is declared in the schema (authoritative); ``None``
         only if even the metadata read failed.
       * ``tokenizer``    — ``"current"`` or ``"legacy"`` (an index made before 0.5, which splits Devanagari and
-        Bengali words at their vowel signs until the migration or an explicit re-index rebuilds it); absent when there
+        Bengali words at their vowel signs until the migration (or ``ensure_fts(rebuild="always")``) rebuilds it); absent when there
         is no index.
       * ``healthy``      — a cheap bounded probe (``SELECT rowid ... LIMIT 1``) ran without a
         corruption error. ``False`` = the index exists but is DAMAGED (a post-crash malformed
@@ -1214,8 +1227,7 @@ def fts_status(session: Session) -> dict:
         ).fetchone()
         out["present"] = row is not None
         if row is not None:
-            declared = str(row[0] or "").lower()
-            out["tokenizer"] = "current" if "categories" in declared and "m*" in declared else "legacy"
+            out["tokenizer"] = _tokenizer_of(row[0])
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never crashes
         out["present"] = None
         out["error"] = failure_text(exc)

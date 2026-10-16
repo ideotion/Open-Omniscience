@@ -688,10 +688,11 @@ def migrate(
                 report.state = "declined"
                 report.message = "declined: nothing was changed"
                 return report
-            _fts_phase(con, report, say)
-            report.state = "done"
-            report.finished_at = datetime.now(UTC).isoformat()
-            report.message = "the search index was rebuilt with the current tokenizer; the country codes were already done"
+            _run_fts_after_country_flip(con, report, say)
+            if report.state != "fts-pending":
+                report.state = "done"
+                report.finished_at = datetime.now(UTC).isoformat()
+                report.message = "the search index was rebuilt with the current tokenizer; the country codes were already done"
             return report
         if form == "alpha3":
             raise MigrationRefused(
@@ -959,6 +960,12 @@ def main(argv: list[str] | None = None) -> int:
         rep = migrate(path, backup_dir=args.backup_dir, confirm=ask, progress=show, estimate_only=args.estimate)
     except MigrationRefused as exc:
         print(f"Stopped: {exception_text(exc, typed=False)}", file=sys.stderr)
+        return 3
+    except KeyboardInterrupt:
+        print("Interrupted. Nothing half-done is kept: run this again and it finishes.", file=sys.stderr)
+        return 3
+    except Exception as exc:  # noqa: BLE001 - class only: the engine's text and its chained context can carry a path or a value
+        print(f"Stopped: the run failed ({type(exc).__name__}). Nothing was lost; run this again to finish it.", file=sys.stderr)
         return 3
     print(rep.message)
     if rep.collisions:

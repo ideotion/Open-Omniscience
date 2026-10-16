@@ -161,6 +161,27 @@ def test_a_rebuild_that_dies_leaves_the_old_index_not_an_empty_one(tmp_path, mon
     assert _hits(eng, "सरक"), "and still answers"
 
 
+def test_an_explicit_reindex_that_dies_leaves_the_old_index_not_an_empty_one(tmp_path, monkeypatch):
+    _path, eng = _store(tmp_path, legacy=True)
+    before = _terms(eng)
+
+    def boom(_con):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(fts, "rebuild_index", boom)
+    with pytest.raises(RuntimeError):
+        ensure_fts(eng, rebuild="always")
+    monkeypatch.undo()
+    with eng.connect() as c:
+        assert fts_tokenizer(c) == "legacy", "the drop was not rolled back"
+        assert c.execute(text("SELECT count(*) FROM article_fts_docsize")).scalar() == len(_DOCS)
+    assert _terms(eng) == before and _hits(eng, "सरक"), "the old index still answers"
+    # and the next explicit re-index finishes the job
+    assert ensure_fts(eng, rebuild="always") == "rebuilt"
+    with eng.connect() as c:
+        assert fts_tokenizer(c) == "current"
+
+
 def test_the_tokenizer_swap_needs_an_index_to_swap(tmp_path):
     eng = create_engine(f"sqlite:///{tmp_path / 'e.db'}", future=True)
     Base.metadata.create_all(eng)
@@ -275,8 +296,68 @@ def test_a_failed_index_rebuild_does_not_undo_the_migrated_codes_and_the_next_ru
     assert rep.state == "fts-pending"
     assert rep.fts == {"state": "failed", "error": "OSError"}
     assert "/secret/path" not in rep.message and "disk full" not in rep.message, "the engine's text is never carried"
+    chk = create_engine(f"sqlite:///{path}", future=True)
+    with chk.connect() as c:
+        assert fts_tokenizer(c) == "legacy", "the failed rebuild must leave the OLD index, not an empty current one"
+        assert c.execute(text("SELECT count(*) FROM article_fts_docsize")).scalar() == len(_DOCS)
+    chk.dispose()
     con = sqlite3.connect(path)
     assert con.execute("SELECT value FROM app_state WHERE key='store.country_form'").fetchone() is not None
     con.close()
     again = cm.migrate(path, backup_dir=tmp_path / "bk2")
     assert again.state == "done" and again.fts["tokenizer_after"] == "current"
+
+
+def test_a_failed_index_only_run_says_so_by_class_and_the_next_run_finishes_it(tmp_path, monkeypatch):
+    path, eng = _alpha2_store(tmp_path, legacy=False)
+    eng.dispose()
+    assert cm.migrate(path, backup_dir=tmp_path / "bk").state == "done"
+    con = sqlite3.connect(path)
+    from src.database.fts_norm import register
+
+    register(con)
+    con.execute("DROP TABLE article_fts")
+    con.execute(_LEGACY_TABLE)
+    con.execute("INSERT INTO article_fts(article_fts) VALUES ('rebuild')")
+    con.commit()
+    con.close()
+    real = fts.rebuild_index
+
+    def boom(_con):
+        raise OSError("disk full at /secret/path")
+
+    monkeypatch.setattr(fts, "rebuild_index", boom)
+    rep = cm.migrate(path)
+    monkeypatch.setattr(fts, "rebuild_index", real)
+    assert rep.state == "fts-pending" and rep.fts == {"state": "failed", "error": "OSError"}
+    assert "/secret/path" not in rep.message and rep.finished_at is None
+    assert cm.migrate(path).state == "done"
+
+
+def test_the_command_names_a_failure_by_class_and_never_prints_the_engines_text(monkeypatch, capsys):
+    def boom(*_a, **_k):
+        raise RuntimeError("could not open /secret/path with passphrase hunter2")
+
+    monkeypatch.setattr(cm, "migrate", boom)
+    assert cm.main(["--yes"]) == 3
+    err = capsys.readouterr().err
+    assert "RuntimeError" in err and "hunter2" not in err and "/secret/path" not in err
+
+    def interrupted(*_a, **_k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cm, "migrate", interrupted)
+    assert cm.main(["--yes"]) == 3
+    assert "Interrupted" in capsys.readouterr().err
+
+
+def test_the_diagnostics_card_says_which_tokenizer_the_search_index_has_and_names_the_rebuild(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as client:
+        body = client.get("/api/diagnostics/country-form").json()
+        assert body["search_index"] == {"tokenizer": "current", "needs_rebuild": False}
+        est = client.get("/api/diagnostics/country-form?estimate=true").json()
+        assert "search_index" in (est["estimate"] or {}) or "refused" in (est["estimate"] or {})
