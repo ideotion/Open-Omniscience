@@ -30,6 +30,7 @@ from pathlib import Path
 
 from src.ai_layer import source_tags as ST
 from src.jobs import progress_state as _progress_state
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger("ai_layer.source_tags_job")
 
@@ -278,7 +279,7 @@ def run_source_tags_job(
             )
         except LLMUnavailable as exc:
             state = "error"
-            error_msg = str(exc)[:300]
+            error_msg = record_text(exc, limit=300)
             break
         pb = out["parsed"]
         rec = ST.source_tag_batch_record(
@@ -636,7 +637,7 @@ def run_progressive_source_tags_job(
                         f"stopped after {consecutive_failures} consecutive "
                         f"local-model failures ({batches_completed} batches "
                         f"completed, {totals['assigned_count']} tagged so far): "
-                        f"{str(exc)[:200]}"
+                        f"{record_text(exc, limit=200)}"
                         # The backend's own reason BESIDE the raw error, not instead of
                         # it: one says what happened, the other says what to do about it.
                         + (f" [{_why}]" if _why else "")
@@ -863,5 +864,5 @@ def last_source_tags_report() -> dict:
         return {
             "schema": SOURCE_TAGS_RUN_SUMMARY_SCHEMA,
             "available": False,
-            "error": str(exc)[:300],
+            "error": record_text(exc, limit=300),
         }

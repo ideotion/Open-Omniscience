@@ -41,7 +41,7 @@ import sys
 import threading
 import time
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 try:
     import resource  # Unix-only: getrusage peak-RSS cross-check
@@ -133,7 +133,7 @@ def corpus_fingerprint(db_path: str | Path, passphrase: str | None = None) -> di
         finally:
             conn.close()
     except Exception as exc:  # noqa: BLE001 - report the read failure honestly
-        out["row_counts_error"] = str(exc)
+        out["row_counts_error"] = record_text(exc)
     out["row_counts"] = counts
     return out
 
@@ -498,7 +498,7 @@ def endpoint_bench(
                 resp = client.get(path)
                 status = resp.status_code
             except Exception as exc:  # noqa: BLE001
-                error = str(exc)
+                error = record_text(exc)
             samples.append((time.perf_counter() - t0) * 1000.0)
         samples.sort()
         rows.append(
@@ -810,7 +810,7 @@ def _guard(fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         return fn()
     except Exception as exc:  # noqa: BLE001 - degrade loudly, don't abort the report
         log_failure(_LOG, "scale-bench phase failed", exc, level=logging.WARNING)
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": record_text(exc, typed=True)}
 
 
 # --------------------------------------------------------------------------- #

@@ -39,6 +39,7 @@ from src.custody.timestamp import (
     ots_info,
     ots_stamp,
 )
+from src.monitoring.secret_scrub import record_text
 
 PRIVACY_WARNING = (
     "Anchoring to a PUBLIC blockchain is permanent publication of a hash + timestamp. "
@@ -167,11 +168,11 @@ class OpenTimestampsAnchorProvider(AnchorProvider):
         try:
             digest = bytes.fromhex(merkle_root)
         except ValueError as exc:
-            raise AnchorError(f"merkle_root must be hex: {exc}") from exc
+            raise AnchorError(f"merkle_root must be hex: {record_text(exc)}") from exc
         try:
             proof: TimestampProof = ots_stamp(digest)
         except TimestampUnavailable as exc:
-            raise AnchorUnavailable(str(exc)) from exc
+            raise AnchorUnavailable(record_text(exc)) from exc
         return AnchorReceipt(
             provider=self.name,
             merkle_root=merkle_root,

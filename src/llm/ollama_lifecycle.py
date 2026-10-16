@@ -47,7 +47,7 @@ import shutil
 import subprocess
 import time
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger("llm.ollama_lifecycle")
 
@@ -178,7 +178,7 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
             popen_kwargs["start_new_session"] = True
         _proc = subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 - fixed argv, absolute path from shutil.which, no shell
     except OSError as exc:
-        raise OllamaLifecycleError(f"could not launch 'ollama serve': {exc}") from exc
+        raise OllamaLifecycleError(f"could not launch 'ollama serve': {record_text(exc)}") from exc
 
     if not wait:
         return {"started": True, "ready": False, "path": path, "note": "not waited for"}
@@ -245,7 +245,7 @@ def release_vram(*, timeout: float = 8.0) -> dict:
         }
     except Exception as exc:  # noqa: BLE001 - a courtesy release must never block a start
         log_failure(_LOG, "could not ask Ollama to release VRAM", exc, level=logging.INFO)
-        return {"released": [], "reason": str(exc), "attempted": True}
+        return {"released": [], "reason": record_text(exc), "attempted": True}
 
 
 def stop(*, timeout: float = 10.0) -> dict:
@@ -296,6 +296,6 @@ def stop(*, timeout: float = 10.0) -> dict:
             proc.kill()
             proc.wait(timeout=5)
     except OSError as exc:
-        return {"stopped": False, "owned": True, "reason": f"{type(exc).__name__}: {exc}"}
+        return {"stopped": False, "owned": True, "reason": record_text(exc, typed=True)}
     _proc = None
     return {"stopped": True, "owned": True}

@@ -47,6 +47,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from src.monitoring.secret_scrub import record_text
 
 SCHEMA = "oo-ai-activity-1"
 
@@ -448,7 +449,7 @@ def recent_activity(
         except Exception as exc:  # noqa: BLE001 - a degraded half must not blank the feed
             stored = {
                 "available": False,
-                "reason": f"{type(exc).__name__}: {str(exc)[:200]}",
+                "reason": record_text(exc, limit=200, typed=True),
             }
 
     return {
@@ -498,7 +499,7 @@ def _coordinator_view() -> dict:
             )
     except Exception as exc:  # noqa: BLE001 - the lane's absence is not the feed's failure
         view["status"] = None
-        view["status_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+        view["status_error"] = record_text(exc, limit=120, typed=True)
     return view
 
 

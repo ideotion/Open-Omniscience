@@ -17,6 +17,7 @@ import io
 from dataclasses import dataclass, field
 
 from dateutil import parser as date_parser
+from src.monitoring.secret_scrub import record_text
 
 # Accepted header aliases (lowercased) -> canonical field.
 _ALIASES = {
@@ -70,7 +71,7 @@ def parse_price_csv(text: str) -> ParsedPrices:
             observed = date_parser.parse(rec["observed_on"]).date()
             price = float(rec["price"])
         except (ValueError, TypeError, KeyError) as exc:
-            errors.append(f"row {i}: {exc}")
+            errors.append(f"row {i}: {record_text(exc)}")
             continue
         point: dict = {"observed_on": observed, "price": price}
         if rec.get("currency"):

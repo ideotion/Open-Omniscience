@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 logger = logging.getLogger(__name__)
 
@@ -425,7 +425,7 @@ class Compressor:
         try:
             compressed_data = compress_func(data_bytes, algo_config)
         except Exception as e:
-            raise CompressionError(f"Compression failed: {e}") from e
+            raise CompressionError(f"Compression failed: {record_text(e)}") from e
 
         # Create header
         header = self._create_header(
@@ -488,7 +488,7 @@ class Compressor:
         try:
             decompressed_data = decompress_func(actual_compressed_data, algo_config)
         except Exception as e:
-            raise CompressionError(f"Decompression failed: {e}") from e
+            raise CompressionError(f"Decompression failed: {record_text(e)}") from e
 
         # Validate size
         if len(decompressed_data) != original_size:

@@ -44,6 +44,7 @@ from src.database.models import AiKeyword, Article
 from src.database.session import session_scope
 from src.database.stand_in import not_a_stand_in_article_id
 from src.llm.ollama import LLMUnavailable
+from src.monitoring.secret_scrub import record_text
 
 # Bump when the prompt changes (provenance flag travels with each AI-derived result).
 LANGDETECT_PROMPT_VERSION = "ai-langdetect-v1"
@@ -274,11 +275,11 @@ def detect_for_articles(
                 if isinstance(res.error, LLMUnavailable):
                     yield {"event": "done", "total": total, "stored": stored,
                            "skipped": skipped, "failed": failed, "none": none,
-                           "vetoed": vetoed, "aborted": True, "reason": str(res.error)[:200]}
+                           "vetoed": vetoed, "aborted": True, "reason": record_text(res.error, limit=200)}
                     return
                 failed += 1
                 yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
-                       "status": "failed", "error": str(res.error)[:200]}
+                       "status": "failed", "error": record_text(res.error, limit=200)}
                 continue
             code = res.value
             if not code:

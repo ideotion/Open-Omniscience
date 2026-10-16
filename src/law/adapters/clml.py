@@ -45,6 +45,7 @@ from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as _safe_fromstring
 
 from src.law.adapters import TEXT_RECOVERY_FLOOR, AdapterRefusal, ParsedLaw, Provision
+from src.monitoring.secret_scrub import record_text
 
 FORMAT = "clml"
 
@@ -256,14 +257,14 @@ def parse_clml(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedL
         try:
             data = data.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise AdapterRefusal("not utf-8 xml", detail=str(exc)) from exc
+            raise AdapterRefusal("not utf-8 xml", detail=record_text(exc)) from exc
 
     try:
         root = _safe_fromstring(data)
     except DefusedXmlException as exc:  # entity expansion / external entity
         raise AdapterRefusal("unsafe xml refused", detail=type(exc).__name__) from exc
     except Exception as exc:  # noqa: BLE001 - any malformed input is one refusal reason
-        raise AdapterRefusal("not well-formed xml", detail=str(exc)[:200]) from exc
+        raise AdapterRefusal("not well-formed xml", detail=record_text(exc, limit=200)) from exc
 
     root_name = _local(root.tag)
     if root_name not in _ROOTS:

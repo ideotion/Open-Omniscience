@@ -40,6 +40,7 @@ import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ def run_world_discovery(
             if "airplane" in str(exc):  # the kill switch raced the loop check
                 paused_reason = "airplane mode engaged — progress is saved; start again to resume"
                 break
-            errors.append(f"{cc}: {exc}"[:200])
+            errors.append(f"{cc}: {record_text(exc)}"[:200])
             consecutive_failures += 1
             if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
                 paused_reason = (
@@ -177,7 +178,7 @@ def run_world_discovery(
                 break
             continue
         except Exception as exc:  # noqa: BLE001 - one country must never abort the world
-            errors.append(f"{cc}: {type(exc).__name__}: {exc}"[:200])
+            errors.append(f"{cc}: {record_text(exc, typed=True)}"[:200])
             consecutive_failures += 1
             if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
                 paused_reason = (

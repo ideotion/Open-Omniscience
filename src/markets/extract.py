@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
+from src.monitoring.secret_scrub import record_text
 
 # Matches a numeric token possibly containing grouping/decimal separators or
 # (non-breaking) spaces used as thousands separators.
@@ -111,7 +112,7 @@ def extract_price(
     try:
         el = soup.select_one(selector)
     except Exception as exc:  # noqa: BLE001 - bad CSS selector from operator input
-        return PriceExtraction(None, None, f"invalid CSS selector: {exc}")
+        return PriceExtraction(None, None, f"invalid CSS selector: {record_text(exc)}")
     if el is None:
         return PriceExtraction(None, None, "selector matched no element on the page")
 
@@ -128,7 +129,7 @@ def extract_price(
         try:
             m = re.search(value_regex, raw)
         except re.error as exc:
-            return PriceExtraction(None, raw, f"invalid value_regex: {exc}")
+            return PriceExtraction(None, raw, f"invalid value_regex: {record_text(exc)}")
         if not m:
             return PriceExtraction(None, raw, "value_regex did not match the element text")
         text = m.group(m.lastindex) if m.lastindex else m.group(0)

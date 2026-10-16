@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from src.jobs.progress_state import load_progress_state, save_progress_state
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger("ai_layer.translation_sweep")
 
@@ -307,7 +307,7 @@ def run_keyword_translation_sweep(
                 try:
                     text = translate_keyword(client, it.term, lang, tgt, model=model)
                 except LLMUnavailable as exc:
-                    paused_reason = f"the local model is unavailable: {exc}"[:200]
+                    paused_reason = f"the local model is unavailable: {record_text(exc)}"[:200]
                     unavailable = True
                     break
                 except LLMError:
@@ -512,7 +512,7 @@ def run_title_translation_sweep(
                         source_lang=src, target_lang=tgt, model=model,
                     )
                 except LLMUnavailable as exc:
-                    paused_reason = f"the local model is unavailable: {exc}"[:200]
+                    paused_reason = f"the local model is unavailable: {record_text(exc)}"[:200]
                     unavailable = True
                     break
                 except LLMError:

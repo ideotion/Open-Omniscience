@@ -48,7 +48,7 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 from src.llm.weights_pin import PinMismatch as _PinMismatch
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def server_log_tail(*, limit: int = _LOG_TAIL_BYTES, head_limit: int = _LOG_HEAD
             "tail": tail.decode("utf-8", errors="replace"),
         }
     except OSError as exc:
-        return {"available": False, "reason": f"could not read the server log: {exc}"}
+        return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
 
 
 #: Fatal signatures, MOST SPECIFIC FIRST -- the cause, then the generic wrappers around
@@ -362,7 +362,7 @@ def failure_excerpt(*, limit: int = 900) -> dict:
         with p.open("rb") as fh:
             raw = fh.read(4_000_000)
     except OSError as exc:
-        return {"available": False, "reason": f"could not read the server log: {exc}"}
+        return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
 
     text = raw.decode("utf-8", errors="replace")
     lines = text.splitlines()
@@ -677,7 +677,7 @@ def record_install_attempt(
             _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
     except Exception as exc:  # noqa: BLE001 - must NEVER break the install it records
         _history_disabled = True
-        _history_disabled_reason = f"{type(exc).__name__}: {exc}"[:200]
+        _history_disabled_reason = record_text(exc, typed=True, limit=200)
         try:
             log_failure(_LOG, "vLLM install-attempt journal write failed -- recording disabled "
                 "for this process", exc, level=logging.WARNING)
@@ -1668,7 +1668,7 @@ def newest_failed_start_log(*, limit: int = _BUNDLED_FAILED_LOG_BYTES) -> dict:
     try:
         raw = newest.read_bytes()
     except OSError as exc:
-        return {"available": False, "reason": f"could not read {newest}: {exc}"}
+        return {"available": False, "reason": f"could not read {newest}: {record_text(exc)}"}
     out: dict = {"available": True, "path": str(newest), "bytes": len(raw)}
     if len(raw) <= limit:
         out["text"] = raw.decode("utf-8", errors="replace")
@@ -1916,7 +1916,7 @@ def clear_gpu_for_vllm(*, settle: float = _VRAM_SETTLE_TIMEOUT_S) -> dict:
         released = release_vram()
     except Exception as exc:  # noqa: BLE001 - see the docstring
         log_failure(_LOG, "could not clear the GPU before starting vLLM", exc, level=logging.INFO)
-        released = {"released": [], "reason": str(exc), "attempted": True}
+        released = {"released": [], "reason": record_text(exc), "attempted": True}
     waited = 0.0
     if released.get("released") and before is not None:
         # Poll until the reading stops improving, not for a fixed nap: the release is
@@ -2271,7 +2271,7 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
     try:
         pids = _adoptable_server_pids()
     except Exception as exc:  # noqa: BLE001 - a scan that fails is a reason, not a crash
-        return {"stopped": False, "reason": f"could not identify the server: {exc}"[:200]}
+        return {"stopped": False, "reason": f"could not identify the server: {record_text(exc)}"[:200]}
     if not pids:
         return {
             "stopped": False,
@@ -3133,7 +3133,7 @@ def kv_basis(model: str) -> dict:
     try:
         rev = _loadable_revision(model)
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never raise
-        return {"measured": False, "reason": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        return {"measured": False, "reason": record_text(exc, limit=120, typed=True)}
     if rev is None:
         return {
             "measured": False,
@@ -3147,7 +3147,7 @@ def kv_basis(model: str) -> dict:
     try:
         got = _kv_from_checkpoint(model)
     except Exception as exc:  # noqa: BLE001
-        return {"measured": False, "reason": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        return {"measured": False, "reason": record_text(exc, limit=120, typed=True)}
     if got is None:
         return {
             "measured": False,
@@ -3441,13 +3441,13 @@ def run_models_download_job(
             # Its OWN state, not folded into "error": a gated repo, a typo and a network
             # blip are the operator's to fix, while "the published weights are not the
             # bytes you pinned" is a supply-chain finding and reads as one.
-            results.append({"model": model, "state": "integrity-mismatch", "error": str(exc)})
+            results.append({"model": model, "state": "integrity-mismatch", "error": record_text(exc)})
         except (VllmLifecycleError, VllmUnsupportedError) as exc:
             # Recorded with its own reason -- a gated repo and a typo look identical
             # from a bare "failed", and only one of them is the operator's to fix.
-            results.append({"model": model, "state": "error", "error": str(exc)})
+            results.append({"model": model, "state": "error", "error": record_text(exc)})
         except Exception as exc:  # noqa: BLE001 - one model's surprise is not the batch's
-            results.append({"model": model, "state": "error", "error": repr(exc)})
+            results.append({"model": model, "state": "error", "error": record_text(exc, typed=True)})
     downloaded = [r for r in results if r.get("state") in {"downloaded", "already_cached"}]
     failed = [r for r in results if r.get("state") == "error"]
     return {
@@ -3649,7 +3649,7 @@ def run_install_job(
         tmp.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise VllmLifecycleError(
-            f"could not create pip's unpack directory {tmp}: {exc}"
+            f"could not create pip's unpack directory {tmp}: {record_text(exc)}"
         ) from exc
     try:
         run = runner or _default_runner

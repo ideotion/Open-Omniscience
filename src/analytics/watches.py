@@ -34,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Watch, WatchMatch
+from src.monitoring.secret_scrub import record_text
 
 # A matcher maps (session, query) -> the list of article ids matching the query, best
 # first. Injectable so the firing logic is unit-testable without an FTS table.
@@ -156,7 +157,7 @@ def _filters_blob(filters: dict | None) -> str | None:
     try:
         adv = _validated(AdvancedSearch(**known))
     except (HTTPException, TypeError) as exc:
-        raise ValueError(getattr(exc, "detail", None) or str(exc)) from exc
+        raise ValueError(getattr(exc, "detail", None) or record_text(exc)) from exc
     stored = adv.to_dict()
     if "near" in known:
         # An explicit distance is kept even when it equals the grammar's default: absent

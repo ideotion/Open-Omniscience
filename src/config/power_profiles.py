@@ -38,6 +38,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Any
+from src.monitoring.secret_scrub import record_text
 
 SCHEMA = "oo-power-profile-1"
 PROFILE_NAMES = ("low", "optimized", "max")
@@ -329,7 +330,7 @@ def power_profile_report(
     except ValueError as exc:
         return {
             "schema": SCHEMA,
-            "error": str(exc),
+            "error": record_text(exc),
             "profiles": list(PROFILE_NAMES),
         }
     return {

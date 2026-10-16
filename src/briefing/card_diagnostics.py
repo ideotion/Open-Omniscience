@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from src.monitoring.secret_scrub import record_text
 
 # Replicates app.js cardAnalyzeQuery: a quoted term in the title wins, else the card
 # `key`, else the title with quotes stripped. This is the seed a search-fallback uses.
@@ -103,7 +104,7 @@ def card_click_diagnostics(session) -> dict:
                     len(search_ids(session, seed, exclude_quarantined=True) or []) if seed else 0
                 )
             except SearchQueryError as exc:
-                err = str(exc)
+                err = record_text(exc)
             # MISMATCH = the fuzzy search loads a wildly different count than the card's n
             # (or zero), i.e. clicking does NOT reproduce the card's corpus.
             mm = bool(

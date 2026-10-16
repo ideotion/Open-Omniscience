@@ -20,6 +20,7 @@ import io
 from src.catalog.countries import normalize_country, to_iso2, to_iso3
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
+from src.monitoring.secret_scrub import record_text
 
 # The defined column set (export order). Only name + domain are required on import.
 EXPORT_COLUMNS: list[str] = [
@@ -284,7 +285,7 @@ def upsert_sources(session, rows: list[dict]) -> dict:
                 existing[domain] = -1
                 created += 1
         except Exception as exc:  # noqa: BLE001 - one bad row must not abort the batch
-            errors.append(f"{domain}: {exc}")
+            errors.append(f"{domain}: {record_text(exc)}")
             continue
     session.commit()
     return {"created": created, "updated": updated, "skipped": len(errors), "errors": errors}

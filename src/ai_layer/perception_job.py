@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from src.monitoring.secret_scrub import record_text
 
 PERCEPTION_LIVE_SCHEMA = "oo-perception-eval-live-1"
 
@@ -80,7 +81,7 @@ def last_perception_eval_live_report() -> dict:
         data["filename"] = path.name
         return data
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
-        return {"schema": PERCEPTION_LIVE_SCHEMA, "available": False, "error": str(exc)[:300]}
+        return {"schema": PERCEPTION_LIVE_SCHEMA, "available": False, "error": record_text(exc, limit=300)}
 
 
 __all__ = [

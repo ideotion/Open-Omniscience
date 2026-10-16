@@ -58,7 +58,7 @@ from sqlalchemy import func
 from src.config.machine_floor import scan_budget
 from src.database.models import Article
 from src.database.stand_in import not_a_stand_in_source
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -1722,7 +1722,7 @@ def run_qualification_pass(
         # escape as an unhandled exception, which the job would report as a crash.
         log_failure(_LOG, "qualification pass paused during the cohort freeze", exc, level=logging.INFO)
         return {
-            "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
+            "enabled": True, "evaluated": 0, "paused": "memory", "reason": record_text(exc),
             "trial_fetch_errors": trial_errors, "deferred": deferred,
         }
     # A cut frozen at another threshold is a DIFFERENT baseline -- it decides which sources
@@ -1747,7 +1747,7 @@ def run_qualification_pass(
         # truth, and the queue's least-recently-attempted ordering brings them back.
         log_failure(_LOG, "qualification pass paused", exc, level=logging.INFO)
         return {
-            "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
+            "enabled": True, "evaluated": 0, "paused": "memory", "reason": record_text(exc),
             "trial_fetch_errors": trial_errors, "deferred": deferred,
         }
     fails_by_source = sa.flag_criteria(

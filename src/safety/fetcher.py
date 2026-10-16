@@ -24,6 +24,7 @@ import requests
 from urllib3.util import parse_url
 
 from src.ingest import DEFAULT_USER_AGENT, BlockedTarget, EthicalFetcher, kill_switch_active
+from src.monitoring.secret_scrub import record_text
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
 
 # The SOCKS proxy schemes requests[socks]/PySocks understand. Shared by the
@@ -348,7 +349,7 @@ def _protected_transport(settings: SafetySettings) -> tuple[str | None, tuple[st
         try:
             validate_socks_pool(list(pool))
         except ValueError as exc:
-            return None, (), str(exc)
+            return None, (), record_text(exc)
         return None, pool, None
     if settings.http_proxy:
         return settings.http_proxy, (), None

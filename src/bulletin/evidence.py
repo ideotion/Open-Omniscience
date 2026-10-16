@@ -49,7 +49,7 @@ from src.backup.attribution import (
 )
 from src.bulletin.period import Period
 from src.database.models import Article, Source
-from src.monitoring.secret_scrub import exception_text, log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ def evidence_plan(session, period: Period, *, dest: str | os.PathLike | None = N
         except OSError as exc:
             out["destination_writable"] = False
             # The operator chose this path and is told why it fails (the route answers them; no record keeps it): the OS words, scrubbed.
-            out["destination_error"] = exception_text(exc, limit=300)
+            out["destination_error"] = record_text(exc, limit=300, typed=True)
     return out
 
 

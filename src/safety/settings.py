@@ -27,6 +27,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 SETTINGS_VERSION = "oo-safety-settings-1"
@@ -267,7 +268,7 @@ def save_settings(updates: dict) -> SafetySettings:
                 # ALL-TOR OR REFUSED (C10, transport honesty): a single non-SOCKS
                 # entry refuses the WHOLE update -- never partially applied, never
                 # a silent per-host downgrade to clearnet.
-                raise SafetySettingsError(str(exc)) from exc
+                raise SafetySettingsError(record_text(exc)) from exc
         current.http_proxies = pool
     if "discovery_external_enabled" in updates and updates["discovery_external_enabled"] is not None:
         current.discovery_external_enabled = bool(updates["discovery_external_enabled"])

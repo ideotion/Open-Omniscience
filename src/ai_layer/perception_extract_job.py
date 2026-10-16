@@ -46,6 +46,7 @@ from pathlib import Path
 
 from src.ai_layer import perception_extract as PE
 from src.jobs import progress_state as _progress_state
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger("ai_layer.perception_extract_job")
 
@@ -492,7 +493,7 @@ def last_perception_extract_report() -> dict:
         return {
             "schema": PERCEPTION_EXTRACT_RUN_SUMMARY_SCHEMA,
             "available": False,
-            "error": str(exc)[:300],
+            "error": record_text(exc, limit=300),
         }
 
 

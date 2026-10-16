@@ -35,6 +35,7 @@ import base64
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from src.monitoring.secret_scrub import record_text
 
 # Public OpenTimestamps calendar servers (operated by the OTS project & community).
 DEFAULT_CALENDARS = (
@@ -62,7 +63,7 @@ try:  # pragma: no cover - availability is environment-dependent
     _OTS_IMPORTED = True
 except Exception as _exc:  # noqa: BLE001
     _OTS_IMPORTED = False
-    _OTS_IMPORT_ERROR = f"{type(_exc).__name__}: {str(_exc)[:160]}"
+    _OTS_IMPORT_ERROR = record_text(_exc, limit=160, typed=True)
 
 
 def _probe_ots() -> tuple[bool, str]:
@@ -111,7 +112,7 @@ def _probe_ots() -> tuple[bool, str]:
         if not any(isinstance(a, PendingAttestation) for _m, a in back.timestamp.all_attestations()):
             return False, "a serialized attestation did not survive the round trip"
     except Exception as exc:  # noqa: BLE001 - nothing escapes a capability probe
-        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
+        return False, record_text(exc, limit=160, typed=True)
     return True, "detached-proof round trip verified (build, serialize, deserialize, read)"
 
 
@@ -236,7 +237,7 @@ def ots_stamp(
             ts.merge(cal_ts)
             reached += 1
         except Exception as exc:  # noqa: BLE001 - calendars are best-effort
-            errors.append(f"{url}: {exc}")
+            errors.append(f"{url}: {record_text(exc)}")
     if reached == 0:
         raise TimestampUnavailable(
             "No OpenTimestamps calendar could be reached: " + "; ".join(errors)

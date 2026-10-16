@@ -47,7 +47,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from src.monitoring.secret_scrub import env_secret, passphrase_bytes
+from src.monitoring.secret_scrub import env_secret, passphrase_bytes, record_text
 
 # --------------------------------------------------------------------------- #
 # Post-quantum backend (optional, import-guarded)
@@ -128,7 +128,7 @@ def _probe_mldsa(mod: object) -> tuple[bool, str]:
         if _mldsa_verify(mod, pk, probe + b"!", sig):
             return False, "verify() accepted a signature over different data"
     except Exception as exc:  # noqa: BLE001 - the whole point is that NOTHING escapes
-        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
+        return False, record_text(exc, limit=160, typed=True)
     return True, f"{_MLDSA_VARIANT} round trip verified (keygen, sign, verify true and false)"
 
 

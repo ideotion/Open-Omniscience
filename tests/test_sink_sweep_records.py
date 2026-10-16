@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message;
 #: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
-         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "is_corruption"}
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption"}
 MODULES = sorted(
     p.relative_to(ROOT).as_posix()
     for entry in ("src/scheduler", "src/wiki")
@@ -35,6 +35,16 @@ MODULES = sorted(
 ) + sorted(
     p.relative_to(ROOT).as_posix() for p in (ROOT / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py"
 ) + sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py"))
+#: Slice 5: every OTHER package of ``src/`` and the top-level modules (the sweep reads the whole program). ``static`` holds no Python; a module
+#: added to any package is read from its first commit.
+_SWEEP_DONE = {"scheduler", "wiki", "backup", "ingest", "database", "monitoring", "api", "static", "__pycache__"}
+_S5_MODULES: set[str] = set()
+MODULES += sorted(
+    p.relative_to(ROOT).as_posix()
+    for p in (ROOT / "src").rglob("*.py")
+    if p.relative_to(ROOT / "src").parts[0] not in _SWEEP_DONE
+)
+_S5_MODULES.update(m for m in MODULES if m.split('/')[1] not in _SWEEP_DONE)
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
@@ -341,16 +351,8 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_scalar', 'if _budget_spent(session, exc):'): 1,
         ('corpus_integrity', 'if _budget_spent(session, exc):'): 2,
     },
-    'src/monitoring/keyword_write_cost.py': {  # engine_text is record_text (a driver by class only)
-        ('_cut_reason', 'return f"stopped before the sample finished, by the {why} ({engine_text(exc)})"'): 1,
+    'src/monitoring/keyword_write_cost.py': {  # engine_text is record_text (a driver by class only): _cut_reason's text is composed by it
         ('keyword_write_cost', 'cut = _cut_reason(exc)'): 1,
-        ('keyword_write_cost', '_LOG.debug("keyword write cost unavailable: %s", engine_text(exc, typed=True))'): 1,
-        ('keyword_write_cost', 'out["reason"] = f"unreadable: {engine_text(exc, 200)}"'): 1,
-        ('_write_rate', 'out[key] = {"available": False, "reason": f"stopped by the {why} ({engine_text(exc)})"}'): 1,
-        ('_write_rate', 'out[key] = {"available": False, "reason": f"unreadable: {engine_text(exc, 160)}"}'): 1,
-    },
-    'src/monitoring/llm_bench.py': {  # bounded_error scrubs through record_text before its cut (no database call can raise in the bench)
-        ('_one_call', '"error": bounded_error(exc, 200),'): 1,
     },
     'src/monitoring/machine_record.py': {  # _unavailable writes the class name and nothing else
         ('_build', 'out["app_version"] = _unavailable(exc)'): 1,
@@ -565,7 +567,7 @@ _RAISE_FROM = re.compile(r"(?<=[)\w\]\"]) from (?:exc|e|err|ex|None)[ \t]*$", re
 
 
 def _api_chain_taken_off(rel: str, source: str) -> str:
-    return _RAISE_FROM.sub("", source) if rel.startswith("src/api/") else source
+    return _RAISE_FROM.sub("", source) if (rel.startswith("src/api/") or rel in _S5_MODULES) else source
 
 
 def _found(rel: str, source: str) -> list[str]:
@@ -684,6 +686,316 @@ def test_the_sweep_reads_every_module_of_src_api():
     read = {m for m in MODULES if m.startswith("src/api/")}
     on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py")}
     assert on_disk <= read, sorted(on_disk - read)
+
+
+# --- slice 5: the rest of src/ ----------------------------------------------------------------------------------------------------
+# Every OTHER package is read like the ones above (a stored or served text from a caught exception is record_text's, or a line below with its reason).
+_S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    'src/ai_layer/source_tags_job.py': {
+        # outage_detail reads an exception through record_text (llm/backend.py); pinned by tests/test_outage_detail_scrub.py
+        ('run_progressive_source_tags_job', 'f"{outage_detail(_why, exc, recovery=_fix)} — retrying in "'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('run_progressive_source_tags_job', 'if is_context_overflow(exc) and working_batch > 1:'): 1,
+    },
+    'src/ai_layer/triage_job.py': {
+        # outage_detail reads an exception through record_text (llm/backend.py); pinned by tests/test_outage_detail_scrub.py
+        ('run_progressive_triage_job', 'f"{outage_detail(_why, exc, recovery=_fix)} — retrying in "'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('run_progressive_triage_job', 'if is_context_overflow(exc) and working_batch > 1:'): 1,
+    },
+    'src/analytics/equivalence.py': {
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('QueryExpander.cap_facts', 'rec = self._capped.get(e.normalized)'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('QueryExpander.searched_siblings', 'rec = self._capped.get(e.normalized)'): 1,
+    },
+    'src/analytics/keyword_log_export.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('ZipJob.write', 'refusal = no_room_refusal(exc, "writing the archive")'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('ZipJob.write_parts', 'refusal = no_room_refusal(exc, "writing the parts")'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('finish_parts', 'refusal = no_room_refusal(exc, "writing the parts") if isinstance(exc, OSError) else None'): 1,
+    },
+    'src/analytics/keyword_log_scan.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('_refuse_when_the_disk_is_full', 'getattr(exc, "sqlite_errorcode", None) == _SQLITE_IOERR_WRITE'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('_refuse_when_the_disk_is_full', 'refusal = no_room_refusal(OSError(code, str(exc)), "ranking keywords")'): 1,
+        # read for a keyword to CLASSIFY the failure; the text goes nowhere
+        ('_refuse_when_the_disk_is_full', 'said = str(exc).lower()'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('no_room_refusal', 'code = getattr(exc, "errno", None)'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('scratch_file', 'refusal = no_room_refusal(exc, "creating its scratch file")'): 1,
+    },
+    'src/analytics/rollup_serve.py': {
+        # the module's own stop signal: a reason word and a detail dict it wrote itself, no engine text
+        ('_build_inmemory_and_swap', 'skip = {"reason": stop.reason, "at": time.time(), **stop.detail}'): 2,
+    },
+    'src/analytics/store.py': {
+        # _skip_error writes engine_text (record_text); its body is pinned by test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub
+        ('maybe_cleanup_keywords', 'tally["entity_status"] = _skip_error(exc)'): 1,
+        # _skip_error writes engine_text (record_text); its body is pinned by test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub
+        ('maybe_cleanup_keywords', 'tally["language"] = _skip_error(exc)'): 1,
+        # _skip_error writes engine_text (record_text); its body is pinned by test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub
+        ('maybe_cleanup_keywords', 'tally["prune"] = _skip_error(exc)'): 2,
+    },
+    'src/analytics/watches.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('_filters_blob', 'raise ValueError(getattr(exc, "detail", None) or record_text(exc))'): 1,
+    },
+    'src/catalog/discover_job.py': {
+        # read for a keyword to CLASSIFY the failure; the text goes nowhere
+        ('run_world_discovery', 'if "airplane" in str(exc):  # the kill switch raced the loop check'): 1,
+    },
+    'src/catalog/qualification_merge.py': {
+        # hands the JSON error on to the YAML reader, which reads only its class and fixed words
+        ('rows_from_export_bytes', 'return _rows_from_export_yaml(text, origin, json_exc)'): 1,
+    },
+    'src/config/kv_store.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('_ro_only_failure', 'return type(exc).__name__ == "OperationalError" and any(w in str(exc).lower() for w in _RO_ONLY_FAILURES)'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('is_damaged', 'return isinstance(exc, ValueError) or bool(getattr(exc, "damaged", False))'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('kv_get_json_checked', 'if isinstance(exc, FileNotFoundError) or "no such table" in str(exc).lower():'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('kv_get_json_checked', 'if not _ro_only_failure(ro_exc):'): 1,
+        # read for a keyword to CLASSIFY the failure; the text goes nowhere
+        ('kv_get_json_strict', 'if "no such table" in str(exc).lower():'): 1,
+    },
+    'src/custody/pending.py': {
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('_record', '"failed_at": _now_iso(), "error": str(error or "")[:300], "found_by": found_by,'): 1,
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('note_failed', 'source_id=source_id, error=error, found_by=found_by)])'): 1,
+    },
+    'src/diagnostics.py': {
+        # _brief is record_text's first line (src/diagnostics.py)
+        ('_check_database', 'r.line(FAIL, "Database", f"reachable but query failed: {_brief(exc)}")'): 1,
+    },
+    'src/entities/gazetteer_build.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('fetch_wikidata', '_reraise_refusal(exc)  # ... except a refusal by the transport or the kill switch'): 1,
+    },
+    'src/events/catalog.py': {
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_span_for', 'end = _span_end_date(start, e["end_month"], e["end_day"])'): 2,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_span_for', 'if not (e.get("end_month") and e.get("end_day") and e.get("month") and e.get("day")):'): 4,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_span_for', 'origin, until = e.get("origin_year"), e.get("until_year")'): 2,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_span_for', 'start = date(year, int(e["month"]), int(e["day"]))'): 2,
+    },
+    'src/events/dedup.py': {
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_when_display', 'return e.get("next_occurrence") or _when_key(e) or "—"'): 2,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_when_key', 'if e.get("month"):'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_when_key', 'if e.get("next_occurrence"):'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_when_key', 'return e.get("cadence") or ""'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_when_key', 'return e["next_occurrence"][5:7]  # MM'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_when_key', 'return f"{int(e[\'month\']):02d}"'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('fingerprint', 'return (_norm_title(e.get("title", "")), _when_key(e), (e.get("country") or "").upper())'): 3,
+    },
+    'src/geo/osm_downloads.py': {
+        # kept to be re-raised on the caller's side: not written
+        ('OsmDownloadManager._download', 'failure = exc'): 1,
+    },
+    'src/hazards/ingest.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('ingest_hazard_record', 'if not is_integrity_error(exc):'): 2,
+    },
+    'src/jobs/background.py': {
+        # kept to be re-raised on the caller's side: not written
+        ('BackgroundJob._run', 'failure = exc'): 1,
+    },
+    'src/law/corpus.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('upsert_law_corpus_article', 'if not is_integrity_error(exc):'): 1,
+    },
+    'src/law/track.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('track_document', 'if not is_integrity_error(exc):'): 2,
+    },
+    'src/llm/backend.py': {
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('outage_detail', 'text = str(error or "").strip()'): 1,
+    },
+    'src/llm/concurrency.py': {
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('run_concurrent', 'out.append(ConcurrentResult(ok=False, error=exc))'): 1,
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('run_concurrent', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
+    },
+    'src/llm/ollama.py': {
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('OllamaClient.generate', 'f"Ollama error for model {model!r}: {_http_error_text(exc)}"'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('OllamaClient.generate', 'if exc.response.status_code == 404:'): 1,
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('OllamaClient.pull', 'raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}")'): 1,
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('OllamaClient.remove', 'if exc.response.status_code == 404:'): 1,
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('OllamaClient.remove', 'raise LLMError(f"Ollama error removing {model!r}: {_http_error_text(exc)}")'): 1,
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('_http_error_text', 'line = _status_line(exc)'): 1,
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('_http_error_text', 'reason = _http_reason(exc)'): 1,
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('_http_reason', 'raw = exc.response.text or ""'): 1,
+        # _status_line: httpx's HTTPStatusError status line and URL with the explainer line cut off; no driver and no key
+        ('_status_line', 'text = str(exc)'): 1,
+        # a parameter named error holding a text its caller made through record_text; not an exception here
+        ('is_context_overflow', 'if error is None:'): 1,
+        # read for a keyword to CLASSIFY the failure; the text goes nowhere
+        ('is_context_overflow', 'text = str(error).lower()'): 1,
+    },
+    'src/llm/vllm_client.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('VllmClient.generate', 'if exc.response.status_code == 404:'): 1,
+        # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
+        ('VllmClient.generate', 'raise LLMError(f"vLLM error for model {model!r}: {_http_error_text(exc)}")'): 1,
+    },
+    'src/llm/vllm_lifecycle.py': {
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('record_install_attempt', '"error": (str(error)[:500] if error else None),'): 2,
+        # an exception handed on in an object / a text already made by the caller from record_text; not made here
+        ('run_install_job._journal', 'error=error,'): 1,
+    },
+    'src/markets/csv_feeds.py': {
+        # read for a keyword to CLASSIFY the failure; the text goes nowhere
+        ('classify_fetch_failure', 'low = str(exc).lower()'): 1,
+        # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
+        ('import_feed', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
+    },
+    'src/osm/view.py': {
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('parse_bbox', 'for v in (w, s, e, n):'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('parse_bbox', 'if not (w < e and s < n):'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('parse_bbox', 'return w, s, e, n'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('parse_bbox', 'w, e = max(-180.0, w), min(180.0, e)'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', 'cw, ch = (e - w) / CLUSTER_GRID, (n - s) / CLUSTER_GRID'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', 'out: dict[str, Any] = {"bbox": [w, s, e, n], "caps": caps()}'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', 'p = {"w": w, "s": s, "e": e, "n": n}'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', 'tol = (e - w) / SIMPLIFY_PX'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', 'w, s, e, n = parse_bbox(w, s, e, n)'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', 'want = (e - w) / CLUSTER_GRID'): 1,
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('view', '{"lv": lv, "x0": int((w + 180) // sz), "x1": int((e + 180) // sz),'): 1,
+    },
+    'src/safety/fetcher.py': {
+        # a fixed sentence of that function, never the URL
+        ('refuse_unlisted_host', 'raise RedirectRefused(str(exc)) from None  # a fixed sentence of that function, never the URL'): 1,
+    },
+    'src/safety/settings.py': {
+        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        ('_read_raw_strict', 'raise refused(exc)'): 3,
+    },
+    'src/timemap/datediag.py': {
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('recall_probe._adjacent_to_a_date', 'or (e <= ks and _APPOS_BRIDGE.fullmatch(text, e, ks)))'): 2,
+    },
+    'src/timemap/dateextract.py': {
+        # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
+        ('_extract._appositive_of_claimed', 'right_start = e + (len(text[e:]) - len(text[e:].lstrip(seps)))'): 3,
+    },
+    'src/weather/openmeteo.py': {
+        # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
+        ('fetch_daily_slice', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
+    },
+}
+_S5_NOT_RECORDS: dict[str, dict[str, int]] = {
+    'src/ai_layer/coordinator.py': {
+        'getattr reaches m.enabled_key, a way round the scan of the log calls': 1,
+    },
+    'src/ai_layer/langdetect_llm.py': {
+        'res.error is kept as a name, a log call the scan cannot read': 3,
+    },
+    'src/ai_layer/perception_extract.py': {
+        'res.error is kept as a name, a log call the scan cannot read': 2,
+    },
+    'src/ai_layer/triage.py': {
+        'getattr reaches f, a way round the scan of the log calls': 1,
+    },
+    'src/analytics/perception_eval.py': {
+        'getattr reaches fld, a way round the scan of the log calls': 1,
+    },
+    'src/analytics/reindex_parallel.py': {
+        'd.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/analytics/store.py': {
+        'deriv.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/briefing/card.py': {
+        'getattr reaches name, a way round the scan of the log calls': 2,
+    },
+    'src/briefing/registry.py': {
+        'getattr reaches name, a way round the scan of the log calls': 1,
+    },
+    'src/catalog/qualification_merge.py': {
+        'zlib.error is kept as a name, a log call the scan cannot read': 2,
+    },
+    'src/config/app_settings.py': {
+        'getattr reaches _name, a way round the scan of the log calls': 2,
+    },
+    'src/geo/osm_downloads.py': {
+        'e.error is kept as a name, a log call the scan cannot read': 5,
+        'self.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/law/track.py': {
+        'getattr reaches field, a way round the scan of the log calls': 1,
+    },
+    'src/markets/extract.py': {
+        're.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/osm/completeness.py': {
+        'row.error is kept as a name, a log call the scan cannot read': 1,
+        'r.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/osm/history.py': {
+        'self.error is kept as a name, a log call the scan cannot read': 1,
+        'report.error is kept as a name, a log call the scan cannot read': 2,
+        'r.error is kept as a name, a log call the scan cannot read': 1,
+    },
+    'src/osm/ingest.py': {
+        'self.error is kept as a name, a log call the scan cannot read': 1,
+        'report.error is kept as a name, a log call the scan cannot read': 2,
+        "getattr reaches T.column_name('name'), a way round the scan of the log calls": 1,
+    },
+    'src/osm/reference_run.py': {
+        'getattr reaches name, a way round the scan of the log calls': 2,
+        'p.info is kept as a name, a log call the scan cannot read': 2,
+    },
+    'src/safety/crypto.py': {
+        'struct.error is kept as a name, a log call the scan cannot read': 2,
+    },
+    'src/utils/access_log.py': {
+        'sys.exc_info() reads the exception being handled': 1,
+    },
+    'src/versioned/budget.py': {
+        'getattr reaches row.setting, a way round the scan of the log calls': 1,
+    },
+}
+CLASSIFIED.update(_S5_CLASSIFIED)
+NOT_RECORDS.update(_S5_NOT_RECORDS)
 
 
 # --- ``withheld=`` is a FIXED sentence ----------------------------------------------------------------------------------------------
@@ -920,3 +1232,18 @@ def test_the_record_text_alias_the_bundle_trusts_is_the_real_record_text():
     from src.monitoring import secret_scrub
 
     assert bundle._record_text is secret_scrub.record_text
+
+
+def test_engine_text_and_bounded_error_never_return_a_drivers_words_or_a_held_passphrase(monkeypatch):
+    """Both are credited as scrubbing calls by name (CALLS): each is held to the same two things as the api helpers."""
+    import sqlite3
+
+    from src.database import connect
+    from src.llm.ollama import bounded_error
+    from src.monitoring.engine_text import engine_text
+
+    secret = "hunter2" + "Zq8Lm_tbl"
+    monkeypatch.setattr(connect, "_passphrase", "kQ7!vLm-held-key")
+    for exc in (sqlite3.OperationalError(f"no such table: {secret}"), ValueError("with kQ7!vLm-held-key inside")):
+        for out in (engine_text(exc), engine_text(exc, 200, typed=True), bounded_error(exc, 200)):
+            assert secret not in out and "kQ7!vLm-held-key" not in out, out
