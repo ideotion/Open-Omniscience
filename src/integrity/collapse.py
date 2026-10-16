@@ -149,22 +149,25 @@ def story_prominence(
 
     cutoff = datetime.now(UTC) - timedelta(days=days)
     rows = (
-        session.query(Article.id, Source.name, Source.domain, Article.title, Article.content)
+        session.query(Article.id, Source.name, Source.domain, Article.title, Article.content, Article.source_id)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
         .order_by(Article.id.desc())
         .limit(limit)
         .all()
     )
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # a story's voices are OUTLETS: one site's several feeds are one voice
     source_of: dict[str, str] = {}
     texts: dict[str, str] = {}
     title_of: dict[str, str] = {}
-    for aid, name, domain, title, content in rows:
+    for aid, name, domain, title, content, src_id in rows:
         sid = str(aid)
         text = content or title or ""
         if len(text) < min_chars:
             continue
-        source_of[sid] = name or domain or f"source-{aid}"
+        source_of[sid] = outlets.label(src_id, name, domain)
         texts[sid] = text
         title_of[sid] = title or "(untitled)"
 

@@ -1,0 +1,94 @@
+"""Gates that STATE independence, coordination or convergence count OUTLETS, not feeds (row J, R146 (a)).
+
+One outlet (a domain) can hold several sources once a source is keyed on (domain, feed). A near-duplicate story carried
+by BBC News, BBC Arabic and BBC Persian is ONE publisher repeating itself; reading it as three voices would manufacture
+agreement. Each test builds the sibling case and the control, and the mutation check is reverting the gate.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.database.models import Article, Base, Source
+from src.database.outlet import OutletMap, outlet_expr
+from src.integrity import collapse as collapse_mod
+from src.integrity.actors import corpus_actors
+
+_TEXT = (
+    "The ministry announced sweeping new measures on Tuesday afternoon, declaring that the reforms would transform "
+    "the sector within a year and promising that every region would benefit from the unprecedented and historic "
+    "national modernisation programme, officials told reporters at a briefing in the capital."
+)
+
+
+@pytest.fixture()
+def s(monkeypatch, tmp_path):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+    yield session
+    session.close()
+
+
+def _feed(s, name, domain, feed, text=_TEXT, minutes=0):
+    src = Source(name=name, domain=domain, rss_url=feed)
+    s.add(src)
+    s.flush()
+    now = datetime.now(UTC)
+    s.add(Article(url=f"https://{domain}/{src.id}", canonical_url=f"https://{domain}/{src.id}", source_id=src.id,
+                  title="Reforms announced", content=text, hash=f"h{src.id}", language="en",
+                  published_at=now + timedelta(minutes=minutes), created_at=now))
+    s.flush()
+    return src.id
+
+
+def test_outlet_map_names_an_outlet_by_its_oldest_source(s):
+    a = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en")
+    b = _feed(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar")
+    c = _feed(s, "DW", "dw.com", "https://dw.com/rss")
+    s.commit()
+    m = OutletMap(s)
+    assert m.key(a) == m.key(b) == "bbc.com" and m.key(c) == "dw.com"
+    assert m.label(b, "BBC Arabic", "bbc.com") == "BBC News"  # stored signatures are keyed on this name
+    assert m.primary_id(b) == a
+    assert m.key(999, "gone.example") == "gone.example" and m.key(999) == "source-999"
+
+
+def test_outlet_expr_is_the_domain_or_a_stable_placeholder(s):
+    a = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en")
+    s.commit()
+    from sqlalchemy import func
+    n = (s.query(func.count(func.distinct(outlet_expr(Article.source_id, Source.domain))))
+         .select_from(Article).outerjoin(Source, Source.id == Article.source_id).scalar())
+    assert n == 1 and a
+
+
+def test_one_outlets_feeds_are_not_a_coordinated_actor(s):
+    for i, (name, feed) in enumerate([("BBC News", "en"), ("BBC Arabic", "ar"), ("BBC Persian", "fa")]):
+        _feed(s, name, "bbc.com", f"https://bbc.com/{feed}", minutes=i)
+    s.commit()
+    assert corpus_actors(s, days=7, threshold=0.6).actors == []  # one publisher repeating itself
+
+
+def test_two_outlets_make_one_event_of_two_members_not_four(s):
+    for i, (name, feed) in enumerate([("BBC News", "en"), ("BBC Arabic", "ar"), ("BBC Persian", "fa")]):
+        _feed(s, name, "bbc.com", f"https://bbc.com/{feed}", minutes=i)
+    _feed(s, "DW", "dw.com", "https://dw.com/rss", minutes=5)
+    s.commit()
+    actors = corpus_actors(s, days=7, threshold=0.6).actors
+    assert len(actors) == 1
+    assert sorted(actors[0].sources) == ["BBC News", "DW"]  # the oldest source's name stands for the outlet
+
+
+def test_story_voices_are_outlets(s):
+    for i, (name, feed) in enumerate([("BBC News", "en"), ("BBC Arabic", "ar"), ("BBC Persian", "fa")]):
+        _feed(s, name, "bbc.com", f"https://bbc.com/{feed}", minutes=i)
+    _feed(s, "DW", "dw.com", "https://dw.com/rss", minutes=5)
+    s.commit()
+    story = max(collapse_mod.story_prominence(s, days=7)["stories"], key=lambda x: x["voices_raw"])
+    assert story["voices_raw"] == 2, "four feeds of two outlets counted as four independent voices"
