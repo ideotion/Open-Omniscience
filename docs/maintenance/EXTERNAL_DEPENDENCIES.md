@@ -114,6 +114,9 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   of date; never loosen a test to pass), then move the pyproject range, the registry
   `{floor, verified, ceiling}`, `requirements.lock` (regenerate its hash block from PyPI) and the
   `sqlcipher-smoke` pin together.
+- **Natural Earth geometry** — refresh only on a data correction (changes rarely).
+- **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
+  Dependabot bump; re-pin to the new SHA with its tag comment.
 - **urllib3** (`urllib3-log-shapes`) — the HTTP library under `requests`. `src/ingest/urllib3_log.py` keeps the
   request target (the signature of a signed storage download) and anything else a record carries out of urllib3's own log lines:
   it withholds a line it does not know, and in a line it knows it reduces every argument that is not a number or text to its
@@ -127,9 +130,6 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   must not keep; never loosen a test to pass. Then move the pyproject range, the registry `{floor, verified, ceiling, current}`,
   the `urllib3-floor` job in `.github/workflows/ci.yml` if the floor moved, and, if it moved, `requirements.lock` together. The
   weekly freshness run opens the issue when upstream publishes a release past `current`.
-- **Natural Earth geometry** — refresh only on a data correction (changes rarely).
-- **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
-  Dependabot bump; re-pin to the new SHA with its tag comment.
 
 ## Clearing an `on-security` artifact without re-vendoring (`reviewed_through`)
 
