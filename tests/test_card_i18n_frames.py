@@ -480,7 +480,7 @@ def test_the_laundering_card_reads_in_french_arabic_and_chinese(monkeypatch, loc
             "Outbound origins cited by >= 3 distinct sources (and >= 3 articles); "
             "social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy "
             "pages, share widgets, license footers); at most one card per registrable origin "
-            "domain. Independence = distinct sources, not article count."
+            "domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count."
         ),
     }
     monkeypatch.setattr(laundering, "find_source_laundering", lambda *_a, **_k: found)
