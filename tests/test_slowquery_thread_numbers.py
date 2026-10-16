@@ -16,7 +16,7 @@ import time
 import pytest
 from sqlalchemy import create_engine, event
 
-from src.monitoring import slowquery
+from src.monitoring import slowquery, thread_usage
 
 RECORD_KEYS = {"at", "duration_ms", "sql", "cpu_ms", "nvcsw", "nivcsw", "majflt", "inblock"}
 
@@ -55,7 +55,7 @@ def _run(engine, sql):
     return slowquery.recent(10)[-1]
 
 
-@pytest.mark.skipif(slowquery._RUSAGE_THREAD is None, reason="the OS gives no per-thread counters")
+@pytest.mark.skipif(thread_usage.RUSAGE_THREAD is None, reason="the OS gives no per-thread counters")
 def test_a_wait_has_little_cpu_and_a_voluntary_switch_and_work_has_cpu(engine):
     waited = _run(engine, "SELECT pause(0.25)")
     worked = _run(engine, "SELECT burn(0.25)")
@@ -68,7 +68,7 @@ def test_a_wait_has_little_cpu_and_a_voluntary_switch_and_work_has_cpu(engine):
     assert worked["cpu_ms"] >= 240, worked
 
 
-@pytest.mark.skipif(slowquery._RUSAGE_THREAD is None, reason="the OS gives no per-thread counters")
+@pytest.mark.skipif(thread_usage.RUSAGE_THREAD is None, reason="the OS gives no per-thread counters")
 def test_the_counters_are_the_executing_threads_not_the_processs(engine):
     """Another thread switching a hundred times during the statement must not appear in the statement's record: the record's
     interval is nested in the same thread's outer interval, so its count cannot exceed the outer one unless it counted the process."""
@@ -95,21 +95,21 @@ def test_the_counters_are_the_executing_threads_not_the_processs(engine):
 
 def test_the_record_carries_numbers_only_never_a_value_or_a_second_statement(engine):
     rec = _run(engine, "SELECT pause(0.1)")
-    if slowquery._RUSAGE_THREAD is not None:
+    if thread_usage.RUSAGE_THREAD is not None:
         assert set(rec) == RECORD_KEYS, set(rec)
     assert all(isinstance(rec[k], (int, float)) for k in rec if k not in ("at", "sql")), rec
     assert "0.1" not in rec["sql"], "the bound value is stripped as before"
 
 
 def test_a_figure_the_os_cannot_give_is_absent_never_zero(engine, monkeypatch):
-    monkeypatch.setattr(slowquery, "_RUSAGE_THREAD", None)
+    monkeypatch.setattr(thread_usage, "RUSAGE_THREAD", None)
     rec = _run(engine, "SELECT pause(0.1)")
     assert "cpu_ms" in rec and not ({"nvcsw", "nivcsw", "majflt", "inblock"} & set(rec)), rec
 
     def no_clock():
         raise OSError("no per-thread clock")
 
-    monkeypatch.setattr(slowquery.time, "thread_time", no_clock)
+    monkeypatch.setattr(thread_usage.time, "thread_time", no_clock)
     rec = _run(engine, "SELECT pause(0.1)")
     assert "cpu_ms" not in rec, "a clock that cannot be read is no figure, not 0.0"
     assert rec["duration_ms"] >= 90, "the wall time is unaffected"
@@ -147,10 +147,18 @@ def test_a_sample_that_fails_never_reaches_the_statement(engine, monkeypatch):
     def boom():
         raise OSError("clock")
 
-    monkeypatch.setattr(slowquery.time, "thread_time", boom)
-    if slowquery._resource is not None:
-        monkeypatch.setattr(slowquery._resource, "getrusage", lambda *_a: (_ for _ in ()).throw(OSError("rusage")))
+    monkeypatch.setattr(thread_usage.time, "thread_time", boom)
+    if thread_usage._resource is not None:
+        monkeypatch.setattr(thread_usage._resource, "getrusage", lambda *_a: (_ for _ in ()).throw(OSError("rusage")))
     with engine.connect() as conn:
         assert conn.exec_driver_sql("SELECT pause(0.1)").fetchall() == [(1,)]
     rec = slowquery.recent(10)[-1]
     assert "cpu_ms" not in rec and "nvcsw" not in rec and rec["duration_ms"] >= 90
+
+
+def test_a_sample_from_the_future_is_clamped_to_zero_never_shown_negative():
+    """A sample taken on ANOTHER thread (a mistake of a caller) can be ahead of this thread's counters; the difference is clamped."""
+    out = thread_usage.since((1e12, (10**12,) * 4))
+    assert out.get("cpu_ms") == 0.0
+    if thread_usage.RUSAGE_THREAD is not None:
+        assert all(out[name] == 0 for name in thread_usage.COUNTS), out
