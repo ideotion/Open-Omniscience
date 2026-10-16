@@ -142,6 +142,11 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
     },
     # Backup: an exception that is NOT a database driver's (a file system refusal, a journal that cannot be opened, a member that
     # fails to decrypt) keeps its scrubbed words, with every held secret passed (ruling 2026-10-13: other links keep their words).
+    # The migration command's console: ``MigrationRefused`` is this module's own refusal (fixed sentences naming a path or a class),
+    # printed to the terminal of the person who ran it and stored nowhere; scrubbed with what the process holds all the same.
+    "src/backup/country_migration.py": {
+        ("main", 'print(f"Stopped: {exception_text(exc, typed=False)}", file=sys.stderr)'): 1,
+    },
     "src/backup/export_folder.py": {
         ("allocate_export_folder", 'raise ExportFolderError(f"Cannot use destination {base}: {exception_text(exc, typed=False)}") from None'): 1,
         ("allocate_export_folder", "first = exception_text(exc, typed=False)"): 1,

@@ -518,7 +518,7 @@ def test_a_file_system_without_hard_links_still_publishes_the_copy_and_still_ref
 def test_a_place_that_cannot_be_examined_is_refused_by_class_and_never_read_as_free(tmp_path):
     a = _new_store(tmp_path / "a.db", articles=12)
     blocker = tmp_path / "blocker"
-    blocker.write_text("a file where a folder should be")
+    blocker.write_text("a file where a folder should be", encoding="utf-8")
     con = _live(a)
     try:
         with pytest.raises(cm.MigrationRefused) as caught:

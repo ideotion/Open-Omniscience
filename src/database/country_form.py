@@ -172,12 +172,11 @@ def read_form(con) -> Form:
 def read_form_in(con, schema: str) -> Form:
     import json
 
-    try:
-        row = con.execute(f'SELECT value FROM {schema}."app_state" WHERE key = ?', (KEY,)).fetchone()  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias ("main"/"inc"), never input
-    except Exception as exc:  # noqa: BLE001 - only "no such table" means absent
-        if "no such table" in str(exc).lower():
-            return "alpha2"
-        raise
+    # Asked of the schema, not read off an engine's message: a file with no ``app_state`` table is alpha-2 (every store that
+    # predates the marker), and a read that fails for any other reason raises (unreadable is not absent).
+    if not con.execute(f"SELECT 1 FROM {schema}.sqlite_master WHERE type='table' AND name='app_state'").fetchone():  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias ("main"/"inc"), never input
+        return "alpha2"
+    row = con.execute(f'SELECT value FROM {schema}."app_state" WHERE key = ?', (KEY,)).fetchone()  # noqa: S608  # nosec B608 - as above
     if not row:
         return "alpha2"
     try:

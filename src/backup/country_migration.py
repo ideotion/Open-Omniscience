@@ -245,12 +245,11 @@ def _upsert_json(con, key: str, obj: dict) -> None:
 
 
 def read_journal(con) -> dict | None:
-    try:
-        row = con.execute('SELECT value FROM "app_state" WHERE key = ?', (JOURNAL_KEY,)).fetchone()
-    except Exception as exc:  # noqa: BLE001 - only "no such table" means absent
-        if "no such table" in str(exc).lower():
-            return None
-        raise
+    # Asked of the schema, not read off an engine's message: only a store with no ``app_state`` table has no journal, and a
+    # read that fails for any other reason raises (unreadable is not absent).
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_state'").fetchone():
+        return None
+    row = con.execute('SELECT value FROM "app_state" WHERE key = ?', (JOURNAL_KEY,)).fetchone()
     return json.loads(row[0]) if row else None
 
 
@@ -261,7 +260,9 @@ def take_exclusive(con) -> None:
         con.execute("BEGIN IMMEDIATE")
         con.execute("COMMIT")
     except Exception as exc:  # noqa: BLE001 - driver text is never kept; the class and the way out are
-        if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+        from src.database.write import is_locked_error
+
+        if is_locked_error(exc):
             raise AppStillRunning(
                 "another program has this database open (the app, a second copy of this command, a backup). "
                 "Close it and run this again: the migration needs the file to itself."
@@ -762,6 +763,8 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
 
+    from src.monitoring.secret_scrub import exception_text
+
     ap = argparse.ArgumentParser(
         prog="open-omniscience migrate-countries",
         description="Move the store's country codes from alpha-2 to alpha-3. Run it with the app CLOSED.",
@@ -825,7 +828,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rep = migrate(path, backup_dir=args.backup_dir, confirm=ask, progress=show, estimate_only=args.estimate)
     except MigrationRefused as exc:
-        print(f"Stopped: {exc}", file=sys.stderr)
+        print(f"Stopped: {exception_text(exc, typed=False)}", file=sys.stderr)
         return 3
     print(rep.message)
     if rep.collisions:

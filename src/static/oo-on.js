@@ -267,7 +267,7 @@
     "kxBackfill", "kxHide", "kxRemoveTag", "kxShowTag", "kxToggleTags", "launchOllama",
     "lawAddDocument", "lawSeed", "lawSetWatched", "lawSummarize", "lawTrack", "leadFlipFrom",
     "leadFlipKeyFrom", "livingShowDiff", "loadActors", "loadAlternates", "loadBuiltinStoplist", "loadChronology",
-    "loadCitedSources", "loadConvergences", "loadFamilies", "loadFamilyCuration", "loadFeed",
+    "loadCitedSources", "loadConvergences", "loadCountryForm", "loadFamilies", "loadFamilyCuration", "loadFeed",
     "loadGovAggregate", "loadGovCountry", "loadGovMap", "loadHomeLatest", "loadHomeRecentList",
     "loadIndicesData", "loadKeywordExplorer", "loadLaw", "loadLawChanges", "loadLemmaPreview",
     "loadLivingStream", "loadLunar", "loadMap", "loadMarketData", "loadPatternsGate", "loadProfile",
