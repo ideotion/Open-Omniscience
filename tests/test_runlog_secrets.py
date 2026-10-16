@@ -285,3 +285,62 @@ def test_the_walk_reads_a_run_opened_in_a_closure_against_the_secrets_of_the_fun
         "    return inner()\n"
     )
     assert _runs_that_keep_a_secret_from_the_journal(source)[1], "the inner run is the outer function's to hand over"
+
+
+# ---- the reader: a journal an older build wrote raw is checked when it is read (2026-10-16) -------------------------------------
+
+
+def _older_files(tmp_path, key: str) -> str:
+    """A journal and a beat file as an older build left them: the held passphrase raw, JSON-escaped and percent-encoded."""
+    d = tmp_path / "run_logs"
+    d.mkdir(exist_ok=True)
+    from urllib.parse import quote
+
+    rid = "20260101T000000Z-old"
+    rows = [
+        {"ev": "run_begin", "t": "2026-01-01T00:00:00Z", "run": "old", "note": f"key {key}"},
+        {"ev": "error", "t": "2026-01-01T00:00:01Z", "message": f"near '{key}' syntax", "url": f"http://x/?k={quote(key, safe='')}"},
+        {"ev": "run_end", "t": "2026-01-01T00:00:02Z", "outcome": "error"},
+    ]
+    (d / f"{rid}.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    (d / f"{rid}.beat.jsonl").write_text(json.dumps({"ev": "beat", "t": "x", "detail": key}) + "\n", encoding="utf-8")
+    return rid
+
+
+def test_older_journal_is_checked_when_read(tmp_path, monkeypatch):
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", PASS)
+    S.forget_held()
+    rid = _older_files(tmp_path, PASS)
+    out = json.dumps([runlog.raw_runs(), runlog.summarise(rid), runlog.list_runs()])
+
+    for form in (PASS, json.dumps(PASS)[1:-1]):
+        assert form not in out, form
+
+
+def test_unparseable_older_journal_is_withheld_with_a_reason(tmp_path, monkeypatch):
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", PASS)
+    S.forget_held()
+    rid = _older_files(tmp_path, PASS)
+    p = tmp_path / "run_logs" / f"{rid}.jsonl"
+    p.write_text(p.read_text(encoding="utf-8") + '{"ev":"error","message":"' + PASS + "\n", encoding="utf-8")  # torn
+    entry = runlog.raw_runs()[rid]
+    assert PASS not in json.dumps(entry)
+    assert entry["milestones_not_read"]["lines_not_read"] == 1
+
+
+def test_non_utf8_older_journal_is_withheld_with_a_reason(tmp_path, monkeypatch):
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", PASS)
+    S.forget_held()
+    rid = _older_files(tmp_path, PASS)
+    p = tmp_path / "run_logs" / f"{rid}.jsonl"
+    p.write_bytes(p.read_bytes() + b'\xff\xfe{"ev":"x","m":"' + PASS.encode() + b'"}\n')
+    entry = runlog.raw_runs()[rid]
+    assert PASS not in json.dumps(entry)
+    assert entry["milestones_not_read"]["file_not_utf8"] is True
+    assert [r["outcome"] for r in runlog.list_runs()] == ["unreadable: not valid UTF-8"]
