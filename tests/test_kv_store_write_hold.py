@@ -127,7 +127,74 @@ def test_a_save_that_waits_too_long_is_refused_with_nothing_written_in_fixed_wor
     assert len(errors) == 1 and isinstance(errors[0], kv_store.KvWriteRefused)
     assert "nothing was written" in str(errors[0]) and str(errors[0]) == kv_store._REFUSED_TEXT
     assert _stored(store, "settings.refused") is None
-    assert kv_store._inflight == 0, "a refused save must not stay counted as in flight"
+    assert not kv_store._inflight, "a refused save must not stay counted as in flight"
+
+
+class _InterruptedAdd(set):
+    """A set whose ``add`` is interrupted (as a signal handler's KeyboardInterrupt is, between two statements of the slot): after the
+    token is in (``after=True``) or before it is (``after=False``)."""
+
+    def __init__(self, *, after: bool):
+        super().__init__()
+        self._after = after
+
+    def add(self, item):
+        if self._after:
+            super().add(item)
+        raise KeyboardInterrupt
+
+
+@pytest.mark.parametrize("after", [True, False], ids=["after the write was counted", "before the write was counted"])
+def test_an_interrupt_inside_the_slot_neither_leaks_a_count_nor_releases_another_writes(store, monkeypatch, after):
+    """The count is one ``add`` and the release one lock-free ``remove`` of the write's own token (a KeyError for a token never counted is
+    caught): an interrupt that lands after the add leaves nothing counted (a leaked count would make every later hold refuse to start
+    until a restart), and one that lands before it releases nothing (a decrement of a write that was never counted would let a hold
+    start with another save still writing the old file). This pins the contract of the set (a plain integer fails it by a TypeError,
+    not by an ordering); the window that really leaks under signals is the release's lock, pinned by the test below. MUTATION TARGETS:
+    ``remove`` replaced by ``clear``, or the release removed."""
+    other = object()  # another settings write in flight on another thread
+    flight = _InterruptedAdd(after=after)
+    flight.update({other})
+    monkeypatch.setattr(kv_store, "_inflight", flight)
+    with pytest.raises(KeyboardInterrupt), kv_store._write_slot():
+        pytest.fail("the slot must not be entered")
+    assert set(flight) == {other}, "the interrupted write left a count, or released one that was not its own"
+    with pytest.raises(kv_store.KvWriteBusy), kv_store.hold_writes(0):
+        pass  # the other write is still waited for
+
+
+class _InterruptedEnter:
+    """``kv_store._hold`` whose Nth ``with`` entry raises KeyboardInterrupt, as a signal delivered inside ``Condition.__enter__`` (Python
+    code in CPython 3.13, measured with real signals) does: before the body of the ``with`` runs."""
+
+    def __init__(self, real, *, fail_on):
+        self._real, self._fail_on, self._entries = real, fail_on, 0
+
+    def __enter__(self):
+        self._entries += 1
+        if self._entries == self._fail_on:
+            raise KeyboardInterrupt
+        return self._real.__enter__()
+
+    def __exit__(self, *exc):
+        return self._real.__exit__(*exc)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def test_an_interrupt_as_the_release_takes_the_lock_does_not_leave_the_write_counted(store, monkeypatch):
+    """The release is a lock-free ``remove`` BEFORE the lock is taken to wake a hold: an interrupt delivered while ``with _hold`` is
+    entered (the second entry of a slot, the first being the count) used to arrive before the decrement and leave the write counted
+    for ever, so every later hold refused to start until a restart (about 5 % of interrupted writes with real signals on CPython 3.13).
+    MUTATION TARGET: the release moved back inside ``with _hold``."""
+    with monkeypatch.context() as patched:  # not monkeypatch.undo(): that would also revert the store fixture's DATABASE_URL
+        patched.setattr(kv_store, "_hold", _InterruptedEnter(kv_store._hold, fail_on=2))
+        with pytest.raises(KeyboardInterrupt), kv_store._write_slot():
+            pass
+        assert not kv_store._inflight, "the write stayed counted after its body ended"
+    with kv_store.hold_writes(0):  # and a restore's hold starts at once
+        assert kv_store._hold_by == threading.get_ident()
 
 
 def test_a_delete_is_held_too(store):
@@ -145,7 +212,7 @@ def test_the_holder_itself_passes_through(store):
     with kv_store.hold_writes(1):
         kv_store.kv_set_json("settings.holder", {"v": 4})  # the restore thread, were it to save a setting, is not made to wait for itself
     assert _stored(store, "settings.holder") == '{"v": 4}'
-    assert kv_store._inflight == 0
+    assert not kv_store._inflight
 
 
 def test_a_thread_that_holds_the_gate_is_refused_at_once_during_a_hold(store, monkeypatch):
@@ -497,7 +564,7 @@ def test_an_interrupt_during_the_drain_does_not_leave_the_hold_set(store):
     finally:
         kv_store._hold.wait = real_wait  # type: ignore[method-assign]
         slot.__exit__(None, None, None)
-    assert kv_store._hold_by is None and kv_store._inflight == 0
+    assert kv_store._hold_by is None and not kv_store._inflight
     kv_store.kv_set_json("settings.after", {"v": 1})  # and a save is not made to wait
 
 
