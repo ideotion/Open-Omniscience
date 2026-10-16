@@ -21,10 +21,11 @@ from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 ORES_ENDPOINT = "https://ores.wikimedia.org/v3/scores"
-#: The hosts the scoring client talks to: ``ores.wikimedia.org`` and any other host under ``wikimedia.org`` (a replacement endpoint, if
-#: the service moves, would have to be one: see ``ORES_AS_OF`` for what has and has not been confirmed). A request or a redirect hop to
-#: any other host is refused (``src.safety.fetcher.refuse_unlisted_host``).
-ORES_HOSTS = (".wikimedia.org",)
+#: The host the scoring client talks to: ``ores.wikimedia.org``, exactly the host of ``ORES_ENDPOINT`` and the one the consent popup's
+#: Wikipedia lane names for it (R143). A replacement endpoint, if the service moves (see ``ORES_AS_OF`` for what has and has not been
+#: confirmed), needs its own entry in that lane first, and then here. A request or a redirect hop to any other host is refused
+#: (``src.safety.fetcher.refuse_unlisted_host``).
+ORES_HOSTS = ("ores.wikimedia.org",)
 PROVENANCE = "ores:damaging,goodfaith"
 ORES_USER_AGENT = f"OpenOmniscienceBot/{OO_VERSION} (+https://github.com/ideotion/Open-Omniscience)"
 
@@ -63,6 +64,7 @@ OUTCOMES: tuple[str, ...] = (
     "empty_request",
     "endpoint_gone",       # 404/410: the strongest available evidence of the migration
     "refused_offline",     # OUR kill switch, named as ours (invariant #14e's corollary)
+    "refused_redirect",    # OUR host list refused the endpoint's redirect (R143): e.g. a move to another Wikimedia host, not a dropped packet
     "http_error",
     "transport_error",
     "unreadable_response",
@@ -166,10 +168,16 @@ class OresClient:
             # operator pointed at Wikimedia for their own airplane mode has been sent
             # to look in the wrong place.
             from src.ingest import kill_switch_active
+            from src.safety.fetcher import RedirectRefused
 
             if kill_switch_active():
                 self._note("refused_offline", "the network kill switch is active (airplane mode)")
                 _LOG.info("ORES scoring refused by THIS APP: airplane mode is engaged")
+            elif isinstance(exc, RedirectRefused):
+                # R143: the list is exactly ``ores.wikimedia.org``, so a redirect to Lift Wing (or any other host) is refused here and is
+                # named as ours, not as a network fault: this is the signal Q717's verification reads. ``reason`` is a fixed sentence.
+                self._note("refused_redirect", exc.reason)
+                log_failure(_LOG, f"ORES scoring failed for {wiki}", exc, level=logging.WARNING)
             else:
                 self._note("transport_error", type(exc).__name__)
                 log_failure(_LOG, f"ORES scoring failed for {wiki}", exc, level=logging.WARNING)

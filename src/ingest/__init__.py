@@ -39,6 +39,8 @@ from urllib.robotparser import RobotFileParser
 
 import requests
 
+# Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
+from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,

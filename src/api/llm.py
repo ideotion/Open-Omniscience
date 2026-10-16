@@ -888,8 +888,8 @@ def llm_install_prepare() -> dict:
     command to run it (and the app can run it when elevation is non-interactive).
     The release lookup is held to ``api.github.com`` and the download to GitHub's release hosts
     (``GITHUB_ASSET_HOSTS``): a redirect or an address off its list is refused, not followed, and
-    answers 502 with a fixed sentence that names no host (``InstallerRedirectRefused``). A hop the HTTP client cannot read
-    (a malformed ``Location``) is not followed either, but fails as an ordinary error before anything is sent."""
+    answers 502 with a fixed sentence that names no host (``InstallerRedirectRefused``). Any other failure of either fetch
+    answers 502 with its own fixed sentence and only ``HTTP <status>`` or the exception's class name (``InstallerFetchFailed``, R142)."""
     from src.llm.installer import (
         InstallerUnavailable,
         InstallerVerificationError,
