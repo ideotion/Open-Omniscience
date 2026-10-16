@@ -972,7 +972,7 @@ def pool_wait_stats() -> dict[str, float]:
         return {k: (round(v, 4) if isinstance(v, float) else v) for k, v in _POOL_WAIT.items()}
 
 
-def _connection_first(session) -> None:
+def connection_first(session) -> None:
     """Check the session's pooled connection out BEFORE the write window is asked for.
 
     THE ORDER WAS WRONG. ``before_flush`` and ``do_orm_execute`` fire BEFORE SQLAlchemy checks a connection out for the statement, so a
@@ -981,6 +981,11 @@ def _connection_first(session) -> None:
     bundles) the wait is the pool's 30 s timeout, and the whole write queue stood behind a writer that was not writing. Reproduced: a
     pool of one with its connection out, a session adding a row, the gate held by the waiter. :func:`hold_write_window` already did it
     in this order (``session.connection()`` first); the two hooks now do too.
+
+    THE RULE IS ONE ORDER EVERYWHERE: the pooled connection, then the gate. A writer that holds a connection while it queues for the gate is
+    safe only if every other taker of both asks for the connection first, or the queued writers hold the pool and the gate holder waits
+    for the pool's timeout. This function is for a session whose work follows under ``write_lock()``; a raw connection is taken as
+    ``with engine.connect() as conn, write_lock():``. ``tests/test_gate_connection_order.py`` scans ``src/`` for the other order.
 
     A session with more than one bind and no default raises ``UnboundExecutionError`` here; the flush chooses the bind per mapper, so that
     case keeps its old order (the gate, then the connection). Any other error, a pool timeout included, is raised from here exactly as
@@ -1001,7 +1006,7 @@ def _on_before_flush(session, _flush_context, _instances) -> None:
     # First write of this session's transaction is about to hit the file —
     # take the write window. Idempotent within the transaction via the flag.
     if not session.info.get(_SESSION_FLAG):
-        _connection_first(session)
+        connection_first(session)
         write_gate.acquire()
         session.info[_SESSION_FLAG] = True
 
@@ -1046,7 +1051,7 @@ def _on_orm_execute(orm_execute_state) -> None:
         return
     session = orm_execute_state.session
     if not session.info.get(_SESSION_FLAG):
-        _connection_first(session)
+        connection_first(session)
         write_gate.acquire()
         session.info[_SESSION_FLAG] = True
 

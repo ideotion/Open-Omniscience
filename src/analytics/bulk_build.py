@@ -223,8 +223,8 @@ def _drop(session: Session, names: list[str]) -> list[str]:
     from src.database.writer import write_lock
 
     dropped: list[str] = []
+    conn = session.connection()  # the connection first, then the gate (writer.connection_first)
     with write_lock():
-        conn = session.connection()
         existing = _existing_indexes(conn)
         for name in names:
             if name not in existing:
@@ -256,8 +256,8 @@ def _rebuild_missing(session: Session, planned: list[str]) -> list[str]:
         if index is None:
             _LOG.warning("bulk build cannot rebuild unknown index %s", name)
             continue
+        conn = session.connection()  # the connection first, then the gate: the commit below gave the last one back
         with write_lock():
-            conn = session.connection()
             if name in _existing_indexes(conn):
                 continue
             conn.execute(CreateIndex(index))

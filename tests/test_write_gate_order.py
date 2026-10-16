@@ -5,7 +5,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 ``before_flush`` and ``do_orm_execute`` fire before SQLAlchemy checks a connection out for the statement, so a session whose FIRST
 statement was its write took the gate and then waited for the pool. With 23 of 24 connections out (the 16 Oct 2026 bundles) that
-wait is the pool's 30 s timeout, spent holding the one window every other writer needs. ``_connection_first`` checks the connection
+wait is the pool's 30 s timeout, spent holding the one window every other writer needs. ``connection_first`` checks the connection
 out first. These tests use a real pool of one whose only connection is out, a real session factory wired with the writer's own hooks,
 and read the gate from a third thread while the writer is waiting.
 """
@@ -165,6 +165,6 @@ class _Failing(Session):
 def test_a_connection_failure_other_than_an_unbound_session_propagates_and_is_not_hidden():
     boom = OperationalError("connect", {}, Exception("unable to open database file"))
     with pytest.raises(OperationalError):
-        writer._connection_first(_Failing(boom))
+        writer.connection_first(_Failing(boom))
     unbound = UnboundExecutionError("no bind")
-    assert writer._connection_first(_Failing(unbound)) is None
+    assert writer.connection_first(_Failing(unbound)) is None
