@@ -279,3 +279,34 @@ def test_a_rising_theme_reports_distinct_outlets(tmp_path, monkeypatch):
     kid = session.query(Keyword).filter_by(normalized_term="risingterm").one().id
     today = datetime.now(UTC).date()
     assert _distinct_sources_windowed(session, {kid}, today - timedelta(days=5), today + timedelta(days=1)) == 2
+
+
+def test_a_cited_domain_is_cited_by_outlets_not_feeds(s):
+    from src.database.models import ArticleLink
+    from src.discovery.cited_sources import cited_domain_stats
+
+    a = _feed(s, "S en", "s.test", "https://s.test/en", text="a")
+    b = _feed(s, "S fr", "s.test", "https://s.test/fr", text="b")
+    c = _feed(s, "O", "o.test", "https://o.test/rss", text="c")
+    for sid in (a, b, c):
+        aid = s.query(Article).filter_by(source_id=sid).one().id
+        s.add(ArticleLink(article_id=aid, url="https://cited.example/p", normalized_url="https://cited.example/p",
+                          link_type="external"))
+    s.commit()
+    stats = cited_domain_stats(s)["cited.example"]
+    assert len(stats["articles"]) == 3 and len(stats["sources"]) == 2  # two outlets, three feeds
+
+
+def test_the_ripple_independence_gate_counts_outlets(tmp_path, monkeypatch):
+    from src.analytics.supply_chain_ripple import _source_counts
+    from src.database.models import Keyword
+
+    session = _kw_session(tmp_path, monkeypatch)
+    a = _feed(session, "BBC News", "bbc.com", "https://bbc.com/en", text="a")
+    b = _feed(session, "BBC Arabic", "bbc.com", "https://bbc.com/ar", text="b")
+    c = _feed(session, "DW", "dw.com", "https://dw.com/rss", text="c")
+    session.commit()
+    _mention_spread(session, "oilterm", [(a, 1), (b, 1), (c, 1)])
+    kid = session.query(Keyword).filter_by(normalized_term="oilterm").one().id
+    today = datetime.now(UTC).date()
+    assert _source_counts(session, [kid], today - timedelta(days=5), today + timedelta(days=1)) == {kid: 2}
