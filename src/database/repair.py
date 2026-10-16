@@ -79,6 +79,7 @@ from typing import Any
 
 from src.database import damage, library_generation, salvage
 from src.jobs.background import BackgroundJob, Framed, JobContext, register_job
+from src.monitoring.secret_scrub import exception_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -814,16 +815,23 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
                 else:
                     report["outcome"] = _repair(work, target, report, ctx)
     except Declined as refusal:
-        report.update(outcome="declined", reason=refusal.code, reason_text=refusal.detail, **refusal.facts)
-        _LOG.warning("database repair: not done (%s): %s", refusal.code, refusal.detail)
+        # The words of a refusal enter the record and the log through ``exception_text``, in the one place they are written: every
+        # producer says a fixed sentence today, and nothing but this line keeps the next one that quotes a driver from carrying a
+        # passphrase to the boot-sequence status and the diagnostics bundle. The scrub comes before any cut a reader makes.
+        code = refusal.code
+        text = exception_text(refusal, typed=False)
+        report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)
+        _LOG.warning("database repair: not done (%s): %s", code, text)
         raise
     except salvage.SalvageStopped:
         report["outcome"] = "stopped"
         _LOG.info("database repair: stopped (the app is shutting down); the copy is removed at the next start")
     except salvage.SalvageRefused as refusal:
-        report.update(outcome="declined", reason=refusal.code, reason_text=refusal.detail)
-        _LOG.warning("database repair: not done (%s): %s", refusal.code, refusal.detail)
-        raise Declined(refusal.code, refusal.detail) from refusal
+        code = refusal.code
+        text = exception_text(refusal, typed=False)
+        report.update(outcome="declined", reason=code, reason_text=text)
+        _LOG.warning("database repair: not done (%s): %s", code, text)
+        raise Declined(code, text) from refusal
     except Exception as exc:
         # A salvage failure already says where and why in words of ours (a table or index name, and the class and fixed label of the driver's
         # error, ``damage.failure_text``); any other exception is its class, and for a driver's error its fixed label.
