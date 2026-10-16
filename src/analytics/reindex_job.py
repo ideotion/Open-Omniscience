@@ -35,7 +35,8 @@ import threading
 import time
 from pathlib import Path
 
-from src.monitoring.engine_text import engine_text, is_pool_timeout
+from src.monitoring.engine_text import engine_text
+from src.monitoring.engine_text import is_pool_timeout
 
 # Articles per reindex_all_batch loop. Each batch commits per-article inside
 # index_article, and the cursor is persisted after each batch, so a crash loses at
