@@ -205,3 +205,48 @@ def test_a_restore_of_a_log_nothing_can_check_appends_one_withheld_line_not_n(tm
     staged = staged_artifact(staging, members=[{"name": "logs/app_errors.jsonl", "role": "logs"}], origin_fingerprint="ab" * 32)
     report = merge_side_files(staged)
     assert report["logs"]["app_errors.jsonl"]["appended"] == 1
+
+
+def test_the_release_run_report_is_scrubbed_as_it_is_written(tmp_path, monkeypatch):
+    """A phase result is carried into the report verbatim; the report as a whole passes the scrub, taking out what the process holds."""
+    from src.monitoring import release_run as rr
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    run = rr._Run(rr.RunParams(str(tmp_path / "dest"), "the-runs-own-pass-88"))
+    run.phases.append({"name": "collect", "status": "ok", "result": {"session_forensics": {"kernel": [f"killed (cmd {_KEY})"]}}})
+    path = rr._write_report(run, interim=False)
+    text = path.read_text(encoding="utf-8")
+    assert _KEY not in text and "killed (cmd" in text
+
+
+def test_the_release_runs_session_forensics_block_is_scrubbed_where_it_enters(tmp_path, monkeypatch):
+    import contextlib as _cl
+
+    import src.api.wiki_lane as wl
+    import src.catalog.qualification_integrity as qi
+    import src.database.session as dbs
+    import src.monitoring.expedition as ex
+    import src.monitoring.forensics as fo
+    import src.monitoring.p0_validation as p0
+    import src.monitoring.soak_window as sw
+    from src.monitoring import release_run as rr
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(sw, "soak_window", lambda db, bar_hours: {"window": {"hours": 72.1, "reaches_bar": True}, "unmeasured": []})
+    monkeypatch.setattr(qi, "qualification_integrity_report", lambda db: {"measured": True})
+    monkeypatch.setattr(p0, "_check_collector", lambda: {"verdict": "pass"})
+    monkeypatch.setattr(dbs, "session_scope", lambda: _cl.nullcontext(None))
+    monkeypatch.setattr(wl, "lane_counters_route", lambda window_days: {"measured": False})
+    monkeypatch.setattr(ex, "digest", lambda: {})
+    monkeypatch.setattr(fo, "session_forensics", lambda: {"kernel": [f"oom (cmd {_KEY})"]})
+    monkeypatch.setattr(rr, "_network_state", lambda: {})
+
+    class _Ctx:
+        stopping = False
+
+        def set_progress(self, **kw):
+            pass
+
+    run = rr._Run(rr.RunParams(str(tmp_path / "d"), "x-run-pass-123", online_probes=False))
+    out = rr._collect(_Ctx(), run)
+    assert _KEY not in json.dumps(out["session_forensics"]) and "oom (cmd" in json.dumps(out["session_forensics"])
