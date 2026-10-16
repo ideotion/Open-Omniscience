@@ -175,7 +175,7 @@ def test_huge_or_odd_identity_values_are_not_carried(stop):
 def test_a_record_that_cannot_be_written_is_a_logged_step_not_a_stop(stop, monkeypatch):
     calls, _d, data = stop
     monkeypatch.setattr(os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
-    rec = memstop.execute(DECISION, _Guard())
+    memstop.execute(DECISION, _Guard())
     assert not (data / "memory_stop.json").exists() and "shutdown" in calls
 
 
