@@ -154,13 +154,17 @@ TOTAL_BUDGET_BYTES = 600_000
 #: lines it replaces are already inside the measured figure below, so this is the safe side; the export's own measure on the
 #: nastiest text is 259,137 to 289,001 bytes for the earlier ends). THE TEST COMPUTES THIS FROM THE EXPORT'S OWN CONSTANTS,
 #: whichever cut the tree has, and fails when the result passes 400,000: the figure is a ceiling, not a copy of today's cut. The
-#: sum is 919,000 - 125,000 + 400,000 = 1,194,000;
+#: sum is 919,000 - 125,000 + 400,000 = 1,194,000, and the crash-evidence change adds three readings to the same
+#: member (session-forensics.json), measured by that change with every counter at 2^62, a 200-character cgroup path, 400 matching
+#: mapped libraries and every reason at its clip: oom_counters 2,145 + previous_session_native_libs 6,437 (its name list has
+#: its own 6,000-byte budget) + can_answer 1,747 = 10,329 bytes, typically about 2.5 KB. All of it is counted here, whole:
+#: 1,194,000 + 10,329 = 1,204,329;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 595,720 with all seven rows and the free room 1,512,744 bytes (12,744 over the 1,500,000 floor), so a row can grow by that much before
+#: 595,720 with all seven rows and the free room 1,502,415 bytes (2,415 over the 1,500,000 floor), so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
-OTHER_NEW_MEMBERS_BYTES = 1_194_000
+OTHER_NEW_MEMBERS_BYTES = 1_204_329
 HEADROOM_AT_LEAST_BYTES = 1_500_000
 
 
