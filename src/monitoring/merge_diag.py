@@ -44,7 +44,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import record_text, scrubbed, scrubbed_value
 
 #: Bytes read per milestone journal. The field artifact was 1.6 GB and ~8.7M
 #: statement records; parsing all of it costs ~90 s of CPU, which is too much to
@@ -287,6 +287,7 @@ def sampled_statements(max_runs: int = _MAX_JOURNALS) -> dict[str, Any]:
         seen: Counter[str] = Counter()
         longest: dict[str, float] = {}
         total = with_sql = 0
+        clean: dict[str, str] = {}  # each distinct label is checked once, not once per beat
         try:
             with open(p, encoding="utf-8", errors="replace") as fh:
                 for line in fh:
@@ -300,6 +301,13 @@ def sampled_statements(max_runs: int = _MAX_JOURNALS) -> dict[str, Any]:
                     sql = r.get("sql")
                     if not sql:
                         continue
+                    # A beat file an older build wrote may hold a label with a passphrase in it; the label is checked BEFORE it becomes
+                    # a key (keys are not walked by a value check) and before the bundle carries it.
+                    if not isinstance(sql, str):
+                        sql = str(sql)
+                    if sql not in clean:
+                        clean[sql] = scrubbed(sql)
+                    sql = clean[sql]
                     with_sql += 1
                     seen[sql] += 1
                     s = r.get("sql_s")
@@ -355,6 +363,7 @@ def _attribute(path: Path) -> dict[str, Any]:
     # int-valued by contract -- silently truncating fractional statement times.
     total: dict[str, float] = {}
     count: dict[str, int] = {}
+    clean: dict[str, str] = {}  # each distinct label is checked once (see sampled_statements)
     last: dict | None = None
     spans: list[tuple[float, float]] = []
     for blob in chunks:
@@ -371,9 +380,12 @@ def _attribute(path: Path) -> dict[str, Any]:
                 continue
             if r.get("ev") != "merge_statement_begin":
                 continue
-            el, lab = r.get("el_s"), (r.get("sql") or "?")
+            el, lab = r.get("el_s"), str(r.get("sql") or "?")
             if not isinstance(el, (int, float)):
                 continue
+            if lab not in clean:
+                clean[lab] = scrubbed(lab)
+            lab = clean[lab]
             if lo is None:
                 lo = el
             hi = el
@@ -404,7 +416,7 @@ def _attribute(path: Path) -> dict[str, Any]:
         "complete": size <= _JOURNAL_HEAD_BYTES + _JOURNAL_TAIL_BYTES,
         "covered_spans_el_s": [[round(a, 1), round(b, 1)] for a, b in spans],
         "statements_by_time": rows,
-        "last_statement_begun": last,
+        "last_statement_begun": scrubbed_value(last),
     }
 
 

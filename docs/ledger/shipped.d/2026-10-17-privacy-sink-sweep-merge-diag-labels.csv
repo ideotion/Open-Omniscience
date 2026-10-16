@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,privacy,Merge diagnostics check the statement labels they read from older beat and journal files,shipped,PR #1420,src/monitoring/merge_diag.py;tests/test_sink_sweep_writer_gaps.py,"The sql labels of beat files and per-statement journals, and the last statement record, are scrubbed before they become counter keys or are published; each distinct label is checked once."

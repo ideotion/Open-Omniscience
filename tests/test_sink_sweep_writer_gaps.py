@@ -142,3 +142,25 @@ def test_import_results_member_checks_what_an_older_build_wrote(monkeypatch, tmp
     for form in _forms():
         assert form not in json.dumps(imports), form
     assert any(isinstance(r, dict) and r.get("lines_not_read") == 1 for r in imports), imports
+
+
+def test_merge_diag_checks_the_statement_labels_an_older_beat_or_journal_holds(monkeypatch, tmp_path):
+    """The merge diagnostics publish the ``sql`` label of every beat and journal record. An older file can hold one with the passphrase in
+    it; the label is checked before it becomes a key. MUTATION TARGETS: the two ``scrubbed`` calls on the labels and the one on the last
+    record."""
+    from src.monitoring import merge_diag
+
+    monkeypatch.setattr("src.backup.runlog.run_logs_dir", lambda: tmp_path)
+    label = f"ATTACH 'x' AS m KEY '{_PW}'"
+    beat = {"ev": "beat", "sql": label, "sql_s": 3.0}
+    (tmp_path / "20260101T000000Z-a.beat.jsonl").write_text(json.dumps(beat) + "\n" + json.dumps(beat) + "\n", encoding="utf-8")
+    recs = [
+        {"ev": "merge_statement_begin", "el_s": 1.0, "sql": label},
+        {"ev": "merge_statement_begin", "el_s": 4.0, "sql": "SELECT 2"},
+        {"ev": "merge_statement_begin", "el_s": 6.0, "sql": label, "note": f"also {_PW}"},  # the last record is published whole
+    ]
+    (tmp_path / "20260101T000000Z-b.jsonl").write_text("\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+    out = json.dumps([merge_diag.sampled_statements(), merge_diag.attributed_statements()])
+    for form in _forms():
+        assert form not in out, form
+    assert "ATTACH" in out, "the label is still reported, with the key taken out"
