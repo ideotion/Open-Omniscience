@@ -21,9 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 #: The calls that may be handed a caught exception: the class, and the scrubbing line. ``note_error``/``log_failure_once`` are the
 #: storage guard's own entry points (they log through ``log_failure`` and keep a per-path dedupe key in memory only);
 #: ``refusal_text``/``is_damaged`` are the settings store's class-only refusal and its damaged-value test; ``refusal_token``/
-#: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message.
+#: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message;
+#: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
-         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text"}
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "is_corruption"}
 MODULES = sorted(
     p.relative_to(ROOT).as_posix()
     for entry in ("src/scheduler", "src/wiki")
