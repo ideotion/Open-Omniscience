@@ -248,6 +248,21 @@ DRAIN_GATE_TIMEOUT_S = 30.0
 #: slot, and twelve frames reach from a worker's entry point to the statement that holds it.
 PIN_HOLDERS_MAX = 8
 PIN_STACK_DEPTH = 12
+#: A frame in the log is its page plus a header of this many bytes (SQLite's WAL format, fixed by the file format and not a setting):
+#: the figure that turns the pin's count of frames into the bytes the log cannot give back.
+WAL_FRAME_HEADER_BYTES = 24
+#: The write-gate phases (``writer.thread_phase``) in which a legacy-mode checkout is running a statement or ending a transaction:
+#: the only moments such a checkout pins the log, so a holder in one of them is listed before an older one that is idle.
+_PIN_STATEMENT_PHASES = frozenset({"execute", "commit"})
+#: Why a pin figure is absent, one fixed sentence each (a key in the report's ``pin_note``, never a message built from the driver).
+_PIN_NOTES = {
+    "no-passive": "The passive pass did not run or gave no figures, so no reader's position was read.",
+    "unreadable": "The passive pass gave figures that are not those of a log in WAL mode.",
+    "all-copied": (
+        "The passive pass copied every frame of the log, so there is no position to read from it. That does not prove "
+        "nothing pins the file: a reader whose snapshot is at the end of the log leaves the same figures."
+    ),
+}
 #: The log line names fewer than the report holds: one line per drain must stay readable in a
 #: log that rotates at 60 MB on a drive that may be nearly full. The report has the rest.
 PIN_LOG_HOLDERS = 4
@@ -651,12 +666,40 @@ def _checkpoint_enabled() -> bool:
     return wal_checkpoint_enabled()
 
 
+def _pin_figures(drain: dict | None) -> tuple[dict[str, int] | None, str | None]:
+    """How far behind the end of the log the oldest reader holds it, from the passive pass of the drain, or why that is not known.
+
+    PASSIVE copies every frame up to the oldest reader's mark and stops there, so ``checkpointed_frames`` IS that mark and
+    ``log_frames - checkpointed_frames`` is what the reader keeps the file from giving back. SQLite records the position and not
+    which connection holds it, so this narrows the search and names no one. Returns ``(pin, None)`` or ``(None, note_key)``;
+    ``bytes_behind`` is absent when the page size was not read, never a guessed 4096.
+    """
+    passive = drain.get("passive") if isinstance(drain, dict) else None
+    if not isinstance(passive, dict):
+        return None, "no-passive"
+    log, done = passive.get("log_frames"), passive.get("checkpointed_frames")
+    if not (
+        isinstance(log, int) and not isinstance(log, bool) and isinstance(done, int) and not isinstance(done, bool)
+    ):
+        return None, "no-passive"
+    if log < 0 or done < 0 or done > log:
+        return None, "unreadable"
+    if done == log:
+        return None, "all-copied"
+    pin: dict[str, int] = {"mark_frame": done, "frames_behind": log - done}
+    size = drain.get("page_size") if isinstance(drain, dict) else None
+    if isinstance(size, int) and not isinstance(size, bool) and size > 0:
+        pin["bytes_behind"] = (log - done) * (size + WAL_FRAME_HEADER_BYTES)
+    return pin, None
+
+
 def _pin_report(drain: dict | None) -> dict[str, Any]:
     """Who holds the WAL, named, with a stack each: the data no bundle has had.
 
     ``pool_watch`` sees checkouts of the pooled engines; a read that is not a pooled
     checkout cannot be seen from here, and the report says so rather than implying it would.
-    Never raises.
+    ``pin`` is the measured side (how far behind the end of the log the oldest reader holds it); ``holders`` are candidates, each with
+    the phase its thread is in NOW, a thread inside a statement or a commit listed before an older idle one. Never raises.
     """
     out: dict[str, Any] = {
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -665,13 +708,36 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
         "instrument": "unattached",
     }
     try:
+        pin, why = _pin_figures(drain)
+        if pin is not None:
+            out["pin"] = pin
+        else:
+            out["pin"] = None
+            out["pin_note"] = _PIN_NOTES.get(why or "", _PIN_NOTES["no-passive"])
+    except Exception:  # noqa: BLE001 - a report must never raise
+        out["pin"] = None
+    try:
         from src.database import pool_watch
 
         if pool_watch.is_registered():
             out["instrument"] = "attached"
-            rows = pool_watch.checked_out()
+            rows = pool_watch.checked_out()  # oldest first
             out["checkouts"] = len(rows)
-            top = rows[:PIN_HOLDERS_MAX]
+            if rows:
+                out["oldest_thread"] = rows[0]["thread"]
+            phases: dict[int, str | None] = {}
+            try:
+                from src.database.writer import thread_phases
+
+                phases = thread_phases([r["ident"] for r in rows if r.get("ident")])
+            except Exception:  # noqa: BLE001 - the phase is an extra; the holders stay without one
+                phases = {}
+            # Every row is ranked, THEN the list is cut: the cap shrinks what is printed, and a thread in a statement behind eight
+            # idle older ones must not be the one that is cut. ``sorted`` is stable, so age order holds inside each group.
+            ranked = sorted(
+                rows, key=lambda r: 0 if phases.get(r.get("ident") or -1) in _PIN_STATEMENT_PHASES else 1
+            )
+            top = ranked[:PIN_HOLDERS_MAX]
             stacks = pool_watch.stacks_for(
                 [r["ident"] for r in top if r.get("ident")], depth=PIN_STACK_DEPTH
             )
@@ -681,10 +747,16 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
                     "endpoint": r.get("endpoint"),
                     "pool": r.get("pool"),
                     "age_s": r["age_s"],
+                    "phase": phases.get(r.get("ident") or -1),
                     "stack": stacks.get(r["ident"], []) if r.get("ident") else [],
                 }
                 for r in top
             ]
+            out["ranked_by"] = (
+                "Threads inside a statement or a commit when this was taken come first, then the others by how long their "
+                "connection has been out. A phase is one instant, read from the stack at the moment of the report, not the "
+                "thread's history; none means the thread was already gone."
+            )
     except Exception:  # noqa: BLE001
         out["instrument"] = "unreadable"
     try:
@@ -702,9 +774,10 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
         "driver runs its legacy transaction mode, where a plain SELECT starts no transaction, so "
         "a checkout there pins the log only while a statement or an open cursor of it is running, "
         "or after a write it has not committed; a read_snapshot checkout holds its snapshot "
-        "from its first read until it ends. The pool field says which. The oldest checkout is "
-        "the likeliest holder, never a measured one, and an age says how long the connection "
-        "has been out, not how long a statement ran."
+        "from its first read until it ends. The pool field says which. SQLite records how far "
+        "behind the end of the log the oldest reader holds it (pin) but not which connection that "
+        "is, so the holders narrow the search and none is proof. An age says how long the "
+        "connection has been out, not how long a statement ran."
     )
     return out
 
@@ -1602,7 +1675,10 @@ class StorageGuard:
             # more so under an override, when collection runs), so keying on all of them would
             # bring back the one-warning-a-minute flood this key exists to stop.
             holders = report.get("holders", [])
-            key = ("pinned" if pinned else "gate-busy", str(holders[0].get("thread")) if holders else None)
+            # The key follows the OLDEST checkout, not the first listed: the listing is ranked by what each thread is doing
+            # now, which changes between reports, and a change of rank is not news.
+            first = report.get("oldest_thread") or (holders[0].get("thread") if holders else None)
+            key = ("pinned" if pinned else "gate-busy", str(first) if first else None)
             with self._lock:
                 fresh = key != self._report_key
                 self._report_key = key
@@ -1610,13 +1686,23 @@ class StorageGuard:
             tops = "; ".join(
                 f"{h['thread']} ({h['age_s']:.0f} s)"
                 + (f" [{h['pool']} pool]" if h.get("pool") else "")
+                + (f" in {h['phase']}" if h.get("phase") else "")
                 + (f" at {h['stack'][-1]}" if h.get("stack") else "")
                 for h in report.get("holders", [])[:PIN_LOG_HOLDERS]
+            )
+            pin = report.get("pin")
+            behind = (
+                f"; the oldest reader holds the log {pin['frames_behind']} frames"
+                + (f" ({pin['bytes_behind']} bytes)" if "bytes_behind" in pin else "")
+                + " behind its end"
+                if isinstance(pin, dict) and "frames_behind" in pin
+                else ""
             )
             if pinned:
                 log(
                     "storage guard: the WAL cannot be reset -- TRUNCATE is busy, a reader holds "
-                    "it; checkouts (candidates, not proof of a snapshot): %s",
+                    "it%s; checkouts (candidates, not proof of a snapshot): %s",
+                    behind,
                     tops or "none listed (the holder is not a pooled checkout)",
                 )
             else:

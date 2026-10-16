@@ -298,6 +298,7 @@ def checkpoint_wal(
         from src.database.damage import guard_raw_driver
         from src.database.writer import write_lock
 
+        page_size: int | None = None
         t0 = time.monotonic()
         raw = engine.raw_connection()
         try:
@@ -323,6 +324,11 @@ def checkpoint_wal(
                     # reader whose snapshot is at the current end of the WAL
                     # satisfies it exactly (423 == 423) while still pinning the
                     # file. There is nothing to predict: not waiting is the fix.
+                    # The page size turns the pin's frame count into bytes (a frame is a page plus a 24-byte header). Read before
+                    # the checkpoint; a failed read leaves it absent, never a guessed 4096.
+                    with suppress(Exception):
+                        size_row = cur.execute("PRAGMA page_size").fetchone()
+                        page_size = int(size_row[0]) if size_row else None
                     passive_row = cur.execute(
                         "PRAGMA wal_checkpoint(PASSIVE)"
                     ).fetchone()
@@ -354,6 +360,7 @@ def checkpoint_wal(
             "checkpointed_frames": ckpt_frames,
             "wal_bytes_before": bytes_before,
             "wal_bytes_after": bytes_after,
+            "page_size": page_size,
             "duration_ms": duration_ms,
             # S4.1: the passive step's own result. Separate keys, because a
             # busy TRUNCATE over a successful backfill and a busy TRUNCATE that

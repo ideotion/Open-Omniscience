@@ -84,7 +84,7 @@ def test_a_holder_waiting_for_a_pooled_connection_is_in_the_pool_wait_phase(engi
     holder = _Holder(body)
     try:
         with holder:
-            assert writer._hold_phase(holder.thread.ident) == "pool-wait"
+            assert writer.thread_phase(holder.thread.ident) == "pool-wait"
             hog.close()  # frees the pool, the holder's connect() returns
     finally:
         hog.close()
@@ -96,7 +96,7 @@ def test_a_holder_inside_a_statement_is_in_the_execute_phase(engine):
             c.exec_driver_sql("SELECT pause(0.8)").fetchall()
 
     with _Holder(body) as holder:
-        assert writer._hold_phase(holder.thread.ident) == "execute"
+        assert writer.thread_phase(holder.thread.ident) == "execute"
 
 
 def test_a_holder_working_in_python_is_in_the_python_phase():
@@ -104,12 +104,12 @@ def test_a_holder_working_in_python_is_in_the_python_phase():
         finish.wait(5)  # no SQLAlchemy frame on its stack
 
     with _Holder(body) as holder:
-        assert writer._hold_phase(holder.thread.ident) == "python"
+        assert writer.thread_phase(holder.thread.ident) == "python"
 
 
 def test_a_thread_that_is_gone_or_unknown_has_no_phase():
-    assert writer._hold_phase(None) is None
-    assert writer._hold_phase(2**62) is None
+    assert writer.thread_phase(None) is None
+    assert writer.thread_phase(2**62) is None
 
 
 def test_every_name_the_phase_table_relies_on_still_exists_in_the_libraries_installed():
@@ -141,7 +141,7 @@ def test_the_watchdog_sample_records_the_phase_and_counts_the_samples_of_one_hol
 
     gate = writer.write_gate
     warned = None
-    with _Holder(body) as holder:
+    with _Holder(body):
         warned = writer.watchdog_tick(gate, warned)
         warned = writer.watchdog_tick(gate, warned)
     ev = _gate_hold_events()
@@ -153,7 +153,7 @@ def test_the_watchdog_sample_records_the_phase_and_counts_the_samples_of_one_hol
 def test_a_new_hold_starts_its_samples_from_none(journal):
     gate = writer.write_gate
     for _ in range(2):
-        with _Holder(lambda finish: finish.wait(5)) as holder:
+        with _Holder(lambda finish: finish.wait(5)):
             writer.watchdog_tick(gate, None)
             samples = dict(writer._PHASE_SAMPLES)
         assert samples == {"python": 1}, samples
@@ -176,7 +176,7 @@ def test_the_end_of_a_long_hold_carries_the_holders_cpu_and_the_memory(journal, 
         h.thread.start()
         assert h.started.wait(5)
         h.thread.join(10)
-    slept, burned = sorted(_gate_hold_events(), key=lambda e: e["cpu_ms"] if "cpu_ms" in e else 0)
+    slept, burned = sorted(_gate_hold_events(), key=lambda e: e.get("cpu_ms", 0))
     assert slept["mem_available_mb"] == 4321 and slept["swap_used_mb"] == 987
     assert slept["cpu_ms"] < 150 and slept["seconds"] >= 0.4, slept
     assert burned["cpu_ms"] >= 380 and burned["seconds"] >= 0.4, burned

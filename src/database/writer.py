@@ -88,7 +88,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
 
@@ -659,27 +659,43 @@ _PHASE_FRAMES = 400
 _PHASE_SAMPLES: dict[str, int] = {}
 
 
-def _hold_phase(ident: int | None) -> str | None:
-    """``pool-wait``, ``execute``, ``commit`` or ``python`` for the thread with this ident, from its innermost matching frame; ``None`` when
-    the thread is gone. Best-effort, never raises."""
-    if ident is None:
-        return None
+def _phase_of(frame: Any) -> str:
+    """The phase of one thread's innermost-matching frame (``python`` when none of the table's functions is on its stack)."""
+    walked = 0
+    while frame is not None and walked < _PHASE_FRAMES:
+        hit = _PHASE_AT.get((str(frame.f_globals.get("__name__", "")), frame.f_code.co_name))
+        if hit is not None:
+            return hit
+        frame = frame.f_back
+        walked += 1
+    return "python"
+
+
+def thread_phases(idents: Iterable[int | None]) -> dict[int, str | None]:
+    """:func:`thread_phase` for several threads from ONE snapshot of the interpreter's frames (the pin report asks for up to a handful
+    at once, and a snapshot per thread would read the stacks at different instants). A thread that is gone, or an ident that is
+    ``None``, maps to ``None``. Best-effort, never raises: when the snapshot itself fails every ident maps to ``None``."""
+    wanted = [i for i in idents if i is not None]
+    out: dict[int, str | None] = dict.fromkeys(wanted)
     try:
         import sys
 
-        frame = sys._current_frames().get(ident)
-        if frame is None:
-            return None
-        walked = 0
-        while frame is not None and walked < _PHASE_FRAMES:
-            hit = _PHASE_AT.get((str(frame.f_globals.get("__name__", "")), frame.f_code.co_name))
-            if hit is not None:
-                return hit
-            frame = frame.f_back
-            walked += 1
-        return "python"
+        frames = sys._current_frames()
+        for ident in wanted:
+            frame = frames.get(ident)
+            out[ident] = _phase_of(frame) if frame is not None else None
     except Exception:  # noqa: BLE001 - a diagnostic must never raise
+        return dict.fromkeys(wanted)
+    return out
+
+
+def thread_phase(ident: int | None) -> str | None:
+    """``pool-wait``, ``execute``, ``commit`` or ``python`` for the thread with this ident, from its innermost matching frame; ``None`` when
+    the thread is gone. Best-effort, never raises. Public because the storage guard's pin report reads it for the threads that hold a
+    checkout, and the gate-hold journal for the thread that holds the gate: one classifier, so the two records agree."""
+    if ident is None:
         return None
+    return thread_phases([ident]).get(ident)
 
 
 def _memory_numbers() -> dict[str, int]:
@@ -723,7 +739,7 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
             "waiters": s.get("waiters"),
             "queued": s.get("queued"),
         }
-        phase = _hold_phase(ident)
+        phase = thread_phase(ident)
         if started != _JOURNALED_HOLD:
             _PHASE_SAMPLES.clear()  # a new hold: its samples start from none
         if phase is not None:
