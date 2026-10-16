@@ -540,12 +540,16 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
             entry = _STATE.setdefault(kind, _empty_kind())
             entry["total"] += 1
             entry["events"].append(event)
-            while len(entry["events"]) > KEEP[kind]:
-                gone = entry["events"].pop(0)
-                for k in [k for k, v in _OPEN.items() if v is gone]:
-                    _OPEN.pop(k, None)
             if key is not None:
                 _OPEN[(kind, key)] = event
+            while len(entry["events"]) > KEEP[kind]:
+                # A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one
+                # long backup would otherwise evict its open record, and its end would be lost. The oldest event that is not live
+                # goes first; only when every event is live does the oldest go. The other kinds keep the plain rule (the oldest goes).
+                live = {id(v) for v in _OPEN.values()} if kind in _RUN_JOURNAL_KINDS else set()
+                gone = entry["events"].pop(next((i for i, e in enumerate(entry["events"]) if id(e) not in live), 0))
+                for k in [k for k, v in _OPEN.items() if v is gone]:
+                    _OPEN.pop(k, None)
             _mark_dirty_locked()
     except Exception as exc:  # noqa: BLE001
         _internal_failure("record", exc)
@@ -765,8 +769,11 @@ def note_pool_timeout(
 #: The journal kind of each run, by the run journal's own name for it (``export`` is the volume backup, ``import`` the volume restore),
 #: so a record here and a run in ``run-journal.json`` are matched by name.
 RUN_KINDS: dict[str, str] = {"export": "run_export", "import": "run_import", "verify": "run_verify"}
+_RUN_JOURNAL_KINDS = frozenset(RUN_KINDS.values())  # the kinds whose open events the trimming in :func:`record` keeps
 
-#: How a run can end, as the run journal names it. Anything else a hook hands over is recorded as ``(unnamed outcome)``.
+#: How a run can end, as the run journal names it, with ONE difference: a backup the newsletter filter refused is "error" in
+#: ``run-journal.json`` (which records its class) and "refused" here, because nothing ran. Anything else a hook hands over is recorded
+#: as ``(unnamed outcome)``.
 RUN_OUTCOMES = frozenset(
     {"ok", "skipped-already-merged", "refused", "stopped-by-operator", "cancelled", "paused", "error", "ended-without-a-recorded-outcome"}
 )
@@ -868,15 +875,16 @@ def run_facts(note: RunNote | None, **facts: Any) -> None:
 
 
 def free_bytes_of(path: str | os.PathLike[str] | None = None) -> int | None:
-    """Free bytes on the volume holding ``path`` (its nearest existing parent; the data folder when ``path`` is None), or None when it
-    cannot be read: an unreadable figure is not ``0``, which would read as a full drive. Never raises. A stat of the volume, so it is for
-    a worker thread, never for a site that holds the write gate."""
+    """Free bytes on the volume holding ``path`` (the data folder when ``path`` is None), or None when it cannot be read: an unreadable
+    figure is not ``0``, which would read as a full drive, and it is not another volume's figure either (the path is stat-ed as given,
+    never its parent). Never raises. A stat of the volume, so it is for a worker thread, never for a site that holds the write gate; it
+    is a helper of the run records and not a recording, which stay dict updates. A volume that cannot be read (gone, a permission, a
+    mount that gave up) is an absent field and nothing more: it is not a fault of the journal and is neither counted nor logged."""
     try:
-        where = Path(path) if path is not None else data_dir()
-        while not where.exists() and where != where.parent:
-            where = where.parent
-        return int(shutil.disk_usage(where).free)
-    except Exception as exc:  # noqa: BLE001 - a volume that is not there, a permission, a hung mount that gave up
+        return int(shutil.disk_usage(Path(path) if path is not None else data_dir()).free)
+    except OSError:
+        return None
+    except Exception as exc:  # noqa: BLE001 - a path that is not a path: the journal's fault, counted
         _internal_failure("free_bytes_of", exc)
         return None
 
@@ -933,25 +941,6 @@ def run_refused(what: str, reason: str, *, failure: str | None = None) -> None:
         _internal_failure("run_refused", exc)
 
 
-def run_part(what: str, **facts: Any) -> bool:
-    """Add facts to the NEWEST run of ``what`` still open in this process, for a step that runs inside a run and holds no note (the
-    backup's summary file). One volume job runs at a time, so the newest open one is the run the step belongs to; with none open
-    (the folder backup also writes a summary) this does nothing and returns False. Never raises."""
-    try:
-        kind = RUN_KINDS.get(what)
-        if kind is None:
-            return False
-        fields = _run_fields(facts)
-        with _LOCK:
-            keys = [k for (kd, k) in _OPEN if kd == kind]
-        if not keys or not fields:
-            return False
-        return update(kind, keys[-1], fields)
-    except Exception as exc:  # noqa: BLE001
-        _internal_failure("run_part", exc)
-        return False
-
-
 # ---------------------------------------------------------------------------------------------------------------------------------
 #  The Diagnostics member (the slot contract: ``(max_bytes) -> dict``, never raises, counts and names the cut)
 # ---------------------------------------------------------------------------------------------------------------------------------
@@ -967,7 +956,9 @@ _METHOD = (
     "keep the last ten runs of each: how each ended, the class of its failure, a fixed sentence for a refusal, its seconds, the free "
     "bytes of the volume it wrote to when it began ('dest_free_bytes' for a backup, 'data_free_bytes' for a restore, where it stages; "
     "absent when unreadable) and the figures the engine measured. A run 'open' with no end was going when this member was built, or "
-    "its process was killed (an earlier process's says so in 'ended'); a refusal with 'ran' false is a start that never became a run."
+    "its process was killed (an earlier process's says so in 'ended'); a refusal with 'ran' false is a start that never became a run. "
+    "A backup the newsletter filter refused is 'error' in the run journal and 'refused' here. Refused starts share the ten kept with "
+    "the runs ('total' counts them all); a run still open is the last to be pushed out."
 )
 _CAVEAT = (
     "A process kill loses the last second of events when writes succeed (a failed write is tried again, doubling to a minute), and a "

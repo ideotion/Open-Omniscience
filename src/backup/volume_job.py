@@ -434,7 +434,7 @@ class VolumeBackupManager:
             # there, and a page that was reloaded mid-export is not needed at all.
             from src.backup.export_summary import write_summary_for_export_job
 
-            write_summary_for_export_job(destp, volume_status=done_status)
+            write_summary_for_export_job(destp, volume_status=done_status, run_note=note)
             with self._lock:
                 self._state = "done"
                 self._summary = kept

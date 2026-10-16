@@ -581,7 +581,7 @@ def write_backup_summary(dest: str | os.PathLike[str], facts: dict[str, Any]) ->
 
 
 def write_summary_for_export_job(
-    dest: str | os.PathLike[str], *, volume_status: dict[str, Any] | None
+    dest: str | os.PathLike[str], *, volume_status: dict[str, Any] | None, run_note: Any = None
 ) -> Path | None:
     """Write ``BACKUP_SUMMARY.md`` from the JOB, when an export phase completes (J2).
 
@@ -601,7 +601,11 @@ def write_summary_for_export_job(
 
     NEVER RAISES. A summary that cannot be written is not a failed backup -- the bytes
     are on the drive and verified -- so this returns ``None`` and logs, and the panel
-    reports the missing file when it next reads the folder.
+    reports the missing file when it next reads the folder. ``run_note`` is the volume
+    backup's own run in the storage-events journal (``storage_events.run_started``):
+    when it is given, the CLASS of a failure to write is kept on that run; a caller
+    that has no run of its own (the folder backup) passes nothing and the failure stays
+    at the log line, never on a run it does not belong to.
     """
     from src.backup.export_folder import is_export_folder_name
 
@@ -612,7 +616,7 @@ def write_summary_for_export_job(
         return write_backup_summary(d, export_facts(d, volume_status=volume_status))
     except Exception as exc:  # noqa: BLE001 - see the docstring: never fail the backup over this
         log_failure(_LOG, f"export summary: could not write {SUMMARY_NAME} in {d}", exc, level=logging.WARNING)
-        # The backup run in flight (if one is) keeps the CLASS of this failure in the storage-events journal, so a backup that ended "ok"
-        # with no summary beside it says why; a folder backup, which opens no run there, leaves it at the log line.
-        storage_events.run_part("export", summary_error=type(exc).__name__)
+        # The volume backup that handed over its run keeps the CLASS of this failure in the storage-events journal, so a backup that
+        # ended "ok" with no summary beside it says why; with no note (the folder backup) it stays at the log line.
+        storage_events.run_facts(run_note, summary_error=type(exc).__name__)
         return None

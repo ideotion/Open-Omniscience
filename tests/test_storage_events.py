@@ -382,18 +382,25 @@ _WIDEST_CLASS = "Module." + "E" * (se._CLASS_NAME_MAX - len("Module."))  # 80 ch
 
 def _fill_runs() -> None:
     """Each run kind to its cap with the WIDEST event the hooks can write: every measured field present at a large value, the longest
-    class name the journal accepts, the longest refusal sentence, the backup's summary failure beside its end."""
+    class name the journal accepts, the longest refusal sentence, the backup's summary failure beside its end and the seconds of a run
+    of more than a day. The last event of each kind is then checked to carry every key the sink knows, so a hook parameter that is
+    renamed (the sink drops what it does not know) shrinks this measurement visibly and not silently."""
     assert len(_WIDEST_CLASS) == se._CLASS_NAME_MAX
     longest = max(se.RUN_REFUSALS, key=lambda k: len(se.RUN_REFUSALS[k]))
+    every_key = set(se._RUN_NUMBERS) | set(se._RUN_FLAGS) | set(se._RUN_CLASSES) | {"verify", "error", "reason", "outcome", "seconds"}
     for what, kind in se.RUN_KINDS.items():
         for _ in range(se.KEEP[kind] + 4):
             note = se.run_started(what)
+            assert note is not None
+            note.started = time.monotonic() - 99_999.999  # more than a day, the widest the seconds can be written
             se.run_free_space(note, "dest_free_bytes" if what == "export" else "data_free_bytes", "/")
-            se.run_facts(note, dest_free_bytes=123_456_789_012_345, data_free_bytes=123_456_789_012_345)
-            se.run_part(what, summary_error=_WIDEST_CLASS)
-            se.run_ended(note, "ended-without-a-recorded-outcome", error=_WIDEST_CLASS, reason=longest, volumes=1234, bytes=123_456_789_012_345,
+            se.run_facts(note, dest_free_bytes=123_456_789_012_345, data_free_bytes=123_456_789_012_345, summary_error=_WIDEST_CLASS)
+            se.run_ended(note, "ended-without-a-recorded-outcome", failure=_WIDEST_CLASS, reason=longest, volumes=1234, bytes=123_456_789_012_345,
                          gate_held_s=1234.567, snapshot_s=1234.567, snapshot_bytes=123_456_789_012_345, engine_wall_s=12345.678,
                          articles_merged=12_345_678, reindexed=12_345_678, verify="unavailable", set_ok=False)
+        last = se._STATE[kind]["events"][-1]
+        assert every_key <= set(last), f"{kind}: the widest run lost {sorted(every_key - set(last))}"
+        assert last["error"] == _WIDEST_CLASS and last["seconds"] >= 99_999.0
 
 
 def _fill_like_the_hooks(long_names: bool) -> None:
@@ -445,7 +452,7 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 64,665 bytes with ordinary names and 109,375 with every name at the cut (a byte or two either way: every event carries the process id),
+    every kind, with the events the hooks write. Measured 65,056 bytes with ordinary names and 109,766 with every name at the cut (a byte or two either way: every event carries the process id),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 115,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
     from src.api import diagnostics_slots as slots
 

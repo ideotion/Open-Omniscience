@@ -116,7 +116,6 @@ def test_an_unknown_kind_or_a_missing_note_does_nothing(journal):
     se.run_facts(None, volumes=1)
     se.run_free_space(None, "dest_free_bytes", "/")
     se.run_refused("nope", "no-passphrase")
-    assert se.run_part("nope", summary_error="OSError") is False
     for kind in se.RUN_KINDS.values():
         assert se.diagnostics_member(10**9)["kinds"][kind]["total"] == 0
 
@@ -134,7 +133,7 @@ def test_an_outcome_outside_the_table_is_recorded_as_unnamed_and_never_as_the_te
 )
 def test_only_a_class_name_gets_into_an_error_field(journal, value):
     note = se.run_started("export")
-    se.run_part("export", summary_error=value)
+    se.run_facts(note, summary_error=value)
     se.run_ended(note, "error", failure=value)
     event = _only("run_export")
     assert event["error"] == "(not a class name)" and event["summary_error"] == "(not a class name)"
@@ -212,29 +211,30 @@ def test_every_refusal_sentence_is_fixed_text_with_no_slot():
         assert "{" not in sentence and "%" not in sentence and "/" not in sentence and "\\" not in sentence, key
 
 
-def test_run_part_reaches_the_newest_open_run_of_its_own_kind_only(journal):
+def test_run_facts_reach_only_the_run_of_their_own_note(journal):
     older = se.run_started("export")
     newest = se.run_started("export")
     other = se.run_started("import")
-    assert se.run_part("export", summary_error="OSError") is True
+    se.run_facts(older, summary_error="OSError")
     se.run_ended(newest, "ok")
     se.run_ended(older, "ok")
     se.run_ended(other, "ok")
     by_start = _events("run_export")
-    assert [("summary_error" in e) for e in by_start] == [False, True], "only the newest open run of the kind"
+    assert [("summary_error" in e) for e in by_start] == [True, False], "the older run's note reaches the older run, not the newest open one"
     assert "summary_error" not in _only("run_import")
 
 
-def test_run_part_with_no_open_run_does_nothing(journal):
+def test_run_facts_on_a_run_that_ended_do_nothing(journal):
     note = se.run_started("export")
     se.run_ended(note, "ok")
-    assert se.run_part("export", summary_error="OSError") is False
+    se.run_facts(note, summary_error="OSError")
     assert "summary_error" not in _only("run_export"), "a closed run is not reopened by a late step"
 
 
-def test_free_bytes_of_walks_up_to_an_existing_parent(journal, tmp_path):
-    free = se.free_bytes_of(tmp_path / "not" / "made" / "yet")
+def test_free_bytes_of_stats_the_path_as_given_and_never_reports_another_volume(journal, tmp_path):
+    free = se.free_bytes_of(tmp_path)
     assert isinstance(free, int) and free > 0
+    assert se.free_bytes_of(tmp_path / "not" / "made" / "yet") is None, "a path that is not there is absent, not its parent's volume"
 
 
 def test_an_unreadable_volume_leaves_the_field_absent_and_never_zero(journal, tmp_path, monkeypatch):
@@ -248,7 +248,20 @@ def test_an_unreadable_volume_leaves_the_field_absent_and_never_zero(journal, tm
     se.run_ended(note, "ok")
     event = _only("run_export")
     assert "dest_free_bytes" not in event, "an unreadable figure is not 0, which would read as a full drive"
+    member = se.diagnostics_member(10**9)
+    assert member["file"]["internal_failures"] == 0, "a volume that cannot be read is an absent field, not a fault of the journal"
     _nothing_secret_anywhere(journal, MARKER)
+
+
+def test_a_failure_that_is_not_an_os_error_is_the_journals_own_and_is_counted(journal, tmp_path, monkeypatch):
+    def broken(_path):
+        raise ValueError(f"not a path {MARKER}")
+
+    monkeypatch.setattr(se.shutil, "disk_usage", broken)
+    assert se.free_bytes_of(tmp_path) is None
+    member = se.diagnostics_member(10**9)
+    assert member["file"]["internal_failures"] == 1 and "ValueError" in member["file"]["last_internal_failure"]
+    assert MARKER not in json.dumps(member), "counted by class, never by its message"
 
 
 def test_the_free_space_is_read_after_the_run_is_open_so_a_hang_leaves_it_open(journal, tmp_path, monkeypatch):
@@ -305,7 +318,6 @@ def test_a_journal_that_cannot_record_never_raises_into_the_run_hooks(journal, m
     se.run_refused("export", "no-passphrase")
     se.run_facts(se.RunNote("run_export", ("run", 1), 0.0), volumes=1)
     se.run_ended(se.RunNote("run_export", ("run", 1), 0.0), "ok")
-    assert se.run_part("export", summary_error="OSError") is False
     assert MARKER not in json.dumps(se.diagnostics_member(10**9)), "a failure inside the journal is counted by class, never by its message"
 
 
@@ -336,6 +348,25 @@ def test_a_backup_that_is_done_leaves_its_measurements_and_the_free_bytes_of_its
     assert event["verify"] == "off"
     assert isinstance(event["dest_free_bytes"], int) and event["dest_free_bytes"] > 0
     assert "data_free_bytes" not in event, "a backup writes to its destination, not the data folder"
+
+
+def test_the_backup_reads_the_free_space_after_its_run_is_written_open(journal, tmp_path, monkeypatch):
+    """The order the docstrings promise, at the worker's own call site: a stat that hangs on a dead mount must find the run already open."""
+    seen: list[list[dict]] = []
+    real = se.shutil.disk_usage
+    dest = tmp_path / "dest"
+
+    def look(path):
+        if Path(path) == dest:  # the run journal's own hardware profile also stats the data folder, before the run is opened
+            seen.append([dict(e) for e in _events("run_export")])
+        return real(path)
+
+    monkeypatch.setattr(se.shutil, "disk_usage", look)
+    mgr = VolumeBackupManager()
+    mgr.start_backup(str(dest), "pw", verify_after_write=False, _backup_fn=_ok_backup)
+    assert _finish(mgr)["state"] == "done"
+    assert seen, "the worker read the free space"
+    assert len(seen[0]) == 1 and seen[0][0]["open"] is True, "the run was already written open when the stat ran"
 
 
 def test_a_backup_that_fails_leaves_the_class_and_no_word_of_the_exception_or_the_path(journal, tmp_path):
@@ -438,7 +469,17 @@ def test_a_destination_that_is_a_file_is_refused_too(journal, tmp_path):
     mgr = VolumeBackupManager()
     with pytest.raises(ValueError):
         mgr.start_backup(str(target), "pw", _backup_fn=_ok_backup)
-    assert _only("run_export")["outcome"] == "refused"
+    event = _only("run_export")
+    assert (event["outcome"], event["reason"]) == ("refused", se.RUN_REFUSALS["destination-unusable"]), "mkdir refuses a file before is_dir is asked"
+
+
+def test_a_destination_that_stops_being_a_folder_after_it_was_made_is_the_not_a_folder_refusal(journal, tmp_path, monkeypatch):
+    monkeypatch.setattr(vj.Path, "is_dir", lambda _self: False)
+    mgr = VolumeBackupManager()
+    with pytest.raises(ValueError):
+        mgr.start_backup(str(tmp_path / "gone-before-the-check"), "pw", _backup_fn=_ok_backup)
+    event = _only("run_export")
+    assert (event["outcome"], event["reason"]) == ("refused", se.RUN_REFUSALS["not-a-folder"])
 
 
 def test_a_source_that_is_not_a_folder_is_a_refusal_for_a_restore_and_for_a_verify(journal, tmp_path):
@@ -529,6 +570,34 @@ def test_an_artifact_already_merged_is_recorded_as_skipped_and_reads_no_drive(jo
     assert calls == [], "a restore that writes nothing does not stat the data folder"
 
 
+def test_a_real_restore_that_merges_ends_ok_with_its_figures_and_not_as_the_net_would(journal, tmp_path, monkeypatch):
+    """The path every good restore takes (the injected ``_restore_fn`` skips it): if its ``ok`` record is lost the finally net would
+    write "ended-without-a-recorded-outcome" for every restore that worked."""
+    import src.backup.artifact as artifact
+    import src.backup.merge as merge
+    import src.scheduler.runner as runner
+
+    class _Staged:
+        file_members = ()
+        staging_dir = tmp_path / "staging"
+
+    monkeypatch.setattr(merge, "artifact_source_digest", lambda _src: None)
+    monkeypatch.setattr(merge, "find_completed_import", lambda _digest: None)
+    monkeypatch.setattr(merge, "check_memory_before_staging", lambda: None)
+    monkeypatch.setattr(merge, "run_restore", lambda _staged, **_k: {"articles_merged": 12, "reindexed": 7, "batch_id": 3})
+    monkeypatch.setattr(artifact, "read_volume_backup", lambda *_a, **_k: _Staged())
+    monkeypatch.setattr(artifact, "cleanup_staging", lambda _staged: None)
+    monkeypatch.setattr(runner, "pause_for_exclusive_operation", lambda: False)
+    monkeypatch.setattr(runner, "resume_after_exclusive_operation", lambda _was: None)
+    monkeypatch.setattr(vj, "defer_reindex", lambda: False)
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(tmp_path), "pw")
+    assert _finish(mgr)["state"] == "done"
+    event = _only("run_import")
+    assert (event["outcome"], event["articles_merged"], event["reindexed"]) == ("ok", 12, 7)
+    assert isinstance(event["data_free_bytes"], int) and event["open"] is False
+
+
 def test_a_restore_that_goes_on_reads_the_free_bytes_of_the_data_folder_and_a_failure_keeps_them(journal, tmp_path, monkeypatch):
     import src.backup.merge as merge
 
@@ -587,13 +656,38 @@ def test_a_backup_summary_that_cannot_be_written_is_named_on_the_run_that_ended_
     _nothing_secret_anywhere(journal, MARKER, "read-only drive")
 
 
-def test_a_summary_failure_with_no_backup_in_flight_records_nothing(journal, tmp_path, monkeypatch):
-    """The folder backup also writes a summary and opens no run in this journal."""
+def test_a_summary_failure_with_no_note_lands_on_no_run_even_when_another_backup_is_open(journal, tmp_path, monkeypatch):
+    """The folder backup also writes a summary and has no run in this journal; a volume backup that happens to be open is not its run."""
     dated = tmp_path / f"202610161200_{export_folder.BACKUP_FOLDER_TOKEN}_{export_folder.BACKUP_FOLDER_SUFFIX}"
     monkeypatch.setattr(export_summary, "export_facts", lambda *_a, **_k: {})
     monkeypatch.setattr(export_summary, "write_backup_summary", lambda *_a: (_ for _ in ()).throw(OSError("full")))
+    unrelated = se.run_started("export")
     assert export_summary.write_summary_for_export_job(dated, volume_status=None) is None
-    assert _events("run_export") == []
+    se.run_ended(unrelated, "ok")
+    assert "summary_error" not in _only("run_export"), "a summary that failed for someone else's folder is not this run's fact"
+
+
+def test_a_summary_failure_lands_on_the_run_whose_note_was_handed_over_and_on_no_other(journal, tmp_path, monkeypatch):
+    dated = tmp_path / f"202610161200_{export_folder.BACKUP_FOLDER_TOKEN}_{export_folder.BACKUP_FOLDER_SUFFIX}"
+    monkeypatch.setattr(export_summary, "export_facts", lambda *_a, **_k: {})
+    monkeypatch.setattr(export_summary, "write_backup_summary", lambda *_a: (_ for _ in ()).throw(OSError("full")))
+    mine = se.run_started("export")
+    newer = se.run_started("export")
+    assert export_summary.write_summary_for_export_job(dated, volume_status=None, run_note=mine) is None
+    se.run_ended(newer, "ok")
+    se.run_ended(mine, "ok")
+    assert [("summary_error" in e) for e in _events("run_export")] == [True, False]
+
+
+def test_a_burst_of_refused_starts_does_not_push_the_run_in_flight_out_of_the_journal(journal):
+    running = se.run_started("export")
+    for _ in range(se.KEEP["run_export"] + 3):
+        se.run_refused("export", "already-running")
+    se.run_ended(running, "ok")
+    events = _events("run_export")
+    assert [e for e in events if e.get("outcome") == "ok"], "the run that was in flight still has its end recorded"
+    assert se.diagnostics_member(10**9)["kinds"]["run_export"]["total"] == 1 + se.KEEP["run_export"] + 3, "total counts every record"
+    assert len(events) == se.KEEP["run_export"]
 
 
 # --------------------------------------------------------------------------- #
@@ -626,7 +720,7 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
     allowed_facts = set(se._RUN_NUMBERS) | set(se._RUN_FLAGS) | set(se._RUN_CLASSES) | {"verify"}
     seen = 0
     for path in ("src/backup/volume_job.py", "src/backup/export_summary.py"):
-        for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_part", "run_free_space"}):
+        for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space"}):
             seen += 1
             where = f"{path}:{call.lineno}"
             name = call.func.attr  # type: ignore[attr-defined]
@@ -666,17 +760,40 @@ def test_each_worker_closes_its_run_in_a_finally_net_and_every_start_names_its_r
         assert len(nets) == 1, f"{name} must close its run in a finally"
     for name in ("start_backup", "start_restore", "start_verify"):
         fn = next(f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name == name)
-        raises = [n for n in ast.walk(fn) if isinstance(n, ast.Raise)]
-        refusals = [c for c in ast.walk(fn) if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "run_refused"]
-        assert raises and len(refusals) >= len(raises), f"{name}: every raise of a refusal is preceded by a journal record"
+        _assert_each_raise_follows_a_refusal(fn)
     reject = next(f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name == "_reap_or_reject")
-    assert any(isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "run_refused" for c in ast.walk(reject))
+    _assert_each_raise_follows_a_refusal(reject)
+
+
+def _is_refusal_statement(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Attribute)
+        and stmt.value.func.attr == "run_refused"
+    )
+
+
+def _assert_each_raise_follows_a_refusal(fn: ast.FunctionDef) -> None:
+    """Every ``raise`` is preceded, in the SAME block, by a ``run_refused`` statement: a record moved after its raise is dead code."""
+    raises = 0
+    for node in ast.walk(fn):
+        for field in ("body", "orelse", "finalbody"):
+            block = getattr(node, field, None)
+            if not isinstance(block, list):
+                continue
+            for i, stmt in enumerate(block):
+                if isinstance(stmt, ast.Raise):
+                    raises += 1
+                    assert any(_is_refusal_statement(earlier) for earlier in block[:i]), f"{fn.name}:{stmt.lineno}: a raise with no refusal record before it"
+    assert raises, f"{fn.name} raises nothing: the pin found nothing to guard"
 
 
 def test_the_member_says_what_the_run_kinds_are():
     for kind in se.RUN_KINDS.values():
         assert kind in se._METHOD, kind
     assert "run journal's 'export'" in se._METHOD and "dest_free_bytes" in se._METHOD and "data_free_bytes" in se._METHOD
+    assert "newsletter filter" in se._METHOD, "the one outcome that differs from the run journal's is said so"
 
 
 def test_the_kinds_are_the_run_journals_names_and_the_caps_are_ten_each():
