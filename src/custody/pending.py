@@ -148,25 +148,65 @@ def _rewrite(items: list[dict[str, Any]]) -> None:
     os.replace(tmp, p)
 
 
-def late_count(log: Any = None) -> int | None:
-    """How many INGEST entries in the log were recorded late (None when unreadable)."""
-    own = log is None
-    try:
-        if own:
-            from src.custody.log import CustodyLog
+#: How long the late count waits for a writer's commit (milliseconds). It protects the request thread, which is a settings read,
+#: from queueing behind ingest: past it the count is reported unread, with the reason, never waited out.
+_LATE_READ_BUSY_MS = 3000
 
-            log = CustodyLog()
-        row = log.conn.execute(
-            "SELECT COUNT(*) FROM custody_entries WHERE action = 'ingest' AND metadata_json LIKE ?",
-            (f"%{_LATE_NEEDLE}%",),
-        ).fetchone()
-        return int(row[0]) if row else 0
+
+def _late_count_on(conn: Any) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM custody_entries WHERE action = 'ingest' AND metadata_json LIKE ?",
+        (f"%{_LATE_NEEDLE}%",),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def late_reading() -> dict[str, Any]:
+    """The late count, read WITHOUT a :class:`CustodyLog`: ``{"count", "reason", "computed_at"}``.
+
+    A plain read-only connection: no signer (no key unwrap), no process-wide append lock (which every ingest ``record`` holds, and
+    which a settings read queued behind: measured 3.5-6 s of a 9-12 s read with 50 workers on 2 cores), no table creation. It
+    never writes, so a log that does not exist yet reads 0 and is NOT created by being asked about. ``count`` is ``None`` when
+    the log could not be read, and ``reason`` then names the CLASS of the failure (never the driver's words); a count carries the
+    moment it was taken, because nothing here caches it.
+    """
+    computed_at = datetime.now(UTC).isoformat(timespec="seconds")
+    out: dict[str, Any] = {"count": None, "reason": None, "computed_at": computed_at}
+    conn = None
+    try:
+        from src.database.connect import connect
+        from src.paths import data_dir
+
+        try:
+            conn = connect(data_dir() / "custody_log.db", read_only=True)
+        except FileNotFoundError:
+            out["count"] = 0  # no log yet: nothing was recorded late
+            return out
+        conn.execute(f"PRAGMA busy_timeout={_LATE_READ_BUSY_MS}")
+        # The table's absence is asked, not read off an error's words: a log file whose table is not made yet has no entries.
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'custody_entries'").fetchone() is None:
+            out["count"] = 0
+        else:
+            out["count"] = _late_count_on(conn)
+    except Exception as exc:  # noqa: BLE001 - a count is a disclosure, never a failure
+        out["reason"] = type(exc).__name__
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.close()
+    return out
+
+
+def late_count(log: Any = None) -> int | None:
+    """How many INGEST entries in the log were recorded late (None when unreadable).
+
+    Without a ``log`` this is :func:`late_reading`'s count; with one, it reads through that log's connection."""
+    if log is None:
+        return late_reading()["count"]
+    try:
+        return _late_count_on(log.conn)
     except Exception:  # noqa: BLE001 - a count is a disclosure, never a failure
         return None
-    finally:
-        if own and log is not None:
-            with contextlib.suppress(Exception):
-                log.close()
 
 
 def _columns_for(ids: list[int], session_factory: Any = None) -> dict[int, dict[str, Any]]:
