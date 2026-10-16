@@ -3,9 +3,9 @@
 ``FolderBackupManager`` copies, restores and verifies tens of gigabytes of wiki dumps, map extracts and model blobs across a drive. Each
 mode already left a line in the run journal (``folder-export``, ``folder-import``, ``verify``); none left a durable record that survives a
 process killed in the middle of it, and a start that was refused (no room on the drive, a destination that cannot be used, a job already
-running) left nothing at all. They record into the same three kinds as the volume set (the run journal calls a folder backup an
-``export`` and a folder restore an ``import``) and say ``via: "folder"``, so a reader keeps one list of backups and tells them apart by
-that key.
+running) left nothing at all. They record into the same three kinds as the volume set (a folder backup is an ``export`` here, a folder
+restore an ``import``; the run journal calls them ``folder-export`` and ``folder-import``) and say ``via: "folder"``, so a reader keeps one
+list of backups and tells them apart by that key.
 
 What this file pins:
 
@@ -411,3 +411,131 @@ def test_the_manager_records_into_the_journal_this_module_reads_and_every_run_is
 
 def test_the_member_says_the_folder_modes_are_runs_too():
     assert "folder backup" in se._METHOD and "'folder'" in se._METHOD
+
+
+# --------------------------------------------------------------------------- #
+#  4. The Opus read of the first version
+# --------------------------------------------------------------------------- #
+from tests.test_storage_events_runs import _unreadable  # noqa: E402
+
+
+def test_a_destination_whose_volume_cannot_be_examined_after_the_start_leaves_the_field_absent_and_the_run_closed(journal, tmp_path, monkeypatch):
+    """M1: the walk to the nearest existing parent ran between the record being opened and the ``try``, so a mount that dropped in the
+    window killed the worker with its state at ``running`` and its record open. The walk is now a function that never raises."""
+    import errno
+
+    drive = tmp_path / "UNREADABLE-drive"
+    real = Path.exists
+
+    def exists(self, *a, **k):
+        if "UNREADABLE" in str(self):
+            raise OSError(errno.ENOTCONN, "Transport endpoint is not connected")
+        return real(self, *a, **k)
+
+    assert fb._volume_probe(drive) == tmp_path, "before the patch: a destination not made yet is probed at its nearest existing parent"
+    monkeypatch.setattr(Path, "exists", exists)
+    assert fb._volume_probe(drive) is None, "an error the system raises is an absent probe, not an exception"
+    monkeypatch.setattr(fb, "write_folder_backup", lambda *a, **k: {"stopped": False, "complete": True, "copied": 3, "skipped": 0, "bytes_copied": 350})
+    mgr = FolderBackupManager()
+    mgr._run_backup(drive, _items(tmp_path / "src"), [])
+    event = _only("run_export")
+    assert (event["outcome"], event["open"], event["via"]) == ("ok", False, "folder")
+    assert "dest_free_bytes" not in event, "an unreadable figure is absent, never 0 and never another volume's"
+    assert mgr.status()["state"] == "done"
+
+
+def test_a_failure_of_the_copy_after_an_unexaminable_probe_is_an_error_state_with_a_closed_record(journal, tmp_path, monkeypatch):
+    import errno
+
+    real = Path.exists
+
+    def exists(self, *a, **k):
+        if "UNREADABLE" in str(self):
+            raise OSError(errno.EIO, "Input/output error")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "exists", exists)
+
+    def failing(*a, **k):
+        raise OSError(errno.EIO, f"{MARKER}")
+
+    monkeypatch.setattr(fb, "write_folder_backup", failing)
+    mgr = FolderBackupManager()
+    with pytest.raises(OSError):
+        mgr._run_backup(tmp_path / "UNREADABLE-drive", _items(tmp_path / "src"), [])
+    assert mgr.status()["state"] == "error"
+    event = _only("run_export")
+    assert (event["outcome"], event["error"], event["open"]) == ("error", "OSError", False)
+    _nothing_secret_anywhere(journal, MARKER, "UNREADABLE")
+
+
+@pytest.mark.parametrize(("mode", "kind", "method"), [("backup", "run_export", "exists"), ("restore", "run_import", "is_dir"), ("verify", "run_verify", "is_dir")])
+def test_a_folder_start_whose_path_the_system_cannot_examine_is_a_refusal_and_raises_the_oserror(journal, tmp_path, monkeypatch, mode, kind, method):
+    _unreadable(monkeypatch, method)
+    mgr = FolderBackupManager()
+    with pytest.raises(OSError):
+        mgr.start(str(tmp_path / f"UNREADABLE-{MARKER}"), ["wiki_dumps"], mode=mode, _items=_items(tmp_path / "src"))
+    event = _only(kind)
+    assert (event["outcome"], event["ran"], event["via"], event["error"]) == ("refused", False, "folder", "OSError")
+    assert event["reason"] == se.RUN_REFUSALS["path-unreadable"]
+    assert mgr.status()["state"] != "running", "the refusal left the manager idle"
+    _nothing_secret_anywhere(journal, MARKER, "UNREADABLE", str(tmp_path))
+
+
+def test_a_listing_of_the_sources_that_fails_is_a_refusal_too(journal, tmp_path, monkeypatch):
+    def listing(**k):
+        raise PermissionError(f"{MARKER} {tmp_path}")
+
+    monkeypatch.setattr(fb, "collect_items", listing)
+    mgr = FolderBackupManager()
+    with pytest.raises(PermissionError):
+        mgr.start(str(tmp_path / "drive"), ["wiki_dumps"])
+    event = _only("run_export")
+    assert (event["outcome"], event["error"], event["reason"]) == ("refused", "PermissionError", se.RUN_REFUSALS["path-unreadable"])
+    _nothing_secret_anywhere(journal, MARKER, str(tmp_path))
+
+
+def test_free_space_that_cannot_be_read_is_not_recorded_as_a_shortage(journal, tmp_path, monkeypatch):
+    """L2: ``free_bytes`` answers 0 for a volume it cannot read, which refuses the backup (fail closed) but is not a measured shortage."""
+
+    def unreadable(_path):
+        raise OSError(5, "Input/output error")
+
+    items = _items(tmp_path / "src")  # made before the patch: writing them reads the free space too
+    monkeypatch.setattr(fb.shutil, "disk_usage", unreadable)
+    mgr = FolderBackupManager()
+    with pytest.raises(ValueError, match="Not enough free space"):
+        mgr.start(str(tmp_path / "drive"), ["wiki_dumps"], _items=items)
+    event = _only("run_export")
+    assert event["reason"] == se.RUN_REFUSALS["free-space-unreadable"] and event["reason"] != se.RUN_REFUSALS["no-space"]
+
+
+def test_a_bad_signature_is_a_mismatch_the_verdict_counts_and_the_record_says_the_set_is_not_ok(journal, tmp_path):
+    """L5: a tampered manifest on intact files recorded ``mismatches`` 0 and ``set_ok`` False, with nothing saying why."""
+    import json
+
+    backup = tmp_path / "drive"
+    fb.write_folder_backup(backup, _items(tmp_path / "src"))
+    manifest = backup / fb.MANIFEST_NAME
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["created_at"] = "1999-01-01T00:00:00+00:00"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    mgr = FolderBackupManager()
+    mgr.start(str(backup), [], mode="verify")
+    _join(mgr)
+    assert mgr.status()["verify"]["signature_state"] == "bad-signature"
+    event = _only("run_verify")
+    assert (event["outcome"], event["checked"], event["mismatches"], event["set_ok"]) == ("ok", 3, 1, False)
+    assert fb._verify_counts({"files_checked": 5, "summary": {}, "signature_state": "bad-signature"}) == (5, 1)
+    assert fb._verify_counts({"files_checked": 5, "summary": {}, "signature_state": "verified"}) == (5, 0)
+
+
+@pytest.mark.parametrize("name", ["_run_backup", "_run_restore", "_run_verify"])
+def test_each_worker_reads_the_cancel_flag_once_so_its_three_records_cannot_disagree(name):
+    reads = [
+        n
+        for n in ast.walk(_method(name))
+        if isinstance(n, ast.Attribute) and n.attr == "_cancelled" and isinstance(n.ctx, ast.Load)
+        and isinstance(n.value, ast.Name) and n.value.id == "self"
+    ]
+    assert len(reads) == 1, f"{name} reads self._cancelled {len(reads)} times"

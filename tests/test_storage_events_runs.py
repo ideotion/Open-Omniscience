@@ -370,7 +370,7 @@ def test_the_backup_reads_the_free_space_after_its_run_is_written_open(journal, 
 
 
 def test_a_backup_that_fails_leaves_the_class_and_no_word_of_the_exception_or_the_path(journal, tmp_path):
-    dest = tmp_path / f"folder-{MARKER}"
+    dest = tmp_path / f"dest4711-{MARKER}"
 
     def failing(dest_, pw, **_k):
         raise RuntimeError(f"disk exploded at {dest_} while writing {pw}: {MARKER}")
@@ -380,7 +380,7 @@ def test_a_backup_that_fails_leaves_the_class_and_no_word_of_the_exception_or_th
     assert _finish(mgr)["state"] == "error"
     event = _only("run_export")
     assert event["outcome"] == "error" and event["error"] == "RuntimeError" and event["seconds"] >= 0
-    _nothing_secret_anywhere(journal, MARKER, "the-typed-passphrase", "disk exploded", str(tmp_path), "folder-")
+    _nothing_secret_anywhere(journal, MARKER, "the-typed-passphrase", "disk exploded", str(tmp_path), "dest4711-")
 
 
 def test_a_newsletter_filter_refusal_is_a_refused_run_with_the_class(journal, tmp_path):
@@ -734,10 +734,13 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
         "src/backup/volume_job.py", "src/backup/export_summary.py", "src/api/backup_v2.py", "src/ingest/import_job.py",
         "src/backup/folder_backup.py",
     ):
-        for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space"}):
+        for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space", "run_path_checked"}):
             seen[path] = seen.get(path, 0) + 1
             where = f"{path}:{call.lineno}"
             name = call.func.attr  # type: ignore[attr-defined]
+            if name == "run_path_checked":
+                first = call.args[0]  # a kind, or ``what`` in the one helper every folder start passes through
+                assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
             if name in ("run_ended", "run_refused"):
                 outcome_arg = call.args[1] if name == "run_ended" else None
                 if outcome_arg is not None:
@@ -746,7 +749,8 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
                 if name == "run_refused":
                     first = call.args[0]  # a kind, or ``what`` in the one helper every start passes through
                     assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
-                    assert isinstance(call.args[1], ast.Constant) and call.args[1].value in se.RUN_REFUSALS, where
+                    keys = _constants_of(call.args[1])  # one key, or a conditional of keys (the no-space / free-space-unreadable pair)
+                    assert keys is not None and keys <= set(se.RUN_REFUSALS), where
             for kw in call.keywords:
                 assert kw.arg is not None, f"{where}: a ** mapping can carry anything"
                 if kw.arg in ("failure", "summary_error"):
@@ -754,17 +758,34 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
                 elif kw.arg == "reason":
                     assert isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_REFUSALS, where
                 elif kw.arg == "via":
-                    # a key of the fixed table, or the one local that holds such a key (``via = "volume-set" if ... else None``)
-                    assert (isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_VIA) or (
-                        isinstance(kw.value, ast.Name) and kw.value.id == "via"
-                    ), f"{where}: via must be a key of the table"
+                    # a key of the fixed table, written out at the call: no local, no expression
+                    assert isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_VIA, f"{where}: via must be a key of the table"
                 else:
                     assert kw.arg in allowed_facts, f"{where}: {kw.arg} is not a fact a run may carry"
-    # Per file, so a file whose hooks were deleted cannot hide behind the others' count (27, 1, 11, 7 and 18 at the time of writing).
-    floors = {"src/backup/volume_job.py": 25, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 9, "src/ingest/import_job.py": 6,
-              "src/backup/folder_backup.py": 17}
-    for path, floor in floors.items():
-        assert seen.get(path, 0) >= floor, f"the scan found {seen.get(path, 0)} hooks in {path}, expected at least {floor}"
+    # Per file, so a file whose hooks were deleted cannot hide behind the others' count. EXACT at the time of writing (30, 1, 12, 8 and 18):
+    # a hook added or removed here moves the number in the same change, which is the point of a ratchet; a floor with slack let one
+    # missing hook through.
+    counts = {"src/backup/volume_job.py": 30, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 12, "src/ingest/import_job.py": 8,
+              "src/backup/folder_backup.py": 18}
+    for path, expected in counts.items():
+        assert seen.get(path, 0) == expected, f"the scan found {seen.get(path, 0)} hooks in {path}, expected {expected}"
+
+
+def test_no_file_that_carries_a_run_hook_writes_the_journal_by_hand():
+    """A raw ``record``/``update``/``end``/``note_*`` call in these files would bypass ``_run_fields``' allowlist at the call site; the
+    scan above reads only the ``run_*`` builders, so this one says there is nothing else to read."""
+    for path in (
+        "src/backup/volume_job.py", "src/backup/export_summary.py", "src/api/backup_v2.py", "src/ingest/import_job.py",
+        "src/backup/folder_backup.py",
+    ):
+        tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+        raw = [
+            n.func.attr
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "storage_events" and not n.func.attr.startswith("run_")
+        ]
+        assert raw == [], f"{path} calls storage_events.{raw} directly"
 
 
 def test_each_worker_closes_its_run_in_a_finally_net_and_every_start_names_its_refusal():
@@ -816,11 +837,66 @@ def _assert_each_raise_follows_a_refusal(fn: ast.FunctionDef) -> None:
 def test_the_member_says_what_the_run_kinds_are():
     for kind in se.RUN_KINDS.values():
         assert kind in se._METHOD, kind
-    assert "run journal's 'export'" in se._METHOD and "dest_free_bytes" in se._METHOD and "data_free_bytes" in se._METHOD
-    assert "newsletter filter" in se._METHOD, "the one outcome that differs from the run journal's is said so"
+    assert "dest_free_bytes" in se._METHOD and "data_free_bytes" in se._METHOD
+    assert "newsletter filter" in se._METHOD, "an outcome that differs from the run journal's is said so"
 
 
 def test_the_kinds_are_the_run_journals_names_and_the_caps_are_ten_each():
     assert se.RUN_KINDS == {"export": "run_export", "import": "run_import", "verify": "run_verify"}
     assert all(se.KEEP[kind] == 10 for kind in se.RUN_KINDS.values())
     assert vj.storage_events is se, "the manager records into the journal this module reads"
+
+
+# --------------------------------------------------------------------------- #
+#  4. A start that cannot even look at its path
+# --------------------------------------------------------------------------- #
+def _unreadable(monkeypatch, method: str, needle: str = "UNREADABLE") -> None:
+    """Make ``Path.<method>`` raise what a dropped mount or a too-long name raises (ENAMETOOLONG) for a path that holds ``needle``;
+    every other path is answered by the real method. Python 3.13's ``Path.exists`` and ``is_dir`` re-raise every error but a missing path."""
+    import errno
+
+    real = getattr(Path, method)
+
+    def look(self, *a, **k):
+        if needle in str(self):
+            raise OSError(errno.ENAMETOOLONG, f"File name too long: {self}")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, method, look)
+
+
+def test_a_path_the_system_cannot_examine_ends_the_start_in_a_refusal_record_and_the_error_is_raised_on_unchanged(journal):
+    with pytest.raises(OSError) as caught, se.run_path_checked("import", via="single-file"):
+        raise OSError(36, f"File name too long: /home/someone/{MARKER}")
+    assert caught.value.errno == 36, "the caller sees the error it saw before the record existed"
+    event = _only("run_import")
+    assert (event["outcome"], event["ran"], event["via"], event["error"]) == ("refused", False, "single-file", "OSError")
+    assert event["reason"] == se.RUN_REFUSALS["path-unreadable"] and "open" not in event
+    _nothing_secret_anywhere(journal, MARKER, "someone", "too long")
+
+
+def test_only_an_oserror_is_a_refusal_here_and_a_kind_the_journal_does_not_have_records_nothing(journal):
+    with pytest.raises(ValueError), se.run_path_checked("import", via="folder"):
+        raise ValueError("not this module's business")
+    with pytest.raises(OSError), se.run_path_checked("", via="folder"):  # the folder manager's "no such mode"
+        raise OSError(5, "I/O error")
+    with se.run_path_checked("import", via="folder"):
+        pass
+    for kind in se.RUN_KINDS.values():
+        assert se.diagnostics_member(10**9)["kinds"][kind]["total"] == 0
+
+
+def test_the_two_new_refusal_keys_have_fixed_sentences_that_claim_only_what_was_known():
+    for key in ("path-unreadable", "free-space-unreadable"):
+        assert key in se.RUN_REFUSALS and "{" not in se.RUN_REFUSALS[key], key
+    assert "could not be" in se.RUN_REFUSALS["free-space-unreadable"], "an unread figure is not a shortage"
+    assert "free space the backup needs" in se.RUN_REFUSALS["no-space"]
+
+
+def test_the_member_names_the_run_journals_own_names_for_the_runs_and_says_where_the_outcomes_differ():
+    method = se._METHOD
+    for word in ("folder-export", "folder-import", "newsletter-import", "match by 'via'", "stopped-by-operator", "merge check", "bad signature"):
+        assert word in method, word
+    assert "the run journal's 'export'" not in method, "the folder backup is not the run journal's 'export'"
+    doc = se.__doc__ or ""
+    assert "folder-export" in doc and "newsletter-import" in doc and "volume-set verification has no run there" in doc

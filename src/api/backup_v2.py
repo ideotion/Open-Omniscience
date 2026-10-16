@@ -214,7 +214,9 @@ def restore_legacy_path(
     from pathlib import Path as _Path
 
     p = _Path(path)
-    if not p.is_file():
+    with storage_events.run_path_checked("import", via="single-file"):
+        is_file = p.is_file()
+    if not is_file:
         storage_events.run_refused("import", "not-a-file", via="single-file")
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
     # The passphrase handed in is not held by the process (a backup's own), so the nets that read what it holds cannot know it,
@@ -291,8 +293,12 @@ def restore_legacy_path(
                 # the scrubbed text, and the recorders that keep a response text scrub it again where they make the record.
                 log_failure(_LOG, "legacy restore failed", exc, passphrase)
                 # The operator's own Stop is not a failure (the volume restore keeps the two apart too); anything else is an error.
+                # Asked of the CLASS: this function holds a passphrase, and a guard test (test_p0_validation) allows a caught exception to
+                # reach only a scrub or ``type(exc)``, so a bare ``isinstance(exc, ...)`` is refused there although it makes no text.
                 storage_events.run_ended(
-                    note, "stopped-by-operator" if isinstance(exc, RestoreAborted) else "error", failure=type(exc).__name__
+                    note,
+                    "stopped-by-operator" if issubclass(type(exc), RestoreAborted) else "error",
+                    failure=type(exc).__name__,
                 )
                 raise _restore_error("restore", exc, passphrase) from None
             finally:

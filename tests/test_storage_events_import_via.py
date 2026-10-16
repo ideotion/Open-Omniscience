@@ -3,8 +3,9 @@ files, told apart from the volume restore by a ``via`` key of a fixed table (WAL
 
 ``run_import`` began as the volume restore. Two other ways to import ran for hours with no durable record of their own (a legacy backup
 restored from a path, a folder of ``.eml`` files imported by a background job): a process killed in the middle of either left only the
-lines the run journal had flushed, and a start that was refused left nothing. They record into the SAME kind (the run journal calls all
-of them ``import``), so a reader keeps one list of imports and tells them apart by ``via``.
+lines the run journal had flushed, and a start that was refused left nothing. They record into the SAME kind (every restore is an
+``import`` here; the run journal calls the newsletter one ``newsletter-import``), so a reader keeps one list of imports and tells them
+apart by ``via``.
 
 What this file pins:
 
@@ -456,3 +457,80 @@ def test_the_new_hooks_are_called_through_the_modules_journal_and_hand_over_no_t
         for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in {"run_started", "run_ended", "run_refused", "run_free_space", "run_facts"}):
             for kw in call.keywords:
                 assert kw.arg in {"failure", "reason", "via", "articles_merged", "reindexed", "files", "files_done", "resumed_from"}, f"{rel}:{call.lineno}: {kw.arg}"
+
+
+# --------------------------------------------------------------------------- #
+#  6. A start that cannot even look at its path (the Opus read, L1)
+# --------------------------------------------------------------------------- #
+from tests.test_storage_events_runs import _unreadable  # noqa: E402
+
+
+def test_a_legacy_restore_whose_path_the_system_cannot_examine_is_a_refusal_and_still_raises_the_oserror(journal, tmp_path, monkeypatch):
+    _unreadable(monkeypatch, "is_file")
+    with pytest.raises(OSError) as caught:
+        backup_v2.restore_legacy_path(str(tmp_path / f"UNREADABLE-{MARKER}"), PASS)
+    assert not isinstance(caught.value, HTTPException), "the error is the one it was before the record existed"
+    event = _only("run_import")
+    assert (event["outcome"], event["ran"], event["via"], event["error"]) == ("refused", False, "single-file", "OSError")
+    assert event["reason"] == se.RUN_REFUSALS["path-unreadable"]
+    _nothing_secret_anywhere(journal, PASS, MARKER, "UNREADABLE", str(tmp_path))
+
+
+def test_a_newsletter_import_whose_folder_the_system_cannot_examine_is_a_refusal_and_so_is_one_it_cannot_list(journal, tmp_path, monkeypatch):
+    mgr = _mgr(tmp_path)
+    with monkeypatch.context() as unreadable:  # not ``monkeypatch.undo()``: that would also undo the journal fixture's patches
+        _unreadable(unreadable, "is_dir")
+        with pytest.raises(OSError):
+            mgr.start(str(tmp_path / f"UNREADABLE-{MARKER}"))
+    event = _only("run_import")
+    assert (event["outcome"], event["ran"], event["via"], event["error"]) == ("refused", False, "newsletter-eml", "OSError")
+    assert event["reason"] == se.RUN_REFUSALS["path-unreadable"]
+
+    folder = tmp_path / "inbox"
+    folder.mkdir()
+    monkeypatch.setattr(import_job, "_eml_files", lambda p: (_ for _ in ()).throw(PermissionError(f"{MARKER} {p}")))
+    with pytest.raises(PermissionError):
+        _mgr(tmp_path).start(str(folder))
+    last = _events("run_import")[-1]
+    assert (last["outcome"], last["via"], last["error"]) == ("refused", "newsletter-eml", "PermissionError")
+    assert last["reason"] == se.RUN_REFUSALS["path-unreadable"]
+    _nothing_secret_anywhere(journal, MARKER, "UNREADABLE", str(tmp_path))
+
+
+def test_a_volume_start_whose_folder_the_system_cannot_examine_is_a_refusal_of_the_kind_that_asked(journal, tmp_path, monkeypatch):
+    mgr = VolumeBackupManager()
+    _unreadable(monkeypatch, "is_dir")
+    bad = str(tmp_path / f"UNREADABLE-{MARKER}")
+    for kind, start in (
+        ("run_import", lambda: mgr.start_restore(bad, "pw")),
+        ("run_verify", lambda: mgr.start_verify(bad, "pw")),
+    ):
+        with pytest.raises(OSError):
+            start()
+        event = _only(kind)
+        assert (event["outcome"], event["via"], event["error"]) == ("refused", "volume-set", "OSError"), kind
+        assert event["reason"] == se.RUN_REFUSALS["path-unreadable"]
+    # a backup makes its folder first, so the stat that fails is the one after it
+    with pytest.raises(OSError):
+        mgr.start_backup(bad, "pw")
+    event = _only("run_export")
+    assert (event["outcome"], event["via"]) == ("refused", "volume-set")
+    _nothing_secret_anywhere(journal, MARKER, "UNREADABLE", str(tmp_path))
+
+
+def test_the_legacy_restore_names_a_stop_and_a_merge_refusal_differently_from_the_run_journal_and_says_so(journal, legacy, monkeypatch):
+    """The Opus read, L4: the storage record sees the failure before the run journal does, and the member says where that differs."""
+    from src.backup import runlog
+
+    ended: list[tuple] = []
+    real_end = runlog.end
+    monkeypatch.setattr(runlog, "end", lambda outcome, **k: ended.append((outcome, k.get("cls"))) or real_end(outcome, **k))
+    for raises, here, there in ((MergeError, "refused", "error"), (RestoreAborted, "stopped-by-operator", "error")):
+        monkeypatch.setattr(backup_v2, "run_restore", lambda *a, _r=raises, **k: (_ for _ in ()).throw(_r("stop")))
+        ended.clear()
+        with pytest.raises(HTTPException):
+            backup_v2.restore_legacy_path(str(legacy), PASS)
+        assert _events("run_import")[-1]["outcome"] == here
+        assert ended and ended[0][0] == there, "the run journal records the same failure as an error (its first end; the net after it is a no-op)"
+    for fragment in ("merge check", "stopped-by-operator", "'error' there"):
+        assert fragment in se._METHOD, fragment
