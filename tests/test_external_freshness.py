@@ -132,6 +132,21 @@ def test_sqlcipher3_range_in_pyproject_matches_the_registry_and_keeps_its_ceilin
     )
 
 
+def test_urllib3_range_in_pyproject_matches_the_registry_and_keeps_its_ceiling():
+    """src/ingest/urllib3_log.py is built on the log calls of the urllib3 releases it was read from (2.7.0 and 2.8.0).
+    pyproject carries the range with a ceiling at the first release NOT read, and the registry carries the same floor and ceiling:
+    lifting the ceiling is the qualification's last step (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never a way to get a lane green."""
+    entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
+    pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'"urllib3>=([0-9.]+),<([0-9.]+)"', pyproject)
+    assert m, "pyproject.toml's urllib3 requirement lost its floor or its ceiling (see the comment above it)"
+    assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the urllib3 floor"
+    assert m.group(2) == str(entry["pin"]["ceiling"]), "pyproject and the registry disagree on the urllib3 ceiling"
+    assert not R._ver_ge(str(entry["pin"]["verified"]), m.group(2)), "the verified version is not below the ceiling"
+    assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified version is not inside the range"
+    assert entry["upstream_check"]["current"] == str(entry["pin"]["verified"]), "the release the watch compares with is the newest one read"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

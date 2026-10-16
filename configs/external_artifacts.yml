@@ -529,6 +529,37 @@ artifacts:
       - "requirements.lock and the sqlcipher-smoke job pin the newest qualified release (verified); they move with the ceiling"
     last_verified: "2026-10-13"
 
+  - id: urllib3-log-shapes
+    title: urllib3 (the HTTP library under requests), read for what it LOGS
+    kind: runtime-coupling
+    description: >
+      src/ingest/urllib3_log.py puts a default-deny filter on urllib3's own loggers, because urllib3 writes the request target
+      (path and query: the signature of a signed storage download) in its log lines: at WARNING on a malformed header line and on a
+      retry, at DEBUG on the request line and each redirect hop. The filter is built on a TABLE of the library's log calls
+      (logger, message template, the source text of each argument, which positions carry a target) read from 2.7.0 and 2.8.0, which
+      are identical in all three. A line the table does not know is withheld whole at run time, so a release that logs something new
+      cannot leak through it; but the table is what lets a KNOWN line keep its host and status, so a release that changes what it
+      logs is read before it is allowed. tests/test_urllib3_log_withholds_the_path.py compares the table with the installed
+      release's source (a new call, a changed argument, a dropped call, a logger it does not cover each fail by name) and drives the
+      real library against a loopback socket. pyproject.toml carries the range and the ceiling (the first release NOT read).
+    upstream: https://pypi.org/project/urllib3/ (https://github.com/urllib3/urllib3)
+    check_upstream: "pypi.org/pypi/urllib3/json - compare info.version; 2.8.0 was the newest on 2026-10-16 and is read; requirements.lock pins 2.7.0"
+    license: MIT
+    pin: {floor: "2.7.0", verified: "2.8.0", ceiling: "2.9"}  # ceiling = the first release NOT read (pyproject says <ceiling)
+    upstream_check: {github: "urllib3/urllib3", type: release, current: "2.8.0"}
+    refresh: >
+      read the new release (docs/maintenance/EXTERNAL_DEPENDENCIES.md, the urllib3 row): run
+      tests/test_urllib3_log_withholds_the_path.py on it, and for each failure decide whether the table is out of date (extend
+      SHAPES and, if a new line carries a target, its target positions) or the library started to log something this app must not
+      keep (never loosen a test to pass), then move the pyproject range, the registry {floor, verified, ceiling} and, if it moved,
+      requirements.lock together
+    freshness: {max_age_months: 6}
+    couplings:
+      - "pyproject.toml dependencies urllib3 carries the same floor and a ceiling below the first release not read"
+      - "src/ingest/urllib3_log.py SHAPES and LOGGERS equal the installed release's log calls and loggers (test-enforced)"
+      - "requirements.lock pins a release inside the range (2.7.0 today)"
+    last_verified: "2026-10-16"
+
   - id: vader-linear-reproduction
     title: vaderSentiment 3.3.2 internals, reproduced in linear time
     kind: runtime-coupling
