@@ -734,19 +734,20 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
         "src/backup/volume_job.py", "src/backup/export_summary.py", "src/api/backup_v2.py", "src/ingest/import_job.py",
         "src/backup/folder_backup.py",
     ):
-        for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space", "run_path_checked"}):
+        for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space", "run_path_checked",
+                                  "run_refused_if_raised", "run_ended_if_raised"}):
             seen[path] = seen.get(path, 0) + 1
             where = f"{path}:{call.lineno}"
             name = call.func.attr  # type: ignore[attr-defined]
             if name == "run_path_checked":
                 first = call.args[0]  # a kind, or ``what`` in the one helper every folder start passes through
                 assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
-            if name in ("run_ended", "run_refused"):
-                outcome_arg = call.args[1] if name == "run_ended" else None
+            if name in ("run_ended", "run_refused", "run_ended_if_raised", "run_refused_if_raised"):
+                outcome_arg = call.args[1] if name in ("run_ended", "run_ended_if_raised") else None
                 if outcome_arg is not None:
                     outcomes = _constants_of(outcome_arg)
                     assert outcomes is not None and outcomes <= se.RUN_OUTCOMES, where
-                if name == "run_refused":
+                if name in ("run_refused", "run_refused_if_raised"):
                     first = call.args[0]  # a kind, or ``what`` in the one helper every start passes through
                     assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
                     keys = _constants_of(call.args[1])  # one key, or a conditional of keys (the no-space / free-space-unreadable pair)
@@ -769,6 +770,28 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
               "src/backup/folder_backup.py": 18}
     for path, expected in counts.items():
         assert seen.get(path, 0) == expected, f"the scan found {seen.get(path, 0)} hooks in {path}, expected {expected}"
+
+
+def test_the_path_checks_stay_as_written_and_the_record_wraps_them_never_sits_inside_them():
+    """Six statements examine a path a request handed in (three volume starts, the legacy restore's ``is_file`` and read, the folder
+    restore/verify start). Code scanning fingerprints each by its own text and the text that follows it, so a record written inside the
+    branch (or between the check and its raise) turns a finding that was already there into a new one, and the pull request's check goes
+    red for code it did not write. The records wrap the statement from outside; nothing under the wrapper but the check itself."""
+    found = 0
+    for path in ("src/backup/volume_job.py", "src/api/backup_v2.py", "src/backup/folder_backup.py"):
+        tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.With) and (_refusal_wrapper_type(node) or _ended_wrapper_type(node)):
+                found += 1
+                inside = [
+                    c.func.attr
+                    for stmt in node.body
+                    for c in ast.walk(stmt)
+                    if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and isinstance(c.func.value, ast.Name)
+                    and c.func.value.id == "storage_events"
+                ]
+                assert inside == [], f"{path}:{node.lineno}: a record inside the wrapped check: {inside}"
+    assert found == 6, f"expected the 6 wrapped path checks, found {found}"
 
 
 def test_no_file_that_carries_a_run_hook_writes_the_journal_by_hand():
@@ -819,8 +842,59 @@ def _is_refusal_statement(stmt: ast.stmt) -> bool:
     )
 
 
+def _raised_type(stmt: ast.Raise) -> str | None:
+    """The name of the exception a ``raise`` makes: ``raise ValueError(...)`` and ``raise ValueError`` both say ``ValueError``."""
+    exc = stmt.exc.func if isinstance(stmt.exc, ast.Call) else stmt.exc
+    return exc.id if isinstance(exc, ast.Name) else None
+
+
+def _refusal_wrapper_type(node: ast.AST) -> str | None:
+    """For a ``with`` that carries ``storage_events.run_refused_if_raised(kind, key, SomeError, ...)``: the name ``SomeError``."""
+    if not isinstance(node, ast.With):
+        return None
+    for item in node.items:
+        call = item.context_expr
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "run_refused_if_raised" and len(call.args) >= 3:
+            third = call.args[2]
+            return third.id if isinstance(third, ast.Name) else None
+    return None
+
+
+def _ended_wrapper_type(node: ast.AST) -> str | None:
+    """For a ``with`` that carries ``storage_events.run_ended_if_raised(note, outcome, SomeError)``: the name ``SomeError``."""
+    if not isinstance(node, ast.With):
+        return None
+    for item in node.items:
+        call = item.context_expr
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "run_ended_if_raised" and len(call.args) >= 3:
+            third = call.args[2]
+            return third.id if isinstance(third, ast.Name) else None
+    return None
+
+
+def raise_is_recorded_by_a_wrapper(fn: ast.FunctionDef, stmt: ast.Raise) -> bool:
+    """The ``raise`` is recorded by a wrapper, which keeps the statement it belongs to as it was before the record existed: it sits inside a
+    ``with`` whose ``run_refused_if_raised`` names the very exception it raises, or inside the ``except SomeError`` of a ``try`` whose body
+    holds a ``with`` whose ``run_ended_if_raised`` names ``SomeError``. A wrapper that names another exception records nothing for this one."""
+    parent = {child: node for node in ast.walk(fn) for child in ast.iter_child_nodes(node)}
+    up: ast.AST | None = parent.get(stmt)
+    while up is not None and up is not fn:
+        wrapper = _refusal_wrapper_type(up)
+        if wrapper is not None and wrapper == _raised_type(stmt):
+            return True
+        if isinstance(up, ast.ExceptHandler) and isinstance(up.type, ast.Name):
+            try_node = parent.get(up)
+            if isinstance(try_node, ast.Try) and any(
+                _ended_wrapper_type(inner) == up.type.id for top in try_node.body for inner in ast.walk(top)
+            ):
+                return True
+        up = parent.get(up)
+    return False
+
+
 def _assert_each_raise_follows_a_refusal(fn: ast.FunctionDef) -> None:
-    """Every ``raise`` is preceded, in the SAME block, by a ``run_refused`` statement: a record moved after its raise is dead code."""
+    """Every ``raise`` is preceded, in the SAME block, by a ``run_refused`` statement, or is recorded by a wrapper
+    (:func:`raise_is_recorded_by_a_wrapper`): a record moved after its raise is dead code."""
     raises = 0
     for node in ast.walk(fn):
         for field in ("body", "orelse", "finalbody"):
@@ -830,7 +904,8 @@ def _assert_each_raise_follows_a_refusal(fn: ast.FunctionDef) -> None:
             for i, stmt in enumerate(block):
                 if isinstance(stmt, ast.Raise):
                     raises += 1
-                    assert any(_is_refusal_statement(earlier) for earlier in block[:i]), f"{fn.name}:{stmt.lineno}: a raise with no refusal record before it"
+                    recorded = any(_is_refusal_statement(earlier) for earlier in block[:i]) or raise_is_recorded_by_a_wrapper(fn, stmt)
+                    assert recorded, f"{fn.name}:{stmt.lineno}: a raise with no refusal record before it"
     assert raises, f"{fn.name} raises nothing: the pin found nothing to guard"
 
 

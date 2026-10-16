@@ -983,6 +983,35 @@ def run_path_checked(what: str, *, via: str | None = None) -> Iterator[None]:
         raise
 
 
+@contextmanager
+def run_refused_if_raised(
+    what: str, reason: str, exc_type: type[BaseException] | tuple[type[BaseException], ...], *, via: str | None = None
+) -> Iterator[None]:
+    """Around the ONE statement that refuses a start by raising ``exc_type`` (the ``if not path.is_dir(): raise ...`` of a start): the
+    refusal is recorded (``reason``, a key of :data:`RUN_REFUSALS`, and the way in) and the exception goes on unchanged. The checking
+    statement stays as it was written, byte for byte, which is why this is a wrapper and not a call inside its branch: code scanning
+    fingerprints a path check by its own text and the text that follows it, so a line added there makes an old finding a new one."""
+    try:
+        yield
+    except exc_type:
+        run_refused(what, reason, via=via)
+        raise
+
+
+@contextmanager
+def run_ended_if_raised(
+    note: RunNote | None, outcome: str, exc_type: type[BaseException] | tuple[type[BaseException], ...], *, reason: str | None = None
+) -> Iterator[None]:
+    """Around the ONE statement whose ``exc_type`` failure ends the run under ``note`` (the read of the file being restored): the run is
+    closed with ``outcome``, the CLASS NAME of the failure (never its message) and, if given, a key of :data:`RUN_REFUSALS`, and the
+    exception goes on unchanged for the caller's own handler. A wrapper for the same reason as :func:`run_refused_if_raised`."""
+    try:
+        yield
+    except exc_type as exc:
+        run_ended(note, outcome, failure=type(exc).__name__, reason=reason)
+        raise
+
+
 # ---------------------------------------------------------------------------------------------------------------------------------
 #  The Diagnostics member (the slot contract: ``(max_bytes) -> dict``, never raises, counts and names the cut)
 # ---------------------------------------------------------------------------------------------------------------------------------

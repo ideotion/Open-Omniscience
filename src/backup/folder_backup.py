@@ -1144,10 +1144,10 @@ class FolderBackupManager:
                         )
                 elif mode in ("restore", "verify"):
                     destp = Path(dest)
-                    if not destp.is_dir():
-                        storage_events.run_refused(what, "not-a-folder", via="folder")
-                        verb = "verify" if mode == "verify" else "restore from"
-                        raise ValueError(f"{destp} is not a folder to {verb}.")
+                    with storage_events.run_refused_if_raised(what, "not-a-folder", ValueError, via="folder"):
+                        if not destp.is_dir():
+                            verb = "verify" if mode == "verify" else "restore from"
+                            raise ValueError(f"{destp} is not a folder to {verb}.")
                 else:
                     raise ValueError(f"unknown folder-backup mode {mode!r}")
             self._stop.clear()

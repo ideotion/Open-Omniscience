@@ -38,7 +38,13 @@ from src.database.models import Base
 from src.ingest import import_job
 from src.ingest.import_job import NewsletterImportManager
 from src.monitoring import storage_events as se
-from tests.test_storage_events_runs import _events, _finish, _nothing_secret_anywhere, _only
+from tests.test_storage_events_runs import (
+    _events,
+    _finish,
+    _nothing_secret_anywhere,
+    _only,
+    raise_is_recorded_by_a_wrapper,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = "MARKER-passphrase-4711-correct-horse"
@@ -421,7 +427,8 @@ def _each_raise_follows_a_record(fn: ast.FunctionDef, names: set[str]) -> int:
             for i, stmt in enumerate(block):
                 if isinstance(stmt, ast.Raise):
                     raises += 1
-                    assert any(_is_record(earlier, names) for earlier in block[:i]), f"{fn.name}:{stmt.lineno}: a raise with no record before it"
+                    recorded = any(_is_record(earlier, names) for earlier in block[:i]) or raise_is_recorded_by_a_wrapper(fn, stmt)
+                    assert recorded, f"{fn.name}:{stmt.lineno}: a raise with no record before it"
     return raises
 
 
