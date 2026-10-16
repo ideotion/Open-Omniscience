@@ -38,6 +38,7 @@ WHAT IS EXEMPT, and why it is not an oversight (see :data:`COUNTRY_COLUMNS_EXEMP
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 from typing import Literal
@@ -252,6 +253,75 @@ def _convert_row_by_row(
     return done, reasons
 
 
+def alternate_country_keys(table: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The keys of an alternate's ``identity`` and ``fields`` JSON that hold a country code, for the table it is about.
+
+    Derived from the two registries that already say it (``ALTERNATE_SPECS``: what a swap shows and how a law item is
+    identified; :data:`COUNTRY_COLUMNS`: which columns hold a country), so a third list cannot disagree with them."""
+    from src.backup.provenance import ALTERNATE_SPECS
+
+    spec = ALTERNATE_SPECS.get(table)
+    if spec is None:
+        return (), ()
+    fields = tuple(c for c in COUNTRY_COLUMNS.get(table, ()) if c in spec["shown"] or c in spec["differs"])
+    # A law item is identified by (jurisdiction, document url, revision hash, model): the jurisdiction is the value of
+    # ``law_documents.jurisdiction`` at the moment the difference was captured.
+    return (("jurisdiction",) if spec["scope"] == "law" else ()), fields
+
+
+def convert_alternate_countries(
+    con: sqlite3.Connection, *, schema: str, form: Literal["alpha2", "alpha3"]
+) -> dict:
+    """Write the country codes inside ``metadata_alternates`` identities and field sets in ``form``.
+
+    An alternate records the values of a row (``fields``) and the natural identity of the item it differs from
+    (``identity``) as JSON text, so a code inside it is NOT a column and no column rewrite reaches it. Left in the old
+    form, a captured ``fr`` swaps back into an alpha-3 store as ``fr``, a law identity stops matching its document ("the row
+    is gone"), and a restore of the same backup records the difference a second time. The same walk serves the migration
+    (``schema="main"``, in its last transaction) and the restore (the staged copy, toward the store it merges into).
+
+    The JSON is edited by SQLite (``json_set``), so it comes out minified the way ``json_object`` writes it and stays
+    byte-comparable with what a capture writes. A value with no ISO meaning stays as it is; a row whose JSON is not valid is
+    left untouched and counted. Idempotent."""
+    out = {"converted": 0, "left_unreadable": 0}
+    if not _table_exists(con, schema, "metadata_alternates"):
+        return out
+    present = _columns_of(con, schema, "metadata_alternates")
+    if not {"id", "table_name", "identity", "fields"} <= present:
+        return out
+    from src.backup.provenance import ALTERNATE_SPECS
+
+    for table in sorted(ALTERNATE_SPECS):
+        ident_keys, field_keys = alternate_country_keys(table)
+        for column, keys in (("identity", ident_keys), ("fields", field_keys)):
+            for key in keys:
+                path = f"$.{key}"
+                rows = con.execute(
+                    f'SELECT id, "{column}" FROM {schema}.metadata_alternates '  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias; `column` is one of two literals
+                    f'WHERE table_name = ? AND CASE WHEN json_valid("{column}") THEN json_type("{column}", ?) END = \'text\'',
+                    (table, path),
+                ).fetchall()
+                for rid, raw in rows:
+                    try:
+                        value = json.loads(raw).get(key)
+                    except (TypeError, ValueError, AttributeError):
+                        out["left_unreadable"] += 1
+                        continue
+                    target = canonical_country(value, form) if isinstance(value, str) else None
+                    if target is None or target == value:
+                        continue
+                    con.execute(
+                        f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 - as above; the path, the value and the id are bound
+                        (path, target, rid),
+                    )
+                    out["converted"] += 1
+    bad = con.execute(
+        f"SELECT COUNT(*) FROM {schema}.metadata_alternates WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias
+    ).fetchone()[0]
+    out["left_unreadable"] += int(bad)
+    return out
+
+
 def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -> dict:
     """Normalise every registered country column of the ATTACHED staged corpus.
 
@@ -332,9 +402,12 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                 con.execute("RELEASE oo_country_norm")
                 converted[key] = converted.get(key, 0) + int(cur.rowcount or 0)
 
+    alternates = convert_alternate_countries(con, schema=schema, form=form)
+
     report: dict = {
         "target_form": form,
         "columns_scanned": scanned,
+        "alternates": alternates,
         "rows_converted": sum(converted.values()),
         # THE 0.5 PRECONDITION, MEASURED ON EVERY RESTORE. This step normalises the
         # STAGED copy toward the form the STORE says it is in (`store_form_of`); it does

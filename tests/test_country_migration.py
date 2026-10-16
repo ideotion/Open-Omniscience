@@ -316,6 +316,139 @@ def test_a_store_that_says_alpha3_but_holds_alpha2_is_not_called_done(tmp_path):
         cm.migrate(db, backup_dir=tmp_path / "bk")
 
 
+# ---- the read of the B1 head -------------------------------------------------------------------------------------- #
+def _boot_init_db(data: Path) -> subprocess.CompletedProcess:
+    """What every start path does first: ``init_db()`` on the store under ``data``."""
+    env = {**os.environ, "OO_DATA_DIR": str(data), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1", "OO_AUTOSEED": "0"}
+    env.pop("DATABASE_URL", None)
+    return subprocess.run([sys.executable, "-c", "from src.database.session import init_db; init_db(); print('booted')"],
+                          cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
+
+
+def test_an_interrupted_run_stops_the_app_from_booting_or_writing_until_it_is_finished(tmp_path, monkeypatch):
+    """Committed windows hold alpha-3 while the marker says alpha-2: an equality filter on `fr` would miss them, a restore keyed
+    on the value would duplicate a law document, and one app write would make the run unfinishable. So nothing starts on it."""
+    from src.config import kv_store
+
+    data = tmp_path / "state"
+    data.mkdir()
+    db = _new_store(data / "open_omniscience.db")
+    before = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    ticks = {"n": 0}
+
+    def stop() -> bool:
+        ticks["n"] += 1
+        return ticks["n"] > 3
+
+    assert cm.migrate(db, backup_dir=tmp_path / "bk", should_stop=stop).state == "interrupted"
+    half = {t: _column(db, t, c) for t, c in cm.migration_columns()}
+    assert half != before, "the stop came before any window: the test would prove nothing"
+
+    booted = _boot_init_db(data)
+    assert booted.returncode != 0 and "booted" not in booted.stdout
+    assert "migrate-countries" in booted.stderr and "interrupted" in booted.stderr, booted.stderr[-1500:]
+    assert {t: _column(db, t, c) for t, c in cm.migration_columns()} == half, "the refused boot still touched the store"
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    kv_store.kv_invalidate()
+    with pytest.raises(cf.MigrationUnfinished):
+        cf.store_form()
+    with pytest.raises(cf.StoreFormUnreadable):  # every caller that already fails closed on an unreadable form does here too
+        cf.CountryCode(8).process_bind_param("fr", None)
+    with cf.writing_in("alpha2"):
+        assert cf.store_form() == "alpha2", "a block that fills a side file is not the live store"
+
+    assert cm.migrate(db, backup_dir=tmp_path / "bk").state == "done"
+    kv_store.kv_invalidate()
+    assert cf.store_form() == "alpha3"
+    assert _boot_init_db(data).stdout.strip().endswith("booted")
+
+
+def test_the_diagnostics_card_says_a_run_is_unfinished_instead_of_a_form(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    def unfinished():
+        raise cf.MigrationUnfinished(cf.unfinished_message("interrupted"))
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(cf, "store_form", unfinished)
+        body = client.get("/api/diagnostics/country-form").json()
+    assert body["form"] is None and body["readable"] is False and body["unfinished"] is True
+    assert "migrate-countries" in body["note"]
+
+
+def test_a_backup_folder_that_already_holds_a_safety_copy_is_refused_and_the_copy_is_kept(tmp_path):
+    import hashlib
+
+    a = _new_store(tmp_path / "a.db", articles=51)
+    b = _new_store(tmp_path / "b.db", articles=8)
+    shared = tmp_path / "shared"
+    assert cm.migrate(a, backup_dir=shared).state == "done"
+    copy = next(shared.glob("*.db"))
+    digest = hashlib.sha256(copy.read_bytes()).hexdigest()
+    before = _column(b, "articles", "country")
+    with pytest.raises(cm.MigrationRefused, match="already a file"):
+        cm.migrate(b, backup_dir=shared)
+    assert hashlib.sha256(copy.read_bytes()).hexdigest() == digest, "another store's only safety copy was replaced"
+    assert _column(b, "articles", "country") == before and cf.read_form(sqlite3.connect(b)) == "alpha2"
+
+
+def test_a_relative_backup_folder_is_journalled_as_an_absolute_path(tmp_path, monkeypatch):
+    db = _new_store(tmp_path / "s.db")
+    monkeypatch.chdir(tmp_path)
+    ticks = {"n": 0}
+
+    def stop() -> bool:
+        ticks["n"] += 1
+        return ticks["n"] > 2
+
+    rep = cm.migrate(db, backup_dir=Path("relbk"), should_stop=stop)
+    assert rep.state == "interrupted" and Path(rep.backup["path"]).is_absolute()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert cm.migrate(db, backup_dir=Path("relbk")).state == "done", "a resume from another folder lost its own safety copy"
+
+
+def test_a_copy_killed_midway_leaves_no_file_with_the_safety_copys_name(tmp_path, monkeypatch):
+    from src.database import connect as dbc
+
+    db = _new_store(tmp_path / "s.db")
+
+    def killed(_con, dest):
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(b"SQLite format 3\x00 truncated")
+        raise KeyboardInterrupt  # what a kill looks like to the code that is left: nothing cleans up after it
+
+    monkeypatch.setattr(dbc, "snapshot_open_connection", killed)
+    with pytest.raises(KeyboardInterrupt):
+        cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert not list((tmp_path / "bk").glob("*.pre-country-form.db")), "a truncated file wears the name an operator would restore from"
+    monkeypatch.undo()
+    assert cm.migrate(db, backup_dir=tmp_path / "bk").state == "done"
+    assert len(list((tmp_path / "bk").glob("*.pre-country-form.db"))) == 1
+
+
+def test_a_store_the_app_creates_is_alpha3_even_when_the_settings_table_exists_first(tmp_path):
+    """``app_state`` alone is not a corpus: a setting written before the first boot reaches ``init_db`` must not make the new
+    store look like somebody's pre-existing alpha-2 corpus."""
+    data = tmp_path / "state"
+    data.mkdir()
+    con = sqlite3.connect(data / "open_omniscience.db")
+    con.execute('CREATE TABLE "app_state" (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)')
+    con.execute("INSERT INTO app_state VALUES ('some.setting', '{}', NULL)")
+    con.commit()
+    con.close()
+    assert _boot_init_db(data).stdout.strip().endswith("booted")
+    con = sqlite3.connect(data / "open_omniscience.db")
+    try:
+        assert cf.read_form(con) == "alpha3"
+    finally:
+        con.close()
+
+
 # ---- the encrypted path --------------------------------------------------------------------------------------- #
 def test_an_encrypted_store_is_migrated_under_its_key_and_its_safety_copy_stays_ciphertext(tmp_path, monkeypatch):
     from src.database import connect as dbc
@@ -353,9 +486,9 @@ def test_the_migration_covers_exactly_the_typed_columns_and_every_registered_one
     registered = {(t, c) for t, cols in COUNTRY_COLUMNS.items() for c in cols}
     assert registered <= typed, f"a column the restore normalises is not migrated: {sorted(registered - typed)}"
     extra = typed - registered
-    assert extra == {("article_mentioned_places", "country")}, f"a typed column nobody classified: {sorted(extra)}"
+    assert not extra, f"a typed column nobody classified: {sorted(extra)}"
     exempt = {tuple(k.split(".", 1)) for k in COUNTRY_COLUMNS_EXEMPT}
-    assert not (typed & exempt - {("article_mentioned_places", "country")}), "an exempt column is typed and would be rewritten"
+    assert not (typed & exempt), "an exempt column is typed and would be rewritten"
 
 
 # ---- the column type ---------------------------------------------------------------------------------------------- #

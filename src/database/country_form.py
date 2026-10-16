@@ -25,8 +25,10 @@ Both directions FAIL CLOSED the way ``to_iso2``/``to_iso3`` do: a value with no 
 ``eu``, ``int``, an aggregate, junk) passes through exactly as it is. Converting it to ``None`` would
 delete the operator's data to make a code table happy (R100).
 
-An alpha-2 store is untouched by all of it: nothing is converted on the way in, and the way out only
-rewrites a three-letter code, which such a store does not hold.
+An alpha-2 store is untouched on the way in (nothing is converted). On the way out a three-letter code is read as its
+alpha-2: such a store does not hold one written by the app, and one that does (a file filled by hand) reads as alpha-2
+while it stays as stored, so a filter written ``== "fr"`` misses it. That is the store's own mixed state, which the scan
+(``scan_country_code_duplicates``) reports; it is not made worse here.
 """
 
 from __future__ import annotations
@@ -53,6 +55,42 @@ class StoreFormUnreadable(RuntimeError):
     Unreadable is not absent: reading a locked or damaged store as "alpha-2" would write the
     wrong form into a migrated store, which is the mixed state this module exists to prevent.
     """
+
+
+#: The migration's journal (``src/backup/country_migration.py`` writes it, in the same transaction as each window).
+JOURNAL_KEY = "store.country_migration"
+#: Journal states that mean some rows hold alpha-3 while the marker still says alpha-2.
+UNFINISHED_STATES = ("running", "interrupted")
+
+
+class MigrationUnfinished(StoreFormUnreadable):
+    """A migration converted some rows and did not finish, so the store holds both forms.
+
+    A subclass of :class:`StoreFormUnreadable` on purpose: every place that already fails closed when the form cannot be
+    read fails closed here too, and for the same reason (an equality filter on ``fr`` misses the converted rows, a
+    restore keyed on the value duplicates what it should have deduplicated, and one app write would make the
+    run unfinishable by changing a row count)."""
+
+
+def unfinished_message(state: object) -> str:
+    return (
+        f"a country-form migration of this store was interrupted (state: {state}): some rows already hold alpha-3 while the "
+        "store still says alpha-2. The app will not open or write it until the run is finished. Close everything that has "
+        "the store open and run `open-omniscience migrate-countries`: it resumes where it stopped."
+    )
+
+
+def refuse_if_unfinished() -> None:
+    """Raise :class:`MigrationUnfinished` when the journal says a run began and did not end. Unreadable is not absent: a
+    journal that cannot be read raises :class:`StoreFormUnreadable`."""
+    from src.config.kv_store import KvReadError, kv_get_json_checked
+
+    try:
+        journal = kv_get_json_checked(JOURNAL_KEY)
+    except KvReadError as exc:
+        raise StoreFormUnreadable(f"the country migration journal could not be read ({type(exc).__name__})") from None
+    if isinstance(journal, dict) and journal.get("state") in UNFINISHED_STATES:
+        raise MigrationUnfinished(unfinished_message(journal.get("state")))
 
 
 def form_from_value(value: dict | None) -> Form:
@@ -82,12 +120,14 @@ def writing_in(form: Form) -> Iterator[None]:
 def store_form() -> Form:
     """The live store's country form (cached in-process by the settings store; a restore or a
     migration drops the entry), unless a block says it is writing a side file (:func:`writing_in`).
-    Raises :class:`StoreFormUnreadable` when it cannot be read."""
+    Raises :class:`StoreFormUnreadable` when it cannot be read, and :class:`MigrationUnfinished` (its subclass) when a
+    migration began and did not end."""
     forced = _WRITING_IN.get()
     if forced is not None:
         return forced
     from src.config.kv_store import KvReadError, kv_get_json_checked
 
+    refuse_if_unfinished()  # a store that holds both forms is not read as either
     try:
         return form_from_value(kv_get_json_checked(KEY))
     except KvReadError as exc:

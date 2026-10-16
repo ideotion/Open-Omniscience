@@ -18,8 +18,9 @@ rule it out is to make sure nobody else is writing while the form changes.
 
 THE FORM CHANGES IN ONE PLACE. The marker ``store.country_form`` (``src/database/country_form.py``) flips in the SAME
 transaction as the last verification: the claim about the data changes together with the proof of it, or not at all.
-Until then the store is alpha-2 and the app behaves exactly as it always did, so an interrupted run leaves a store the
-app can still use.
+Until then the store is alpha-2, and an interrupted run leaves it holding BOTH forms (the windows already committed are
+alpha-3): the journal says so (``running`` / ``interrupted``), the app refuses to boot on it and ``store_form()`` refuses
+every read of the form, until the run is finished (``src/database/country_form.py``, ``refuse_if_unfinished``).
 
 HOW A RUN IS SHAPED
   1. take the file exclusively, then read the plan: per column, every distinct stored spelling and how many rows hold it,
@@ -33,7 +34,9 @@ HOW A RUN IS SHAPED
   5. sweep each column in windows of rowids, one transaction per window, converting every convertible spelling in the
      window and recording the cursor in the same transaction;
   6. verify, inside one last transaction, that nothing convertible is left, that every table has the rows it had and
-     that each column's before/after counts balance spelling by spelling; flip the marker in that transaction.
+     that each column's before/after counts balance spelling by spelling; convert the country codes written INSIDE
+     the recorded differences (``metadata_alternates`` identity/field JSON: no column holds them); flip the marker in
+     that transaction.
 
 A killed run is resumed by running it again: the cursor is in the file, a window that was not committed was rolled
 back by SQLite, and a row already converted no longer matches a spelling to convert.
@@ -63,7 +66,7 @@ BATCH_ROWIDS = 20_000
 #: Spellings converted per statement: three bound values per spelling, and the oldest SQLite builds allow 999.
 _SPELLINGS_PER_STATEMENT = 200
 
-JOURNAL_KEY = "store.country_migration"
+JOURNAL_KEY = cf.JOURNAL_KEY
 
 
 class MigrationRefused(RuntimeError):
@@ -313,8 +316,16 @@ def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
 
     Verified means: it opens with the store's own key, ``PRAGMA quick_check`` answers ``ok``, and every table has exactly
     the rows the live file has. The copy keeps the store's encryption state (an encrypted corpus stays ciphertext)."""
+    import os
+
     from src.database.connect import connect, snapshot_open_connection
 
+    dest = Path(dest).resolve()  # the journal keeps this path: a relative one would not be found from another folder
+    if dest.exists():
+        raise MigrationRefused(
+            f"there is already a file at {dest}: it may be the safety copy of another migration, and this one would replace "
+            "it. Nothing was changed. Pass --backup-dir with a folder that does not hold one."
+        )
     need = int(store_bytes(db_path) * 1.1) + (1 << 20)
     free = _free_bytes(dest.parent)
     if free < need:
@@ -323,23 +334,29 @@ def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
             "Free some space, or pass --backup-dir with a folder on a bigger drive."
         )
     live = _tables_with_rows(con)
-    snapshot_open_connection(con, dest)
-    copy = connect(dest, check_same_thread=False)
+    # Written under a name that is not the safety copy's, and renamed once it has been checked: a kill during the copy
+    # leaves a ``.partial`` file, never a truncated file wearing the name an operator would restore from.
+    partial = dest.with_name(dest.name + ".partial")
+    snapshot_open_connection(con, partial)
+    copy = connect(partial, check_same_thread=False)
     try:
         qc = copy.execute("PRAGMA quick_check").fetchone()
         verdict = qc[0] if qc else "no answer"
         got = _tables_with_rows(copy)
     finally:
         copy.close()
+    for suffix in ("-wal", "-shm"):
+        partial.with_name(partial.name + suffix).unlink(missing_ok=True)
     if verdict != "ok":
-        dest.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
         raise MigrationRefused("the safety copy failed its integrity check, so it was removed and nothing was changed")
     if got != live:
         diff = sorted(t for t in set(live) | set(got) if live.get(t) != got.get(t))
-        dest.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
         raise MigrationRefused(
             "the safety copy does not hold the same rows as the store (" + ", ".join(diff[:8]) + "), so it was removed and nothing was changed"
         )
+    os.replace(partial, dest)
     return BackupInfo(str(dest), dest.stat().st_size, live, datetime.now(UTC).isoformat(), verdict)
 
 
@@ -380,8 +397,9 @@ def _rowid_span(con, table: str) -> tuple[int, int] | None:
 
 
 def probe_rate(con, plan: Plan) -> dict:
-    """Time ONE window of the biggest column to rewrite, then roll it back. A floor for the rate, not a promise: it
-    leaves out the commit and the checkpoint a real window pays, and says so."""
+    """Time ONE window of the biggest column to rewrite, then roll it back. A rough reading of the rate, not a floor and not
+    a promise: it leaves out the commit and the checkpoint a real window pays (the real run is slower there) and it times a
+    window whose share of convertible rows may differ from the table's (sparse here, the real run is faster per row)."""
     candidates = sorted((c for c in plan.columns if c.to_rewrite), key=lambda c: -c.to_rewrite)
     if not candidates:
         return {"rate_rows_per_s": None, "basis": "nothing to rewrite"}
@@ -402,7 +420,8 @@ def probe_rate(con, plan: Plan) -> dict:
         "rate_rows_per_s": n / dt,
         "basis": (
             f"{n} rows of {cp.key} rewritten in {dt:.3f} s on this machine and rolled back. It leaves out the commit and "
-            "the log checkpoint of a real window, so the run is usually slower"
+            "the log checkpoint of a real window, and the window may hold more or fewer convertible rows than the table as a whole, so "
+            "read it as a rough order of magnitude"
         ),
     }
 
@@ -424,6 +443,8 @@ class Report:
     table_rows_after: dict[str, int] = field(default_factory=dict)
     rate_rows_per_s: float | None = None
     seconds: float | None = None
+    #: Country codes inside the recorded differences (``metadata_alternates``), which no column rewrite reaches.
+    alternates: dict = field(default_factory=dict)
     #: Where the time went, so an estimate scales each part by what it scales with: the sweep by rows, the copy and the
     #: proof by the size of the store.
     backup_seconds: float | None = None
@@ -550,7 +571,7 @@ def migrate(
             rows_to_rewrite=plan.to_rewrite,
             store_bytes=report.store_bytes,
             free_bytes=_free_bytes(backup_dir or db_path.parent),
-            seconds_at_least=(plan.to_rewrite / rate) if rate else None,
+            seconds_about=(plan.to_rewrite / rate) if rate else None,
         )
         report.estimate = est
         say({"phase": "plan", "plan": report.plan, "estimate": est})
@@ -568,7 +589,7 @@ def migrate(
                     "half-migrated. Put the safety copy back where the journal says it was, or restore from your own backup."
                 )
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-            root = backup_dir or (db_path.parent / "backups" / f"pre-country-form-{stamp}")
+            root = Path(backup_dir or (db_path.parent / "backups" / f"pre-country-form-{stamp}")).resolve()
             say({"phase": "backup", "dir": str(root)})
             t_backup = time.perf_counter()
             info = take_verified_backup(con, db_path, Path(root) / "open_omniscience.pre-country-form.db")
@@ -645,6 +666,11 @@ def migrate(
                     raise MigrationRefused(f"{key} does not balance after the run. The marker was NOT flipped; the safety copy is intact.")
             if after.to_rewrite:
                 raise MigrationRefused("values that should have converted are still there. The marker was NOT flipped; run it again.")
+            # The codes inside an alternate's identity and field JSON are not columns, so the sweep never touched them;
+            # they move in the SAME transaction as the marker, or a captured `fr` would swap into an alpha-3 store as `fr`.
+            from src.backup.country_codes import convert_alternate_countries
+
+            report.alternates = convert_alternate_countries(con, schema="main", form="alpha3")
             cf.write_form(con, "alpha3", by="country-migration")
             journal.update(state="done", finished_at=datetime.now(UTC).isoformat())
             _upsert_json(con, JOURNAL_KEY, journal)
@@ -743,7 +769,7 @@ def main(argv: list[str] | None = None) -> int:
             if "time" in est:
                 print("Time: " + est["time"])
             else:
-                print("Time: at least " + _duration(est.get("seconds_at_least")) + ".  " + est["basis"])
+                print("Time: about " + _duration(est.get("seconds_about")) + " for the sweep alone.  " + est["basis"])
         elif ph == "backup":
             print(f"Taking the verified safety copy in {event['dir']} ...")
         elif ph == "backup-verified":

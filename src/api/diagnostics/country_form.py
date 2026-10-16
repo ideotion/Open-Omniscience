@@ -37,8 +37,7 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
 
     command = "open-omniscience migrate-countries"  # the command that moves a store, as it is typed
 
-    from src.backup.country_migration import JOURNAL_KEY
-    from src.database.country_form import KEY, StoreFormUnreadable, store_form
+    from src.database.country_form import JOURNAL_KEY, KEY, MigrationUnfinished, StoreFormUnreadable, store_form
 
     def _kv(key: str) -> dict | None:
         row = db.execute(text('SELECT value FROM "app_state" WHERE key = :k'), {"k": key}).first()
@@ -52,6 +51,10 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
 
     try:
         form = store_form()
+    except MigrationUnfinished as exc:
+        stopped = _kv(JOURNAL_KEY) or {}
+        return {"form": None, "readable": False, "unfinished": True, "command": command, "note": str(exc),
+                "journal": {"state": stopped.get("state"), "rewritten": stopped.get("rewritten")}}
     except StoreFormUnreadable:
         return {"form": None, "readable": False, "command": command,
                 "note": "the form of this store could not be read, so nothing was assumed"}
@@ -72,6 +75,8 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
                         "free_bytes": est.get("free_bytes"), "left_as_stored": rep.unmapped, "time": est.get("time")}
             except MigrationRefused as exc:
                 plan = {"refused": str(exc)}
+            except Exception as exc:  # noqa: BLE001 - a locked or keyless file, a read that failed: the class is the answer
+                plan = {"refused": f"the plan could not be read ({type(exc).__name__}); nothing was changed"}
     return {
         "form": form,
         "readable": True,

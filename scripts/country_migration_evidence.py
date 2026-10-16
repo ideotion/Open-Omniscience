@@ -29,6 +29,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -247,10 +248,21 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(steps[args.child](), default=str))
         return 0
 
-    work: Path = args.work
-    if work.exists() and any(work.iterdir()):
-        raise SystemExit(f"{work} is not empty: this script never reuses or deletes a directory it did not just make")
-    work.mkdir(parents=True, exist_ok=True)
+    # Every run works in a directory this script just made INSIDE --work, and removes only that one: a --work that
+    # already exists (empty or not) is never emptied, and an --out inside it would be deleted with the run, so it is refused.
+    root: Path = args.work
+    root.mkdir(parents=True, exist_ok=True)
+    if args.out and root.resolve() in args.out.resolve().parents:
+        raise SystemExit(f"--out {args.out} is inside --work {root}, which is removed after the run: write it elsewhere")
+    work = Path(tempfile.mkdtemp(prefix="run-", dir=root))
+    try:
+        return _run(args, work)
+    finally:
+        if not args.keep:  # also when a step failed: the generated stores are scratch, never left behind
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def _run(args, work: Path) -> int:
     a, b, c = work / "store-a-migrated", work / "store-b-alpha2-fresh", work / "store-c-alpha3-fresh"
     for d in (a, b, c):
         d.mkdir()
@@ -277,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
         return (r.get("scan") or {}).get("duplicates")
 
     report["summary"] = {
+        "label": LABEL,  # the block people quote carries its own label: these stores are GENERATED, not a real corpus
         "duplicates_before_alpha2": dup(report["3a_restore_before_into_alpha2_store"]),
         "duplicates_fresh_alpha3": dup(report["3b_restore_into_fresh_alpha3_store"]),
         "duplicates_after_migration": dup(after),
@@ -288,8 +301,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         args.out.write_text(text, encoding="utf-8")
     print(text)
-    if not args.keep:
-        shutil.rmtree(work, ignore_errors=True)
     return 0
 
 

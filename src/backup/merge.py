@@ -2543,6 +2543,15 @@ def _alternate_object(raw, *, scalars: bool) -> dict | None:
     return obj
 
 
+def _country_in_form_of(con, code: str) -> str:
+    """A country code from a recorded difference, in the form the working copy (``main``) holds its codes. A value that
+    is not a code stays as it is."""
+    from src.backup.country_codes import canonical_country, store_form_of
+
+    out = canonical_country(code, store_form_of(con))
+    return code if out is None else out
+
+
 def _alternate_local_match(
     con, spec: dict, identity: dict, notnull: Iterable[str] = ()
 ) -> tuple[str | None, list]:
@@ -2570,7 +2579,7 @@ def _alternate_local_match(
             " WHERE d.url = ? AND r.content_hash = ?" + (" AND d.jurisdiction = ?" if juris else "")
             + " ORDER BY r.id LIMIT 1",
             (identity.get("document_url"), identity.get("revision_content_hash"))
-            + ((juris,) if juris else ()),
+            + ((_country_in_form_of(con, juris),) if juris else ()),
         )
         if not rows:
             return None, []
