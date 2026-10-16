@@ -119,3 +119,34 @@ def test_preflight_verdicts_metadata_and_log(tmp_path, monkeypatch):
         assert rec["verdict"] == "robots_denied" and rec["robots"] == "disallowed"
     finally:
         db.close()
+
+
+def test_the_feeds_of_one_outlet_share_one_robots_read_and_each_keeps_its_own_record(tmp_path, monkeypatch):
+    """Row J, D1: robots.txt and the homepage belong to the site; three feeds are three records but one visit."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base
+
+    monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    for i, feed in enumerate(("en", "ar", "fa")):
+        db.add(Source(name=f"BBC {feed}", domain="bbc.example", rss_url=f"https://bbc.example/{feed}.xml",
+                      language="en", enabled=True, priority=i))
+    db.add(Source(name="DW", domain="dw.example", language="en", enabled=True, priority=9))
+    db.flush()
+    gets: list[str] = []
+
+    class _Counting(_Sess):
+        def get(self, url, *a, **kw):
+            gets.append(url)
+            return super().get(url, *a, **kw)
+
+    summary = preflight_sources(db, _F(_Counting({"bbc.example": "User-agent: *\nCrawl-delay: 7"})), limit=50)
+    assert summary["checked"] == 4  # a record per feed
+    assert sorted(g for g in gets if g.endswith("/robots.txt")) == ["https://bbc.example/robots.txt",
+                                                                    "https://dw.example/robots.txt"]
+    rows = db.query(SourceMetadata).filter(SourceMetadata.robots_allowed.is_(True)).count()
+    assert rows == 4  # every feed's own metadata carries the outlet's verdict
