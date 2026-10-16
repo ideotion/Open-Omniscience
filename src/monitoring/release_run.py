@@ -2213,7 +2213,7 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
     promise holds for every phase, not only the restore's), BEFORE the cut to 400
     characters, so a cut through it cannot leave a fragment. Every passphrase the process
     holds is taken out with it, and a text that cannot be checked is the exception's class
-    and none of its words (``secret_scrub.exception_text``, which every handler of this module writes a caught
+    and none of its words (``secret_scrub.record_text``, which every handler of this module writes a caught
     exception through, a function that holds no passphrase included: the guard reads them all). The log line is
     written through
     ``log_failure``, which carries the scrubbed traceback and never the exception: the error
