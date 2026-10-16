@@ -23,6 +23,7 @@ fabrication, so ``unknown`` must NOT refuse.
 
 from __future__ import annotations
 
+import os
 import subprocess
 
 import pytest
@@ -325,7 +326,14 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
     def broken(*a, **k):
         raise OSError("disk full")
 
-    monkeypatch.setattr(V.os, "replace", broken)
+    real_replace = os.replace
+
+    def only_the_copy(src, dst, *a, **k):
+        if str(src).endswith(".log.tmp"):
+            return broken()
+        return real_replace(src, dst, *a, **k)
+
+    monkeypatch.setattr(V.os, "replace", only_the_copy)
     out = V.start_outcome()
     record = [h for h in V.start_history() if h.get("event") == "exited"][-1]
     assert record["full_log"] is None and "raw copy is never made" in record["full_log_reason"]
@@ -349,3 +357,20 @@ def test_status_bounds_the_live_log_scan_for_the_poll_only(gpu8, monkeypatch):
     V.status()
     assert seen.get("scan_bound") == V._STATUS_LOG_SCAN_BYTES
     assert default is None
+
+
+def test_a_poll_during_the_copy_of_an_exits_log_says_it_is_being_copied(gpu8, monkeypatch, tmp_path):
+    """The exit is noted before the (slow) scrubbed copy runs, so a concurrent poll gets a stated reason rather than neither key."""
+    monkeypatch.setattr(V, "_proc", _Proc(code=1))
+    monkeypatch.setattr(V, "_exits_noted", set())
+    monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
+    seen = {}
+
+    def slow_copy(pid, code):
+        seen["during"] = dict(V.start_outcome())
+        return None, None
+
+    monkeypatch.setattr(V, "_preserve_failed_log_result", slow_copy)
+    V.start_outcome()
+    assert "being copied" in seen["during"]["preserved_log_reason"]

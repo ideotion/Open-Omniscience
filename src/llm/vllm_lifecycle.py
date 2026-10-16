@@ -204,9 +204,13 @@ def _read_line(fh) -> tuple[bytes, int | None]:
             return b"", n
 
 
-def _scrubbed_lines(fh) -> Iterator[bytes]:
+def _scrubbed_lines(fh, held: list[int] | None = None) -> Iterator[bytes]:
     """The lines of a binary file, each taken through the scrub whole (its line ending kept aside) and re-encoded. Every byte that comes out
-    of here has been scrubbed; a line too long to hold comes out as a marker that counts its bytes."""
+    of here has been scrubbed; a line too long to hold comes out as a marker that counts its bytes.
+
+    ``held`` is for a log a running server is still writing: its last line may be unfinished (the server's output is block-buffered, so a
+    write can stop inside a key), and a half line is a fragment no scrub can recognise. With a list given, an unterminated last line is not
+    emitted; its byte count is appended to ``held``."""
     while True:
         piece, big = _read_line(fh)
         if big is not None:
@@ -214,63 +218,106 @@ def _scrubbed_lines(fh) -> Iterator[bytes]:
             continue
         if not piece:
             return
+        if held is not None and not piece.endswith((b"\n", b"\r")):
+            held.append(len(piece))
+            return
         line = piece.decode("utf-8", errors="replace")
         body = line.rstrip("\r\n")
         yield (scrubbed(body) + line[len(body):]).encode("utf-8")
 
 
 def _scrubbed_log_ends(
-    path: Path, *, head_cap: int, keep: int, scan_bound: int | None = None
+    path: Path,
+    *,
+    head_cap: int,
+    keep: int,
+    scan_bound: int | None = None,
+    hold_unfinished: bool = False,
 ) -> dict:
     """Stream a log line by line through the scrub, keeping its first ``head_cap`` bytes and its last ``keep`` bytes.
 
     Every byte is counted and none is withheld: ``file_size`` is the file's size on disk, ``scrubbed_bytes`` the scrubbed text's length
-    (``None`` when the middle was not scanned, see ``scan_bound``). The scrub sees one WHOLE line before any cut, so a key that straddles
-    a head or tail cut keeps no prefix; a passphrase that itself holds a line break cannot match across two lines, which is a stated
-    limit. ``tail_note`` says why the tail is empty when a big log's last stretch holds no line boundary to start from. May raise OSError."""
+    (``None`` when the middle was not scanned, see ``scan_bound``; it differs from the file size wherever a key, an invalid byte or an
+    overlong line was replaced). The scrub sees one WHOLE line before any cut, so a key that straddles a head or tail cut keeps no prefix; a
+    passphrase that itself holds a line break cannot match across two lines, which is a stated limit. When the middle is not scanned the tail
+    starts at or after where the head stopped, so no text is shown twice, and ``gap_bytes`` is the file bytes between them.
+    ``tail_note`` says why the tail is empty when a big log's last stretch holds no line boundary to start from; ``held_back_bytes`` counts
+    an unfinished last line kept out while the server is still writing (``hold_unfinished``). May raise OSError."""
     file_size = path.stat().st_size
     head = bytearray()
-    window: deque[bytes] = deque()
+    # (scrubbed line, file offset where it ends): the offsets say how many FILE bytes lie between the head and the tail
+    window: deque[tuple[bytes, int]] = deque()
     window_bytes = 0
+    window_from = 0  # file offset where the oldest line still in the window starts
     total = 0
+    held: list[int] | None = [] if hold_unfinished else None
+
+    def _push(out: bytes, end: int) -> None:
+        nonlocal window_bytes, window_from
+        window.append((out, end))
+        window_bytes += len(out)
+        while window and window_bytes - len(window[0][0]) >= keep:
+            gone, window_from = window.popleft()
+            window_bytes -= len(gone)
 
     whole = scan_bound is None or file_size <= scan_bound
     tail_note = None
+    gap = None
     with path.open("rb") as fh:
-        for out in _scrubbed_lines(fh):
+        head_end = 0
+        for out in _scrubbed_lines(fh, held):
             total += len(out)
             if len(head) < head_cap:
                 head += out[: head_cap - len(head)]
-            if not whole and len(head) >= head_cap:
+            if not whole and (len(head) >= head_cap or fh.tell() >= (scan_bound or 0)):
+                head_end = fh.tell()
                 break
-            window.append(out)
-            window_bytes += len(out)
-            while window and window_bytes - len(window[0]) >= keep:
-                window_bytes -= len(window.popleft())
+            _push(out, fh.tell())
+        else:
+            head_end = fh.tell()
         if not whole:
             window.clear()
-            start = max(0, file_size - keep - _TAIL_ALIGN_MARGIN)
-            fh.seek(start)
-            if start > 0:
-                _read_line(fh)  # the partial line the seek landed in, dropped whole; the window starts on a line boundary
             window_bytes = 0
-            for out in _scrubbed_lines(fh):
-                window.append(out)
-                window_bytes += len(out)
-                while window and window_bytes - len(window[0]) >= keep:
-                    window_bytes -= len(window.popleft())
-            if not window and file_size > 0:
+            start = max(0, file_size - keep - _TAIL_ALIGN_MARGIN)
+            if start <= head_end:
+                start = head_end  # already on a line boundary, and nothing is shown twice
+                fh.seek(start)
+            else:
+                fh.seek(start)
+                _read_line(fh)  # the partial line the seek landed in, dropped whole; the window starts on a line boundary
+            window_from = fh.tell()
+            held = [] if hold_unfinished else None
+            for out in _scrubbed_lines(fh, held):
+                _push(out, fh.tell())
+            joined = b"".join(w[0] for w in window)
+            if not window and file_size > head_end and not held:
                 tail_note = (
                     "the end of the log has no line break to start from within the part read (one long line, for example a progress "
                     "bar), so no tail is shown; the byte counts above are the file's"
                 )
+            # file bytes between the head and the tail; the part of the oldest tail line that the byte cut drops is counted at its scrubbed length
+            gap = max(0, window_from - head_end) + max(0, len(joined) - keep)
+    joined = b"".join(w[0] for w in window)
     return {
         "file_size": file_size,
         "scrubbed_bytes": total if whole else None,
         "head": bytes(head),
-        "tail": b"".join(window)[-keep:],
+        "tail": joined[-keep:],
         "whole": whole,
         "tail_note": tail_note,
+        "gap_bytes": gap,
+        "held_back_bytes": held[0] if held else 0,
+    }
+
+
+def _held_back_note(ends: dict) -> dict:
+    """The additive keys that say an unfinished last line was kept out of a live log (empty when nothing was)."""
+    n = ends.get("held_back_bytes") or 0
+    if not n:
+        return {}
+    return {
+        "held_back_bytes": n,
+        "held_back_note": f"the last {n:,} bytes are an unfinished line, held back while the server is still writing: a half line cannot be checked for the passphrase",
     }
 
 
@@ -289,7 +336,7 @@ def server_log_tail(
     absent rather than a duplicate of ``tail`` -- a reader must never be shown the same
     text twice and left to wonder whether the server said it twice.
 
-    ``bytes`` is the file's size on disk; ``scrubbed_bytes`` is the scrubbed text's length, which differs when a key was replaced.
+    ``bytes`` is the file's size on disk; ``scrubbed_bytes`` is the scrubbed text's length, which differs wherever a key, an invalid byte or an overlong line was replaced.
     ``scan_bound`` is for status polling only (see ``_STATUS_LOG_SCAN_BYTES``): a log above it has its middle counted, not scanned,
     and says so with ``scanned_whole: False``."""
     p = server_log_path()
@@ -297,7 +344,7 @@ def server_log_tail(
         if not p.is_file():
             return {"available": False, "reason": "no server log yet (never started here)"}
         # scrubbed on READ, line by line, BEFORE the head/tail cut: the live log is the server's own output and can echo a path, a URL or a config line
-        ends = _scrubbed_log_ends(p, head_cap=head_limit, keep=limit, scan_bound=scan_bound)
+        ends = _scrubbed_log_ends(p, head_cap=head_limit, keep=limit, scan_bound=scan_bound, hold_unfinished=process_alive())
         size = ends["file_size"]
         tail = ends["tail"]
         if ends["whole"] and ends["scrubbed_bytes"] <= limit:
@@ -310,13 +357,14 @@ def server_log_tail(
                 "truncated": False,
                 "elided_bytes": 0,
                 "tail": tail.decode("utf-8", errors="replace"),
+                **_held_back_note(ends),
             }
         if ends["whole"]:
             head = ends["head"][: min(head_limit, max(0, ends["scrubbed_bytes"] - limit))]
             elided = ends["scrubbed_bytes"] - len(head) - limit
         else:
             head = ends["head"]
-            elided = max(0, size - len(head) - len(tail))
+            elided = ends["gap_bytes"] or 0
         return {
             "available": True,
             "path": str(p),
@@ -330,6 +378,7 @@ def server_log_tail(
             "head": head.decode("utf-8", errors="replace"),
             "tail": tail.decode("utf-8", errors="replace"),
             **({"tail_note": ends["tail_note"]} if ends["tail_note"] else {}),
+            **_held_back_note(ends),
         }
     except OSError as exc:
         return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
@@ -480,10 +529,16 @@ def failure_excerpt(*, limit: int = 900) -> dict:
         # The log is rewritten "wb" per start, so this is ONE attempt's output. Bounded
         # anyway: a runaway progress bar must not pull megabytes into a UI poll.
         with p.open("rb") as fh:
-            raw = fh.read(_EXCERPT_READ_BYTES)
-        if len(raw) == _EXCERPT_READ_BYTES and b"\n" in raw:
-            # a full read ends mid-line: drop that partial line so no key is cut before the scrub sees it
-            raw = raw[: raw.rindex(b"\n") + 1]
+            raw = fh.read(_EXCERPT_READ_BYTES + 1)  # one byte more tells the end of the file from a cut
+        cut = len(raw) > _EXCERPT_READ_BYTES
+        raw = raw[:_EXCERPT_READ_BYTES]
+        # A read that ends mid-line (the bound, or a running server's unfinished last line) is cut back to the last line break, `\r` too since
+        # progress bars use it: a half line holds a fragment of a key that no scrub can recognise.
+        if cut or (raw and process_alive() and not raw.endswith((b"\n", b"\r"))):
+            end = max(raw.rfind(b"\n"), raw.rfind(b"\r"))
+            if end < 0:
+                return {"available": False, "reason": "the server log is one unfinished or overlong line so far: it cannot be checked for the passphrase in pieces"}
+            raw = raw[: end + 1]
     except OSError as exc:
         return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
 
@@ -1028,6 +1083,7 @@ def start_outcome() -> dict:
     pid = getattr(_proc, "pid", None)
     if pid is not None and pid not in _exits_noted:
         _exits_noted.add(pid)
+        _exit_preserved[pid] = (None, "the log of this exit is still being copied with the passphrase taken out")
         excerpt = {}
         try:
             # 1200, not the 400 this used to pass: the excerpt is the ONE record that

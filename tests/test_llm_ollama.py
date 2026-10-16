@@ -544,3 +544,17 @@ def test_a_key_that_holds_whitespace_is_taken_out_before_the_reason_is_folded(mo
     text = ollama._http_error_text(exc)
     assert "two-spaces-9f3a" not in text
     assert "failed" in text
+
+
+def test_a_key_with_edge_whitespace_at_the_start_of_the_body_is_taken_out_before_the_strip(monkeypatch):
+    """``strip()`` would remove the key's own leading space and the scrub would no longer match; the body is scrubbed first."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "  edge-space-77c1"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
+    exc = httpx.HTTPStatusError("boom", request=request, response=httpx.Response(500, request=request, text=key + " then it failed"))
+    text = ollama._http_error_text(exc)
+    assert "edge-space-77c1" not in text and "failed" in text

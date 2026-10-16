@@ -2185,14 +2185,16 @@ def test_a_big_log_is_never_withheld_and_every_byte_is_counted(monkeypatch):
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     lines = [f"line {i} " + "x" * 80 + "\n" for i in range(3000)]
     lines[1500] = f"leak {_KEY} here\n"
+    lines[-1] = f"final {_KEY}\n"  # the last line is shown, so the key is there to be taken out
     V.server_log_path().write_text("".join(lines), encoding="utf-8")
     size = V.server_log_path().stat().st_size
     out = V.server_log_tail()
     assert out["available"] is True and out["truncated"] is True
     assert out["bytes"] == size and out["scanned_whole"] is True
     assert out["scrubbed_bytes"] <= size and out["elided_bytes"] > 0
-    assert out["head"].startswith("line 0 ") and out["tail"].rstrip().endswith("x" * 80)
+    assert out["head"].startswith("line 0 ") and out["tail"].startswith("") and "final " in out["tail"]
     assert _KEY not in json.dumps(out)
+    assert out["elided_bytes"] == out["scrubbed_bytes"] - len(out["head"].encode()) - len(out["tail"].encode())
 
 
 def test_a_status_poll_bounds_its_read_but_says_so_and_still_scrubs_both_ends(monkeypatch):
@@ -2322,7 +2324,7 @@ def test_a_big_log_whose_end_holds_no_line_break_says_why_its_tail_is_empty(monk
     monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     V.server_log_path().write_text("start\n" + "p" * 5000, encoding="utf-8")  # a progress bar to the end of the file
-    out = V.server_log_tail(limit=200, head_limit=20, scan_bound=100)
+    out = V.server_log_tail(limit=200, head_limit=3, scan_bound=100)
     assert out["available"] is True and out["tail"] == "" and "no line break" in out["tail_note"]
 
 
@@ -2382,3 +2384,83 @@ def test_a_journal_line_an_older_build_wrote_raw_is_scrubbed_when_it_is_read(mon
     V._start_history_path().parent.mkdir(parents=True, exist_ok=True)
     V._start_history_path().write_text(json.dumps({"at": 1, "excerpt": f"old {_KEY} line"}) + "\n", encoding="utf-8")
     assert _KEY not in json.dumps(V.install_history()) and _KEY not in json.dumps(V.start_history())
+
+
+def test_a_status_poll_shows_no_line_twice_and_counts_the_gap_between_the_halves(monkeypatch):
+    """The head phase reads on to the scan bound, so the tail's seek can land before the head's end: the tail then starts where the head stopped."""
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 500)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i:03d} " + "x" * 80 + "\n" for i in range(25)]
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    out = V.server_log_tail(limit=300, head_limit=10_000_000, scan_bound=2000)
+    assert out["scanned_whole"] is False
+    head_lines = [ln for ln in out["head"].splitlines() if ln.startswith("line ")]
+    tail_lines = [ln for ln in out["tail"].splitlines() if ln.startswith("line ")]
+    assert head_lines and tail_lines and not (set(head_lines) & set(tail_lines)), "no line is shown in both halves"
+    assert tail_lines[-1].startswith("line 024")
+
+
+def test_the_gap_between_head_and_tail_is_counted_in_file_bytes(monkeypatch):
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i:03d} " + "x" * 80 + "\n" for i in range(400)]
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    size = V.server_log_path().stat().st_size
+    out = V.server_log_tail(limit=300, head_limit=200, scan_bound=1000)
+    shown = len(out["head"].encode()) + len(out["tail"].encode())
+    assert size - 100 <= out["elided_bytes"] + shown <= size + 100, "what is shown plus the gap is the file, to within a line"
+
+
+def test_a_status_poll_of_overlong_lines_stops_at_its_bound(monkeypatch):
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 500)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(("z" * 250 + "\n") * 400, encoding="utf-8")
+    reads = []
+    real = V._read_line
+
+    def counting(fh):
+        reads.append(1)
+        return real(fh)
+
+    monkeypatch.setattr(V, "_read_line", counting)
+    out = V.server_log_tail(limit=300, head_limit=10_000_000, scan_bound=2000)
+    assert out["available"] is True and out["scanned_whole"] is False
+    assert len(reads) < 60, "the head phase must stop at the scan bound, not read all 400 lines"
+
+
+def test_failure_excerpt_cuts_back_to_a_carriage_return_when_the_read_ends_mid_line(monkeypatch):
+    """Progress output separates its updates with a carriage return only: a bound that falls inside a key there must not leave its start."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 200)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    text = "OSError: gone\r" + "p" * 150 + "\r" + "t" * 12 + _KEY + "\r"
+    assert text.index(_KEY) < 200 < text.index(_KEY) + len(_KEY)
+    V.server_log_path().write_text(text, encoding="utf-8")
+    out = V.failure_excerpt(limit=2000)
+    assert _KEY[:8] not in json.dumps(out)
+    assert out["available"] is True and "OSError: gone" in out["excerpt"], "the read is cut back to the last carriage return, not given up"
+
+
+def test_failure_excerpt_keeps_a_last_line_that_ends_exactly_at_the_bound(monkeypatch):
+    monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 60)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    text = "x" * 20 + "\n" + "RuntimeError: the real cause here______"  # 21 + 39 = 60 bytes, no final newline
+    assert len(text) == 60
+    V.server_log_path().write_text(text, encoding="utf-8")
+    out = V.failure_excerpt(limit=2000)
+    assert "the real cause" in (out.get("excerpt") or "")
+
+
+def test_an_unfinished_last_line_of_a_running_servers_log_is_held_back(monkeypatch):
+    """The server's output is block-buffered, so a write can stop inside a key: a half line is not shown while the server runs."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "process_alive", lambda: True)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("RuntimeError: boom\nloading " + _KEY[:12], encoding="utf-8")
+    out = V.server_log_tail()
+    assert _KEY[:8] not in json.dumps(out) and out["held_back_bytes"] == len("loading " + _KEY[:12]) and "held back" in out["held_back_note"]
+    assert "boom" in out["tail"]
+    assert _KEY[:8] not in json.dumps(V.failure_excerpt(limit=2000))
+    monkeypatch.setattr(V, "process_alive", lambda: False)
+    assert "loading" in V.server_log_tail()["tail"], "a finished log is shown whole"

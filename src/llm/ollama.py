@@ -322,7 +322,8 @@ def _http_reason(exc: httpx.HTTPStatusError) -> str:
         raw = exc.response.text or ""
     except Exception:  # a streamed/closed response has no readable text
         return ""
-    body = raw.strip()
+    # scrubbed BEFORE the strip: a held passphrase with leading or trailing whitespace at the edge of the body would otherwise lose it first
+    body = scrubbed(raw).strip()
     if not body:
         return ""
     try:
