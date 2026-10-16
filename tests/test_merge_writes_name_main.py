@@ -900,6 +900,41 @@ def test_the_scan_still_fails_on_the_shapes_the_semicolon_reading_could_hide(sni
     assert _scan(snippet), snippet
 
 
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # MUTANTS THE FIRST PASS LEFT ALIVE (2026-10-16). A conditional is read branch by branch, and a branch the reader cannot read makes
+        # the whole text a problem. The branch here is built from two pieces, so the "string anywhere" reading of each piece does not see a write:
+        # only reading the conditional's branches does. (A constant branch is flagged by the anywhere-reading whatever this clause does.)
+        'def f(con, x):\n    con.execute("SELECT 1" if x else "DEL" + "ETE FROM t")',
+        'def f(con, x):\n    con.execute("DEL" + "ETE FROM t" if x else "SELECT 1")',
+        # an unreadable branch on either side is a problem, not a skip (the other branch being a harmless read)
+        'def f(con, x, build):\n    con.execute("SELECT 1" if x else build())',
+        'def f(con, x, build):\n    con.execute(build() if x else "SELECT 1")',
+        # a call that carries a ``*args`` before the statement's position: the statement is not where the count says, so it is unreadable
+        'def run(con, sql, extra=None):\n    con.execute(sql)\ndef f(con, pair):\n    run(*pair, "SELECT 1")',
+        'def run(con, sql, extra=None):\n    con.execute(sql)\ndef f(con, pair):\n    run(con, *pair)',
+        # a positional-only parameter comes BEFORE the ordinary ones in a caller's count: here the statement is the second argument
+        'def run(con, /, sql):\n    con.execute(sql)\ndef f():\n    run("SELECT 1", "DEL" + "ETE FROM t")',
+    ],
+)
+def test_the_scan_reads_a_conditional_branch_by_branch_and_a_star_before_the_statement(snippet):
+    assert _scan(snippet), snippet
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # a positional-only parameter AFTER which an ordinary one carries the statement: positional order is posonly first, then the rest
+        'def run(con, /, sql):\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
+        'def run(con, /, sql):\n    con.execute(sql)\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        'def f(con, x):\n    con.execute("SELECT 1" if x else "DEL" + "ETE FROM main.t")',
+    ],
+)
+def test_the_scan_passes_a_positional_only_parameter_before_the_statement_and_a_qualified_conditional(snippet):
+    assert _scan(snippet) == [], snippet
+
+
 #: The functions OUTSIDE ``merge.py`` that receive the merge connection, each with why it is not a way to write unqualified. The scan reads
 #: ``merge.py`` only, so a callee in another module is read by a person once, here, and a NEW one fails the test below until it is.
 _CROSS_MODULE_CALLEES: dict[str, str] = {
