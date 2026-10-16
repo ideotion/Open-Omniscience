@@ -182,32 +182,38 @@ def test_a_member_exception_with_a_broken_str_still_records_error(monkeypatch):
     assert isinstance(rl, dict) and rl.get("error") == "_Evil: its text is withheld"
 
 
-@pytest.mark.parametrize("kind", ["interrupt", "typed"])
-def test_a_member_the_deadline_stopped_names_the_deadline(monkeypatch, kind):
-    """A DB member that the statement deadline ended records WHICH limit stopped it, not only the engine's "interrupted"."""
-    import sqlite3
-
-    import src.api.diagnostics.bundle as bundle
+def test_a_member_the_deadline_stopped_names_the_deadline(monkeypatch):
+    """A DB member that the statement deadline ended records that it was the deadline, not only the engine's words."""
     import src.monitoring.integrity as _intg
     from src.api.main import app
     from src.database.maintenance import StatementTimeout
 
     def _stopped(*a, **k):
-        if kind == "typed":
-            raise StatementTimeout("statement exceeded the 7s deadline and was aborted")
-        raise sqlite3.OperationalError("interrupted")
+        raise StatementTimeout("statement exceeded the 7s deadline and was aborted")
 
     monkeypatch.setattr(_intg, "corpus_integrity", _stopped)
-    monkeypatch.setattr(bundle, "deadline_expired", lambda session: True)
     with TestClient(app) as c:
         ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
-    assert ci["stopped_by"] == "statement deadline" and ci["member_budget_s"] > 0, ci
+    assert ci["stopped_by"] == "statement deadline" and "7s deadline" in ci["error"], ci
+
+
+def test_a_memory_stop_is_not_called_a_deadline_stop(monkeypatch):
+    import src.monitoring.integrity as _intg
+    from src.api.main import app
+    from src.database.maintenance import MemoryShort
+
+    def _short(*a, **k):
+        raise MemoryShort("stopped: memory below the floor")
+
+    monkeypatch.setattr(_intg, "corpus_integrity", _short)
+    with TestClient(app) as c:
+        ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
+    assert "stopped_by" not in ci and "memory" in ci["error"], ci
 
 
 def test_a_member_that_failed_for_another_reason_is_not_called_deadline_stopped(monkeypatch):
     import sqlite3
 
-    import src.api.diagnostics.bundle as bundle
     import src.monitoring.integrity as _intg
     from src.api.main import app
 
@@ -215,7 +221,6 @@ def test_a_member_that_failed_for_another_reason_is_not_called_deadline_stopped(
         raise sqlite3.OperationalError("database disk image is malformed")
 
     monkeypatch.setattr(_intg, "corpus_integrity", _other)
-    monkeypatch.setattr(bundle, "deadline_expired", lambda session: True)
     with TestClient(app) as c:
         ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
     assert "stopped_by" not in ci

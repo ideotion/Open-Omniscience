@@ -36,7 +36,12 @@ from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.api.country_wire import to_wire
 from src.database.country_form import order_key
 from src.database.derived_views import KeywordMentionRead
-from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
+from src.database.maintenance import (
+    MemoryShort,
+    StatementTimeout,
+    deadline_expired,
+    statement_deadline,
+)
 from src.database.models import Article, Keyword, Source
 from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
@@ -306,11 +311,11 @@ def debug_bundle(
                 return thunk()
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
                 out: dict[str, Any] = {"error": _err_str(exc)}
-                # A member the deadline stopped says so, and names the deadline: "interrupted" alone reads as a fault of the
-                # member, when it is the bundle's own time limit that ended it (the engine's text names no limit).
-                if isinstance(exc, StatementTimeout) or ("interrupt" in str(exc).lower() and deadline_expired(db)):
+                # A member the statement deadline ended says so: the engine's own word ("interrupted") names no limit and reads as a fault
+                # of the member. The typed error's message carries the deadline's seconds (each member arms its own), so none is repeated
+                # here. A memory stop (``MemoryShort``, a subclass) is a different stop and keeps its own words.
+                if isinstance(exc, StatementTimeout) and not isinstance(exc, MemoryShort):
                     out["stopped_by"] = "statement deadline"
-                    out["member_budget_s"] = budget  # the bundle's per-member budget, which is the limit the statement deadline was armed with
                 return out
         box: dict = {}
 

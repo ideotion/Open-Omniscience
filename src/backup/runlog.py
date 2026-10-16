@@ -1050,11 +1050,12 @@ def _iter_jsonl(p: Path, *, raw: bool = False, stats: dict | None = None) -> Ite
     A torn final line is exactly what a hard kill leaves, so it is skipped rather
     than treated as corruption -- unchanged from the list version this replaces.
 
-    THE READER IS WHERE AN OLDER FILE IS CHECKED: a journal written before the sweep may hold a passphrase an engine quoted, and these
+    THE READER IS WHERE AN OLDER FILE IS CHECKED (while a passphrase is held -- before unlock there is nothing to compare against): a journal written before the sweep may hold a passphrase an engine quoted, and these
     records leave the machine in the diagnostics bundle and the API. Each record is parsed first and then every string in it is checked
     (the file holds the JSON-escaped form; the parsed string is the form the passphrase has). A line that does not parse is not
     passed on in any form; ``stats['lines_not_read']`` counts those, and ``stats['withheld']`` the records that could not be checked.
-    ``raw=True`` is for the callers that only look at a record's ``ev`` (is the journal finished, is it empty) and publish nothing."""
+    ``raw=True`` is for the callers that stream a whole journal and keep a few records (they check the ones they keep) or only look at a
+    record's ``ev`` (is the journal finished, is it empty) and publish nothing."""
     try:
         with open(p, encoding="utf-8") as fh:
             for line in fh:
@@ -1203,22 +1204,31 @@ def summarise(run_id: str) -> dict:
     open_stages: list[str] = []
     stages: dict = {}
     last_stage_end: str | None = None
-    for r in _iter_jsonl(d / f"{run_id}.jsonl"):
+    # READ RAW, CHECK WHAT IS KEPT: this runs at boot over a journal that may be tens of MB, and a check of every string of every
+    # record (up to ~500 shapes each while a passphrase is held) is the cost the boot path cannot pay. The records the answer is made
+    # of are checked as they are kept, and a stage name is checked BEFORE it becomes a key (keys are not walked by a value check).
+    # While the corpus passphrase is not yet held (the boot pass runs before unlock) the check has nothing to compare against; a
+    # reader serving the answer later checks again.
+    def _name(x):
+        return scrubbed_value(x) if isinstance(x, str) else x
+
+    read_stats: dict = {}
+    for r in _iter_jsonl(d / f"{run_id}.jsonl", raw=True, stats=read_stats):
         milestones_seen += 1
         ev = r.get("ev")
         if ev == "run_begin":
             if not begin_rec:
-                begin_rec = r
+                begin_rec = _checked(r)
         elif ev == "run_end":
-            end_rec = r  # the LAST one wins, as reversed() gave before
+            end_rec = _checked(r)  # the LAST one wins, as reversed() gave before
         elif ev == "error":
-            errors.append(r)
+            errors.append(_checked(r))
         elif ev == "milestones_capped":
-            capped = r
+            capped = _checked(r)
         elif ev == "stage_begin":
-            open_stages.append(r.get("name", "?"))
+            open_stages.append(_name(r.get("name", "?")))
         elif ev == "stage_end":
-            nm = r.get("name")
+            nm = _name(r.get("name"))
             if nm in open_stages:
                 open_stages.remove(nm)
             # A lone stage_end is normal, not corruption: StageTimings.record()
@@ -1245,6 +1255,8 @@ def summarise(run_id: str) -> dict:
         "beats": beats_total,
         "errors": [{"t": e.get("t"), "cls": e.get("cls"), "msg": e.get("msg")} for e in errors],
     }
+    if read_stats:
+        out["milestones_not_read"] = dict(read_stats)  # lines that did not parse, or the rest of a file that is not UTF-8
     if end_rec is not None:
         out["wall_s"] = end_rec.get("wall_s")
         if end_rec.get("journal_truncated"):

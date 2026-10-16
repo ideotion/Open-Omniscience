@@ -298,9 +298,13 @@ def _older_files(tmp_path, key: str) -> str:
 
     rid = "20260101T000000Z-old"
     rows = [
-        {"ev": "run_begin", "t": "2026-01-01T00:00:00Z", "run": "old", "note": f"key {key}"},
-        {"ev": "error", "t": "2026-01-01T00:00:01Z", "message": f"near '{key}' syntax", "url": f"http://x/?k={quote(key, safe='')}"},
-        {"ev": "run_end", "t": "2026-01-01T00:00:02Z", "outcome": "error"},
+        {"ev": "run_begin", "t": "2026-01-01T00:00:00Z", "run": "old", "note": f"key {key}", "kind": f"k {key}",
+         "label": f"l {key}", "hardware": {"cpu": f"c {key}"}},
+        {"ev": "stage_begin", "name": f"stage {key}"},
+        {"ev": "stage_end", "name": f"done {key}", "seconds": 2},
+        {"ev": "error", "t": "2026-01-01T00:00:01Z", "cls": f"C {key}", "msg": f"near '{key}' syntax", "message": f"near '{key}' syntax",
+         "url": f"http://x/?k={quote(key, safe='')}"},
+        {"ev": "run_end", "t": "2026-01-01T00:00:02Z", "outcome": f"o {key}", "wall_s": 1},
     ]
     (d / f"{rid}.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     (d / f"{rid}.beat.jsonl").write_text(json.dumps({"ev": "beat", "t": "x", "detail": key}) + "\n", encoding="utf-8")
@@ -344,3 +348,16 @@ def test_non_utf8_older_journal_is_withheld_with_a_reason(tmp_path, monkeypatch)
     assert PASS not in json.dumps(entry)
     assert entry["milestones_not_read"]["file_not_utf8"] is True
     assert [r["outcome"] for r in runlog.list_runs()] == ["unreadable: not valid UTF-8"]
+
+
+def test_a_stage_name_an_older_journal_holds_is_checked_before_it_is_a_key_or_the_place_it_died(tmp_path, monkeypatch):
+    """A run that never ended names the stage it died in; a finished stage's name is a dict key (keys are not walked by a value check)."""
+    from src.database import connect
+
+    monkeypatch.setattr(connect, "_passphrase", PASS)
+    S.forget_held()
+    rid = _older_files(tmp_path, PASS)
+    p = tmp_path / "run_logs" / f"{rid}.jsonl"
+    p.write_text("\n".join(line for line in p.read_text(encoding="utf-8").splitlines() if '"run_end"' not in line) + "\n", encoding="utf-8")
+    out = runlog.summarise(rid)
+    assert out["died_in_stage"] and PASS not in json.dumps(out)
