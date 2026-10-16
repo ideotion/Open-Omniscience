@@ -201,7 +201,7 @@ def test_a_member_the_deadline_stopped_names_the_deadline(monkeypatch, kind):
     monkeypatch.setattr(bundle, "deadline_expired", lambda session: True)
     with TestClient(app) as c:
         ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
-    assert ci["stopped_by"] == "statement deadline" and ci["deadline_s"] > 0, ci
+    assert ci["stopped_by"] == "statement deadline" and ci["member_budget_s"] > 0, ci
 
 
 def test_a_member_that_failed_for_another_reason_is_not_called_deadline_stopped(monkeypatch):

@@ -310,7 +310,7 @@ def debug_bundle(
                 # member, when it is the bundle's own time limit that ended it (the engine's text names no limit).
                 if isinstance(exc, StatementTimeout) or ("interrupt" in str(exc).lower() and deadline_expired(db)):
                     out["stopped_by"] = "statement deadline"
-                    out["deadline_s"] = budget
+                    out["member_budget_s"] = budget  # the bundle's per-member budget, which is the limit the statement deadline was armed with
                 return out
         box: dict = {}
 
