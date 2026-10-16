@@ -1980,3 +1980,22 @@ def test_the_measured_footprint_is_applied_in_both_directions(monkeypatch, tmp_p
     # would be measurably larger, which is the direction that fails at startup.
     unmargined = V.compute_server_args(8192, vram_free_mb=7812, weight_footprint_gb=tiny)
     assert unmargined["max_model_len"] > expected
+
+
+def test_a_held_passphrase_in_the_installers_error_or_output_is_taken_out_where_the_journal_is_written(monkeypatch):
+    """The installer's error and its captured output enter the journal in ``_scrub_history``, so the key the process holds is taken
+    out there, whichever tool echoed it (an index or proxy URL, a path, a config line)."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "hunter2-correct-horse-9f3a"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    V.record_install_attempt(
+        version="0.26.0", phase="pip", outcome="error", exit_code=1,
+        error=f"resolver said: bad token {key} in the config",
+        output_tail=[f"reading {key}", "an unrelated line"], output_lines_total=2,
+    )
+    blob = V._history_path().read_text(encoding="utf-8")
+    assert key not in blob
+    assert "an unrelated line" in blob  # only the held key is taken out

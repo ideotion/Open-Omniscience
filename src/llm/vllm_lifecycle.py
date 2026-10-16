@@ -48,7 +48,7 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 from src.llm.weights_pin import PinMismatch as _PinMismatch
-from src.monitoring.secret_scrub import log_failure, record_text
+from src.monitoring.secret_scrub import log_failure, record_text, scrubbed
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -593,7 +593,9 @@ def _scrub_history(obj):
     if isinstance(obj, list):
         return [_scrub_history(v) for v in obj]
     if isinstance(obj, str):
-        return _redact_secrets_in_text(obj)
+        # credential shapes first (a URL's userinfo), then every passphrase the process holds, failing closed: the installer's output
+        # and its error enter the journal here, whatever tool echoed them
+        return scrubbed(_redact_secrets_in_text(obj))
     return obj
 
 

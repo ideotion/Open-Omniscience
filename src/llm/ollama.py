@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import record_text, scrubbed
 
 # Real, currently-existing Ollama tags suitable for CPU-only single-user use.
 # (The previous catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)
@@ -366,7 +366,9 @@ def _http_error_text(exc: httpx.HTTPStatusError) -> str:
     """``<status line> — <the server's reason>``, or just the status line."""
     reason = _http_reason(exc)
     line = _status_line(exc)
-    return f"{line}{REASON_SEP}{reason}" if reason else line
+    # The server's own words enter an ``LLMError`` here, so they are scrubbed here: a backend can echo the request, and every job that
+    # stores the error then holds text that is already clean (failing closed: a text that cannot be checked is withheld whole).
+    return scrubbed(f"{line}{REASON_SEP}{reason}" if reason else line)
 
 
 def bounded_error(exc: BaseException, limit: int = 300) -> str:

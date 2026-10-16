@@ -497,3 +497,19 @@ def test_bounded_error_keeps_no_driver_words_and_no_held_passphrase(monkeypatch)
     monkeypatch.setattr(connect, "_passphrase", "kQ7!vLm-held-key")
     assert "hunter2Zq8Lm_tbl" not in bounded_error(sqlite3.OperationalError("no such table: hunter2Zq8Lm_tbl"), 200)
     assert "kQ7!vLm-held-key" not in bounded_error(ValueError("failed with kQ7!vLm-held-key inside"), 200)
+
+
+def test_a_backend_that_echoes_the_held_passphrase_never_puts_it_in_the_llm_error(monkeypatch):
+    """The server's own words enter the error text in ``_http_error_text``, so the key the process holds is taken out there."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "hunter2-correct-horse-9f3a"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
+    response = httpx.Response(500, request=request, json={"error": f"the prompt was {key} and it failed"})
+    exc = httpx.HTTPStatusError("boom", request=request, response=response)
+    text = ollama._http_error_text(exc)
+    assert key not in text
+    assert "failed" in text  # the rest of the server's reason is kept
