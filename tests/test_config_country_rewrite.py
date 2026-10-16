@@ -40,7 +40,7 @@ import yaml
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.catalog.countries import config_country, country_payload
+from src.catalog.countries import config_country, country_payload_iso3
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIGS = sorted((ROOT / "configs").glob("*.yml"))
@@ -74,7 +74,7 @@ def offenders(text: str) -> list[str]:
     line, and YAML's boolean for an unquoted ``NO`` (Norway) is an offender rather than a silent False."""
     bad = []
     for path, value in _pairs(yaml.safe_load(text)):
-        if not (isinstance(value, str) and country_payload(value) == value and value == value.upper()):
+        if not (isinstance(value, str) and value == value.upper() and country_payload_iso3(value) == value):
             bad.append(f"{'/'.join(map(str, path))}: {value!r}")
     return bad
 
@@ -109,6 +109,10 @@ def test_the_check_reddens_on_an_unquoted_norway_and_on_a_flow_mapping_value():
     assert offenders("sources:\n  - {name: A, domain: a.no, country: NO}\n") == ["sources/0/country: False"]
     assert offenders("documents:\n  - {jurisdiction: uk, country: GBR}\n") == ["documents/0/jurisdiction: 'uk'"]
     assert offenders("documents:\n  - {jurisdiction: GBR, country: GBR}\n") == []
+    # uppercase is not enough: a value no country code answers to is an offender too
+    assert offenders("sources:\n  - {name: A, country: ZZZ}\n  - {name: B, country: WLD}\n") == [
+        "sources/0/country: 'ZZZ'", "sources/1/country: 'WLD'"
+    ]
 
 
 # --- the script ---------------------------------------------------------------------------------------------
@@ -364,3 +368,76 @@ def test_the_real_events_keep_their_uppercase_alpha2_and_norway_is_a_string_now(
     # The unquoted `NO` this event carried was YAML's boolean false: it never said Norway to a loader.
     assert countries["Norges Bank policy rate decision"] == "NO"
     assert {"US", "EU", "INT"} <= set(countries.values())
+
+
+# --- the review folds ---------------------------------------------------------------------------------------
+
+
+def test_a_trailing_comment_is_never_edited():
+    mod = _script()
+    old = "sources:\n  - {name: X, country: fr}  # see a, country: fr and {jurisdiction: uk}\n  - name: Y  # b, country: de\n"
+    new, _ = mod.rewrite_text(old)
+    assert new == "sources:\n  - {name: X, country: FRA}  # see a, country: fr and {jurisdiction: uk}\n  - name: Y  # b, country: de\n"
+    # a hash inside quotes is not a comment
+    q, _ = mod.rewrite_text("sources:\n  - {name: 'A # B', country: fr}\n")
+    assert q == "sources:\n  - {name: 'A # B', country: FRA}\n"
+
+
+def test_a_value_the_text_pass_cannot_see_is_named_not_skipped():
+    mod = _script()
+    left = mod.leftovers('sources:\n  - {name: A, "country": fr}\n  - {name: B, country: ZZZ}\n  - {name: C, country: FRA}\n')
+    assert left == ["sources/0/country: 'fr'", "sources/1/country: 'ZZZ'"]
+
+
+def test_the_script_writes_nothing_when_a_later_file_is_refused(tmp_path, monkeypatch):
+    mod = _script()
+    (tmp_path / "configs").mkdir()
+    good = tmp_path / "configs" / "a.yml"
+    bad = tmp_path / "configs" / "b.yml"
+    good.write_text("sources:\n  - {name: A, country: fr}\n", encoding="utf-8")
+    bad.write_text("sources:\n  - {name: B, country: ZZZ}\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "TARGETS", ("configs/a.yml", "configs/b.yml"))
+    monkeypatch.setattr(sys, "argv", ["rewrite_config_countries.py", "--write"])
+    assert mod.main() == 2
+    assert good.read_text(encoding="utf-8") == "sources:\n  - {name: A, country: fr}\n", "the first file was rewritten anyway"
+    # and report mode says there is something left to do rather than pass
+    monkeypatch.setattr(sys, "argv", ["rewrite_config_countries.py"])
+    assert mod.main() == 1
+
+
+def test_the_legal_validator_finds_a_duplicate_across_the_two_spellings():
+    vlc = _tool("validate_legal_catalog")
+    curated = {"sources": [], "documents": [{"jurisdiction": "GBR", "url": "https://example.org/hra"}]}
+    ver = {"status": "lead"}
+    generated = {
+        "schema": vlc.SCHEMA, "as_of": "2026-10",
+        "sources": [],
+        "documents": [{"jurisdiction": "uk", "title": "HRA", "url": "https://example.org/hra", "verification": ver}],
+    }
+    assert any("already in the CURATED catalog" in e for e in vlc.validate(generated, curated)["errors"])
+    generated["documents"] = [
+        {"jurisdiction": "GB", "title": "A", "url": "https://example.org/x", "verification": ver},
+        {"jurisdiction": "GBR", "title": "B", "url": "https://example.org/x", "verification": ver},
+    ]
+    assert any("duplicate (jurisdiction, url)" in e for e in vlc.validate(generated, {"sources": [], "documents": []})["errors"])
+
+
+@pytest.mark.parametrize("stored", ["gb", "GB", "uk"])
+def test_a_row_an_older_catalogue_registered_under_another_spelling_is_not_registered_twice(tmp_path, stored):
+    from src.database.country_form import writing_in
+    from src.database.models import Base, LawDocument
+    from src.law.catalog import register_documents
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    cat = tmp_path / "c.yml"
+    cat.write_text(
+        "documents:\n  - {jurisdiction: GBR, title: HRA, url: 'https://example.org/hra', country: GBR, language: en}\n",
+        encoding="utf-8",
+    )
+    with writing_in("alpha2"), sessionmaker(bind=engine)() as s:
+        s.add(LawDocument(jurisdiction=stored, title="HRA", url="https://example.org/hra", category="legislation"))
+        s.commit()
+        out = register_documents(s, cat, tmp_path / "none.yml")
+        assert out["created"] == 0 and s.query(LawDocument).count() == 1

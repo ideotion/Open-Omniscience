@@ -379,7 +379,9 @@ def register_documents(
     to the pre-S4b behaviour); tests pass an isolated/nonexistent path so a crafted
     fixture catalog is never silently merged with the real ~225-source harvest."""
     docs = registrable_documents(load_legal_catalog(path, generated_path))
-    existing_rows = {(row.jurisdiction, row.url): row for row in session.query(LawDocument).all()}
+    # Keyed through the same spelling the catalogue is read in: a row an older user catalogue registered as
+    # ``gb`` or ``GB`` is the document the catalogue now calls ``uk``, not a second one.
+    existing_rows = {(law_jurisdiction(row.jurisdiction), row.url): row for row in session.query(LawDocument).all()}
     created = 0
     healed = 0
     for d in docs:

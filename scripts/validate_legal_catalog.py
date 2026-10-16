@@ -79,6 +79,16 @@ SOURCE_TYPES = ("legal", "ip", "case_law", "gazette")
 SPECIAL_COUNTRIES = ("eu", "int")
 
 
+def _form(value):
+    """A country in ONE spelling, for comparing keys: ``uk``, ``GB`` and ``GBR`` are the same jurisdiction, and a
+    duplicate guard that read the raw text would stop firing across the two forms (S05-02 S3)."""
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+    from src.catalog.countries import config_country
+
+    return config_country(value)
+
+
 def _is_wire_country(value: object) -> bool:
     """The shipped catalogues' own form (uppercase alpha-3, S05-02 S3): a session's raw output arrives in
     lowercase alpha-2 and the committed file holds this, so the shape check reads both. Which of the two a COMMITTED
@@ -188,7 +198,7 @@ def validate(generated: dict, curated: dict) -> dict:
 
     curated_domains = {s.get("domain") for s in curated.get("sources", [])}
     curated_docs = {
-        (d.get("jurisdiction"), d.get("url")) for d in curated.get("documents", [])
+        (_form(d.get("jurisdiction")), d.get("url")) for d in curated.get("documents", [])
     }
     seen_domains: set[str] = set()
 
@@ -285,7 +295,7 @@ def validate(generated: dict, curated: dict) -> dict:
             _err(errors, where, "a verified row must carry verification.retrieved_at")
         dom = s.get("domain")
         if dom:
-            key = (dom, s.get("kind"), country)
+            key = (dom, s.get("kind"), _form(country))
             if key in seen_domain_kinds:
                 _err(errors, where, "duplicate (domain, kind, country) within the generated file "
                                     "(one host may carry two ROLES — codes portal + gazette — or "
@@ -309,7 +319,7 @@ def validate(generated: dict, curated: dict) -> dict:
             _err(errors, where, f"verification.status must be one of {VERIFICATION_STATUSES}")
         elif status == "lead":
             leads.append(where)
-        dkey = (d.get("jurisdiction"), d.get("url"))
+        dkey = (_form(d.get("jurisdiction")), d.get("url"))
         if dkey in seen_docs:
             _err(errors, where, "duplicate (jurisdiction, url) within the generated file")
         seen_docs.add(dkey)

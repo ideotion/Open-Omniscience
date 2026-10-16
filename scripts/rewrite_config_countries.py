@@ -81,6 +81,20 @@ def _is_flow_or_block_line(line: str) -> bool:
     return not line.lstrip().startswith("#")
 
 
+def _split_comment(body: str) -> tuple[str, str]:
+    """``(code, comment)``: the comment starts at the first ``#`` outside quotes that opens the line or follows a space."""
+    quote = ""
+    for i, ch in enumerate(body):
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#" and (i == 0 or body[i - 1] in " \t"):
+            return body[:i], body[i:]
+    return body, ""
+
+
 def rewrite_text(text: str) -> tuple[str, list[dict]]:
     """Return ``(new_text, changes)``; ``changes`` lists every value looked at, rewritten or not."""
     out: list[str] = []
@@ -102,7 +116,8 @@ def rewrite_text(text: str) -> tuple[str, list[dict]]:
             changes.append({"line": number, "key": m.group("key"), "old": val, "new": new, "changed": True})
             return m.group("lead") + m.group("quote") + new + m.group("quote")
 
-        out.append(_VALUE.sub(sub, body) + eol)
+        code, comment = _split_comment(body)  # a trailing comment is never edited
+        out.append(_VALUE.sub(sub, code) + comment + eol)
     return "".join(out), changes
 
 
@@ -151,6 +166,19 @@ def prove_equivalent(old_text: str, new_text: str) -> list[str]:
     return problems
 
 
+def leftovers(text: str) -> list[str]:
+    """Every country/jurisdiction value still not in the wire form, whatever the text form it was written in.
+
+    The regex pass reads ``key: value`` text; a quoted key, an anchor, a tag or a value on the next line is
+    invisible to it. This reads the PARSED document, so such a value is named instead of skipped, and a
+    value no country code answers to (``ZZZ``, ``WLD``) is named too."""
+    bad = []
+    for path, value in _walk_pairs(yaml.safe_load(text)):
+        if not (isinstance(value, str) and value.isupper() and country_payload_iso3(value) == value):
+            bad.append(f"{'/'.join(map(str, path))}: {value!r}")
+    return bad
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--write", action="store_true", help="rewrite the files in place")
@@ -159,14 +187,24 @@ def main() -> int:
 
     report: dict = {"files": {}, "unplaced": []}
     would_change = 0
+    # PROVE EVERY FILE FIRST, write after: a refusal on the last file must not leave the first ones rewritten.
+    planned: list[tuple[str, str, str, list[dict]]] = []
     for rel in TARGETS:
-        path = ROOT / rel
-        old_text = path.read_bytes().decode("utf-8")
+        old_text = (ROOT / rel).read_bytes().decode("utf-8")
         new_text, changes = rewrite_text(old_text)
         problems = prove_equivalent(old_text, new_text)
         if problems:
             print(f"REFUSED {rel}: {problems[:5]}", file=sys.stderr)
             return 2
+        planned.append((rel, old_text, new_text, changes))
+    left = [(rel, v) for rel, _, new_text, _ in planned for v in leftovers(new_text)]
+    if left and args.write:
+        print("REFUSED: values the pass could not put in the wire form (nothing was written):", file=sys.stderr)
+        for rel, v in left:
+            print(f"  {rel}: {v}", file=sys.stderr)
+        return 2
+    for rel, old_text, new_text, changes in planned:
+        path = ROOT / rel
         tally = Counter("rewritten" if c["changed"] else "kept" for c in changes)
         unplaced = sorted({(c["key"], c["old"]) for c in changes if not c["changed"] and country_payload_iso3(c["old"]) is None})
         report["files"][rel] = {"values": len(changes), **tally}
@@ -176,13 +214,17 @@ def main() -> int:
             path.write_bytes(new_text.encode("utf-8"))
         print(f"{rel}: {len(changes)} values, {tally.get('rewritten', 0)} rewritten, {len(unplaced)} distinct unplaced")
     print(f"total rewritten: {would_change}")
+    if left:
+        print("not in the wire form after the pass:")
+        for rel, v in left:
+            print(f"  {rel}: {v}")
     if report["unplaced"]:
         print("left as written (not a recognised country code):")
         for u in report["unplaced"]:
             print(f"  {u['file']}: {u['key']}: {u['value']}")
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return 0 if (args.write or would_change == 0) else 1
+    return 0 if (not left and (args.write or would_change == 0)) else 1
 
 
 if __name__ == "__main__":
