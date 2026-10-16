@@ -324,3 +324,49 @@ def test_a_claim_trail_joins_the_feeds_of_one_site_into_one_path():
     assert out["n_paths"] == 2
     top = out["paths"][0]
     assert top["article_ids"] == [1, 2] and [(j["kind"], j["detail"]) for j in top["joins"]] == [("same_source", "BBC News")]
+
+
+def test_a_feed_level_count_says_it_counts_feeds_on_every_surface(tmp_path, monkeypatch):
+    """R146 (b): the passport, the evidence plan and the upcoming-dates view each carry the sentence."""
+    from datetime import date
+
+    from fastapi.testclient import TestClient
+
+    from src.analytics.passport import METHOD, corpus_passport
+    from src.api.main import app
+    from src.database.models import ArticleMentionedDate
+    from src.database.outlet import FEEDS_NOT_OUTLETS
+    from src.database.session import get_db
+    from src.timemap.datestore import upcoming_deduced
+
+    assert FEEDS_NOT_OUTLETS in METHOD
+    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        ids = [_feed(s, n, "bbc.com", f"https://bbc.com/{n}", text=n) for n in ("a", "b")]
+        arts = [s.query(Article).filter_by(source_id=i).one().id for i in ids]
+        for aid in arts:
+            s.add(ArticleMentionedDate(article_id=aid, mentioned_on=date.today() + timedelta(days=3), status="candidate",
+                                       snippet="x"))
+        s.commit()
+        from sqlalchemy import select
+
+        assert FEEDS_NOT_OUTLETS in corpus_passport(s, select(Article.id))["method"]
+        assert FEEDS_NOT_OUTLETS in upcoming_deduced(s, min_articles=1)["method"]
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            r = client.post("/api/reports/evidence/plan", json={"article_ids": arts})
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+    assert r.json()["sources"] == 2 and r.json()["sources_note"] == FEEDS_NOT_OUTLETS

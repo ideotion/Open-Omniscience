@@ -23,12 +23,14 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from src.database.models import Article, Source
+from src.database.outlet import FEEDS_NOT_OUTLETS
 
 METHOD = (
     "Counted over the articles this view was computed on. Countries are the countries of the "
     "articles' sources, as the source catalogue records them; languages are each article's "
     "language tag, else the detected language; the date span runs from the earliest to the "
-    "latest publication date. Articles missing any of these are counted apart, never dropped."
+    "latest publication date. Articles missing any of these are counted apart, never dropped. "
+    + FEEDS_NOT_OUTLETS
 )
 
 

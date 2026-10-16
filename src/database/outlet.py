@@ -21,6 +21,13 @@ from sqlalchemy.orm import Session
 from src.database.models import Source
 
 
+FEEDS_NOT_OUTLETS = (
+    "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several."
+)
+"""The sentence every user-visible FEED-level source count carries (row J, R146 (b)): a count that is the size of the
+sources list is a true count of feeds, and reads as a count of independent voices unless it says what it counts."""
+
+
 def outlet_expr(source_id_col: Any, domain_col: Any) -> Any:
     """SQL: the outlet an article's source belongs to -- its domain, or ``source-<id>`` when the source row is gone.
 

@@ -18,6 +18,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, ArticleMentionedDate
+from src.database.outlet import FEEDS_NOT_OUTLETS
 from src.database.stand_in import not_a_stand_in_article
 from src.timemap.dateextract import extract_dates
 
@@ -268,7 +269,7 @@ def upcoming_deduced(
         "count": len(events),
         "method": (
             "Future dates MENTIONED in your articles, grouped by date (distinct "
-            f"articles + distinct sources); surfacing gate ≥ {min_articles} articles."
+            f"articles + distinct sources); surfacing gate ≥ {min_articles} articles. " + FEEDS_NOT_OUTLETS
         ),
         "caveat": (
             "Deduced from article text, never confirmed — a date an article mentions, "
