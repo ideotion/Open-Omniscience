@@ -51,6 +51,13 @@ _BARE_QID = re.compile(r"^\s*[Qq]\d+\s*$")
 DECLINED_UNRESOLVED = "label_not_resolved"
 DECLINED_NO_LABEL = "wikidata_has_no_label"
 DECLINED_REFUSED = "network_refused"
+#: Protected fetch mode is on and no usable proxy is configured (``TransportUnavailable``), so the lookup was never sent: the operator's own
+#: transport setting, not Wikidata and not airplane mode, and every later row would be refused the same way.
+DECLINED_TRANSPORT = "transport_unavailable"
+#: Wikidata answered with a redirect to an address this client does not follow (another host, plain http, another port) and the request was refused rather than
+#: followed (``RedirectRefused``): not "could not reach Wikidata" and not "no label", because a
+#: person has to look at where the answer pointed and a retry would be refused the same way.
+DECLINED_REDIRECT_REFUSED = "redirect_refused"
 
 
 class AirplaneRefusal(RuntimeError):
@@ -112,6 +119,8 @@ def resolve_labels(
     import time
 
     from src.ingest import kill_switch_active
+    from src.ingest.airplane import AirplaneModeError
+    from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 
     active = kill_switch or kill_switch_active
     napper = sleep if sleep is not None else time.sleep
@@ -125,18 +134,36 @@ def resolve_labels(
     labels: dict[str, str] = {}
     declined: dict[str, str] = {}
     requests = 0
-    for i, qid in enumerate(dict.fromkeys(q.strip().upper() for q in qids if q)):
-        if active():
-            # Checked again BETWEEN rows: an operator can engage airplane mode during a run
-            # that sleeps ten seconds per request, and a start-only check would keep going.
-            for remaining in list(qids)[i:]:
-                declined.setdefault(str(remaining).strip().upper(), DECLINED_REFUSED)
-            break
+    refused = 0
+    order = list(dict.fromkeys(q.strip().upper() for q in qids if q))  # one row per Q-id, in the order asked
+    for i, qid in enumerate(order):
         if i:
             napper(interval_s)  # R8: <= 1 request / 10 s, BEFORE the request, never after
+        if active():
+            # Checked again BETWEEN rows, AFTER the sleep: an operator can engage airplane mode during a run
+            # that sleeps ten seconds per request, and a check before the sleep would let the next fetch find out.
+            for remaining in order[i:]:
+                declined.setdefault(remaining, DECLINED_REFUSED)
+            break
         try:
             payload = fetch(wbentities_url(qid, tuple(langs)))
             requests += 1
+        except (NetworkBlocked, AirplaneModeError):
+            # The kill switch engaged between the check above and the socket: named as the kill switch, for this row and the rest.
+            for remaining in order[i:]:
+                declined.setdefault(remaining, DECLINED_REFUSED)
+            break
+        except TransportUnavailable:
+            # A ConnectionError, so it has to be named BEFORE the generic clause: protected mode has nothing to route through, which is the
+            # operator's setting to fix, and the rest of the run would be refused the same way (one sleep each, for nothing).
+            for remaining in order[i:]:
+                declined.setdefault(remaining, DECLINED_TRANSPORT)
+            break
+        except RedirectRefused:
+            # Counted and named as itself: it is not a failed lookup (the host answered) and a retry is refused the same way.
+            declined[qid] = DECLINED_REDIRECT_REFUSED
+            refused += 1
+            continue
         except Exception:  # noqa: BLE001 - a failed lookup declines a row, never crashes a run
             declined[qid] = DECLINED_UNRESOLVED
             continue
@@ -146,10 +173,11 @@ def resolve_labels(
         else:
             declined[qid] = DECLINED_NO_LABEL
 
-    return {
+    result: dict = {
         "labels": labels,
         "declined": declined,
         "requests": requests,
+        "lookups_refused": refused,
         "interval_s": interval_s,
         "method": (
             f"One request per Q-id to www.wikidata.org, at most one per {interval_s:g} "
@@ -160,17 +188,29 @@ def resolve_labels(
             "A row whose label could not be resolved is DECLINED, never admitted under its "
             "Q-id and never under a guess. 'Could not reach Wikidata' and 'Wikidata has no "
             "label' are recorded as different reasons, because a later pass can act on the "
-            "first and only a person can act on the second."
+            "first and only a person can act on the second. A request Wikidata answered with a "
+            "redirect to an address this client does not follow (another host, plain http, another port) is refused, not followed, and is recorded as its own "
+            "reason with a count."
         ),
     }
+    if refused:
+        result["refusal"] = RedirectRefused.__name__  # the class name and nothing else: no address, no message
+    return result
 
 
-def admit_or_decline(rows: Iterable[tuple[object, str | None]], labels: dict[str, str]) -> dict:
+def admit_or_decline(
+    rows: Iterable[tuple[object, str | None]],
+    labels: dict[str, str],
+    reasons: dict[str, str] | None = None,
+) -> dict:
     """Apply the ruling to a candidate set: name the resolvable ones, decline the rest.
 
     Rows whose name is NOT a bare Q-id pass through untouched — this rule is about
-    identifiers standing in for names, and nothing else.
+    identifiers standing in for names, and nothing else. ``reasons`` is
+    :func:`resolve_labels`'s ``declined`` map: a declined row carries the reason its lookup
+    ended with, and one it holds no reason for reads as ``label_not_resolved``.
     """
+    reasons = reasons or {}
     admitted: list[dict] = []
     declined: list[dict] = []
     for rid, name in rows:
@@ -182,13 +222,26 @@ def admit_or_decline(rows: Iterable[tuple[object, str | None]], labels: dict[str
         if label:
             admitted.append({"id": rid, "name": label, "renamed_from": qid})
         else:
-            declined.append({
-                "id": rid, "qid": qid, "reason": DECLINED_UNRESOLVED,
-                "detail": (
-                    "The name is a bare Wikidata identifier and no label was resolved for "
-                    "it, so admitting it would put an identifier in the catalogue where a "
-                    "name belongs. The row is left for a later pass, not discarded."
-                ),
-            })
+            reason = reasons.get(qid, DECLINED_UNRESOLVED)
+            detail = (
+                "The name is a bare Wikidata identifier and no label was resolved for "
+                "it, so admitting it would put an identifier in the catalogue where a "
+                "name belongs. The row is left for a later pass, not discarded."
+            )
+            if reason == DECLINED_TRANSPORT:
+                detail = (
+                    "The name is a bare Wikidata identifier. The lookup was not sent: protected fetch mode is on and no usable proxy is "
+                    "configured, so the request is refused rather than sent directly. Admitting the row would put an identifier in the "
+                    "catalogue where a name belongs, so it is left for a later pass, not discarded."
+                )
+            elif reason == DECLINED_REDIRECT_REFUSED:
+                detail = (
+                    "The name is a bare Wikidata identifier. Wikidata answered the lookup "
+                    "with a redirect to an address this client does not follow (another host, plain http or another port), which is refused rather than followed, "
+                    "so no label was resolved and admitting the row would put an identifier "
+                    "in the catalogue where a name belongs. The row is left for a later "
+                    "pass, not discarded."
+                )
+            declined.append({"id": rid, "qid": qid, "reason": reason, "detail": detail})
     return {"admitted": admitted, "declined": declined,
             "admitted_count": len(admitted), "declined_count": len(declined)}

@@ -47,6 +47,7 @@ https://ollama.com/download rather than pretend to auto-install.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import platform
 import shutil
@@ -57,8 +58,15 @@ from pathlib import Path
 
 from src.paths import data_dir
 
+logger = logging.getLogger(__name__)
+
 # The ollama/ollama latest-release API. Its assets carry GitHub-attested digests.
 GITHUB_LATEST_RELEASE = "https://api.github.com/repos/ollama/ollama/releases/latest"
+# The one host that lookup talks to, pinned EQUAL to GITHUB_LATEST_RELEASE's host by a test. A redirect off it is refused rather than
+# followed (GitHub answers a renamed repository with a 301 to ``/repositories/<id>/...`` on the SAME host, which stays allowed). The
+# asset download that response names is NOT listed: it follows a URL the response chooses, to storage whose host has moved before, and
+# its bytes are checked against the attested sha256 instead (docs/SECURITY.md, "Local AI install & weights").
+GITHUB_API_HOSTS = ("api.github.com",)
 # The official Linux installer asset name within that release.
 INSTALLER_ASSET_NAME = "install.sh"
 
@@ -74,6 +82,23 @@ class InstallerUnavailable(InstallerError):
 class InstallerVerificationError(InstallerError):
     """The downloaded installer did not match GitHub's attested checksum (or none
     was attested). We never run an unverified script."""
+
+
+class InstallerRedirectRefused(InstallerVerificationError):
+    """GitHub's release lookup answered with a redirect off ``api.github.com``, which is refused rather than followed.
+
+    A subclass, so the route that maps a verification failure to 502 maps this one too and a test can pin the reason apart from a
+    checksum mismatch. Its text is fixed: it names neither the host the redirect pointed at nor the URL (a traceback chain is a sink), so
+    a person is told what did not happen and where to install Ollama by hand.
+    """
+
+    MESSAGE = (
+        "GitHub's release lookup was redirected somewhere this app does not follow. Nothing was "
+        "downloaded and nothing was run. Install Ollama from https://ollama.com/download."
+    )
+
+    def __init__(self) -> None:
+        super().__init__(self.MESSAGE)
 
 
 # --------------------------------------------------------------------------- #
@@ -385,10 +410,19 @@ def run_installer(path: str) -> Iterator[str]:
 # guarded_session in the app keeps refusing under the kill switch.
 def _default_get_json(url: str) -> dict:
     from src.ingest.egress_window import PURPOSE_AI_INSTALL
-    from src.safety.fetcher import guarded_session
+    from src.safety.fetcher import RedirectRefused, guarded_session
 
-    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL)
-    resp = session.get(url, timeout=30)
+    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL, allowed_hosts=GITHUB_API_HOSTS)
+    refused = False
+    try:
+        resp = session.get(url, timeout=30)
+    except RedirectRefused:
+        # Only the class name is logged, and the exception raised below is raised OUTSIDE this block, so it has neither a cause nor a
+        # context: nothing the refused hop carried can ride a traceback into a log or a response.
+        logger.warning("Ollama installer: the release lookup's redirect was refused (%s)", RedirectRefused.__name__)
+        refused = True
+    if refused:
+        raise InstallerRedirectRefused()
     resp.raise_for_status()
     return resp.json()
 
