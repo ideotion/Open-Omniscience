@@ -1699,8 +1699,12 @@ _STMT_LABEL_CHARS = 120
 
 
 def _stmt_label(sql: str) -> str:
-    """A stable, short, whitespace-collapsed label for one SQL statement."""
-    return " ".join((sql or "").split())[:_STMT_LABEL_CHARS]
+    """A stable, short, whitespace-collapsed label for one SQL statement.
+
+    The statement is checked for the held passphrase WHOLE, before the whitespace is collapsed and before the cut: the label goes to the
+    beat files and the journal, and a cut through a key leaves its start, which no later check can know. (Nothing the merge runs holds a
+    key today -- ``tests/test_sink_sweep_writer_gaps.py`` pins that -- so this is the net beneath that reading.)"""
+    return " ".join(scrubbed(sql or "").split())[:_STMT_LABEL_CHARS]
 
 
 @contextmanager
