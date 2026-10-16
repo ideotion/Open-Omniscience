@@ -30,6 +30,7 @@ from pathlib import Path
 
 import yaml
 
+from src.catalog.countries import config_country
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ def _load_file(p: Path) -> list[City]:
                 name=str(c["name"]),
                 lat=lat,
                 lon=lon,
-                country=(str(c.get("country", "")).lower() or None),
+                country=(str(config_country(c.get("country", ""))).lower() or None),
                 population=c.get("population"),
                 qid=_clean_qid(c.get("qid")),
                 osm=_clean_osm(c.get("osm")),

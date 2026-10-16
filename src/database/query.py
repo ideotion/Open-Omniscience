@@ -153,13 +153,13 @@ def release_between_pieces(session) -> bool:
     reads sees them expired: it loads them AFTER the pieces, as ``trending`` and the corpus keyword rows do, or
     loads them again (``source_quality`` does).
 
-    THE SESSION'S OWN FLAGS CANNOT SEE EVERY WRITE: DML run through ``session.execute(text(...))`` or on
-    ``session.connection()`` sets none of them (``release_idle_connection`` reads ``new/dirty/deleted``, the
-    write flags and a savepoint), and rolling back there discards the write without a sound (MEASURED by the
-    deep read of this PR: both writes were lost, a Core ``update()`` through ``session.execute`` was not). The
-    DRIVER knows: its connection reports ``in_transaction`` after any write and not after a SELECT (pysqlite's
-    legacy mode begins none), so a session with a transaction open on the driver is declined as well, which
-    also declines a snapshot session whatever the registry says (it holds an explicit BEGIN)."""
+    A WRITE THE SESSION'S FLAGS CANNOT SEE (DML run through ``session.execute(text(...))`` or on ``session.connection()``) is declined
+    by ``release_idle_connection`` itself: it compares the rows the driver's connection has changed with the count taken when the
+    transaction began, so every caller of it gets that, not this helper alone (this helper used to ask the driver's ``in_transaction``
+    for it, and the collector's wrapper and the all-diagnostics build did not). What is asked here is the other thing the flag says: a
+    session whose connection has a transaction open may be holding an explicit BEGIN, which is exactly what a
+    ``read_snapshot_session`` holds on purpose, so it is declined whatever the registry says (the all-diagnostics build is the caller
+    that WANTS such a pin given back, and calls the primitive)."""
     try:
         from src.database.read_snapshot import holds_snapshot
         from src.database.session import release_idle_connection

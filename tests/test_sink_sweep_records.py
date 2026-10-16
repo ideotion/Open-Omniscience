@@ -26,25 +26,29 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
          "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption"}
-MODULES = sorted(
-    p.relative_to(ROOT).as_posix()
-    for entry in ("src/scheduler", "src/wiki")
-    for p in (ROOT / entry).rglob("*.py")
-) + sorted(
-    p.relative_to(ROOT).as_posix() for entry in ("src/backup", "src/ingest", "src/database") for p in (ROOT / entry).rglob("*.py")
-) + sorted(
-    p.relative_to(ROOT).as_posix() for p in (ROOT / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py"
-) + sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py"))
-#: Slice 5: every OTHER package of ``src/`` and the top-level modules (the sweep reads the whole program). ``static`` holds no Python; a module
-#: added to any package is read from its first commit.
+#: Packages the earlier slices named one by one; every OTHER package of ``src/`` and the top-level modules are read by slice 5's glob (the
+#: sweep reads the whole program). ``static`` holds no Python; a module added to any package is read from its first commit.
 _SWEEP_DONE = {"scheduler", "wiki", "backup", "ingest", "database", "monitoring", "api", "static", "__pycache__"}
-_S5_MODULES: set[str] = set()
-MODULES += sorted(
-    p.relative_to(ROOT).as_posix()
-    for p in (ROOT / "src").rglob("*.py")
-    if p.relative_to(ROOT / "src").parts[0] not in _SWEEP_DONE
-)
-_S5_MODULES.update(m for m in MODULES if m.split('/')[1] not in _SWEEP_DONE)
+
+
+def _collect_modules(root: Path) -> list[str]:
+    """Every module of ``src/`` under ``root`` the records guard reads: the packages the first slices named, then every other one by glob.
+    ``secret_scrub.py`` is the one file left out (it IS the scrub, and its own words are pinned by the helper-body tests)."""
+    named: list[str] = []
+    for entries in (("src/scheduler", "src/wiki"), ("src/backup", "src/ingest", "src/database")):
+        named += sorted(p.relative_to(root).as_posix() for entry in entries for p in (root / entry).rglob("*.py"))
+    named += sorted(p.relative_to(root).as_posix() for p in (root / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py")
+    named += sorted(p.relative_to(root).as_posix() for p in (root / "src/api").rglob("*.py"))
+    rest = sorted(
+        p.relative_to(root).as_posix()
+        for p in (root / "src").rglob("*.py")
+        if p.relative_to(root / "src").parts[0] not in _SWEEP_DONE
+    )
+    return named + rest
+
+
+MODULES = _collect_modules(ROOT)
+_S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DONE}
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
@@ -96,6 +100,11 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     "src/wiki/history.py": {
         ('retry_after_of', 'response = getattr(exc, "response", None)'): 1,
+    },
+    # ``RedirectRefused.reason`` is one of the fixed sentences ``refuse_unlisted_host`` writes (never the URL or the host), so ORES's detail
+    # for a refused redirect is that sentence and no part of the exception's own text (tests/test_session_host_list.py pins the sentence).
+    "src/wiki/ores.py": {
+        ('OresClient.score', 'self._note("refused_redirect", exc.reason)'): 1,
     },
     "src/wiki/walk.py": {
         ('_http_status', 'status = getattr(getattr(exc, "response", None), "status_code", None)'): 1,
@@ -285,6 +294,15 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_mark_wrote', 'session.info[_WROTE_FLAG] = True'): 1,
         ('_clear_wrote', 'session.info.pop(_WROTE_FLAG, None)'): 1,
         ('release_idle_connection', 'if session.info.get(_WROTE_FLAG) or session.info.get(_WRITE_GATE_SESSION_FLAG):'): 2,
+        # The release's rows-changed baseline and statement flag (2026-10-16): dictionaries on the session and on the DBAPI connection's
+        # ``info``, holding an integer and a boolean. None is a log call and none carries text.
+        ('_note_rows_changed_at_begin', 'baseline = session.info.setdefault(_CHANGES_BASELINE, {})'): 1,
+        ('_note_connection_transaction_start', 'info = conn.info'): 1,
+        ('_note_rows_changed_at_begin', 'earlier = connection.info.get(_CONNECTION_BEGAN_AT)'): 1,
+        ('_note_statement_that_is_not_a_read', 'conn.info[_NON_READ_STATEMENT] = True'): 1,
+        ('_clear_wrote', 'session.info.pop(_CHANGES_BASELINE, None)'): 1,
+        ('release_idle_connection', 'if connection.info.get(_NON_READ_STATEMENT):'): 1,
+        ('release_idle_connection', 'began_at = session.info.get(_CHANGES_BASELINE) or {}'): 1,
     },
     'src/database/verify.py': {
         ('classify_error', 'found = damage.corruption_of(exc)'): 1,
@@ -668,6 +686,30 @@ def test_the_sweep_reads_the_whole_scheduler_and_wiki_trees():
     assert len(on_disk) >= 20, "the directory glob found no module: the test would pass over nothing"
 
 
+def test_every_module_under_src_is_read_by_the_records_guard():
+    """No file of ``src/`` sits outside the guard's tables: a new module in ANY package, or a whole new package, is read from its first
+    commit. ``secret_scrub.py`` is the only file left out, by name."""
+    on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*.py")}
+    assert on_disk - set(MODULES) == {"src/monitoring/secret_scrub.py"}, sorted(on_disk - set(MODULES))
+    assert len(on_disk) >= 300, "the glob found almost nothing: the test would pass over nothing"
+
+
+def test_a_planted_package_and_a_planted_module_are_read(tmp_path):
+    """The proof the guard above can fail: a package that exists nowhere in the tables, and a module added to a package the first slices
+    named, both come out of the collector; a file the collector must leave out does not."""
+    for rel in ("src/zzplanted/__init__.py", "src/zzplanted/deep/inner.py", "src/api/zz_new_route.py", "src/scheduler/zz_new.py",
+                "src/monitoring/zz_new.py", "src/topmodule.py"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("", encoding="utf-8")
+    (tmp_path / "src/monitoring/secret_scrub.py").write_text("", encoding="utf-8")
+    (tmp_path / "src/static").mkdir()
+    (tmp_path / "src/static/readme.txt").write_text("", encoding="utf-8")
+    found = set(_collect_modules(tmp_path))
+    assert {"src/zzplanted/__init__.py", "src/zzplanted/deep/inner.py", "src/api/zz_new_route.py", "src/scheduler/zz_new.py",
+            "src/monitoring/zz_new.py", "src/topmodule.py"} <= found
+    assert "src/monitoring/secret_scrub.py" not in found
+
+
 _HANDLER = "def f():\n    try:\n        pass\n    except Exception as exc:\n        {body}\n"
 
 
@@ -891,6 +933,11 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_concurrent', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
     },
+    'src/llm/installer.py': {
+        # failure_words returns "HTTP <status>" or the exception's class name and nothing of its text (tests/test_session_host_list.py pins it)
+        ('_get_within', 'failure = failure_words(exc)'): 1,
+        ('_default_get_json', 'failure = failure_words(exc)'): 1,
+    },
     'src/llm/ollama.py': {
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
         ('OllamaClient.generate', 'f"Ollama error for model {model!r}: {_http_error_text(exc)}"'): 1,
@@ -923,7 +970,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/llm/vllm_lifecycle.py': {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
-        ('record_install_attempt', '"error": (str(error)[:500] if error else None),'): 2,
+        ('record_install_attempt', '"error": (scrubbed(str(error))[:500] if error else None),'): 2,
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_install_job._journal', 'error=error,'): 1,
     },
@@ -960,6 +1007,8 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/safety/fetcher.py': {
         # a fixed sentence of that function, never the URL
         ('refuse_unlisted_host', 'raise RedirectRefused(str(exc)) from None  # a fixed sentence of that function, never the URL'): 1,
+        # reads an HTTP error answer's status code to word the failure as "HTTP <status>"; the exception's text is never read
+        ('failure_words', 'response = getattr(exc, "response", None) if isinstance(exc, requests.exceptions.HTTPError) else None'): 1,
     },
     'src/safety/settings.py': {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written

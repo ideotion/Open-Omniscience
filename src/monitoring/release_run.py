@@ -1376,6 +1376,15 @@ def _heartbeat_sample(run: _Run) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+def _law_probe() -> dict[str, Any]:
+    """The law probe as the run records it: the checks, or the failure named (a catalogue that is there and cannot be
+    read is recorded as that error, never as "no documents")."""
+    try:
+        return _law_live_checks()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": record_text(exc, limit=300, typed=True)}
+
+
 def _law_live_checks() -> dict[str, Any]:
     """Fetch ONE tracked document per priority host through the ethical fetcher, and
     parse the CLML one with the adapter. URLs come from the catalogue, never from a
@@ -2444,10 +2453,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         elif params.online_probes:
             def _probes() -> dict[str, Any]:
                 out: dict[str, Any] = {}
-                try:
-                    out["law"] = _law_live_checks()
-                except Exception as exc:  # noqa: BLE001
-                    out["law"] = {"error": record_text(exc, limit=300, typed=True)}
+                out["law"] = _law_probe()
                 try:
                     out["weights"] = _weights_digest_proposal()
                 except Exception as exc:  # noqa: BLE001

@@ -47,8 +47,14 @@ from src.database.models import LawDocument
 COVERAGE_NO_COUNTRY = "no-country-on-tracked-documents"
 COVERAGE_NO_ENUMERATION = "no-official-enumeration"
 COVERAGE_UNIT_UNDECLARED = "enumerated-unit-undeclared"
+#: The catalogue file is there and could not be read: the denominators are UNCHECKED, which is not "none exist".
+COVERAGE_UNCHECKED = "catalogue-unreadable"
 
 _COVERAGE_REASONS = {
+    COVERAGE_UNCHECKED: (
+        "The law catalogue file is present but could not be read, so this jurisdiction's official enumeration was "
+        "not looked up. Unchecked, not absent: nothing here says no enumeration exists."
+    ),
     COVERAGE_NO_COUNTRY: (
         "The documents tracked under this jurisdiction state no country, so the catalog's "
         "official enumerations (which are keyed by country) could not be looked up at all. "
@@ -250,11 +256,19 @@ def law_coverage_report(
     # ONE catalog parse, shared by both consumers below. Read separately they cost 553 ms
     # each on the shipped file, and this report is a member of the all-diagnostics bundle
     # -- paying twice for the same bytes is avoidable rather than acceptable.
-    from src.law.catalog import load_legal_catalog
+    from src.law.catalog import LawCatalogUnreadable, load_legal_catalog
+    from src.monitoring.secret_scrub import http_detail
 
-    catalog = load_legal_catalog()
+    # A catalogue that is there and cannot be read ends the denominators as UNCHECKED with the reason, in the report
+    # itself: the tracked-document counts below come from the database and stay true, and nothing is read as "no
+    # enumeration exists".
+    catalog_error: str | None = None
+    try:
+        catalog = load_legal_catalog()
+    except LawCatalogUnreadable as exc:
+        catalog, catalog_error = None, http_detail(exc)
     enum_by_country = (
-        official_enumerations(catalog) if enumerations is None else enumerations
+        {} if catalog_error else official_enumerations(catalog) if enumerations is None else enumerations
     )
     tracked_countries: set[str] = set()
 
@@ -292,6 +306,8 @@ def law_coverage_report(
         figures = [f for c in countries for f in enum_by_country.get(c, [])]
         if not countries:
             state = COVERAGE_NO_COUNTRY
+        elif catalog_error:
+            state = COVERAGE_UNCHECKED
         elif not figures:
             state = COVERAGE_NO_ENUMERATION
         else:
@@ -325,12 +341,31 @@ def law_coverage_report(
     # the jurisdictions already being watched, which is the shape that lets a vertical
     # look healthy while covering almost nothing.
     untracked = sorted(set(enum_by_country) - tracked_countries)
+    unchecked = {"state": "unchecked", "reason": catalog_error}
+    # The usual keys stay, null: a figure that was not looked up is not a zero (an absent key would read as one).
+    unchecked_extraction = {
+        **unchecked,
+        **dict.fromkeys(
+            (
+                "pdf_extractor_available", "ocr_available", "tracked_documents_whose_url_ends_pdf", "tracked_documents",
+                "catalog_sources_with_a_declared_format_list", "catalog_sources_publishing_pdf_only", "catalog_sources",
+                "method", "caveat",
+            )
+        ),
+    }
+    unchecked_enumeration = {
+        **unchecked,
+        **dict.fromkeys(
+            ("countries_with_an_official_count", "figures", "countries_enumerated_but_untracked", "untracked", "method", "caveat")
+        ),
+    }
     return {
         "documents": total_docs,
         "baselined": total_baselined,
+        "catalog": {"readable": catalog_error is None, "error": catalog_error},
         "jurisdictions": jurisdictions,
-        "extraction": _pdf_reach(session, catalog),
-        "enumeration": {
+        "extraction": unchecked_extraction if catalog_error else _pdf_reach(session, catalog),
+        "enumeration": unchecked_enumeration if catalog_error else {
             "countries_with_an_official_count": len(enum_by_country),
             "figures": sum(len(v) for v in enum_by_country.values()),
             "countries_enumerated_but_untracked": len(untracked),

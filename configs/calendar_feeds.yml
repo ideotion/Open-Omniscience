@@ -31,7 +31,7 @@ families:
   - key: holidays-ad
     name: 'Andorra — public holidays'
     kind: holidays
-    country: AD
+    country: AND
     feeds:
       - id: google-hol-ad
         provider: 'Google Calendar'
@@ -44,7 +44,7 @@ families:
   - key: holidays-ae
     name: 'United Arab Emirates — public holidays'
     kind: holidays
-    country: AE
+    country: ARE
     feeds:
       - id: google-hol-ae
         provider: 'Google Calendar'
@@ -57,7 +57,7 @@ families:
   - key: holidays-af
     name: 'Afghanistan — public holidays'
     kind: holidays
-    country: AF
+    country: AFG
     feeds:
       - id: google-hol-af
         provider: 'Google Calendar'
@@ -70,7 +70,7 @@ families:
   - key: holidays-ag
     name: 'Antigua & Barbuda — public holidays'
     kind: holidays
-    country: AG
+    country: ATG
     feeds:
       - id: google-hol-ag
         provider: 'Google Calendar'
@@ -83,7 +83,7 @@ families:
   - key: holidays-ai
     name: 'Anguilla — public holidays'
     kind: holidays
-    country: AI
+    country: AIA
     feeds:
       - id: google-hol-ai
         provider: 'Google Calendar'
@@ -96,7 +96,7 @@ families:
   - key: holidays-al
     name: 'Albania — public holidays'
     kind: holidays
-    country: AL
+    country: ALB
     feeds:
       - id: google-hol-al
         provider: 'Google Calendar'
@@ -109,7 +109,7 @@ families:
   - key: holidays-am
     name: 'Armenia — public holidays'
     kind: holidays
-    country: AM
+    country: ARM
     feeds:
       - id: google-hol-am
         provider: 'Google Calendar'
@@ -122,7 +122,7 @@ families:
   - key: holidays-an
     name: 'Netherlands Antilles — public holidays'
     kind: holidays
-    country: AN
+    country: ANT
     feeds:
       - id: wph-hol-an
         provider: 'WorldPublicHoliday'
@@ -131,7 +131,7 @@ families:
   - key: holidays-ao
     name: 'Angola — public holidays'
     kind: holidays
-    country: AO
+    country: AGO
     feeds:
       - id: google-hol-ao
         provider: 'Google Calendar'
@@ -144,7 +144,7 @@ families:
   - key: holidays-ar
     name: 'Argentina — public holidays'
     kind: holidays
-    country: AR
+    country: ARG
     feeds:
       - id: google-hol-ar
         provider: 'Google Calendar'
@@ -157,7 +157,7 @@ families:
   - key: holidays-as
     name: 'American Samoa — public holidays'
     kind: holidays
-    country: AS
+    country: ASM
     feeds:
       - id: google-hol-as
         provider: 'Google Calendar'
@@ -170,7 +170,7 @@ families:
   - key: holidays-at
     name: 'Austria — public holidays'
     kind: holidays
-    country: AT
+    country: AUT
     feeds:
       - id: google-hol-at
         provider: 'Google Calendar'
@@ -183,7 +183,7 @@ families:
   - key: holidays-au
     name: 'Australia — public holidays'
     kind: holidays
-    country: AU
+    country: AUS
     feeds:
       - id: google-hol-au
         provider: 'Google Calendar'
@@ -196,7 +196,7 @@ families:
   - key: holidays-aw
     name: 'Aruba — public holidays'
     kind: holidays
-    country: AW
+    country: ABW
     feeds:
       - id: google-hol-aw
         provider: 'Google Calendar'
@@ -209,7 +209,7 @@ families:
   - key: holidays-ax
     name: 'Aland Islands — public holidays'
     kind: holidays
-    country: AX
+    country: ALA
     feeds:
       - id: wph-hol-ax
         provider: 'WorldPublicHoliday'
@@ -218,7 +218,7 @@ families:
   - key: holidays-az
     name: 'Azerbaijan — public holidays'
     kind: holidays
-    country: AZ
+    country: AZE
     feeds:
       - id: google-hol-az
         provider: 'Google Calendar'
@@ -231,7 +231,7 @@ families:
   - key: holidays-ba
     name: 'Bosnia & Herzegovina — public holidays'
     kind: holidays
-    country: BA
+    country: BIH
     feeds:
       - id: google-hol-ba
         provider: 'Google Calendar'
@@ -244,7 +244,7 @@ families:
   - key: holidays-bb
     name: 'Barbados — public holidays'
     kind: holidays
-    country: BB
+    country: BRB
     feeds:
       - id: google-hol-bb
         provider: 'Google Calendar'
@@ -257,7 +257,7 @@ families:
   - key: holidays-bd
     name: 'Bangladesh — public holidays'
     kind: holidays
-    country: BD
+    country: BGD
     feeds:
       - id: google-hol-bd
         provider: 'Google Calendar'
@@ -270,7 +270,7 @@ families:
   - key: holidays-be
     name: 'Belgium — public holidays'
     kind: holidays
-    country: BE
+    country: BEL
     feeds:
       - id: google-hol-be
         provider: 'Google Calendar'
@@ -283,7 +283,7 @@ families:
   - key: holidays-bf
     name: 'Burkina Faso — public holidays'
     kind: holidays
-    country: BF
+    country: BFA
     feeds:
       - id: google-hol-bf
         provider: 'Google Calendar'
@@ -296,7 +296,7 @@ families:
   - key: holidays-bg
     name: 'Bulgaria — public holidays'
     kind: holidays
-    country: BG
+    country: BGR
     feeds:
       - id: google-hol-bg
         provider: 'Google Calendar'
@@ -309,7 +309,7 @@ families:
   - key: holidays-bh
     name: 'Bahrain — public holidays'
     kind: holidays
-    country: BH
+    country: BHR
     feeds:
       - id: google-hol-bh
         provider: 'Google Calendar'
@@ -322,7 +322,7 @@ families:
   - key: holidays-bi
     name: 'Burundi — public holidays'
     kind: holidays
-    country: BI
+    country: BDI
     feeds:
       - id: google-hol-bi
         provider: 'Google Calendar'
@@ -335,7 +335,7 @@ families:
   - key: holidays-bj
     name: 'Benin — public holidays'
     kind: holidays
-    country: BJ
+    country: BEN
     feeds:
       - id: google-hol-bj
         provider: 'Google Calendar'
@@ -348,7 +348,7 @@ families:
   - key: holidays-bl
     name: 'St. Barthélemy — public holidays'
     kind: holidays
-    country: BL
+    country: BLM
     feeds:
       - id: google-hol-bl
         provider: 'Google Calendar'
@@ -361,7 +361,7 @@ families:
   - key: holidays-bm
     name: 'Bermuda — public holidays'
     kind: holidays
-    country: BM
+    country: BMU
     feeds:
       - id: google-hol-bm
         provider: 'Google Calendar'
@@ -374,7 +374,7 @@ families:
   - key: holidays-bn
     name: 'Brunei — public holidays'
     kind: holidays
-    country: BN
+    country: BRN
     feeds:
       - id: google-hol-bn
         provider: 'Google Calendar'
@@ -387,7 +387,7 @@ families:
   - key: holidays-bo
     name: 'Bolivia — public holidays'
     kind: holidays
-    country: BO
+    country: BOL
     feeds:
       - id: google-hol-bo
         provider: 'Google Calendar'
@@ -400,7 +400,7 @@ families:
   - key: holidays-bq
     name: 'Bonaire, Saint Eustatius and Saba — public holidays'
     kind: holidays
-    country: BQ
+    country: BES
     feeds:
       - id: wph-hol-bq
         provider: 'WorldPublicHoliday'
@@ -409,7 +409,7 @@ families:
   - key: holidays-br
     name: 'Brazil — public holidays'
     kind: holidays
-    country: BR
+    country: BRA
     feeds:
       - id: google-hol-br
         provider: 'Google Calendar'
@@ -422,7 +422,7 @@ families:
   - key: holidays-bs
     name: 'Bahamas — public holidays'
     kind: holidays
-    country: BS
+    country: BHS
     feeds:
       - id: google-hol-bs
         provider: 'Google Calendar'
@@ -435,7 +435,7 @@ families:
   - key: holidays-bt
     name: 'Bhutan — public holidays'
     kind: holidays
-    country: BT
+    country: BTN
     feeds:
       - id: google-hol-bt
         provider: 'Google Calendar'
@@ -444,7 +444,7 @@ families:
   - key: holidays-bv
     name: 'Bouvet Island — public holidays'
     kind: holidays
-    country: BV
+    country: BVT
     feeds:
       - id: wph-hol-bv
         provider: 'WorldPublicHoliday'
@@ -453,7 +453,7 @@ families:
   - key: holidays-bw
     name: 'Botswana — public holidays'
     kind: holidays
-    country: BW
+    country: BWA
     feeds:
       - id: google-hol-bw
         provider: 'Google Calendar'
@@ -466,7 +466,7 @@ families:
   - key: holidays-by
     name: 'Belarus — public holidays'
     kind: holidays
-    country: BY
+    country: BLR
     feeds:
       - id: google-hol-by
         provider: 'Google Calendar'
@@ -479,7 +479,7 @@ families:
   - key: holidays-bz
     name: 'Belize — public holidays'
     kind: holidays
-    country: BZ
+    country: BLZ
     feeds:
       - id: google-hol-bz
         provider: 'Google Calendar'
@@ -492,7 +492,7 @@ families:
   - key: holidays-ca
     name: 'Canada — public holidays'
     kind: holidays
-    country: CA
+    country: CAN
     feeds:
       - id: google-hol-ca
         provider: 'Google Calendar'
@@ -505,7 +505,7 @@ families:
   - key: holidays-cc
     name: 'Cocos Islands — public holidays'
     kind: holidays
-    country: CC
+    country: CCK
     feeds:
       - id: wph-hol-cc
         provider: 'WorldPublicHoliday'
@@ -514,7 +514,7 @@ families:
   - key: holidays-cd
     name: 'Congo - Kinshasa — public holidays'
     kind: holidays
-    country: CD
+    country: COD
     feeds:
       - id: google-hol-cd
         provider: 'Google Calendar'
@@ -527,7 +527,7 @@ families:
   - key: holidays-cf
     name: 'Central African Republic — public holidays'
     kind: holidays
-    country: CF
+    country: CAF
     feeds:
       - id: google-hol-cf
         provider: 'Google Calendar'
@@ -540,7 +540,7 @@ families:
   - key: holidays-cg
     name: 'Congo - Brazzaville — public holidays'
     kind: holidays
-    country: CG
+    country: COG
     feeds:
       - id: google-hol-cg
         provider: 'Google Calendar'
@@ -553,7 +553,7 @@ families:
   - key: holidays-ch
     name: 'Switzerland — public holidays'
     kind: holidays
-    country: CH
+    country: CHE
     feeds:
       - id: google-hol-ch
         provider: 'Google Calendar'
@@ -566,7 +566,7 @@ families:
   - key: holidays-ci
     name: "Côte d'Ivoire — public holidays"
     kind: holidays
-    country: CI
+    country: CIV
     feeds:
       - id: google-hol-ci
         provider: 'Google Calendar'
@@ -579,7 +579,7 @@ families:
   - key: holidays-ck
     name: 'Cook Islands — public holidays'
     kind: holidays
-    country: CK
+    country: COK
     feeds:
       - id: google-hol-ck
         provider: 'Google Calendar'
@@ -592,7 +592,7 @@ families:
   - key: holidays-cl
     name: 'Chile — public holidays'
     kind: holidays
-    country: CL
+    country: CHL
     feeds:
       - id: google-hol-cl
         provider: 'Google Calendar'
@@ -605,7 +605,7 @@ families:
   - key: holidays-cm
     name: 'Cameroon — public holidays'
     kind: holidays
-    country: CM
+    country: CMR
     feeds:
       - id: google-hol-cm
         provider: 'Google Calendar'
@@ -618,7 +618,7 @@ families:
   - key: holidays-cn
     name: 'China — public holidays'
     kind: holidays
-    country: CN
+    country: CHN
     feeds:
       - id: google-hol-cn
         provider: 'Google Calendar'
@@ -631,7 +631,7 @@ families:
   - key: holidays-co
     name: 'Colombia — public holidays'
     kind: holidays
-    country: CO
+    country: COL
     feeds:
       - id: google-hol-co
         provider: 'Google Calendar'
@@ -644,7 +644,7 @@ families:
   - key: holidays-cr
     name: 'Costa Rica — public holidays'
     kind: holidays
-    country: CR
+    country: CRI
     feeds:
       - id: google-hol-cr
         provider: 'Google Calendar'
@@ -657,7 +657,7 @@ families:
   - key: holidays-cu
     name: 'Cuba — public holidays'
     kind: holidays
-    country: CU
+    country: CUB
     feeds:
       - id: google-hol-cu
         provider: 'Google Calendar'
@@ -670,7 +670,7 @@ families:
   - key: holidays-cv
     name: 'Cape Verde — public holidays'
     kind: holidays
-    country: CV
+    country: CPV
     feeds:
       - id: google-hol-cv
         provider: 'Google Calendar'
@@ -683,7 +683,7 @@ families:
   - key: holidays-cw
     name: 'Curaçao — public holidays'
     kind: holidays
-    country: CW
+    country: CUW
     feeds:
       - id: google-hol-cw
         provider: 'Google Calendar'
@@ -696,7 +696,7 @@ families:
   - key: holidays-cx
     name: 'Christmas Island — public holidays'
     kind: holidays
-    country: CX
+    country: CXR
     feeds:
       - id: wph-hol-cx
         provider: 'WorldPublicHoliday'
@@ -705,7 +705,7 @@ families:
   - key: holidays-cy
     name: 'Cyprus — public holidays'
     kind: holidays
-    country: CY
+    country: CYP
     feeds:
       - id: google-hol-cy
         provider: 'Google Calendar'
@@ -718,7 +718,7 @@ families:
   - key: holidays-cz
     name: 'Czechia — public holidays'
     kind: holidays
-    country: CZ
+    country: CZE
     feeds:
       - id: google-hol-cz
         provider: 'Google Calendar'
@@ -731,7 +731,7 @@ families:
   - key: holidays-de
     name: 'Germany — public holidays'
     kind: holidays
-    country: DE
+    country: DEU
     feeds:
       - id: google-hol-de
         provider: 'Google Calendar'
@@ -744,7 +744,7 @@ families:
   - key: holidays-dj
     name: 'Djibouti — public holidays'
     kind: holidays
-    country: DJ
+    country: DJI
     feeds:
       - id: google-hol-dj
         provider: 'Google Calendar'
@@ -757,7 +757,7 @@ families:
   - key: holidays-dk
     name: 'Denmark — public holidays'
     kind: holidays
-    country: DK
+    country: DNK
     feeds:
       - id: google-hol-dk
         provider: 'Google Calendar'
@@ -770,7 +770,7 @@ families:
   - key: holidays-dm
     name: 'Dominica — public holidays'
     kind: holidays
-    country: DM
+    country: DMA
     feeds:
       - id: google-hol-dm
         provider: 'Google Calendar'
@@ -783,7 +783,7 @@ families:
   - key: holidays-do
     name: 'Dominican Republic — public holidays'
     kind: holidays
-    country: DO
+    country: DOM
     feeds:
       - id: google-hol-do
         provider: 'Google Calendar'
@@ -796,7 +796,7 @@ families:
   - key: holidays-dz
     name: 'Algeria — public holidays'
     kind: holidays
-    country: DZ
+    country: DZA
     feeds:
       - id: google-hol-dz
         provider: 'Google Calendar'
@@ -809,7 +809,7 @@ families:
   - key: holidays-ec
     name: 'Ecuador — public holidays'
     kind: holidays
-    country: EC
+    country: ECU
     feeds:
       - id: google-hol-ec
         provider: 'Google Calendar'
@@ -822,7 +822,7 @@ families:
   - key: holidays-ee
     name: 'Estonia — public holidays'
     kind: holidays
-    country: EE
+    country: EST
     feeds:
       - id: google-hol-ee
         provider: 'Google Calendar'
@@ -835,7 +835,7 @@ families:
   - key: holidays-eg
     name: 'Egypt — public holidays'
     kind: holidays
-    country: EG
+    country: EGY
     feeds:
       - id: google-hol-eg
         provider: 'Google Calendar'
@@ -848,7 +848,7 @@ families:
   - key: holidays-eh
     name: 'Western Sahara — public holidays'
     kind: holidays
-    country: EH
+    country: ESH
     feeds:
       - id: wph-hol-eh
         provider: 'WorldPublicHoliday'
@@ -857,7 +857,7 @@ families:
   - key: holidays-er
     name: 'Eritrea — public holidays'
     kind: holidays
-    country: ER
+    country: ERI
     feeds:
       - id: google-hol-er
         provider: 'Google Calendar'
@@ -870,7 +870,7 @@ families:
   - key: holidays-es
     name: 'Spain — public holidays'
     kind: holidays
-    country: ES
+    country: ESP
     feeds:
       - id: google-hol-es
         provider: 'Google Calendar'
@@ -883,7 +883,7 @@ families:
   - key: holidays-et
     name: 'Ethiopia — public holidays'
     kind: holidays
-    country: ET
+    country: ETH
     feeds:
       - id: google-hol-et
         provider: 'Google Calendar'
@@ -896,7 +896,7 @@ families:
   - key: holidays-fi
     name: 'Finland — public holidays'
     kind: holidays
-    country: FI
+    country: FIN
     feeds:
       - id: google-hol-fi
         provider: 'Google Calendar'
@@ -909,7 +909,7 @@ families:
   - key: holidays-fj
     name: 'Fiji — public holidays'
     kind: holidays
-    country: FJ
+    country: FJI
     feeds:
       - id: google-hol-fj
         provider: 'Google Calendar'
@@ -922,7 +922,7 @@ families:
   - key: holidays-fk
     name: 'Falkland Islands — public holidays'
     kind: holidays
-    country: FK
+    country: FLK
     feeds:
       - id: google-hol-fk
         provider: 'Google Calendar'
@@ -935,7 +935,7 @@ families:
   - key: holidays-fm
     name: 'Micronesia — public holidays'
     kind: holidays
-    country: FM
+    country: FSM
     feeds:
       - id: google-hol-fm
         provider: 'Google Calendar'
@@ -948,7 +948,7 @@ families:
   - key: holidays-fo
     name: 'Faroe Islands — public holidays'
     kind: holidays
-    country: FO
+    country: FRO
     feeds:
       - id: google-hol-fo
         provider: 'Google Calendar'
@@ -961,7 +961,7 @@ families:
   - key: holidays-fr
     name: 'France — public holidays'
     kind: holidays
-    country: FR
+    country: FRA
     feeds:
       - id: google-hol-fr
         provider: 'Google Calendar'
@@ -974,7 +974,7 @@ families:
   - key: holidays-ga
     name: 'Gabon — public holidays'
     kind: holidays
-    country: GA
+    country: GAB
     feeds:
       - id: google-hol-ga
         provider: 'Google Calendar'
@@ -987,7 +987,7 @@ families:
   - key: holidays-gb
     name: 'United Kingdom — public holidays'
     kind: holidays
-    country: GB
+    country: GBR
     feeds:
       - id: google-hol-gb
         provider: 'Google Calendar'
@@ -1000,7 +1000,7 @@ families:
   - key: holidays-gd
     name: 'Grenada — public holidays'
     kind: holidays
-    country: GD
+    country: GRD
     feeds:
       - id: google-hol-gd
         provider: 'Google Calendar'
@@ -1013,7 +1013,7 @@ families:
   - key: holidays-ge
     name: 'Georgia — public holidays'
     kind: holidays
-    country: GE
+    country: GEO
     feeds:
       - id: google-hol-ge
         provider: 'Google Calendar'
@@ -1026,7 +1026,7 @@ families:
   - key: holidays-gf
     name: 'French Guiana — public holidays'
     kind: holidays
-    country: GF
+    country: GUF
     feeds:
       - id: google-hol-gf
         provider: 'Google Calendar'
@@ -1039,7 +1039,7 @@ families:
   - key: holidays-gg
     name: 'Guernsey — public holidays'
     kind: holidays
-    country: GG
+    country: GGY
     feeds:
       - id: google-hol-gg
         provider: 'Google Calendar'
@@ -1052,7 +1052,7 @@ families:
   - key: holidays-gh
     name: 'Ghana — public holidays'
     kind: holidays
-    country: GH
+    country: GHA
     feeds:
       - id: google-hol-gh
         provider: 'Google Calendar'
@@ -1065,7 +1065,7 @@ families:
   - key: holidays-gi
     name: 'Gibraltar — public holidays'
     kind: holidays
-    country: GI
+    country: GIB
     feeds:
       - id: google-hol-gi
         provider: 'Google Calendar'
@@ -1078,7 +1078,7 @@ families:
   - key: holidays-gl
     name: 'Greenland — public holidays'
     kind: holidays
-    country: GL
+    country: GRL
     feeds:
       - id: google-hol-gl
         provider: 'Google Calendar'
@@ -1091,7 +1091,7 @@ families:
   - key: holidays-gm
     name: 'Gambia — public holidays'
     kind: holidays
-    country: GM
+    country: GMB
     feeds:
       - id: google-hol-gm
         provider: 'Google Calendar'
@@ -1104,7 +1104,7 @@ families:
   - key: holidays-gn
     name: 'Guinea — public holidays'
     kind: holidays
-    country: GN
+    country: GIN
     feeds:
       - id: google-hol-gn
         provider: 'Google Calendar'
@@ -1117,7 +1117,7 @@ families:
   - key: holidays-gp
     name: 'Guadeloupe — public holidays'
     kind: holidays
-    country: GP
+    country: GLP
     feeds:
       - id: google-hol-gp
         provider: 'Google Calendar'
@@ -1130,7 +1130,7 @@ families:
   - key: holidays-gq
     name: 'Equatorial Guinea — public holidays'
     kind: holidays
-    country: GQ
+    country: GNQ
     feeds:
       - id: google-hol-gq
         provider: 'Google Calendar'
@@ -1143,7 +1143,7 @@ families:
   - key: holidays-gr
     name: 'Greece — public holidays'
     kind: holidays
-    country: GR
+    country: GRC
     feeds:
       - id: google-hol-gr
         provider: 'Google Calendar'
@@ -1156,7 +1156,7 @@ families:
   - key: holidays-gt
     name: 'Guatemala — public holidays'
     kind: holidays
-    country: GT
+    country: GTM
     feeds:
       - id: google-hol-gt
         provider: 'Google Calendar'
@@ -1169,7 +1169,7 @@ families:
   - key: holidays-gu
     name: 'Guam — public holidays'
     kind: holidays
-    country: GU
+    country: GUM
     feeds:
       - id: google-hol-gu
         provider: 'Google Calendar'
@@ -1182,7 +1182,7 @@ families:
   - key: holidays-gw
     name: 'Guinea-Bissau — public holidays'
     kind: holidays
-    country: GW
+    country: GNB
     feeds:
       - id: google-hol-gw
         provider: 'Google Calendar'
@@ -1195,7 +1195,7 @@ families:
   - key: holidays-gy
     name: 'Guyana — public holidays'
     kind: holidays
-    country: GY
+    country: GUY
     feeds:
       - id: google-hol-gy
         provider: 'Google Calendar'
@@ -1208,7 +1208,7 @@ families:
   - key: holidays-hk
     name: 'Hong Kong — public holidays'
     kind: holidays
-    country: HK
+    country: HKG
     feeds:
       - id: google-hol-hk
         provider: 'Google Calendar'
@@ -1221,7 +1221,7 @@ families:
   - key: holidays-hm
     name: 'Heard & McDonald Islands — public holidays'
     kind: holidays
-    country: HM
+    country: HMD
     feeds:
       - id: wph-hol-hm
         provider: 'WorldPublicHoliday'
@@ -1230,7 +1230,7 @@ families:
   - key: holidays-hn
     name: 'Honduras — public holidays'
     kind: holidays
-    country: HN
+    country: HND
     feeds:
       - id: google-hol-hn
         provider: 'Google Calendar'
@@ -1243,7 +1243,7 @@ families:
   - key: holidays-hr
     name: 'Croatia — public holidays'
     kind: holidays
-    country: HR
+    country: HRV
     feeds:
       - id: google-hol-hr
         provider: 'Google Calendar'
@@ -1256,7 +1256,7 @@ families:
   - key: holidays-ht
     name: 'Haiti — public holidays'
     kind: holidays
-    country: HT
+    country: HTI
     feeds:
       - id: google-hol-ht
         provider: 'Google Calendar'
@@ -1269,7 +1269,7 @@ families:
   - key: holidays-hu
     name: 'Hungary — public holidays'
     kind: holidays
-    country: HU
+    country: HUN
     feeds:
       - id: google-hol-hu
         provider: 'Google Calendar'
@@ -1282,7 +1282,7 @@ families:
   - key: holidays-id
     name: 'Indonesia — public holidays'
     kind: holidays
-    country: ID
+    country: IDN
     feeds:
       - id: google-hol-id
         provider: 'Google Calendar'
@@ -1295,7 +1295,7 @@ families:
   - key: holidays-ie
     name: 'Ireland — public holidays'
     kind: holidays
-    country: IE
+    country: IRL
     feeds:
       - id: google-hol-ie
         provider: 'Google Calendar'
@@ -1308,7 +1308,7 @@ families:
   - key: holidays-il
     name: 'Israel — public holidays'
     kind: holidays
-    country: IL
+    country: ISR
     feeds:
       - id: google-hol-il
         provider: 'Google Calendar'
@@ -1321,7 +1321,7 @@ families:
   - key: holidays-im
     name: 'Isle of Man — public holidays'
     kind: holidays
-    country: IM
+    country: IMN
     feeds:
       - id: google-hol-im
         provider: 'Google Calendar'
@@ -1334,7 +1334,7 @@ families:
   - key: holidays-in
     name: 'India — public holidays'
     kind: holidays
-    country: IN
+    country: IND
     feeds:
       - id: google-hol-in
         provider: 'Google Calendar'
@@ -1347,7 +1347,7 @@ families:
   - key: holidays-io
     name: 'British Indian Ocean Territory — public holidays'
     kind: holidays
-    country: IO
+    country: IOT
     feeds:
       - id: wph-hol-io
         provider: 'WorldPublicHoliday'
@@ -1356,7 +1356,7 @@ families:
   - key: holidays-iq
     name: 'Iraq — public holidays'
     kind: holidays
-    country: IQ
+    country: IRQ
     feeds:
       - id: google-hol-iq
         provider: 'Google Calendar'
@@ -1369,7 +1369,7 @@ families:
   - key: holidays-ir
     name: 'Iran — public holidays'
     kind: holidays
-    country: IR
+    country: IRN
     feeds:
       - id: google-hol-ir
         provider: 'Google Calendar'
@@ -1382,7 +1382,7 @@ families:
   - key: holidays-is
     name: 'Iceland — public holidays'
     kind: holidays
-    country: IS
+    country: ISL
     feeds:
       - id: google-hol-is
         provider: 'Google Calendar'
@@ -1395,7 +1395,7 @@ families:
   - key: holidays-it
     name: 'Italy — public holidays'
     kind: holidays
-    country: IT
+    country: ITA
     feeds:
       - id: google-hol-it
         provider: 'Google Calendar'
@@ -1408,7 +1408,7 @@ families:
   - key: holidays-je
     name: 'Jersey — public holidays'
     kind: holidays
-    country: JE
+    country: JEY
     feeds:
       - id: google-hol-je
         provider: 'Google Calendar'
@@ -1421,7 +1421,7 @@ families:
   - key: holidays-jm
     name: 'Jamaica — public holidays'
     kind: holidays
-    country: JM
+    country: JAM
     feeds:
       - id: google-hol-jm
         provider: 'Google Calendar'
@@ -1434,7 +1434,7 @@ families:
   - key: holidays-jo
     name: 'Jordan — public holidays'
     kind: holidays
-    country: JO
+    country: JOR
     feeds:
       - id: google-hol-jo
         provider: 'Google Calendar'
@@ -1447,7 +1447,7 @@ families:
   - key: holidays-jp
     name: 'Japan — public holidays'
     kind: holidays
-    country: JP
+    country: JPN
     feeds:
       - id: google-hol-jp
         provider: 'Google Calendar'
@@ -1460,7 +1460,7 @@ families:
   - key: holidays-ke
     name: 'Kenya — public holidays'
     kind: holidays
-    country: KE
+    country: KEN
     feeds:
       - id: google-hol-ke
         provider: 'Google Calendar'
@@ -1473,7 +1473,7 @@ families:
   - key: holidays-kg
     name: 'Kyrgyzstan — public holidays'
     kind: holidays
-    country: KG
+    country: KGZ
     feeds:
       - id: google-hol-kg
         provider: 'Google Calendar'
@@ -1486,7 +1486,7 @@ families:
   - key: holidays-kh
     name: 'Cambodia — public holidays'
     kind: holidays
-    country: KH
+    country: KHM
     feeds:
       - id: google-hol-kh
         provider: 'Google Calendar'
@@ -1499,7 +1499,7 @@ families:
   - key: holidays-ki
     name: 'Kiribati — public holidays'
     kind: holidays
-    country: KI
+    country: KIR
     feeds:
       - id: google-hol-ki
         provider: 'Google Calendar'
@@ -1512,7 +1512,7 @@ families:
   - key: holidays-km
     name: 'Comoros — public holidays'
     kind: holidays
-    country: KM
+    country: COM
     feeds:
       - id: google-hol-km
         provider: 'Google Calendar'
@@ -1525,7 +1525,7 @@ families:
   - key: holidays-kn
     name: 'St. Kitts & Nevis — public holidays'
     kind: holidays
-    country: KN
+    country: KNA
     feeds:
       - id: google-hol-kn
         provider: 'Google Calendar'
@@ -1538,7 +1538,7 @@ families:
   - key: holidays-kp
     name: 'North Korea — public holidays'
     kind: holidays
-    country: KP
+    country: PRK
     feeds:
       - id: google-hol-kp
         provider: 'Google Calendar'
@@ -1551,7 +1551,7 @@ families:
   - key: holidays-kr
     name: 'South Korea — public holidays'
     kind: holidays
-    country: KR
+    country: KOR
     feeds:
       - id: google-hol-kr
         provider: 'Google Calendar'
@@ -1564,7 +1564,7 @@ families:
   - key: holidays-kw
     name: 'Kuwait — public holidays'
     kind: holidays
-    country: KW
+    country: KWT
     feeds:
       - id: google-hol-kw
         provider: 'Google Calendar'
@@ -1577,7 +1577,7 @@ families:
   - key: holidays-ky
     name: 'Cayman Islands — public holidays'
     kind: holidays
-    country: KY
+    country: CYM
     feeds:
       - id: google-hol-ky
         provider: 'Google Calendar'
@@ -1590,7 +1590,7 @@ families:
   - key: holidays-kz
     name: 'Kazakhstan — public holidays'
     kind: holidays
-    country: KZ
+    country: KAZ
     feeds:
       - id: google-hol-kz
         provider: 'Google Calendar'
@@ -1603,7 +1603,7 @@ families:
   - key: holidays-la
     name: 'Laos — public holidays'
     kind: holidays
-    country: LA
+    country: LAO
     feeds:
       - id: google-hol-la
         provider: 'Google Calendar'
@@ -1616,7 +1616,7 @@ families:
   - key: holidays-lb
     name: 'Lebanon — public holidays'
     kind: holidays
-    country: LB
+    country: LBN
     feeds:
       - id: google-hol-lb
         provider: 'Google Calendar'
@@ -1629,7 +1629,7 @@ families:
   - key: holidays-lc
     name: 'St. Lucia — public holidays'
     kind: holidays
-    country: LC
+    country: LCA
     feeds:
       - id: google-hol-lc
         provider: 'Google Calendar'
@@ -1642,7 +1642,7 @@ families:
   - key: holidays-li
     name: 'Liechtenstein — public holidays'
     kind: holidays
-    country: LI
+    country: LIE
     feeds:
       - id: google-hol-li
         provider: 'Google Calendar'
@@ -1655,7 +1655,7 @@ families:
   - key: holidays-lk
     name: 'Sri Lanka — public holidays'
     kind: holidays
-    country: LK
+    country: LKA
     feeds:
       - id: google-hol-lk
         provider: 'Google Calendar'
@@ -1664,7 +1664,7 @@ families:
   - key: holidays-lr
     name: 'Liberia — public holidays'
     kind: holidays
-    country: LR
+    country: LBR
     feeds:
       - id: google-hol-lr
         provider: 'Google Calendar'
@@ -1677,7 +1677,7 @@ families:
   - key: holidays-ls
     name: 'Lesotho — public holidays'
     kind: holidays
-    country: LS
+    country: LSO
     feeds:
       - id: google-hol-ls
         provider: 'Google Calendar'
@@ -1690,7 +1690,7 @@ families:
   - key: holidays-lt
     name: 'Lithuania — public holidays'
     kind: holidays
-    country: LT
+    country: LTU
     feeds:
       - id: google-hol-lt
         provider: 'Google Calendar'
@@ -1703,7 +1703,7 @@ families:
   - key: holidays-lu
     name: 'Luxembourg — public holidays'
     kind: holidays
-    country: LU
+    country: LUX
     feeds:
       - id: google-hol-lu
         provider: 'Google Calendar'
@@ -1716,7 +1716,7 @@ families:
   - key: holidays-lv
     name: 'Latvia — public holidays'
     kind: holidays
-    country: LV
+    country: LVA
     feeds:
       - id: google-hol-lv
         provider: 'Google Calendar'
@@ -1729,7 +1729,7 @@ families:
   - key: holidays-ly
     name: 'Libya — public holidays'
     kind: holidays
-    country: LY
+    country: LBY
     feeds:
       - id: google-hol-ly
         provider: 'Google Calendar'
@@ -1742,7 +1742,7 @@ families:
   - key: holidays-ma
     name: 'Morocco — public holidays'
     kind: holidays
-    country: MA
+    country: MAR
     feeds:
       - id: google-hol-ma
         provider: 'Google Calendar'
@@ -1755,7 +1755,7 @@ families:
   - key: holidays-mc
     name: 'Monaco — public holidays'
     kind: holidays
-    country: MC
+    country: MCO
     feeds:
       - id: google-hol-mc
         provider: 'Google Calendar'
@@ -1768,7 +1768,7 @@ families:
   - key: holidays-md
     name: 'Moldova — public holidays'
     kind: holidays
-    country: MD
+    country: MDA
     feeds:
       - id: google-hol-md
         provider: 'Google Calendar'
@@ -1781,7 +1781,7 @@ families:
   - key: holidays-me
     name: 'Montenegro — public holidays'
     kind: holidays
-    country: ME
+    country: MNE
     feeds:
       - id: google-hol-me
         provider: 'Google Calendar'
@@ -1794,7 +1794,7 @@ families:
   - key: holidays-mf
     name: 'St. Martin — public holidays'
     kind: holidays
-    country: MF
+    country: MAF
     feeds:
       - id: google-hol-mf
         provider: 'Google Calendar'
@@ -1807,7 +1807,7 @@ families:
   - key: holidays-mg
     name: 'Madagascar — public holidays'
     kind: holidays
-    country: MG
+    country: MDG
     feeds:
       - id: google-hol-mg
         provider: 'Google Calendar'
@@ -1820,7 +1820,7 @@ families:
   - key: holidays-mh
     name: 'Marshall Islands — public holidays'
     kind: holidays
-    country: MH
+    country: MHL
     feeds:
       - id: google-hol-mh
         provider: 'Google Calendar'
@@ -1833,7 +1833,7 @@ families:
   - key: holidays-mk
     name: 'North Macedonia — public holidays'
     kind: holidays
-    country: MK
+    country: MKD
     feeds:
       - id: google-hol-mk
         provider: 'Google Calendar'
@@ -1846,7 +1846,7 @@ families:
   - key: holidays-ml
     name: 'Mali — public holidays'
     kind: holidays
-    country: ML
+    country: MLI
     feeds:
       - id: google-hol-ml
         provider: 'Google Calendar'
@@ -1859,7 +1859,7 @@ families:
   - key: holidays-mm
     name: 'Myanmar (Burma) — public holidays'
     kind: holidays
-    country: MM
+    country: MMR
     feeds:
       - id: google-hol-mm
         provider: 'Google Calendar'
@@ -1868,7 +1868,7 @@ families:
   - key: holidays-mn
     name: 'Mongolia — public holidays'
     kind: holidays
-    country: MN
+    country: MNG
     feeds:
       - id: google-hol-mn
         provider: 'Google Calendar'
@@ -1881,7 +1881,7 @@ families:
   - key: holidays-mo
     name: 'Macao — public holidays'
     kind: holidays
-    country: MO
+    country: MAC
     feeds:
       - id: google-hol-mo
         provider: 'Google Calendar'
@@ -1894,7 +1894,7 @@ families:
   - key: holidays-mp
     name: 'Northern Mariana Islands — public holidays'
     kind: holidays
-    country: MP
+    country: MNP
     feeds:
       - id: google-hol-mp
         provider: 'Google Calendar'
@@ -1907,7 +1907,7 @@ families:
   - key: holidays-mq
     name: 'Martinique — public holidays'
     kind: holidays
-    country: MQ
+    country: MTQ
     feeds:
       - id: google-hol-mq
         provider: 'Google Calendar'
@@ -1920,7 +1920,7 @@ families:
   - key: holidays-mr
     name: 'Mauritania — public holidays'
     kind: holidays
-    country: MR
+    country: MRT
     feeds:
       - id: google-hol-mr
         provider: 'Google Calendar'
@@ -1933,7 +1933,7 @@ families:
   - key: holidays-ms
     name: 'Montserrat — public holidays'
     kind: holidays
-    country: MS
+    country: MSR
     feeds:
       - id: google-hol-ms
         provider: 'Google Calendar'
@@ -1946,7 +1946,7 @@ families:
   - key: holidays-mt
     name: 'Malta — public holidays'
     kind: holidays
-    country: MT
+    country: MLT
     feeds:
       - id: google-hol-mt
         provider: 'Google Calendar'
@@ -1959,7 +1959,7 @@ families:
   - key: holidays-mu
     name: 'Mauritius — public holidays'
     kind: holidays
-    country: MU
+    country: MUS
     feeds:
       - id: google-hol-mu
         provider: 'Google Calendar'
@@ -1972,7 +1972,7 @@ families:
   - key: holidays-mv
     name: 'Maldives — public holidays'
     kind: holidays
-    country: MV
+    country: MDV
     feeds:
       - id: google-hol-mv
         provider: 'Google Calendar'
@@ -1985,7 +1985,7 @@ families:
   - key: holidays-mw
     name: 'Malawi — public holidays'
     kind: holidays
-    country: MW
+    country: MWI
     feeds:
       - id: google-hol-mw
         provider: 'Google Calendar'
@@ -1998,7 +1998,7 @@ families:
   - key: holidays-mx
     name: 'Mexico — public holidays'
     kind: holidays
-    country: MX
+    country: MEX
     feeds:
       - id: google-hol-mx
         provider: 'Google Calendar'
@@ -2011,7 +2011,7 @@ families:
   - key: holidays-my
     name: 'Malaysia — public holidays'
     kind: holidays
-    country: MY
+    country: MYS
     feeds:
       - id: google-hol-my
         provider: 'Google Calendar'
@@ -2024,7 +2024,7 @@ families:
   - key: holidays-mz
     name: 'Mozambique — public holidays'
     kind: holidays
-    country: MZ
+    country: MOZ
     feeds:
       - id: google-hol-mz
         provider: 'Google Calendar'
@@ -2037,7 +2037,7 @@ families:
   - key: holidays-na
     name: 'Namibia — public holidays'
     kind: holidays
-    country: NA
+    country: NAM
     feeds:
       - id: google-hol-na
         provider: 'Google Calendar'
@@ -2050,7 +2050,7 @@ families:
   - key: holidays-nc
     name: 'New Caledonia — public holidays'
     kind: holidays
-    country: NC
+    country: NCL
     feeds:
       - id: google-hol-nc
         provider: 'Google Calendar'
@@ -2063,7 +2063,7 @@ families:
   - key: holidays-ne
     name: 'Niger — public holidays'
     kind: holidays
-    country: NE
+    country: NER
     feeds:
       - id: google-hol-ne
         provider: 'Google Calendar'
@@ -2076,7 +2076,7 @@ families:
   - key: holidays-nf
     name: 'Norfolk Island — public holidays'
     kind: holidays
-    country: NF
+    country: NFK
     feeds:
       - id: wph-hol-nf
         provider: 'WorldPublicHoliday'
@@ -2085,7 +2085,7 @@ families:
   - key: holidays-ng
     name: 'Nigeria — public holidays'
     kind: holidays
-    country: NG
+    country: NGA
     feeds:
       - id: google-hol-ng
         provider: 'Google Calendar'
@@ -2098,7 +2098,7 @@ families:
   - key: holidays-ni
     name: 'Nicaragua — public holidays'
     kind: holidays
-    country: NI
+    country: NIC
     feeds:
       - id: google-hol-ni
         provider: 'Google Calendar'
@@ -2111,7 +2111,7 @@ families:
   - key: holidays-nl
     name: 'Netherlands — public holidays'
     kind: holidays
-    country: NL
+    country: NLD
     feeds:
       - id: google-hol-nl
         provider: 'Google Calendar'
@@ -2126,7 +2126,7 @@ families:
     kind: holidays
     # Quoted: YAML 1.1 reads a bare NO as the boolean false (the "Norway problem"),
     # which left this one family with no country at all.
-    country: 'NO'
+    country: 'NOR'
     feeds:
       - id: google-hol-no
         provider: 'Google Calendar'
@@ -2139,7 +2139,7 @@ families:
   - key: holidays-np
     name: 'Nepal — public holidays'
     kind: holidays
-    country: NP
+    country: NPL
     feeds:
       - id: google-hol-np
         provider: 'Google Calendar'
@@ -2148,7 +2148,7 @@ families:
   - key: holidays-nr
     name: 'Nauru — public holidays'
     kind: holidays
-    country: NR
+    country: NRU
     feeds:
       - id: google-hol-nr
         provider: 'Google Calendar'
@@ -2161,7 +2161,7 @@ families:
   - key: holidays-nz
     name: 'New Zealand — public holidays'
     kind: holidays
-    country: NZ
+    country: NZL
     feeds:
       - id: google-hol-nz
         provider: 'Google Calendar'
@@ -2174,7 +2174,7 @@ families:
   - key: holidays-om
     name: 'Oman — public holidays'
     kind: holidays
-    country: OM
+    country: OMN
     feeds:
       - id: google-hol-om
         provider: 'Google Calendar'
@@ -2187,7 +2187,7 @@ families:
   - key: holidays-pa
     name: 'Panama — public holidays'
     kind: holidays
-    country: PA
+    country: PAN
     feeds:
       - id: google-hol-pa
         provider: 'Google Calendar'
@@ -2200,7 +2200,7 @@ families:
   - key: holidays-pe
     name: 'Peru — public holidays'
     kind: holidays
-    country: PE
+    country: PER
     feeds:
       - id: google-hol-pe
         provider: 'Google Calendar'
@@ -2213,7 +2213,7 @@ families:
   - key: holidays-pf
     name: 'French Polynesia — public holidays'
     kind: holidays
-    country: PF
+    country: PYF
     feeds:
       - id: google-hol-pf
         provider: 'Google Calendar'
@@ -2226,7 +2226,7 @@ families:
   - key: holidays-pg
     name: 'Papua New Guinea — public holidays'
     kind: holidays
-    country: PG
+    country: PNG
     feeds:
       - id: google-hol-pg
         provider: 'Google Calendar'
@@ -2239,7 +2239,7 @@ families:
   - key: holidays-ph
     name: 'Philippines — public holidays'
     kind: holidays
-    country: PH
+    country: PHL
     feeds:
       - id: google-hol-ph
         provider: 'Google Calendar'
@@ -2252,7 +2252,7 @@ families:
   - key: holidays-pk
     name: 'Pakistan — public holidays'
     kind: holidays
-    country: PK
+    country: PAK
     feeds:
       - id: google-hol-pk
         provider: 'Google Calendar'
@@ -2261,7 +2261,7 @@ families:
   - key: holidays-pl
     name: 'Poland — public holidays'
     kind: holidays
-    country: PL
+    country: POL
     feeds:
       - id: google-hol-pl
         provider: 'Google Calendar'
@@ -2274,7 +2274,7 @@ families:
   - key: holidays-pm
     name: 'St. Pierre & Miquelon — public holidays'
     kind: holidays
-    country: PM
+    country: SPM
     feeds:
       - id: google-hol-pm
         provider: 'Google Calendar'
@@ -2287,7 +2287,7 @@ families:
   - key: holidays-pr
     name: 'Puerto Rico — public holidays'
     kind: holidays
-    country: PR
+    country: PRI
     feeds:
       - id: google-hol-pr
         provider: 'Google Calendar'
@@ -2300,7 +2300,7 @@ families:
   - key: holidays-pt
     name: 'Portugal — public holidays'
     kind: holidays
-    country: PT
+    country: PRT
     feeds:
       - id: google-hol-pt
         provider: 'Google Calendar'
@@ -2313,7 +2313,7 @@ families:
   - key: holidays-pw
     name: 'Palau — public holidays'
     kind: holidays
-    country: PW
+    country: PLW
     feeds:
       - id: google-hol-pw
         provider: 'Google Calendar'
@@ -2326,7 +2326,7 @@ families:
   - key: holidays-py
     name: 'Paraguay — public holidays'
     kind: holidays
-    country: PY
+    country: PRY
     feeds:
       - id: google-hol-py
         provider: 'Google Calendar'
@@ -2339,7 +2339,7 @@ families:
   - key: holidays-qa
     name: 'Qatar — public holidays'
     kind: holidays
-    country: QA
+    country: QAT
     feeds:
       - id: google-hol-qa
         provider: 'Google Calendar'
@@ -2352,7 +2352,7 @@ families:
   - key: holidays-re
     name: 'Réunion — public holidays'
     kind: holidays
-    country: RE
+    country: REU
     feeds:
       - id: google-hol-re
         provider: 'Google Calendar'
@@ -2365,7 +2365,7 @@ families:
   - key: holidays-ro
     name: 'Romania — public holidays'
     kind: holidays
-    country: RO
+    country: ROU
     feeds:
       - id: google-hol-ro
         provider: 'Google Calendar'
@@ -2378,7 +2378,7 @@ families:
   - key: holidays-rs
     name: 'Serbia — public holidays'
     kind: holidays
-    country: RS
+    country: SRB
     feeds:
       - id: google-hol-rs
         provider: 'Google Calendar'
@@ -2391,7 +2391,7 @@ families:
   - key: holidays-ru
     name: 'Russia — public holidays'
     kind: holidays
-    country: RU
+    country: RUS
     feeds:
       - id: google-hol-ru
         provider: 'Google Calendar'
@@ -2404,7 +2404,7 @@ families:
   - key: holidays-rw
     name: 'Rwanda — public holidays'
     kind: holidays
-    country: RW
+    country: RWA
     feeds:
       - id: google-hol-rw
         provider: 'Google Calendar'
@@ -2417,7 +2417,7 @@ families:
   - key: holidays-sa
     name: 'Saudi Arabia — public holidays'
     kind: holidays
-    country: SA
+    country: SAU
     feeds:
       - id: google-hol-sa
         provider: 'Google Calendar'
@@ -2430,7 +2430,7 @@ families:
   - key: holidays-sb
     name: 'Solomon Islands — public holidays'
     kind: holidays
-    country: SB
+    country: SLB
     feeds:
       - id: google-hol-sb
         provider: 'Google Calendar'
@@ -2443,7 +2443,7 @@ families:
   - key: holidays-sc
     name: 'Seychelles — public holidays'
     kind: holidays
-    country: SC
+    country: SYC
     feeds:
       - id: google-hol-sc
         provider: 'Google Calendar'
@@ -2456,7 +2456,7 @@ families:
   - key: holidays-sd
     name: 'Sudan — public holidays'
     kind: holidays
-    country: SD
+    country: SDN
     feeds:
       - id: google-hol-sd
         provider: 'Google Calendar'
@@ -2469,7 +2469,7 @@ families:
   - key: holidays-se
     name: 'Sweden — public holidays'
     kind: holidays
-    country: SE
+    country: SWE
     feeds:
       - id: google-hol-se
         provider: 'Google Calendar'
@@ -2482,7 +2482,7 @@ families:
   - key: holidays-sg
     name: 'Singapore — public holidays'
     kind: holidays
-    country: SG
+    country: SGP
     feeds:
       - id: google-hol-sg
         provider: 'Google Calendar'
@@ -2495,7 +2495,7 @@ families:
   - key: holidays-sh
     name: 'St. Helena — public holidays'
     kind: holidays
-    country: SH
+    country: SHN
     feeds:
       - id: google-hol-sh
         provider: 'Google Calendar'
@@ -2508,7 +2508,7 @@ families:
   - key: holidays-si
     name: 'Slovenia — public holidays'
     kind: holidays
-    country: SI
+    country: SVN
     feeds:
       - id: google-hol-si
         provider: 'Google Calendar'
@@ -2521,7 +2521,7 @@ families:
   - key: holidays-sj
     name: 'Svalbard and Jan Mayen — public holidays'
     kind: holidays
-    country: SJ
+    country: SJM
     feeds:
       - id: wph-hol-sj
         provider: 'WorldPublicHoliday'
@@ -2530,7 +2530,7 @@ families:
   - key: holidays-sk
     name: 'Slovakia — public holidays'
     kind: holidays
-    country: SK
+    country: SVK
     feeds:
       - id: google-hol-sk
         provider: 'Google Calendar'
@@ -2543,7 +2543,7 @@ families:
   - key: holidays-sl
     name: 'Sierra Leone — public holidays'
     kind: holidays
-    country: SL
+    country: SLE
     feeds:
       - id: google-hol-sl
         provider: 'Google Calendar'
@@ -2556,7 +2556,7 @@ families:
   - key: holidays-sm
     name: 'San Marino — public holidays'
     kind: holidays
-    country: SM
+    country: SMR
     feeds:
       - id: google-hol-sm
         provider: 'Google Calendar'
@@ -2569,7 +2569,7 @@ families:
   - key: holidays-sn
     name: 'Senegal — public holidays'
     kind: holidays
-    country: SN
+    country: SEN
     feeds:
       - id: google-hol-sn
         provider: 'Google Calendar'
@@ -2582,7 +2582,7 @@ families:
   - key: holidays-so
     name: 'Somalia — public holidays'
     kind: holidays
-    country: SO
+    country: SOM
     feeds:
       - id: google-hol-so
         provider: 'Google Calendar'
@@ -2595,7 +2595,7 @@ families:
   - key: holidays-sr
     name: 'Suriname — public holidays'
     kind: holidays
-    country: SR
+    country: SUR
     feeds:
       - id: google-hol-sr
         provider: 'Google Calendar'
@@ -2608,7 +2608,7 @@ families:
   - key: holidays-ss
     name: 'South Sudan — public holidays'
     kind: holidays
-    country: SS
+    country: SSD
     feeds:
       - id: google-hol-ss
         provider: 'Google Calendar'
@@ -2621,7 +2621,7 @@ families:
   - key: holidays-st
     name: 'São Tomé & Príncipe — public holidays'
     kind: holidays
-    country: ST
+    country: STP
     feeds:
       - id: google-hol-st
         provider: 'Google Calendar'
@@ -2634,7 +2634,7 @@ families:
   - key: holidays-sv
     name: 'El Salvador — public holidays'
     kind: holidays
-    country: SV
+    country: SLV
     feeds:
       - id: google-hol-sv
         provider: 'Google Calendar'
@@ -2647,7 +2647,7 @@ families:
   - key: holidays-sx
     name: 'Sint Maarten — public holidays'
     kind: holidays
-    country: SX
+    country: SXM
     feeds:
       - id: google-hol-sx
         provider: 'Google Calendar'
@@ -2660,7 +2660,7 @@ families:
   - key: holidays-sy
     name: 'Syria — public holidays'
     kind: holidays
-    country: SY
+    country: SYR
     feeds:
       - id: google-hol-sy
         provider: 'Google Calendar'
@@ -2673,7 +2673,7 @@ families:
   - key: holidays-sz
     name: 'Eswatini — public holidays'
     kind: holidays
-    country: SZ
+    country: SWZ
     feeds:
       - id: google-hol-sz
         provider: 'Google Calendar'
@@ -2686,7 +2686,7 @@ families:
   - key: holidays-tc
     name: 'Turks & Caicos Islands — public holidays'
     kind: holidays
-    country: TC
+    country: TCA
     feeds:
       - id: google-hol-tc
         provider: 'Google Calendar'
@@ -2699,7 +2699,7 @@ families:
   - key: holidays-td
     name: 'Chad — public holidays'
     kind: holidays
-    country: TD
+    country: TCD
     feeds:
       - id: google-hol-td
         provider: 'Google Calendar'
@@ -2712,7 +2712,7 @@ families:
   - key: holidays-tg
     name: 'Togo — public holidays'
     kind: holidays
-    country: TG
+    country: TGO
     feeds:
       - id: google-hol-tg
         provider: 'Google Calendar'
@@ -2725,7 +2725,7 @@ families:
   - key: holidays-th
     name: 'Thailand — public holidays'
     kind: holidays
-    country: TH
+    country: THA
     feeds:
       - id: google-hol-th
         provider: 'Google Calendar'
@@ -2738,7 +2738,7 @@ families:
   - key: holidays-tj
     name: 'Tajikistan — public holidays'
     kind: holidays
-    country: TJ
+    country: TJK
     feeds:
       - id: google-hol-tj
         provider: 'Google Calendar'
@@ -2751,7 +2751,7 @@ families:
   - key: holidays-tk
     name: 'Tokelau — public holidays'
     kind: holidays
-    country: TK
+    country: TKL
     feeds:
       - id: wph-hol-tk
         provider: 'WorldPublicHoliday'
@@ -2760,7 +2760,7 @@ families:
   - key: holidays-tl
     name: 'Timor-Leste — public holidays'
     kind: holidays
-    country: TL
+    country: TLS
     feeds:
       - id: google-hol-tl
         provider: 'Google Calendar'
@@ -2773,7 +2773,7 @@ families:
   - key: holidays-tm
     name: 'Turkmenistan — public holidays'
     kind: holidays
-    country: TM
+    country: TKM
     feeds:
       - id: google-hol-tm
         provider: 'Google Calendar'
@@ -2786,7 +2786,7 @@ families:
   - key: holidays-tn
     name: 'Tunisia — public holidays'
     kind: holidays
-    country: TN
+    country: TUN
     feeds:
       - id: google-hol-tn
         provider: 'Google Calendar'
@@ -2799,7 +2799,7 @@ families:
   - key: holidays-to
     name: 'Tonga — public holidays'
     kind: holidays
-    country: TO
+    country: TON
     feeds:
       - id: google-hol-to
         provider: 'Google Calendar'
@@ -2812,7 +2812,7 @@ families:
   - key: holidays-tr
     name: 'Turkey — public holidays'
     kind: holidays
-    country: TR
+    country: TUR
     feeds:
       - id: google-hol-tr
         provider: 'Google Calendar'
@@ -2825,7 +2825,7 @@ families:
   - key: holidays-tt
     name: 'Trinidad & Tobago — public holidays'
     kind: holidays
-    country: TT
+    country: TTO
     feeds:
       - id: google-hol-tt
         provider: 'Google Calendar'
@@ -2838,7 +2838,7 @@ families:
   - key: holidays-tv
     name: 'Tuvalu — public holidays'
     kind: holidays
-    country: TV
+    country: TUV
     feeds:
       - id: google-hol-tv
         provider: 'Google Calendar'
@@ -2851,7 +2851,7 @@ families:
   - key: holidays-tw
     name: 'Taiwan — public holidays'
     kind: holidays
-    country: TW
+    country: TWN
     feeds:
       - id: google-hol-tw
         provider: 'Google Calendar'
@@ -2864,7 +2864,7 @@ families:
   - key: holidays-tz
     name: 'Tanzania — public holidays'
     kind: holidays
-    country: TZ
+    country: TZA
     feeds:
       - id: google-hol-tz
         provider: 'Google Calendar'
@@ -2877,7 +2877,7 @@ families:
   - key: holidays-ua
     name: 'Ukraine — public holidays'
     kind: holidays
-    country: UA
+    country: UKR
     feeds:
       - id: google-hol-ua
         provider: 'Google Calendar'
@@ -2890,7 +2890,7 @@ families:
   - key: holidays-ug
     name: 'Uganda — public holidays'
     kind: holidays
-    country: UG
+    country: UGA
     feeds:
       - id: google-hol-ug
         provider: 'Google Calendar'
@@ -2903,7 +2903,7 @@ families:
   - key: holidays-us
     name: 'United States — public holidays'
     kind: holidays
-    country: US
+    country: USA
     feeds:
       - id: google-hol-us
         provider: 'Google Calendar'
@@ -2916,7 +2916,7 @@ families:
   - key: holidays-uy
     name: 'Uruguay — public holidays'
     kind: holidays
-    country: UY
+    country: URY
     feeds:
       - id: google-hol-uy
         provider: 'Google Calendar'
@@ -2929,7 +2929,7 @@ families:
   - key: holidays-uz
     name: 'Uzbekistan — public holidays'
     kind: holidays
-    country: UZ
+    country: UZB
     feeds:
       - id: google-hol-uz
         provider: 'Google Calendar'
@@ -2942,7 +2942,7 @@ families:
   - key: holidays-va
     name: 'Vatican City — public holidays'
     kind: holidays
-    country: VA
+    country: VAT
     feeds:
       - id: google-hol-va
         provider: 'Google Calendar'
@@ -2955,7 +2955,7 @@ families:
   - key: holidays-vc
     name: 'St. Vincent & Grenadines — public holidays'
     kind: holidays
-    country: VC
+    country: VCT
     feeds:
       - id: google-hol-vc
         provider: 'Google Calendar'
@@ -2968,7 +2968,7 @@ families:
   - key: holidays-ve
     name: 'Venezuela — public holidays'
     kind: holidays
-    country: VE
+    country: VEN
     feeds:
       - id: google-hol-ve
         provider: 'Google Calendar'
@@ -2981,7 +2981,7 @@ families:
   - key: holidays-vg
     name: 'British Virgin Islands — public holidays'
     kind: holidays
-    country: VG
+    country: VGB
     feeds:
       - id: google-hol-vg
         provider: 'Google Calendar'
@@ -2994,7 +2994,7 @@ families:
   - key: holidays-vi
     name: 'U.S. Virgin Islands — public holidays'
     kind: holidays
-    country: VI
+    country: VIR
     feeds:
       - id: google-hol-vi
         provider: 'Google Calendar'
@@ -3007,7 +3007,7 @@ families:
   - key: holidays-vn
     name: 'Vietnam — public holidays'
     kind: holidays
-    country: VN
+    country: VNM
     feeds:
       - id: google-hol-vn
         provider: 'Google Calendar'
@@ -3020,7 +3020,7 @@ families:
   - key: holidays-vu
     name: 'Vanuatu — public holidays'
     kind: holidays
-    country: VU
+    country: VUT
     feeds:
       - id: google-hol-vu
         provider: 'Google Calendar'
@@ -3033,7 +3033,7 @@ families:
   - key: holidays-wf
     name: 'Wallis & Futuna — public holidays'
     kind: holidays
-    country: WF
+    country: WLF
     feeds:
       - id: google-hol-wf
         provider: 'Google Calendar'
@@ -3046,7 +3046,7 @@ families:
   - key: holidays-ws
     name: 'Samoa — public holidays'
     kind: holidays
-    country: WS
+    country: WSM
     feeds:
       - id: google-hol-ws
         provider: 'Google Calendar'
@@ -3059,7 +3059,7 @@ families:
   - key: holidays-xk
     name: 'Kosovo — public holidays'
     kind: holidays
-    country: XK
+    country: XKX
     feeds:
       - id: google-hol-xk
         provider: 'Google Calendar'
@@ -3072,7 +3072,7 @@ families:
   - key: holidays-ye
     name: 'Yemen — public holidays'
     kind: holidays
-    country: YE
+    country: YEM
     feeds:
       - id: google-hol-ye
         provider: 'Google Calendar'
@@ -3085,7 +3085,7 @@ families:
   - key: holidays-yt
     name: 'Mayotte — public holidays'
     kind: holidays
-    country: YT
+    country: MYT
     feeds:
       - id: google-hol-yt
         provider: 'Google Calendar'
@@ -3098,7 +3098,7 @@ families:
   - key: holidays-za
     name: 'South Africa — public holidays'
     kind: holidays
-    country: ZA
+    country: ZAF
     feeds:
       - id: google-hol-za
         provider: 'Google Calendar'
@@ -3111,7 +3111,7 @@ families:
   - key: holidays-zm
     name: 'Zambia — public holidays'
     kind: holidays
-    country: ZM
+    country: ZMB
     feeds:
       - id: google-hol-zm
         provider: 'Google Calendar'
@@ -3124,7 +3124,7 @@ families:
   - key: holidays-zw
     name: 'Zimbabwe — public holidays'
     kind: holidays
-    country: ZW
+    country: ZWE
     feeds:
       - id: google-hol-zw
         provider: 'Google Calendar'

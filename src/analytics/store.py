@@ -1595,6 +1595,7 @@ def reindex_all_batch(
     workers: int | None = None,
     stats: dict | None = None,
     bump_epoch: bool = True,
+    should_flush: Callable[[int, float], bool] | None = None,
 ) -> dict:
     """FORCE-re-index a batch of ALL articles (id > ``after_id``), oldest first.
 
@@ -1619,7 +1620,13 @@ def reindex_all_batch(
 
     ``bump_epoch`` is passed straight through to :func:`reindex_articles` -- see there.
     This function is PAGED, so its caller is a loop and is the one that knows where the
-    run begins and ends; the job manager passes False and takes the two bumps itself."""
+    run begins and ends; the job manager passes False and takes the two bumps itself.
+
+    ``should_flush`` (2026-10-16, write-gate holds) is passed straight through too, and decided by the CALLER for the reason given
+    there: whether a writer may be waiting is the caller's fact. Without it the width above is the only thing that ends a batch, so
+    an operator who sets ``OO_REINDEX_COMMIT_BATCH=200`` holds the single-writer gate for 200 articles (36 s at the field's 333 a
+    minute, 60 to 175 s on the machine that crashed) while a save from the UI waits. ``None`` (the default) is the count rule
+    byte-for-byte."""
     rows = (
         session.query(Article.id)
         .filter(Article.id > after_id)
@@ -1657,6 +1664,7 @@ def reindex_all_batch(
             scope=scope,
             stats=stats,
             bump_epoch=bump_epoch,
+            should_flush=should_flush,
         )
         reindexed = int(res.get("reindexed", 0))
         failed = int(res.get("failed", 0))

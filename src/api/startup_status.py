@@ -27,7 +27,7 @@ _lock = threading.Lock()
 # state: "idle" (never unlocked this process) | "running" | "ready" | "error"
 # queryable: the DB is open and usable (init_db done) — the app can be entered even
 # while the best-effort upkeep is still running in the background.
-_state: dict[str, object] = {"state": "idle", "phase": "", "error": None, "queryable": False}
+_state: dict[str, object] = {"state": "idle", "phase": "", "error": None, "queryable": False, "notes": []}
 
 
 def set_startup(
@@ -35,6 +35,8 @@ def set_startup(
 ) -> None:
     with _lock:
         _state["state"] = state
+        if state == "running":
+            _state["notes"] = []  # a new start says its own skips; the last one's are not this one's
         if phase is not None:
             _state["phase"] = phase
         _state["error"] = error
@@ -51,6 +53,15 @@ def mark_phase(phase: str) -> None:
         _state["phase"] = phase
 
 
+def note(text: str) -> None:
+    """Say, on the status the unlock page polls, that a startup step was skipped and why (a fixed sentence the caller
+    wrote, never an exception's own words). Kept for the life of the process, once per sentence."""
+    with _lock:
+        notes = _state.setdefault("notes", [])
+        if isinstance(notes, list) and text not in notes:
+            notes.append(text)
+
+
 def mark_queryable() -> None:
     """The DB is open and usable — the app may be entered now (upkeep continues)."""
     with _lock:
@@ -59,7 +70,9 @@ def mark_queryable() -> None:
 
 def get_startup() -> dict[str, object]:
     with _lock:
-        return dict(_state)
+        out = dict(_state)
+        out["notes"] = list(out.get("notes") or [])  # type: ignore[call-overload]
+        return out
 
 
 # --- the recovery step BEFORE the store is open (rank 5, phase 0) --------------------------

@@ -254,6 +254,7 @@ class ReindexJobManager:
                 reconcile_keyword_language,
                 reindex_all_batch,
             )
+            from src.backup.merge import reindex_flush_policy, reindex_hold_target_s
             from src.database.corpus_lease import corpus_lease
             from src.database.models import Article
 
@@ -308,6 +309,15 @@ class ReindexJobManager:
                     # seconds: _load_persisted int()s every tally value, so a float
                     # would silently truncate across a restart anyway.
                     st: dict = {}
+                    # THE WRITER THAT ARRIVES (write-gate holds, 2026-10-16). ``commit_batch`` is the CEILING on a batch; with
+                    # it raised the batch holds the single-writer gate from its first article to its commit, and a save from the
+                    # UI waits behind all of it (200 articles are 36 s at the field's rate). The policy ends a batch at the hold
+                    # target or when a writer is queued, the same one the backlog drain hands its batches. Resolved per page,
+                    # not once: the operator may change ``OO_REINDEX_HOLD_TARGET_S`` during a run that lasts days. Unused at
+                    # width 1, which commits inside ``index_article``. A failure to build it ends the run loudly (the error
+                    # state below) rather than silently putting the count-only rule back.
+                    hold_target_s = reindex_hold_target_s()
+                    flush_policy = reindex_flush_policy(hold_target_s)
                     with corpus_lease("reindex"):
                         r = reindex_all_batch(
                             session,
@@ -318,6 +328,7 @@ class ReindexJobManager:
                             commit_batch=commit_batch,
                             stats=st,
                             bump_epoch=False,
+                            should_flush=flush_policy,
                         )
                     after = int(r["last_id"])
                     with self._lock:
@@ -327,6 +338,16 @@ class ReindexJobManager:
                             self._tally.get("mentions_written", 0)
                             + int(st.get("mentions_written", 0) or 0)
                         )
+                        # How the batches ended, and under which rule: commits that landed, how many the policy ended early, the
+                        # target in force (0 = the count-only rule, so 0 early commits beside a raised width is then expected and
+                        # not a policy that never fired) and the longest hold of the gate by one batch. Whole numbers (the tally's
+                        # int-only reload): milliseconds, the longest kept as a maximum across pages and not summed.
+                        for _k in ("batch_commits", "early_batch_commits"):
+                            self._tally[_k] = self._tally.get(_k, 0) + int(st.get(_k, 0) or 0)
+                        self._tally["hold_target_ms"] = int(round(hold_target_s * 1000))
+                        _longest = st.get("longest_batch_s")
+                        if _longest is not None:
+                            self._tally["longest_batch_ms"] = max(self._tally.get("longest_batch_ms", 0), int(round(float(_longest) * 1000)))
                         for _k, _s in (("seconds_loading", "load_s"),
                                        ("seconds_extracting", "precompute_s"),
                                        ("seconds_writing", "apply_s")):
