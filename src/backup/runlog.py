@@ -549,7 +549,7 @@ class RunLog:
         # draw and the reason step 3 of a 19-step merge stayed unexplained.
         stmt = self._stmt
         if stmt is not None:
-            rec["sql"] = stmt[0]
+            rec["sql"] = scrubbed_value(stmt[0])  # written at the beat (15 s), not per statement; the label was cut by the merge before this saw it
             rec["sql_s"] = round(time.monotonic() - stmt[1], 1)
 
         src_name, done, total = _counter_of(prog)

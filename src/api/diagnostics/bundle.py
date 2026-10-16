@@ -47,6 +47,7 @@ from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring import diagnostics_runs as _diag_runs
+from src.monitoring.secret_scrub import UNREADABLE_TEXT as _UNREADABLE_TEXT
 from src.monitoring.secret_scrub import http_detail, log_failure
 from src.monitoring.secret_scrub import record_text as _record_text
 from src.monitoring.secret_scrub import scrubbed_value as _scrubbed_value
@@ -3346,6 +3347,11 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
         outcomes: dict[str, int] = {}
         started_at: str | None = None
         for line in item.get("lines", []):
+            if line == _UNREADABLE_TEXT:
+                # the reader's own check withheld this line before it reached here: it is withheld, not torn
+                unchecked += 1
+                out_lines.append(json.dumps({"event": "withheld", "chars": 0, "reason": "could not be checked for the passphrase", "previous_run": name}))
+                continue
             try:
                 rec = json.loads(line, parse_constant=_reject_json_constant)
                 if not isinstance(rec, dict):
@@ -3395,6 +3401,9 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
             # the run finished -- it means the journal shows no member in flight (a kill BETWEEN
             # two members, or before the first begin, leaves nothing to name).
             "unfinished": unfinished[:20],
+            # A line that was torn or withheld may have been the `end` of a member listed above as unfinished: the list is then a
+            # superset of the truth, and says so.
+            **({"unfinished_may_include_ended": True} if (unparsed or unchecked) and unfinished else {}),
             **({"unfinished_total": len(unfinished)} if len(unfinished) > 20 else {}),
             "outcomes": dict(sorted(outcomes.items())[:20]),
             "unparsed_lines": unparsed,

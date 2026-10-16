@@ -437,6 +437,21 @@ def _ring_members(base: Path) -> list[Member]:
     return out
 
 
+def _stage_json_report(src: Path, dst: Path) -> None:
+    """Copy the JSON document ``src`` to ``dst`` with the held passphrase taken out of every value in it, or a withheld stub when it cannot."""
+    from src.monitoring.secret_scrub import scrubbed_value
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        doc = scrubbed_value(json.loads(src.read_text(encoding="utf-8")))
+        if not isinstance(doc, (dict, list)):
+            raise ValueError("could not be checked")
+        text = json.dumps(doc, indent=2, default=str)
+    except (ValueError, RecursionError):  # not valid JSON or UTF-8, or not checkable: nothing of it is carried
+        text = json.dumps({"withheld": "this report could not be read as JSON, so it could not be checked for the passphrase and is not carried"})
+    dst.write_text(text, encoding="utf-8")
+
+
 def _collect_members(
     include_keys: bool, tmp_dir: Path, include_newsletters: bool = True
 ) -> list[Member]:
@@ -482,10 +497,12 @@ def _collect_members(
         for p in sorted(reports.rglob("*.json")):
             # A report of what an import did carries the error text of what failed: written scrubbed by this build, but a report an older
             # build left can hold a passphrase an engine quoted, and a backup (possibly unencrypted) is where it would leave the install.
-            # Staged line by line through the scrub, like the logs; size and sha are taken on the staged copy.
+            # It is a JSON DOCUMENT, so it is checked as one (parsed, every value checked, written again): a line-by-line copy would
+            # rewrite a number or a key that the passphrase happens to be, and tear the document. One that does not parse is withheld
+            # whole and says so. Size and sha are taken on the staged copy.
             rel = str(p.relative_to(base))
             staged_report = tmp_dir / rel
-            scrubbed_copy(p, staged_report)
+            _stage_json_report(p, staged_report)
             members.append(Member(rel, "import_reports", staged_report))
     editions = base / _BULLETIN_EDITIONS_DIR
     if editions.is_dir():

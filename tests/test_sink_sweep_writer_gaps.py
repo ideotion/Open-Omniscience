@@ -188,3 +188,24 @@ def test_a_big_journal_that_is_not_utf8_only_near_its_end_is_still_flagged(tmp_p
     (tmp_path / "20260101T000000Z-big.jsonl").write_bytes(("\n".join(json.dumps(r) for r in rows) + "\n").encode() + b'\xff\xfe{"ev":"x"}\n')
     entry = runlog.list_runs()[0]
     assert entry["milestones_not_read"]["file_not_utf8"] is True, entry
+
+
+def test_a_line_the_readers_own_check_withheld_is_counted_as_withheld(monkeypatch):
+    """The read step scrubs each line as a string; a line it withholds arrives as the fixed words and is counted as withheld, not torn.
+    MUTATION TARGET: the ``_UNREADABLE_TEXT`` branch of ``_fold_previous_run_journals``."""
+    from src.monitoring.secret_scrub import UNREADABLE_TEXT
+
+    b = _bundle()
+    text, block = b._fold_previous_run_journals({"carried": [{"journal": "j", "bytes": 1, "truncated": False, "lines": [UNREADABLE_TEXT]}], "not_carried": []})
+    assert block["runs"][0]["withheld_lines"] == 1 and block["runs"][0]["unparsed_lines"] == 0
+
+
+def test_a_member_whose_end_line_was_lost_is_listed_as_possibly_ended(monkeypatch):
+    """A torn or withheld line may have been the ``end`` of a member that is listed as unfinished: the list says it is a superset."""
+    b = _bundle()
+    begin = json.dumps({"event": "begin", "file": "m.json", "started_at": "t"})
+    _text, block = b._fold_previous_run_journals({"carried": [{"journal": "j", "bytes": 1, "truncated": False, "lines": [begin, "{torn"]}], "not_carried": []})
+    run = block["runs"][0]
+    assert run["unfinished"] == ["m.json"] and run["unfinished_may_include_ended"] is True
+    _t, clean = b._fold_previous_run_journals({"carried": [{"journal": "j", "bytes": 1, "truncated": False, "lines": [begin]}], "not_carried": []})
+    assert "unfinished_may_include_ended" not in clean["runs"][0]

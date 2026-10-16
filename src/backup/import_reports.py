@@ -26,6 +26,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.monitoring.secret_scrub import scrubbed_value
+
 _DIR_NAME = "import_reports"
 
 
@@ -438,7 +440,7 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
         if isinstance(run.get("id"), str) and run["id"]:
             out["run_id"] = run["id"]
         if run.get("label"):
-            out["label"] = str(run["label"])
+            out["label"] = scrubbed_value(str(run["label"]))  # an older build's report is listed as it is read, so it is checked here
     committed = str(data.get("outcome") or "").lower() in _COMMITTED_OUTCOMES
     raw_plan = data.get("plan")
     plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}

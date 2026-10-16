@@ -301,7 +301,7 @@ def sampled_statements(max_runs: int = _MAX_JOURNALS) -> dict[str, Any]:
                     sql = r.get("sql")
                     if not sql:
                         continue
-                    # A beat file an older build wrote may hold a label with a passphrase in it; the label is checked BEFORE it becomes
+                    # A beat file or journal may hold a label with a passphrase in it (the merge cut the label before any check could see it, and an older build wrote it unchecked); the label is checked BEFORE it becomes
                     # a key (keys are not walked by a value check) and before the bundle carries it.
                     if not isinstance(sql, str):
                         sql = str(sql)

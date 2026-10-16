@@ -293,22 +293,58 @@ def test_a_field_test_step_that_fails_does_not_record_the_key(monkeypatch, tmp_p
     assert _KEY not in raw and "probe" in raw and "false" in raw
 
 
-def test_the_single_file_backup_carries_older_import_reports_scrubbed(tmp_path, monkeypatch):
-    """``import_reports/*.json`` ride the single-file backup; a report an older build wrote holds an engine's error text. MUTATION TARGET:
-    the ``scrubbed_copy`` of the reports in ``_collect_members``."""
+def _reports_stage(tmp_path, monkeypatch, body: str):
     from src.backup import artifact
 
     monkeypatch.setattr(artifact, "data_dir", lambda: tmp_path)
     monkeypatch.setattr("src.backup.sqlite_backup.live_db_path", lambda: tmp_path / "live.db")
     monkeypatch.setattr(artifact, "snapshot_sqlite", lambda _src, dest: Path(dest).write_bytes(b""))
     d = tmp_path / "import_reports"
-    d.mkdir()
-    old = {"kind": "restore", "errors": [{"msg": f"near '{_KEY}' syntax", "esc": json.dumps(_KEY)[1:-1]}]}
-    (d / "restore-20260101T000000Z-ab.json").write_text(json.dumps(old, indent=2), encoding="utf-8")
+    d.mkdir(exist_ok=True)
+    (d / "restore-20260101T000000Z-ab.json").write_text(body, encoding="utf-8")
     out = tmp_path / "stage"
-    out.mkdir()
+    out.mkdir(exist_ok=True)
     members = [m for m in artifact._collect_members(False, out) if m.role == "import_reports"]
     assert [m.name for m in members] == ["import_reports/restore-20260101T000000Z-ab.json"]
-    staged = members[0].path.read_text(encoding="utf-8")
+    return members[0].path.read_text(encoding="utf-8")
+
+
+def test_the_single_file_backup_carries_older_import_reports_scrubbed(tmp_path, monkeypatch):
+    """``import_reports/*.json`` ride the single-file backup; a report an older build wrote holds an engine's error text. MUTATION TARGET:
+    ``_stage_json_report`` in ``artifact.py``."""
+    old = {"kind": "restore", "errors": [{"msg": f"near '{_KEY}' syntax", "esc": json.dumps(_KEY)[1:-1]}]}
+    staged = _reports_stage(tmp_path, monkeypatch, json.dumps(old, indent=2))
     assert _KEY not in staged and json.loads(staged)["kind"] == "restore"
-    assert _KEY in (d / "restore-20260101T000000Z-ab.json").read_text(encoding="utf-8"), "the live report is not rewritten"
+    assert _KEY in (tmp_path / "import_reports" / "restore-20260101T000000Z-ab.json").read_text(encoding="utf-8"), "the live report is not rewritten"
+
+
+def test_a_report_is_checked_as_a_document_not_line_by_line(tmp_path, monkeypatch):
+    """A passphrase that is also a number in the report must not tear the document (a line copy rewrote the number to the redaction
+    word, which is not JSON), and one that is a key name must not rename the key. Values are checked; keys and numbers are kept."""
+    monkeypatch.setattr(connect, "_passphrase", "20260917")
+    ss.forget_held()
+    body = json.dumps({"outcome": "ok", "plan": {"articles_merged": 20260917123}, "n": 20260917, "msg": "held 20260917 here"}, indent=2)
+    doc = json.loads(_reports_stage(tmp_path, monkeypatch, body))
+    assert doc["plan"]["articles_merged"] == 20260917123 and doc["outcome"] == "ok"
+    assert "20260917" not in doc["msg"]
+
+
+def test_a_report_that_does_not_parse_is_withheld_and_says_so(tmp_path, monkeypatch):
+    staged = _reports_stage(tmp_path, monkeypatch, '{"msg": "torn ' + _KEY)
+    assert _KEY not in staged and "withheld" in json.loads(staged)
+
+
+def test_the_report_download_and_listing_check_an_older_report(tmp_path, monkeypatch):
+    """An older build's report is served (json and md) and listed (label) with the passphrase taken out. MUTATION TARGETS: the check in
+    ``import_reports_download`` and the one on the label in ``import_reports.py``."""
+    from src.api import backup_v2
+    from src.backup import import_reports
+
+    monkeypatch.setattr(import_reports, "_reports_dir", lambda: tmp_path)
+    old = {"outcome": "ok", "import_run": {"id": "r1", "label": f"run {_KEY}"}, "errors": [f"driver said {_KEY}"]}
+    (tmp_path / "restore-20260101T000000Z-ab.json").write_text(json.dumps(old), encoding="utf-8")
+    for fmt in ("json", "md"):
+        body = backup_v2.import_reports_download("restore-20260101T000000Z-ab.json", format=fmt).body.decode()
+        assert _KEY not in body, fmt
+    facts = import_reports._report_facts(tmp_path / "restore-20260101T000000Z-ab.json", 1)
+    assert _KEY not in json.dumps(facts)
