@@ -184,7 +184,8 @@ def _time_case(case: _Case, repeats: int, session: Session | None = None) -> dic
                 err_row["note"] = case.note
             if runs:  # we got at least one timing before it failed — keep it
                 err_row["runs_ms"] = [round(r, 1) for r in runs]
-            if session is not None and _deadline_left_ms(session) is not None and _deadline_left_ms(session) <= 0:
+            left = _deadline_left_ms(session) if session is not None else None
+            if left is not None and left <= 0:
                 # the deadline stopped this statement: say so, not "interrupted", which reads as a fault of the case
                 err_row["error"] = "stopped by the member's deadline while running"
                 err_row["stopped_by_deadline"] = True
