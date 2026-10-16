@@ -671,31 +671,86 @@ def test_an_unwritable_report_path_ends_the_run_before_any_file_is_touched(tmp_p
     assert _bytes(tmp_path) == before and "REPORT NOT WRITTEN" in capsys.readouterr().err
 
 
-def test_the_temporaries_go_even_when_the_put_back_is_interrupted(tmp_path, monkeypatch):
-    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write")
-    real = os.replace
+def test_an_interrupt_during_the_put_back_does_not_skip_the_files_still_to_be_put_back(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(
+        tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD, "c.yml": "sources:\n  - {name: C, country: it}\n"},
+        "--write", "--report", str(report),
+    )
+    real, real_one = os.replace, mod._write_one
     calls = {"n": 0}
 
     def flaky(src, dst):
+        if str(dst).endswith(".json"):
+            return real(src, dst)
         calls["n"] += 1
-        if calls["n"] == 2:
+        if calls["n"] == 3:  # the third rename dies; a and b are already replaced
             raise OSError("disk went away")
         return real(src, dst)
 
-    def interrupted(path, data):
-        raise KeyboardInterrupt
+    def interrupted_on_a(path, data):
+        if path.name == "a.yml":
+            raise KeyboardInterrupt
+        return real_one(path, data)
 
     monkeypatch.setattr(mod.os, "replace", flaky)
-    monkeypatch.setattr(mod, "_write_one", interrupted)
+    monkeypatch.setattr(mod, "_write_one", interrupted_on_a)
+    assert mod.main() == 2
+    assert (tmp_path / "configs" / "b.yml").read_bytes() == B_OLD.encode(), "the put-back stopped at the interrupted file"
+    assert json.loads(report.read_text(encoding="utf-8"))["refused"]["not_put_back"] == ["a.yml"]
+    assert not list((tmp_path / "configs").glob(".*.tmp")), "an interrupt during the put-back left a temporary behind"
+
+
+def test_an_interrupt_right_after_a_rename_still_puts_that_file_back(tmp_path, monkeypatch):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write")
+    before = _bytes(tmp_path)
+    real = os.replace
+    calls = {"n": 0}
+
+    def replace_then_interrupt(src, dst):
+        calls["n"] += 1
+        real(src, dst)
+        if calls["n"] == 2:  # b is already replaced when the interrupt lands
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(mod.os, "replace", replace_then_interrupt)
     with pytest.raises(KeyboardInterrupt):
         mod.main()
-    assert not list((tmp_path / "configs").glob(".*.tmp")), "an interrupt during the put-back left a temporary behind"
+    assert _bytes(tmp_path) == before, "the file replaced just before the interrupt was left rewritten"
+
+
+def test_a_run_that_dies_between_the_early_check_and_the_end_does_not_leave_a_report_that_reads_as_clean(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(report))
+
+    def boom(_text):
+        raise ValueError("a bug")
+
+    monkeypatch.setattr(mod, "rewrite_text", boom)
+    with pytest.raises(ValueError):
+        mod.main()
+    assert json.loads(report.read_text(encoding="utf-8"))["state"] == "running"
+    monkeypatch.undo()
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(report))
+    assert mod.main() == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["state"] == "finished"
+
+
+def test_the_write_failed_line_never_prints_a_temporary_files_path(tmp_path, monkeypatch, capsys):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write")
+
+    def refuse(src, dst):
+        raise OSError(f"cannot rename {src}")
+
+    monkeypatch.setattr(mod.os, "replace", refuse)
+    assert mod.main() == 2
+    assert str(tmp_path) not in capsys.readouterr().err
 
 
 def test_a_syntax_error_or_a_wrong_shape_in_a_law_catalogue_is_the_same_named_error(tmp_path):
     from src.law import catalog as law_catalog
 
-    for body in ("sources: [unclosed\n", "- just\n- a list\n", "sources: {a: 1}\n", "documents: oops\n"):
+    for body in ("sources: [unclosed\n", "- just\n- a list\n", "sources: {a: 1}\n", "documents: oops\n", "[]\n", "0\n", "false\n"):
         target = tmp_path / "law.yml"
         target.write_text(body, encoding="utf-8")
         with pytest.raises(law_catalog.LawCatalogUnreadable, match="law.yml could not be read") as info:
@@ -725,6 +780,24 @@ def test_both_boot_sites_seed_the_law_catalogue_through_the_helper_and_say_so_on
     api_main._seed_law_catalogue(object(), seed, lambda _s: None)
     notes = startup_status.get_startup()["notes"]
     assert len(notes) == 1 and "Law sources and documents were not seeded" in notes[0] and "PermissionError" in notes[0]
+
+
+def test_a_unicode_error_still_names_the_catalogue_in_the_503_and_the_probe(tmp_path, monkeypatch):
+    from src.law import catalog as law_catalog
+    from src.monitoring import release_run
+    from src.monitoring.secret_scrub import http_detail
+
+    bad = tmp_path / "law.yml"
+    bad.write_bytes(b"sources: [\xff]\n")
+    try:
+        law_catalog._read_catalog_yaml(bad)
+    except law_catalog.LawCatalogUnreadable as exc:
+        assert "law.yml" in http_detail(exc) and "UnicodeDecodeError" in http_detail(exc)
+        assert exc.__context__ is None, "a chained UnicodeError would reduce the whole message to its class"
+    monkeypatch.setattr(law_catalog, "LEGAL_CATALOG_PATH", bad)
+    monkeypatch.setattr(law_catalog, "GENERATED_CATALOG_PATH", tmp_path / "none.yml")
+    out = release_run._law_probe()
+    assert "law.yml" in out["error"]
 
 
 def test_the_release_runs_law_probe_records_the_named_error(monkeypatch):

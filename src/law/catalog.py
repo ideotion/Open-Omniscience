@@ -55,21 +55,34 @@ class LawCatalogUnreadable(RuntimeError):
     ends the load with this, named by the file and the error's CLASS only (never a path, a line or the file's text)."""
 
 
+def _unreadable(path: Path, why: str) -> LawCatalogUnreadable:
+    return LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({why})")
+
+
 def _read_catalog_yaml(path: Path) -> dict:
+    # The error is RAISED outside the ``except`` blocks, so it carries no ``__context__``: the scrubs that walk a
+    # chain would otherwise reduce a UnicodeError's chain to its class and lose the file's name.
+    failed = ""
+    raw = ""
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {"sources": [], "documents": []}
     except (OSError, UnicodeError) as exc:
-        raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({type(exc).__name__})") from None
+        failed = type(exc).__name__
+    if failed:
+        raise _unreadable(path, failed)
+    data: object = None
     try:
-        data = yaml.safe_load(raw) or {}
+        data = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
-        raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({type(exc).__name__})") from None
-    if not isinstance(data, dict) or any(
-        not isinstance(data.get(key, []), list) for key in ("sources", "documents")
-    ):
-        raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read (it is not shaped like a catalogue)")
+        failed = type(exc).__name__
+    if failed:
+        raise _unreadable(path, failed)
+    if data is None:  # an empty file is an empty catalogue, as it always was
+        data = {}
+    if not isinstance(data, dict) or any(not isinstance(data.get(key, []), list) for key in ("sources", "documents")):
+        raise _unreadable(path, "it is not shaped like a catalogue")
     sources = [
         s
         for s in data.get("sources", [])

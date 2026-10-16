@@ -35,6 +35,8 @@ def set_startup(
 ) -> None:
     with _lock:
         _state["state"] = state
+        if state == "running":
+            _state["notes"] = []  # a new start says its own skips; the last one's are not this one's
         if phase is not None:
             _state["phase"] = phase
         _state["error"] = error

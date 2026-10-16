@@ -249,7 +249,8 @@ class ChangedSinceRead(RuntimeError):
 
 def sweep_stale_temporaries(paths: list[Path], started: float) -> tuple[list[str], list[str]]:
     """Remove the ``.<name>.<8 characters>.tmp`` files a killed run left beside the targets (the shape ``mkstemp``
-    makes, and only those older than this run's start, so a run going on right now keeps its own). Returns
+    makes, and only those older than this run's start: a run that started AFTER this one keeps its own; one that
+    started before it can lose its staged file, and then fails safe and rolls back). Returns
     ``(removed, could_not_remove)``; an unlink error is counted, never raised."""
     removed: list[str] = []
     failed: list[str] = []
@@ -290,8 +291,8 @@ def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
         for path, tmp, old in staged:
             if path.read_bytes() != old:
                 raise ChangedSinceRead(path.name)
+            replaced.append((path, old))  # BEFORE the rename: an interrupt right after it must still put this file back
             os.replace(tmp, path)
-            replaced.append((path, old))
         for directory in {path.parent for path, _tmp, _old in staged}:
             _fsync_dir(directory)
     except BaseException:
@@ -300,14 +301,22 @@ def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
             for path, old in replaced:
                 try:
                     _write_one(path, old)
-                except OSError:
-                    stuck.append(path.name)
+                except BaseException:  # noqa: BLE001 - an interrupt must not skip the files still to be put back
+                    if not _still_original(path, old):  # a rename that never happened has nothing to put back
+                        stuck.append(path.name)
         finally:
             for _path, tmp, _old in staged:
                 tmp.unlink(missing_ok=True)
         if stuck:
             raise PutBackFailed(stuck) from None
         raise
+
+
+def _still_original(path: Path, original: bytes) -> bool:
+    try:
+        return path.read_bytes() == original
+    except OSError:
+        return False
 
 
 def _write_one(path: Path, data: bytes) -> None:
@@ -327,8 +336,12 @@ def _write_one(path: Path, data: bytes) -> None:
     _fsync_dir(path.parent)
 
 
-def _write_report(path: str | None, report: dict) -> bool:
-    """Write the report beside its path and rename it into place; False (said on stderr) when that cannot be done."""
+def _write_report(path: str | None, report: dict, *, final: bool = True) -> bool:
+    """Write the report beside its path and rename it into place; False (said on stderr) when that cannot be done.
+
+    ``state`` reads ``running`` in the copy written before any work (it proves the path is writable) and ``finished``
+    in every later one, so a run that died in between does not leave a report that reads as a clean run."""
+    report["state"] = "finished" if final else "running"
     if not path:
         return True
     target = Path(path)
@@ -358,7 +371,7 @@ def main() -> int:
         "files": {}, "unplaced": [], "left": [], "refused": None,
         "stale_temporaries_removed": [], "stale_temporaries_not_removed": [],
     }
-    if not _write_report(args.report, report):  # an unwritable report path ends the run BEFORE any file is touched
+    if not _write_report(args.report, report, final=False):  # an unwritable report path ends the run BEFORE any file is touched
         print("nothing was changed", file=sys.stderr)
         return 2
     would_change = 0
@@ -407,7 +420,9 @@ def main() -> int:
         try:
             write_all_atomically(to_write)
         except (OSError, RuntimeError) as exc:
-            print(f"WRITE FAILED ({type(exc).__name__}): {exc}", file=sys.stderr)
+            # An OSError's own text carries the temporary file's full path; only this script's own errors say more.
+            said = str(exc) if isinstance(exc, (PutBackFailed, ChangedSinceRead)) else "every original was left as it was"
+            print(f"WRITE FAILED ({type(exc).__name__}): {said}", file=sys.stderr)
             report["refused"] = {"write_failed": type(exc).__name__}
             if isinstance(exc, PutBackFailed):
                 report["refused"]["not_put_back"] = exc.files

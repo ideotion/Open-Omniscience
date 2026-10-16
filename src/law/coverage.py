@@ -257,6 +257,7 @@ def law_coverage_report(
     # each on the shipped file, and this report is a member of the all-diagnostics bundle
     # -- paying twice for the same bytes is avoidable rather than acceptable.
     from src.law.catalog import LawCatalogUnreadable, load_legal_catalog
+    from src.monitoring.secret_scrub import http_detail
 
     # A catalogue that is there and cannot be read ends the denominators as UNCHECKED with the reason, in the report
     # itself: the tracked-document counts below come from the database and stay true, and nothing is read as "no
@@ -265,7 +266,7 @@ def law_coverage_report(
     try:
         catalog = load_legal_catalog()
     except LawCatalogUnreadable as exc:
-        catalog, catalog_error = None, str(exc)
+        catalog, catalog_error = None, http_detail(exc)
     enum_by_country = (
         {} if catalog_error else official_enumerations(catalog) if enumerations is None else enumerations
     )

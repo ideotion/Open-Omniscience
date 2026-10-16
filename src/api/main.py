@@ -94,9 +94,11 @@ except PackageNotFoundError:  # pragma: no cover - only when not pip-installed
 
 
 def _seed_law_catalogue(session, seed_legal_sources, register_documents) -> None:
-    """Seed the law portals and register the trackable documents; a catalogue file that is there and cannot be read
-    ends THIS step, named in the log and on the startup status, and never the rest of the boot's seeding (unreadable is not absent: it is not
-    read as an empty catalogue either, and the next boot tries again)."""
+    """Seed the law portals and register the trackable documents; a law catalogue file that is there and cannot be used
+    ends THIS step, named in the log and on the startup status (the status payload; the unlock page does not draw it),
+    and not the steps after it. The curated ``configs/legal_sources.yml`` is also read by ``seed_default_sources``
+    before this runs, and a failure THERE still ends the whole block as it always did (unreadable is not absent: it is
+    not read as an empty catalogue either, and the next boot tries again)."""
     from src.api.startup_status import note
     from src.law.catalog import LawCatalogUnreadable
 
@@ -105,7 +107,7 @@ def _seed_law_catalogue(session, seed_legal_sources, register_documents) -> None
         register_documents(session)
     except LawCatalogUnreadable as exc:
         log_failure(logger, "the law catalogue could not be read; its sources and documents were not seeded this boot", exc, level=logging.WARNING)
-        note(f"Law sources and documents were not seeded this start: {exc}. Everything else started normally.")
+        note(f"Law sources and documents were not seeded this start: {http_detail(exc)}.")
 
 
 def _note_boot_init_db() -> None:
