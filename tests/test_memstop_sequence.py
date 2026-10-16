@@ -71,7 +71,7 @@ def test_the_evidence_is_on_disk_before_the_ladder_runs_again(stop):
     calls, disk, data = stop
     memstop.execute(DECISION, _Guard())
     assert disk["release_again"] is True and disk["snapshot"] is False, "the snapshot is the very first act; the record follows it"
-    rec = json.loads((data / "memory_stop.json").read_text())
+    rec = json.loads((data / "memory_stop.json").read_text(encoding="utf-8"))
     assert rec["decision"]["low_share"] == 1.0 and rec["guard"]["mem_avail_mb"] == 48.0
     assert rec["release_again"]["rss_after_mb"] == 1400.0 and rec["session_id"] == "sess-1"
 
@@ -115,7 +115,7 @@ def test_a_failing_step_leaves_the_rest_running_and_is_recorded_as_its_class(sto
     rec = memstop.execute(DECISION, _Guard())
     assert "shutdown" in calls, "the shutdown still runs"
     assert rec["steps"][failing] == {"ok": False, "error": "RuntimeError"}
-    assert PASS not in (data / "memory_stop.json").read_text(), "the engine's words never reach the record"
+    assert PASS not in (data / "memory_stop.json").read_text(encoding="utf-8"), "the engine's words never reach the record"
 
 
 def test_the_shutdown_failing_is_recorded_not_raised(stop, monkeypatch):
@@ -136,7 +136,7 @@ def test_the_record_read_back_is_this_sessions_only(stop):
 
 def test_the_reader_keeps_only_the_allow_list(stop):
     _c, _d, data = stop
-    (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "kind": "memory-stop", "secret": PASS, "steps": {}}))
+    (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "kind": "memory-stop", "secret": PASS, "steps": {}}), encoding="utf-8")
     got = memstop.read_record("sess-1")
     assert got and "secret" not in got and PASS not in json.dumps(got)
 
@@ -157,7 +157,7 @@ def test_the_record_stays_within_its_stated_size_at_its_largest(stop):
 
 def test_a_record_over_the_bound_is_not_parsed_and_only_its_size_is_said(stop, monkeypatch):
     _c, _d, data = stop
-    (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "decision": {"pad": "p" * (memstop.RECORD_MAX_BYTES + 10)}}))
+    (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "decision": {"pad": "p" * (memstop.RECORD_MAX_BYTES + 10)}}), encoding="utf-8")
     monkeypatch.setattr(memstop.json, "loads", lambda *a, **k: (_ for _ in ()).throw(AssertionError("parsed an oversize file")))
     got = memstop.read_record("sess-1")
     assert got == {"oversize": True, "attributed": False, "bytes_read": 0, "bytes_on_disk": (data / "memory_stop.json").stat().st_size}
@@ -166,7 +166,7 @@ def test_a_record_over_the_bound_is_not_parsed_and_only_its_size_is_said(stop, m
 def test_huge_or_odd_identity_values_are_not_carried(stop):
     _c, _d, data = stop
     (data / "memory_stop.json").write_text(json.dumps({"session_id": "sess-1", "kind": "x" * 1000, "at": "y" * 1000, "pid": "z" * 1000,
-                                                       "uptime_s": [1] * 100}))
+                                                       "uptime_s": [1] * 100}), encoding="utf-8")
     got = memstop.read_record("sess-1")
     assert got["kind"] is None and got["at"] is None and got["pid"] is None and got["uptime_s"] is None
     assert len(json.dumps(got)) < 400
@@ -304,7 +304,7 @@ def test_a_record_still_over_the_bound_after_the_first_cut_is_cut_to_its_identit
 def test_a_record_that_cannot_be_statted_or_parsed_reads_as_unreadable_not_absent(stop, monkeypatch):
     _c, _d, data = stop
     assert memstop.read_record("sess-1") is None, "no file: absent"
-    (data / "memory_stop.json").write_text("{not json")
+    (data / "memory_stop.json").write_text("{not json", encoding="utf-8")
     assert memstop.read_record("sess-1") == {"unreadable": True, "error": "JSONDecodeError", "attributed": False}
     real = type(memstop._path())
 
@@ -319,7 +319,7 @@ def test_a_record_that_cannot_be_statted_or_parsed_reads_as_unreadable_not_absen
 def test_a_file_that_grew_after_the_stat_is_read_for_at_most_the_bound_plus_one_byte(stop, monkeypatch):
     _c, _d, data = stop
     f = data / "memory_stop.json"
-    f.write_text("x" * (memstop.RECORD_MAX_BYTES * 20))
+    f.write_text("x" * (memstop.RECORD_MAX_BYTES * 20), encoding="utf-8")
     real_stat = type(f).stat
 
     class _S:
