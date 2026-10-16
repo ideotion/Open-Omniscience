@@ -30,7 +30,6 @@ from src.catalog.normalize import country_from_title
 from src.database.models import Source
 from src.database.source_identity import composite_key_active
 from src.ingest.seed_plan import (
-    EXCLUSIVE_TAG_PREFIXES,
     entry_key,
     entry_tags,
     exclusive_family,
@@ -215,10 +214,24 @@ def paired_rows(session: Session, sources: list[dict], *, plan=None, rows_by_dom
         by_key = {}
         for r in rows:
             by_key.setdefault(r.feed_key or "", r)
+        unmatched: list[dict] = []
         for e in entries:
             row = by_key.get(entry_key(e)[1])
             if row is not None:
                 pairs.append((row, e))
+            else:
+                unmatched.append(e)
+        # A feed URL the catalogue CORRECTED on an outlet that holds several feeds: no entry carries the row's key any
+        # more, so by key the entry is new and the row keeps the dead URL. A leftover entry and a leftover row are the
+        # same source when the row's recorded baseline is that entry's NAME (the name is what the catalogue kept) and
+        # exactly one leftover row says so; anything less certain registers a new row, as it always did.
+        paired_ids = {id(r) for r, _ in pairs}
+        leftover = [r for r in rows if id(r) not in paired_ids and r.feed_key]
+        for e in unmatched:
+            named = [r for r in leftover if (_baseline_of(r) or {}).get("name") == e.get("name")]
+            if len(named) == 1 and sum(1 for x in unmatched if x.get("name") == e.get("name")) == 1:
+                pairs.append((named[0], e))
+                leftover.remove(named[0])
             else:
                 todo.append(e)
     return pairs, todo, plan, rows_by_domain
@@ -251,8 +264,14 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
         done = {str(t) for t in (base.get("merged_tags") or [])}
         have = split_tags(row.tags)
         added: list[str] = []
+        offered_present: list[str] = []
         for tag in entry_tags(entry):
-            if tag in have or tag in done:
+            if tag in done:
+                continue
+            if tag in have:
+                # Already on the row: nothing to add, but the catalogue HAS offered it -- recorded, so an operator who
+                # removes it later does not see the next boot put it back (223 of the 240 real merges share a tag).
+                offered_present.append(tag)
                 continue
             fam = exclusive_family(tag)
             clash = next((t for t in have if fam and t.startswith(fam) and t != tag), None)
@@ -264,11 +283,13 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
                 continue
             have.append(tag)
             added.append(tag)
+        recorded = done | set(added) | set(offered_present)
+        if recorded != done:
+            base["merged_tags"] = sorted(recorded)
+            row.catalog_baseline = json.dumps(base, sort_keys=True)
         if not added:
             continue
         row.tags = ",".join(have)
-        base["merged_tags"] = sorted(done | set(added))
-        row.catalog_baseline = json.dumps(base, sort_keys=True)
         merged_n += len(added)
         if id(row) not in touched:
             touched.add(id(row))
@@ -587,13 +608,13 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     if new_rows:
         session.add_all(new_rows)
         session.commit()
-    created_for: dict[int, Source] = {id(e): r for e, r in zip(to_create, new_rows)}
+    created_for: dict[int, Source] = {id(e): r for e, r in zip(to_create, new_rows, strict=True)}
     row_of: dict[int, Source] = {id(e): r for r, e in pairs} | created_for
     # An already-registered source used to end the story: skipped, never re-read. The catalogue keeps LEARNING (new
     # explicit countries, new tags, and the title/ccTLD fallbacks that did not exist when older rows were made), and
     # none of it reached a row that already existed. NULL-only, so a re-seed can add what is missing and can never
     # revert what an operator set.
-    all_pairs = pairs + [(r, e) for e, r in zip(to_create, new_rows)]
+    all_pairs = pairs + [(r, e) for e, r in zip(to_create, new_rows, strict=True)]
     reconciled = reconcile_source_metadata(session, sources, pairs=pairs)
     # ...and then the other half: a field that is NOT empty but that the catalogue has since CORRECTED. Runs AFTER, so a
     # field reconcile just filled reads as a gap rather than as an edit (sync skips empties).

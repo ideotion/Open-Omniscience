@@ -163,3 +163,48 @@ def test_a_store_still_keyed_on_the_domain_holds_a_second_feed_back_instead_of_f
     result = seed_sources(s, [_e("Outlet", "en"), _e("Outlet es", "es"), _e("Other", "o", domain="other.example")])
     assert s.query(Source).count() == 2  # the first feed of each domain only
     assert result["created"] == 2 and result["held_back_legacy_key"] == 1
+
+
+def test_a_tag_both_entries_carry_stays_removed_once_the_operator_removed_it(s):
+    """A merged tag the row already had was never recorded, so removing it was undone at the next boot (223 of the 240
+    real merges share a tag with their row: news on Reuters). The catalogue's offer is recorded even when nothing is added."""
+    entries = [_e("Outlet", "en", tags=["politics"]), _e("Outlet", tags=["politics", "extra"])]
+    seed_sources(s, entries)
+    row = s.query(Source).one()
+    assert split(row.tags) == ["extra", "politics"] or set(split(row.tags)) == {"politics", "extra"}
+    row.tags = ",".join(t for t in split(row.tags) if t != "politics")
+    s.commit()
+    seed_sources(s, entries)
+    assert "politics" not in split(s.query(Source).one().tags)
+
+
+def split(value):
+    return [t for t in (value or "").split(",") if t]
+
+
+def test_the_seeder_reads_a_curated_oldest_row_past_to_a_measured_disqualified_one(s):
+    """The restore merge hands a sibling the outlet's MEASURED verdict even when the oldest row only carries the
+    catalogue's stamp; the seeder must not give it nothing (boot would then stamp it qualified and collect it)."""
+    seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet DE", "de")])
+    _judged(s, "Outlet EN", STATUS_QUALIFIED, version=CURATED_CRITERIA_VERSION)
+    _judged(s, "Outlet DE", STATUS_DISQUALIFIED)
+    seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet DE", "de"), _e("Outlet AR", "ar")])
+    assert s.query(Source).filter_by(name="Outlet AR").one().status == STATUS_DISQUALIFIED
+
+
+def test_the_stricter_verdict_wins_for_a_new_sibling(s):
+    """R150 in the seeder as in the restore: en (oldest) qualified, de disqualified -> the new sibling is disqualified."""
+    seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet DE", "de")])
+    _judged(s, "Outlet EN", STATUS_QUALIFIED)
+    _judged(s, "Outlet DE", STATUS_DISQUALIFIED)
+    seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet DE", "de"), _e("Outlet AR", "ar")])
+    assert s.query(Source).filter_by(name="Outlet AR").one().status == STATUS_DISQUALIFIED
+
+
+def test_a_corrected_feed_url_on_an_outlet_with_several_feeds_is_the_same_source(s):
+    """Measured by the independent read: 'en' fixed to 'en-v2' on a two-feed outlet made a THIRD row and left the dead
+    feed polled. The row whose recorded baseline carries that entry's name is the same source."""
+    seed_sources(s, [_e("O en", "en"), _e("O ar", "ar")])
+    result = seed_sources(s, [_e("O en", "en-v2"), _e("O ar", "ar")])
+    assert result["created"] == 0 and s.query(Source).count() == 2
+    assert sorted(r.rss_url for r in s.query(Source)) == ["https://outlet.example/ar.xml", "https://outlet.example/en-v2.xml"]

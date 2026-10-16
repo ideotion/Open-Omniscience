@@ -54,18 +54,8 @@ from src.ingest.seed_sources import (
     seed_sources,
 )
 
-#: Measured 2026-09-07 on configs/sources.yml alone: 54 domains, 227 entries that can
-#: never be registered. Lower it when a collision is genuinely resolved; never raise it
-#: to admit a new one -- adding a second entry for a domain the catalogue already
-#: claims silently discards the new entry, which is the thing this pins.
-_COLLIDING_DOMAINS_BUDGET = 54
-_SHADOWED_ENTRIES_BUDGET = 227
-
-#: Measured 2026-09-07 on what seed_default_sources really builds. This is the one an
-#: install reports, and the one that catches a CROSS-catalogue collision -- invisible
-#: to the per-file budget above, and already 248 entries strong.
-_BOOT_COLLIDING_DOMAINS_BUDGET = 299
-_BOOT_SHADOWED_ENTRIES_BUDGET = 475
+#: (The 2026-09-07 multiplicity budgets -- 54/227 per file, 299/475 on a boot -- are retired: after row J they measure how many
+#: entries share a domain, not what is lost. The losses are pinned by ``_UNREGISTERED_BUDGET`` below.)
 
 #: Shadowed entries that declare a language and declare a DIFFERENT one than the
 #: sibling that survives -- the loss that is genuinely a lost language, as opposed to
@@ -130,44 +120,17 @@ def session():
         s.close()
 
 
-def test_the_curated_catalog_does_not_grow_new_unreachable_entries(catalog):
-    collisions = catalog_domain_collisions(catalog)
-    shadowed = sum(len(v) for v in collisions.values())
-    assert len(collisions) <= _COLLIDING_DOMAINS_BUDGET, (
-        f"{len(collisions)} domains now carry more than one catalogue entry "
-        f"(budget {_COLLIDING_DOMAINS_BUDGET}). A second entry for a domain the "
-        "catalogue already claims is silently discarded by the seeder."
-    )
-    assert shadowed <= _SHADOWED_ENTRIES_BUDGET, (
-        f"{shadowed} catalogue entries can never be registered "
-        f"(budget {_SHADOWED_ENTRIES_BUDGET})."
-    )
+def test_the_multiplicity_per_domain_is_a_measure_not_a_loss(catalog, boot_catalog):
+    """After row J a second entry of a domain is a second FEED (a row), a feed-less description (tags merge) or, in a few
+    cases, truly unregistered. ``catalog_domain_collisions`` counts the multiplicity, which is NOT what an install loses, so
+    it carries no growth ratchet here (a contributor adding a BBC or DW language service is doing the right thing): the
+    losses are pinned where they are measured, by ``plan_registration`` below (``_UNREGISTERED_BUDGET``). What this keeps is
+    the relation, so the two figures cannot drift apart unseen: the unregistered entries are a subset of the multiplicity."""
+    from src.ingest.seed_plan import plan_registration
 
-
-def test_the_budget_is_not_left_above_the_real_count(catalog):
-    """A ratchet left slack is a ratchet that cannot fire."""
-    collisions = catalog_domain_collisions(catalog)
-    assert len(collisions) == _COLLIDING_DOMAINS_BUDGET
-    assert sum(len(v) for v in collisions.values()) == _SHADOWED_ENTRIES_BUDGET
-
-
-def test_the_boot_path_does_not_grow_new_unreachable_entries(boot_catalog):
-    """The per-file budget cannot see a CROSS-catalogue collision, and 248 of them
-    already exist -- including the whole political-lean catalogue. This pins what an
-    install actually loses, which is the number the seeder reports."""
-    collisions = catalog_domain_collisions(boot_catalog)
-    shadowed = sum(len(v) for v in collisions.values())
-    assert len(collisions) == _BOOT_COLLIDING_DOMAINS_BUDGET, (
-        f"{len(collisions)} domains carry more than one entry across the catalogues "
-        f"seed_default_sources loads (budget {_BOOT_COLLIDING_DOMAINS_BUDGET})."
-    )
-    assert shadowed == _BOOT_SHADOWED_ENTRIES_BUDGET, (
-        f"{shadowed} entries can never be registered on a real boot "
-        f"(budget {_BOOT_SHADOWED_ENTRIES_BUDGET})."
-    )
-    # The per-file figure is a strict subset of it, or one of the two is measuring
-    # something other than what it says.
-    assert shadowed > _SHADOWED_ENTRIES_BUDGET
+    for entries in (catalog, boot_catalog):
+        multiplicity = sum(len(v) for v in catalog_domain_collisions(entries).values())
+        assert len(plan_registration(entries).unregistered) <= multiplicity
 
 
 def test_the_political_lean_vocabulary_is_the_half_with_a_live_consumer(boot_catalog):

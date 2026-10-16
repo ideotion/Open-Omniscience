@@ -35,22 +35,32 @@ def inherit_sibling_verdicts(session: Session, created: list[Source], *, now: da
         return {"inherited": 0, "qualified": 0, "disqualified": 0, "skipped_curated_stamp": 0}
     now = now or datetime.now(UTC)
     domains = sorted({r.domain for r in created if r.domain})
-    oldest: dict[str, Source] = {}
-    skipped_curated = 0
+    measured: dict[str, list[Source]] = {}
+    curated_domains: set[str] = set()
     for row in (
         session.query(Source)
         .filter(Source.domain.in_(domains), Source.status.in_((STATUS_QUALIFIED, STATUS_DISQUALIFIED)))
         .order_by(Source.id)
     ):
-        oldest.setdefault(row.domain, row)
+        # A catalogue-curated stamp is provenance, not a verdict: it is not a candidate, and it does not hide a MEASURED
+        # verdict on a later row of the outlet (the restore merge reads it the same way, R148).
+        if row.status == STATUS_QUALIFIED and row.qualification_criteria_version == CURATED_CRITERIA_VERSION:
+            curated_domains.add(row.domain)
+            continue
+        measured.setdefault(row.domain, []).append(row)
+    skipped_curated = 0
     inherited: list[Source] = []
     counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     for row in created:
-        src = oldest.get(row.domain)
-        if src is None or src.id >= row.id or (row.status or STATUS_UNQUALIFIED) != STATUS_UNQUALIFIED:
+        if (row.status or STATUS_UNQUALIFIED) != STATUS_UNQUALIFIED:
             continue
-        if src.status == STATUS_QUALIFIED and src.qualification_criteria_version == CURATED_CRITERIA_VERSION:
-            skipped_curated += 1
+        older = [r for r in measured.get(row.domain, []) if r.id < row.id]
+        # THE STRICTER VERDICT WINS (R150, the same rule as a restored sibling): any measured disqualified feed of the
+        # outlet decides; otherwise the oldest measured row does.
+        src = next((r for r in older if r.status == STATUS_DISQUALIFIED), older[0] if older else None)
+        if src is None:
+            if row.domain in curated_domains:
+                skipped_curated += 1
             continue
         prior_enabled, prior_status = row.enabled, row.status
         row.status = src.status
