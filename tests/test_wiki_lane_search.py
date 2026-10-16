@@ -435,6 +435,553 @@ def test_the_route_answers_a_corruption_raised_by_a_snippet_read_with_the_fixed_
     with caplog.at_level(logging.DEBUG):
         out = search_lane("Vardar", limit=5)
     assert out["available"] is False and out["reason"] == "lane-unreadable"
-    for text in (repr(out), caplog.text):
-        assert not any(w in text for w in ("zq-driver-words", "zq_secret_column", "zq-bound-value")), text
+    for blob in (repr(out), caplog.text):
+        assert not any(w in blob for w in ("zq-driver-words", "zq_secret_column", "zq-bound-value")), blob
     assert any(r.levelno == logging.WARNING for r in caplog.records), "the failure is logged, class-only, at WARNING"
+
+
+def test_a_snippet_finds_the_word_through_case_accents_and_arabic_folding():
+    parts = S.snippet("Le Café de Flore", ["cafe"])
+    assert {"text": "Café", "hit": True} in parts
+    arabic = "ذهب إلى المَدرسة صباحا"
+    parts = S.snippet(arabic, ["المدرسة"])
+    assert any(p["hit"] and p["text"] == "المَدرسة" for p in parts)
+    assert S.snippet_literals('grain AND "red wheat" NOT barley') == ["grain", "red wheat"]
+    # The grammar's forms mark their words; a SQL field filter and a NOT mark nothing.
+    assert S.snippet_literals("salt* NEAR(red wheat, 5) title:mill source:bbc NOT rye") == [
+        "salt", "red", "wheat", "mill",
+    ]
+    assert S.snippet_literals("(unbalanced") == [], "a query that does not parse marks nothing"
+
+
+def test_one_query_means_in_these_texts_what_it_means_in_the_corpus(lane):
+    """The corpus search's grammar (S05-01): a prefix, NEAR and a title filter search these
+    texts as they search the corpus. The SQL field filters describe corpus ARTICLES, so they
+    are named as not applied -- and never widened into a search of every held text."""
+    _warm(title="Salt works", latest=(1101, "The saltpan kept its gates shut for a decade.", T0))
+    _warm(title="Harbour", latest=(1102, "Gates of the harbour. Much later, far away, a saltpan.", T0))
+    _index()
+
+    def revids(q, **kw):
+        return sorted(i["revid"] for i in _search(q, snippets=False, **kw)["items"])
+
+    assert revids("saltp*") == [1101, 1102], "a prefix was read as a whole word"
+    assert revids("saltp") == [], "without the star it is a whole word, as in the corpus"
+    assert revids("NEAR(saltpan gates, 3)") == [1101], "NEAR was read as two plain words"
+    assert revids("NEAR(saltpan gates)", near_default=5) == [1101]
+    assert revids("NEAR(saltpan gates)", near_default=10) == [1101, 1102], "the reader's NEAR default was ignored"
+    assert revids("title:salt") == [1101] and revids("title:harb*") == [1102]
+    mixed = _search("source:reuters gates", snippets=False)
+    assert mixed["fields_not_applied"] == ["source"] and mixed["total"] == 2
+    alone = _search("source:reuters", snippets=False)
+    assert alone["total"] is None and alone["items"] == [], "a field filter alone searched every text"
+    assert _search("title:=Harbour gates", snippets=False)["fields_not_applied"] == ["title="]
+    assert "fields_not_applied" not in _search("gates", snippets=False)
+    assert _search("author:x OR gates")["error"] == "query_invalid", "the corpus's own refusal"
+
+
+def test_a_hindi_word_is_one_word_so_a_vowel_sign_never_splits_it(lane):
+    """R39's tokenizer from the index's first day: 'किताब' is not the three letters around
+    its vowel signs, so a search for one of them must not find it."""
+    _warm(title="हिन्दी पृष्ठ", latest=(980, "यह किताब अच्छी है।", T0))
+    _index()
+    assert _hits("किताब") == [("warm", 980, "full")]
+    assert _hits("त") == [], "a letter between two vowel signs is not a word"
+
+
+def test_a_query_finds_arabic_written_with_or_without_its_vowel_marks(lane):
+    _warm(title="صفحة", latest=(990, "ذهب إلى المَدرسة صباحا", T0))
+    _index()
+    assert _hits("المدرسة") == [("warm", 990, "full")]
+
+
+# --------------------------------------------------------------------------- #
+# faults: a text that cannot be read is set aside and retried; a lane fault writes nothing
+# --------------------------------------------------------------------------- #
+def _corrupt_latest(row_id):
+    with _session() as db:
+        # Straight to the column, as a damaged file would be: no feeder fires on it.
+        db.execute(text("UPDATE wiki_warm_pages SET latest_text = :b WHERE id = :id"), {"b": b"\x00not-compressed", "id": row_id})
+
+
+def test_an_unreadable_text_is_set_aside_counted_and_the_rest_of_the_batch_goes_on(lane):
+    bad = _warm(title="Damaged", latest=(1101, "Damaged text.", T0))
+    good = _warm(title="Healthy", latest=(1102, "Healthy text.", T0))
+    _corrupt_latest(bad)
+    out = _index()
+    assert out.failed == 1 and out.settled == 2
+    assert _queue() == [("warm", bad, True)], "set aside, not dropped: a failure is never out for good"
+    assert _hits("Healthy") == [("warm", 1102, "full")]
+    assert [d for d in _docs() if d[1] == 1101] == [], "nothing of the failed page was written"
+    status = _search("Healthy")
+    assert status["pending"] == 0 and status["failed"] == 1
+    assert _index().settled == 0, "a set-aside item is not retried in every batch"
+    assert good
+
+
+def test_a_set_aside_item_is_retried_when_the_lane_next_starts_or_the_page_changes(lane):
+    bad = _warm(title="Damaged later", latest=(1201, "Words.", T0))
+    _corrupt_latest(bad)
+    _index()
+    assert _queue() == [("warm", bad, True)]
+    with _session() as db:
+        assert S.retry_failed(db) == 1
+    assert _queue() == [("warm", bad, False)]
+    _index()
+    assert _queue() == [("warm", bad, True)]
+    with _session() as db:
+        # The page's next fetch, written without loading the damaged text back.
+        db.execute(
+            update(WikiWarmPage).where(WikiWarmPage.id == bad).values(
+                latest_revid=1202, latest_text="Fresh words.", latest_revised_at=T0 + timedelta(days=1)
+            )
+        )
+    assert _queue() == [("warm", bad, False)], "the page's next change makes it pending again"
+    _index()
+    assert _queue() == [] and _hits("Fresh") == [("warm", 1202, "full")]
+
+
+def test_the_indexer_retries_set_aside_items_once_per_start_never_every_window(lane):
+    bad = _warm(title="Retry page", latest=(1301, "Words.", T0))
+    _corrupt_latest(bad)
+    indexer = _indexer()
+    first = indexer.index_for(60)
+    assert first.failed == 1
+    again = indexer.index_for(60)
+    assert again.retried == 0 and again.failed == 0, "one attempt per start, never a loop"
+    assert _indexer().index_for(60).retried == 1, "a new start tries it once more"
+
+
+def test_a_fault_in_the_lane_itself_leaves_the_whole_batch_pending_and_nothing_written(lane, monkeypatch):
+    """No savepoints: on this driver a released SAVEPOINT commits, so a per-unit savepoint
+    would have kept the first unit's writes after the batch failed. The batch is ONE
+    transaction, and a lane fault takes all of it back."""
+    a = _warm(title="First", latest=(1401, "First words.", T0))
+    b = _warm(title="Second", latest=(1402, "Second words.", T0))
+    real = S._apply
+    calls = []
+
+    def flaky(lane_, plan):
+        calls.append(plan.owner_id)
+        if len(calls) == 2:
+            raise OperationalError("INSERT", {}, Exception("disk I/O error"))
+        return real(lane_, plan)
+
+    monkeypatch.setattr(S, "_apply", flaky)
+    with pytest.raises(OperationalError):
+        _index()
+    assert calls == [a, b]
+    assert _docs() == [], "the first page's entry went back with the batch"
+    assert _queue() == [("warm", a, False), ("warm", b, False)], "every row it took is still pending"
+    with _session() as db:
+        assert db.execute(text("SELECT count(*) FROM wiki_lane_fts WHERE wiki_lane_fts MATCH 'First'")).scalar() == 0
+
+
+def test_a_released_savepoint_commits_on_this_driver_which_is_why_there_are_none(tmp_path):
+    """The measurement index_batch's docstring rests on, kept as a test so a driver that
+    changes it is noticed."""
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    path = tmp_path / "sp.db"
+    eng = create_engine(f"sqlite:///{path}", future=True)
+    with eng.begin() as c:
+        c.exec_driver_sql("CREATE TABLE t(x INT)")
+    s = Session(eng)
+    s.execute(text("SELECT 1")).all()
+    sp = s.begin_nested()
+    s.execute(text("INSERT INTO t VALUES (1)"))
+    sp.commit()
+    s.rollback()
+    other = sqlite3.connect(path)
+    assert other.execute("SELECT count(*) FROM t").fetchone()[0] == 1
+    other.close()
+    s.close()
+    eng.dispose()
+    assert not S.index_batch.__code__.co_names.count("begin_nested")
+
+
+# --------------------------------------------------------------------------- #
+# the indexer: the budget, the deadline, the segmenters, the runner's order
+# --------------------------------------------------------------------------- #
+class Clock:
+    def __init__(self, step=0.0):
+        self.t = 1000.0
+        self.step = step
+
+    def __call__(self):
+        self.t += self.step
+        return self.t
+
+
+def _plenty():
+    return budget_state(total_gb=20, disk_bytes=0, editions=1)
+
+
+def _spent():
+    return budget_state(total_gb=1, disk_bytes=2 * 1024**3, editions=1)
+
+
+def _indexer(budget=_plenty, batch=100, clock=None, caps=lambda: CAPS):
+    return S.LaneIndexer(lane_session=_session, budget=budget, batch=batch, caps=caps,
+                         monotonic=clock or Clock())
+
+
+def test_a_spent_budget_pauses_the_indexer_by_name_and_it_writes_nothing(lane):
+    from src.wiki.walk import PAUSED_BUDGET
+
+    _warm(title="Budget page", latest=(1501, "Words.", T0))
+    indexer = _indexer(budget=_spent)
+    report = indexer.index_for(60)
+    assert report.paused == PAUSED_BUDGET and report.settled == 0
+    assert indexer.status()["state"] == S.STATE_PAUSED and indexer.status()["reason"] == PAUSED_BUDGET
+    assert _docs() == [] and len(_queue()) == 1
+
+
+def test_the_indexer_stops_at_its_deadline_but_always_moves_forward(lane):
+    for n in range(3):
+        _warm(title=f"Deadline {n}", latest=(1600 + n, "Words.", T0))
+    with _session() as db:
+        out = S.index_batch(db, limit=100, caps=CAPS, deadline=0.0, monotonic=lambda: 5.0)
+    assert out.stopped_early and out.settled == 1, "one unit, then the deadline"
+    report = _indexer().index_for(60)
+    assert report.settled == 2 and _queue() == []
+    assert _indexer().status()["state"] == S.STATE_NOT_STARTED
+
+
+def test_the_indexer_says_when_it_has_caught_up(lane):
+    _warm(title="Caught up", latest=(1701, "Words.", T0))
+    indexer = _indexer(batch=1)
+    report = indexer.index_for(60)
+    assert report.settled == 1 and indexer.status()["state"] == S.STATE_CAUGHT_UP
+    assert indexer.status()["entries_this_process"] == 1
+
+
+def test_a_change_of_segmenters_queues_every_held_text_again(lane):
+    _warm(title="Seg page", latest=(1801, "Words.", T0))
+    _hot([(1802, "a\n", T0), (1803, "b\n", T0 + timedelta(days=1))])
+    _indexer().index_for(60)
+    assert _queue() == []
+    with _session() as db:
+        assert db.get(WikiLaneIndexState, S.STATE_KEY).segmenters == 0
+    report = _indexer(caps=lambda: CAPS | fts_norm.ZH_JIEBA).index_for(60)
+    assert report.requeued == 2, "the WARM page and the one revision"
+    assert report.settled == 2 and _queue() == []
+    with _session() as db:
+        assert db.get(WikiLaneIndexState, S.STATE_KEY).segmenters == fts_norm.ZH_JIEBA
+    assert _indexer(caps=lambda: CAPS | fts_norm.ZH_JIEBA).index_for(60).requeued == 0, "once"
+
+
+def test_the_counts_are_the_entries_own_and_survive_a_replacement(lane):
+    row_id = _warm(title="Counted", latest=(1901, "abc", T0))
+    _index()
+    with _session() as db:
+        state = db.get(WikiLaneIndexState, S.STATE_KEY)
+        assert (state.docs, state.chars) == (1, len("Counted") + len("abc"))
+    _refetch(row_id, (1902, "abcdef", T0 + timedelta(days=1)))
+    _index()
+    with _session() as db:
+        state = db.get(WikiLaneIndexState, S.STATE_KEY)
+        n = db.execute(select(func.count()).select_from(WikiLaneDoc)).scalar()
+        assert state.docs == n == 2, "the latest, and the previous by its removed line"
+        status = S.index_status(db)
+    assert status["entries"] == 2 and status["available"] is True and status["pending"] == 0
+
+
+def test_the_runner_gives_the_index_its_share_of_the_idle_time_first(lane):
+    from src.wiki.runner import WikiLaneRunner
+
+    order: list[tuple[str, float]] = []
+
+    class Indexer:
+        def index_for(self, seconds, *, should_stop):
+            order.append(("index", seconds))
+            raise RuntimeError("an index bug")
+
+        def status(self):
+            return {"state": "indexing"}
+
+    class Warm:
+        def warm_for(self, seconds, *, should_stop):
+            order.append(("warm", seconds))
+            from src.wiki import warm as M
+
+            return M.WarmReport()
+
+        def status(self):
+            return {"state": "off"}
+
+    slept: list[float] = []
+    runner = WikiLaneRunner(
+        adapter=None, stream=None, lane_session=_session, state_of=lambda: "running",
+        hot_sets=dict, budget=_plenty, warm=Warm(), indexer=Indexer(), sleep=slept.append,
+        monotonic=lambda: 0.0, drain_interval_s=30.0,
+    )
+    runner.idle(30.0)
+    assert [name for name, _ in order] == ["index", "warm"], "texts already held become findable first"
+    assert order[0][1] == 30.0 * S.INDEX_SHARE, "and for its share only"
+    assert runner.last_index == {"error": "RuntimeError"}, "a broken index never ends the lane"
+    assert sum(slept) == 30.0
+    assert runner.index_status()["last_window"] == {"error": "RuntimeError"}
+
+
+# --------------------------------------------------------------------------- #
+# the routes: absences by name, one version read back, and «Add to corpus»
+# --------------------------------------------------------------------------- #
+def test_the_search_route_on_a_machine_without_the_lane_creates_nothing(no_lane):
+    from src.api import wiki_lane_search as R
+
+    out = R.lane_search(q="anything", limit=20, offset=0)
+    assert out["available"] is False and out["reason"] == "lane-never-run"
+    assert out["total"] is None
+    assert not lane_path("wiki").exists(), "a search never brings the lane file into being"
+
+
+def test_the_version_route_reads_back_exactly_the_version_a_hit_named(lane):
+    from fastapi import HTTPException
+
+    from src.api import wiki_lane_search as R
+
+    row_id = _warm(
+        title="Two versions",
+        latest=(2002, "Now it says ''tin''.", T0 + timedelta(days=1)),
+        previous=(2001, "Once it said ''copper''.", T0),
+    )
+    old = R.lane_version(source="warm", owner_id=row_id, revid=2001)
+    assert old["text"] == S.plain_text("Once it said ''copper''.") and "copper" in old["text"]
+    assert "tin" not in old["text"] and old["revid"] == 2001
+    assert old["revised_at"] == T0.isoformat() and old["url"].endswith("&oldid=2001")
+    assert old["which"] == "previous"
+    assert R.lane_version(source="warm", owner_id=row_id, revid=2002)["which"] == "latest"
+    with pytest.raises(HTTPException) as exc:
+        R.lane_version(source="warm", owner_id=row_id, revid=1999)
+    assert exc.value.status_code == 404 and exc.value.detail == "not-held"
+
+
+def test_the_newest_followed_version_says_the_corpus_already_has_it(lane):
+    from src.api import wiki_lane_search as R
+
+    eid = _hot([(2101, "old\n", T0), (2102, "new\n", T0 + timedelta(days=1))])
+    newest = R.lane_version(source="hot", owner_id=eid, revid=2102)
+    earlier = R.lane_version(source="hot", owner_id=eid, revid=2101)
+    assert newest["newest_followed"] is True and newest["which"] == "newest"
+    assert earlier["newest_followed"] is False and earlier["which"] == "earlier"
+
+
+def test_every_hit_says_which_held_text_it_is(lane):
+    """The UI words these tokens ×12; a hit that did not say which text it is would read as
+    the page's current text, which a previous or earlier version is not."""
+    _warm(
+        title="Which page",
+        latest=(2151, "Tokenword stays in the latest text.", T0 + timedelta(days=1)),
+        previous=(2150, "Tokenword was here. Oldword only here.", T0),
+    )
+    _hot([(2160, "Tokenword kept.\nOldword went.\n", T0), (2161, "Tokenword kept.\n", T0 + timedelta(days=2))])
+    _index()
+    which = sorted((h["source"], h["which"]) for h in _search("Tokenword OR Oldword")["items"])
+    assert which == [("hot", "earlier"), ("warm", "latest"), ("warm", "previous")]
+
+
+def _corpus():
+    from src.database.session import SessionLocal, init_db
+
+    init_db()
+    return SessionLocal()
+
+
+def test_add_to_corpus_stores_that_version_under_its_own_address_date_and_revision(lane):
+    from src.api import wiki_lane_search as R
+    from src.api.wiki_lane_search import AddVersion
+    from src.database.models import Article
+    from src.wiki.corpus import wiki_article_url, wiki_version_url
+
+    at = T0 - timedelta(days=400)
+    row_id = _warm(
+        title="Add me page",
+        latest=(2202, "The newer text of the add me page.", T0),
+        previous=(2201, "The older text of the add me page, about saltpetre.", at),
+    )
+    db = _corpus()
+    try:
+        out = R.add_to_corpus(AddVersion(source="warm", owner_id=row_id, revid=2201), db=db)
+        assert out["status"] == "created" and out["revid"] == 2201
+        art = db.get(Article, out["article_id"])
+        assert art.canonical_url == wiki_version_url(EDITION, "Add me page", 2201)
+        assert art.canonical_url != wiki_article_url(EDITION, "Add me page"), "never the page's own address"
+        assert art.source_revision == "2201"
+        assert art.content == "The older text of the add me page, about saltpetre."
+        assert art.published_at.replace(tzinfo=UTC) == at, "the date the wiki gave that version, not today"
+        again = R.add_to_corpus(AddVersion(source="warm", owner_id=row_id, revid=2201), db=db)
+        assert again == {**again, "status": "exists", "article_id": art.id}, "never a second copy"
+    finally:
+        db.close()
+
+
+def test_add_to_corpus_names_the_article_that_already_has_the_same_words(lane):
+    from src.api import wiki_lane_search as R
+    from src.api.wiki_lane_search import AddVersion
+    from src.wiki.corpus import upsert_wiki_corpus_article
+
+    words = "Identical words in the corpus already, about vermilion."
+    db = _corpus()
+    try:
+        upsert_wiki_corpus_article(db, wiki=EDITION, title="Same words page", plain=words, revid=2300)
+        row_id = _warm(title="Same words page", latest=(2301, words, T0))
+        out = R.add_to_corpus(AddVersion(source="warm", owner_id=row_id, revid=2301), db=db)
+        assert out["status"] == "same_text" and out["title"] == "Same words page"
+    finally:
+        db.close()
+
+
+def test_add_to_corpus_refuses_a_version_not_held_or_a_page_without_a_title(lane):
+    from fastapi import HTTPException
+
+    from src.api import wiki_lane_search as R
+    from src.api.wiki_lane_search import AddVersion
+
+    db = _corpus()
+    try:
+        with pytest.raises(HTTPException) as exc:
+            R.add_to_corpus(AddVersion(source="warm", owner_id=999_999, revid=1), db=db)
+        assert exc.value.status_code == 404
+        untitled = _warm(title=None, latest=(2401, "No title here.", T0))
+        with pytest.raises(HTTPException) as exc:
+            R.add_to_corpus(AddVersion(source="warm", owner_id=untitled, revid=2401), db=db)
+        assert exc.value.status_code == 409 and exc.value.detail == "no-title"
+    finally:
+        db.close()
+
+
+def test_a_version_address_reads_back_to_exactly_what_it_was_built_from():
+    from src.wiki.corpus import wiki_page_ref, wiki_version_ref, wiki_version_url
+
+    for title in ("Plain", "With spaces", "AT&T", "Q&A?", "C#", "Épée", "東京", "a=b", "100%"):
+        url = wiki_version_url("en", title, 12345)
+        assert wiki_version_ref(url) == ("en", title, 12345), url
+        assert wiki_page_ref(url) is None, "a version address is never the page's own"
+    assert wiki_version_url("en", None, 7) == "https://en.wikipedia.org/w/index.php?oldid=7"
+    assert wiki_version_ref("https://en.wikipedia.org/w/index.php?oldid=7") is None
+    assert wiki_version_ref("https://en.wikipedia.org/w/index.php?title=X&oldid=7&x=1") is None
+    assert wiki_version_ref("https://evil.example/w/index.php?title=X&oldid=7") is None
+    assert wiki_version_ref("https://en.wikipedia.org/w/index.php?title=X&oldid=0") is None
+
+
+@pytest.fixture()
+def client():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def test_the_reader_carries_the_licence_and_the_revision_for_an_added_version(lane, client):
+    from src.api import wiki_lane_search as R
+    from src.api.wiki_lane_search import AddVersion
+    from src.wiki.attribution import LICENCE_NAME
+
+    row_id = _warm(title="Licensed version", latest=(2501, "Text of a licensed version.", T0))
+    db = _corpus()
+    try:
+        aid = R.add_to_corpus(AddVersion(source="warm", owner_id=row_id, revid=2501), db=db)["article_id"]
+    finally:
+        db.close()
+    html = client.get(f"/api/articles/{aid}/view").text
+    assert LICENCE_NAME in html, "Wikipedia text under its licence, whichever version it is"
+    assert "oldid=2501" in html
+
+
+def test_the_omnibar_wiki_group_carries_the_lane_hits_beside_the_corpus(lane):
+    import sqlalchemy as sa
+    from sqlalchemy.orm import sessionmaker
+
+    from src.api.search_omni import _wiki_group
+    from src.database.fts import ensure_fts
+    from src.database.models import Base
+
+    _warm(title="Omnibar page", latest=(2601, "The omnibar finds molybdenum.", T0))
+    _index()
+    eng = sa.create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(eng)
+    s = sessionmaker(bind=eng, future=True)()
+    try:
+        ensure_fts(s.get_bind())
+        s.commit()
+        g = _wiki_group(s, "molybdenum")
+    finally:
+        s.close()
+        eng.dispose()
+    assert g["lane"]["available"] is True and g["lane"]["total"] == 1
+    assert g["lane"]["items"][0]["revid"] == 2601
+    assert g["lane"]["items"][0]["snippet"] is None, "per keystroke: no snippets here"
+    assert g["lane"]["caveat"] == S.CAVEAT
+
+
+def test_a_lane_whose_index_is_not_built_yet_says_so_rather_than_answering_zero(lane):
+    """A search opens the lane without ``create_lane``, so on a lane file this process has not
+    started yet (the lane switched off, say) the index may not exist: that is its own reason."""
+    from src.api import wiki_lane_search as R
+
+    with _session() as db:
+        db.execute(text("DROP TABLE wiki_lane_fts"))
+    dispose_all()
+    out = R.search_lane("anything", limit=20)
+    assert out["available"] is False and out["reason"] == S.UNAVAILABLE_NOT_BUILT
+    assert out["total"] is None
+    with _session() as db:
+        names = {r[0] for r in db.execute(text("SELECT name FROM sqlite_master"))}
+    assert S.FTS_TABLE not in names, "a search reads; it never builds the index"
+
+
+def test_a_batch_that_only_sets_aside_still_finds_the_state_row_its_session_made(lane):
+    """Lane sessions do not autoflush, and ``get`` finds only flushed rows. A first batch that
+    creates the state row, then a second in the same session whose every unit is set aside
+    (so nothing else flushes), made a second row under the same key and the commit failed.
+    The indexer opens a session per batch; a caller that does not must not break the index."""
+    _warm(title="Readable", latest=(2901, "Readable words.", T0))
+    bad = _warm(title="Damaged later", latest=(2902, "Damaged words.", T0))
+    _corrupt_latest(bad)
+    with _session() as db:
+        first = S.index_batch(db, limit=1, caps=CAPS)
+        second = S.index_batch(db, limit=1, caps=CAPS)
+        assert (first.written, second.failed) == (1, 1)
+        assert S.index_status(db)["entries"] == 1, "the session reads its own state row"
+    with _session() as db:
+        assert db.execute(select(func.count()).select_from(WikiLaneIndexState)).scalar() == 1
+
+
+def test_the_search_tab_answer_says_what_it_looked_through(lane, monkeypatch):
+    """R52's owed line: a search with no Wikipedia hit must never read as «Wikipedia does not
+    say this». The answer names the editions, how many pages hold a text, and WARM's switch."""
+    from src.api import wiki_lane_search as R
+    from src.wiki.lane_models import WikiWarmEdition
+
+    monkeypatch.setattr(R, "_warm_enabled", lambda: False)
+    _warm(title="Covered page", latest=(2701, "Covered words.", T0))
+    with _session() as db:
+        db.add(WikiWarmEdition(edition=EDITION, pages_with_text=1))
+    _hot([(2702, "a\n", T0), (2703, "b\n", T0 + timedelta(days=1))], page_id=2702)
+    _index()
+    out = R.lane_search(q="nowhere", limit=20, offset=0)
+    assert out["total"] == 0
+    cov = out["coverage"]
+    assert cov["editions"] == [EDITION]
+    assert cov["changed_pages"] == {"pages": 1, "editions": [{"edition": EDITION, "pages": 1}]}
+    assert cov["stream_pages"] == {"pages": 1, "editions": [{"edition": EDITION, "pages": 1}]}
+    assert cov["pending"] == 0 and cov["failed"] == 0 and cov["entries"] == 2
+    assert cov["warm_enabled"] is False, "so the tab can say WARM's texts are not being fetched"
+    assert "this machine" in cov["method"]
+
+
+def test_the_omnibar_skips_the_queue_count_it_runs_per_keystroke(lane):
+    from src.api.wiki_lane_search import search_lane
+
+    _warm(title="Keystroke page", latest=(2801, "Keystroke words.", T0))
+    _index()
+    quick = search_lane("Keystroke", limit=5, snippets=False, queue=False)
+    assert quick["total"] == 1 and "pending" not in quick and "coverage" not in quick
+    full = search_lane("Keystroke", limit=5, coverage=True)
+    assert full["pending"] == 0 and "coverage" in full
