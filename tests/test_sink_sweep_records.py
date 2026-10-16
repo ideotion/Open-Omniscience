@@ -945,7 +945,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/llm/vllm_lifecycle.py': {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
-        ('record_install_attempt', '"error": (str(error)[:500] if error else None),'): 2,
+        ('record_install_attempt', '"error": (scrubbed(str(error))[:500] if error else None),'): 2,
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_install_job._journal', 'error=error,'): 1,
     },
