@@ -67,6 +67,7 @@ def test_a_pause_is_a_503_with_retry_after_and_the_pauses_own_words(monkeypatch,
         ins._deadlined(object(), "k", lambda: {}, degraded_replay=replay)
     assert got.value.status_code == 503, "not the 429 a busy server gets"
     assert got.value.headers["Retry-After"] == "10"
+    assert got.value.headers["X-OO-Paused"] == "wal"
     assert WORDS in got.value.detail
 
 

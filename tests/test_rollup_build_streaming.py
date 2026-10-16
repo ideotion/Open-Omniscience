@@ -1185,3 +1185,60 @@ def test_a_stop_with_no_total_is_held_on_what_was_observed(serve_env, monkeypatc
     assert rollup_serve._build_and_swap() == "declined"
     held = rollup_serve._STATE["stopped"]
     assert held["observed_grew_mb"] == 1000.0 and held["grew_mb"] == 1000.0
+
+
+class _MovingBudget:
+    """A budget that answers the 1,004 MB reading ONCE and a different machine afterwards (R147)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        if self.calls == 1:
+            return {"duckdb_memory_limit_mb": 1004, "duckdb_threads": 2, "total_ram_mb": 6698.5,
+                    "columnar_serve_default": True}
+        return {"duckdb_memory_limit_mb": 9999, "duckdb_threads": 8, "total_ram_mb": 66000.0,
+                "columnar_serve_default": True}
+
+
+def test_a_budget_that_moves_during_a_build_changes_neither_its_shards_nor_its_stop_record(
+        serve_env, session, monkeypatch):
+    """R147: one snapshot per build (limit, threads, total, read_at), used for the connection, the shard size and the
+    stop; the budget is not asked again."""
+    import src.config.memory_budget as mb
+
+    _seed(session, keywords=60, mentions_per=10)
+    moving = _MovingBudget()
+    monkeypatch.setattr(mb, "budget", moving)
+    planned: list[float] = []
+    real_plan = columnar.plan_build_shards
+    monkeypatch.setattr(columnar, "plan_build_shards", lambda rows, limit_mb: (planned.append(limit_mb), real_plan(rows, limit_mb))[1])
+    configs: list[dict] = []
+    real_cfg = columnar._offline_config
+    monkeypatch.setattr(columnar, "_offline_config", lambda spill=None, snapshot=None: (configs.append(real_cfg(spill, snapshot)), configs[-1])[1])
+
+    class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    def always_out_of_memory(*_a, **_k):
+        raise OutOfMemoryException("limit")
+
+    monkeypatch.setattr(columnar, "_aggregate_stage", always_out_of_memory)
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert planned == [1004.0], "the shard size came from the one reading"
+    assert configs[0]["memory_limit"] == "1004MB" and configs[0]["threads"] == 2
+    assert stopped["duckdb_limit_mb"] == 1004.0 and stopped["duckdb_threads"] == 2
+    assert stopped["budget_total_mb"] == 6698.5 and stopped["budget_read_at"].endswith("Z")
+    assert moving.calls == 1, "nothing in the build asked the budget a second time"
+
+
+def test_a_finished_build_names_the_budget_reading_it_ran_under(serve_env, session, monkeypatch):
+    import src.config.memory_budget as mb
+
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(mb, "budget", _MovingBudget())
+    rollup_serve._STATE["last_build"] = None
+    assert rollup_serve._build_inmemory_and_swap() is None
+    lb = rollup_serve.status()["last_build"]
+    assert lb["duckdb_limit_mb"] == 1004.0 and lb["duckdb_threads"] == 2 and lb["budget_total_mb"] == 6698.5

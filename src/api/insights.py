@@ -391,8 +391,9 @@ def _raise_if_heavy_paused(kind: type, detail: str) -> None:
     nothing, the next call asks again). Anything else returns and the caller re-raises."""
     if not any(klass.__name__ == "HeavyPaused" for klass in kind.__mro__):
         return
+    # ``X-OO-Paused: wal`` is how a client tells this pause from a statement-deadline 503 (the WAL follow-on sends the same)
     raise HTTPException(
-        status_code=503, detail=detail, headers={"Retry-After": _PAUSE_RETRY_AFTER_S}
+        status_code=503, detail=detail, headers={"Retry-After": _PAUSE_RETRY_AFTER_S, "X-OO-Paused": "wal"}
     ) from None
 
 

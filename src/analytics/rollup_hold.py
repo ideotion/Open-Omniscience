@@ -47,6 +47,10 @@ _FIELDS: dict[str, tuple[type, ...]] = {
     "mentions_count": (int,),
     "checked_at": (int, float),
     # how the sharded aggregate was cut when it stopped: shards, the shard it stopped in, the parts it had been halved to
+    # the budget reading the build ran under (R147): threads, the machine total the limit came from, and when it was read
+    "duckdb_threads": (int,),
+    "budget_total_mb": (int, float),
+    "budget_read_at": (str,),
     "shards": (int,),
     "shard": (int,),
     "split": (int,),

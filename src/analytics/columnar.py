@@ -121,7 +121,25 @@ def duckdb_available() -> bool:
         return False
 
 
-def _offline_config(spill=None) -> dict:
+def budget_snapshot() -> dict:
+    """What a rollup build is sized from, read ONCE when it starts (R147): DuckDB's limit and threads, the machine's
+    total RAM they were derived from, and when they were read. ``budget()`` is fixed at boot, so this changes nothing
+    today; the snapshot is the build's own state and the build never asks the budget again, so a budget that does
+    move (a later change to resolve it again) cannot cut one build's shards from two different limits."""
+    from datetime import UTC, datetime
+
+    from src.config.memory_budget import budget
+
+    b = budget()
+    return {
+        "duckdb_limit_mb": float(b["duckdb_memory_limit_mb"]),
+        "duckdb_threads": int(b["duckdb_threads"]),
+        "total_mb": b.get("total_ram_mb"),
+        "read_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
+
+
+def _offline_config(spill=None, snapshot: dict | None = None) -> dict:
     """DuckDB config that guarantees no network on open: extension autoload/autoinstall
     DISABLED and external access OFF. The columnar engine is local-first by construction.
 
@@ -135,15 +153,13 @@ def _offline_config(spill=None) -> dict:
     # keep while the app, the browser and the desktop are also resident, and on the
     # 2-core field machine a thread count that competes with the collector for exactly
     # the cores it needs. Bounded at EVERY size, not only on small machines.
-    from src.config.memory_budget import budget
-
-    b = budget()
+    snap = snapshot or budget_snapshot()
     cfg = {
         "autoinstall_known_extensions": False,
         "autoload_known_extensions": False,
         "enable_external_access": False,
-        "memory_limit": f"{int(b['duckdb_memory_limit_mb'])}MB",
-        "threads": int(b["duckdb_threads"]),
+        "memory_limit": f"{int(snap['duckdb_limit_mb'])}MB",
+        "threads": int(snap["duckdb_threads"]),
     }
     if spill is not None:
         cfg["temp_directory"] = str(spill)
@@ -610,7 +626,7 @@ def status(passphrase: str | None = None) -> dict:
     }
 
 
-def connect(passphrase: str | None = None, *, spill=None):
+def connect(passphrase: str | None = None, *, spill=None, snapshot: dict | None = None):
     """Open the derived columnar engine — a persisted ENCRYPTED store when that is
     securely possible offline, else an in-memory store. NEVER a plaintext file on disk.
 
@@ -625,7 +641,8 @@ def connect(passphrase: str | None = None, *, spill=None):
     deletes the file and falls back to in-memory — never a crash, because the canonical
     SQLCipher store is always the source of truth.
 
-    ``spill`` applies to the in-memory store only; see :func:`_offline_config`.
+    ``spill`` applies to the in-memory store only; see :func:`_offline_config`. ``snapshot`` (see
+    :func:`budget_snapshot`) is the build's own reading of the budget; none reads it afresh.
     """
     if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
         return None
@@ -670,7 +687,7 @@ def connect(passphrase: str | None = None, *, spill=None):
             )
 
     # In-memory fallback — rebuilt lazily on use; writes NO file (never plaintext).
-    con = duckdb.connect(database=":memory:", config=_offline_config(spill))
+    con = duckdb.connect(database=":memory:", config=_offline_config(spill, snapshot))
     ensure_store_meta(con)
     _LOG.info("columnar engine: in-memory store (no secure persisted encryption offline)")
     return con
@@ -1049,7 +1066,8 @@ def _aggregate_stage(con, stage: str, shards: int, parts: int, residue: int) -> 
             + _aggregate_stage(con, stage, shards, parts * 2, residue + parts))
 
 
-def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_batch=None) -> dict:
+def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_batch=None,
+                        snapshot: dict | None = None) -> dict:
     """(Re)build ``keyword_daily`` + ``keyword_meta`` — the FULL streamed build (D2).
 
     Streams canonical mention rows out of the app's SQLite/SQLCipher connection in
@@ -1209,9 +1227,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     # half the bytes a row while the ids allow it, at BOTH ends: a negative id below -2**31 needs BIGINT too
     id_type = "INTEGER" if max_ref <= _INT32_MAX and min_ref >= -_INT32_MAX else "BIGINT"
     stage_types = (id_type, "DATE", "BIGINT", id_type)
-    from src.config.memory_budget import budget
-
-    limit_mb = float(budget()["duckdb_memory_limit_mb"])
+    snapshot = snapshot or budget_snapshot()  # R147: read once; the shard size and every stop below come from THIS
+    limit_mb = float(snapshot["duckdb_limit_mb"])
     plan = plan_build_shards(rows_hint, limit_mb)
     shards = plan["shards"]
     stage_names = [f"keyword_daily_stage_{j}" for j in range(shards)]
@@ -1406,6 +1423,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         "shards": shards,
         "shard_splits": splits,
         "predicted_peak_mib": plan["predicted_peak_mib"],
+        "budget_snapshot": snapshot,
         "observed_mib": round(observed_mib, 1),
         # The boundary phase B stopped at (``MAX(created_at)`` read once, before the scan; None when no
         # mention had a ``created_at``). A comparison against the live table must stop at the same one:

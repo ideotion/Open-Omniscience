@@ -241,7 +241,8 @@ def status() -> dict:
 #: The fields of a decline that go into another report's row (the boot step's): codes and numbers a reader compares
 #: against the budget. Free text of the engine is never among them.
 _DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
-                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split")
+                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split",
+                  "duckdb_threads", "budget_total_mb", "budget_read_at")
 
 
 def decline_detail() -> dict:
@@ -304,8 +305,11 @@ def _build_inmemory_and_swap() -> dict | None:
 
     # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
     spill = _spill_setting()
+    # R147: the budget is read ONCE, here, and this build (its connection, its shard size, its stop record) lives on
+    # this snapshot. Nothing below asks the budget for the limit again.
+    snap = columnar.budget_snapshot()
     try:
-        con = columnar.connect(passphrase=None, spill=spill)
+        con = columnar.connect(passphrase=None, spill=spill, snapshot=snap)
     except BaseException:
         _remove_spill(spill)
         raise
@@ -316,7 +320,7 @@ def _build_inmemory_and_swap() -> dict | None:
     ok = False
     _progress_begin()
     try:
-        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
+        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"])
         with session_scope() as s:
             # Token BEFORE the build (conservative: rows landing DURING the build make the
             # recorded token compare "changed" next check -> one extra rebuild, never a
@@ -328,7 +332,7 @@ def _build_inmemory_and_swap() -> dict | None:
             tally: dict = {}
             build_started = time.monotonic()
             try:
-                tally = columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
+                tally = columnar.build_keyword_daily(con, s, on_batch=_make_on_batch(), snapshot=snap)
             except columnar.BuildDeclined as stop:
                 skip = {"reason": stop.reason, "at": time.time(), **stop.detail}
             except Exception as exc:  # noqa: BLE001
@@ -336,11 +340,14 @@ def _build_inmemory_and_swap() -> dict | None:
                     raise
                 # DuckDB reached its memory limit and may not offload: the bound held, so decline.
                 skip = {"reason": "duckdb-limit", "at": time.time(),
-                        "duckdb_limit_mb": _duckdb_limit_mb(), "error": record_text(exc, limit=200)}
+                        "duckdb_limit_mb": snap["duckdb_limit_mb"], "error": record_text(exc, limit=200)}
             else:
                 skip = None
             if skip is not None:
                 skip.update({
+                    # the limit and the machine total this build ran under, whatever stopped it (R147)
+                    "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
+                    "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
                     "begin_rss_mb": r["rss_mb"], "mentions_total": total_hint,
                     "epoch": token[0] if token else None,
                     # what the wall was measured against, so a corpus that has SHRUNK since is told from one that
@@ -372,7 +379,8 @@ def _build_inmemory_and_swap() -> dict | None:
             "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
             "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
             "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
-            "duckdb_limit_mb": _duckdb_limit_mb(),
+            "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
+            "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
         }
         old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
@@ -1054,7 +1062,7 @@ def _build_and_swap() -> str:
                     # projection past that is the linear extrapolation outrunning the build's own ceiling (and
                     # MAX(id) overstates the rows after re-index churn): never ask for more than the start check does.
                     chunk = columnar_batch_mb()
-                    ceiling = round(_duckdb_limit_mb() * _LIMIT_OVERSHOOT + chunk, 1)
+                    ceiling = round(float(stopped.get("duckdb_limit_mb") or _duckdb_limit_mb()) * _LIMIT_OVERSHOOT + chunk, 1)
                     grew = min(grew, max(ceiling, observed))
                 with _LOCK:
                     _STATE["last_skip"] = stopped
@@ -1062,6 +1070,8 @@ def _build_and_swap() -> str:
                     "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
                     "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
                     "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
+                    "duckdb_threads": stopped.get("duckdb_threads"), "budget_total_mb": stopped.get("budget_total_mb"),
+                    "budget_read_at": stopped.get("budget_read_at"),
                     "mentions_total": stopped.get("mentions_total"), "rows_done": stopped.get("rows_done"),
                     "mentions_count": stopped.get("mentions_count"),
                     "shards": stopped.get("shards"), "shard": stopped.get("shard"), "split": stopped.get("split"),
