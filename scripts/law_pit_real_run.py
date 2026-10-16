@@ -209,6 +209,9 @@ def make_fetcher(timeout: float = 45.0):
                 # to the library that connects.
                 if not allowed_url(url):
                     raise BlockedTarget(f"refused: {url!r} is not an https URL on {HOST}")
+                # The library must never follow a redirect on its own: a followed hop would skip this check and
+                # the hop guard, so redirects are always walked by ``_guarded_redirect_get``, one judged hop at a time.
+                kw["allow_redirects"] = False
                 return real_get(url, *a, **kw)
 
             self.session.get = _get

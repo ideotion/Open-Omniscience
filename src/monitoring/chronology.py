@@ -263,6 +263,9 @@ def _sessions(records: list[dict[str, Any]], current: dict[str, Any], now: float
             "ended_at": _iso(end_at) if end_at is not None else None,
             "clean": clean,
             "end_basis": basis,
+            # The app ended this session itself because memory stayed exhausted (``scheduler.memstop.SHUTDOWN_REASON``, pinned
+            # equal by a test): a fixed word, never the record's own text.
+            "stopped_for": "memory" if (end is not None and end.get("reason") == "memory exhausted") else None,
             "end_unknown": unknown,
             "current": is_current,
             "pid": r.get("pid"),
@@ -823,7 +826,8 @@ def for_vitals(max_age_s: float = 30.0) -> dict[str, Any]:
         "restarts_since_ledger_start": s.get("restarts"),
         "ledger_since": s.get("anchor_at"),
         "sessions_recorded": len(c.get("sessions") or []),
-        "previous_session_end": ({"at": prev.get("ended_at"), "clean": prev.get("clean"), "basis": prev.get("end_basis")}
+        "previous_session_end": ({"at": prev.get("ended_at"), "clean": prev.get("clean"), "basis": prev.get("end_basis"),
+                                  "stopped_for": prev.get("stopped_for")}
                                  if prev else None),
         "longest_stretch_s": ((s.get("longest_stretch") or {}).get("seconds")),
         "method": "the session ledger (data/session_history.jsonl); restarts are boots after the ledger's first boot",

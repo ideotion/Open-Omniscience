@@ -771,6 +771,9 @@ def previous_session_report() -> dict[str, Any]:
         out["earlier_unclean_ends"] = earlier_unclean_ends(prev)
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
         out["earlier_unclean_ends"] = {"available": False, "reason": _why(exc)}
+    # The clean stop (B2): a session the app ended itself because memory stayed exhausted says so, whatever the sentinel's verdict
+    # (a stop that finished reads "clean", one the kernel cut short reads "during shutdown"). Numbers and step names only.
+    out["memory_stop"] = previous_memory_stop()
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
@@ -814,6 +817,19 @@ def previous_session_report() -> dict[str, Any]:
             )
         out["last_collector_sample"] = sample
     return out
+
+
+def previous_memory_stop() -> dict[str, Any] | None:
+    """The record of the clean stop that ended the previous session, or ``None`` when it did not end that way: read through the
+    allow-list with the size it was (``scheduler.memstop.read_record``), and only when it names the ledger's id for the previous
+    session. Never raises."""
+    try:
+        from src.monitoring.session_history import previous_session_id
+        from src.scheduler.memstop import read_record
+
+        return read_record(previous_session_id())
+    except Exception:  # noqa: BLE001 - forensics degrades, never raises
+        return None
 
 
 def _previous_peaks() -> dict[str, Any] | None:

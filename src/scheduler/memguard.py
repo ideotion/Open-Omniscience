@@ -35,6 +35,13 @@ per-pass hygiene still apply). Thresholds are env-tunable:
 
   OO_MEM_GUARD_RSS_PCT   trip when RSS >= this % of total RAM   (default 85)
   OO_MEM_GUARD_AVAIL_MB  trip when available RAM <= this        (default 256)
+
+THE CLEAN STOP (``OO_MEM_STOP=0`` turns it off; question 22a, B2). A guard that stays engaged while available memory sits on
+the floor has not helped: the pause stops NEW work, and the memory the process already holds does not come back (the 2026-09-30
+plateau sat at 64 MB or less for 12 minutes before the kernel killed it). :func:`stall_decision` is the pure criterion for that
+state, replayed against the recorded series in ``tests/test_memguard_stop.py``; when it holds, the guard hands the process to
+``src.scheduler.memstop`` ONCE, which keeps the evidence and shuts the app down through the path the power button uses. The
+window is :data:`STOP_WINDOW_S` (``OO_MEM_STOP_WINDOW_S``) and the floor :data:`STOP_AVAIL_MB` (``OO_MEM_STOP_AVAIL_MB``).
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from datetime import UTC, datetime
 
 from src.monitoring.secret_scrub import log_failure
@@ -63,6 +71,84 @@ def _env_int(name: str, default: int) -> int:
         return max(1, int(os.getenv(name, "") or default))
     except (TypeError, ValueError):
         return default
+
+
+#: How long, engaged, available memory must have sat on the floor (300 s fired 724 s before the kernel's kill on the recorded
+#: 2026-09-30 series; 120 s would stop a machine that recovers within two minutes, 600 s leaves the teardown too little room).
+STOP_WINDOW_S = 300.0
+#: The floor: a quarter of the guard's own 256 MB line. A reading above TWICE this (a brief recovery) breaks the plateau.
+STOP_AVAIL_MB = 64.0
+#: Fewest readings a window may stand on, the share of them that must be at the floor, and the share of the window its real
+#: span must cover (a missing reading counts nothing, as in ``observe``).
+#: What each protects: ``STOP_MIN_SAMPLES`` -- a window of two readings is a blip, not a plateau; ``STOP_LOW_SHARE`` -- one stray reading
+#: above the floor may not hold a real stall off, but a tenth of them may not be waved through; ``STOP_SPAN_SHARE`` -- a window the
+#: readings do not actually cover is a guess about the missing time.
+STOP_MIN_SAMPLES = 10
+STOP_LOW_SHARE = 0.9
+STOP_SPAN_SHARE = 0.95
+#: The shortest window an environment override may set: below it the gap rule (window / 10) would leave under two seconds
+#: between readings and a passing dip would stop the app. A smaller override is raised to this, not honoured.
+STOP_MIN_WINDOW_S = 20.0
+#: This process must hold this share of the machine's RAM, or stopping it frees nothing another process is holding.
+STOP_HELD_SHARE = 1.0 / 3.0
+
+
+def stall_decision(
+    samples: list[tuple[float, float]] | deque[tuple[float, float]],
+    now: float,
+    *,
+    window_s: float = STOP_WINDOW_S,
+    floor_mb: float = STOP_AVAIL_MB,
+    rss_mb: float | None = None,
+    total_mb: float | None = None,
+) -> dict:
+    """Whether the engaged guard has STALLED at the floor. ``samples`` are ``(monotonic seconds, available MB)`` taken while the
+    guard was engaged; the window is the last ``window_s`` seconds up to ``now``. Pure: no clock, no state, no I/O.
+
+    ``due`` is true only when ALL hold: at least :data:`STOP_MIN_SAMPLES` readings in the window; their real span at least
+    :data:`STOP_SPAN_SHARE` of the window; at least :data:`STOP_LOW_SHARE` of them at ``floor_mb`` or less; none above twice
+    the floor (a recovery, even a brief one, breaks the plateau); and the process holds at least :data:`STOP_HELD_SHARE` of the
+    machine's RAM. The answer always carries the numbers it was made from and, when not due, the one condition that failed
+    first (``why``), so a record never asserts more than was measured. ``held_elsewhere`` is set when the memory is the
+    plateau's but not this process's."""
+    inside = [(t, a) for t, a in samples if now - window_s <= t <= now]
+    out: dict = {"due": False, "window_s": window_s, "floor_mb": floor_mb, "samples": len(inside)}
+    if len(inside) < STOP_MIN_SAMPLES:
+        out["why"] = "too few readings in the window"
+        return out
+    span = now - inside[0][0]
+    out["span_s"] = round(span, 1)
+    if span < STOP_SPAN_SHARE * window_s:
+        out["why"] = "the readings do not span the window"
+        return out
+    # A recovery can hide in a stretch with no readings: no gap (between readings, or from the last one to now) may be longer
+    # than a tenth of the window, the same share as the fewest readings it may stand on.
+    gaps = [b[0] - a[0] for a, b in zip(inside, inside[1:], strict=False)] + [now - inside[-1][0]]
+    out["longest_gap_s"] = round(max(gaps), 1)
+    if max(gaps) > window_s / STOP_MIN_SAMPLES:
+        out["why"] = "a stretch of the window has no readings"
+        return out
+    low = sum(1 for _t, a in inside if a <= floor_mb)
+    top = max(a for _t, a in inside)
+    out["low_share"] = round(low / len(inside), 3)
+    out["max_avail_mb"] = round(top, 1)
+    if top > 2.0 * floor_mb:
+        out["why"] = "available memory recovered inside the window"
+        return out
+    if low < STOP_LOW_SHARE * len(inside):
+        out["why"] = "too few readings at the floor"
+        return out
+    if rss_mb is None or not total_mb:
+        out["why"] = "this process's share of the memory could not be read"
+        return out
+    share = rss_mb / total_mb
+    out["held_share"] = round(share, 3)
+    if share < STOP_HELD_SHARE:
+        out["why"] = "memory held elsewhere"
+        out["held_elsewhere"] = True
+        return out
+    out["due"] = True
+    return out
 
 
 def _psutil_readings() -> dict:
@@ -110,6 +196,7 @@ class MemoryGuard:
         resume_after: int | None = None,
         readings_fn=None,
         release_fn=None,
+        stop_fn=None,
     ) -> None:
         self.rss_pct = _env_float("OO_MEM_GUARD_RSS_PCT", 85.0) if rss_pct is None else rss_pct
         self.avail_floor_mb = (
@@ -127,6 +214,13 @@ class MemoryGuard:
         # freed rather than assert that pausing helped.
         self._release_fn = release_fn
         self._last_release: dict | None = None
+        # The clean stop (B2): the engaged window's readings, the one-shot flag, and the last criterion answer. ``stop_fn`` is
+        # injectable so the guard stays a latch in tests and the sequence is its own module.
+        self._stop_fn = stop_fn
+        self._stop_thread: threading.Thread | None = None
+        self._stall: deque[tuple[float, float]] = deque()
+        self._stop_started = False
+        self._stall_last: dict | None = None
         self._lock = threading.Lock()
         self._engaged = False
         self._since: str | None = None
@@ -188,6 +282,11 @@ class MemoryGuard:
         tripped_reason: str | None = None
         tripped_engagement = 0
         resumed = False
+        stop_decision: dict | None = None
+        # Read before the lock is taken: the environment is not work to do while a sampler waits on it.
+        stop_window = max(STOP_MIN_WINDOW_S, _env_float("OO_MEM_STOP_WINDOW_S", STOP_WINDOW_S))
+        stop_floor = _env_float("OO_MEM_STOP_AVAIL_MB", STOP_AVAIL_MB)
+        stop_on = self.stop_enabled()
         with self._lock:
             prev_swap = self._last_proc_swap
             if proc_swap_mb is not None:
@@ -222,6 +321,7 @@ class MemoryGuard:
                         self._under = 0
                         tripped_reason = self._reason
                         tripped_engagement = self._engagements
+                        self._stall.clear()
                 else:
                     self._over = 0
             else:
@@ -240,6 +340,8 @@ class MemoryGuard:
                         resumed = True
                 else:
                     self._under = 0
+                if self._engaged:
+                    stop_decision = self._note_stall_locked(mem_avail_mb, rss_mb, mem_total_mb, stop_window, stop_floor, stop_on)
             engaged = self._engaged
         # Log OUTSIDE the lock (skeptic nit: the jsonl error handler does file
         # I/O; workers' admit() checks must never queue behind a log write).
@@ -256,7 +358,58 @@ class MemoryGuard:
             self._run_release(tripped_engagement)
         if resumed:
             _LOG.warning("memory guard released (memory recovered) — collection resumes")
+        if stop_decision is not None:
+            self._run_stop(stop_decision)
         return engaged
+
+    @staticmethod
+    def stop_enabled() -> bool:
+        return os.getenv("OO_MEM_STOP", "1") != "0"
+
+    def _note_stall_locked(
+        self, avail: float | None, rss: float | None, total: float | None, window: float, floor: float, stop_on: bool
+    ) -> dict | None:
+        """Fold one engaged sample into the stall window and, when the criterion holds for the first time, claim the one stop.
+        Caller holds the lock and runs the stop OUTSIDE it. The window is pruned by TIME (older than the window), so what it
+        holds is bounded by how often readings arrive, not by a count."""
+        if avail is None or not stop_on:
+            return None
+        now = time.monotonic()
+        self._stall.append((now, avail))
+        while self._stall and self._stall[0][0] < now - window:
+            self._stall.popleft()
+        decision = stall_decision(self._stall, now, window_s=window, floor_mb=floor, rss_mb=rss, total_mb=total)
+        self._stall_last = decision
+        if not decision["due"] or self._stop_started:
+            return None
+        self._stop_started = True
+        return decision
+
+    def _run_stop(self, decision: dict) -> None:
+        """Hand the process to the clean stop, on its OWN named thread. Never raises: the pause stands whether or not the stop runs.
+
+        Not on the caller's thread: the stop waits (a bounded pause, a bounded exclusive wait, ~70 s at most), and the caller is the
+        scheduler's own loop or a polling endpoint -- the first would be asked to join itself in the pause, the second would hang a
+        request. ``self._stop_thread`` is kept so a test can join it. If the thread cannot start (plausible at the memory floor) the
+        stop runs on the caller's thread instead: a stop that waits is better than a stop that is lost."""
+        fn = self._stop_fn
+        if fn is None:
+            from src.scheduler.memstop import execute as fn  # noqa: PLC0415
+
+        def _go() -> None:
+            try:
+                fn(decision, self)
+            except Exception as exc:  # noqa: BLE001 - a failed stop leaves the pause in force
+                log_failure(_LOG, "memory guard: the clean stop failed", exc, level=logging.WARNING)
+
+        try:
+            t = threading.Thread(target=_go, name="oo-memory-stop", daemon=True)
+            self._stop_thread = t
+            t.start()
+        except Exception as exc:  # noqa: BLE001 - "can't start new thread" is plausible at the memory floor: the stop still runs
+            log_failure(_LOG, "memory guard: the stop's thread could not start; running it on this one", exc, level=logging.WARNING)
+            self._stop_thread = None
+            _go()
 
     def raw_pressure(
         self,
@@ -356,6 +509,8 @@ class MemoryGuard:
         self._since = None
         self._over = 0
         self._under = 0
+        self._stall.clear()
+        self._stall_last = None
 
     @staticmethod
     def _describe(rss_frac_pct, mem_avail_mb, over_rss: bool, over_avail: bool) -> str:
@@ -389,6 +544,11 @@ class MemoryGuard:
                     "resume_rss_pct": self.resume_rss_pct,
                 },
                 "last_reading": dict(self._last),
+                "stop": {
+                    "enabled": self.stop_enabled(),
+                    "started": self._stop_started,
+                    "last_decision": dict(self._stall_last) if self._stall_last else None,
+                },
                 # Honest visibility: an "enabled" guard with no readings (no
                 # psutil) is BLIND — surfaced, never implied protection.
                 "readings_available": (
