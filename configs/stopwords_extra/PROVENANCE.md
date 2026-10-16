@@ -509,3 +509,40 @@ one of them, retroactively and with no re-index; new Japanese keywords are split
 extraction they act on little (reasoned: janome was not installed to test, as in batch 6). The `々` note of batch 6 is moot for this batch: no Japanese or Chinese candidate of the decision file contains it, and the
 script guard is unchanged.
 
+
+## Stoplist batch 9: function words, number words, calendar words and site chrome in Belarusian, Bosnian, Persian, Croatian, Nynorsk, Norwegian, Albanian and Urdu (2026-10-16, R131, language group 7)
+
+325 words from the same triage and the same method as batches 2 to 8 (read batch 2 first), run on the decision file `full.repeat-agreed.tsv` (sha256 47400de97c79) against the keyword log (sha256 prefix 6467504ab8ab), in
+eight NEW files (the loader unions every file in the directory): be 63, bs 2, fa 26, hr 24, nn 42, no 46, sq 43, ur 79. By the triage's codes: 210 function words (Belarusian `пра`, `гэта`, Albanian `dhe`, `për`,
+Urdu `لیے`, `جبکہ`, Norwegian `blant`, `dersom`, Croatian `tijekom`, `stoga`, Persian `زیرا`, `طبق`), 31 calendar words (`верасня`, `shtator`, `ستمبر`, `rujna`, Persian `شهریور` in its two spellings of the letter y, `tysdag`), 30 number
+words (`тры`, `qind`, `ہزار`, `کروڑ`, `åtte`, `میلیارد`), 35 boilerplate words (Norwegian `abonnent`, `nattmodus`, `hovedinnhold`, `eavis`, `snarveier`, Nynorsk `studentabonnement`, `annonsørinnhald`, Persian `برچسبها` "tags",
+`پیوندها` "links", Croatian `komentiranje`), 18 fragments of the kind batch 8 explains (the Urdu suffix `ویں`, the participle `کردہ`, `جارہی`, and 11 Nynorsk and 3 Norwegian site-name-plus-`allerede` runs, below) and one loan
+word (Urdu `اینڈ`, "and"). The tool refused most of the triage's other candidates (nn 248 of 296, no 144 of 192, be 69 of 135, sq 45 of 89, hr 17 of 62, bs 10 of 13, fa 8 of 36, ur 15 of 105), as phrases, entity
+readings or content in another language. None of the eight is in `TWICE_READ`, none is a `single_reader` language; 323 of the 325 carry the `repeat_agreed` marker (the batch comments give the counts), and the two that do not, Urdu `جاتا` and `جائیں`, both auxiliary forms of "to go", are N at high confidence in the decision file with neither `unstable` nor `not_repeated` set, and the tool admitted them on that footing. The script map of the tool and of
+`tests/test_stopword_file_scripts.py` gain Cyrillic (be) and Arabic script (fa, ur).
+
+**Read by hand, and how many were left out of each language:** every word with an "also read in articles tagged X (n)" note was read against the language it is also read in, because a stoplist word is global and hides
+the spelling everywhere. Nobody on the project reads Belarusian, Persian, Albanian or Urdu, so those four languages were read conservatively, leaving a word out at the first doubt; Croatian, Bosnian and the two Norwegian
+written standards are closer to languages the project reads and were read more fully. Left out, with the language's counts of words read / addable / refused by the tool:
+- **be** (135 / 66 / 69): 3 left out, `kawiarnia`, `przystań` and `rzeźbie`, Polish words in a Belarusian-tagged article (the triage language is the article's, not the word's). Kept: `таму`, also read in 4 Macedonian
+  articles, where it is the same kind of word.
+- **bs** (13 / 3 / 10): 1 left out, `čanje`, which reads as the tail of a longer word. Two kept, `izuzev` and `nijedan`.
+- **fa** (36 / 28 / 8): 2 left out, `الملل` (the tail of `بین‌الملل` "international", and Arabic "boredom", which this stoplist would hide there) and `نوشت` ("wrote", a reporting verb whose row carries no
+  `repeat_agreed` marker and which is coded `ph`: left to a reader of Persian).
+- **hr** (62 / 45 / 17): 21 left out. `tko` is read in 17 English articles (TKO, the boxing result), and 20 forms end in a closing apostrophe (`max'`, `grudi'`, `baraba'`, `braka'`, `croata'` and the like), the quotation fragments batch 7 also left out. 24 kept.
+- **nn** (296 / 48 / 248): 6 left out, each also read in articles of other languages, where a global entry would hide a different word (what each is there is reasoned from the spelling, not checked in the text): `inn` (133 English-tagged articles, the English "inn"), `kan` (English 25, Turkish 19, Hausa 9, French 3; Turkish "blood"), `deg` (English 22, degrees), `kva` (English 5, the unit kVA), `sine` (English, Spanish, Romanian and Turkish, 5 each, and one more language), `eit` (English 4).
+- **no** (192 / 48 / 144): 2 left out, `dine` (the English verb, in 144 English articles) and `artikkelen` ("the article": coded `bp`, but it carries no marker and is a content noun in its definite form).
+- **sq** (89 / 44 / 45): 1 left out, `mbi`, read in 4 English articles (reasoned to be an abbreviation there, not checked). 43 kept.
+- **ur** (105 / 90 / 15): 11 left out. `آباد` (the "-abad" of place names, also read in Arabic and English articles) and four more fragments of longer words, `ایشن` (association), `انٹیلی` (intelligence), `ایسوسی` and
+  `ورزی` (as in "violation"); five English words of programming text in an Urdu-tagged article (`snippets`, `supplied`, `countable`, `foreach`, `implements`: coded `lng`, left out as the earlier batches did);
+  and `akanksha8000`, a user name.
+
+**Kept on purpose:** the Nynorsk and Norwegian runs of a site's author or section name glued to `allerede` (`drønenallerede`, `paulsenallerede`, `skjermdumpallerede`, `abonnementallerede`, 16 in nn and 3 in no): they are
+not words of any language but a scraping artefact of one site, a name followed by the paywall word, so hiding the whole stored keyword loses no name (the name alone is not hidden). The Norwegian words that the notes
+show also in Danish-tagged articles (`derfor`, `hvert`, `altså`, `nemlig`) are the same function words in Danish, kept. `meny` (also read in 7 Swedish articles) is the same word there.
+
+**The Serbian `kad` entry is removed in this batch (the cautious option of OPEN_QUEUE's "Owed to the next Malay reader", closed here):** batch 4 flagged Serbian `kad` as also the Malay "kad" (card, as in "kad merah", red
+card), batch 5 (Malay) noted it and left the entry in. A stoplist word is global, so the Serbian "when" hid the Malay "card" in every Malay corpus; Serbian `kada` (already in `sr.yml`) still covers the Serbian use, and
+the cost of removing `kad` is one Serbian function word shown in the keywords. A reader of Malay may put it back as an informed choice. `tests/test_analytics_extract.py` no longer declares it under batch 4.
+
+Hiding is retroactive with no re-index; extraction also drops them from now on.

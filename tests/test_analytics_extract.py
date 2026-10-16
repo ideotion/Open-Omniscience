@@ -340,7 +340,7 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         # content sense; evidence in configs/stopwords_extra/PROVENANCE.md (the curly spelling of an apostrophe
         # word is listed beside the straight one).
         "avgusta", "bili", "biće", "bude", "budu", "deset", "devet", "drugih", "duž", "dva", "dve",
-        "hiljada", "iako", "ispred", "jeste", "jula", "kad", "koga", "koje", "kojeg", "kojem", "koji",
+        "hiljada", "iako", "ispred", "jeste", "jula", "koga", "koje", "kojeg", "kojem", "koji",
         "kojih", "kojim", "kojoj", "koju", "koliko", "mene", "meni", "među", "međutim", "miliona",
         "moja", "moje", "najčitanije", "naša", "naše", "našeg", "naši", "naših", "našim", "našoj", "našu",
         "nedelju", "nego", "neke", "neki", "nekih", "neko", "neće", "nešto", "nijesu", "nisam", "nismo",
@@ -476,6 +476,54 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         # noise twice and batch 6 left out as over-cautious (the same kind as the kept と述べた); evidence in
         # configs/stopwords_extra/PROVENANCE.md.
         "としています", "とコメント", "と強調", "と指摘", "と指摘した", "と振り返った", "と振り返り", "と振り返る", "と語る", "と説明", "を発表", "を発表せず",
+        # stoplist batch 9 (2026-10-16, R131, language group 7: be bs fa hr nn no sq ur): function words, number and month
+        # words and site chrome the triage called noise twice, kept only where the log shows no other-language content
+        # sense; evidence in configs/stopwords_extra/PROVENANCE.md. Serbian `kad` left the union in the same batch (it is
+        # also Malay "kad", card), so it is no longer declared under batch 4.
+        # be
+        "аднак", "ажно", "акрамя", "будзе", "будзем", "былі", "быць", "быў", "верасня", "восем", "гэта",
+        "гэтага", "гэтае", "гэтай", "гэтая", "гэтую", "гэты", "гэтым", "гэтыя", "дзве", "дзвюма", "дзе",
+        "дзясяты", "жніўні", "каля", "калі", "нашага", "нашай", "нядзелю", "паводле", "пад", "падчас",
+        "паміж", "пасля", "пра", "праз", "пры", "сярод", "таго", "таксама", "такіх", "таму", "тое", "толькі",
+        "тры", "тым", "тых", "чатырох", "чым", "шэсць", "яго", "ягоная", "якая", "якое", "якой", "якім",
+        "якіх", "якія", "яму", "яны", "яшчэ", "ўсё", "ўсіх",
+        # bs
+        "izuzev", "nijedan",
+        # fa
+        "اینان", "بالای", "برچسبها", "بهعنوان", "ترین", "تمامی", "جمعه", "دوشنبه", "زیرا", "سپتامبر", "شنبه",
+        "شهريور", "شهریور", "شهریورماه", "طبق", "میتواند", "میلیارد", "میلیون", "هشت", "هفتم", "هفته",
+        "پسندها", "پیوندها", "چهارم", "یکدیگر", "یکشنبه",
+        # hr
+        "diljem", "izvan", "kojom", "komentara", "komentiranje", "nedjelju", "nečemu", "nitko", "njezinu",
+        "obje", "ovakva", "ponedjeljak", "rujna", "srpnja", "stoga", "subotu", "tijekom", "tisuća", "tisuće",
+        "umjesto", "unatoč", "uslijed", "vašu", "čije",
+        # nn
+        "aamallerede", "aartunallerede", "alvsvågallerede", "andaallerede", "annonsørinnhald", "blitt",
+        "bvaallerede", "deira", "ditt", "drønenallerede", "fordi", "fotballallerede", "frå", "før",
+        "gjerdeallerede", "hadde", "hagenesallerede", "harestadallerede", "hjå", "ikkje", "innan", "korleis",
+        "kunne", "kvarandre", "lofstadallerede", "meny", "mælandallerede", "noko", "nokon", "nokre",
+        "paulsenallerede", "seleallerede", "sitt", "sjølv", "skjermdumpallerede", "skulle",
+        "studentabonnement", "sundag", "tysdag", "utanfor", "vere", "westadallerede",
+        # no
+        "abonnementallerede", "abonnementet", "abonnent", "abonnentens", "altså", "annonseinfo",
+        "annonsørinnhold", "arkivallerede", "avisleveringen", "bak", "blant", "brukerid", "brukernavn",
+        "burde", "bør", "derfor", "dersom", "eavis", "fem", "hovedinnhold", "hvert", "imot", "innlogging",
+        "inntil", "kommentarfelt", "kundesenter", "logg", "millioner", "nattmodus", "nemlig", "nyhetsbrev",
+        "papirutgaven", "personvernpolicy", "privatallerede", "rundt", "sju", "slike", "snarvegar",
+        "snarveier", "såfremt", "søk", "utenfor", "vilkår", "våre", "vårt", "åtte",
+        # sq
+        "asnjë", "atij", "atë", "cilat", "dhe", "edhe", "gusht", "gushtit", "ishte", "janë", "jemi", "kanë",
+        "kishte", "kjo", "korrik", "këtij", "këto", "këtë", "megjithatë", "mijë", "ndaj", "ndonjë", "ndër",
+        "ndërsa", "një", "nuk", "nën", "pasi", "prej", "për", "përmes", "përqind", "qenë", "qind", "rreth",
+        "sepse", "shtator", "sipas", "tetorit", "tij", "çdo", "çfarë", "është",
+        # ur
+        "اتنی", "اتوار", "ارب", "اسے", "اندر", "انھوں", "انھیں", "انہوں", "انہیں", "اُن", "اپنا", "اپنی",
+        "اپنے", "اکتوبر", "اگست", "ایسا", "ایسی", "اینڈ", "بارے", "باوجود", "بجائے", "برائے", "بلکہ", "تاکہ",
+        "تاہم", "تمام", "تھیں", "تین", "جائیں", "جاتا", "جاتی", "جارہی", "جبکہ", "جسے", "جنہوں", "جولائی",
+        "جہاں", "جیسے", "دونوں", "ذریعے", "سات", "ستمبر", "سکتا", "سکتی", "سکتے", "سکیں", "علاوہ", "لاکھ",
+        "لیے", "مئی", "مجھے", "ملین", "میری", "میرے", "وہی", "ویں", "پانچ", "پیچھے", "چار", "چاہئیں", "چکا",
+        "کردہ", "کروڑ", "کسی", "کچھ", "کیلیے", "کےلیے", "گئیں", "ہزار", "ہفتہ", "ہماری", "ہمارے", "ہمیں",
+        "ہوتا", "ہونا", "ہونے", "ہوگا", "ہوگی", "یہی",
     })
     assert added_since_migration <= _EXTRA_STOPWORDS, (
         "a declared post-migration addition is missing from the data files"

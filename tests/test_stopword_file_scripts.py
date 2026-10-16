@@ -42,9 +42,11 @@ _DIR = Path(__file__).resolve().parents[1] / "configs" / "stopwords_extra"
 _NON_LATIN_FILES = {
     "am.yml": ("ETHIOPIC",),
     "ar.yml": ("ARABIC",),
+    "be.yml": ("CYRILLIC",),
     "bg.yml": ("CYRILLIC",),
     "bn.yml": ("BENGALI",),
     "el.yml": ("GREEK",),
+    "fa.yml": ("ARABIC",),
     "hi.yml": ("DEVANAGARI",),
     "ja.yml": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
     "kk.yml": ("CYRILLIC",),
@@ -53,6 +55,7 @@ _NON_LATIN_FILES = {
     "mr.yml": ("DEVANAGARI",),
     "ru.yml": ("CYRILLIC",),
     "uk.yml": ("CYRILLIC",),
+    "ur.yml": ("ARABIC",),
     "zh.yml": ("CJK",),
 }
 
