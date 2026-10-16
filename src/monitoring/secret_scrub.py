@@ -1292,6 +1292,46 @@ def _scrub_document(text: str, needle: str) -> str:
         return _scrub_cut_text(text, needle)
 
 
+#: The most of ONE line :func:`scrubbed_copy` holds in memory at once. It protects MEMORY, not the passphrase: a line over it is not copied, in
+#: whole or in part; a marker that counts its bytes takes its place.
+_COPY_LINE_BYTES = 1_000_000
+
+
+def scrubbed_copy(src: Path, dst: Path) -> int:
+    """Copy the text file ``src`` to ``dst`` with every passphrase the process holds taken out, and return how many lines changed.
+
+    For a record file that LEAVES the install (a backup's logs, a bundle's member): each line is scrubbed WHOLE before anything is
+    written, so a key can never be cut by this function, and the line ending is kept as it was. A line too long to hold
+    (:data:`_COPY_LINE_BYTES`) is replaced by a marker that counts its bytes, never copied in part; an invalid UTF-8 byte becomes U+FFFD.
+    When what the process holds cannot be read, :func:`scrubbed` withholds the line (the fixed words of :data:`UNREADABLE_TEXT`), so
+    nothing unchecked is copied. The destination is written in place: the caller hands it a staging path of its own. A passphrase that
+    itself holds a line break cannot match across two lines (a stated limit). Raises ``OSError``."""
+    changed = 0
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with src.open("rb") as fh, dst.open("wb") as out:
+        while True:
+            piece = fh.readline(_COPY_LINE_BYTES)
+            if not piece:
+                break
+            if len(piece) == _COPY_LINE_BYTES and not piece.endswith(b"\n"):
+                nxt = fh.readline(_COPY_LINE_BYTES)
+                if nxt:  # longer than the bound: count the rest in pieces and drop it
+                    n = len(piece) + len(nxt)
+                    while len(nxt) == _COPY_LINE_BYTES and not nxt.endswith(b"\n"):
+                        nxt = fh.readline(_COPY_LINE_BYTES)
+                        n += len(nxt)
+                    out.write(f"[a line of {n:,} bytes is not copied: it is too long to check for the passphrase in one piece]\n".encode())
+                    changed += 1
+                    continue
+            line = piece.decode("utf-8", errors="replace")
+            body = line.rstrip("\r\n")
+            clean = scrubbed(body)
+            if clean != body:
+                changed += 1
+            out.write((clean + line[len(body):]).encode("utf-8"))
+    return changed
+
+
 def scrub_file(path: Path, needle: str) -> bool:
     """Take ``needle`` out of the file at ``path``, in place, and say whether the file was rewritten.
 

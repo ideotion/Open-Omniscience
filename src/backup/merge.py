@@ -5702,6 +5702,8 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 existing = set(local.read_text("utf-8").splitlines())
             except OSError:
                 existing = set()
+        # a restored backup's lines are scrubbed WHOLE before they join the live log (a backup an older build made can hold a key)
+        incoming_lines = [scrubbed(ln) for ln in incoming_lines]
         fresh = [ln for ln in incoming_lines if ln and ln not in existing]
         if fresh:
             with open(local, "a", encoding="utf-8") as fh:

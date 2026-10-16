@@ -1129,6 +1129,7 @@ def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
     from src.backup.artifact import _LOG_FILES as LOG_FILES
     from src.backup.artifact import _STATE_FILES as STATE_FILES
     from src.database.connect import snapshot_preserving
+    from src.monitoring.secret_scrub import scrubbed_copy
 
     base = data_dir()
     members: list[MemberFile] = []
@@ -1142,7 +1143,11 @@ def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
     def _stage(rel: str, role: str, src: Path) -> None:
         dst = tmp_dir / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+        if role == "logs":
+            # a record file that LEAVES the install: copied line by line through the scrub (a log an older build wrote can hold a key)
+            scrubbed_copy(src, dst)
+        else:
+            shutil.copy2(src, dst)
         members.append(MemberFile(rel, role, dst))
 
     for name in STATE_FILES:

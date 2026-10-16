@@ -184,11 +184,14 @@ def session_forensics_report(download: bool = Query(False)) -> dict | Response:
     from src.monitoring.forensics import render_text as _render
     from src.monitoring.forensics import session_forensics as _sf
 
-    payload = _sf()
+    from src.monitoring.secret_scrub import scrubbed, scrubbed_value
+
+    # the standalone route has no member net of its own: kernel-log lines and journal text enter the facts, so every string passes the scrub
+    payload = scrubbed_value(_sf())
     if download:
         fname = f"oo-session-forensics-{datetime.now().strftime('%Y%m%d-%H%M')}.txt"
         return Response(
-            content=_render(payload),
+            content=scrubbed(_render(payload)),
             media_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
