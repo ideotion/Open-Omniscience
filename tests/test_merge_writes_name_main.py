@@ -124,6 +124,8 @@ class _Scan:
         self.module_assigns = self._assigns([n for n in self.tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))])
         #: helper name -> {parameter name: its positional index, or None when keyword-only}: the parameters that reach an execute call
         self.passthrough: dict[str, dict[str, int | None]] = {}
+        #: a name bound to an execute method (``<exec>``) or to a pass-through helper: ``ex = con.execute`` / ``ex = run``
+        self.aliases: dict[str, str] = {}
         self.problems: list[str] = []
         self.allowed_used: set[str] = set()
 
@@ -166,7 +168,8 @@ class _Scan:
             # string that is not one; anything else makes the text unreadable at the helper, which is a problem
             if node.func.attr == "replace":
                 gone = self._texts(node.args[0], fn) if node.args else None
-                if gone is None or any(w in t.lower() for t in gone for w in ("main", "temp")):
+                # a fragment of the prefix is as good as the prefix: `.replace("ma", "").replace("in.", "")` strips `main.`
+                if gone is None or any(w in t.lower() or t.lower() in prefix for t in gone for w in ("main", "temp") for prefix in ("main.", "temp.")):
                     return None
             return self._origin_params(node.func.value, fn, seen)
         return None
@@ -246,6 +249,12 @@ class _Scan:
         changed = True
         while changed:
             changed = False
+            for node in ast.walk(self.tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    kind = self._callable_kind(node.value)
+                    if kind is not None and self.aliases.get(node.targets[0].id) != kind:
+                        self.aliases[node.targets[0].id] = kind
+                        changed = True
             for fn in self.defs:
                 index = dict(self._params(fn))
                 for call in (n for n in ast.walk(fn) if isinstance(n, ast.Call) and self._func_of(n) is fn):
@@ -270,7 +279,38 @@ class _Scan:
                 if text and _looks_like_write(text[0]) and not isinstance(self.parent.get(node), ast.Expr):
                     for problem in _classify(text[0]):
                         self._report(node, problem)
+        # 4. an execute method or a helper used as a VALUE other than the right side of a plain `name = ...` (an alias, followed above):
+        #    `partial(run, con)`, `map(con.execute, rows)`: the scan cannot see which SQL reaches it, so that is a problem
+        for node in ast.walk(self.tree):
+            kind = self._callable_kind(node) if isinstance(node, (ast.Attribute, ast.Name)) else None
+            if kind is None or isinstance(getattr(node, "ctx", None), ast.Store):
+                continue
+            parent = self.parent.get(node)
+            if isinstance(parent, ast.Call) and parent.func is node:
+                continue
+            if isinstance(parent, ast.Attribute):  # `con` in `con.execute`, `a` in `a.run`: not a use of the callable
+                continue
+            if isinstance(parent, ast.Assign) and parent.value is node and all(isinstance(t, ast.Name) for t in parent.targets):
+                continue
+            if isinstance(node, ast.Name) and node.id not in self.passthrough and node.id not in self.aliases:
+                continue
+            self._report(node, f"{ 'an execute method' if kind == '<exec>' else kind} used as a value")
         return sorted(set(self.problems))
+
+    def _callable_kind(self, node: ast.expr) -> str | None:
+        """``"<exec>"`` for an execute method taken as a value (``con.execute``, ``getattr(con, "execute")``), the helper's name for a
+        pass-through helper or an alias of one, else ``None``."""
+        if isinstance(node, ast.Attribute) and node.attr in _EXEC_METHODS:
+            return "<exec>"
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr" and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant) and node.args[1].value in _EXEC_METHODS):
+            return "<exec>"
+        name = node.id if isinstance(node, ast.Name) else getattr(node, "attr", None) if isinstance(node, ast.Attribute) else None
+        if name is None:
+            return None
+        if name in self.aliases:
+            return self.aliases[name]
+        return name if name in self.passthrough else None
 
     def _sql_args(self, call: ast.Call) -> list[ast.expr]:
         """The arguments of ``call`` that are SQL: the statement of an execute-like method (positional or by keyword), and the passed-through
@@ -280,6 +320,8 @@ class _Scan:
         if (isinstance(f, ast.Call) and isinstance(f.func, ast.Name) and f.func.id == "getattr" and len(f.args) >= 2
                 and isinstance(f.args[1], ast.Constant) and f.args[1].value in _EXEC_METHODS):  # getattr(con, "execute")(...)
             f = ast.Attribute(value=f.args[0], attr=f.args[1].value)
+        if isinstance(f, ast.Name) and f.id in self.aliases:  # `ex = con.execute; ex(...)` and `ex = run; ex(...)`
+            f = ast.Attribute(value=f, attr="execute") if self.aliases[f.id] == "<exec>" else ast.Name(id=self.aliases[f.id])
         keywords = {k.arg: k.value for k in call.keywords if k.arg is not None}
         spread = [ast.Starred(value=k.value) for k in call.keywords if k.arg is None]  # a Starred is never a readable text
         starred = next((a for a in call.args if isinstance(a, ast.Starred)), None)
@@ -429,6 +471,19 @@ def test_the_scan_sees_the_real_module_s_writes():
         # a parameter reassigned on SOME path stays a pass-through: the caller's text can still reach execute
         'def run(con, sql, flag):\n    if flag:\n        sql = "SELECT 1"\n    con.execute(sql)\ndef f(con, v):\n    run(con, f"{v} FROM t", False)',
         'def run(con, sql):\n    def g():\n        sql = "SELECT 1"\n        return sql\n    g()\n    con.execute(sql)\ndef f(con, v):\n    run(con, f"{v} FROM t")',
+        # fragments of the prefix: stripping `ma` then `in.` strips `main.`
+        'def run(con, sql):\n    con.execute(sql.replace("ma", "").replace("in.", ""))\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        'def run(con, sql):\n    con.execute(sql.replace(".", ""))\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        'def run(con, sql):\n    con.execute(sql.replace("n.", ""))\ndef f(con):\n    run(con, "DELETE FROM main.t")',
+        # aliases of execute and of a helper, with a BUILT statement
+        'def f(con, v):\n    ex = con.execute\n    ex(f"{v} FROM t")',
+        'def f(con, v):\n    ex = getattr(con, "executemany")\n    ex(f"{v} FROM t", [])',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, v):\n    ex = run\n    ex(con, f"{v} FROM t")',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, v):\n    ex = run\n    ey = ex\n    ey(con, f"{v} FROM t")',
+        # a callable used as a value the scan cannot follow
+        'from functools import partial\ndef run(con, sql):\n    con.execute(sql)\ndef f(con, v):\n    partial(run, con)(f"{v} FROM t")',
+        'def f(con, rows):\n    list(map(con.execute, rows))',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con, rows):\n    list(map(run, rows))',
         # *args and **kwargs that could carry the statement are not resolvable
         'def f(con, args):\n    con.execute(*args)',
         'def f(con, kw):\n    con.execute(**kw)',
@@ -477,6 +532,11 @@ def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
         'def f(con):\n    con.execute("ANALYZE main.t")',
         'def f(con):\n    con.execute("PRAGMA main.optimize")',
         'def f(con):\n    getattr(con, "execute")("DELETE FROM main.t")',
+        # aliases of readable calls, and a `.replace` that strips something else
+        'def f(con):\n    ex = con.execute\n    ex("SELECT 1")',
+        'def run(con, sql):\n    con.execute(sql)\ndef f(con):\n    ex = run\n    ex(con, "SELECT 1")',
+        'def f(con):\n    ex = getattr(con, "execute")\n    ex("DELETE FROM main.t")',
+        'def run(con, sql):\n    con.execute(sql.replace("{cols}", "a, b"))\ndef f(con):\n    run(con, "SELECT {cols} FROM t")',
         # readable shapes that a clause removed from the reader would turn into a failure (positional-only parameter, conditional)
         'def run(con, sql, /):\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 1")',
         'def f(con, x):\n    con.execute("DELETE FROM main.t" if x else "DELETE FROM temp.t")',
