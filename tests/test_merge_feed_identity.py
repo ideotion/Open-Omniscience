@@ -55,8 +55,16 @@ def _run(tmp_path, local, incoming):
     with _corpus(working)() as s:
         local(s)
         s.commit()
-    merge_corpus(staged, working, _META)
+    report, _batch = merge_corpus(staged, working, _META)
+    _LAST_REPORT[str(tmp_path)] = report
     return working
+
+
+_LAST_REPORT: dict[str, dict] = {}
+
+
+def _report_of(tmp_path):
+    return _LAST_REPORT[str(tmp_path)]
 
 
 def test_two_feeds_of_one_domain_arrive_as_two_sources_and_keep_their_articles(tmp_path):
@@ -192,3 +200,62 @@ def test_an_unmatched_feed_lands_as_a_sibling_takes_the_outlets_verdict_and_is_l
     entry = sources["siblings"][0]
     assert entry["domain"] == "dw.com" and entry["verdict_inherited"] is True
     assert entry["reason"] == "feed not present locally, added under outlet dw.com https://dw.com/en"  # the oldest local row names the outlet
+
+
+def _stamp(path: Path, feed: str, criteria: str):
+    with _corpus(path)() as s:
+        s.query(Source).filter_by(rss_url=feed).one().qualification_criteria_version = criteria
+        s.commit()
+
+
+def test_a_catalogue_stamp_is_provenance_not_a_verdict_the_sibling_inherits(tmp_path):
+    """R148 (a): a catalogue-curated 'qualified' on the outlet's only stamped row is not handed on; the incoming
+    disqualified feed keeps its own verdict and is NOT reported as inheriting one."""
+    from src.catalog.qualification import CURATED_CRITERIA_VERSION
+
+    def local(s):
+        _src(s, "dw.com", "https://dw.com/en", status="qualified")
+        _src(s, "dw.com", "https://dw.com/de", status="unqualified")
+        s.flush()
+        s.query(Source).filter_by(rss_url="https://dw.com/en").one().qualification_criteria_version = CURATED_CRITERIA_VERSION
+
+    working = _run(tmp_path, local, lambda s: _src(s, "dw.com", "https://dw.com/old-feed", status="disqualified"))
+    rows = {r[1]: r for r in _rows(working)}
+    assert rows["f:dw.com/old-feed"][2] == "disqualified"
+    report = _report_of(tmp_path)
+    assert report["sources"]["siblings"][0]["verdict_inherited"] is False
+
+
+def test_the_qualification_tally_counts_what_lands_not_what_arrived(tmp_path):
+    """The sibling arrives 'qualified' and lands 'disqualified' (the outlet's verdict): the tally must say
+    introduced_disqualified, not introduced_qualified."""
+    def local(s):
+        _src(s, "dw.com", "https://dw.com/en", status="disqualified")
+        _src(s, "dw.com", "https://dw.com/de", status="unqualified")
+
+    _run(tmp_path, local, lambda s: _src(s, "dw.com", "https://dw.com/old-feed", status="qualified"))
+    tally = _report_of(tmp_path)["_source_qualification"]
+    assert tally["introduced_disqualified"] == 1
+    assert tally["introduced_qualified"] == 0
+
+
+def test_the_outlets_verdict_is_the_oldest_measured_rows_not_the_newest(tmp_path):
+    """Two measured rows that disagree: R148 reads the OLDEST (the row the outlet's name and signatures come from)."""
+    def local(s):
+        _src(s, "dw.com", "https://dw.com/en", status="unqualified")  # oldest row, not measured: skipped
+        _src(s, "dw.com", "https://dw.com/de", status="disqualified")  # oldest MEASURED row
+        _src(s, "dw.com", "https://dw.com/fr", status="qualified")
+
+    working = _run(tmp_path, local, lambda s: _src(s, "dw.com", "https://dw.com/old-feed", status="qualified"))
+    assert {r[1]: r for r in _rows(working)}["f:dw.com/old-feed"][2] == "disqualified"
+
+
+def test_an_incoming_row_without_a_feed_is_not_reported_as_a_feed(tmp_path):
+    def local(s):
+        _src(s, "dw.com", "https://dw.com/en")
+        _src(s, "dw.com", "https://dw.com/de")
+
+    _run(tmp_path, local, lambda s: _src(s, "dw.com", None))
+    entry = _report_of(tmp_path)["sources"]["siblings"][0]
+    assert entry["incoming_feed"] is None
+    assert entry["reason"].startswith("entry without a feed")

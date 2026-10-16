@@ -2870,7 +2870,8 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -
         if len(r.siblings) < _SAMPLE_LIMIT:
             r.siblings.append({
                 "domain": domain, "incoming_feed": feed, "outlet": outlet, "verdict_inherited": takes,
-                "reason": f"feed not present locally, added under outlet {outlet}",
+                "reason": (f"feed not present locally, added under outlet {outlet}" if feed
+                           else f"entry without a feed, added beside the feeds of outlet {outlet}"),
             })
     return inherited
 
@@ -3107,6 +3108,7 @@ def _merge_sources(con, batch_id, results) -> None:
         f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",
     )
     _record_inherited_sibling_verdicts(con, batch_id, sibling_ids)
+    con.execute("DROP TABLE IF EXISTS temp.sib_verdict")  # read by the INSERT and the tally above; nothing reads it later
 
     g = DomainResult()
     g.duplicate = _count(
