@@ -56,7 +56,10 @@ READ_ONLY_PRAGMAS_WITH_ARGUMENT = frozenset(
 
 
 def is_plain_read(statement: str) -> bool:
-    """True only for a statement that cannot change the database: see the module docstring. Never raises on a ``str``."""
+    """True for a statement that cannot change the SCHEMA or the header and, by its first word, is a read: see the module docstring. A
+    statement that begins with ``WITH`` is one although ``WITH ... INSERT`` / ``DELETE`` write rows: the driver's changed-row count sees those
+    (``tests/test_release_declines_unseen_writes.py`` pins both), and a common table expression cannot carry a schema change. Never raises
+    on a ``str``."""
     found = _FIRST_WORD.match(statement)
     if found is None:
         return False

@@ -34,7 +34,7 @@ import math
 import os
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import create_engine, event
@@ -714,6 +714,12 @@ _CHANGES_BASELINE = "_oo_txn_rows_changed"
 # the session, and through it the connection) can both reach. Reset when a root transaction first meets the connection.
 _NON_READ_STATEMENT = "_oo_txn_ran_a_non_read"
 
+# The same count, taken one layer down: when the CONNECTION's transaction begins (the Engine ``begin`` event), which is before a Session
+# that is later bound to that connection can begin. A Session joined to a connection that already had a transaction open (``Session(bind=
+# connection)`` after writes on it) would otherwise record its baseline AFTER those writes, and the release would find "nothing changed"
+# and roll them back (reproduced 2026-10-16 by the independent read). The Session's own baseline is the earlier of the two.
+_CONNECTION_BEGAN_AT = "_oo_conn_txn_rows_changed"
+
 
 def _driver_rows_changed(connection: Any) -> int | None:
     """Rows the DBAPI connection under the SQLAlchemy ``connection`` has changed since it was opened; ``None`` when it cannot say.
@@ -726,19 +732,42 @@ def _driver_rows_changed(connection: Any) -> int | None:
     return count if type(count) is int else None
 
 
+@event.listens_for(Engine, "begin")
+def _note_connection_transaction_start(conn) -> None:  # pragma: no cover - event
+    """A transaction began on ``conn``: remember the driver's count of changed rows and forget the last transaction's statement flag.
+
+    Both live on the DBAPI connection's ``info`` (it outlives the checkout, so the flag is cleared HERE, at every beginning, and never
+    carries a schema change an earlier use of the pooled connection made into the next). A savepoint is not a ``begin``, so a nested
+    transaction moves neither. Never raises: a count that could not be taken leaves the last one, which is older, and an older baseline
+    can only make the release decline."""
+    try:
+        info = conn.info
+        info[_CONNECTION_BEGAN_AT] = _driver_rows_changed(conn)
+        info.pop(_NON_READ_STATEMENT, None)
+    except Exception:  # noqa: BLE001 - see the docstring: the worst outcome is a declined release
+        return
+
+
 @event.listens_for(SASession, "after_begin")
 def _note_rows_changed_at_begin(session, transaction, connection) -> None:  # pragma: no cover - event
     """Take the baseline the first time this ROOT transaction meets ``connection``; a savepoint beginning later must not move it.
 
     ``after_begin`` fires for a nested transaction too. Measured 2026-10-16: an unseen write, then a savepoint that began and
     ended, and the baseline had moved up to the count with the write in it -- the release then found "nothing changed" and the
-    rollback discarded the row."""
+    rollback discarded the row. The count is the one the connection's own transaction recorded when it began
+    (:func:`_note_connection_transaction_start`) when that is at hand and not newer than the driver's now, so a Session that joins a
+    connection with writes already on it does not take them for its starting point."""
     baseline = session.info.setdefault(_CHANGES_BASELINE, {})
     if id(connection) in baseline:
         return
-    baseline[id(connection)] = _driver_rows_changed(connection)
-    with suppress(Exception):  # a flag that could not be cleared can only decline a release, never allow one
-        connection.info.pop(_NON_READ_STATEMENT, None)
+    started = _driver_rows_changed(connection)
+    try:
+        earlier = connection.info.get(_CONNECTION_BEGAN_AT)
+    except Exception:  # noqa: BLE001 - no earlier count to compare with: the count above stands
+        earlier = None
+    if type(earlier) is int and type(started) is int and earlier <= started:
+        started = earlier
+    baseline[id(connection)] = started
 
 
 @event.listens_for(Engine, "before_cursor_execute")
@@ -827,6 +856,24 @@ def release_idle_connection(session: SASession) -> bool:
     which bypasses SQLAlchemy's statement events and moves no row count -- no
     caller in this repository does that on a session's connection.
 
+    Three edges of "the connection the transaction holds". (1) A transaction that has not met a connection yet holds nothing: it is
+    declined without asking the session for one, because asking CHECKS ONE OUT (a physical connect, and on the encrypted store a key
+    derivation, or a wait on an exhausted pool) only to roll it back. (2) A connection the pool DISCARDED under the transaction (the
+    damage observer does it after a read of a damaged page) took everything the transaction ran with it, and the session cannot run
+    another statement until it is rolled back, so the rollback is made: declining would leave every later reader of the session
+    raising ``PendingRollbackError`` (the all-diagnostics build lost every member after the damaged one). (3) A Session joined to a
+    connection that already had a transaction takes the count from the connection's own beginning (:func:`_note_connection_transaction_start`),
+    so writes made on it before the Session began are still seen.
+
+    The statement listener costs, measured by the independent read of this change on a plaintext file with trivial ``SELECT``s: about
+    1.5 microseconds per statement on an engine that already had listeners (every engine the app builds does), and about 5 on one that
+    had none, because registering on the ``Engine`` class turns event dispatch on for every engine in the process (the classifier alone
+    is 0.38 for a ``SELECT``, 1.25 for a ``PRAGMA``). The app's main engine runs pysqlite in its legacy mode, where DDL outside a
+    transaction a DML opened autocommits, so the flag protects a narrow case there (a DML that matched no row, then DDL or a header
+    PRAGMA); under an explicit BEGIN, the ``read_snapshot`` recipe and the tests, it protects every schema change.
+    A read-only savepoint that is rolled back (``ROLLBACK TO SAVEPOINT`` is not a plain read) also declines the release for the rest of
+    its transaction; nothing is lost.
+
     So: this releases a session that has READ and not yet written. Anything else
     is declined — slower, never wrong. Returns whether a connection was handed
     back, so a caller can REPORT the effect instead of assuming it. Never raises.
@@ -847,17 +894,26 @@ def release_idle_connection(session: SASession) -> bool:
             return False
         if not session.in_transaction():
             return False
-        # A write that went round the ORM: a statement that is not a plain read (a schema change or a header PRAGMA move no row
-        # count), then the driver's own count of changed rows against the one taken when the transaction began (see
-        # ``_CHANGES_BASELINE``). Unreadable, unrecorded or different: declined.
-        connection = session.connection()
-        if connection.info.get(_NON_READ_STATEMENT):
-            return False
+        # No connection recorded for this transaction (it began and has not run a statement): nothing is held, so nothing is given
+        # back, and asking the session for its connection would CHECK ONE OUT (a physical connect and a key derivation on the
+        # encrypted store, a wait on an exhausted pool) only to roll it back.
         began_at = session.info.get(_CHANGES_BASELINE) or {}
-        before = began_at.get(id(connection)) if len(began_at) == 1 else None
-        now = _driver_rows_changed(connection)
-        if before is None or now is None or now != before:
+        if not began_at:
             return False
+        # The connection the transaction holds is dead (a damaged page invalidated it): what ran on it is gone with it, the session
+        # cannot run another statement until it is rolled back, and the rollback below loses nothing. Declining here would leave
+        # every later reader of this session raising ``PendingRollbackError``. Otherwise: a write that went round the ORM is a
+        # statement that is not a plain read (a schema change or a header PRAGMA move no row count), then the driver's own count of
+        # changed rows against the one taken when the transaction began (see ``_CHANGES_BASELINE``). Unreadable, unrecorded or
+        # different: declined.
+        connection = session.connection()
+        if getattr(connection, "invalidated", False) is not True:
+            if connection.info.get(_NON_READ_STATEMENT):
+                return False
+            before = began_at.get(id(connection)) if len(began_at) == 1 else None
+            now = _driver_rows_changed(connection)
+            if before is None or now is None or now != before:
+                return False
         session.rollback()
         return True
     except Exception as exc:  # noqa: BLE001 - releasing early is never worth an error

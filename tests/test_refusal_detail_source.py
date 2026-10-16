@@ -34,13 +34,15 @@ that the module binds at its top level or declares ``global`` / ``nonlocal`` to 
 The producers are found as calls NAMED ``Declined`` / ``SalvageRefused``, so :func:`producer_escapes` fails a module that could make one
 another way: a subclass, a factory method on the class, an alias or any use of the class as a value (``Refuse = Declined``,
 ``functools.partial(Declined, ...)``). The two names the allowance rests on are bound exactly once (:func:`_bindings`): an import, a
-definition, a store, a parameter, an ``except`` target, a ``global`` / ``nonlocal`` declaration, a ``match`` capture, and any call or
-attribute that can rebind a module's names without writing them (``globals()``, ``vars()``, ``exec``, ``eval``, ``sys.modules``, ``__dict__``).
+definition, a store, a parameter, an ``except`` target, a ``global`` / ``nonlocal`` declaration, a ``match`` capture, and a call or
+attribute from a short list that can rebind a module's names without writing them (``globals()``, ``vars()``, ``exec``, ``eval``, ``sys.modules``, ``__dict__``).
 
 STATED LIMITS (each has a control in :data:`LIMITS` that passes today; extending the reading means moving the entry to
 :data:`VIOLATIONS`): a parameter is not followed to the callers that pass it, a call into another module is not read (only
-``failure_text`` / ``failure_label``, by name, are allowed to take the exception), and an attribute read through ``getattr`` is not
-followed. None occurs in ``repair.py`` or ``salvage.py`` today.
+``failure_text`` / ``failure_label``, by name, are allowed to take the exception), an attribute read through ``getattr`` is not
+followed, and a name rebound through the module's own object obtained by import (``import pkg.repair as _me; _me.exception_text = str``,
+``setattr(importlib.import_module(__name__), ...)``, ``setattr(__import__(__name__), ...)``) is not seen by :func:`helper_problems`.
+None occurs in ``repair.py`` or ``salvage.py`` today.
 """
 
 from __future__ import annotations
@@ -98,8 +100,8 @@ def _types_of(node: ast.expr | None) -> list[str] | None:
 
 def _bindings(tree: ast.AST, name: str) -> list[ast.AST]:
     """Every place that binds ``name``: an import (a star import binds every name), a definition, a store, a parameter, an ``except``
-    target, a ``global`` / ``nonlocal`` declaration, a ``match`` capture, and a call or an attribute that can rebind any name of the module
-    without writing it (:data:`DYNAMIC_CALLS`, :data:`DYNAMIC_ATTRIBUTES`: each counts as a binding of every name). A module whose only
+    target, a ``global`` / ``nonlocal`` declaration, a ``match`` capture, and a call or an attribute from the short lists below that can rebind a
+    name of the module without writing it (:data:`DYNAMIC_CALLS`, :data:`DYNAMIC_ATTRIBUTES`: each counts as a binding of every name). A module whose only
     binding of a name is the one expected cannot have it rebound."""
     found: list[ast.AST] = []
     for node in ast.walk(tree):
@@ -665,8 +667,23 @@ def test_the_module_docstring_states_every_limit_the_controls_pin():
     doc = __doc__ or ""
     assert "STATED LIMITS" in doc and "LIMITS" in doc
     assert len(LIMITS) == 3, "a new limit is stated in the docstring above (it names each) and given its entry in LIMITS"
-    for words in ("parameter", "another module", "getattr"):
+    for words in ("parameter", "another module", "getattr", "the module's own object obtained by import"):
         assert words in doc, words
+
+
+#: The fourth stated limit, about the HELPER's pin and not the producers' reading: a name rebound through the module's own object obtained by
+#: import. Each form passes today (the independent read of PR 1418 reproduced all four); a reading that learns one moves it to the violations.
+OWN_IMPORT_REBINDS = [
+    "import src.database.repair as _me\n_me.exception_text = str\n",
+    "from src.database import repair as _me\nsetattr(_me, 'exception_text', str)\n",
+    "import importlib\nsetattr(importlib.import_module(__name__), 'exception_text', str)\n",
+    "setattr(__import__(__name__), 'exception_text', str)\n",
+]
+
+
+@pytest.mark.parametrize("form", OWN_IMPORT_REBINDS)
+def test_control_rebinding_a_name_through_the_modules_own_import_is_a_stated_limit(form):
+    assert helper_problems(_real_helper_source() + "\n" + form) == [], form
 
 
 _CARRIED = {

@@ -288,7 +288,8 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # The release's rows-changed baseline and statement flag (2026-10-16): dictionaries on the session and on the DBAPI connection's
         # ``info``, holding an integer and a boolean. None is a log call and none carries text.
         ('_note_rows_changed_at_begin', 'baseline = session.info.setdefault(_CHANGES_BASELINE, {})'): 1,
-        ('_note_rows_changed_at_begin', 'connection.info.pop(_NON_READ_STATEMENT, None)'): 1,
+        ('_note_connection_transaction_start', 'info = conn.info'): 1,
+        ('_note_rows_changed_at_begin', 'earlier = connection.info.get(_CONNECTION_BEGAN_AT)'): 1,
         ('_note_statement_that_is_not_a_read', 'conn.info[_NON_READ_STATEMENT] = True'): 1,
         ('_clear_wrote', 'session.info.pop(_CHANGES_BASELINE, None)'): 1,
         ('release_idle_connection', 'if connection.info.get(_NON_READ_STATEMENT):'): 1,

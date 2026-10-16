@@ -109,6 +109,16 @@ UNSEEN_WRITES = {
     "an update on the session's connection": (lambda s: s.connection().execute(sa.update(_NOTE).values(body="changed")), ["changed"]),
     "a delete on the session's connection": (lambda s: s.connection().execute(sa.delete(_NOTE)), []),
     "the DBAPI cursor itself": (lambda s: s.connection().connection.cursor().execute("INSERT INTO note (body) VALUES ('new')"), ["new", "seed"]),
+    # ``statement_kind.is_plain_read`` calls a statement that BEGINS with WITH a read, as it must (``WITH ... SELECT`` is the common form);
+    # these two are writes, and only the driver's count of changed rows catches them.
+    "a WITH ... INSERT": (
+        lambda s: s.connection().execute(sa.text("WITH x AS (SELECT 'cte' AS b) INSERT INTO note (body) SELECT b FROM x")),
+        ["cte", "seed"],
+    ),
+    "a WITH ... DELETE": (
+        lambda s: s.connection().execute(sa.text("WITH x AS (SELECT 1 AS one) DELETE FROM note WHERE EXISTS (SELECT 1 FROM x)")),
+        [],
+    ),
 }
 
 

@@ -145,6 +145,9 @@ def test_the_job_hands_every_batch_the_policy_and_counts_how_they_ended(world, f
     assert status["state"] == "done" and status["tally"]["reindexed"] == 7
     # 5, 10, 15 -> commit; 5, 10, 15 -> commit; 5 -> the final flush. The width alone would be ONE commit of 7 articles, 35 s of gate.
     assert status["tally"]["batch_commits"] == 3 and status["tally"]["early_batch_commits"] == 2
+    # Which rule ran: what a reader needs to tell a policy that never fired from a count-only run. The longest hold is absent here, with
+    # its reason: this session is not under the write gate, so no batch held anything to time (``test_the_job_keeps_the_longest_hold_...``).
+    assert status["tally"]["hold_target_ms"] == 12_000 and "longest_batch_ms" not in status["tally"]
 
 
 def test_a_target_of_zero_is_the_count_rule_in_the_job_too(world, fake_clock, monkeypatch):
@@ -156,6 +159,8 @@ def test_a_target_of_zero_is_the_count_rule_in_the_job_too(world, fake_clock, mo
 
     assert status["state"] == "done" and status["tally"]["reindexed"] == 7
     assert status["tally"]["batch_commits"] == 1 and status["tally"]["early_batch_commits"] == 0
+    # 0 early commits is what the count-only rule looks like; the tally says it is the rule.
+    assert status["tally"]["hold_target_ms"] == 0
 
 
 def test_the_job_re_reads_the_target_for_every_page(world, monkeypatch):
@@ -200,6 +205,42 @@ def test_the_batch_counts_add_up_across_pages_and_do_not_restart_on_each(world, 
     assert tally["batch_commits"] == 3 and tally["early_batch_commits"] == 2
 
 
+def _stub_pages(monkeypatch, longest):
+    """Pages of 3 whose pass reports ``longest`` (one figure per page, in seconds or None) as the longest hold of the gate by a batch."""
+    pages = iter(longest)
+
+    def _page(session, *, extractor, limit, after_id, stats=None, **kw):
+        rows = session.query(Article.id).filter(Article.id > after_id).order_by(Article.id).limit(limit).all()
+        last = rows[-1][0] if rows else after_id
+        remaining = session.query(Article.id).filter(Article.id > last).count()
+        if stats is not None:
+            stats["longest_batch_s"] = next(pages)
+        return {"reindexed": len(rows), "failed": 0, "last_id": last, "remaining": remaining, "done": remaining == 0}
+
+    monkeypatch.setattr(job_mod, "_BATCH", 3)
+    monkeypatch.setattr(store_mod, "reindex_all_batch", _page)
+
+
+def test_the_job_keeps_the_longest_hold_as_a_maximum_in_whole_milliseconds(world, monkeypatch):
+    """Pages of 3, 3 and 1 report 2.5 s, 7.25 s and 4 s: the run's longest hold is 7,250 ms, not their 13.75 s sum and not the last page's."""
+    maker, tmp = world
+    _stub_pages(monkeypatch, [2.5, 7.25, 4.0])
+
+    tally = _run_job(maker, tmp)["tally"]
+
+    assert tally["longest_batch_ms"] == 7_250 and type(tally["longest_batch_ms"]) is int
+
+
+def test_a_page_with_nothing_to_time_does_not_zero_or_lower_the_longest_hold(world, monkeypatch):
+    """A page under no gate reports None. That is "not timed", never 0: the earlier maximum stands, and a run that never timed one has no key."""
+    maker, tmp = world
+    _stub_pages(monkeypatch, [6.0, None, 1.0])
+    assert _run_job(maker, tmp)["tally"]["longest_batch_ms"] == 6_000
+
+    _stub_pages(monkeypatch, [None, None, None])
+    assert "longest_batch_ms" not in _run_job(maker, tmp)["tally"]
+
+
 def test_the_batch_counts_are_whole_numbers_because_the_persisted_tally_is_int_only(world, fake_clock, monkeypatch):
     """``_load_persisted`` int()s every tally value, so a float here would be truncated across a restart: both counts must be ints."""
     maker, tmp = world
@@ -211,6 +252,7 @@ def test_the_batch_counts_are_whole_numbers_because_the_persisted_tally_is_int_o
 
     assert all(isinstance(v, int) for v in tally.values())
     assert tally["batch_commits"] == 3 and tally["early_batch_commits"] == 2
+    assert tally["hold_target_ms"] == 12_000
 
 
 # --------------------------------------------------------------------------- #
