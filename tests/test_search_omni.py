@@ -86,7 +86,7 @@ def test_omni_federates_with_disclosed_totals(client, omni_seed):
     assert any(i["normalized_term"] == "quokkafloss" for i in kws["items"])
     assert _group(d, "sources")["total"] == 0  # name does not contain the term
     assert any(i["title"].startswith("Quokkafloss") for i in _group(d, "wiki")["items"])
-    assert any(i["jurisdiction"] == "eu" for i in _group(d, "law")["items"])
+    assert any(i["jurisdiction"] == "EUU" for i in _group(d, "law")["items"])
     assert "index-backed" in d["method"]
 
 

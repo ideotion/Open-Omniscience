@@ -59,7 +59,7 @@ def test_api_facets_and_filtering():
         un = c.get("/api/events?calendar=un_days").json()
         assert un["count"] >= 10 and all(e["calendar"] == "un_days" for e in un["events"])
         fr = c.get("/api/events?country=FR").json()
-        assert fr["count"] >= 1 and all(e["country"] == "FR" for e in fr["events"])
+        assert fr["count"] >= 1 and all(e["country"] == "FRA" for e in fr["events"])
         tag = c.get("/api/events?tag=climate").json()
         assert tag["count"] >= 1 and all("climate" in e["tags"] for e in tag["events"])
 
