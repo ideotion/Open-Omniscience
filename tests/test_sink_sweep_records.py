@@ -285,6 +285,14 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_mark_wrote', 'session.info[_WROTE_FLAG] = True'): 1,
         ('_clear_wrote', 'session.info.pop(_WROTE_FLAG, None)'): 1,
         ('release_idle_connection', 'if session.info.get(_WROTE_FLAG) or session.info.get(_WRITE_GATE_SESSION_FLAG):'): 2,
+        # The release's rows-changed baseline and statement flag (2026-10-16): dictionaries on the session and on the DBAPI connection's
+        # ``info``, holding an integer and a boolean. None is a log call and none carries text.
+        ('_note_rows_changed_at_begin', 'baseline = session.info.setdefault(_CHANGES_BASELINE, {})'): 1,
+        ('_note_rows_changed_at_begin', 'connection.info.pop(_NON_READ_STATEMENT, None)'): 1,
+        ('_note_statement_that_is_not_a_read', 'conn.info[_NON_READ_STATEMENT] = True'): 1,
+        ('_clear_wrote', 'session.info.pop(_CHANGES_BASELINE, None)'): 1,
+        ('release_idle_connection', 'if connection.info.get(_NON_READ_STATEMENT):'): 1,
+        ('release_idle_connection', 'began_at = session.info.get(_CHANGES_BASELINE) or {}'): 1,
     },
     'src/database/verify.py': {
         ('classify_error', 'found = damage.corruption_of(exc)'): 1,

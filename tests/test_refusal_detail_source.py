@@ -27,8 +27,15 @@ cannot), a store into an item or an attribute of the name (``d["n"] = x``, ``sel
 and a ``for`` / ``with`` / comprehension target. A function or method defined in the module and called in the words (``g()`` or
 ``self.g()``, by name) is followed to what it returns, and text carried from another function is followed: an attribute read is followed
 to every store to an attribute of that name in the module (``self.t = x``, ``setattr(o, "t", x)``, ``self.parts.append(x)``), and a name
-declared ``global`` / ``nonlocal`` to every assignment to it. The readers that reach the exception being handled without naming it (``format_exc``, ``sys.exc_info``, ``sys.exception``,
+that the module binds at its top level or declares ``global`` / ``nonlocal`` to every assignment to it (so ``ERRS = []`` filled by
+``ERRS.append(str(e))`` in one function and read in another is followed without a ``global`` line). The readers that reach the exception being handled without naming it (``format_exc``, ``sys.exc_info``, ``sys.exception``,
 ``locals()`` ...) are a violation wherever they appear in a refusal's words.
+
+The producers are found as calls NAMED ``Declined`` / ``SalvageRefused``, so :func:`producer_escapes` fails a module that could make one
+another way: a subclass, a factory method on the class, an alias or any use of the class as a value (``Refuse = Declined``,
+``functools.partial(Declined, ...)``). The two names the allowance rests on are bound exactly once (:func:`_bindings`): an import, a
+definition, a store, a parameter, an ``except`` target, a ``global`` / ``nonlocal`` declaration, a ``match`` capture, and any call or
+attribute that can rebind a module's names without writing them (``globals()``, ``vars()``, ``exec``, ``eval``, ``sys.modules``, ``__dict__``).
 
 STATED LIMITS (each has a control in :data:`LIMITS` that passes today; extending the reading means moving the entry to
 :data:`VIOLATIONS`): a parameter is not followed to the callers that pass it, a call into another module is not read (only
@@ -72,6 +79,8 @@ UNNAMED_READERS = frozenset(
      "format_tb", "format_stack", "format_list", "locals", "globals", "vars"}
 )
 #: Calls that put their arguments INTO the object they are called on.
+DYNAMIC_CALLS = frozenset({"globals", "vars", "exec", "eval"})
+DYNAMIC_ATTRIBUTES = frozenset({"modules", "__dict__"})
 MUTATORS = frozenset({"append", "extend", "add", "update", "insert", "setdefault", "appendleft", "extendleft", "write"})
 
 
@@ -89,7 +98,9 @@ def _types_of(node: ast.expr | None) -> list[str] | None:
 
 def _bindings(tree: ast.AST, name: str) -> list[ast.AST]:
     """Every place that binds ``name``: an import (a star import binds every name), a definition, a store, a parameter, an ``except``
-    target, a ``global`` / ``nonlocal`` declaration. A module whose only binding of a name is the one expected cannot have it rebound."""
+    target, a ``global`` / ``nonlocal`` declaration, a ``match`` capture, and a call or an attribute that can rebind any name of the module
+    without writing it (:data:`DYNAMIC_CALLS`, :data:`DYNAMIC_ATTRIBUTES`: each counts as a binding of every name). A module whose only
+    binding of a name is the one expected cannot have it rebound."""
     found: list[ast.AST] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -100,9 +111,28 @@ def _bindings(tree: ast.AST, name: str) -> list[ast.AST]:
             or (isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names)
             or (isinstance(node, ast.ExceptHandler) and node.name == name)
             or (isinstance(node, ast.arg) and node.arg == name)
+            or (isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == name)
+            or (isinstance(node, ast.MatchMapping) and node.rest == name)
+            or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in DYNAMIC_CALLS)
+            or (isinstance(node, ast.Attribute) and node.attr in DYNAMIC_ATTRIBUTES)
         ):
             found.append(node)
     return found
+
+
+def _module_level_names(tree: ast.Module) -> frozenset[str]:
+    """The names the module stores at its top level (not inside a function, a class body or a lambda): a container such as ``ERRS = []``
+    that one function fills and another reads is shared module-wide whether or not any function says ``global``."""
+    names: set[str] = set()
+    pending: list[ast.AST] = list(tree.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        pending.extend(ast.iter_child_nodes(node))
+    return frozenset(names)
 
 
 def _trusted_calls(tree: ast.Module, module: str | None) -> frozenset[str]:
@@ -151,6 +181,7 @@ class Reading:
         self.tree = ast.parse(source)
         self.trusted = _trusted_calls(self.tree, module) if trusted is None else trusted
         self.parent = {child: node for node in ast.walk(self.tree) for child in ast.iter_child_nodes(node)}
+        self.module_names = _module_level_names(self.tree)
         self.sites = 0
         self.forms: Counter[str] = Counter()
         self.violations: list[str] = []
@@ -295,7 +326,7 @@ class Reading:
                 else:
                     self.forms[form] += 1
                 continue
-            scope = self.tree if self._declared_outside(use.id) else self._function_of(at)
+            scope = self.tree if use.id in self.module_names or self._declared_outside(use.id) else self._function_of(at)
             for value in [*self._assigned(use.id, scope), *self._returned(use.id)]:
                 self._follow(value, seen, "assigned-name")
 
@@ -323,6 +354,56 @@ def read(source: str, *, module: str | None = None, trusted: frozenset[str] | No
     return Reading(source, module=module, trusted=trusted)
 
 
+def _in_annotation(node: ast.AST, parent: dict[ast.AST, ast.AST]) -> bool:
+    """Whether ``node`` is part of a type annotation: naming a class there makes none of it."""
+    child = node
+    while child in parent:
+        up = parent[child]
+        if (
+            (isinstance(up, ast.arg) and up.annotation is child)
+            or (isinstance(up, (ast.FunctionDef, ast.AsyncFunctionDef)) and up.returns is child)
+            or (isinstance(up, ast.AnnAssign) and up.annotation is child)
+        ):
+            return True
+        child = up
+    return False
+
+
+def producer_escapes(source: str) -> list[str]:
+    """The ways ``source`` could make a refusal WITHOUT a call named for its class, so that :class:`Reading` would never read its words: a
+    subclass of a refusal, a factory method on one, and any use of the class as a value (an alias, ``functools.partial``, a list of
+    classes, a return). Naming the class in an ``except`` clause, in ``isinstance`` / ``issubclass``, in an annotation or as the callee of a
+    producer call is not one."""
+    tree = ast.parse(source)
+    parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            if any(_name_of(base) in RAISED for base in node.bases):
+                found.append(f"{node.lineno}: class {node.name} is a subclass of a refusal")
+            if node.name in RAISED:
+                found += [
+                    f"{item.lineno}: {node.name}.{item.name} is a factory of refusals"
+                    for item in node.body
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and any(_name_of(d) in {"classmethod", "staticmethod"} for d in item.decorator_list)
+                ]
+        elif isinstance(node, (ast.Name, ast.Attribute)) and isinstance(node.ctx, ast.Load) and _name_of(node) in RAISED:
+            up = parent.get(node)
+            if (
+                (isinstance(up, ast.Call) and up.func is node)
+                or (isinstance(up, ast.ExceptHandler) and up.type is node)
+                or (isinstance(up, ast.Tuple) and isinstance(parent.get(up), ast.ExceptHandler))
+                or (isinstance(up, ast.ClassDef) and node in up.bases)
+                or (isinstance(up, ast.Call) and _name_of(up.func) in {"isinstance", "issubclass"} and node in up.args[1:])
+                or (isinstance(up, ast.Tuple) and isinstance(parent.get(up), ast.Call) and _name_of(parent[up].func) in {"isinstance", "issubclass"})
+                or _in_annotation(node, parent)
+            ):
+                continue
+            found.append(f"{node.lineno}: {ast.unparse(node)} is used as a value")
+    return found
+
+
 # --------------------------------------------------------------------------- #
 #  the real modules
 # --------------------------------------------------------------------------- #
@@ -348,6 +429,13 @@ def test_the_helper_that_hands_over_a_refusals_words_is_pinned_to_its_one_shape(
     whole definition of the helper (signature, defaults, decorators, annotations, body) and that both names are bound exactly once in
     repair.py, so the allowance cannot outlive either. The controls below mutate the real source one way at a time."""
     assert helper_problems((ROOT / HELPER_MODULE).read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize("rel", SOURCES)
+def test_no_refusal_can_be_made_in_the_real_code_without_a_call_named_for_its_class(rel):
+    """The producers are found as calls NAMED ``Declined`` / ``SalvageRefused``: a subclass, a factory method or an alias would make
+    refusals whose words nothing here reads. None exists; this keeps it so (the controls below build each one)."""
+    assert producer_escapes((ROOT / rel).read_text(encoding="utf-8")) == [], rel
 
 
 # --------------------------------------------------------------------------- #
@@ -731,3 +819,105 @@ def test_control_a_producer_called_through_a_module_is_found_and_a_class_definit
     assert read(source).sites == 0
     assert read(_snippet('raise repair.Declined("c", f"{exc}")')).violations
     assert read(_snippet('raise salvage.SalvageRefused("c", f"{exc}")')).violations
+
+
+# --------------------------------------------------------------------------- #
+#  controls for the three limits CHECK-3 found in the first build
+# --------------------------------------------------------------------------- #
+_MODULE_LEVEL = {
+    "text appended to a module-level list by another function": (
+        "ERRS = []\n"
+        "def a():\n    try:\n        pass\n    except OSError as e:\n        ERRS.append(str(e))\n"
+        "def b():\n    raise Declined('c', ERRS[0])\n"
+    ),
+    "text stored in an item of a module-level dict by another function": (
+        "HELD = {}\n"
+        "def a():\n    try:\n        pass\n    except OSError as e:\n        HELD['n'] = str(e)\n"
+        "def b():\n    raise Declined('c', HELD['n'])\n"
+    ),
+    "the exception kept in a module-level list": (
+        "ERRS = []\n"
+        "def a():\n    try:\n        pass\n    except OSError as e:\n        ERRS.append(e)\n"
+        "def b():\n    raise Declined('c', str(ERRS[0]))\n"
+    ),
+    "text kept in a module-level container declared in an if": (
+        "if True:\n    ERRS = []\n"
+        "def a():\n    try:\n        pass\n    except OSError as e:\n        ERRS.extend([str(e)])\n"
+        "def b():\n    raise Declined('c', ', '.join(ERRS))\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(_MODULE_LEVEL))
+def test_control_text_carried_in_a_module_level_container_is_followed_without_a_global_line(form):
+    reading = read(_MODULE_LEVEL[form])
+    assert reading.sites == 1 and reading.violations, form
+
+
+def test_control_a_module_level_name_that_never_holds_an_engines_words_stays_allowed():
+    source = (
+        "NAMES = ('a', 'b')\n"
+        "KNOWN = []\n"
+        "def a():\n    KNOWN.append('fixed')\n"
+        "def b():\n    raise Declined('c', NAMES[0], note=', '.join(KNOWN))\n"
+    )
+    reading = read(source)
+    assert reading.sites == 1 and reading.violations == []
+
+
+def test_control_a_name_stored_inside_a_function_or_class_is_not_a_module_level_name():
+    source = "def f():\n    local = 1\nclass C:\n    held = 2\nx = lambda y: y\nfor item in ():\n    seen = item\n"
+    assert _module_level_names(ast.parse(source)) == {"x", "item", "seen"}
+
+
+_ESCAPES = {
+    "a subclass": "class Busy(Declined):\n    pass\n",
+    "a subclass through a module": "class Busy(repair.Declined):\n    pass\n",
+    "a factory classmethod on the class": "class Declined(Exception):\n    @classmethod\n    def busy(cls):\n        return cls('writer-busy')\n",
+    "a factory staticmethod on the class": "class SalvageRefused(Exception):\n    @staticmethod\n    def busy():\n        return SalvageRefused('writer-busy')\n",
+    "an alias": "Refuse = Declined\n",
+    "an alias through a module": "Refuse = salvage.SalvageRefused\n",
+    "functools.partial": "make = functools.partial(Declined, 'c')\n",
+    "a list of classes": "KINDS = [Declined, SalvageRefused]\n",
+    "a returned class": "def kind():\n    return Declined\n",
+    "a class handed to a function": "def f():\n    register(Declined)\n",
+}
+
+
+@pytest.mark.parametrize("form", sorted(_ESCAPES))
+def test_control_each_other_way_of_making_a_refusal_is_found(form):
+    assert producer_escapes(_ESCAPES[form]), form
+
+
+def test_control_the_uses_of_the_class_that_make_no_refusal_are_not_escapes():
+    source = (
+        "class Declined(Exception):\n    def __init__(self, code, detail):\n        super().__init__(detail)\n"
+        "def f(x: Declined | salvage.SalvageRefused) -> Declined:\n"
+        "    try:\n        raise Declined('c', 'fixed')\n"
+        "    except (LibraryBusy, Declined) as exc:\n        pass\n"
+        "    except salvage.SalvageRefused:\n        pass\n"
+        "    if isinstance(x, (Declined, salvage.SalvageRefused)) or isinstance(x, Declined):\n        raise salvage.SalvageRefused('c', 'fixed')\n"
+        "y: Declined | None = None\n"
+    )
+    assert producer_escapes(source) == []
+
+
+_REBINDS = {
+    "a match capture": "match value:\n    case exception_text:\n        pass\n",
+    "a match star capture": "match value:\n    case [first, *exception_text]:\n        pass\n",
+    "a match mapping rest": "match value:\n    case {'k': 1, **exception_text}:\n        pass\n",
+    "a match capture with a pattern": "match value:\n    case [1, 2] as exception_text:\n        pass\n",
+    "a store through globals()": "globals()['exception_text'] = str\n",
+    "a store through vars()": "vars()['exception_text'] = str\n",
+    "setattr on the module": "setattr(sys.modules[__name__], 'exception_text', str)\n",
+    "a store into the module's __dict__": "sys.modules[__name__].__dict__['exception_text'] = str\n",
+    "exec of a source that rebinds it": "exec('exception_text = str')\n",
+    "eval of a source that rebinds it": "eval('exception_text')\n",
+}
+
+
+@pytest.mark.parametrize("form", sorted(_REBINDS))
+def test_control_each_dynamic_or_pattern_rebinding_of_the_scrub_is_found(form):
+    source = _real_helper_source() + "\n" + _REBINDS[form]
+    assert helper_problems(source), form
+    assert helper_problems(_real_helper_source()) == []
