@@ -37,7 +37,7 @@ import re
 import time
 from urllib.parse import parse_qsl, unquote, urljoin, urlparse
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.utils.logging_config import setup_logging
 from src.utils.security import safe_href
 
@@ -155,7 +155,7 @@ class DuckDuckGoSearch:
             # switch) without importing requests here -- keeps this module off the
             # socket-importer allowlist. Surfaced honestly to the caller.
             log_failure(logger, "DuckDuckGo search failed", e)
-            raise Exception(f"DuckDuckGo search failed: {e}") from e
+            raise Exception(f"DuckDuckGo search failed: {record_text(e)}") from e
 
     @classmethod
     def _parse_results(cls, html: str, max_results: int) -> list[dict]:
@@ -714,4 +714,4 @@ if __name__ == "__main__":
                 print(f"    RSS: {source['rss_urls'][0]}")
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error: {record_text(e)}")

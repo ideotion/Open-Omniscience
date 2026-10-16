@@ -45,6 +45,7 @@ from src.custody.timestamp import (
     ots_stamp,
     sha256,
 )
+from src.monitoring.secret_scrub import record_text
 
 GENESIS_PREV = "0" * 64
 LOG_VERSION = "oo-custody-1"
@@ -304,7 +305,7 @@ class CustodyLog:
             except TimestampUnavailable as exc:
                 proof = local_timestamp(digest)
                 proof.detail = (
-                    "OpenTimestamps was requested but unavailable (" + str(exc) + "); "
+                    "OpenTimestamps was requested but unavailable (" + record_text(exc) + "); "
                     "recorded a local self-asserted time instead. NOT independent "
                     "third-party proof."
                 )

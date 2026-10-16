@@ -41,6 +41,7 @@ from src.llm.ollama import (
     _is_loopback_url,
     _require_loopback,
 )
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ class VllmClient:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
-                f"vLLM not reachable at {self.base_url}: {exc}. Is the vllm server running?"
+                f"vLLM not reachable at {self.base_url}: {record_text(exc)}. Is the vllm server running?"
             ) from exc
         data = resp.json()
         return [m["id"] for m in (data.get("data") or []) if m.get("id")]
@@ -299,7 +300,7 @@ class VllmClient:
             resp = self._client.get("/v1/models")
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {exc}") from exc
+            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {record_text(exc)}") from exc
         return [
             {"tag": m["id"], "size_gb": None, "modified": None}
             for m in (resp.json().get("data") or [])
@@ -366,7 +367,7 @@ class VllmClient:
                 ) from exc
             raise LLMError(f"vLLM error for model {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {exc}") from exc
+            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {record_text(exc)}") from exc
         data = resp.json()
         choices = data.get("choices") or []
         text = ""

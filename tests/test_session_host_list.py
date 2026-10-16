@@ -7,7 +7,7 @@ The Wikipedia, ORES and DuckDuckGo clients go through ``guarded_session`` / ``fo
 a redirect to whatever host the answer named, with no host check on the hop. ``GuardedSession.send`` is the method ``requests`` calls for the
 first request AND for every hop, so the list is checked there, on the URL the HTTP client will connect to. The five Wikidata loaders, the
 Hugging Face release check and the Ollama installer's release lookup each build one fixed endpoint and carry a list of exactly its host
-(tested below, module by module).
+(tested below, module by module); the installer's download carries the exact hosts the repository records GitHub serving a release asset from.
 
 No network: a scripted adapter stands where the socket would be, so the real ``requests`` redirect machinery runs.
 """
@@ -41,16 +41,19 @@ class _Script(BaseAdapter):
     def __init__(self, routes: dict[str, tuple[int, str | None]] | None = None) -> None:
         super().__init__()
         self.routes = routes or {}
+        self.bodies: dict[str, bytes] = {}  # a URL's body when it answers 200; ``{}`` otherwise
         self.sent: list[str] = []
+        self.timeouts: list[float | None] = []  # the timeout each request was sent with, in step with ``sent``
 
     def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         self.sent.append(request.url)
+        self.timeouts.append(timeout)
         status, location = self.routes.get(request.url, (200, None))
         resp = requests.models.Response()
         resp.status_code = status
         if location:
             resp.headers["Location"] = location
-        resp._content = b"{}"
+        resp._content = self.bodies.get(request.url, b"{}")
         resp._content_consumed = True  # no raw: iter_content replays _content
         resp.url = request.url
         resp.request = request
@@ -603,13 +606,171 @@ def test_any_other_failure_of_the_release_lookup_is_not_called_a_refusal(install
     assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused)
 
 
+RELEASE_DOWNLOAD_URL = "https://github.com/ollama/ollama/releases/download/v0.1.0/install.sh"
+STORAGE_URL = "https://release-assets.githubusercontent.com/github-production-release-asset/1/install.sh?sig=1"
+SCRIPT = b"#!/bin/sh\necho installing\n"
+
+
+def _release_json(download_url: str, script: bytes = SCRIPT) -> bytes:
+    """The release answer the lookup returns: the one asset the installer looks for, with the digest GitHub attests for it."""
+    import hashlib
+    import json
+
+    asset = {"name": "install.sh", "browser_download_url": download_url, "digest": "sha256:" + hashlib.sha256(script).hexdigest()}
+    return json.dumps({"tag_name": "v0.1.0", "assets": [asset]}).encode()
+
+
+def test_the_installer_download_refuses_a_redirect_off_its_hosts_and_follows_one_between_them(installer_scripted):
+    from src.llm import installer
+
+    wire = installer_scripted
+    wire.routes[RELEASE_DOWNLOAD_URL] = (302, "https://exfil.example.invalid/steal?k=secret")
+    with pytest.raises(installer.InstallerRedirectRefused) as caught:
+        installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
+    assert wire.sent == [RELEASE_DOWNLOAD_URL], "the hop was refused before it was sent"
+    assert str(caught.value) == installer.InstallerRedirectRefused.DOWNLOAD_MESSAGE
+    assert isinstance(caught.value, installer.InstallerVerificationError), "the route that maps a verification failure maps this one too"
+    # Every host GitHub has served a release asset from, and the release's own host again (a renamed repository), is followed:
+    for storage in (STORAGE_URL, "https://objects.githubusercontent.com/x/install.sh?sig=1", RELEASE_DOWNLOAD_URL + "?renamed=1"):
+        wire.sent.clear()
+        wire.routes[RELEASE_DOWNLOAD_URL] = (302, storage)
+        wire.bodies[storage] = SCRIPT
+        assert installer._default_get_bytes(RELEASE_DOWNLOAD_URL) == SCRIPT
+        assert wire.sent == [RELEASE_DOWNLOAD_URL, storage]
+    assert {s.allowed_hosts for s in wire.sessions} == {installer.GITHUB_ASSET_HOSTS}, "the download's own sessions carry exactly the asset hosts"
+
+
+@pytest.mark.parametrize(
+    "hop",
+    [
+        "https://exfil.example.invalid/x",
+        "https://raw.githubusercontent.com/ollama/ollama/main/install.sh",
+        "https://githubusercontent.com/x",
+        "https://api.github.com/repos/ollama/ollama/releases/latest",
+        "https://release-assets.githubusercontent.com.exfil.example.invalid/x",
+        "http://release-assets.githubusercontent.com/x",
+        "https://exfil@release-assets.githubusercontent.com/x",
+        "https://release-assets.githubusercontent.com:8443/x",
+        "https://release-assets%2B.githubusercontent.com/x",
+    ],
+    ids=[
+        "another host",
+        "a sibling under the same family",
+        "the bare domain of the family",
+        "the lookup's own host",
+        "a listed name as a prefix",
+        "plain http on a listed host",
+        "credentials on a listed host",
+        "another port on a listed host",
+        "a percent sign in the host (the host clause refuses it too)",
+    ],
+)
+def test_each_kind_of_hop_off_the_download_list_is_refused_before_it_is_sent(installer_scripted, hop):
+    """Through the installer's own getter, so that dropping or widening the list at the call site fails every case."""
+    from src.llm import installer
+
+    installer_scripted.routes[RELEASE_DOWNLOAD_URL] = (302, hop)
+    with pytest.raises(installer.InstallerRedirectRefused):
+        installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
+    assert installer_scripted.sent == [RELEASE_DOWNLOAD_URL]
+
+
+@pytest.mark.parametrize(
+    "named",
+    [
+        "https://exfil.example.invalid/install.sh?k=secret",
+        "exfil.example.invalid/install.sh?k=secret",
+        "//exfil.example.invalid/install.sh?k=secret",
+        "https:///install.sh?k=secret",
+        "https://exfil.example.invalid:99999/install.sh?k=secret",
+    ],
+    ids=["a foreign host", "no scheme", "scheme-relative", "no host", "a port out of range"],
+)
+def test_a_release_that_names_a_download_address_off_the_hosts_is_refused_before_it_is_sent(installer_scripted, caplog, named):
+    """The download URL is a value the release response chooses, so the list also decides which host the response may send it to, and an
+    address ``requests`` cannot even read (which it rejects with an error quoting the address) is a refusal too, not a 500 that echoes it."""
+    import logging
+
+    from fastapi import HTTPException
+
+    from src.api.llm import llm_install_prepare
+    from src.llm import installer
+
+    installer_scripted.bodies[installer.GITHUB_LATEST_RELEASE] = _release_json(named)
+    with pytest.raises(installer.InstallerRedirectRefused) as caught:
+        installer.resolve_and_verify(installer._default_get_json, installer._default_get_bytes)
+    assert installer_scripted.sent == [installer.GITHUB_LATEST_RELEASE], "the lookup was sent and the download was not"
+    assert str(caught.value) == installer.InstallerRedirectRefused.DOWNLOAD_MESSAGE
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(HTTPException) as routed:
+        llm_install_prepare()
+    assert routed.value.status_code == 502 and routed.value.detail == installer.InstallerRedirectRefused.DOWNLOAD_MESSAGE
+    assert "exfil" not in caplog.text and "secret" not in caplog.text, "the address the release named is in no log line"
+
+
+@pytest.mark.parametrize("named", [123, ["https://github.com/x"], {"url": "https://github.com/x"}], ids=["a number", "a list", "a mapping"])
+def test_a_release_whose_download_address_is_not_text_is_a_missing_address(named):
+    """``requests`` would call ``str()`` on it and quote it in an error; the release reader says, in fixed words, that it lists none."""
+    from src.llm import installer
+
+    release = {"tag_name": "v1", "assets": [{"name": "install.sh", "browser_download_url": named, "digest": "sha256:" + "0" * 64}]}
+    with pytest.raises(installer.InstallerVerificationError, match="lists no download URL") as caught:
+        installer._attested_installer(release)
+    assert not isinstance(caught.value, installer.InstallerRedirectRefused) and "github.com" not in str(caught.value)
+
+
+def test_the_whole_install_check_runs_through_the_real_redirect_machinery(installer_scripted):
+    """Lookup, redirect from the release host to the storage host, and the digest check, with nothing replaced but the wire."""
+    from src.llm import installer
+
+    wire = installer_scripted
+    wire.bodies[installer.GITHUB_LATEST_RELEASE] = _release_json(RELEASE_DOWNLOAD_URL)
+    wire.routes[RELEASE_DOWNLOAD_URL] = (302, STORAGE_URL)
+    wire.bodies[STORAGE_URL] = SCRIPT
+    data, version, _sha, url = installer.resolve_and_verify(installer._default_get_json, installer._default_get_bytes)
+    assert (data, version, url) == (SCRIPT, "v0.1.0", RELEASE_DOWNLOAD_URL)
+    assert wire.sent == [installer.GITHUB_LATEST_RELEASE, RELEASE_DOWNLOAD_URL, STORAGE_URL]
+    # Bytes that are not the attested ones are still a checksum failure, not a refusal:
+    wire.bodies[STORAGE_URL] = SCRIPT + b"# changed\n"
+    with pytest.raises(installer.InstallerVerificationError) as caught:
+        installer.resolve_and_verify(installer._default_get_json, installer._default_get_bytes)
+    assert not isinstance(caught.value, installer.InstallerRedirectRefused) and "checksum mismatch" in str(caught.value)
+
+
+def test_any_other_failure_of_the_download_is_not_called_a_refusal(installer_scripted):
+    """Only a refusal by the host list is named as one; a missing file, a dropped connection and a timeout keep the failure they always were."""
+    from src.llm import installer
+
+    installer_scripted.routes[RELEASE_DOWNLOAD_URL] = (404, None)
+    with pytest.raises(requests.HTTPError) as caught:
+        installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
+    assert not isinstance(caught.value, installer.InstallerRedirectRefused)
+
+    def _dropped(request, **kwargs):
+        raise requests.ConnectionError("the connection dropped")
+
+    installer_scripted.send = _dropped
+    with pytest.raises(requests.ConnectionError) as dropped:
+        installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
+    assert not isinstance(dropped.value, installer.InstallerRedirectRefused | RedirectRefused)
+
+    def _slow(request, **kwargs):
+        raise requests.Timeout("the answer was slow")
+
+    installer_scripted.send = _slow
+    with pytest.raises(requests.Timeout) as slow:
+        installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
+    assert not isinstance(slow.value, installer.InstallerRedirectRefused | RedirectRefused)
+
+
+@pytest.mark.parametrize("stage", ["lookup", "download"])
 @pytest.mark.parametrize(
     "refusal_text",
     [None, "refused https://exfil.example.invalid/steal?k=secret"],
     ids=["the real refusal", "a refusal whose own text names the target"],
 )
-def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_host_it_pointed_at(installer_scripted, monkeypatch, caplog, refusal_text):
-    """The 502 detail, the log and the exception chain say what did not happen, never where the redirect pointed.
+def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_host_it_pointed_at(installer_scripted, monkeypatch, caplog, refusal_text, stage):
+    """The 502 detail, the log and the exception chain say what did not happen, never where the request was aimed, at either stage.
 
     The second case is what makes this a test of THIS code and not of ``refuse_unlisted_host``'s wording: a refusal that does carry the
     target must still not reach a response, a log record or a traceback."""
@@ -621,19 +782,26 @@ def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_h
     from src.api.llm import llm_install_prepare
     from src.llm import installer
 
+    download = stage == "download"
+    if download:
+        installer_scripted.bodies[installer.GITHUB_LATEST_RELEASE] = _release_json(RELEASE_DOWNLOAD_URL)
     if refusal_text is not None:
+        real = fetcher_mod.refuse_unlisted_host
 
         def _names_the_target(url, allowed):
+            if download and url == installer.GITHUB_LATEST_RELEASE:
+                return real(url, allowed)  # the lookup passes; the download is what is refused
             raise RedirectRefused(refusal_text)
 
         monkeypatch.setattr(fetcher_mod, "refuse_unlisted_host", _names_the_target)
     else:
-        installer_scripted.routes[installer.GITHUB_LATEST_RELEASE] = (302, "https://exfil.example.invalid/steal?k=secret")
+        refused_url = RELEASE_DOWNLOAD_URL if download else installer.GITHUB_LATEST_RELEASE
+        installer_scripted.routes[refused_url] = (302, "https://exfil.example.invalid/steal?k=secret")
     caplog.set_level(logging.DEBUG)
     with pytest.raises(HTTPException) as caught:
         llm_install_prepare()
     assert caught.value.status_code == 502
-    assert caught.value.detail == installer.InstallerRedirectRefused.MESSAGE
+    assert caught.value.detail == (installer.InstallerRedirectRefused.DOWNLOAD_MESSAGE if download else installer.InstallerRedirectRefused.MESSAGE)
     cause = caught.value.__cause__
     assert isinstance(cause, installer.InstallerRedirectRefused)
     assert cause.__cause__ is None and cause.__context__ is None, "no chain behind it: a traceback chain is a sink"
@@ -643,7 +811,98 @@ def test_a_refused_installer_redirect_reaches_the_user_and_the_log_without_the_h
         assert "exfil" not in text and "secret" not in text and "invalid" not in text
     ours = [r for r in caplog.records if r.name == "src.llm.installer"]
     assert [r.levelno for r in ours] == [logging.WARNING] and ours[0].getMessage().endswith("(RedirectRefused)"), "the class name is logged, once"
+    assert ("download" in ours[0].getMessage()) is download, "the line names the stage that was refused"
     assert ours[0].exc_info is None
+
+
+def test_each_fetcher_keeps_its_own_timeout_and_asks_for_the_install_window(installer_scripted):
+    """The shared helper's other arguments: the lookup waits 30 s and the download 120 s, and both ride the AI-install egress window.
+
+    With the kill switch engaged (airplane mode) and the window open, both succeed: a session built without the purpose would be refused
+    by the switch. With the switch engaged and no window, both are refused BY THE SWITCH, which is not a redirect refusal."""
+    from src.ingest import activate_kill_switch
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, close_window, open_window
+    from src.llm import installer
+    from src.safety.fetcher import NetworkBlocked
+
+    wire = installer_scripted
+    assert installer._default_get_json(installer.GITHUB_LATEST_RELEASE) == {}
+    assert installer._default_get_bytes(RELEASE_DOWNLOAD_URL) == b"{}"
+    assert wire.timeouts == [30, 120]
+    activate_kill_switch()
+    try:
+        for get, url in ((installer._default_get_json, installer.GITHUB_LATEST_RELEASE), (installer._default_get_bytes, RELEASE_DOWNLOAD_URL)):
+            with pytest.raises(NetworkBlocked) as blocked:
+                get(url)
+            assert not isinstance(blocked.value, installer.InstallerRedirectRefused | RedirectRefused)
+        open_window(PURPOSE_AI_INSTALL)
+        wire.sent.clear()
+        assert installer._default_get_json(installer.GITHUB_LATEST_RELEASE) == {}
+        assert installer._default_get_bytes(RELEASE_DOWNLOAD_URL) == b"{}"
+        assert wire.sent == [installer.GITHUB_LATEST_RELEASE, RELEASE_DOWNLOAD_URL]
+    finally:
+        close_window()
+
+
+def test_each_fetch_of_the_install_asks_for_its_own_stream_isolation(installer_scripted, monkeypatch):
+    """Protected mode: the lookup and the download each ride their own proxy stream (the isolation token is the address fetched), so one
+    install is not one linkable circuit."""
+    from src.llm import installer
+
+    plain = "socks5h://127.0.0.1:9150"
+    monkeypatch.setattr(fetcher_mod, "load_settings", lambda: SafetySettings(fetch_mode="protected", http_proxy=plain))
+    installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
+    installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
+    proxies = [s.transport_proxy for s in installer_scripted.sessions]
+    assert len(proxies) == 2 and None not in proxies and plain not in proxies, "each session carries a proxy with its isolation credential layered on"
+    assert proxies[0] != proxies[1], "the two fetches do not share a stream"
+
+
+def test_a_missing_transport_is_not_called_a_redirect_refusal(installer_scripted, monkeypatch):
+    """Protected mode with no usable proxy refuses every request; that is a connection failure of its own, not a refused redirect."""
+    from src.llm import installer
+    from src.safety.fetcher import TransportUnavailable
+
+    monkeypatch.setattr(fetcher_mod, "load_settings", lambda: SafetySettings(fetch_mode="protected"))
+    for get, url in ((installer._default_get_json, installer.GITHUB_LATEST_RELEASE), (installer._default_get_bytes, RELEASE_DOWNLOAD_URL)):
+        with pytest.raises(TransportUnavailable) as caught:
+            get(url)
+        assert not isinstance(caught.value, installer.InstallerRedirectRefused | RedirectRefused)
+    assert installer_scripted.sent == []
+
+
+def test_the_download_list_is_exactly_the_github_hosts_the_consent_popup_discloses():
+    """The hosts a person is told about at the consent step are the hosts the install's own requests may reach: the GitHub hosts of the
+    popup's Local AI lane are the lookup's host plus the download's, no more and no fewer (``ollama.com``, ``huggingface.co`` and
+    ``pypi.org`` on that lane are reached by a spawned process, not by these sessions)."""
+    import json
+    from urllib.parse import urlsplit
+
+    from src.llm import installer
+    from tests.js_source_helper import array_literal, read_static
+
+    lane = next(x for x in json.loads(array_literal(read_static("net-hosts.js"), "OO_NET_LANES")) if x.get("id") == "ai")
+    github = {h for h in lane["hosts"] if h == "github.com" or h.endswith((".github.com", ".githubusercontent.com"))}
+    assert github == set(installer.GITHUB_API_HOSTS) | set(installer.GITHUB_ASSET_HOSTS)
+    assert urlsplit(RELEASE_DOWNLOAD_URL).hostname in installer.GITHUB_ASSET_HOSTS, "the host of the address the release names is listed"
+    assert fetcher_mod._checked_hosts(installer.GITHUB_ASSET_HOSTS) == installer.GITHUB_ASSET_HOSTS
+    assert not any(h.startswith(".") for h in installer.GITHUB_ASSET_HOSTS), "exact hosts, never a family"
+    for host in installer.GITHUB_ASSET_HOSTS:
+        refuse_unlisted_host(f"https://{host}/x", installer.GITHUB_ASSET_HOSTS)
+    # ... and the neighbours are refused, so a list that grew by a sibling or a family shows up here:
+    for url in (
+        "https://api.github.com/repos/ollama/ollama/releases/latest",
+        "https://codeload.github.com/ollama/ollama/zip/refs/heads/main",
+        "https://raw.githubusercontent.com/ollama/ollama/main/install.sh",
+        "https://avatars.githubusercontent.com/u/1",
+        "https://githubusercontent.com/x",
+        "https://ollama.com/install.sh",
+        "https://release-assets.githubusercontent.co%6D/x",  # a listed name once decoded: refused for the percent sign as well as for the host
+    ):
+        _refused(lambda url=url: refuse_unlisted_host(url, installer.GITHUB_ASSET_HOSTS))
+    # The other direction: the lookup's list must not accept the download's hosts.
+    for host in installer.GITHUB_ASSET_HOSTS:
+        _refused(lambda host=host: refuse_unlisted_host(f"https://{host}/x", installer.GITHUB_API_HOSTS))
 
 
 def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
@@ -686,18 +945,12 @@ def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
 # --------------------------------------------------------------------------- #
 _BULK = "bulk downloads from request-chosen mirrors that redirect between CDNs by design"
 #: Every module that builds a guarded session WITHOUT a host list: ``{path: (calls, why it has none)}``. Zero slack: a call that gains a
-#: list leaves this table, and a new call joins it with its reason. What is left here are URLs chosen by the request or the catalogue, or
-#: hosts that move (the installer's asset download is one: the row below says why); a session for a fixed endpoint names its list instead.
+#: list leaves this table, and a new call joins it with its reason. What is left here are URLs chosen by the request or the catalogue; a
+#: session for a fixed endpoint, or for the few hosts a fixed service serves from, names its list instead (the Ollama installer's two do).
 UNLISTED_SESSIONS = {
     "src/geo/osm_downloads.py": (2, _BULK),
     "src/ingest/segmented_download.py": (2, _BULK),
     "src/wiki/dumps.py": (2, _BULK),
-    "src/llm/installer.py": (
-        1,
-        "the asset download follows a URL the release response chooses, to storage whose host has moved before and cannot be observed from "
-        "the build sandbox; its bytes are checked against the attested sha256 instead (docs/SECURITY.md, local AI install). The release "
-        "lookup on api.github.com names its list",
-    ),
     "src/stats/fetch.py": (1, "the statistics agencies' catalogue URLs: many hosts, none fixed"),
 }
 

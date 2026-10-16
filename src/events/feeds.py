@@ -36,6 +36,7 @@ from urllib.parse import urlparse
 import yaml
 
 from src.catalog.countries import config_country
+from src.monitoring.secret_scrub import record_text
 from src.paths import data_dir
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "calendar_feeds.yml"
@@ -453,7 +454,7 @@ def verify_feed(fetcher, feed_id: str) -> dict:
         verdict["events"] = len(events)
     except Exception as exc:  # noqa: BLE001 - the verdict IS the error report
         verdict["status"] = "unreachable"
-        verdict["error"] = str(exc)[:300]
+        verdict["error"] = record_text(exc, limit=300)
     pinned = feed.get("year_pinned")
     if pinned and int(pinned) < date.today().year:
         verdict["stale_year"] = int(pinned)

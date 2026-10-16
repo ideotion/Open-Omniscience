@@ -33,6 +33,7 @@ HONESTY BY CONSTRUCTION (mirrors ``src/ai_layer/triage.py``'s doctrine):
 from __future__ import annotations
 
 from src.ai_layer.sampling import sweep_options
+from src.monitoring.secret_scrub import record_text
 
 QUALIFICATION_ASSIST_PROMPT_VERSION = "qualification-assist-v1"
 
@@ -370,7 +371,7 @@ def last_qualification_assist_report(source_id: int | None = None) -> dict:
         data["filename"] = path.name
         return data
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
-        return {"schema": QUALIFICATION_ASSIST_SCHEMA, "available": False, "error": str(exc)[:300]}
+        return {"schema": QUALIFICATION_ASSIST_SCHEMA, "available": False, "error": record_text(exc, limit=300)}
 
 
 __all__ = [

@@ -21,6 +21,8 @@ import re
 import threading
 import time
 
+from src.monitoring.secret_scrub import record_text
+
 _VALID_MODEL = re.compile(r"^[a-zA-Z0-9._:/-]{1,128}$")
 
 
@@ -112,7 +114,7 @@ class ModelPullManager:
                             break
                         self._progress = _progress_of(nxt, prog)
             except Exception as exc:  # noqa: BLE001 - surface, never crash the pump
-                status, err = "error", str(exc)
+                status, err = "error", record_text(exc)
             # D6: what ARRIVED, against what was PINNED. Ollama's own /api/tags digest is
             # the only content commitment on this path -- a tag can be re-pointed, so a
             # pull "succeeding" says nothing about which bytes landed. Checked only on a
@@ -136,7 +138,7 @@ class ModelPullManager:
                     # Its own status, never folded into "error": a network failure is the
                     # operator's to retry, "the published image is not the bytes you
                     # pinned" is a supply-chain finding and must read as one.
-                    status, err = "integrity-mismatch", str(exc)
+                    status, err = "integrity-mismatch", record_text(exc)
                 except Exception:  # noqa: BLE001 - an unreadable digest is a GAP, not a verdict
                     integrity = {
                         "pinned": None,

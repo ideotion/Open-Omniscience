@@ -37,6 +37,8 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
+from src.monitoring.secret_scrub import record_text
+
 FROZEN_BATCH_SCHEMA = "oo-bench-frozen-batch-1"
 BENCH_ANCHORS_SCHEMA = "oo-bench-anchors-1"
 
@@ -445,7 +447,7 @@ def load_frozen_batch(*, path: Path | None = None) -> dict:
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        raise BenchArtifactError(f"the frozen batch at {p} is unreadable: {exc}") from exc
+        raise BenchArtifactError(f"the frozen batch at {p} is unreadable: {record_text(exc)}") from exc
     if not isinstance(data, dict) or data.get("schema") != FROZEN_BATCH_SCHEMA:
         raise BenchArtifactError(f"{p} is not a {FROZEN_BATCH_SCHEMA} artifact")
     if not data.get("keywords"):
@@ -478,7 +480,7 @@ def load_anchors(*, path: Path | None = None) -> dict | None:
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        raise BenchArtifactError(f"the anchors file at {p} is unreadable: {exc}") from exc
+        raise BenchArtifactError(f"the anchors file at {p} is unreadable: {record_text(exc)}") from exc
     if not isinstance(data, dict) or data.get("schema") != BENCH_ANCHORS_SCHEMA:
         raise BenchArtifactError(f"{p} is not a {BENCH_ANCHORS_SCHEMA} artifact")
     return data

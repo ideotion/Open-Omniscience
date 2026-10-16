@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+from src.monitoring.secret_scrub import record_text
+
 # Replicates app.js cardAnalyzeQuery: a quoted term in the title wins, else the card
 # `key`, else the title with quotes stripped. This is the seed a search-fallback uses.
 _QUOTED = re.compile(r'[“"]([^”"]{2,})[”"]')
@@ -42,8 +44,6 @@ def card_click_diagnostics(session) -> dict:
     "hard-linked") or a text search of its seed term ("search-fallback")? A search whose
     live FTS count differs wildly from the card's own ``n`` means the click LOSES the
     card's corpus — the dysfunction to fix, per card type."""
-    from src.database.fts import SearchQueryError, search_ids
-
     # S2.3: READ the cache; never recompute. ``get_briefing(force=True)`` runs
     # refresh_briefing, which WRITES briefing_cache.json -- so a diagnostic that
     # merely reports on Home's cards was replacing the live Home feed with its own
@@ -58,6 +58,7 @@ def card_click_diagnostics(session) -> dict:
     # ``get_briefing(force=False)`` is NOT a substitute: it recomputes on an absent
     # or stale cache, and a recompute writes.
     from src.briefing import service
+    from src.database.fts import SearchQueryError, search_ids
 
     cached = service._read_cache() or {}  # noqa: SLF001 - read, never recompute
     cards = cached.get("cards", [])
@@ -103,7 +104,7 @@ def card_click_diagnostics(session) -> dict:
                     len(search_ids(session, seed, exclude_quarantined=True) or []) if seed else 0
                 )
             except SearchQueryError as exc:
-                err = str(exc)
+                err = record_text(exc)
             # MISMATCH = the fuzzy search loads a wildly different count than the card's n
             # (or zero), i.e. clicking does NOT reproduce the card's corpus.
             mm = bool(

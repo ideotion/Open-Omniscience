@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.llm.ollama import DEFAULT_MODEL, LLMError, LLMUnavailable, OllamaClient
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.wiki.languages import UI_LOCALE_CODES
 
 if TYPE_CHECKING:
@@ -111,7 +111,7 @@ def summarize_revision(
     try:
         result = client.generate(prompt, model=mdl, system=_SYSTEM_PROMPT)
     except (LLMUnavailable, LLMError) as exc:
-        return {"status": "unavailable", "detail": str(exc)[:200]}
+        return {"status": "unavailable", "detail": record_text(exc, limit=200)}
     if not result.text:
         return {"status": "empty"}
     row = LawRevisionSummary(

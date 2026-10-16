@@ -30,6 +30,7 @@ from src.ai_layer.extract import EXTRACT_PROMPT_VERSION, extract_terms
 from src.database.models import AiKeyword
 from src.database.session import session_scope
 from src.llm.ollama import LLMError, LLMUnavailable
+from src.monitoring.secret_scrub import record_text
 
 
 class ArticleWork(NamedTuple):
@@ -126,13 +127,13 @@ def extract_for_articles(
             # Ollama down / model missing / airplane mode — won't recover mid-run.
             yield {"event": "done", "total": total, "stored": stored,
                    "skipped": skipped, "failed": failed, "terms": terms_total,
-                   "aborted": True, "reason": str(exc)[:200]}
+                   "aborted": True, "reason": record_text(exc, limit=200)}
             return
         except LLMError as exc:
             failed += 1
             yield {"event": "item", "i": i, "total": total,
                    "article_id": w.article_id, "status": "failed",
-                   "error": str(exc)[:200]}
+                   "error": record_text(exc, limit=200)}
             continue
         with session_scope() as session:  # a write-only session, held for the write
             added = ai_store.record_keywords(

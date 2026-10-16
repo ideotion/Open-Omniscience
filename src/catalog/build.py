@@ -20,6 +20,7 @@ import yaml
 from src.catalog.countries import country_payload
 from src.catalog.normalize import dedup_entries
 from src.catalog.wikidata import parse_results
+from src.monitoring.secret_scrub import record_text
 
 DEFAULT_QUERY_CONFIG = Path(__file__).resolve().parents[2] / "configs" / "catalog_query.yml"
 
@@ -73,7 +74,7 @@ def generate_catalog(
             try:
                 payload = run_query(cc, spec["type_qids"])
             except Exception as exc:  # noqa: BLE001 - record + continue, never abort the run
-                errors.append(f"{cc}/{spec['source_type']}: {exc}")
+                errors.append(f"{cc}/{spec['source_type']}: {record_text(exc)}")
                 continue
             entries = parse_results(
                 payload,

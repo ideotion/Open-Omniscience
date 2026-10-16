@@ -39,6 +39,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from src.monitoring.secret_scrub import record_text
+
 SCHEMA = "oo-power-profile-1"
 PROFILE_NAMES = ("low", "optimized", "max")
 # Only Optimized is a MEASURED shipping value; Low/Max await the GAMMA harness (§7 OPERATOR-GATED).
@@ -329,7 +331,7 @@ def power_profile_report(
     except ValueError as exc:
         return {
             "schema": SCHEMA,
-            "error": str(exc),
+            "error": record_text(exc),
             "profiles": list(PROFILE_NAMES),
         }
     return {

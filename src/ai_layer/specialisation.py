@@ -41,6 +41,8 @@ from __future__ import annotations
 import logging
 import time
 
+from src.monitoring.secret_scrub import record_text
+
 _LOG = logging.getLogger("ai_layer.specialisation")
 
 #: The two article-shaped tasks a per-article pipeline actually runs. Triage operates on
@@ -127,7 +129,7 @@ def measure_language_agreement(
                 detect_language_llm(client, title, text, model=model, keep_alive=keep_alive)
             )
         except Exception as exc:  # noqa: BLE001 - one bad article never ends the sweep
-            errors.append(f"{type(exc).__name__}: {exc}")
+            errors.append(record_text(exc, typed=True))
             continue
         if got is None:
             refused += 1
@@ -282,7 +284,7 @@ def timed_switch(*, backend: str, model: str | None, switch=None) -> dict:
             "model": model,
             "wall_s": round(time.monotonic() - t0, 3),
             "ok": False,
-            "reason": f"{type(exc).__name__}: {exc}",
+            "reason": record_text(exc, typed=True),
         }
     wall = round(time.monotonic() - t0, 3)
     ok = bool(out.get("ready") or out.get("ok"))

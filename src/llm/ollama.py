@@ -591,7 +591,7 @@ class OllamaClient:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
-                f"Ollama not reachable at {self.base_url}: {exc}. Is the ollama service running?"
+                f"Ollama not reachable at {self.base_url}: {record_text(exc)}. Is the ollama service running?"
             ) from exc
         data = resp.json()
         return [m["name"] for m in data.get("models", [])]
@@ -608,7 +608,7 @@ class OllamaClient:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
-                f"Ollama not reachable at {self.base_url}: {exc}. Is the ollama service running?"
+                f"Ollama not reachable at {self.base_url}: {record_text(exc)}. Is the ollama service running?"
             ) from exc
         out = []
         for m in resp.json().get("models", []):
@@ -670,7 +670,7 @@ class OllamaClient:
                 f"Ollama error for model {model!r}: {_http_error_text(exc)}"
             ) from exc
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
+            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {record_text(exc)}") from exc
         data = resp.json()
         return GenerationResult(
             model=model,
@@ -764,7 +764,7 @@ class OllamaClient:
         except httpx.HTTPStatusError as exc:
             raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
+            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {record_text(exc)}") from exc
 
     def remove(self, model: str) -> bool:
         """Delete an installed model via the local Ollama process. Returns True on
@@ -778,7 +778,7 @@ class OllamaClient:
                 raise LLMUnavailable(f"Model {model!r} is not installed.") from exc
             raise LLMError(f"Ollama error removing {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
+            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {record_text(exc)}") from exc
         return True
 
     def close(self) -> None:

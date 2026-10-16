@@ -886,8 +886,10 @@ def llm_install_prepare() -> dict:
     action over CLEARNET via the guarded factory — refused under airplane mode,
     gated by the ONE consent (#14). Returns the verified version + sha + the exact
     command to run it (and the app can run it when elevation is non-interactive).
-    The release lookup is held to ``api.github.com``: a redirect off it is refused, not
-    followed, and answers 502 with a fixed sentence that names no host (``InstallerRedirectRefused``)."""
+    The release lookup is held to ``api.github.com`` and the download to GitHub's release hosts
+    (``GITHUB_ASSET_HOSTS``): a redirect or an address off its list is refused, not followed, and
+    answers 502 with a fixed sentence that names no host (``InstallerRedirectRefused``). A hop the HTTP client cannot read
+    (a malformed ``Location``) is not followed either, but fails as an ordinary error before anything is sent."""
     from src.llm.installer import (
         InstallerUnavailable,
         InstallerVerificationError,

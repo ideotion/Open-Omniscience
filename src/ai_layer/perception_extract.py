@@ -63,6 +63,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.monitoring.secret_scrub import record_text
+
 if TYPE_CHECKING:
     from src.ai_layer.jobs import ArticleWork
 
@@ -527,7 +529,7 @@ def extract_perception_batch(
             if not res.ok:
                 if isinstance(res.error, LLMUnavailable):
                     tally["aborted"] = True
-                    tally["reason"] = str(res.error)[:200]
+                    tally["reason"] = record_text(res.error, limit=200)
                     aborted_here = True
                     break
                 tally["attempted"] += 1  # an isolated per-article failure -- keep going

@@ -261,7 +261,7 @@ def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeErro
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
-        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(json_exc)) from exc
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=record_text(json_exc)) from exc
     except ValueError as exc:  # a date the YAML reader recognised but the calendar does not have
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_BAD_VALUE) from exc
     except RecursionError as exc:
@@ -330,7 +330,7 @@ def rows_from_bundle_bytes(
         ) from exc
     except json.JSONDecodeError as exc:
         raise MergeInputError(
-            REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=str(exc)
+            REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=record_text(exc)
         ) from exc
     except ValueError as exc:  # an integer past the interpreter's digit limit
         raise MergeInputError(

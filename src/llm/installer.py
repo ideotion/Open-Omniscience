@@ -25,7 +25,9 @@ resolved WITHOUT inventing anything (a §0.5 non-negotiable):
 
   * Both the API call and the asset download go through the guarded fetch factory
     (kill switch + protected-mode proxy), so they obey airplane mode and never
-    silently downgrade transport. The official script's OWN later download of the
+    silently downgrade transport, and each session is held to its own exact host
+    list (``GITHUB_API_HOSTS``, ``GITHUB_ASSET_HOSTS``): a redirect, or an address
+    the release response names, off the list is refused rather than followed. The official script's OWN later download of the
     binary egresses over CLEARNET via curl (the same transport caveat as a model
     pull, maintainer Q9) — the UI discloses this at consent.
 
@@ -55,6 +57,7 @@ import subprocess  # noqa: S404 - we run only a GitHub-attested, hash-verified s
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from src.paths import data_dir
 
@@ -63,10 +66,19 @@ logger = logging.getLogger(__name__)
 # The ollama/ollama latest-release API. Its assets carry GitHub-attested digests.
 GITHUB_LATEST_RELEASE = "https://api.github.com/repos/ollama/ollama/releases/latest"
 # The one host that lookup talks to, pinned EQUAL to GITHUB_LATEST_RELEASE's host by a test. A redirect off it is refused rather than
-# followed (GitHub answers a renamed repository with a 301 to ``/repositories/<id>/...`` on the SAME host, which stays allowed). The
-# asset download that response names is NOT listed: it follows a URL the response chooses, to storage whose host has moved before, and
-# its bytes are checked against the attested sha256 instead (docs/SECURITY.md, "Local AI install & weights").
+# followed (GitHub answers a renamed repository with a 301 to ``/repositories/<id>/...`` on the SAME host, which stays allowed).
 GITHUB_API_HOSTS = ("api.github.com",)
+# The hosts the asset download may reach: the host of the ``browser_download_url`` the release response names (``github.com``) and the
+# release-asset storage it redirects to, which GitHub has moved once (``objects.githubusercontent.com``, then
+# ``release-assets.githubusercontent.com``, as recorded in docs/SECURITY.md). They are exactly the GitHub hosts the consent popup
+# already lists for this lane (``src/static/net-hosts.js``), and a test keeps the two in step, so the hosts a person is told about are
+# the hosts the request may reach. The URL itself is a value the lookup's response chooses, so this list also confines WHICH host the
+# response may send the download to. When GitHub moves the storage again the download is refused (never followed), the person is told
+# to install from ollama.com/download, and this list is what to update. ``GITHUB_ASSET_HOSTS_AS_OF`` is the day docs/SECURITY.md recorded
+# the storage host, that is, when the record was written; nobody has yet observed the redirect chain for this list (an operator step the
+# queue names).
+GITHUB_ASSET_HOSTS = ("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")
+GITHUB_ASSET_HOSTS_AS_OF = "2026-09-27"
 # The official Linux installer asset name within that release.
 INSTALLER_ASSET_NAME = "install.sh"
 
@@ -85,20 +97,26 @@ class InstallerVerificationError(InstallerError):
 
 
 class InstallerRedirectRefused(InstallerVerificationError):
-    """GitHub's release lookup answered with a redirect off ``api.github.com``, which is refused rather than followed.
+    """A request of the install was refused by its host list rather than followed: GitHub's release lookup answered with a redirect off
+    ``api.github.com``, or the installer's download was aimed (by the address the release names, or by a redirect on the way) at a host
+    that is not one of ``GITHUB_ASSET_HOSTS``.
 
     A subclass, so the route that maps a verification failure to 502 maps this one too and a test can pin the reason apart from a
-    checksum mismatch. Its text is fixed: it names neither the host the redirect pointed at nor the URL (a traceback chain is a sink), so
-    a person is told what did not happen and where to install Ollama by hand.
+    checksum mismatch. Its text is one of two fixed sentences: it names neither the host the request was aimed at nor the URL (a
+    traceback chain is a sink), so a person is told what did not happen and where to install Ollama by hand.
     """
 
     MESSAGE = (
         "GitHub's release lookup was redirected somewhere this app does not follow. Nothing was "
         "downloaded and nothing was run. Install Ollama from https://ollama.com/download."
     )
+    DOWNLOAD_MESSAGE = (
+        "GitHub's Ollama installer was to be downloaded from somewhere this app does not follow (the address the release names, or "
+        "a redirect on the way to it). Nothing was run and nothing was installed. Install Ollama from https://ollama.com/download."
+    )
 
-    def __init__(self) -> None:
-        super().__init__(self.MESSAGE)
+    def __init__(self, *, download: bool = False) -> None:
+        super().__init__(self.DOWNLOAD_MESSAGE if download else self.MESSAGE)
 
 
 # --------------------------------------------------------------------------- #
@@ -219,7 +237,7 @@ def _attested_installer(release: dict) -> tuple[str, str, str]:
             continue
         url = asset.get("browser_download_url")
         digest = (asset.get("digest") or "").strip().lower()
-        if not url:
+        if not url or not isinstance(url, str):
             raise InstallerVerificationError("The release lists no download URL for install.sh.")
         if not digest.startswith("sha256:") or len(digest) != len("sha256:") + 64:
             raise InstallerVerificationError(
@@ -408,31 +426,44 @@ def run_installer(path: str) -> Iterator[str]:
 # (everything after them happens in the installer's own child process), so they
 # are the only sessions that opt into the egress window. Every other
 # guarded_session in the app keeps refusing under the kill switch.
-def _default_get_json(url: str) -> dict:
-    from src.ingest.egress_window import PURPOSE_AI_INSTALL
-    from src.safety.fetcher import RedirectRefused, guarded_session
+def _get_within(url: str, hosts: tuple[str, ...], *, timeout: int, download: bool) -> Any:
+    """GET ``url`` on a session held to ``hosts`` (checked on the first request and on every redirect hop), and return the response.
 
-    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL, allowed_hosts=GITHUB_API_HOSTS)
+    The one place the two fetchers refuse: only the class name is logged, and the exception raised below is raised OUTSIDE the
+    ``except`` block, so it has neither a cause nor a context: nothing the refused address carried can ride a traceback into a log or a
+    response. Any other failure (a server error, a dropped connection, a timeout) is NOT a refusal and passes through as it always did.
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL
+    from src.safety.fetcher import RedirectRefused, guarded_session, refuse_unlisted_host
+
+    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL, allowed_hosts=hosts)
     refused = False
     try:
-        resp = session.get(url, timeout=30)
+        # The address is held to the list HERE as well as in the session: ``requests`` rejects one it cannot read (no scheme, ``https:///x``,
+        # a port over 65535) before the session's own check runs, with an error whose text quotes the address, and the address is a value the
+        # release response chose. Read here, such an address is a refusal like any other.
+        refuse_unlisted_host(url, hosts)
+        resp = session.get(url, timeout=timeout)
     except RedirectRefused:
-        # Only the class name is logged, and the exception raised below is raised OUTSIDE this block, so it has neither a cause nor a
-        # context: nothing the refused hop carried can ride a traceback into a log or a response.
-        logger.warning("Ollama installer: the release lookup's redirect was refused (%s)", RedirectRefused.__name__)
+        logger.warning(
+            "Ollama installer: the %s was refused (%s)",
+            "download's address or redirect" if download else "release lookup's redirect",
+            RedirectRefused.__name__,
+        )
         refused = True
     if refused:
-        raise InstallerRedirectRefused()
+        raise InstallerRedirectRefused(download=download)
+    return resp
+
+
+def _default_get_json(url: str) -> dict:
+    resp = _get_within(url, GITHUB_API_HOSTS, timeout=30, download=False)
     resp.raise_for_status()
     return resp.json()
 
 
 def _default_get_bytes(url: str) -> bytes:
-    from src.ingest.egress_window import PURPOSE_AI_INSTALL
-    from src.safety.fetcher import guarded_session
-
-    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL)
-    resp = session.get(url, timeout=120)
+    resp = _get_within(url, GITHUB_ASSET_HOSTS, timeout=120, download=True)
     resp.raise_for_status()
     return resp.content
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 
 from src.ai_layer.sampling import sweep_options
+from src.monitoring.secret_scrub import record_text
 
 # Bump when the prompt materially changes -- the provenance flag that travels
 # with every AI-derived candidate (mirrors LANGDETECT_PROMPT_VERSION).
@@ -187,7 +188,7 @@ def run_perception_eval_against_model(
             "model": model,
             "backend": backend_name,
             "prompt_version": PERCEPTION_PROMPT_VERSION,
-            "detail": str(exc)[:300],
+            "detail": record_text(exc, limit=300),
         }
     return {
         "status": "ok",

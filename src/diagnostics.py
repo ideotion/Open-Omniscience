@@ -18,6 +18,8 @@ import os
 import sys
 from pathlib import Path
 
+from src.monitoring.secret_scrub import record_text
+
 # ANSI only when writing to a terminal.
 if sys.stdout.isatty():
     _G, _Y, _R, _B, _D, _RST = (
@@ -84,7 +86,7 @@ def _check_data_dir(r: _Report) -> Path | None:
 
         d = data_dir()
     except Exception as exc:  # pragma: no cover - defensive
-        r.line(FAIL, "Data directory", f"could not resolve: {exc}")
+        r.line(FAIL, "Data directory", f"could not resolve: {record_text(exc)}")
         return None
     if os.access(d, os.W_OK):
         r.line(OK, "Data directory", str(d))
@@ -99,12 +101,13 @@ def _brief(exc: Exception, limit: int = 200) -> str:
     A SQLAlchemy error stringifies to the failing statement plus a docs URL: the
     schemaless-database case below produced a fifteen-line SELECT dump with every
     column of ``sources`` spelled out, inside a report whose whole purpose is to be
-    readable by someone who is not a programmer. The FIRST line carries the cause
-    ("(sqlite3.OperationalError) no such table: sources"); the rest is the essay.
-    Keep the cause, bound the length, and never let a probe's detail line become a
-    page.
+    readable by someone who is not a programmer. The text is :func:`record_text` (a database
+    driver's error is its class only: its words can quote a statement or a key, and this line is
+    shown and copied), cut to its FIRST line, bounded in length, so a probe's detail line never
+    becomes a page.
     """
-    first = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+    said = record_text(exc).strip()
+    first = said.splitlines()[0] if said else exc.__class__.__name__
     first = " ".join(first.split())
     return first if len(first) <= limit else first[: limit - 1] + "\u2026"
 
@@ -114,7 +117,7 @@ def _check_database(r: _Report) -> None:
         from src.database.models import Article, Source
         from src.database.session import DATABASE_URL, engine, session_scope
     except Exception as exc:
-        r.line(FAIL, "Database", f"could not import layer: {exc}")
+        r.line(FAIL, "Database", f"could not import layer: {record_text(exc)}")
         return
     where = DATABASE_URL.replace("sqlite:///", "")
     if DATABASE_URL.startswith("sqlite") and not Path(where).exists():
@@ -195,7 +198,7 @@ def _check_ollama(r: _Report) -> None:
                 WARN, "Local LLM (Ollama)", "not reachable (LLM features will say 'unavailable')"
             )
     except Exception as exc:
-        r.line(WARN, "Local LLM (Ollama)", f"not available: {exc}")
+        r.line(WARN, "Local LLM (Ollama)", f"not available: {record_text(exc)}")
 
 
 def _check_launcher(r: _Report) -> None:
