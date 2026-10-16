@@ -1327,6 +1327,8 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                 if readings.get("total_mb") is not None:
                     at_peak["total_mb"] = readings["total_mb"]
                 at_peak["at"] = stamp
+        # The numbers this tick's checks were compared with: read outside the lock (the guard's line is plain attributes).
+        lines = _lines_in_force(readings) if may_snapshot_threads else None
         with _LOCK:
             if not _MARKS:
                 _MARKS.update(_session_header())
@@ -1388,6 +1390,16 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                 if prev_a is None or avail < prev_a:
                     _MARKS["avail_min_mb"] = avail
                     _MARKS["avail_min_at"] = stamp
+            if may_snapshot_threads:
+                _MARKS["watch_ticks"] = int(_MARKS.get("watch_ticks") or 0) + 1
+                _MARKS["watch_lines"] = lines
+                total_now = readings.get("total_mb")
+                if rss is not None and total_now:
+                    share = round(100.0 * rss / total_now, 1)
+                    prev_share = _MARKS.get("rss_share_max_pct")
+                    if prev_share is None or share > prev_share:
+                        _MARKS["rss_share_max_pct"] = share
+                        _MARKS["rss_share_max_at"] = stamp
             swap = readings.get("swap_used_mb")
             if swap is not None:
                 prev_s = _MARKS.get("swap_used_max_mb")
@@ -1443,6 +1455,41 @@ def current() -> dict[str, Any]:
         if _LIGHT:
             out["pressure_light"] = list(_LIGHT)
         return out
+
+
+def _lines_in_force(readings: dict[str, float]) -> dict[str, float | None]:
+    """The numbers the light and heavy snapshots were being compared with at this reading, so an empty ring can be read against them.
+
+    ``total_mb`` is the RAM read at this tick; the guard's own two numbers (``light_avail_within_mb`` = its floor times
+    ``_LIGHT_NEAR_FACTOR``, ``light_rss_share_pct`` = its share divided by the factor) come from the boot-time guard and are ``None`` where
+    the guard cannot be read. Absent, never zero."""
+    total = readings.get("total_mb")
+    floor, pct = _guard_line()
+    return {
+        "total_mb": total,
+        "heavy_avail_below_mb": round(_pressure_line_mb(total), 1) if total else None,
+        "light_avail_within_mb": round(floor * _LIGHT_NEAR_FACTOR, 1) if floor is not None else None,
+        "light_rss_share_pct": round(pct / _LIGHT_NEAR_FACTOR, 1) if pct is not None else None,
+        "swap_at_least_mb": round(max(_LIGHT_SWAP_MIN_MB, (total or 0.0) * _LIGHT_SWAP_SHARE), 1) if total else None,
+    }
+
+
+def _watched(marks: dict[str, Any]) -> dict[str, Any]:
+    """What one session's sampler WATCHED, from its high-water marks, so that no snapshot can be told from the numbers: how many
+    liveness checks ran, the lowest available memory, the highest swap, RSS and RSS share it saw (each with when), and the lines in force
+    at its last check. A mark the session never set is ``None`` (a build that did not keep it, or a reading that could not be taken),
+    never zero."""
+    return {
+        "liveness_checks": marks.get("watch_ticks"),
+        "lowest_available_mb": marks.get("avail_min_mb"),
+        "lowest_available_at": marks.get("avail_min_at"),
+        "highest_swap_mb": marks.get("swap_used_max_mb"),
+        "highest_swap_at": marks.get("swap_used_max_at"),
+        "highest_rss_mb": marks.get("rss_max_mb"),
+        "highest_rss_share_pct": marks.get("rss_share_max_pct"),
+        "highest_rss_share_at": marks.get("rss_share_max_at"),
+        "lines_at_last_check": marks.get("watch_lines"),
+    }
 
 
 def _fit_newest(items: list[Any], budget: int) -> tuple[list[Any], int]:
@@ -1501,11 +1548,13 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             "kept_per_session": _LIGHT_KEEP,
             "this_session": {
                 "taken": now.get("pressure_light_taken"),
+                "watched": _watched(now),
                 "snapshots": [],
                 "dropped_oldest_to_fit": 0,
             },
             "previous_session": {
                 "taken": prev.get("pressure_light_taken"),
+                "watched": _watched(prev),
                 "snapshots": [],
                 "dropped_oldest_to_fit": 0,
                 "started_at": prev.get("started_at"),
