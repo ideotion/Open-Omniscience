@@ -72,8 +72,9 @@ class HeavyBusy(RuntimeError):
 
 PAUSED_DETAIL = "Paused while the write-ahead log is pinned; resumes by itself."
 
-#: The response header that tells a client this 503 is the named pause and not a failure: the client keeps
-#: its answer, backs off and says why, instead of showing "No data".
+#: The response header that tells a client this 503 is the named pause and not a failure, so that a client can keep its last answer and
+#: back off instead of showing "No data". NOTHING IN THIS TREE READS IT YET: ``api()`` in ``app-core.js`` treats the 503 as any other
+#: error. The reader is the keyword lane's Home back-off (a separate change); until it lands the header is a contract, not a behaviour.
 PAUSED_HEADER = "X-OO-Paused"
 PAUSED_HEADER_VALUE = "wal"
 

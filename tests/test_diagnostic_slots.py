@@ -750,10 +750,16 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     # the stated figures are the ones the comment names, not drifted copies
     assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_194_000
     # the arithmetic beside the number: the plan's 919 KB with its +125 KB session-forensics estimate swapped for the crash
-    # trace export's worst case: (400 + 9 x 120) lines x (202 + 4) bytes, about 10,000 of framing and the previous session's
-    # 400 lines x 206, together 397,280, bounded at 400,000
-    crash_trace = (400 + 9 * 120) * (202 + 4) + 10_000 + 400 * (202 + 4)
-    assert crash_trace == 397_280 <= 400_000
+    # trace export's worst case, COMPUTED from the export's own constants so that a cut that grows fails here: the newest earlier
+    # end keeps ``NEWEST_EARLIER_TRACE_LINES`` lines (the cut of the one export that has the constant; the others have no such
+    # distinction), the other earlier ends keep ``EARLIER_TRACE_LINES`` each, the previous session keeps ``_TRACE_REPORT_LINES``,
+    # every line is at most ``_TRACE_LINE_BYTES`` + 4 bytes with the JSON around it, and about 10,000 bytes frame the member
+    from src.monitoring import exit_evidence as ee
+
+    line = ee._TRACE_LINE_BYTES + 4
+    newest_earlier = getattr(ee, "NEWEST_EARLIER_TRACE_LINES", ee.EARLIER_TRACE_LINES)
+    crash_trace = (newest_earlier + (ee.EARLIER_ENDS_LIMIT - 1) * ee.EARLIER_TRACE_LINES + ee._TRACE_REPORT_LINES) * line + 10_000
+    assert crash_trace <= 400_000, f"the crash trace export's worst case is {crash_trace:,} bytes; the slot counts 400,000: measure again"
     assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000
     assert free == 1_512_744, "the comment on the table states the free room; move them together"
 

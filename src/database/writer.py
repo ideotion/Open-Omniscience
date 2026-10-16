@@ -677,6 +677,8 @@ def thread_phases(idents: Iterable[int | None]) -> dict[int, str | None]:
     ``None``, maps to ``None``. Best-effort, never raises: when the snapshot itself fails every ident maps to ``None``."""
     wanted = [i for i in idents if i is not None]
     out: dict[int, str | None] = dict.fromkeys(wanted)
+    frames: dict[int, Any] | None = None
+    frame: Any = None
     try:
         import sys
 
@@ -686,6 +688,11 @@ def thread_phases(idents: Iterable[int | None]) -> dict[int, str | None]:
             out[ident] = _phase_of(frame) if frame is not None else None
     except Exception:  # noqa: BLE001 - a diagnostic must never raise
         return dict.fromkeys(wanted)
+    finally:
+        # The snapshot holds THIS function's own frame (the calling thread's innermost), and this frame holds the snapshot: a reference
+        # cycle that keeps every frame in the chain, and every local in them, alive until the next collection. The watchdog asks every
+        # 15 s of a long hold, so the names are dropped as the function ends.
+        del frames, frame
     return out
 
 

@@ -225,7 +225,7 @@ def test_a_pinned_log_pauses_a_scan_that_would_start_and_its_compute_is_never_ca
     assert compute.calls == 0, "the point: no new scan while the log is pinned"
     exc = caught.value
     assert isinstance(exc, HTTPException) and exc.status_code == 503
-    # the wire contract is spelled out here, not imported: the keyword lane's Home back-off reads the marker header
+    # the wire contract is spelled out here, not imported: the header is for a client to tell the pause from a failure (nothing in this tree reads it yet)
     assert exc.detail == "Paused while the write-ahead log is pinned; resumes by itself."
     assert exc.headers == {"Retry-After": "10", "X-OO-Paused": "wal"}
     status = heavy.status()

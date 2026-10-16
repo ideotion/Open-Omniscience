@@ -147,12 +147,14 @@ TOTAL_BUDGET_BYTES = 600_000
 #: (machine 20, selftests 4, storage 120, contention 200, session-forensics, release-run 150,
 #: wiki-lane-history 300 KB): an ESTIMATE, which the plan says it is, and it is the figure to replace
 #: when those members are measured. The session-forensics part was +125 KB in the plan and is now the crash trace
-#: export's stated worst case after its cut grew from 60 lines to 400/400/120 and each line was cut to 202 bytes as
-#: written (206 with the JSON around it): the earlier ends (400 + 9 x 120) = 1,480 lines x 206 = 304,880 bytes, about
-#: 10,000 of framing, and the previous session's trace 400 lines x 206 = 82,400 bytes, together 397,280, bounded at
-#: 400,000 and counted whole as the member's increment (the 60 lines it replaces are already inside the measured figure
-#: below, so this is the safe side; the export's own measure on the nastiest text is 259,137 to 289,001 bytes for the
-#: earlier ends). The sum is 919,000 - 125,000 + 400,000 = 1,194,000;
+#: export's stated worst case at the cut the crash-evidence change sets (400 lines for the previous session, 400 for the newest
+#: earlier end and 120 for each of the nine others, each line cut to 202 bytes as written, 206 with the JSON around it): the
+#: earlier ends (400 + 9 x 120) = 1,480 lines x 206 = 304,880 bytes, about 10,000 of framing, and the previous session's trace
+#: 400 lines x 206 = 82,400 bytes, together 397,280, bounded at 400,000 and counted whole as the member's increment (the 60
+#: lines it replaces are already inside the measured figure below, so this is the safe side; the export's own measure on the
+#: nastiest text is 259,137 to 289,001 bytes for the earlier ends). THE TEST COMPUTES THIS FROM THE EXPORT'S OWN CONSTANTS,
+#: whichever cut the tree has, and fails when the result passes 400,000: the figure is a ceiling, not a copy of today's cut. The
+#: sum is 919,000 - 125,000 + 400,000 = 1,194,000;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
 #: 595,720 with all seven rows and the free room 1,512,744 bytes (12,744 over the 1,500,000 floor), so a row can grow by that much before

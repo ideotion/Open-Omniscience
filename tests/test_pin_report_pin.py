@@ -398,3 +398,55 @@ def test_many_threads_are_classified_from_one_snapshot_of_the_frames(monkeypatch
     got = writer.thread_phases([me, me, 2**62, None])
     assert len(calls) == 1
     assert got[me] == "python" and got[2**62] is None
+
+
+class _Marker:
+    """An object only a weak reference can watch: it has no cycle of its own."""
+
+
+def _frames_freed_before_the_collector(ident_of) -> bool:
+    """Whether a local of a thread that asked ``thread_phases`` is gone the moment the thread ends, with the cyclic collector OFF.
+    ``ident_of`` maps the asking thread's ident to the ident it asks about."""
+    import gc
+    import weakref
+
+    seen: dict = {}
+
+    def work() -> None:
+        marker = _Marker()
+        seen["ref"] = weakref.ref(marker)
+        writer.thread_phases([ident_of(threading.get_ident())])
+
+    gc.collect()
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        t = threading.Thread(target=work, name="oo-phase-cycle")
+        t.start()
+        t.join(10)
+        return seen["ref"]() is None
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
+def test_asking_for_its_own_phase_leaves_no_reference_cycle_behind():
+    """``sys._current_frames()`` holds the asking thread's innermost frame, which is ``thread_phases``'s own, and that frame held the snapshot:
+    every local up the asking thread's stack stayed alive until the next collection (a 50 MB local, measured), and the watchdog asks every
+    15 s of a long hold. RED WITHOUT the ``del`` of both names: the loop variable is the same frame when a thread asks about itself."""
+    assert _frames_freed_before_the_collector(lambda me: me)
+
+
+def test_asking_for_another_threads_phase_leaves_no_reference_cycle_behind():
+    """The snapshot alone is a cycle too: it holds this function's frame whichever thread is asked about. RED WITHOUT ``del frames``."""
+    assert _frames_freed_before_the_collector(lambda me: 2**62)
+
+
+def test_a_snapshot_that_fails_still_answers_none_and_drops_its_names(monkeypatch):
+    import sys
+
+    def broken():
+        raise RuntimeError("no frames")
+
+    monkeypatch.setattr(sys, "_current_frames", broken)
+    assert writer.thread_phases([threading.get_ident(), None]) == {threading.get_ident(): None}
