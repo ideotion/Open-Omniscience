@@ -748,11 +748,14 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     free = cap - worst
     assert free >= slots.HEADROOM_AT_LEAST_BYTES, f"{free:,} bytes are left of a part, the table promises {slots.HEADROOM_AT_LEAST_BYTES:,}"
     # the stated figures are the ones the comment names, not drifted copies
-    assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_092_960
+    assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_194_000
     # the arithmetic beside the number: the plan's 919 KB with its +125 KB session-forensics estimate swapped for the crash
-    # trace export's worst case, (400 + 9 x 120) lines of 202 bytes
-    assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + (400 + 9 * 120) * 202
-    assert free == 1_613_784, "the comment on the table states the free room; move them together"
+    # trace export's worst case: (400 + 9 x 120) lines x (202 + 4) bytes, about 10,000 of framing and the previous session's
+    # 400 lines x 206, together 397,280, bounded at 400,000
+    crash_trace = (400 + 9 * 120) * (202 + 4) + 10_000 + 400 * (202 + 4)
+    assert crash_trace == 397_280 <= 400_000
+    assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000
+    assert free == 1_512_744, "the comment on the table states the free room; move them together"
 
 
 def test_a_budget_raised_past_the_headroom_fails_the_pin(monkeypatch):

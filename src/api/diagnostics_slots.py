@@ -105,10 +105,10 @@ class Slot:
 #:   * ``storage-events`` 125,000: MEASURED at the journal's full retention (``storage_events.KEEP``: 20 holds of the write gate, 10 each
 #:     of guard engagements, checkpoints, notable checkpoints, store opens, pool timeouts and the three run kinds: the volume backup, restore and
 #:     verification, the legacy single-file restores, the newsletter folder imports and the folder backups, restores and verifications of the large data) with the events the hooks write, the checkpoints with the reader snapshot ``hygiene`` hands every one of
-#:     them, each run with EVERY field it can carry at once at a large value and the seconds of a run of more than a day (963 bytes raw with the process id, 945 as the member shows it; a real run is 146 to 299): 72,220
-#:     bytes with ordinary names, 116,930 with every thread, route and frame name at the 160-character cut (the longest ``_clean`` lets
+#:     them, each run with EVERY field it can carry at once at a large value and the seconds of a run of more than a day (963 bytes raw with the process id, 945 as the member shows it; a real run is 146 to 299): 77,140
+#:     bytes with ordinary names, 121,850 with every thread, route and frame name at the 160-character cut (the longest ``_clean`` lets
 #:     through), of which 4,241 is the fixed part, the member's own text (each figure moves by a byte or two with the width of the process id every event carries). 125,000 is
-#:     6.9 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The hard ceiling is 100 events at
+#:     2.6 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The gate holds carry the phase, its sample counts, the holder thread's CPU and switch counts and the machine's memory (4,920 bytes over the 20). The hard ceiling is 100 events at
 #:     ``MAX_EVENT_BYTES`` (3,000), 300 KB, and a member over its budget drops the OLDEST events of its largest kind and says how
 #:     many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut. ``test_the_storage_events_budget_holds_a_full_journal``
 #:     rebuilds both measurements and holds them to this number.
@@ -146,15 +146,18 @@ TOTAL_BUDGET_BYTES = 600_000
 #: (machine 20, selftests 4, storage 120, contention 200, session-forensics, release-run 150,
 #: wiki-lane-history 300 KB): an ESTIMATE, which the plan says it is, and it is the figure to replace
 #: when those members are measured. The session-forensics part was +125 KB in the plan and is now the crash trace
-#: export's stated worst case after its cut grew from 60 lines to 400/400/120: (400 + 9 x 120) lines x 202 bytes a line
-#: = 298,960 bytes, counted whole as the member's increment (the 60 lines it replaces are already inside the measured
-#: figure below, so this is the safe side). The sum is 919,000 - 125,000 + 298,960 = 1,092,960;
+#: export's stated worst case after its cut grew from 60 lines to 400/400/120 and each line was cut to 202 bytes as
+#: written (206 with the JSON around it): the earlier ends (400 + 9 x 120) = 1,480 lines x 206 = 304,880 bytes, about
+#: 10,000 of framing, and the previous session's trace 400 lines x 206 = 82,400 bytes, together 397,280, bounded at
+#: 400,000 and counted whole as the member's increment (the 60 lines it replaces are already inside the measured figure
+#: below, so this is the safe side; the export's own measure on the nastiest text is 259,137 to 289,001 bytes for the
+#: earlier ends). The sum is 919,000 - 125,000 + 400,000 = 1,194,000;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 595,720 with all seven rows and the free room 1,613,784 bytes, so a row can grow by that much before
+#: 595,720 with all seven rows and the free room 1,512,744 bytes (12,744 over the 1,500,000 floor), so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
-OTHER_NEW_MEMBERS_BYTES = 1_092_960
+OTHER_NEW_MEMBERS_BYTES = 1_194_000
 HEADROOM_AT_LEAST_BYTES = 1_500_000
 
 
