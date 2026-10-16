@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import record_text, scrubbed
 
 # Real, currently-existing Ollama tags suitable for CPU-only single-user use.
 # (The previous catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)
@@ -322,7 +322,8 @@ def _http_reason(exc: httpx.HTTPStatusError) -> str:
         raw = exc.response.text or ""
     except Exception:  # a streamed/closed response has no readable text
         return ""
-    body = raw.strip()
+    # scrubbed BEFORE the strip: a held passphrase with leading or trailing whitespace at the edge of the body would otherwise lose it first
+    body = scrubbed(raw).strip()
     if not body:
         return ""
     try:
@@ -338,7 +339,9 @@ def _http_reason(exc: httpx.HTTPStatusError) -> str:
                 body = str(err)
     except ValueError:
         pass  # a non-JSON body is still the server's own words -- keep it verbatim
-    body = " ".join(body.split())
+    # scrubbed BEFORE the whitespace is folded and BEFORE the cut: a fold rewrites a key that holds a tab or a run of spaces, and a cut
+    # that lands inside a key keeps its first characters
+    body = " ".join(scrubbed(body).split())
     return body[:_ERR_BODY_MAX] + "…" if len(body) > _ERR_BODY_MAX else body
 
 
@@ -366,7 +369,9 @@ def _http_error_text(exc: httpx.HTTPStatusError) -> str:
     """``<status line> — <the server's reason>``, or just the status line."""
     reason = _http_reason(exc)
     line = _status_line(exc)
-    return f"{line}{REASON_SEP}{reason}" if reason else line
+    # The server's own words enter an ``LLMError`` here, so they are scrubbed here: a backend can echo the request, and every job that
+    # stores the error then holds text that is already clean (failing closed: a text that cannot be checked is withheld whole).
+    return scrubbed(f"{line}{REASON_SEP}{reason}" if reason else line)
 
 
 def bounded_error(exc: BaseException, limit: int = 300) -> str:

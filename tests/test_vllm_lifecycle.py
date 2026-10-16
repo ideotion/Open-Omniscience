@@ -1980,3 +1980,487 @@ def test_the_measured_footprint_is_applied_in_both_directions(monkeypatch, tmp_p
     # would be measurably larger, which is the direction that fails at startup.
     unmargined = V.compute_server_args(8192, vram_free_mb=7812, weight_footprint_gb=tiny)
     assert unmargined["max_model_len"] > expected
+
+
+def test_a_held_passphrase_in_the_installers_error_or_output_is_taken_out_where_the_journal_is_written(monkeypatch):
+    """The installer's error and its captured output enter the journal in ``_scrub_history``, so the key the process holds is taken
+    out there, whichever tool echoed it (an index or proxy URL, a path, a config line)."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "hunter2-correct-horse-9f3a"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    V.record_install_attempt(
+        version="0.26.0", phase="pip", outcome="error", exit_code=1,
+        error=f"resolver said: bad token {key} in the config",
+        output_tail=[f"reading {key}", "an unrelated line"], output_lines_total=2,
+    )
+    blob = V._history_path().read_text(encoding="utf-8")
+    assert key not in blob
+    assert "an unrelated line" in blob  # only the held key is taken out
+
+
+def test_a_key_that_straddles_a_cut_is_taken_out_before_the_line_or_the_error_is_cut(monkeypatch):
+    """Each captured line and the error are scrubbed BEFORE their cuts, so a key that starts before the cut leaves no prefix."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "hunter2-correct-horse-9f3a"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    line = "z" * (V._OUTPUT_LINE_CHARS - 10) + key
+    error = "e" * (500 - 10) + key
+    V.record_install_attempt(
+        version="0.26.0", phase="pip", outcome="error", exit_code=1, error=error, output_tail=[line], output_lines_total=1
+    )
+    blob = V._history_path().read_text(encoding="utf-8")
+    assert key[:10] not in blob
+
+
+_KEY = "hunter2-correct-horse-9f3a"
+
+
+def _hold_key(monkeypatch):
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(connect, "_passphrase", _KEY)
+    ss.forget_held()
+
+
+def _journal_text() -> str:
+    path = V._history_path()
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def test_the_installers_last_words_are_scrubbed_before_they_are_cut_into_the_error(monkeypatch):
+    """The "what uv/pip said last" text is cut to ``_ERROR_TAIL_CHARS``: a key that starts before that cut leaves no prefix in the job's
+    error or in the journal."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    _hold_key(monkeypatch)
+
+    def runner(argv, env=None, should_stop=None):
+        yield "z" * (V._ERROR_TAIL_CHARS - 10) + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as raised:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=runner)
+    assert _KEY[:10] not in str(raised.value)
+    assert _KEY[:10] not in _journal_text()
+
+
+def test_the_live_install_detail_is_scrubbed_before_it_is_cut(monkeypatch):
+    """The installer's lines are shown in the task manager through ``set_progress``, cut to 200 characters: scrubbed first."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    _hold_key(monkeypatch)
+    ctx = FakeCtx()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "q" * 190 + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_install_job(ctx, version="0.26.0", runner=runner)
+    assert ctx.details and all(_KEY[:10] not in d for d in ctx.details)
+
+
+def test_the_live_venv_detail_is_scrubbed_before_it_is_cut(monkeypatch):
+    """The venv phase shows its lines the same way, cut to 120 characters."""
+    _allow_install(monkeypatch)
+    _hold_key(monkeypatch)
+    ctx = FakeCtx()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "v" * 110 + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_install_job(ctx, version="0.26.0", runner=runner)
+    assert any(d.startswith("venv: ") for d in ctx.details) and all(_KEY[:10] not in d for d in ctx.details)
+
+
+def test_a_failed_model_download_scrubs_its_lines_in_the_detail_and_in_the_error(monkeypatch, tmp_path):
+    """The download's lines reach the live detail (cut to 200) and the ``VllmLifecycleError`` built from its last three lines."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _fake_venv()
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    _hold_key(monkeypatch)
+    ctx = FakeCtx()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "d" * 190 + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as raised:
+        V.run_model_download_job(ctx, model="org/m", runner=runner)
+    assert ctx.details and all(_KEY[:10] not in d for d in ctx.details)
+    assert _KEY not in str(raised.value)
+
+
+def test_the_start_journal_takes_the_held_passphrase_out_of_the_server_log_excerpt_and_arguments(monkeypatch):
+    """A server's log excerpt and its arguments enter the start journal in ``_record_start_attempt``."""
+    _hold_key(monkeypatch)
+    V._record_start_attempt({"event": "exited", "excerpt": "boom: " + _KEY + " in the config", "server_args": {"model": _KEY}})
+    blob = V._start_history_path().read_text(encoding="utf-8")
+    assert _KEY not in blob and "boom" in blob
+
+
+def test_a_preserved_failed_log_is_copied_with_the_held_passphrase_taken_out(monkeypatch):
+    """The copy is scrubbed line by line as it is written: the preserved file (carried in the Diagnostics bundle) never holds the key."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(f"starting\nloading from /home/u/{_KEY}/weights\nTHE ACTUAL CAUSE\n", encoding="utf-8")
+    kept = V._preserve_failed_log(7, 1)
+    assert kept is not None
+    body = Path(kept).read_text(encoding="utf-8")
+    assert _KEY not in body and "THE ACTUAL CAUSE" in body and "starting" in body
+
+
+def test_a_preserved_log_that_cannot_be_scrubbed_is_not_kept_and_never_copied_raw(monkeypatch):
+    """Fail closed: when the scrub or the write fails, NOTHING is preserved (no raw copy, no half-clean file, no temporary file) and the
+    caller is given the reason."""
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(f"first\n{_KEY}\nlast\n", encoding="utf-8")
+
+    def broken(text, *a, **k):
+        raise RuntimeError("scrub unavailable")
+
+    monkeypatch.setattr(V, "scrubbed", broken)
+    path, reason = V._preserve_failed_log_result(7, 1)
+    assert path is None and reason
+    assert not list(V.failed_start_log_dir().glob("*")), "nothing is left behind, not even a temporary file"
+    assert V.failed_start_logs() == []
+
+
+def test_the_bundle_scrubs_a_failed_log_an_older_build_left_raw_on_the_disk(monkeypatch):
+    """A log preserved before logs were scrubbed on copy is raw on the disk; the reader takes the key out before it cuts the text."""
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    (V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log").write_text("a" * 40 + _KEY + "b" * 90, encoding="utf-8")  # the 50-byte head cut lands inside the key
+    _hold_key(monkeypatch)
+    out = V.newest_failed_start_log(limit=100)
+    assert out["available"] is True
+    assert _KEY[:10] not in (out.get("text") or "") + (out.get("head") or "") + (out.get("tail") or "")
+
+
+def test_the_live_server_log_is_scrubbed_before_its_head_and_tail_are_cut(monkeypatch):
+    """``server_log_tail`` checks the log whole and THEN cuts: a key that straddles the start of the tail (or the end of the head) leaves
+    no prefix in either half."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    limit, head_limit = 100, 50
+    # the tail starts at size - limit: put the key across that point, and another across the head's end
+    body = "h" * (head_limit - 10) + _KEY + "m" * 200 + "t" * (limit - 10) + _KEY + "e" * 10
+    V.server_log_path().write_text(body, encoding="utf-8")
+    out = V.server_log_tail(limit=limit, head_limit=head_limit)
+    assert out["available"] is True
+    shown = (out.get("head") or "") + (out.get("tail") or "")
+    assert _KEY[:10] not in shown and _KEY[-10:] not in shown
+
+
+def test_a_tail_window_that_starts_inside_a_key_leaves_no_prefix_of_it(monkeypatch):
+    """The key spans exactly ``size - limit`` (where the tail starts), across lines of ordinary length: only the tail half can fail this."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    limit = 100
+    before = ("a" * 60 + "\n") * 3 + "b" * 20
+    key_at = len(before)
+    after_key = _KEY + "c" * 20 + "\n"
+    # size - limit lands 5 bytes into the key: the tail window starts inside it
+    rest = limit - (len(_KEY) - 5) - 20 - 1
+    body = before + after_key + "q" * (rest - 1) + "\n"
+    assert len(body) - limit == key_at + 5, "the tail window must start inside the key"
+    V.server_log_path().write_text(body, encoding="utf-8")
+    out = V.server_log_tail(limit=limit, head_limit=20)
+    shown = (out.get("head") or "") + (out.get("tail") or "")
+    assert out["truncated"] is True
+    assert _KEY[:10] not in shown and _KEY[-10:] not in shown
+
+
+def test_a_big_log_is_never_withheld_and_every_byte_is_counted(monkeypatch):
+    """No fixed cap: a log far above any bound still gives its head and tail, its size on disk, and the scrubbed length beside it."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i} " + "x" * 80 + "\n" for i in range(3000)]
+    lines[1500] = f"leak {_KEY} here\n"
+    lines[-1] = f"final {_KEY}\n"  # the last line is shown, so the key is there to be taken out
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    size = V.server_log_path().stat().st_size
+    out = V.server_log_tail()
+    assert out["available"] is True and out["truncated"] is True
+    assert out["bytes"] == size and out["scanned_whole"] is True
+    assert out["scrubbed_bytes"] <= size and out["elided_bytes"] > 0
+    assert out["head"].startswith("line 0 ") and out["tail"].startswith("") and "final " in out["tail"]
+    assert _KEY not in json.dumps(out)
+    assert out["elided_bytes"] == out["scrubbed_bytes"] - len(out["head"].encode()) - len(out["tail"].encode())
+
+
+def test_a_status_poll_bounds_its_read_but_says_so_and_still_scrubs_both_ends(monkeypatch):
+    """The poll cost bound belongs to status() alone: the middle is counted as not scanned, and a key at the tail's line boundary is still taken out."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 300)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i} " + "x" * 80 + "\n" for i in range(400)]
+    lines[-3] = f"end {_KEY} end\n"
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    size = V.server_log_path().stat().st_size
+    out = V.server_log_tail(limit=300, head_limit=100, scan_bound=1000)
+    assert out["available"] is True and out["scanned_whole"] is False and out["scrubbed_bytes"] is None
+    assert out["bytes"] == size and out["elided_bytes"] > 0
+    assert _KEY not in json.dumps(out) and _KEY[:10] not in out["tail"]
+    assert out["head"].startswith("line 0 ")
+
+
+def test_failure_excerpt_does_not_cut_a_key_at_its_read_bound(monkeypatch):
+    """A read that ends mid-line drops the partial line, so the scrub never sees (or leaves) a key's first characters."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 120)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    text = "RuntimeError: first\n" + "m" * 80 + "\n" + "t" * 5 + _KEY + "\n"  # the 120-byte bound falls inside the key
+    V.server_log_path().write_text(text, encoding="utf-8")
+    out = V.failure_excerpt(limit=2000)
+    assert out["available"] is True
+    assert _KEY[:5] not in (out.get("excerpt") or "")
+
+
+def test_the_newest_failed_log_is_streamed_with_its_file_size_and_scrubbed_size_apart(monkeypatch):
+    _hold_key(monkeypatch)
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    p = V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log"
+    body = "".join(f"row {i} " + "y" * 60 + "\n" for i in range(500)) + f"tail {_KEY}\n"
+    p.write_text(body, encoding="utf-8")
+    out = V.newest_failed_start_log(limit=400)
+    assert out["bytes"] == p.stat().st_size and out["scrubbed_bytes"] != out["bytes"]
+    assert out["truncated"] is True and out["elided_bytes"] > 0
+    assert _KEY[:10] not in json.dumps(out)
+
+
+def test_a_failure_to_remove_an_older_copy_does_not_turn_the_new_copy_into_not_kept(monkeypatch):
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    for i in range(7):
+        (V.failed_start_log_dir() / f"2025010{i}T000000-pid1-rc1.log").write_text("old\n", encoding="utf-8")
+    real_unlink = Path.unlink
+
+    def refuse(self, *a, **k):
+        if self.name.startswith("2025"):
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    path, reason = V._preserve_failed_log_result(9, 1)
+    assert path is not None and reason is None and Path(path).read_text(encoding="utf-8") == "hello\n"
+
+
+def test_a_half_written_copy_left_by_a_killed_process_is_swept_at_the_next_copy():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    old = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
+    fresh = V.failed_start_log_dir() / "20250101T000001-pid2-rc1.log.tmp"
+    for f in (old, fresh):
+        f.write_text("half", encoding="utf-8")
+    long_ago = time.time() - 3600
+    os.utime(old, (long_ago, long_ago))
+    assert V._preserve_failed_log_result(9, 1)[0] is not None
+    assert not old.exists(), "an old leftover is swept"
+    assert fresh.exists(), "a temp younger than a minute may belong to a copy in flight"
+
+
+def test_a_sweep_that_cannot_remove_a_leftover_does_not_stop_the_copy(monkeypatch):
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    old = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
+    old.write_text("half", encoding="utf-8")
+    long_ago = time.time() - 3600
+    os.utime(old, (long_ago, long_ago))
+    real_unlink = Path.unlink
+
+    def refuse(self, *a, **k):
+        if self.name == old.name:
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    path, reason = V._preserve_failed_log_result(9, 1)
+    assert path is not None and reason is None
+
+
+def test_a_line_too_long_to_hold_is_replaced_by_a_marker_and_never_shown_in_part(monkeypatch):
+    """The bound protects memory: a megabyte-long progress bar is counted in a marker and no piece of it reaches either end."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    big = "ZQ" * 400 + _KEY  # 826 bytes, no line break inside
+    V.server_log_path().write_text("first\n" + big + "\nlast\n", encoding="utf-8")
+    out = V.server_log_tail(limit=1000, head_limit=10)
+    shown = json.dumps(out)
+    assert "ZQZQ" not in shown and _KEY[:10] not in shown
+    assert "a line of 827 bytes is not shown" in out["tail"] and "first" in out["tail"] and "last" in out["tail"]
+
+
+def test_a_final_line_of_exactly_the_bound_with_no_line_break_is_shown_whole(monkeypatch):
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("ok\n" + "y" * 100, encoding="utf-8")
+    out = V.server_log_tail(limit=1000)
+    assert out["tail"] == "ok\n" + "y" * 100
+
+
+def test_the_preserved_copy_of_a_huge_line_holds_a_marker_and_not_the_line(monkeypatch):
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("first\n" + "ZQ" * 400 + "\nlast\n", encoding="utf-8")
+    kept = V._preserve_failed_log(7, 1)
+    body = Path(kept).read_text(encoding="utf-8")
+    assert "ZQZQ" not in body and "first" in body and "last" in body and "a line of 801 bytes is not shown" in body
+
+
+def test_a_big_log_whose_end_holds_no_line_break_says_why_its_tail_is_empty(monkeypatch):
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("start\n" + "p" * 5000, encoding="utf-8")  # a progress bar to the end of the file
+    out = V.server_log_tail(limit=200, head_limit=3, scan_bound=100)
+    assert out["available"] is True and out["tail"] == "" and "no line break" in out["tail_note"]
+
+
+def test_a_status_seek_that_lands_inside_a_key_drops_that_whole_line(monkeypatch):
+    """The seek goes back to ``size - limit`` and lands 5 bytes into a key; the partial line is dropped whole. Without the drop the rest
+    of the key is read as a line of its own, which no scrub can recognise."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    limit = 300
+    before = ("a" * 60 + "\n") * 40 + "b" * 20
+    after_key = _KEY + "c" * 20 + "\n"
+    k = limit - (len(_KEY) - 5) - 20 - 1 - 1
+    body = before + after_key + "q" * k + "\n"
+    assert len(body) - limit == len(before) + 5, "the seek must land 5 bytes into the key"
+    V.server_log_path().write_text(body, encoding="utf-8")
+    out = V.server_log_tail(limit=limit, head_limit=20, scan_bound=100)
+    assert out["scanned_whole"] is False
+    assert _KEY[-10:] not in out["tail"] and _KEY[:10] not in out["tail"]
+    assert out["tail"].rstrip("\n").endswith("q" * k)
+
+
+def test_the_installers_last_words_are_scrubbed_before_each_line_is_stripped(monkeypatch):
+    """A held passphrase with edge whitespace, alone on a line, would lose that whitespace to ``strip()`` and then no longer match."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setattr(connect, "_passphrase", "  edge-space-key-7731  ")
+    ss.forget_held()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "  edge-space-key-7731  "
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as raised:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=runner)
+    assert "edge-space-key-7731" not in str(raised.value)
+
+
+def test_the_failure_excerpt_window_is_scrubbed_where_the_log_is_read(monkeypatch):
+    """Arbitration, activation and the backend only ever see the excerpt: the key is taken out of the log before the window is cut."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(f"loading\nRuntimeError: bad config {_KEY} end\nmore\n", encoding="utf-8")
+    out = V.failure_excerpt(limit=40)
+    assert out["available"] is True
+    assert _KEY[:10] not in (out.get("excerpt") or "")
+
+
+def test_a_journal_line_an_older_build_wrote_raw_is_scrubbed_when_it_is_read(monkeypatch):
+    """The install and start journals are served to the UI and the bundle: a line already on the disk is read through the scrub."""
+    _hold_key(monkeypatch)
+    V._history_path().parent.mkdir(parents=True, exist_ok=True)
+    V._history_path().write_text(json.dumps({"at": 1, "error": f"old {_KEY} line"}) + "\n", encoding="utf-8")
+    V._start_history_path().parent.mkdir(parents=True, exist_ok=True)
+    V._start_history_path().write_text(json.dumps({"at": 1, "excerpt": f"old {_KEY} line"}) + "\n", encoding="utf-8")
+    assert _KEY not in json.dumps(V.install_history()) and _KEY not in json.dumps(V.start_history())
+
+
+def test_a_status_poll_shows_no_line_twice_and_counts_the_gap_between_the_halves(monkeypatch):
+    """The head phase reads on to the scan bound, so the tail's seek can land before the head's end: the tail then starts where the head stopped."""
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 500)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i:03d} " + "x" * 80 + "\n" for i in range(25)]
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    out = V.server_log_tail(limit=300, head_limit=10_000_000, scan_bound=2000)
+    assert out["scanned_whole"] is False
+    head_lines = [ln for ln in out["head"].splitlines() if ln.startswith("line ")]
+    tail_lines = [ln for ln in out["tail"].splitlines() if ln.startswith("line ")]
+    assert head_lines and tail_lines and not (set(head_lines) & set(tail_lines)), "no line is shown in both halves"
+    assert tail_lines[-1].startswith("line 024")
+
+
+def test_the_gap_between_head_and_tail_is_counted_in_file_bytes(monkeypatch):
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i:03d} " + "x" * 80 + "\n" for i in range(400)]
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    size = V.server_log_path().stat().st_size
+    out = V.server_log_tail(limit=300, head_limit=200, scan_bound=1000)
+    shown = len(out["head"].encode()) + len(out["tail"].encode())
+    assert size - 100 <= out["elided_bytes"] + shown <= size + 100, "what is shown plus the gap is the file, to within a line"
+
+
+def test_a_status_poll_of_overlong_lines_stops_at_its_bound(monkeypatch):
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 500)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text(("z" * 250 + "\n") * 400, encoding="utf-8")
+    reads = []
+    real = V._read_line
+
+    def counting(fh):
+        reads.append(1)
+        return real(fh)
+
+    monkeypatch.setattr(V, "_read_line", counting)
+    out = V.server_log_tail(limit=300, head_limit=10_000_000, scan_bound=2000)
+    assert out["available"] is True and out["scanned_whole"] is False
+    assert len(reads) < 60, "the head phase must stop at the scan bound, not read all 400 lines"
+
+
+def test_failure_excerpt_cuts_back_to_a_carriage_return_when_the_read_ends_mid_line(monkeypatch):
+    """Progress output separates its updates with a carriage return only: a bound that falls inside a key there must not leave its start."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 200)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    text = "OSError: gone\r" + "p" * 150 + "\r" + "t" * 12 + _KEY + "\r"
+    assert text.index(_KEY) < 200 < text.index(_KEY) + len(_KEY)
+    V.server_log_path().write_text(text, encoding="utf-8")
+    out = V.failure_excerpt(limit=2000)
+    assert _KEY[:8] not in json.dumps(out)
+    assert out["available"] is True and "OSError: gone" in out["excerpt"], "the read is cut back to the last carriage return, not given up"
+
+
+def test_failure_excerpt_keeps_a_last_line_that_ends_exactly_at_the_bound(monkeypatch):
+    monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 60)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    text = "x" * 20 + "\n" + "RuntimeError: the real cause here______"  # 21 + 39 = 60 bytes, no final newline
+    assert len(text) == 60
+    V.server_log_path().write_text(text, encoding="utf-8")
+    out = V.failure_excerpt(limit=2000)
+    assert "the real cause" in (out.get("excerpt") or "")
+
+
+def test_an_unfinished_last_line_of_a_running_servers_log_is_held_back(monkeypatch):
+    """The server's output is block-buffered, so a write can stop inside a key: a half line is not shown while the server runs."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "process_alive", lambda: True)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("RuntimeError: boom\nloading " + _KEY[:12], encoding="utf-8")
+    out = V.server_log_tail()
+    assert _KEY[:8] not in json.dumps(out) and out["held_back_bytes"] == len("loading " + _KEY[:12]) and "held back" in out["held_back_note"]
+    assert "boom" in out["tail"]
+    assert _KEY[:8] not in json.dumps(V.failure_excerpt(limit=2000))
+    monkeypatch.setattr(V, "process_alive", lambda: False)
+    assert "loading" in V.server_log_tail()["tail"], "a finished log is shown whole"
