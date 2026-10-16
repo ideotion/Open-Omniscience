@@ -164,3 +164,27 @@ def test_merge_diag_checks_the_statement_labels_an_older_beat_or_journal_holds(m
     for form in _forms():
         assert form not in out, form
     assert "ATTACH" in out, "the label is still reported, with the key taken out"
+
+
+def test_a_withheld_journal_line_is_counted_as_withheld_not_as_torn(monkeypatch):
+    """A left-over journal line that parses but cannot be walked by the check is withheld and COUNTED as that, beside (not inside) the
+    torn lines. MUTATION TARGET: the ``withheld`` branch in ``_fold_previous_run_journals``."""
+    b = _bundle()
+    good = json.dumps({"event": "end", "file": "m", "outcome": "ok"})
+    monkeypatch.setattr(b, "_scrubbed_value", lambda value, *a, **k: "unreadable" if isinstance(value, dict) else value)
+    text, block = b._fold_previous_run_journals({"carried": [{"journal": "j", "bytes": 1, "truncated": False, "lines": [good, "{torn"]}], "not_carried": []})
+    run = block["runs"][0]
+    assert run["withheld_lines"] == 1 and run["unparsed_lines"] == 1, run
+    assert '"event": "end"' not in text, "a line that could not be checked is not passed on"
+
+
+def test_a_big_journal_that_is_not_utf8_only_near_its_end_is_still_flagged(tmp_path, monkeypatch):
+    """The decoder fails per block: records before the bad bytes in that block are lost with it, and a listing that said nothing would read
+    as a whole journal. MUTATION TARGET: ``milestones_not_read`` in ``list_runs``."""
+    from src.backup import runlog
+
+    monkeypatch.setattr(runlog, "run_logs_dir", lambda: tmp_path)
+    rows = [{"ev": "run_begin", "t": "2026-01-01T00:00:00Z", "kind": "k"}] + [{"ev": "note", "i": i, "pad": "x" * 200} for i in range(400)]
+    (tmp_path / "20260101T000000Z-big.jsonl").write_bytes(("\n".join(json.dumps(r) for r in rows) + "\n").encode() + b'\xff\xfe{"ev":"x"}\n')
+    entry = runlog.list_runs()[0]
+    assert entry["milestones_not_read"]["file_not_utf8"] is True, entry

@@ -1163,6 +1163,7 @@ def list_runs() -> list[dict]:
         except OSError:
             size = 0
         out.append({
+            **({"milestones_not_read": dict(why)} if why else {}),  # lines that did not parse, or the rest of a file that is not UTF-8
             "run_id": p.stem,
             "kind": begin_rec.get("kind"),
             "label": begin_rec.get("label"),
@@ -1358,7 +1359,7 @@ def raw_runs(*, max_runs: int = 4, max_beats: int = 4000) -> dict:
             entry["milestones_not_read"] = dict(stats)
             entry["milestones_not_read_note"] = (
                 "lines of this journal that were not read and are not included: ones that did not parse (a torn last line), "
-                "records that could not be checked for the passphrase, or the rest of a file that is not valid UTF-8"
+                "records that could not be checked for the passphrase, or the rest of a file that is not valid UTF-8 (from the block of the file that holds the bad bytes: the records just before them are lost with it)"
             )
         if total > max_beats:
             entry["beats_omitted"] = total - max_beats

@@ -3342,7 +3342,7 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
     for item in previous.get("carried", []):
         name = item["journal"]
         began: dict[str, str | None] = {}
-        begun = ended = unparsed = unrecognised = 0
+        begun = ended = unparsed = unrecognised = unchecked = 0
         outcomes: dict[str, int] = {}
         started_at: str | None = None
         for line in item.get("lines", []):
@@ -3351,8 +3351,12 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
                 if not isinstance(rec, dict):
                     raise ValueError("not an object")
                 rec = _scrubbed_value(rec)  # a journal an older build left may hold a passphrase an error quoted
-                if not isinstance(rec, dict):
-                    raise ValueError("could not be checked")
+                if not isinstance(rec, dict):  # the record could not be walked: nothing of it is kept, and it is counted as such
+                    unchecked += 1
+                    rec = {"event": "withheld", "chars": len(line), "reason": "could not be checked for the passphrase", "previous_run": name}
+                    text = json.dumps(rec, ensure_ascii=True)
+                    out_lines.append(text)
+                    continue
                 rec["previous_run"] = name
                 text = json.dumps(rec, ensure_ascii=True, allow_nan=False)
             except (ValueError, RecursionError):
@@ -3394,6 +3398,7 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
             **({"unfinished_total": len(unfinished)} if len(unfinished) > 20 else {}),
             "outcomes": dict(sorted(outcomes.items())[:20]),
             "unparsed_lines": unparsed,
+            "withheld_lines": unchecked,
             "unrecognised_lines": unrecognised,
             **({"read_error": item["read_error"]} if item.get("read_error") else {}),
         })
