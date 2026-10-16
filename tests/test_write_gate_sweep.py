@@ -43,6 +43,14 @@ def gated(tmp_path):
     engine.dispose()
 
 
+def _persisted(db, sql: str):
+    """Read ``sql`` on a FRESH connection: what a commit made durable, not what the writing session still holds uncommitted."""
+    from sqlalchemy import text
+
+    with db._sweep_engine.connect() as c:  # type: ignore[attr-defined]
+        return c.execute(text(sql)).fetchall()
+
+
 class _Log:
     """What the gate saw: ``enter``/``exit`` of every ``write_lock()`` and the statements named in ``watch``."""
 
@@ -158,6 +166,7 @@ def test_the_counter_backfill_takes_the_gate_once_per_slice_and_each_time_it_is_
     gated.expire_all()
     got = {k.id: (k.mention_count, k.article_count) for k in gated.query(Keyword).all()}
     assert got == expect
+    assert {r[0]: (r[1], r[2]) for r in _persisted(gated, "SELECT id, mention_count, article_count FROM keywords")} == expect
     assert out == {"keywords": 10, "with_mentions": 7}
 
 
@@ -223,11 +232,19 @@ def test_the_newsletter_removal_holds_the_gate_for_one_chunk_at_a_time(gated, ga
     # The holds were not nested in a longer one: each chunk found the gate free.
     assert gate_log.free_on_entry[:3] == [True, True, True]
     gated.expire_all()
+    assert [r[0] for r in _persisted(gated, "SELECT id FROM articles")] == [keep_id]  # committed, not only pending in the session
     assert [a.id for a in gated.query(Article).all()] == [keep_id]
     assert gated.query(func.count(KeywordMention.id)).scalar() == 1  # the kept article's mention, nothing else
     # The counters were repaired at the end of the pass.
     kw = gated.query(Keyword).one()
     assert (kw.mention_count, kw.article_count) == (1, 1)
+
+
+def test_the_newsletter_removal_chunk_stays_under_the_sqlite_variable_cap():
+    """A chunk's ids are bound as variables in one ``IN (...)``: SQLite's default cap is 999, so the default chunk may not grow past 900."""
+    from src.ingest import email as email_mod
+
+    assert 1 <= email_mod._NEWSLETTER_DELETE_CHUNK <= 900
 
 
 def test_an_interrupted_newsletter_removal_is_finished_by_running_it_again(gated, monkeypatch):
@@ -283,6 +300,7 @@ def test_the_entity_status_downgrades_are_written_one_batch_per_hold(gated, gate
     assert gate_log.free_on_entry == [True, True, True]
     gated.expire_all()
     assert gated.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() == 1
+    assert _persisted(gated, "SELECT count(*) FROM keywords WHERE is_entity = 1") == [(1,)]  # committed, not only pending in the session
 
 
 def test_an_entity_status_pass_with_nothing_to_downgrade_takes_no_hold(gated, gate_log):
