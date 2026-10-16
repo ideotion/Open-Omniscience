@@ -59,6 +59,8 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     # 2026-10-06 (R119), the vitals history, before the release run.
     "vitals_history_report",
     "diagnostics_runs_report",
+    # 2026-10-15, row B1: the store's country form and the migration journal, before the release run.
+    "country_form_status",
     # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,
     # six routes, imported last -- the button the maintainer asked for.
     "release_run_start",

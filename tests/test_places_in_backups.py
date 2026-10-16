@@ -48,6 +48,17 @@ _T1 = datetime(2026, 9, 20, tzinfo=UTC).replace(tzinfo=None)
 _PARIS = "node/17807753"
 
 
+@pytest.fixture(autouse=True)
+def _side_files_are_alpha2():
+    """The corpora here are side files made with ``create_all``: no marker, so alpha-2. The ORM binds in the form the PROCESS's
+    store holds (alpha-3 for a store the app made), so without this the same file would be written in one form and merged as
+    another. The test and the file agree, as one store's code and rows do in an install."""
+    from src.database.country_form import writing_in
+
+    with writing_in("alpha2"):
+        yield
+
+
 def _corpus(path: Path):
     engine = create_engine(f"sqlite:///{path}", future=True)
     Base.metadata.create_all(engine)

@@ -84,7 +84,7 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
         # matching row is then the best available answer, never "gone".
         if identity.get("jurisdiction"):
             where.append("d.jurisdiction = :jurisdiction")
-            params["jurisdiction"] = identity["jurisdiction"]
+            params["jurisdiction"] = _in_store_form(identity["jurisdiction"])
         params["document_url"] = identity.get("document_url")
         params["revision_content_hash"] = identity.get("revision_content_hash")
     for i, (name, column) in enumerate(spec["match"].items()):
@@ -298,6 +298,17 @@ def _scalars(values: dict) -> bool:
     return all(v is None or isinstance(v, (str, int, float, bool)) for v in values.values())
 
 
+def _in_store_form(value: Any) -> Any:
+    """``value`` as a country code in the form the live store holds; anything that is not a code stays exactly as it is."""
+    if not isinstance(value, str):
+        return value
+    from src.backup.country_codes import canonical_country
+    from src.database.country_form import store_form
+
+    code = canonical_country(value, store_form())
+    return value if code is None else code
+
+
 def swap(session: Any, alt_id: int) -> dict:
     """Show the alternate's value and keep the one that was shown as the alternate.
 
@@ -336,7 +347,11 @@ def swap(session: Any, alt_id: int) -> dict:
     before_tag = provenance_tag(session, table, local_id)
     if before_json is None or before_tag is None:
         raise AlternateError("the row this differs from is gone, so there is nothing to swap with", 409)
-    sets = {c: imported[c] for c in names}
+    # A country code recorded in the other form (a difference captured before a migration, or restored from the other
+    # form's machine) goes in as THIS store holds its codes: this UPDATE is raw SQL, so the column type never sees it.
+    from src.backup.country_codes import COUNTRY_COLUMNS
+
+    sets = {c: (_in_store_form(imported[c]) if c in COUNTRY_COLUMNS.get(table, ()) else imported[c]) for c in names}
     notnull = _notnull(session, table)
     stamp_col = producer_extra_columns(table).get("produced_at")
     for field, column in producer_extra_columns(table).items():

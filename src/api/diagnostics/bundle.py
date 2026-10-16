@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from src.api import diagnostics_plan as _plan
 from src.api import diagnostics_slots as _slots
+from src.database.country_form import order_key
 from src.database.derived_views import KeywordMentionRead
 from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
 from src.database.models import Article, Keyword, Source
@@ -383,9 +384,7 @@ def debug_bundle(
                 "last_status": d.last_status,
                 "last_checked_at": d.last_checked_at.isoformat() if d.last_checked_at else None,
             }
-            for d in db.query(LawDocument)
-            .order_by(LawDocument.jurisdiction, LawDocument.title)
-            .all()
+            for d in sorted(db.query(LawDocument).all(), key=lambda d: order_key(d.jurisdiction, d.title))
         ]
 
     def _wiki_pages() -> list:
@@ -1106,6 +1105,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # GROUP BY per country column, under the DB member deadline the wrapper
         # already applies.
         ("country-code-duplicates.json", lambda: _country_code_scan(db)),
+        # 2026-10-15 (row B1): which form the store keeps its country codes in, and the migration's journal if one
+        # ran. Two kv reads, no scan: the rows-to-rewrite count stays on the card's own button.
+        ("country-form.json", lambda: _country_form_member(db)),
         # transversal audit 09 (2026-07-25), C2: fold the local fixity audit in, as
         # 08's own Action Plan C2 originally asked ("fold a fixity pass into the
         # gate-row-3 diagnostics bundle rather than treating it as a separate ask").
@@ -1622,6 +1624,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/schema-drift": "schema-drift.json",
     "/integrity": "corpus-integrity.json",
     "/country-code-duplicates": "country-code-duplicates.json",
+    "/country-form": "country-form.json",  # 2026-10-15 (row B1)
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
     "/release-run/last": "release-run.json",  # the 0.4 release acceptance run (2026-09-18)
@@ -2154,6 +2157,13 @@ def _country_code_scan(db) -> dict:
     from src.backup.country_codes import scan_live_corpus
 
     return scan_live_corpus(db)
+
+
+def _country_form_member(db) -> dict:
+    """The store's country form and the migration journal as a bundle member (a named function, as above)."""
+    from .country_form import country_form_status
+
+    return country_form_status(estimate=False, db=db)
 
 
 def _corpus_counters_safe(db) -> dict:

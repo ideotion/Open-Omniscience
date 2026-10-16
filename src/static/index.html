@@ -3169,6 +3169,16 @@
         <button class="secondary" data-on-click="loadSessionForensics(this)" title="Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents.">Session forensics</button>
         <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- Country-code form (row B1): which form this store keeps, and what moving it to alpha-3 would rewrite.
+           Read-only and button-driven; the migration itself is a command run with the app closed. -->
+      <div id="country-form-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Country codes in this store</div>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" data-on-click="loadCountryForm(this, false)" title="Which form this store keeps its country codes in (alpha-2 like fr, or alpha-3 like FRA). A read of one stored marker; nothing is scanned or changed.">Show the form</button>
+          <button class="secondary" data-on-click="loadCountryForm(this, true)" title="Also counts the rows a migration to alpha-3 would rewrite and lists the values left exactly as stored. One read-only pass over the country columns, so it takes a moment on a large corpus; the app may stay open. It starts nothing: the migration is a command run with the app closed.">Show what a migration would do</button>
+        </div>
+        <div id="country-form-out" class="small" style="margin-top:6px"></div>
+      </div>
       <!-- UNATTENDED RUN (2026-08-12 field ask): ONE button pressed before a multi-day
            absence, and ONE that hands back a copy-pasteable log. The log is a plain file
            read — safe to press mid-run, with jobs still going, on a slow machine.

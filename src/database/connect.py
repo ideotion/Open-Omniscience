@@ -802,6 +802,38 @@ def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
     return True
 
 
+def snapshot_open_connection(conn, dest: Path | str) -> Path:
+    """Consistent snapshot of the database ``conn`` is ALREADY open on, taken through that connection and KEEPING
+    its encryption state (an encrypted corpus stays ciphertext under the same key).
+
+    :func:`snapshot_preserving` opens the file itself, which a caller holding the file EXCLUSIVELY (the country-form
+    migration, ``PRAGMA locking_mode=EXCLUSIVE``) cannot let it do: a second connection is refused, which is the point of
+    the lock. This takes the copy through the connection that holds it."""
+    dest_p = Path(dest)
+    dest_p.parent.mkdir(parents=True, exist_ok=True)
+    dest_p.unlink(missing_ok=True)
+    try:
+        if _is_sqlcipher_conn(conn):
+            key = get_passphrase()
+            if not key:
+                raise DatabaseLockedError("the store is encrypted: cannot snapshot without its passphrase")
+            # The key is BOUND (ATTACH ... KEY takes an expression), so no passphrase is ever spliced into the statement text.
+            conn.execute("ATTACH DATABASE ? AS snap KEY ?", (str(dest_p), key))
+            _match_source_pragmas(conn, "snap")
+            _export(conn, "snap")
+            conn.execute("DETACH DATABASE snap")
+        else:
+            dst = sqlite3.connect(str(dest_p))
+            try:
+                conn.backup(dst)
+            finally:
+                dst.close()
+    except BaseException:
+        dest_p.unlink(missing_ok=True)  # never leave a partial copy to be mistaken for one
+        raise
+    return dest_p
+
+
 class SnapshotStopped(Exception):
     """A snapshot was interrupted because its caller's ``should_stop`` turned true. The partial
     copy has been removed."""

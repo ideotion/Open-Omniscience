@@ -38,6 +38,17 @@ from src.database.models import (  # noqa: E402
     StatSubscription,
 )
 
+
+@pytest.fixture(autouse=True)
+def _spellings_as_given():
+    """These corpora are filled with the exact spellings the test names (`fr` beside `FRA`): written in the alpha-2 form,
+    which converts nothing at the boundary, whatever form the suite's own store happens to be in."""
+    from src.database.country_form import writing_in
+
+    with writing_in("alpha2"):
+        yield
+
+
 _BATCH_META = {
     "artifact_kind": "oo-backup-3",
     "origin_fingerprint": "test",
@@ -52,6 +63,26 @@ def _corpus(path: Path):
     engine = create_engine(f"sqlite:///{path}", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
+
+
+def _mark(path: Path, form: str) -> None:
+    """Say, in the file, which country form this store is in (the marker the restore follows)."""
+    from src.database.country_form import write_form
+
+    con = sqlite3.connect(path)
+    try:
+        write_form(con, form, by="test")
+        con.commit()
+    finally:
+        con.close()
+
+
+def _raw(path: Path, sql: str) -> list:
+    con = sqlite3.connect(path)
+    try:
+        return con.execute(sql).fetchall()
+    finally:
+        con.close()
 
 
 def _article(source_id: int, n: int, country: str | None):
@@ -235,21 +266,20 @@ def test_the_normaliser_runs_BEFORE_every_handler_that_reads_a_country(tmp_path)
 # --------------------------------------------------------------------------- #
 #  The target is ONE constant with ONE read (the 0.5 flip)
 # --------------------------------------------------------------------------- #
-def test_flipping_the_canonical_form_changes_what_the_normaliser_emits(tmp_path, monkeypatch):
-    """The 0.5 storage half (Q301 = c) flips ONE literal. Both settings are pinned here,
-    so the flip cannot silently change what the module claims to do -- a one-line flip
-    owes a disclosure that is true on both sides of it."""
-    monkeypatch.setattr(cc, "CANONICAL_COUNTRY_FORM", "alpha3")
+def test_the_stores_own_form_changes_what_the_normaliser_emits(tmp_path):
+    """The restore follows the store it merges INTO: the marker in the working copy, not a constant. Both settings are
+    pinned here, so the migration cannot silently change what the module claims to do -- a disclosure that is true on
+    both sides of it."""
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"
     with _corpus(staged)() as s:
         s.add(Source(name="N", domain="n.example", country="fr"))
         s.commit()
     _corpus(working)
+    _mark(working, "alpha3")
 
     counts, _ = merge_corpus(staged, working, _BATCH_META)
 
-    with _corpus(working)() as s:
-        assert s.query(Source).one().country == "FRA"
+    assert _raw(working, "SELECT country FROM sources") == [("FRA",)]
     assert counts["_country_codes"]["target_form"] == "alpha3"
     assert "alpha3" in counts["_country_codes"]["method"], (
         "the published method still names the old target -- the sentence and the "
@@ -257,32 +287,45 @@ def test_flipping_the_canonical_form_changes_what_the_normaliser_emits(tmp_path,
     )
 
 
+def test_a_store_with_no_marker_is_alpha2_and_a_restore_into_it_stays_alpha2(tmp_path):
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(staged)() as s:
+        s.add(Source(name="N", domain="n.example", country="FRA"))
+        s.commit()
+    _corpus(working)
+
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+
+    assert _raw(working, "SELECT country FROM sources") == [("fr",)]
+    assert counts["_country_codes"]["target_form"] == "alpha2"
+
+
 def test_the_canonical_form_is_read_in_exactly_one_place():
-    """Anti-drift: a second read is a second place to flip. Asserted over the module's
-    own source with comments stripped, because the constant is NAMED in the docstrings
-    that explain it and a bare count would read those."""
+    """Anti-drift: a second read is a second place to decide. Asserted over the module's own source, because the names
+    are spelled in the docstrings that explain them and a bare count would read those. TWO decisions exist and each is
+    single: which converter (`_converter`, on the form it is handed, defaulting to the constant) and which form the
+    STORE is in (`store_form_of`, the one place the marker is read)."""
     import ast
     import inspect
 
     src = inspect.getsource(cc)
     tree = ast.parse(src)
-    reads = [
-        n
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Name) and n.id == "CANONICAL_COUNTRY_FORM"
-        and isinstance(n.ctx, ast.Load)
+    const_reads = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Name) and n.id == "CANONICAL_COUNTRY_FORM" and isinstance(n.ctx, ast.Load)
     ]
-    # `_converter` decides; the report and the scan echo it as a VALUE, which is
-    # reporting rather than deciding. Only the decision may be single.
-    deciding = [n for n in reads if n.lineno == _converter_line(src)]
-    assert len(deciding) == 1, (
-        f"{len(deciding)} decisions read CANONICAL_COUNTRY_FORM; there must be exactly one"
-    )
+    deciding = [n for n in const_reads if n.lineno == _converter_line(src)]
+    assert len(deciding) == 1, f"{len(deciding)} decisions read CANONICAL_COUNTRY_FORM; there must be exactly one"
+    marker_reads = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom) and any(a.name == "read_form_in" for a in n.names)
+    ]
+    assert len(marker_reads) == 1, "the store's marker must be read in exactly one place"
 
 
 def _converter_line(src: str) -> int:
     for i, line in enumerate(src.splitlines(), start=1):
-        if "return to_iso3 if CANONICAL_COUNTRY_FORM" in line:
+        if "return to_iso3 if (form or CANONICAL_COUNTRY_FORM)" in line:
             return i
     raise AssertionError("the converter's decision line moved; re-anchor this guard")
 
@@ -465,7 +508,7 @@ def test_the_scan_answers_the_same_whatever_the_target_form(tmp_path, monkeypatc
         s.commit()
 
     a2 = _scan(live)["duplicates"]
-    monkeypatch.setattr(cc, "CANONICAL_COUNTRY_FORM", "alpha3")
+    _mark(live, "alpha3")
     a3 = _scan(live)["duplicates"]
 
     assert a2 == a3 == 1
@@ -578,8 +621,9 @@ def test_a_corpus_already_in_the_target_form_reports_zero_off_form(tmp_path):
 def test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form(
     tmp_path, monkeypatch
 ):
-    """THE SIMULATED CORRUPTION, kept as a test. With ``CANONICAL_COUNTRY_FORM`` flipped
-    to alpha-3 while the live corpus is still alpha-2, normalising the staged copy
+    """THE SIMULATED CORRUPTION, kept as a test. With the working copy CLAIMING alpha-3
+    (its marker) while it still holds alpha-2 -- which the migration cannot produce,
+    since it flips the marker in the transaction that verifies there is nothing left -- normalising the staged copy
     toward alpha-3 makes every value-keyed join miss: one law document really does come
     out as two rows. Nothing in this slice can decide that automatically -- a real
     corpus legitimately holds values the converter refuses and can be honestly mixed --
@@ -587,7 +631,6 @@ def test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form(
 
     This test is also the tripwire for that flip: if a future session flips the constant
     without rewriting the live corpus first, this is the failure that says so."""
-    monkeypatch.setattr(cc, "CANONICAL_COUNTRY_FORM", "alpha3")
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"
     with _corpus(staged)() as s:
         s.add(LawDocument(jurisdiction="fr", url="https://l/1", title="Same", country="fr"))
@@ -595,6 +638,7 @@ def test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form(
     with _corpus(working)() as s:
         s.add(LawDocument(jurisdiction="fr", url="https://l/1", title="Mine", country="fr"))
         s.commit()
+    _mark(working, "alpha3")  # the store CLAIMS alpha-3 while it still holds alpha-2: it was not migrated by the migration
 
     counts, _ = merge_corpus(staged, working, _BATCH_META)
 

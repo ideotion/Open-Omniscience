@@ -675,6 +675,49 @@
       }
     }
 
+    // The store's country form and what a migration would rewrite (row B1). Read-only: the migration is a command run
+    // with the app closed, so this shows the instruction and the estimate and starts nothing.
+    let _countryFormTicket = 0;
+    function _renderCountryForm(d, t) {
+      if (!d.readable) return '<div class="note err">' + esc(t("The form of this store could not be read, so nothing was assumed.")) + "</div>";
+      const lines = [];
+      lines.push(`<div>${esc(t("This store keeps country codes as"))} <b>${d.form === "alpha3" ? "ISO 3166-1 alpha-3 (FRA)" : "ISO 3166-1 alpha-2 (fr)"}</b>.</div>`);
+      if (d.form === "alpha2") {
+        lines.push(`<div class="hint">${esc(t("This is how every store made before 0.5 is kept. The app reads and writes it as it always did; nothing is wrong. To move it to alpha-3, close the app and run:"))} <code>${esc(d.command)}</code></div>`);
+      }
+      if (d.estimate) {
+        const e = d.estimate;
+        if (e.refused) lines.push(`<div class="note err">${esc(e.refused)}</div>`);
+        else {
+          lines.push(`<div>${ooLabelHtml(esc(t("Rows a migration would rewrite")), `<b>${fmtNum(Number(e.rows_to_rewrite || 0), 0)}</b>`)}</div>`);
+          const left = Object.entries(e.left_as_stored || {});
+          if (left.length) lines.push(`<div class="hint">${ooLabelHtml(esc(t("Left exactly as stored, because they have no ISO meaning")), left.map(([k, v]) => esc(k) + " " + esc(Object.entries(v).map(([a, n]) => a + " ×" + n).join(", "))).join("; "))}</div>`);
+          lines.push(`<div class="hint">${esc(e.time || "")}</div>`);
+        }
+      }
+      const j = d.journal;
+      if (j) lines.push(`<div class="hint">${ooLabelHtml(esc(t("Last migration")), esc(j.state || "") + (j.backup ? " · " + esc(t("safety copy")) + " " + esc(j.backup) : ""))}</div>`);
+      return lines.join("");
+    }
+    async function loadCountryForm(btn, withEstimate) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("country-form-out");
+      if (!out) return;
+      const me = ++_countryFormTicket;
+      if (btn) btn.disabled = true;
+      out.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      try {
+        const d = await api("/api/diagnostics/country-form" + (withEstimate ? "?estimate=true" : ""));
+        if (me !== _countryFormTicket) return;
+        out.innerHTML = _renderCountryForm(d, t);
+      } catch (e) {
+        if (me !== _countryFormTicket) return;
+        out.innerHTML = '<div class="note err">' + esc(t("Could not read the country form.")) + " " + esc(e.message) + "</div>";
+      } finally {
+        if (btn && me === _countryFormTicket) btn.disabled = false;
+      }
+    }
+
     // Diagnostics: DISCOVER new sources from Wikidata for chosen countries and add
     // them DISABLED for review (never scraped until enabled). Networked -> consent-gated.
     async function discoverSources(btn) {

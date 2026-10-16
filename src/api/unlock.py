@@ -789,11 +789,20 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             _end_recovery_notice(_recovery_token)
         _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
         set_passphrase(body.passphrase)
+        from src.database.country_form import MigrationUnfinished
+
+        _waits_for_migration = False
         try:
             _said = page_reading.line_of(_pages)
             if _said:
                 _LOG.warning("unlock: %s", _said)
-            _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms, pages=_pages)
+            try:
+                _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms, pages=_pages)
+            except MigrationUnfinished:
+                # Not a failure of this unlock: the store itself waits for ``open-omniscience migrate-countries``. Noted
+                # without binding the error, so the answer below is a fixed sentence and never the error's own words.
+                _waits_for_migration = True
+                raise
         except Exception:
             # A key in memory means "a key is in memory", not "the unlock finished": left there after a failed
             # finish (init_db on a full drive or a damaged file), the app reads as open, a retry is answered from
@@ -812,6 +821,17 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
                 log_failure(
                     _LOG, "engine dispose after a failed unlock finish failed", dispose_exc, body.passphrase, level=logging.DEBUG
                 )
+            if _waits_for_migration:
+                # The lock screen shows a 409's own words, where a raised error is an opaque 500.
+                # The English is the key unlock.html translates (tests/test_unlock_errors_are_translated.py reads it).
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "a country-form migration of this store started and did not finish, so it cannot be opened yet. Close "
+                        "everything that has the store open and run `open-omniscience migrate-countries` in a terminal: it "
+                        "resumes where it stopped, and it names the verified safety copy taken before the run began."
+                    ),
+                ) from None
             raise
         _LOG.info("store unlocked")
         return {"unlocked": True, "state": app_lock_state()}

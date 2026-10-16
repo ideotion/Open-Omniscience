@@ -38,10 +38,15 @@ def client():
         ("Reuters Fin", "reuters.com", "en", "GB", "agency", "finance,markets", True),
         ("Disabled DE", "dw.de", "de", "DE", "news", "news", False),
     ]
-    for name, dom, lang, country, stype, tags, enabled in rows:
-        s.add(Source(name=name, domain=dom, language=lang, country=country,
-                     source_type=stype, tags=tags, enabled=enabled))
-    s.commit()
+    # This in-memory file stands in for the live store, which the app boots below as a NEW store (alpha-3), so it is
+    # seeded in the form the app will read and compare in: the same file, as in a real install.
+    from src.database.country_form import writing_in
+
+    with writing_in("alpha3"):
+        for name, dom, lang, country, stype, tags, enabled in rows:
+            s.add(Source(name=name, domain=dom, language=lang, country=country,
+                         source_type=stype, tags=tags, enabled=enabled))
+        s.commit()
 
     def _db():
         yield s
@@ -61,7 +66,8 @@ def _keys(facet):
 def test_facets_distinct_values_and_counts(client):
     r = client.get("/api/sources/facets").json()
     assert _keys(r["languages"]) == {"en": 3, "fr": 1, "de": 1}  # all (incl. disabled)
-    assert _keys(r["countries"]) == {"GB": 3, "FR": 1, "DE": 1}
+    # an alpha-3 store hands back what the column type reads out: lowercase alpha-2, however the row was spelled
+    assert _keys(r["countries"]) == {"gb": 3, "fr": 1, "de": 1}
     assert _keys(r["types"]) == {"news": 4, "agency": 1}
     tags = _keys(r["tags"])
     assert tags["news"] == 4 and tags["science"] == 1 and tags["markets"] == 1

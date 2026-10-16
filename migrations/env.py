@@ -85,6 +85,22 @@ def _drop_views_if_migrating(conn) -> None:
     drop_derived_views(conn)
 
 
+def _compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):
+    """Alembic's type comparison, except that a ``CountryCode`` column is the string column it sits on.
+
+    ``CountryCode`` (``src/database/country_form.py``) is a bind/result adapter over ``String``: it changes what is written
+    to the file and read from it, never the column's DDL, and the form a store holds is a fact the migration owns, not a
+    schema revision. Without this, ``alembic check`` reads the declared length (8) against the baseline's ``VARCHAR(2)``
+    as drift that no migration should ``ALTER``. ``None`` is alembic's own default comparison for everything else."""
+    from sqlalchemy.types import String
+
+    from src.database.country_form import CountryCode
+
+    if isinstance(metadata_type, CountryCode) and isinstance(inspected_type, String):
+        return False
+    return None
+
+
 def run_migrations_offline() -> None:
     """Emit SQL without a DB connection (`alembic upgrade --sql`)."""
     context.configure(
@@ -94,7 +110,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,  # SQLite-safe ALTERs
         include_object=_include_object,
-        compare_type=True,
+        compare_type=_compare_type,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -111,7 +127,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             render_as_batch=True,  # SQLite-safe ALTERs
             include_object=_include_object,
-            compare_type=True,
+            compare_type=_compare_type,
         )
         _drop_views_if_migrating(injected)
         with context.begin_transaction():
@@ -123,7 +139,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             render_as_batch=True,  # SQLite-safe ALTERs
             include_object=_include_object,
-            compare_type=True,
+            compare_type=_compare_type,
         )
         _drop_views_if_migrating(connection)
         with context.begin_transaction():

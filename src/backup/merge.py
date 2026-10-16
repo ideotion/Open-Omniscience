@@ -2543,6 +2543,15 @@ def _alternate_object(raw, *, scalars: bool) -> dict | None:
     return obj
 
 
+def _country_in_form_of(con, code: str) -> str:
+    """A country code from a recorded difference, in the form the working copy (``main``) holds its codes. A value that
+    is not a code stays as it is."""
+    from src.backup.country_codes import canonical_country, store_form_of
+
+    out = canonical_country(code, store_form_of(con))
+    return code if out is None else out
+
+
 def _alternate_local_match(
     con, spec: dict, identity: dict, notnull: Iterable[str] = ()
 ) -> tuple[str | None, list]:
@@ -2570,7 +2579,7 @@ def _alternate_local_match(
             " WHERE d.url = ? AND r.content_hash = ?" + (" AND d.jurisdiction = ?" if juris else "")
             + " ORDER BY r.id LIMIT 1",
             (identity.get("document_url"), identity.get("revision_content_hash"))
-            + ((juris,) if juris else ()),
+            + ((_country_in_form_of(con, juris),) if juris else ()),
         )
         if not rows:
             return None, []
@@ -3578,6 +3587,14 @@ def _stored_text(content, compressed) -> str:
     return content or ""
 
 
+def _carried_country(code: str | None, form: str, canonical) -> str | None:
+    """``code`` (lowercase alpha-2, or None) in the form the store keeps. A value with no ISO meaning stays as it is (R100)."""
+    if code is None:
+        return None
+    converted = canonical(code, form)
+    return converted if converted is not None else code
+
+
 def _plan_derived_carry(con, batch_id, results) -> None:
     """Decide which incoming articles' derived rows can be CARRIED (R24).
 
@@ -3652,8 +3669,16 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     from src.analytics.engine_identity import date_part, index_inputs_digest
     from src.analytics.managed import normalize_lang
     from src.analytics.store import _self_name_forms
+    from src.backup.country_codes import canonical_country, store_form_of
     from src.catalog.countries import normalize_country
+    from src.database.country_form import CountryCode
 
+    # The staged articles are in this store's form (the step before the carry made them so). The stamp's
+    # inputs were digested from what the ORM hands the engine -- lowercase alpha-2 whatever the file holds --
+    # so the digest reads the value back through the column type, and a carried mention is written in the form
+    # the file keeps, as a re-index through the same type would write it.
+    form = store_form_of(con)
+    to_python = CountryCode().process_result_value
     refused = plan["refused"]
     last = -(2**63)
     while True:
@@ -3697,6 +3722,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             if src is None:
                 refused["source_unmapped"] += 1
                 continue
+            country = to_python(country, None)
             text = _stored_text(content, compressed)
             forms = _self_name_forms(SimpleNamespace(name=src[1], domain=src[2]))
             digest = index_inputs_digest(
@@ -3714,7 +3740,8 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 # A re-index passes the ARTICLE's country and no city
                 # (src.analytics.store.reindex_articles), so that is what a carried mention
                 # carries -- not whatever the exporter's ingest denormalised from its source.
-                normalize_country(country), normalize_lang(known) or None,
+                _carried_country(normalize_country(country), form, canonical_country),
+                normalize_lang(known) or None,
             ))
         con.executemany(
             "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language)"
