@@ -753,6 +753,18 @@ def wal_state_before_open() -> dict[str, Any]:
 
 
 def previous_session_report() -> dict[str, Any]:
+    """The forensic verdict on the PREVIOUS session (see ``_previous_session_report``), with the evidence state of the open questions."""
+    out = _previous_session_report()
+    try:
+        from src.monitoring.can_answer import assess
+
+        out["can_answer"] = assess(out)
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        out["can_answer"] = {"unavailable": _why(exc)}
+    return out
+
+
+def _previous_session_report() -> dict[str, Any]:
     """The forensic verdict on the PREVIOUS session, computed from the sentinel
     captured at THIS boot + the collector's last flight-recorder sample."""
     prev = _PREV_AT_BOOT if _PREV_LOADED else _read_state()
