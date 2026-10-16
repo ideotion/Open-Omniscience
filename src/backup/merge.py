@@ -6946,8 +6946,8 @@ def reindex_imported_articles(
             # marker's lifecycle spans every batch of a run -- so one caller up owns
             # both, exactly as it already owns the exclusive commit_batch.
             defer_counters=defer_counters,
-            # Passed through, never decided here: whether a writer may be waiting is the CALLER's fact (the drain), and an import
-            # that owns the machine passes none.
+            # Passed through, never decided here: whether a writer may be waiting is the CALLER's fact. The backlog drain and the
+            # restore's own re-index hand the hold policy; a caller that passes none gets the count rule.
             should_flush=should_flush,
         )
         # Only a batch that reached the end is stamped done. Anything short of that
@@ -7265,6 +7265,18 @@ def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float]
         return held_s >= REINDEX_QUEUED_WRITER_MIN_HOLD_S and write_gate_waiters() > 0
 
     return _should_flush
+
+
+def _restore_reindex_policy(stats: dict) -> Callable[[int, float], bool] | None:
+    """The early-commit policy for the re-index that ends a restore, with the target in force published beside the seconds it produced.
+
+    The restore's width is :func:`import_reindex_commit_batch` (200) when the import owns the machine, and 200 articles are 36 s of
+    the single-writer gate at the field's rate: nothing is collecting, but a save from the UI still waits behind the whole batch.
+    The same policy the backlog drain hands its batches ends one at the hold target or when a writer queues. ``None`` when
+    ``OO_REINDEX_HOLD_TARGET_S`` is 0 (the count-only rule); ``stats["hold_target_s"]`` says which rule ran."""
+    target = reindex_hold_target_s()
+    stats["hold_target_s"] = target
+    return reindex_flush_policy(target)
 
 
 def run_restore(
@@ -7915,6 +7927,8 @@ def run_restore(
                         # leaves the batch marked 'merged' with its durable cursor
                         # intact, and the backlog resumes later exactly here.
                         should_stop=should_stop,
+                        # The writer that arrives (write-gate holds): the width is the ceiling on a batch, the policy ends one early.
+                        should_flush=_restore_reindex_policy(_rx_stats),
                     )
                     _rx_stats["commit_batch"] = reindex_commit_batch
                     # R3: the EFFECTIVE knobs, not the requested ones. The field

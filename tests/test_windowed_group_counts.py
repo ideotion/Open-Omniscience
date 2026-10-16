@@ -580,10 +580,12 @@ def test_the_real_pool_watch_lists_nothing_for_this_thread_while_keep_runs(corpu
 
 @pytest.mark.parametrize("how", ["text", "connection"])
 def test_a_write_the_sessions_flags_cannot_see_is_not_rolled_back_by_the_release(corpus, how):
-    """The deep delta read's S1: ``release_idle_connection`` reads only the session's own flags, and DML run through
+    """The deep delta read's S1: ``release_idle_connection`` read only the session's own flags, and DML run through
     ``session.execute(text(...))`` or on ``session.connection()`` sets none of them, so the read's release
-    rolled the write back without a sound. The driver knows (its connection reports a transaction after a write
-    and none after a SELECT), and ``release_between_pieces`` asks it."""
+    rolled the write back without a sound. The helper now compares the driver's changed-row count with the one
+    taken when the transaction began (tests/test_release_declines_unseen_writes.py pins that on the primitive, for
+    every caller); ``release_between_pieces`` keeps asking the driver's ``in_transaction`` as well, which also
+    declines the explicit BEGIN of a snapshot session."""
     _engine, Sess, _ = corpus
     with Sess() as s:
         if how == "text":

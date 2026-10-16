@@ -204,7 +204,7 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
         assert captured["commit_batch"] == 5
         assert captured["workers"] == 0
         assert progress_seen == [(1, 1)]
-        assert captured["should_flush"] is None, "an import that owns the machine passes no early-commit policy"
+        assert captured["should_flush"] is None, "reindex_imported_articles decides nothing: a caller that passes no policy gets the count rule"
 
         # commit_batch=None (the default) reads OO_REINDEX_COMMIT_BATCH.
         # Since R24 the first call CERTIFIED the article, and a certified article is
