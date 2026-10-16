@@ -21,7 +21,7 @@ from typing import cast
 
 import yaml
 
-from src.catalog.countries import country_query_forms
+from src.catalog.countries import config_country, country_query_forms
 from src.civic.elections import annotate as annotate_election
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_events.yml"
@@ -87,7 +87,7 @@ def load_events() -> list[dict]:
                 "title": str(e["title"]),
                 "calendar": str(e.get("calendar", "other")),
                 "category": str(e.get("category", "other")),
-                "country": e.get("country"),
+                "country": config_country(e.get("country")),
                 "region": e.get("region"),
                 "cadence": str(e.get("cadence", "annual")),
                 "month": e.get("month"),

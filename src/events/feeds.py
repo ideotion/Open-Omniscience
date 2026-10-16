@@ -35,6 +35,7 @@ from urllib.parse import urlparse
 
 import yaml
 
+from src.catalog.countries import config_country
 from src.paths import data_dir
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "calendar_feeds.yml"
@@ -105,7 +106,7 @@ def load_families() -> list[dict]:
                 "key": str(fam["key"]),
                 "name": str(fam.get("name", fam["key"])),
                 "kind": str(fam.get("kind", "other")),
-                "country": fam.get("country"),
+                "country": config_country(fam.get("country")),
                 "feeds": feeds,
             }
         )

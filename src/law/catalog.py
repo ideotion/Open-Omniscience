@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import config_country
 from src.database.models import LawDocument
 from src.ingest.seed_sources import SeedResult
 
@@ -32,22 +33,43 @@ GENERATED_CATALOG_PATH = (
 )
 
 
+#: The one jurisdiction whose STORED code is not its ISO alpha-2. The catalogue spells the United Kingdom ``uk``
+#: and so do the rows an install already holds (the store migration leaves a code with no ISO meaning as it is),
+#: so a document read from the catalogue has to land on that spelling or it would be a second row beside the first.
+_LAW_JURISDICTION_STORED = {"gb": "uk"}
+
+
+def law_jurisdiction(value):
+    """A catalogue's ``jurisdiction`` in the form the ``law_documents`` rows hold it (S05-02 S3).
+
+    The shipped catalogue speaks the wire's alpha-3 (``GBR``, ``EUU``, ``INT``); the rows hold lowercase alpha-2
+    (``fr``) and the three non-ISO codes ``uk``, ``eu`` and ``int``. A catalogue written in either form reads
+    the same, and a value this cannot place comes back as written."""
+    code = config_country(value)
+    return _LAW_JURISDICTION_STORED.get(code, code) if isinstance(code, str) else code
+
+
 def _read_catalog_yaml(path: Path) -> dict:
     if not path.exists():
         return {"sources": [], "documents": []}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return {
-        "sources": [
-            s
-            for s in data.get("sources", [])
-            if isinstance(s, dict) and s.get("name") and s.get("domain")
-        ],
-        "documents": [
-            d
-            for d in data.get("documents", [])
-            if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
-        ],
-    }
+    sources = [
+        s
+        for s in data.get("sources", [])
+        if isinstance(s, dict) and s.get("name") and s.get("domain")
+    ]
+    documents = [
+        d
+        for d in data.get("documents", [])
+        if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
+    ]
+    # The catalogue's country values are in the wire's form; every consumer below reads the app's own.
+    for entry in (*sources, *documents):
+        if "country" in entry:
+            entry["country"] = config_country(entry["country"])
+    for d in documents:
+        d["jurisdiction"] = law_jurisdiction(d["jurisdiction"])
+    return {"sources": sources, "documents": documents}
 
 
 def load_legal_catalog(path: Path | None = None, generated_path: Path | None = None) -> dict:

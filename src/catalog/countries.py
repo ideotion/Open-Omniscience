@@ -1128,6 +1128,20 @@ def country_payload_iso2(value: str | None) -> str | None:
     return code if code and len(code) == 2 else None
 
 
+def config_country(value):
+    """The Python-side form of a country a shipped YAML catalogue carries (S05-02 S3, Q305).
+
+    The configs speak the wire's language (uppercase alpha-3); everything inside the app speaks lowercase
+    alpha-2. A loader runs the config's value through here, so one conversion layer sits between the two and
+    a config written in EITHER form -- the shipped alpha-3, or an alpha-2 a user edited in -- reads the same.
+    A value this cannot place comes back exactly as written (never dropped, never guessed), and a value that
+    is not text (YAML's boolean for an unquoted ``NO``) is returned untouched for the caller to see.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return value
+    return normalize_country(value.strip()) or value
+
+
 def country_query_forms(value: str | None) -> list[str]:
     """Every STORED spelling one filter input could legitimately mean.
 
