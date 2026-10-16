@@ -149,7 +149,8 @@ def test_the_conversion_changes_only_codes_and_writes_json_the_way_a_capture_doe
     con.commit()
     out = convert_alternate_countries(con, schema="main", form="alpha3")
     con.commit()
-    assert out == {"converted": 2, "left_unreadable": 1}
+    assert out == {"converted": 2, "left_unreadable": 1,
+                   "left_as_stored": {"law_revision_summaries.identity.jurisdiction": {"uk": 1}}}, "an unmapped code is counted and listed"
     rows = {r[0]: r[1:] for r in con.execute("SELECT id, identity, fields FROM metadata_alternates")}
     assert rows[1] == ('{"place_id":"node/1"}', '{"country":"FRA","name":"Paris"}'), "minified, like json_object"
     assert rows[2][0] == '{"jurisdiction":"FRA","document_url":"u","model":"m"}'
@@ -165,9 +166,9 @@ def test_the_conversion_changes_only_codes_and_writes_json_the_way_a_capture_doe
 
 def test_a_backup_without_the_table_or_the_columns_has_nothing_to_convert(tmp_path):
     con = sqlite3.connect(tmp_path / "old.db")
-    assert convert_alternate_countries(con, schema="main", form="alpha3") == {"converted": 0, "left_unreadable": 0}
+    assert convert_alternate_countries(con, schema="main", form="alpha3") == {"converted": 0, "left_unreadable": 0, "left_as_stored": {}}
     con.execute("CREATE TABLE metadata_alternates (id INTEGER PRIMARY KEY, table_name TEXT)")
-    assert convert_alternate_countries(con, schema="main", form="alpha3") == {"converted": 0, "left_unreadable": 0}
+    assert convert_alternate_countries(con, schema="main", form="alpha3") == {"converted": 0, "left_unreadable": 0, "left_as_stored": {}}
     con.close()
 
 
@@ -177,6 +178,7 @@ def test_the_restore_converts_a_staged_copys_alternates_toward_the_store_it_merg
         _corpus(p)
     con = sqlite3.connect(staged)
     _alt_row(con, "law_revision_summaries", '{"jurisdiction":"fr","document_url":"u","model":"m"}', '{"summary":"s"}')
+    _alt_row(con, "law_revision_summaries", '{"jurisdiction":"uk","document_url":"u2","model":"m"}', '{"summary":"s"}')
     con.commit()
     con.close()
     con = sqlite3.connect(live)
@@ -185,7 +187,8 @@ def test_the_restore_converts_a_staged_copys_alternates_toward_the_store_it_merg
     con.execute("ATTACH DATABASE ? AS inc", (str(staged),))
     report = normalise_staged_country_codes(con, schema="inc")
     assert report["target_form"] == "alpha3" and report["alternates"]["converted"] == 1
-    assert json.loads(con.execute("SELECT identity FROM inc.metadata_alternates").fetchone()[0])["jurisdiction"] == "FRA"
+    assert report["alternates"]["left_as_stored"] == {"law_revision_summaries.identity.jurisdiction": {"uk": 1}}
+    assert json.loads(con.execute("SELECT identity FROM inc.metadata_alternates ORDER BY id").fetchone()[0])["jurisdiction"] == "FRA"
     con.close()
 
 

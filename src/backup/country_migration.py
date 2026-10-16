@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import time
 from collections.abc import Callable
@@ -311,21 +312,46 @@ def store_bytes(db_path: Path) -> int:
     return total
 
 
+_ALREADY_THERE = (
+    "there is already a file at {dest}: it may be the safety copy of another migration, and this one would replace it. "
+    "Nothing was changed. Pass --backup-dir with a folder that does not hold one."
+)
+
+
+def _path_exists(path: Path) -> bool:
+    """Whether ``path`` is there. Only "no such file" means absent: a path that cannot be examined (no permission, a loop)
+    is refused with the class, never read as free to write over."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise MigrationRefused(
+            f"the place for the safety copy could not be examined ({type(exc).__name__}): {path}. Nothing was changed. "
+            "Pass --backup-dir with a folder this command can read and write."
+        ) from None
+    return True
+
+
+def backup_name(db_path: Path, stamp: str) -> str:
+    """A safety copy's file name: the store's own name, the run's time and a short digest of the store's full path, so two
+    stores migrated into one folder never share a name."""
+    import hashlib
+
+    digest = hashlib.sha256(str(Path(db_path).resolve()).encode("utf-8", "surrogateescape")).hexdigest()[:8]
+    return f"{Path(db_path).stem}.pre-country-form-{stamp}-{digest}.db"
+
+
 def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
     """A consistent copy of the store, THROUGH the connection that holds it, reopened and checked.
 
     Verified means: it opens with the store's own key, ``PRAGMA quick_check`` answers ``ok``, and every table has exactly
     the rows the live file has. The copy keeps the store's encryption state (an encrypted corpus stays ciphertext)."""
-    import os
-
     from src.database.connect import connect, snapshot_open_connection
 
     dest = Path(dest).resolve()  # the journal keeps this path: a relative one would not be found from another folder
-    if dest.exists():
-        raise MigrationRefused(
-            f"there is already a file at {dest}: it may be the safety copy of another migration, and this one would replace "
-            "it. Nothing was changed. Pass --backup-dir with a folder that does not hold one."
-        )
+    if _path_exists(dest):
+        raise MigrationRefused(_ALREADY_THERE.format(dest=dest))
     need = int(store_bytes(db_path) * 1.1) + (1 << 20)
     free = _free_bytes(dest.parent)
     if free < need:
@@ -356,7 +382,20 @@ def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
         raise MigrationRefused(
             "the safety copy does not hold the same rows as the store (" + ", ".join(diff[:8]) + "), so it was removed and nothing was changed"
         )
-    os.replace(partial, dest)
+    # Publish under the final name without ever replacing a file that is there: a hard link fails if the name exists, which
+    # closes the gap between the check above and this line. A file system with no hard links falls back to the check.
+    try:
+        os.link(partial, dest)
+    except FileExistsError:
+        partial.unlink(missing_ok=True)
+        raise MigrationRefused(_ALREADY_THERE.format(dest=dest)) from None
+    except OSError:
+        if _path_exists(dest):
+            partial.unlink(missing_ok=True)
+            raise MigrationRefused(_ALREADY_THERE.format(dest=dest)) from None
+        os.replace(partial, dest)
+    else:
+        partial.unlink(missing_ok=True)
     return BackupInfo(str(dest), dest.stat().st_size, live, datetime.now(UTC).isoformat(), verdict)
 
 
@@ -582,7 +621,7 @@ def migrate(
 
         # ---- the safety copy: once per migration, and kept
         bk = journal.get("backup")
-        if not (bk and Path(bk["path"]).exists()):
+        if not (bk and _path_exists(Path(bk["path"]))):
             if journal.get("cursors") or journal.get("rewritten"):
                 raise MigrationRefused(
                     "an earlier run converted rows and its safety copy is gone, so a new copy would already be "
@@ -592,7 +631,7 @@ def migrate(
             root = Path(backup_dir or (db_path.parent / "backups" / f"pre-country-form-{stamp}")).resolve()
             say({"phase": "backup", "dir": str(root)})
             t_backup = time.perf_counter()
-            info = take_verified_backup(con, db_path, Path(root) / "open_omniscience.pre-country-form.db")
+            info = take_verified_backup(con, db_path, Path(root) / backup_name(db_path, stamp))
             bk = info.__dict__
             report.backup_seconds = time.perf_counter() - t_backup
             journal = {"state": "running", "backup": bk, "cursors": {}, "rewritten": {}, "started_at": report.started_at,
@@ -800,6 +839,11 @@ def main(argv: list[str] | None = None) -> int:
     if rep.unmapped:
         print("Left exactly as stored (no ISO meaning):")
         for key, vals in rep.unmapped.items():
+            print(f"  {key}: " + ", ".join(f"{v!r} x{n:,}" for v, n in vals.items()))
+    left_in_json = (rep.alternates or {}).get("left_as_stored")
+    if left_in_json:
+        print("Left exactly as stored inside recorded differences (no ISO meaning):")
+        for key, vals in left_in_json.items():
             print(f"  {key}: " + ", ".join(f"{v!r} x{n:,}" for v, n in vals.items()))
     if args.json:
         args.json.write_text(json.dumps(rep.__dict__, indent=1, default=str, sort_keys=True), encoding="utf-8")

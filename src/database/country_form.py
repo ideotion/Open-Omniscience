@@ -72,11 +72,14 @@ class MigrationUnfinished(StoreFormUnreadable):
     run unfinishable by changing a row count)."""
 
 
-def unfinished_message(state: object) -> str:
+def unfinished_message(state: object, backup: object = None) -> str:
+    where = f" at {backup}" if isinstance(backup, str) and backup else ""
     return (
-        f"a country-form migration of this store was interrupted (state: {state}): some rows already hold alpha-3 while the "
-        "store still says alpha-2. The app will not open or write it until the run is finished. Close everything that has "
-        "the store open and run `open-omniscience migrate-countries`: it resumes where it stopped."
+        f"a country-form migration of this store started and did not finish (state: {state}). Some rows may already hold "
+        "alpha-3 while the store still says alpha-2, so the app will not open or write it until the run is finished. Close "
+        "everything that has the store open and run `open-omniscience migrate-countries`: it resumes where it stopped. If it "
+        f"reports that it cannot finish, the verified safety copy taken before the run began{where} can be put back, which "
+        "returns the store to how it was before the run."
     )
 
 
@@ -90,7 +93,8 @@ def refuse_if_unfinished() -> None:
     except KvReadError as exc:
         raise StoreFormUnreadable(f"the country migration journal could not be read ({type(exc).__name__})") from None
     if isinstance(journal, dict) and journal.get("state") in UNFINISHED_STATES:
-        raise MigrationUnfinished(unfinished_message(journal.get("state")))
+        backup = journal.get("backup")
+        raise MigrationUnfinished(unfinished_message(journal.get("state"), backup.get("path") if isinstance(backup, dict) else None))
 
 
 def form_from_value(value: dict | None) -> Form:

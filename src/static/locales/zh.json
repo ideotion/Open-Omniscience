@@ -5609,6 +5609,7 @@
   "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "零联网：每个 PDF 都在本地读取并提取文本——从不获取任何内容。原生数字 PDF 使用其精确的文本层。扫描件或纯图像 PDF 没有文本层：若已安装 OCR（[ocr] 附加组件加上 Tesseract 程序），则通过 OCR 读取并明确标记为“OCR 得出”（可信度较低——可能含识别错误；原始 PDF 仍是事实来源）；否则将跳过并给出诚实的原因。重复导入同一文档会被跳过（去重）。",
   "Zoom in": "放大",
   "Zoom out": "缩小",
+  "a country-form migration of this store started and did not finish, so it cannot be opened yet. Close everything that has the store open and run `open-omniscience migrate-countries` in a terminal: it resumes where it stopped, and it names the verified safety copy taken before the run began.": "此存储的国家代码形式迁移已开始但未完成，因此暂时无法打开。请关闭所有正在使用它的程序，并在终端中运行 `open-omniscience migrate-countries`：它会从中断处继续，并告知迁移开始前所做的已验证安全副本的位置。",
   "a database already exists": "数据库已存在",
   "a date extracted from article text": "从文章正文中提取的日期",
   "a day": "每天",

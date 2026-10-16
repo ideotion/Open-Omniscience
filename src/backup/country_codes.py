@@ -283,7 +283,7 @@ def convert_alternate_countries(
     The JSON is edited by SQLite (``json_set``), so it comes out minified the way ``json_object`` writes it and stays
     byte-comparable with what a capture writes. A value with no ISO meaning stays as it is; a row whose JSON is not valid is
     left untouched and counted. Idempotent."""
-    out = {"converted": 0, "left_unreadable": 0}
+    out: dict = {"converted": 0, "left_unreadable": 0, "left_as_stored": {}}
     if not _table_exists(con, schema, "metadata_alternates"):
         return out
     present = _columns_of(con, schema, "metadata_alternates")
@@ -307,8 +307,14 @@ def convert_alternate_countries(
                     except (TypeError, ValueError, AttributeError):
                         out["left_unreadable"] += 1
                         continue
-                    target = canonical_country(value, form) if isinstance(value, str) else None
-                    if target is None or target == value:
+                    if not isinstance(value, str):
+                        continue
+                    target = canonical_country(value, form)
+                    if target is None:
+                        seen = out["left_as_stored"].setdefault(f"{table}.{column}.{key}", {})
+                        seen[value] = seen.get(value, 0) + 1
+                        continue
+                    if target == value:
                         continue
                     con.execute(
                         f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 - as above; the path, the value and the id are bound

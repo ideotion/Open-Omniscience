@@ -236,6 +236,14 @@ _CHILD = textwrap.dedent(
             return out
         cm._sweep_window = dying
         cm.migrate(db, backup_dir=bk)
+    elif mode == "in-final-transaction":
+        from src.database import country_form as cf
+        real_write = cf.write_form
+        def dying_write(con, form, *, by):
+            real_write(con, form, by=by)         # the marker was written ...
+            os._exit(9)                          # ... and the process dies before the final COMMIT
+        cf.write_form = dying_write
+        cm.migrate(db, backup_dir=bk)
     else:
         def after_commit(event):
             if event["phase"] == "sweep":
@@ -282,6 +290,35 @@ def test_a_window_killed_before_its_commit_leaves_none_of_its_rows_converted(tmp
     before = _column(db, "articles", "country")
     _kill_child(db, tmp_path / "bk", "inside-window", 1)  # dies in the very first window, after its UPDATE ran
     assert _column(db, "articles", "country") == before, "an uncommitted window was applied"
+
+
+def test_a_run_killed_inside_its_last_transaction_converted_no_alternate_and_the_next_run_finishes(tmp_path):
+    """The alternates' codes and the marker change in ONE transaction: a kill after both statements and before the COMMIT
+    must leave the store as the sweep left it, so the resume converts them and flips the marker, never one without the other."""
+    db = _new_store(tmp_path / "s.db")
+    con = sqlite3.connect(db)
+    ident = '{"jurisdiction":"fr","document_url":"u","model":"m"}'
+    con.execute(
+        "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields, provenance, origin, status, created_at)"
+        " VALUES (1, 'law_revision_summaries', ?, 1, '{\"summary\":\"s\"}', '{}', 'o', 'pending', '2026-09-01')", (ident,))
+    con.commit()
+    con.close()
+    _kill_child(db, tmp_path / "bk", "in-final-transaction", 0)
+    con = sqlite3.connect(db)
+    try:
+        assert con.execute("SELECT identity FROM metadata_alternates").fetchone()[0] == ident, "an uncommitted alternate was converted"
+        assert cf.read_form(con) == "alpha2", "the marker flipped without its commit"
+        assert json.loads(con.execute("SELECT value FROM app_state WHERE key = ?", (cm.JOURNAL_KEY,)).fetchone()[0])["state"] == "running"
+    finally:
+        con.close()
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert rep.state == "done", rep.message
+    con = sqlite3.connect(db)
+    try:
+        assert json.loads(con.execute("SELECT identity FROM metadata_alternates").fetchone()[0])["jurisdiction"] == "FRA"
+        assert cf.read_form(con) == "alpha3"
+    finally:
+        con.close()
 
 
 def test_stopping_between_windows_is_resumable(tmp_path):
@@ -347,6 +384,9 @@ def test_an_interrupted_run_stops_the_app_from_booting_or_writing_until_it_is_fi
     booted = _boot_init_db(data)
     assert booted.returncode != 0 and "booted" not in booted.stdout
     assert "migrate-countries" in booted.stderr and "interrupted" in booted.stderr, booted.stderr[-1500:]
+    with sqlite3.connect(db) as jc:
+        saved = json.loads(jc.execute("SELECT value FROM app_state WHERE key = ?", (cm.JOURNAL_KEY,)).fetchone()[0])["backup"]["path"]
+    assert saved in booted.stderr, "the refusal does not say where the safety copy is"
     assert {t: _column(db, t, c) for t, c in cm.migration_columns()} == half, "the refused boot still touched the store"
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
@@ -379,20 +419,115 @@ def test_the_diagnostics_card_says_a_run_is_unfinished_instead_of_a_form(tmp_pat
     assert "migrate-countries" in body["note"]
 
 
-def test_a_backup_folder_that_already_holds_a_safety_copy_is_refused_and_the_copy_is_kept(tmp_path):
+def test_two_stores_migrated_into_one_backup_folder_each_keep_their_own_safety_copy(tmp_path):
     import hashlib
 
     a = _new_store(tmp_path / "a.db", articles=51)
     b = _new_store(tmp_path / "b.db", articles=8)
     shared = tmp_path / "shared"
-    assert cm.migrate(a, backup_dir=shared).state == "done"
-    copy = next(shared.glob("*.db"))
-    digest = hashlib.sha256(copy.read_bytes()).hexdigest()
-    before = _column(b, "articles", "country")
-    with pytest.raises(cm.MigrationRefused, match="already a file"):
-        cm.migrate(b, backup_dir=shared)
-    assert hashlib.sha256(copy.read_bytes()).hexdigest() == digest, "another store's only safety copy was replaced"
-    assert _column(b, "articles", "country") == before and cf.read_form(sqlite3.connect(b)) == "alpha2"
+    ra = cm.migrate(a, backup_dir=shared)
+    copy_a = Path(ra.backup["path"])
+    digest = hashlib.sha256(copy_a.read_bytes()).hexdigest()
+    rb = cm.migrate(b, backup_dir=shared)
+    assert ra.state == rb.state == "done"
+    assert Path(rb.backup["path"]) != copy_a and len(list(shared.glob("*.pre-country-form-*.db"))) == 2
+    assert hashlib.sha256(copy_a.read_bytes()).hexdigest() == digest, "another store's only safety copy was replaced"
+
+
+def test_the_name_of_a_safety_copy_tells_two_stores_with_one_file_name_apart(tmp_path):
+    one, two = tmp_path / "x" / "open_omniscience.db", tmp_path / "y" / "open_omniscience.db"
+    assert cm.backup_name(one, "T") != cm.backup_name(two, "T")
+    assert cm.backup_name(one, "T") == cm.backup_name(one, "T"), "a resume must be able to name the same file"
+    assert cm.backup_name(one, "T").startswith("open_omniscience.pre-country-form-T-") and cm.backup_name(one, "T").endswith(".db")
+
+
+def _live(db):
+    from src.database.connect import connect
+
+    return connect(db, check_same_thread=False)
+
+
+def test_a_safety_copy_is_never_written_over_a_file_that_is_there(tmp_path):
+    import hashlib
+
+    a = _new_store(tmp_path / "a.db", articles=12)
+    taken = tmp_path / "bk" / "taken.db"
+    taken.parent.mkdir()
+    taken.write_bytes(b"somebody's only copy")
+    digest = hashlib.sha256(taken.read_bytes()).hexdigest()
+    con = _live(a)
+    try:
+        with pytest.raises(cm.MigrationRefused, match="already a file"):
+            cm.take_verified_backup(con, a, taken)
+    finally:
+        con.close()
+    assert hashlib.sha256(taken.read_bytes()).hexdigest() == digest and not list(taken.parent.glob("*.partial"))
+
+
+def test_a_file_that_appears_between_the_check_and_the_publish_is_not_replaced(tmp_path, monkeypatch):
+    """The name was free when it was checked and is taken by the time the copy is published: the hard link fails rather than
+    replace it (a plain rename would have)."""
+    a = _new_store(tmp_path / "a.db", articles=12)
+    dest = tmp_path / "bk" / "late.db"
+    real = os.link
+
+    def late(src, dst, *args, **kwargs):
+        if Path(dst) == dest:
+            dest.write_bytes(b"theirs")
+        return real(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(cm.os, "link", late)
+    con = _live(a)
+    try:
+        with pytest.raises(cm.MigrationRefused, match="already a file"):
+            cm.take_verified_backup(con, a, dest)
+    finally:
+        con.close()
+    assert dest.read_bytes() == b"theirs" and not list(dest.parent.glob("*.partial"))
+
+
+def test_a_file_system_without_hard_links_still_publishes_the_copy_and_still_refuses_a_taken_name(tmp_path, monkeypatch):
+    import errno
+
+    a = _new_store(tmp_path / "a.db", articles=12)
+    real = os.link
+    state = {"mode": "nolinks"}
+    dest = tmp_path / "bk" / "plain.db"
+
+    def link(src, dst, *args, **kwargs):
+        if Path(dst) != dest:
+            return real(src, dst, *args, **kwargs)
+        if state["mode"] == "taken":
+            dest.write_bytes(b"theirs")
+        raise OSError(errno.EPERM, "no hard links here")
+
+    monkeypatch.setattr(cm.os, "link", link)
+    con = _live(a)
+    try:
+        info = cm.take_verified_backup(con, a, dest)
+        assert Path(info.path) == dest and dest.stat().st_size > 100 and not list(dest.parent.glob("*.partial"))
+        dest.unlink()
+        state["mode"] = "taken"
+        with pytest.raises(cm.MigrationRefused, match="already a file"):
+            cm.take_verified_backup(con, a, dest)
+    finally:
+        con.close()
+    assert dest.read_bytes() == b"theirs" and not list(dest.parent.glob("*.partial"))
+
+
+def test_a_place_that_cannot_be_examined_is_refused_by_class_and_never_read_as_free(tmp_path):
+    a = _new_store(tmp_path / "a.db", articles=12)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file where a folder should be")
+    con = _live(a)
+    try:
+        with pytest.raises(cm.MigrationRefused) as caught:
+            cm.take_verified_backup(con, a, blocker / "x.db")
+    finally:
+        con.close()
+    assert "could not be examined (NotADirectoryError)" in str(caught.value) and "Nothing was changed" in str(caught.value)
+    assert caught.value.__suppress_context__ and caught.value.__cause__ is None, "the OS error's text would reach the operator"
+    assert cf.read_form(sqlite3.connect(a)) == "alpha2"
 
 
 def test_a_relative_backup_folder_is_journalled_as_an_absolute_path(tmp_path, monkeypatch):
@@ -404,12 +539,28 @@ def test_a_relative_backup_folder_is_journalled_as_an_absolute_path(tmp_path, mo
         ticks["n"] += 1
         return ticks["n"] > 2
 
+    asked: list[Path] = []
+    real = cm.take_verified_backup
+    monkeypatch.setattr(cm, "take_verified_backup", lambda con, db_path, dest: asked.append(dest) or real(con, db_path, dest))
     rep = cm.migrate(db, backup_dir=Path("relbk"), should_stop=stop)
     assert rep.state == "interrupted" and Path(rep.backup["path"]).is_absolute()
+    assert asked and asked[0].is_absolute(), "the folder was handed on relative: only the copy's own resolve saved the journal"
+    monkeypatch.setattr(cm, "take_verified_backup", real)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
     assert cm.migrate(db, backup_dir=Path("relbk")).state == "done", "a resume from another folder lost its own safety copy"
+
+
+def test_a_copy_asked_for_by_a_relative_path_reports_an_absolute_one(tmp_path, monkeypatch):
+    db = _new_store(tmp_path / "s.db", articles=12)
+    monkeypatch.chdir(tmp_path)
+    con = _live(db)
+    try:
+        info = cm.take_verified_backup(con, db, Path("rel") / "copy.db")
+    finally:
+        con.close()
+    assert Path(info.path).is_absolute() and Path(info.path).exists()
 
 
 def test_a_copy_killed_midway_leaves_no_file_with_the_safety_copys_name(tmp_path, monkeypatch):
@@ -425,10 +576,10 @@ def test_a_copy_killed_midway_leaves_no_file_with_the_safety_copys_name(tmp_path
     monkeypatch.setattr(dbc, "snapshot_open_connection", killed)
     with pytest.raises(KeyboardInterrupt):
         cm.migrate(db, backup_dir=tmp_path / "bk")
-    assert not list((tmp_path / "bk").glob("*.pre-country-form.db")), "a truncated file wears the name an operator would restore from"
+    assert not list((tmp_path / "bk").glob("*.pre-country-form-*.db")), "a truncated file wears the name an operator would restore from"
     monkeypatch.undo()
     assert cm.migrate(db, backup_dir=tmp_path / "bk").state == "done"
-    assert len(list((tmp_path / "bk").glob("*.pre-country-form.db"))) == 1
+    assert len(list((tmp_path / "bk").glob("*.pre-country-form-*.db"))) == 1
 
 
 def test_a_store_the_app_creates_is_alpha3_even_when_the_settings_table_exists_first(tmp_path):
@@ -540,6 +691,42 @@ def test_the_console_command_estimates_asks_and_migrates_the_store_it_is_pointed
     assert done.returncode == 0, done.stdout[-800:] + done.stderr[-1500:]
     assert cf.read_form(sqlite3.connect(db)) == "alpha3" and _column(db, "law_documents", "jurisdiction")["FRA"] == 1
     assert any((tmp_path / "bk").iterdir()), "the safety copy must exist"
+
+
+def _add_alternates(db: Path) -> None:
+    con = sqlite3.connect(db)
+    for ident in ('{"jurisdiction":"fr","document_url":"u1","model":"m"}', '{"jurisdiction":"uk","document_url":"u2","model":"m"}'):
+        con.execute(
+            "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields, provenance, origin, status, created_at)"
+            " VALUES (1, 'law_revision_summaries', ?, 1, '{\"summary\":\"s\"}', '{}', 'o', 'pending', '2026-09-01')", (ident,))
+    con.commit()
+    con.close()
+
+
+def test_a_code_with_no_alpha3_inside_a_recorded_difference_is_left_and_named_in_the_report(tmp_path):
+    db = _new_store(tmp_path / "s.db")
+    _add_alternates(db)
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk")
+    assert rep.state == "done", rep.message
+    assert rep.alternates["converted"] == 1
+    assert rep.alternates["left_as_stored"] == {"law_revision_summaries.identity.jurisdiction": {"uk": 1}}
+    con = sqlite3.connect(db)
+    try:
+        idents = sorted(json.loads(r[0])["jurisdiction"] for r in con.execute("SELECT identity FROM metadata_alternates"))
+    finally:
+        con.close()
+    assert idents == ["FRA", "uk"], "R100: what has no ISO meaning stays exactly as stored"
+
+
+def test_the_console_command_names_what_it_left_inside_recorded_differences(tmp_path):
+    data = tmp_path / "state"
+    data.mkdir()
+    db = _new_store(data / "open_omniscience.db")
+    _add_alternates(db)
+    done = _cli(data, "--yes", "--backup-dir", str(tmp_path / "bk"))
+    assert done.returncode == 0, done.stdout[-800:] + done.stderr[-1500:]
+    assert "Left exactly as stored inside recorded differences" in done.stdout
+    assert "law_revision_summaries.identity.jurisdiction: 'uk' x1" in done.stdout
 
 
 def test_the_diagnostics_card_reads_the_form_and_the_estimate_and_starts_nothing(tmp_path, monkeypatch):
