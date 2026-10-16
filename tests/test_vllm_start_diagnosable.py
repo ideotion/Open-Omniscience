@@ -335,7 +335,7 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
 
 
 def test_status_bounds_the_live_log_scan_for_the_poll_only(gpu8, monkeypatch):
-    """The poll-cost bound is passed by status() alone; the default read (the bundle's) has none."""
+    """The poll-cost bound is passed by status() (which the bundle's server_log member also reads through); the default read has none."""
     import inspect
 
     default = inspect.signature(V.server_log_tail).parameters["scan_bound"].default

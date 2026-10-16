@@ -2257,10 +2257,92 @@ def test_a_half_written_copy_left_by_a_killed_process_is_swept_at_the_next_copy(
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     V.server_log_path().write_text("hello\n", encoding="utf-8")
     V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
-    orphan = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
-    orphan.write_text("half", encoding="utf-8")
+    old = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
+    fresh = V.failed_start_log_dir() / "20250101T000001-pid2-rc1.log.tmp"
+    for f in (old, fresh):
+        f.write_text("half", encoding="utf-8")
+    long_ago = time.time() - 3600
+    os.utime(old, (long_ago, long_ago))
     assert V._preserve_failed_log_result(9, 1)[0] is not None
-    assert not orphan.exists()
+    assert not old.exists(), "an old leftover is swept"
+    assert fresh.exists(), "a temp younger than a minute may belong to a copy in flight"
+
+
+def test_a_sweep_that_cannot_remove_a_leftover_does_not_stop_the_copy(monkeypatch):
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    old = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
+    old.write_text("half", encoding="utf-8")
+    long_ago = time.time() - 3600
+    os.utime(old, (long_ago, long_ago))
+    real_unlink = Path.unlink
+
+    def refuse(self, *a, **k):
+        if self.name == old.name:
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    path, reason = V._preserve_failed_log_result(9, 1)
+    assert path is not None and reason is None
+
+
+def test_a_line_too_long_to_hold_is_replaced_by_a_marker_and_never_shown_in_part(monkeypatch):
+    """The bound protects memory: a megabyte-long progress bar is counted in a marker and no piece of it reaches either end."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    big = "ZQ" * 400 + _KEY  # 826 bytes, no line break inside
+    V.server_log_path().write_text("first\n" + big + "\nlast\n", encoding="utf-8")
+    out = V.server_log_tail(limit=1000, head_limit=10)
+    shown = json.dumps(out)
+    assert "ZQZQ" not in shown and _KEY[:10] not in shown
+    assert "a line of 827 bytes is not shown" in out["tail"] and "first" in out["tail"] and "last" in out["tail"]
+
+
+def test_a_final_line_of_exactly_the_bound_with_no_line_break_is_shown_whole(monkeypatch):
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("ok\n" + "y" * 100, encoding="utf-8")
+    out = V.server_log_tail(limit=1000)
+    assert out["tail"] == "ok\n" + "y" * 100
+
+
+def test_the_preserved_copy_of_a_huge_line_holds_a_marker_and_not_the_line(monkeypatch):
+    monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("first\n" + "ZQ" * 400 + "\nlast\n", encoding="utf-8")
+    kept = V._preserve_failed_log(7, 1)
+    body = Path(kept).read_text(encoding="utf-8")
+    assert "ZQZQ" not in body and "first" in body and "last" in body and "a line of 801 bytes is not shown" in body
+
+
+def test_a_big_log_whose_end_holds_no_line_break_says_why_its_tail_is_empty(monkeypatch):
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("start\n" + "p" * 5000, encoding="utf-8")  # a progress bar to the end of the file
+    out = V.server_log_tail(limit=200, head_limit=20, scan_bound=100)
+    assert out["available"] is True and out["tail"] == "" and "no line break" in out["tail_note"]
+
+
+def test_a_status_seek_that_lands_inside_a_key_drops_that_whole_line(monkeypatch):
+    """The seek goes back to ``size - limit`` and lands 5 bytes into a key; the partial line is dropped whole. Without the drop the rest
+    of the key is read as a line of its own, which no scrub can recognise."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    limit = 300
+    before = ("a" * 60 + "\n") * 40 + "b" * 20
+    after_key = _KEY + "c" * 20 + "\n"
+    k = limit - (len(_KEY) - 5) - 20 - 1 - 1
+    body = before + after_key + "q" * k + "\n"
+    assert len(body) - limit == len(before) + 5, "the seek must land 5 bytes into the key"
+    V.server_log_path().write_text(body, encoding="utf-8")
+    out = V.server_log_tail(limit=limit, head_limit=20, scan_bound=100)
+    assert out["scanned_whole"] is False
+    assert _KEY[-10:] not in out["tail"] and _KEY[:10] not in out["tail"]
+    assert out["tail"].rstrip("\n").endswith("q" * k)
 
 
 def test_the_installers_last_words_are_scrubbed_before_each_line_is_stripped(monkeypatch):

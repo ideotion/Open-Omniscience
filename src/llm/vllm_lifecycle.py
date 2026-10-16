@@ -173,13 +173,50 @@ def server_log_path() -> Path:
 # bundle showed precisely that -- 29,855 bytes of log, the last 8,000 kept, and the
 # reason the server died sitting in the 21,855 that were thrown away.
 _LOG_HEAD_BYTES = 8000
-#: Status polling only: a live log larger than this is not scanned whole on every poll. This protects the COST OF A POLL (a long-running
+#: Status polling only: a live log larger than this is not scanned whole on every poll. This protects the COST OF A POLL (measured: the per-line scrub
+#: takes about 1.1 s on 16 MB and about 0.14 s on 2 MB, against 0.07 s for the bounded read of both ends; a long-running
 #: server's access log can reach hundreds of MB, and /api/llm/vllm/status is polled), not the passphrase: the head and the tail are still
-#: scrubbed from a line boundary, the middle is counted and stated as not scanned, and the Diagnostics bundle's own read has no such bound.
-_STATUS_LOG_SCAN_BYTES = 16_000_000
+#: scrubbed from a line boundary and the middle is counted and stated as not scanned. The Diagnostics bundle's ``server_log`` member is
+#: read through status() and so is bounded the same way; only its failed-log member (``newest_failed_start_log``) is read whole.
+_STATUS_LOG_SCAN_BYTES = 2_000_000
 #: Extra bytes read before the tail window when a big log is not scanned whole, so the window starts on a line boundary.
 _TAIL_ALIGN_MARGIN = 1_000_000
+#: The most of ONE line that is ever held in memory at once (a copy each as bytes, text, stripped text, scrubbed text and bytes again, so
+#: about five times this). It protects MEMORY, not the passphrase: a runaway progress bar writes megabytes with no newline. A line longer than
+#: this is not shown, in whole or in part; a marker that counts its bytes stands in its place.
+_MAX_LINE_BYTES = 1_000_000
 _LOG_TAIL_BYTES = 8000
+
+
+def _read_line(fh) -> tuple[bytes, int | None]:
+    """One line of a binary file with at most ``_MAX_LINE_BYTES`` held: ``(line, None)``, or ``(b"", n)`` for a line of ``n`` bytes that was
+    too long to hold (the rest of it is read in pieces and dropped), or ``(b"", None)`` at the end of the file."""
+    piece = fh.readline(_MAX_LINE_BYTES)
+    if len(piece) < _MAX_LINE_BYTES or piece.endswith(b"\n"):
+        return piece, None
+    n = len(piece)
+    while True:
+        nxt = fh.readline(_MAX_LINE_BYTES)
+        if not nxt:
+            return (piece, None) if n == len(piece) else (b"", n)  # exactly the bound at the end of the file is a whole line
+        n += len(nxt)
+        if len(nxt) < _MAX_LINE_BYTES or nxt.endswith(b"\n"):
+            return b"", n
+
+
+def _scrubbed_lines(fh) -> Iterator[bytes]:
+    """The lines of a binary file, each taken through the scrub whole (its line ending kept aside) and re-encoded. Every byte that comes out
+    of here has been scrubbed; a line too long to hold comes out as a marker that counts its bytes."""
+    while True:
+        piece, big = _read_line(fh)
+        if big is not None:
+            yield f"[a line of {big:,} bytes is not shown: it is too long to check for the passphrase in one piece]\n".encode()
+            continue
+        if not piece:
+            return
+        line = piece.decode("utf-8", errors="replace")
+        body = line.rstrip("\r\n")
+        yield (scrubbed(body) + line[len(body):]).encode("utf-8")
 
 
 def _scrubbed_log_ends(
@@ -190,22 +227,17 @@ def _scrubbed_log_ends(
     Every byte is counted and none is withheld: ``file_size`` is the file's size on disk, ``scrubbed_bytes`` the scrubbed text's length
     (``None`` when the middle was not scanned, see ``scan_bound``). The scrub sees one WHOLE line before any cut, so a key that straddles
     a head or tail cut keeps no prefix; a passphrase that itself holds a line break cannot match across two lines, which is a stated
-    limit. May raise OSError."""
+    limit. ``tail_note`` says why the tail is empty when a big log's last stretch holds no line boundary to start from. May raise OSError."""
     file_size = path.stat().st_size
     head = bytearray()
     window: deque[bytes] = deque()
     window_bytes = 0
     total = 0
 
-    def _take(raw_line: bytes) -> bytes:
-        line = raw_line.decode("utf-8", errors="replace")
-        body = line.rstrip("\r\n")
-        return (scrubbed(body) + line[len(body):]).encode("utf-8")
-
     whole = scan_bound is None or file_size <= scan_bound
+    tail_note = None
     with path.open("rb") as fh:
-        for raw_line in fh:
-            out = _take(raw_line)
+        for out in _scrubbed_lines(fh):
             total += len(out)
             if len(head) < head_cap:
                 head += out[: head_cap - len(head)]
@@ -217,23 +249,28 @@ def _scrubbed_log_ends(
                 window_bytes -= len(window.popleft())
         if not whole:
             window.clear()
-            window_bytes = 0
             start = max(0, file_size - keep - _TAIL_ALIGN_MARGIN)
             fh.seek(start)
             if start > 0:
-                fh.readline()  # the partial line the seek landed in; the window starts on a line boundary
-            for raw_line in fh:
-                out = _take(raw_line)
+                _read_line(fh)  # the partial line the seek landed in, dropped whole; the window starts on a line boundary
+            window_bytes = 0
+            for out in _scrubbed_lines(fh):
                 window.append(out)
                 window_bytes += len(out)
                 while window and window_bytes - len(window[0]) >= keep:
                     window_bytes -= len(window.popleft())
+            if not window and file_size > 0:
+                tail_note = (
+                    "the end of the log has no line break to start from within the part read (one long line, for example a progress "
+                    "bar), so no tail is shown; the byte counts above are the file's"
+                )
     return {
         "file_size": file_size,
         "scrubbed_bytes": total if whole else None,
         "head": bytes(head),
         "tail": b"".join(window)[-keep:],
         "whole": whole,
+        "tail_note": tail_note,
     }
 
 
@@ -292,6 +329,7 @@ def server_log_tail(
             "elided_bytes": elided,
             "head": head.decode("utf-8", errors="replace"),
             "tail": tail.decode("utf-8", errors="replace"),
+            **({"tail_note": ends["tail_note"]} if ends["tail_note"] else {}),
         }
     except OSError as exc:
         return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
@@ -1692,6 +1730,24 @@ def failed_start_log_dir() -> Path:
     return data_dir() / "vllm_failed_starts"
 
 
+#: A half-written copy younger than this may belong to a copy in flight in another thread, so the sweep leaves it alone.
+_ORPHAN_COPY_MIN_AGE_S = 60.0
+
+
+def _sweep_orphan_copies(dest_dir: Path) -> None:
+    """Remove ``*.log.tmp`` files a killed copy left behind (nothing else globs them). Housekeeping: a failure is logged and never stops the copy."""
+    try:
+        now = time.time()
+        for orphan in dest_dir.glob("*.log.tmp"):
+            try:
+                if now - orphan.stat().st_mtime > _ORPHAN_COPY_MIN_AGE_S:
+                    orphan.unlink(missing_ok=True)
+            except OSError as exc:
+                log_failure(_LOG, "could not remove a leftover preserved-log temp file", exc, level=logging.INFO)
+    except OSError as exc:
+        log_failure(_LOG, "could not look for leftover preserved-log temp files", exc, level=logging.INFO)
+
+
 def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str | None, str | None]:
     """Copy the server log of a start that just FAILED, before the next start truncates it.
 
@@ -1722,16 +1778,13 @@ def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str |
         dest_dir = failed_start_log_dir()
         dest_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
-        for orphan in dest_dir.glob("*.log.tmp"):
-            orphan.unlink(missing_ok=True)  # a copy interrupted by a kill leaves a scrubbed half file nothing else sweeps
+        _sweep_orphan_copies(dest_dir)
         dest = dest_dir / f"{stamp}-pid{pid or 0}-rc{returncode}.log"
         tmp = dest_dir / (dest.name + ".tmp")
         try:
-            with src_path.open("rb") as src, tmp.open("w", encoding="utf-8", newline="\n") as out:
-                for raw_line in src:
-                    line = raw_line.decode("utf-8", errors="replace")
-                    body = line.rstrip("\r\n")
-                    out.write(scrubbed(body) + line[len(body):])
+            with src_path.open("rb") as src, tmp.open("wb") as out:
+                for scrubbed_line in _scrubbed_lines(src):
+                    out.write(scrubbed_line)
             os.replace(tmp, dest)
         finally:
             tmp.unlink(missing_ok=True)
