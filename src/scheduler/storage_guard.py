@@ -2114,6 +2114,15 @@ def stop() -> None:
             t.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
+def log_pause_in_force() -> bool:
+    """Whether work that would add a reader to the write-ahead log should stand aside now: the guard's LOG latch is engaged AND its
+    supervisor runs. The one place the two meet, so every pause asks the same question. WHAT THE SUPERVISOR CONDITION PROTECTS: the
+    supervisor takes the readings and the drain that end the latch, so without it (it failed to start, which is logged) the latch could
+    stand for ever with nobody sampling, and a pause must never outlive its cause. The drive latch and the operator's "Resume anyway"
+    are not asked: a full drive does not hurt a read, and the override is about collection. A non-blocking read; never raises."""
+    return storage_guard.wal_engaged() and supervisor_running()
+
+
 def supervisor_running() -> bool:
     """Whether the supervisor thread is alive. The pass loop asks, because the supervisor is
     what releases the latch: without it (it failed to start, or the guard is driven directly) a
