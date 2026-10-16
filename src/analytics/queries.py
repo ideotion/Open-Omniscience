@@ -2666,7 +2666,7 @@ def trending(
             hi=hi,
             keep=keep,
             where=(KeywordMentionRead.country == country.lower(),) if country else (),
-            **({"deadline": read_deadline} if read_deadline is not None else {}),
+            deadline=read_deadline,
         )
 
     # Opt-in rollup serve: sum the in-memory keyword_daily rollup for the two windows
@@ -2969,7 +2969,7 @@ def trending_windows(
         skipped.sort(key=lambda w: next(i for i, p in enumerate(presets) if p[0] == w["label"]))
         out["partial"] = True
         out["skipped_windows"] = skipped
-        out["live_budget_s"] = float(live_budget_s)
+        out["live_budget_s"] = float(live_budget_s or 0)
         # English only, and it replaces the translated caveat: the panels print `caveat` and look a translation
         # up by its exact text, so a sentence with a variable would never find one (needs a locale key: open item).
         out["caveat"] = (
@@ -3675,7 +3675,7 @@ def map_data(
         return list(out.values())
 
     countries = _agg(KeywordMentionRead.country)
-    out = {
+    out: dict[str, Any] = {
         "days": days,
         "kind": kind,
         "countries": [{"code": c, "top": t} for c, t in sorted(countries.items())],

@@ -1365,10 +1365,10 @@ def _producer_inventory(outcomes: list[ProducerOutcome]) -> dict:
         "silent": [o.name for o in outcomes if o.outcome == "no-signal"],
         "skipped_budget": [o.name for o in outcomes if o.outcome == "skipped-budget"],
         "skipped_budget_n": sum(1 for o in outcomes if o.outcome == "skipped-budget"),
-        "slowest": sorted(
-            ({"producer": o.name, "elapsed_s": round(o.elapsed_s, 1)} for o in outcomes if o.elapsed_s > 0),
-            key=lambda r: -r["elapsed_s"],
-        )[:3],
+        "slowest": [
+            {"producer": o.name, "elapsed_s": round(o.elapsed_s, 1)}
+            for o in sorted((o for o in outcomes if o.elapsed_s > 0), key=lambda o: -o.elapsed_s)[:3]
+        ],
         "note": (
             "THE POINT OF THIS DIAGNOSTIC. run_all() catches a producer exception, logs a "
             "warning and contributes [] — exactly what a producer with no signal "

@@ -1021,7 +1021,8 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip, source = None, None
+        skip: dict | None = None
+        source: str | None = None
         for name, verdict in (
             ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
             ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
@@ -1034,7 +1035,7 @@ def _build_and_swap() -> str:
         if skip:
             with _LOCK:
                 _STATE["last_skip"] = {**skip, "source": source}
-            if source not in _TRANSIENT_VERDICTS:
+            if source is not None and source not in _TRANSIENT_VERDICTS:
                 _note_decline("skipped", source, skip)
             _LOG.info(
                 "rollup serve: build skipped (%s)",
