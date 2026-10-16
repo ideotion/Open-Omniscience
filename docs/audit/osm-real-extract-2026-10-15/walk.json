@@ -1,0 +1,330 @@
+{
+ "observations": [
+  {
+   "surface": "world-vintage",
+   "tag": "en-1440",
+   "text": "OpenStreetMap places, roads and buildings: Liechtenstein (LIE), as of 2013-08-03 · Settings → OpenStreetMap",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "completeness",
+   "tag": "en-1440",
+   "text": "OpenStreetMap tag completeness\nLiechtenstein (LIE), as of 2013-08-03\n667 places with metadata, each tag counted on its own.\nTAG\tPLACES LISTING IT\tSHARE OF 667\nOPENING HOURS\t11\t1.6 %\nWEBSITE\t19\t2.8 %\nE-MAIL ADDRESS\t4\t0.6 %\nPHONE NUMBER\t7\t1 %\nA missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.\nPer region: the region outlines are not built on this install, so no region is counted.",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "geocoder-bahnhofstrasse",
+   "tag": "en-1440",
+   "text": "Locate an address\n\nSearched: the addresses OpenStreetMap records in Liechtenstein (LIE). Addresses outside your OpenStreetMap countries are not located.\n\nLocate\n13 Bahnhofstrasse\t47.16728, 9.50829\tOpen\n15 Bahnhofstrasse\t47.16726, 9.50800\tOpen\n20 Bahnhofstrasse\t47.16736, 9.50737\tOpen\n16 Bahnhofstrasse 9494 Schaan\t47.16765, 9.50761\tOpen",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "geocoder-not-located",
+   "tag": "en-1440",
+   "text": "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "settings-picker",
+   "tag": "en-1440",
+   "text": "Countries for the map data\n\nChoose the countries whose places, roads and buildings this app reads from OpenStreetMap into its own local database. Extracts are published per continent, so a country is read from its continent's download: the size shown is that download's.\n\nCOUNTRY\tCONTINENT DOWNLOAD\tDAILY CHANGES\tDOWNLOAD\tMAP DATA\t\nLiechtenstein (LIE)\tEurope · ~⁨28.0 GB⁩ estimate\t~⁨58.3 MB⁩ a day estimate\tDownload\tRead · data as of 2013-08-03\tRemove\nSuggested from the interface language (the countries where it is an official or major language). Never from your IP address.\nUnited Kingdom (GBR) · ~⁨28.0 GB⁩ Antigua & Barbuda (ATG) · ~⁨600.0 MB⁩ Australia (AUS) · ~⁨1.3 GB⁩ Bahamas (BHS) · ~⁨600.0 MB⁩ Barbados (BRB) · ~⁨600.0 MB⁩ Belize (BLZ) · ~⁨600.0 MB⁩ Botswana (BWA) · ~⁨5.0 GB⁩ Cameroon (CMR) · ~⁨5.0 GB⁩ Canada (CAN) · ~⁨14.0 GB⁩ Dominica (DMA) · ~⁨600.0 MB⁩ Eswatini (SWZ) · ~⁨5.0 GB⁩ Fiji (FJI) · ~⁨1.3 GB⁩ Gambia (GMB) · ~⁨5.0 GB⁩ Ghana (GHA) · ~⁨5.0 GB⁩ Grenada (GRD) · ~⁨600.0 MB⁩ Guyana (GUY) · ~⁨3.0 GB⁩ India (IND) · ~⁨13.0 GB⁩ Ireland (IRL) · ~⁨28.0 GB⁩ Jamaica (JAM) · ~⁨600.0 MB⁩ Kenya (KEN) · ~⁨5.0 GB⁩ Kiribati (KIR) · ~⁨1.3 GB⁩ Lesotho (LSO) · ~⁨5.0 GB⁩ Liberia (LBR) · ~⁨5.0 GB⁩ Malawi (MWI) · ~⁨5.0 GB⁩ Malta (MLT) · ~⁨28.0 GB⁩ Marshall Islands (MHL) · ~⁨1.3 GB⁩ Micronesia (FSM) · ~⁨1.3 GB⁩ Namibia (NAM) · ~⁨5.0 GB⁩ Nauru (NRU) · ~⁨1.3 GB⁩ New Zealand (NZL) · ~⁨1.3 GB⁩ Nigeria (NGA) · ~⁨5.0 GB⁩ Pakistan (PAK) · ~⁨13.0 GB⁩ Palau (PLW) · ~⁨1.3 GB⁩ Papua New Guinea (PNG) ",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "living",
+   "tag": "en-1440",
+   "text": "Living sources — what changed in the sources that keep changing\nRead ⁨2026-10-15 20:58⁩ UTC. Counts cover the last 30 days.\nFreshness is shown as dates, never judged: how recent is recent enough depends on the story. A change counted is not a change read: under a budget the stream stores the text of some changes and counts the rest. Each diff is the one stored when the change arrived, not a live re-diff.\nLive stream\nState\nNot run yet\nOther changed pages\nState\nOff\nPage walk\nState\nOff\nPages you track\nPages\n0\nNever checked\n0\nNewest check\nnever\nOldest check\nnever\nRevisions stored, last 30 days\n0\nFlagged\n0\nStorage\nOn disk\nNot created yet\nBudget\n150 GB the published default\nCombine keywords in Wikipedia\nLive changes\n\nEvery change the stream reported for a page it follows, newest first — with its diff when its text was stored.\n\nThe live stream has not run yet, so there is no timeline. Turn it on with the W button in the top bar.\nPages you track\nNo pages tracked yet. Add them in Settings → Wikipedia.\nTracked changes\nflagged only\nRefresh\nPick a page above to read its tracked revisions.\nOne item across editions\n\nWhat each edition you follow holds for one Wikidata item: its page, its size and the changes this machine recorded. The sizes come from the page walk.\n\nCompare\nThe Wikipedia lane has not run on this machine yet.\nMost-viewed pages beside your corpus\n\nThe source's most-viewed pages of its latest day, each beside the number of articles in your corpus that mention the title. One da",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "world-vintage",
+   "tag": "en-390",
+   "text": "OpenStreetMap places, roads and buildings: Liechtenstein (LIE), as of 2013-08-03 · Settings → OpenStreetMap",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "completeness",
+   "tag": "en-390",
+   "text": "OpenStreetMap tag completeness\nLiechtenstein (LIE), as of 2013-08-03\n667 places with metadata, each tag counted on its own.\nTAG\tPLACES LISTING IT\tSHARE OF 667\nOPENING HOURS\t11\t1.6 %\nWEBSITE\t19\t2.8 %\nE-MAIL ADDRESS\t4\t0.6 %\nPHONE NUMBER\t7\t1 %\nA missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.\nPer region: the region outlines are not built on this install, so no region is counted.",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "geocoder-bahnhofstrasse",
+   "tag": "en-390",
+   "text": "Locate an address\n\nSearched: the addresses OpenStreetMap records in Liechtenstein (LIE). Addresses outside your OpenStreetMap countries are not located.\n\nLocate\n13 Bahnhofstrasse\t47.16728, 9.50829\tOpen\n15 Bahnhofstrasse\t47.16726, 9.50800\tOpen\n20 Bahnhofstrasse\t47.16736, 9.50737\tOpen\n16 Bahnhofstrasse 9494 Schaan\t47.16765, 9.50761\tOpen",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "geocoder-not-located",
+   "tag": "en-390",
+   "text": "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "settings-picker",
+   "tag": "en-390",
+   "text": "Countries for the map data\n\nChoose the countries whose places, roads and buildings this app reads from OpenStreetMap into its own local database. Extracts are published per continent, so a country is read from its continent's download: the size shown is that download's.\n\nCOUNTRY\tCONTINENT DOWNLOAD\tDAILY CHANGES\tDOWNLOAD\tMAP DATA\t\nLiechtenstein (LIE)\tEurope · ~⁨28.0 GB⁩ estimate\t~⁨58.3 MB⁩ a day estimate\tDownload\tRead · data as of 2013-08-03\tRemove\nSuggested from the interface language (the countries where it is an official or major language). Never from your IP address.\nUnited Kingdom (GBR) · ~⁨28.0 GB⁩ Antigua & Barbuda (ATG) · ~⁨600.0 MB⁩ Australia (AUS) · ~⁨1.3 GB⁩ Bahamas (BHS) · ~⁨600.0 MB⁩ Barbados (BRB) · ~⁨600.0 MB⁩ Belize (BLZ) · ~⁨600.0 MB⁩ Botswana (BWA) · ~⁨5.0 GB⁩ Cameroon (CMR) · ~⁨5.0 GB⁩ Canada (CAN) · ~⁨14.0 GB⁩ Dominica (DMA) · ~⁨600.0 MB⁩ Eswatini (SWZ) · ~⁨5.0 GB⁩ Fiji (FJI) · ~⁨1.3 GB⁩ Gambia (GMB) · ~⁨5.0 GB⁩ Ghana (GHA) · ~⁨5.0 GB⁩ Grenada (GRD) · ~⁨600.0 MB⁩ Guyana (GUY) · ~⁨3.0 GB⁩ India (IND) · ~⁨13.0 GB⁩ Ireland (IRL) · ~⁨28.0 GB⁩ Jamaica (JAM) · ~⁨600.0 MB⁩ Kenya (KEN) · ~⁨5.0 GB⁩ Kiribati (KIR) · ~⁨1.3 GB⁩ Lesotho (LSO) · ~⁨5.0 GB⁩ Liberia (LBR) · ~⁨5.0 GB⁩ Malawi (MWI) · ~⁨5.0 GB⁩ Malta (MLT) · ~⁨28.0 GB⁩ Marshall Islands (MHL) · ~⁨1.3 GB⁩ Micronesia (FSM) · ~⁨1.3 GB⁩ Namibia (NAM) · ~⁨5.0 GB⁩ Nauru (NRU) · ~⁨1.3 GB⁩ New Zealand (NZL) · ~⁨1.3 GB⁩ Nigeria (NGA) · ~⁨5.0 GB⁩ Pakistan (PAK) · ~⁨13.0 GB⁩ Palau (PLW) · ~⁨1.3 GB⁩ Papua New Guinea (PNG) ",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "living",
+   "tag": "en-390",
+   "text": "Living sources — what changed in the sources that keep changing\nRead ⁨2026-10-15 20:58⁩ UTC. Counts cover the last 30 days.\nFreshness is shown as dates, never judged: how recent is recent enough depends on the story. A change counted is not a change read: under a budget the stream stores the text of some changes and counts the rest. Each diff is the one stored when the change arrived, not a live re-diff.\nLive stream\nState\nNot run yet\nOther changed pages\nState\nOff\nPage walk\nState\nOff\nPages you track\nPages\n0\nNever checked\n0\nNewest check\nnever\nOldest check\nnever\nRevisions stored, last 30 days\n0\nFlagged\n0\nStorage\nOn disk\nNot created yet\nBudget\n150 GB the published default\nCombine keywords in Wikipedia\nLive changes\n\nEvery change the stream reported for a page it follows, newest first — with its diff when its text was stored.\n\nThe live stream has not run yet, so there is no timeline. Turn it on with the W button in the top bar.\nPages you track\nNo pages tracked yet. Add them in Settings → Wikipedia.\nTracked changes\nflagged only\nRefresh\nPick a page above to read its tracked revisions.\nOne item across editions\n\nWhat each edition you follow holds for one Wikidata item: its page, its size and the changes this machine recorded. The sizes come from the page walk.\n\nCompare\nThe Wikipedia lane has not run on this machine yet.\nMost-viewed pages beside your corpus\n\nThe source's most-viewed pages of its latest day, each beside the number of articles in your corpus that mention the title. One da",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "world-vintage",
+   "tag": "ar-1440",
+   "text": "أماكن وطرق ومبانٍ من OpenStreetMap: ليختنشتاين (LIE)، حتى 2013-08-03 · الإعدادات ← OpenStreetMap",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "completeness",
+   "tag": "ar-1440",
+   "text": "اكتمال وسوم OpenStreetMap\nليختنشتاين (LIE)، حتى 2013-08-03\n667 مكانًا ذا بيانات وصفية، يُحصى كل وسم على حدة.\nوسم\tالأماكن التي تذكره\tالنسبة من 667\nساعات العمل\t11\t1.6 %\nالموقع الإلكتروني\t19\t2.8 %\nعنوان البريد الإلكتروني\t4\t0.6 %\nرقم الهاتف\t7\t1 %\nغياب الوسم يعني أن OpenStreetMap لا يسجّله، لا أن المكان يفتقر إليه. يتفاوت الاكتمال بحسب نشاط رسم خرائط المنطقة. تصف الأرقام المستخرج في تاريخه.\nحسب المنطقة: حدود المناطق غير مبنية في هذا التثبيت، لذا لا تُحصى أي منطقة.",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "settings-picker",
+   "tag": "ar-1440",
+   "text": "البلدان لبيانات الخريطة\n\nاختر البلدان التي يقرأ هذا التطبيق أماكنها وطرقها ومبانيها من OpenStreetMap إلى قاعدة بياناته المحلية. تُنشر المقتطفات لكل قارة، لذا يُقرأ البلد من تنزيل قارته، والحجم المعروض هو حجم ذلك التنزيل.\n\nالبلد\tتنزيل القارة\tالتغييرات اليومية\tتنزيل\tبيانات الخريطة\t\nليختنشتاين (LIE)\tأوروبا · ~⁨28.0 غيغابايت⁩ تقدير\t~⁨58.3 ميغابايت⁩ يوميًا تقدير\tتنزيل\tمقروء · البيانات حتى 2013-08-03\tإزالة\nمقترحة من لغة الواجهة (البلدان التي تكون فيها لغة رسمية أو رئيسية). وليس أبدًا من عنوان IP الخاص بك.\nالمملكة العربية السعودية (SAU) · ~⁨13.0 غيغابايت⁩ إريتريا (ERI) · ~⁨5.0 غيغابايت⁩ الأردن (JOR) · ~⁨13.0 غيغابايت⁩ الإمارات العربية المتحدة (ARE) · ~⁨13.0 غيغابايت⁩ البحرين (BHR) · ~⁨13.0 غيغابايت⁩ الجزائر (DZA) · ~⁨5.0 غيغابايت⁩ السودان (SDN) · ~⁨5.0 غيغابايت⁩ الصومال (SOM) · ~⁨5.0 غيغابايت⁩ العراق (IRQ) · ~⁨13.0 غيغابايت⁩ الكويت (KWT) · ~⁨13.0 غيغابايت⁩ المغرب (MAR) · ~⁨5.0 غيغابايت⁩ اليمن (YEM) · ~⁨13.0 غيغابايت⁩ تشاد (TCD) · ~⁨5.0 غيغابايت⁩ تونس (TUN) · ~⁨5.0 غيغابايت⁩ جزر القمر (COM) · ~⁨5.0 غيغابايت⁩ جيبوتي (DJI) · ~⁨5.0 غيغابايت⁩ سوريا (SYR) · ~⁨13.0 غيغابايت⁩ عُمان (OMN) · ~⁨13.0 غيغابايت⁩ فلسطين (PSE) · ~⁨13.0 غيغابايت⁩ قطر (QAT) · ~⁨13.0 غيغابايت⁩ لبنان (LBN) · ~⁨13.0 غيغابايت⁩ ليبيا (LBY) · ~⁨5.0 غيغابايت⁩ مصر (EGY) · ~⁨5.0 غيغابايت⁩ موريتانيا (MRT) · ~⁨5.0 غيغابايت⁩\nإضافة بلد\nاختر بلدًا…\nآيسلندا (ISL)\nإثيوبيا (ETH)\nأذربيجان (AZE)\nأرمينيا (ARM)\nأروبا (ABW)\nإريتريا (ERI)\nإسبانيا (ESP)\nأستراليا (AUS)\nإستونيا (EST)\nإسرائيل (ISR)\nإسواتيني (SWZ)\nأفغانستان (AFG)\nالأرجنتين (ARG",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "living",
+   "tag": "ar-1440",
+   "text": "المصادر الحيّة — ما الذي تغيّر في المصادر التي لا تكفّ عن التغيّر\nقُرئ: ⁨2026-10-15 20:59⁩ UTC. تغطي الأعداد آخر 30 يومًا.\nتُعرض الحداثة تواريخَ، ولا يُحكم عليها أبدًا: فمدى الحداثة الكافية يتوقف على الخبر. التغيير المعدود ليس تغييرًا مقروءًا: ضمن الميزانية يخزّن التدفق نص بعض التغييرات ويعدّ الباقي. كل فرق هو الذي خُزِّن عند وصول التغيير، لا فرقًا يُعاد حسابه مباشرةً.\nالتدفق المباشر\nالحالة\nلم يعمل بعد\nصفحات أخرى تغيّرت\nالحالة\nمعطّل\nمسح الصفحات\nالحالة\nمعطّل\nالصفحات التي تتتبّعها\nالصفحات\n0\nلم يُتحقَّق منها قط\n0\nأحدث تحقُّق\nأبدًا\nأقدم تحقُّق\nأبدًا\nالمراجعات المُخزَّنة، آخر 30 يومًا\n0\nمُعلَّم\n0\nالتخزين\nعلى القرص\nلم يُنشأ بعد\nالميزانية\n150 غيغابايت القيمة الافتراضية المنشورة\nدمج الكلمات المفتاحية في ويكيبيديا\nالتغييرات المباشرة\n\nكل تغيير أبلغ عنه التدفق لصفحة يتابعها، الأحدث أولاً — مع فرقه إذا خُزِّن نصه.\n\nلم يعمل التدفق المباشر بعد، لذا لا يوجد خط زمني. شغّله بزر W في الشريط العلوي.\nالصفحات التي تتتبّعها\nلا توجد صفحات متتبَّعة بعد. أضفها في الإعدادات → ويكيبيديا.\nالتغييرات المتتبَّعة\nالمُعلَّمة فقط\nتحديث\nاختر صفحة أعلاه لقراءة مراجعاتها المتتبَّعة.\nعنصر واحد عبر الإصدارات\n\nما يحويه كل إصدار تتابعه لعنصر واحد في ويكي بيانات: صفحته وحجمه والتغييرات التي سجّلها هذا الجهاز. تأتي الأحجام من مسح الصفحات.\n\nمقارنة\nلم يعمل مسار ويكيبيديا على هذا الجهاز بعد.\nالصفحات الأكثر مشاهدة بجانب مدوّنتك\n\nالصفحات الأكثر مشاهدة في المصدر في آخر أيامه، كلٌّ منها بجانب عدد مقالات مدوّنتك التي تذكر العنوان. يوم واحد في كل مرة، وليس سجلًّا.\n\nتحديث\nلم تُقرأ بعدُ أي قائمة بالصفحات الأكثر مشاهدة. يقرأ التد",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "world-vintage",
+   "tag": "ar-390",
+   "text": "أماكن وطرق ومبانٍ من OpenStreetMap: ليختنشتاين (LIE)، حتى 2013-08-03 · الإعدادات ← OpenStreetMap",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "completeness",
+   "tag": "ar-390",
+   "text": "اكتمال وسوم OpenStreetMap\nليختنشتاين (LIE)، حتى 2013-08-03\n667 مكانًا ذا بيانات وصفية، يُحصى كل وسم على حدة.\nوسم\tالأماكن التي تذكره\tالنسبة من 667\nساعات العمل\t11\t1.6 %\nالموقع الإلكتروني\t19\t2.8 %\nعنوان البريد الإلكتروني\t4\t0.6 %\nرقم الهاتف\t7\t1 %\nغياب الوسم يعني أن OpenStreetMap لا يسجّله، لا أن المكان يفتقر إليه. يتفاوت الاكتمال بحسب نشاط رسم خرائط المنطقة. تصف الأرقام المستخرج في تاريخه.\nحسب المنطقة: حدود المناطق غير مبنية في هذا التثبيت، لذا لا تُحصى أي منطقة.",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "settings-picker",
+   "tag": "ar-390",
+   "text": "البلدان لبيانات الخريطة\n\nاختر البلدان التي يقرأ هذا التطبيق أماكنها وطرقها ومبانيها من OpenStreetMap إلى قاعدة بياناته المحلية. تُنشر المقتطفات لكل قارة، لذا يُقرأ البلد من تنزيل قارته، والحجم المعروض هو حجم ذلك التنزيل.\n\nالبلد\tتنزيل القارة\tالتغييرات اليومية\tتنزيل\tبيانات الخريطة\t\nليختنشتاين (LIE)\tأوروبا · ~⁨28.0 غيغابايت⁩ تقدير\t~⁨58.3 ميغابايت⁩ يوميًا تقدير\tتنزيل\tمقروء · البيانات حتى 2013-08-03\tإزالة\nمقترحة من لغة الواجهة (البلدان التي تكون فيها لغة رسمية أو رئيسية). وليس أبدًا من عنوان IP الخاص بك.\nالمملكة العربية السعودية (SAU) · ~⁨13.0 غيغابايت⁩ إريتريا (ERI) · ~⁨5.0 غيغابايت⁩ الأردن (JOR) · ~⁨13.0 غيغابايت⁩ الإمارات العربية المتحدة (ARE) · ~⁨13.0 غيغابايت⁩ البحرين (BHR) · ~⁨13.0 غيغابايت⁩ الجزائر (DZA) · ~⁨5.0 غيغابايت⁩ السودان (SDN) · ~⁨5.0 غيغابايت⁩ الصومال (SOM) · ~⁨5.0 غيغابايت⁩ العراق (IRQ) · ~⁨13.0 غيغابايت⁩ الكويت (KWT) · ~⁨13.0 غيغابايت⁩ المغرب (MAR) · ~⁨5.0 غيغابايت⁩ اليمن (YEM) · ~⁨13.0 غيغابايت⁩ تشاد (TCD) · ~⁨5.0 غيغابايت⁩ تونس (TUN) · ~⁨5.0 غيغابايت⁩ جزر القمر (COM) · ~⁨5.0 غيغابايت⁩ جيبوتي (DJI) · ~⁨5.0 غيغابايت⁩ سوريا (SYR) · ~⁨13.0 غيغابايت⁩ عُمان (OMN) · ~⁨13.0 غيغابايت⁩ فلسطين (PSE) · ~⁨13.0 غيغابايت⁩ قطر (QAT) · ~⁨13.0 غيغابايت⁩ لبنان (LBN) · ~⁨13.0 غيغابايت⁩ ليبيا (LBY) · ~⁨5.0 غيغابايت⁩ مصر (EGY) · ~⁨5.0 غيغابايت⁩ موريتانيا (MRT) · ~⁨5.0 غيغابايت⁩\nإضافة بلد\nاختر بلدًا…\nآيسلندا (ISL)\nإثيوبيا (ETH)\nأذربيجان (AZE)\nأرمينيا (ARM)\nأروبا (ABW)\nإريتريا (ERI)\nإسبانيا (ESP)\nأستراليا (AUS)\nإستونيا (EST)\nإسرائيل (ISR)\nإسواتيني (SWZ)\nأفغانستان (AFG)\nالأرجنتين (ARG",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  },
+  {
+   "surface": "living",
+   "tag": "ar-390",
+   "text": "المصادر الحيّة — ما الذي تغيّر في المصادر التي لا تكفّ عن التغيّر\nقُرئ: ⁨2026-10-15 20:59⁩ UTC. تغطي الأعداد آخر 30 يومًا.\nتُعرض الحداثة تواريخَ، ولا يُحكم عليها أبدًا: فمدى الحداثة الكافية يتوقف على الخبر. التغيير المعدود ليس تغييرًا مقروءًا: ضمن الميزانية يخزّن التدفق نص بعض التغييرات ويعدّ الباقي. كل فرق هو الذي خُزِّن عند وصول التغيير، لا فرقًا يُعاد حسابه مباشرةً.\nالتدفق المباشر\nالحالة\nلم يعمل بعد\nصفحات أخرى تغيّرت\nالحالة\nمعطّل\nمسح الصفحات\nالحالة\nمعطّل\nالصفحات التي تتتبّعها\nالصفحات\n0\nلم يُتحقَّق منها قط\n0\nأحدث تحقُّق\nأبدًا\nأقدم تحقُّق\nأبدًا\nالمراجعات المُخزَّنة، آخر 30 يومًا\n0\nمُعلَّم\n0\nالتخزين\nعلى القرص\nلم يُنشأ بعد\nالميزانية\n150 غيغابايت القيمة الافتراضية المنشورة\nدمج الكلمات المفتاحية في ويكيبيديا\nالتغييرات المباشرة\n\nكل تغيير أبلغ عنه التدفق لصفحة يتابعها، الأحدث أولاً — مع فرقه إذا خُزِّن نصه.\n\nلم يعمل التدفق المباشر بعد، لذا لا يوجد خط زمني. شغّله بزر W في الشريط العلوي.\nالصفحات التي تتتبّعها\nلا توجد صفحات متتبَّعة بعد. أضفها في الإعدادات → ويكيبيديا.\nالتغييرات المتتبَّعة\nالمُعلَّمة فقط\nتحديث\nاختر صفحة أعلاه لقراءة مراجعاتها المتتبَّعة.\nعنصر واحد عبر الإصدارات\n\nما يحويه كل إصدار تتابعه لعنصر واحد في ويكي بيانات: صفحته وحجمه والتغييرات التي سجّلها هذا الجهاز. تأتي الأحجام من مسح الصفحات.\n\nمقارنة\nلم يعمل مسار ويكيبيديا على هذا الجهاز بعد.\nالصفحات الأكثر مشاهدة بجانب مدوّنتك\n\nالصفحات الأكثر مشاهدة في المصدر في آخر أيامه، كلٌّ منها بجانب عدد مقالات مدوّنتك التي تذكر العنوان. يوم واحد في كل مرة، وليس سجلًّا.\n\nتحديث\nلم تُقرأ بعدُ أي قائمة بالصفحات الأكثر مشاهدة. يقرأ التد",
+   "present": true,
+   "overflow_px": 0,
+   "junk": []
+  }
+ ],
+ "errors": [
+  [
+   "en-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin1.world.json"
+  ],
+  [
+   "en-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin0.world.json"
+  ],
+  [
+   "en-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin0.json"
+  ],
+  [
+   "en-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin1.json"
+  ],
+  [
+   "en-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin0.world.json"
+  ],
+  [
+   "en-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin1.world.json"
+  ],
+  [
+   "en-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin1.json"
+  ],
+  [
+   "en-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "en-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin0.json"
+  ],
+  [
+   "en-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin0.world.json"
+  ],
+  [
+   "ar-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin1.world.json"
+  ],
+  [
+   "ar-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin1.json"
+  ],
+  [
+   "ar-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-1440",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin0.json"
+  ],
+  [
+   "ar-1440",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin1.world.json"
+  ],
+  [
+   "ar-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_borders/admin0.world.json"
+  ],
+  [
+   "ar-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin1.json"
+  ],
+  [
+   "ar-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  [
+   "ar-390",
+   "http404",
+   "http://127.0.0.1:8771/static/osm_admin0.json"
+  ],
+  [
+   "ar-390",
+   "console.error",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+ ],
+ "offline_requests_blocked": [],
+ "network_before": {
+  "online": false
+ }
+}
