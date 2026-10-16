@@ -346,3 +346,14 @@ def test_a_huge_file_is_read_from_its_end(dd):
     newest = json.dumps({"pid": 5, "boot_id": "b1", "line": "malloc(): corrupted top size"}) + "\n"
     (dd / "diagnostics" / ee.LAUNCHER_STDERR).write_text(filler * (ee._STDERR_READ_BYTES // len(filler) + 50) + newest, encoding="utf-8")
     assert ee.launcher_stderr(5, "b1")["lines"] == ["malloc(): corrupted top size"]
+
+
+def test_only_the_newest_earlier_ends_are_looked_up_for_a_launcher_record(dd):
+    from tests.test_crash_loop_witnesses import _session
+
+    (dd / "diagnostics").mkdir(parents=True, exist_ok=True)
+    recs = []
+    for i in range(1, 6):
+        recs += _session(i, pid=900 + i, signal="SIGABRT")
+    out = ee.earlier_unclean_ends(None, records=recs)["sessions"]
+    assert ["launcher_stderr" in r for r in out] == [True] * ee.STDERR_ROWS_SHOWN + [False] * (len(out) - ee.STDERR_ROWS_SHOWN)

@@ -196,6 +196,9 @@ def launcher_exit(pid: int | None, boot_id: str | None = None) -> dict[str, Any]
 #: (a real abort is one or two messages; a crash loop is what could repeat them), not a view of how many there were: ``lines_recorded``
 #: is always the full count the launcher kept. Worst case per session about 245 B, 11 sessions about 2.7 KB, typical about 100 B.
 STDERR_LINES_SHOWN = 2
+#: Earlier unclean ends that carry a ``launcher_stderr`` (the newest 3, beside the previous session's own). WHAT IT PROTECTS: the report's byte
+#: room (R119, measured by WAL): 4 sessions x about 245 B worst case is 1 KB where all 11 would be 2.7 KB.
+STDERR_ROWS_SHOWN = 3
 #: The fixed messages the launcher's stderr filter admits (scripts/launch.sh ``STDERR_MESSAGES``, which a test pins equal to this set):
 #: glibc 2.41's heap-corruption messages and the interpreter's fatal-error headers. A line is shown only when it IS one of these, whole
 #: (no pattern, no tail), checked AGAIN here because the file is on disk and anything may have written to it; any other line is not
@@ -984,7 +987,7 @@ def earlier_unclean_ends(
             "every other thread; a trace that is cut says how many lines and threads it kept). A session with no trace says why, by what it ended by; "
             "a SIGKILL cannot leave one. The log keeps one rotated generation, so an old end may have "
             "lost its trace to rotation. 'launcher_stderr' is the C library's abort message the launcher filter recorded for that pid "
-            "and boot (null: the launcher left no record for it)."
+            "and boot for the newest " f"{STDERR_ROWS_SHOWN} ends only (null: the launcher left no record for it; absent: an older end, not looked up)."
         ),
         "limit": limit,
         "lines_per_trace": max_lines,
@@ -1044,7 +1047,8 @@ def earlier_unclean_ends(
                     trace = _trace_report(body, cand, end_lines, decodable=read[1])
                 break
         row["trace"] = trace
-        row["launcher_stderr"] = launcher_stderr(pid, boot if isinstance(boot, str) else None)
+        if n_end < STDERR_ROWS_SHOWN:
+            row["launcher_stderr"] = launcher_stderr(pid, boot if isinstance(boot, str) else None)
         if trace is None:
             row["why_no_trace"] = _why_no_trace(exit_seen, found_any)
             row["crashing_thread_kind"] = KIND_NO_TRACE
