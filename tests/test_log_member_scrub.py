@@ -152,8 +152,56 @@ def test_the_standalone_session_forensics_route_scrubs_what_it_serves(monkeypatc
     from src.monitoring import forensics
 
     monkeypatch.setattr(forensics, "session_forensics", lambda: {"kernel": {"lines": [f"oom killed python (cmd {_KEY})"]}, "ok": True})
-    monkeypatch.setattr(forensics, "render_text", lambda payload: "report: " + json.dumps(payload))
+    monkeypatch.setattr(forensics, "render_text", lambda payload: f"report: {json.dumps(payload)} and the renderer adds {_KEY} itself")
     served = route.session_forensics_report(download=False)
     assert _KEY not in json.dumps(served) and served["ok"] is True
     text = route.session_forensics_report(download=True).body.decode()
     assert _KEY not in text
+
+
+def test_a_line_that_is_not_valid_utf8_is_withheld_whole_with_its_size_not_repaired(tmp_path):
+    src = tmp_path / "bin.jsonl"
+    src.write_bytes(b"ok\n" + b"\xff\xfe bad " + _KEY.encode() + b"\nlast\n")
+    dst = tmp_path / "bin.out"
+    assert ss.scrubbed_copy(src, dst) == 1
+    got = dst.read_bytes()
+    assert _KEY.encode() not in got and b"\xff" not in got
+    assert got.startswith(b"ok\n") and got.endswith(b"last\n") and b"is not valid UTF-8" in got
+    assert got.count(b"\n") == 3, "the line count stays as it was"
+
+
+def test_a_line_of_the_bound_followed_by_its_line_ending_counts_as_too_long(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, "_COPY_LINE_BYTES", 100)
+    src = tmp_path / "b.jsonl"
+    src.write_text("y" * 100 + "\n" + "z" * 98 + "\n", encoding="utf-8")
+    dst = tmp_path / "b.out"
+    ss.scrubbed_copy(src, dst)
+    text = dst.read_text(encoding="utf-8")
+    assert "y" * 99 not in text and "a line of 101 bytes is not copied" in text and "z" * 98 in text
+
+
+def test_a_log_that_cannot_be_checked_is_withheld_not_copied_raw(tmp_path, monkeypatch):
+    """When what the process holds cannot be read, ``scrubbed`` withholds: the copy never holds the raw line."""
+    monkeypatch.setattr(connect, "_passphrase", None)
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    ss.forget_held()
+    src = _log(tmp_path)
+    dst = tmp_path / "w.out"
+    ss.scrubbed_copy(src, dst)
+    got = dst.read_text(encoding="utf-8")
+    assert "plain line" not in got and "withheld" in got
+
+
+def test_a_restore_of_a_log_nothing_can_check_appends_one_withheld_line_not_n(tmp_path, monkeypatch):
+    from src.backup.merge import merge_side_files
+    from tests.backup_helper import staged_artifact
+
+    monkeypatch.setattr(ss, "held_passphrases", lambda: None)
+    ss.forget_held()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "live"))
+    staging = tmp_path / "staging"
+    (staging / "logs").mkdir(parents=True)
+    _log(staging / "logs")
+    staged = staged_artifact(staging, members=[{"name": "logs/app_errors.jsonl", "role": "logs"}], origin_fingerprint="ab" * 32)
+    report = merge_side_files(staged)
+    assert report["logs"]["app_errors.jsonl"]["appended"] == 1

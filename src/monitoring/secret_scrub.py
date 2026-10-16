@@ -1302,7 +1302,7 @@ def scrubbed_copy(src: Path, dst: Path) -> int:
 
     For a record file that LEAVES the install (a backup's logs, a bundle's member): each line is scrubbed WHOLE before anything is
     written, so a key can never be cut by this function, and the line ending is kept as it was. A line too long to hold
-    (:data:`_COPY_LINE_BYTES`) is replaced by a marker that counts its bytes, never copied in part; an invalid UTF-8 byte becomes U+FFFD.
+    (:data:`_COPY_LINE_BYTES` bytes before its line ending; a line of exactly that many bytes with its ending after them is already too long) is replaced by a marker that counts its bytes, never copied in part; a line that is not valid UTF-8 is replaced the same way, so every other byte and every line count stays as it was.
     When what the process holds cannot be read, :func:`scrubbed` withholds the line (the fixed words of :data:`UNREADABLE_TEXT`), so
     nothing unchecked is copied. The destination is written in place: the caller hands it a staging path of its own. A passphrase that
     itself holds a line break cannot match across two lines (a stated limit). Raises ``OSError``."""
@@ -1323,7 +1323,13 @@ def scrubbed_copy(src: Path, dst: Path) -> int:
                     out.write(f"[a line of {n:,} bytes is not copied: it is too long to check for the passphrase in one piece]\n".encode())
                     changed += 1
                     continue
-            line = piece.decode("utf-8", errors="replace")
+            try:
+                line = piece.decode("utf-8")
+            except UnicodeDecodeError:
+                # a line that is not text cannot be checked for the passphrase: it is withheld whole, with its size, never dropped or repaired
+                out.write(f"[a line of {len(piece):,} bytes is not copied: it is not valid UTF-8, so it cannot be checked for the passphrase]\n".encode())
+                changed += 1
+                continue
             body = line.rstrip("\r\n")
             clean = scrubbed(body)
             if clean != body:
