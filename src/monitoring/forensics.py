@@ -1036,9 +1036,10 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
     boot = prev.get("boot_id") if isinstance(prev.get("boot_id"), str) else None
     out: dict[str, Any] = {}
     try:
-        from src.monitoring.exit_evidence import launcher_exit, previous_trace
+        from src.monitoring.exit_evidence import launcher_exit, launcher_stderr, previous_trace
 
         out["launcher"] = launcher_exit(pid, boot)
+        out["launcher_stderr"] = launcher_stderr(pid, boot)
         out["crash_trace"] = previous_trace(pid, boot, prev.get("started_at"))
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
         out["unavailable"] = _why(exc)

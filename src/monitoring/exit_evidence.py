@@ -54,6 +54,8 @@ from src.paths import data_dir
 _LOG = logging.getLogger(__name__)
 
 LAUNCHER_EXITS = "launcher_exits.jsonl"
+#: The abort messages the launcher's stderr filter recorded (scripts/launch.sh ``stderr_filter``), one JSON line each plus a summary per launch.
+LAUNCHER_STDERR = "launcher_stderr.jsonl"
 CRASH_TRACE = "crash_trace.log"
 # Rotated to ``crash_trace.log.1`` at arm time once past this size: one header line per
 # session, plus a trace only when a session crashed, so this is years of headers.
@@ -184,6 +186,74 @@ def launcher_exit(pid: int | None, boot_id: str | None = None) -> dict[str, Any]
         if isinstance(rec, dict) and rec.get("pid") == pid and _same_boot(rec.get("boot_id"), boot_id):
             return describe_exit(rec)
     return None
+
+
+# --------------------------------------------------------------------------- #
+#  1b. What the C library said as the process aborted (the launcher's stderr filter)
+# --------------------------------------------------------------------------- #
+
+#: Lines of the launcher's stderr record shown per session (the launcher keeps up to 20), each at most ``_STDERR_LINE_CHARS`` characters.
+#: WHAT THEY PROTECT: the report's byte budget (the record is a few fixed glibc messages, so a real abort is one or two lines; a crash loop
+#: is the case that could repeat them), not a view of how many there were: ``lines_recorded`` is always the full count the launcher kept.
+STDERR_LINES_SHOWN = 3
+_STDERR_LINE_CHARS = 100
+#: The same fixed set of messages the launcher's awk filter admits, checked AGAIN here because the file is on disk and anything may have
+#: written to it; a line that does not match is not shown, only counted in ``rejected_lines``.
+_ABORT_LINE = re.compile(
+    r"^(?:(?:malloc|free|realloc|calloc|malloc_consolidate|munmap_chunk)\(\): "
+    r"(?:corrupted|invalid|unsorted|smallbin|largebin|mismatching|memory corruption|unaligned|double free|too many)[a-z0-9 >().!-]*"
+    r"|double free or corruption \((?:out|!prev|fasttop)\)"
+    r"|corrupted (?:size vs\. prev_size|double-linked list)[a-z ()]*"
+    r"|Fatal Python error: (?:Aborted|Segmentation fault|Bus error|Illegal instruction|Floating point exception))$"
+)
+
+
+def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
+    """The abort messages the launcher's stderr filter recorded for process ``pid``, or None when it holds no record for it.
+
+    None means the launcher left nothing for this pid and boot: the app was started some other way, the launcher predates the filter, awk
+    was missing, or the launcher itself was killed first. It is NOT "the process printed nothing": that is a record with a summary and
+    ``lines_recorded`` 0. ``dropped_lines`` is how many other lines the filter saw and did not keep (it counts, it never stores); it is
+    None when the launcher ended before it could write its summary."""
+    if not isinstance(pid, int):
+        return None
+    try:
+        raw = (_diag_dir() / LAUNCHER_STDERR).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    from src.monitoring.secret_scrub import scrubbed
+
+    shown: list[dict[str, Any]] = []
+    summary: dict[str, Any] | None = None
+    recorded = rejected = 0
+    for line in raw.splitlines():
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(rec, dict) or rec.get("pid") != pid or not _same_boot(rec.get("boot_id"), boot_id):
+            continue
+        if rec.get("summary") is True:
+            summary = rec
+            continue
+        text = rec.get("line")
+        if not isinstance(text, str) or len(text) > _STDERR_LINE_CHARS or not _ABORT_LINE.match(text):
+            rejected += 1
+            continue
+        recorded += 1
+        shown.append({"at": rec.get("at") if isinstance(rec.get("at"), str) else None, "line": scrubbed(text)})
+    if summary is None and not shown and not rejected:
+        return None
+    out: dict[str, Any] = {"lines": shown[-STDERR_LINES_SHOWN:], "lines_recorded": recorded}
+    dropped = summary.get("dropped_lines") if summary else None
+    out["dropped_lines"] = dropped if isinstance(dropped, int) and not isinstance(dropped, bool) else None
+    if summary and isinstance(summary.get("over_cap_lines"), int) and summary["over_cap_lines"]:
+        out["over_cap_lines"] = summary["over_cap_lines"]
+    if rejected:
+        out["rejected_lines"] = rejected
+    if summary is None:
+        out["no_summary"] = True
+    return out
 
 
 def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
@@ -843,7 +913,8 @@ def earlier_unclean_ends(
             f"{max_lines} lines of its trace, {max(max_lines, NEWEST_EARLIER_TRACE_LINES) if max_lines == EARLIER_TRACE_LINES else max_lines} for the newest: the crashing thread whole, then the top of "
             "every other thread; a trace that is cut says how many lines and threads it kept). A session with no trace says why, by what it ended by; "
             "a SIGKILL cannot leave one. The log keeps one rotated generation, so an old end may have "
-            "lost its trace to rotation."
+            "lost its trace to rotation. 'launcher_stderr' is the C library's abort message the launcher filter recorded for that pid "
+            "and boot (null: the launcher left no record for it)."
         ),
         "limit": limit,
         "lines_per_trace": max_lines,
@@ -903,6 +974,7 @@ def earlier_unclean_ends(
                     trace = _trace_report(body, cand, end_lines, decodable=read[1])
                 break
         row["trace"] = trace
+        row["launcher_stderr"] = launcher_stderr(pid, boot if isinstance(boot, str) else None)
         if trace is None:
             row["why_no_trace"] = _why_no_trace(exit_seen, found_any)
             row["crashing_thread_kind"] = KIND_NO_TRACE

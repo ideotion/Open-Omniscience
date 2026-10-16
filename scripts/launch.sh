@@ -129,6 +129,42 @@ record_exit() {
     fi
 }
 
+# What the C library says as a process aborts (2026-10-17, the ten SIGABRTs of the three field sets): glibc writes
+# "free(): invalid pointer" and its kind to STDERR, which is the launcher window, and nothing kept it -- the app's own
+# crash trace holds the Python stacks and not this line, which is what separates heap corruption from an assert.
+# The server's stderr now passes through a filter that (1) hands EVERY line on to the window unchanged, as before, and
+# (2) records only the lines that match a fixed set of glibc and interpreter abort messages, at most
+# STDERR_KEEP of them per launch; every other line is COUNTED and dropped, never stored. A line is recorded only if
+# it matches an anchored pattern of the messages themselves (a stem such as "free(): invalid" plus a short tail of
+# plain letters and brackets), so no log line carrying anything else, a passphrase included, can reach the file.
+# The app reads it at the next boot and scrubs it again. If awk is missing the server starts exactly as before.
+# One summary line per launch (the count of lines dropped) tells "the filter ran and saw nothing" from "no filter".
+STDERR_KEEP=20
+STDERR_RECORD=""
+STDERR_PIDFILE=""
+stderr_filter() {
+    awk -v out="$STDERR_RECORD" -v pidfile="$STDERR_PIDFILE" -v boot="$1" -v keep="$STDERR_KEEP" '
+    BEGIN {
+        re = "^(((malloc|free|realloc|calloc|malloc_consolidate|munmap_chunk)\\(\\): (corrupted|invalid|unsorted|smallbin|largebin|mismatching|memory corruption|unaligned|double free|too many)[a-z0-9 >().!-]*)|(double free or corruption \\((out|!prev|fasttop)\\))|(corrupted (size vs\\. prev_size|double-linked list)[a-z ()]*)|(Fatal Python error: (Aborted|Segmentation fault|Bus error|Illegal instruction|Floating point exception)))$"
+        kept = 0; dropped = 0; over = 0
+    }
+    function stamp(   t) { t = ""; "date -u +%Y-%m-%dT%H:%M:%SZ" | getline t; close("date -u +%Y-%m-%dT%H:%M:%SZ"); return t }
+    function pid(   p) { p = ""; if ((getline p < pidfile) > 0) {} ; close(pidfile); return (p ~ /^[0-9]+$/) ? p : "null" }
+    function bootj() { return (boot ~ /^[0-9a-f-]+$/) ? "\"" boot "\"" : "null" }
+    {
+        print $0 > "/dev/stderr"
+        if (length($0) <= 100 && $0 ~ re) {
+            if (kept < keep) {
+                printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"line\":\"%s\"}\n", stamp(), pid(), bootj(), $0 >> out
+                kept++
+            } else over++
+        } else dropped++
+    }
+    END {
+        printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"summary\":true,\"kept_lines\":%d,\"dropped_lines\":%d,\"over_cap_lines\":%d}\n", stamp(), pid(), bootj(), kept, dropped, over >> out
+    }'
+}
+
 # Start the server in the background so we can wait for health, then open a browser.
 #
 # Cap glibc's malloc arenas at 2 for the SERVER (R114, the maintainer's ruling of 2026-10-01).
@@ -152,12 +188,32 @@ record_exit() {
 # `env` hands the value to the one command without assigning it in this shell, so an install
 # file that declared the variable readonly cannot stop the app from starting.
 unset OO_ARENA_MAX_DEFAULTED
+STDERR_BOOT="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+_dd="$(oo_data_dir)"
+if command -v awk >/dev/null 2>&1 && mkdir -p "$_dd/diagnostics" 2>/dev/null; then
+    STDERR_RECORD="$_dd/diagnostics/launcher_stderr.jsonl"
+    STDERR_PIDFILE="$_dd/diagnostics/.launcher_stderr.pid"
+    : > "$STDERR_PIDFILE" 2>/dev/null || STDERR_RECORD=""
+    # Bounded: the newest 100 lines are many launches of a crash loop.
+    if [ -n "$STDERR_RECORD" ] && [ "$(wc -l < "$STDERR_RECORD" 2>/dev/null || echo 0)" -gt 100 ]; then
+        tail -n 100 "$STDERR_RECORD" > "$STDERR_RECORD.tmp" 2>/dev/null && mv -f "$STDERR_RECORD.tmp" "$STDERR_RECORD" 2>/dev/null || rm -f "$STDERR_RECORD.tmp"
+    fi
+fi
 if [ -n "${MALLOC_ARENA_MAX:-}" ]; then
-    env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience &
+    if [ -n "$STDERR_RECORD" ]; then
+        env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience 2> >(stderr_filter "$STDERR_BOOT") &
+    else
+        env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience &
+    fi
 else
-    env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience &
+    if [ -n "$STDERR_RECORD" ]; then
+        env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience 2> >(stderr_filter "$STDERR_BOOT") &
+    else
+        env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience &
+    fi
 fi
 SERVER=$!
+[ -n "$STDERR_PIDFILE" ] && printf '%s\n' "$SERVER" > "$STDERR_PIDFILE" 2>/dev/null
 SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Stop the server when this launcher exits (window closed / Ctrl-C).
 # HUP is in the list because it is the signal the ADVERTISED stop actually sends:
