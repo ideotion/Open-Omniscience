@@ -817,7 +817,8 @@ def snapshot_open_connection(conn, dest: Path | str) -> Path:
             key = get_passphrase()
             if not key:
                 raise DatabaseLockedError("the store is encrypted: cannot snapshot without its passphrase")
-            conn.execute(f"ATTACH DATABASE ? AS snap KEY '{_sql_literal_escape(key)}'", (str(dest_p),))
+            # The key is BOUND (ATTACH ... KEY takes an expression), so no passphrase is ever spliced into the statement text.
+            conn.execute("ATTACH DATABASE ? AS snap KEY ?", (str(dest_p), key))
             _match_source_pragmas(conn, "snap")
             _export(conn, "snap")
             conn.execute("DETACH DATABASE snap")
