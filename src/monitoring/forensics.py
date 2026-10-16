@@ -261,6 +261,8 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
 
 _PREV_AT_BOOT: dict[str, Any] | None = None
 _PREV_LOADED = False
+_OOM_AT_BOOT: dict[str, Any] | None = None  # the kill counters read at this boot
+_BOOT_ID_AT_BOOT: str | None = None
 # This boot's -wal reading, taken before any connection can exist (S0.1).
 _WAL_AT_BOOT: dict[str, Any] | None = None
 # A reading taken by ``take_boot_wal_reading`` before the lifespan runs, for the start (``serve``) that opens the store itself
@@ -324,7 +326,7 @@ def record_session_start() -> dict[str, Any] | None:
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
     global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL, _PAGES_AT_BOOT, _EARLY_PAGES
-    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO
+    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO, _OOM_AT_BOOT, _BOOT_ID_AT_BOOT
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
     boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
@@ -364,12 +366,22 @@ def record_session_start() -> dict[str, Any] | None:
         from src.monitoring.session_history import machine_boot_id
 
         boot_id, cgroup = machine_boot_id(), own_cgroup()
+        _BOOT_ID_AT_BOOT = boot_id
         if boot_id:
             state["boot_id"] = boot_id
         if cgroup:
             state["cgroup"] = cgroup
     except Exception as exc:  # noqa: BLE001 - a missing handle never breaks a boot
         log_failure(_LOG, "session sentinel: boot id / cgroup unavailable", exc, level=logging.DEBUG)
+    # The kernel's kill counters at this start (question 22). The NEXT start compares its reading with this one, so a kill between two
+    # starts is counted even where no log can be read. Integers and named absences only (``oom_counters.py``).
+    try:
+        from src.monitoring.oom_counters import read as _read_oom_counters
+
+        _OOM_AT_BOOT = _read_oom_counters()
+        state["oom_counters"] = _OOM_AT_BOOT
+    except Exception as exc:  # noqa: BLE001 - a missing reading never breaks a boot
+        log_failure(_LOG, "session sentinel: kill counters unavailable", exc, level=logging.DEBUG)
     _write_state(state)
     # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
     # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
@@ -774,6 +786,7 @@ def previous_session_report() -> dict[str, Any]:
     # The clean stop (B2): a session the app ended itself because memory stayed exhausted says so, whatever the sentinel's verdict
     # (a stop that finished reads "clean", one the kernel cut short reads "during shutdown"). Numbers and step names only.
     out["memory_stop"] = previous_memory_stop()
+    out["oom_counters"] = _oom_counters_between(prev)
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
@@ -817,6 +830,28 @@ def previous_session_report() -> dict[str, Any]:
             )
         out["last_collector_sample"] = sample
     return out
+
+
+def _oom_counters_between(prev: dict[str, Any] | None) -> dict[str, Any]:
+    """The kernel's kill counters at the previous session's start and at this one, and the kills counted between (question 22). Never raises."""
+    try:
+        from src.monitoring.oom_counters import compare
+
+        before = (prev or {}).get("oom_counters")
+        prev_boot = (prev or {}).get("boot_id")
+        same_boot = None if not prev_boot or not _BOOT_ID_AT_BOOT else prev_boot == _BOOT_ID_AT_BOOT
+        return {
+            "previous_session_start": before,
+            "this_session_start": _OOM_AT_BOOT,
+            "between": compare(before, _OOM_AT_BOOT, same_boot=same_boot),
+            "note": (
+                "Counters the kernel keeps, read once at each session start: 'between' is the kills counted from the previous session's "
+                "start to this one's. It covers the previous session AND the gap, and a count of zero is a count only where the reading "
+                "exists (an unreadable counter is named, never zero)."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        return {"unavailable": _why(exc)}
 
 
 def previous_memory_stop() -> dict[str, Any] | None:
