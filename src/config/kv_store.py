@@ -96,9 +96,11 @@ class KvWriteBusy(RuntimeError):
 
 #: The lock is a plain RLock and the Condition is built ON it, and the code takes ``with _hold_lock:``, never ``with _hold:``: a Condition's
 #: ``__enter__`` / ``__exit__`` are Python frames, where CPython delivers a signal, so a KeyboardInterrupt landing between "taken" and "will be
-#: released" left the lock taken for ever (measured with real SIGALRM interrupts: 15,174 of 43,142 left held in a tight loop; a C lock's own
-#: ``with`` is one bytecode and left 0 of 86,634, with ``notify_all`` inside, ``wait`` inside 0 of 65,632). ``wait`` / ``notify_all`` stay on the
-#: Condition, which needs the lock owned, and it is. An RLock because a hold started from inside a section re-enters (tests do).
+#: released" left the lock taken for ever. Measured with real SIGALRM interrupts on CPython 3.13 ONLY: 15,174 of 43,142 left held in a tight loop
+#: with ``with condition:``; a C lock's own ``with`` (``BEFORE_WITH``, one bytecode) left 0 of 40,151, 0 of 46,483 with ``notify_all`` inside and
+#: 0 of 65,632 with ``wait`` inside; this slot: 3,156 of 29,506 before, 0 of 28,911 after. ON 3.14 THE SAME CODE LEAKS (the with statement no longer
+#: compiles to ``BEFORE_WITH``): ``tests/test_condition_with_form.py`` fails on a Python that does not, so a bump re-measures first. ``wait`` /
+#: ``notify_all`` stay on the Condition, which needs the lock owned, and it is. An RLock because that is what ``Condition()`` built for itself.
 _hold_lock = threading.RLock()
 _hold = threading.Condition(_hold_lock)  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
