@@ -284,7 +284,9 @@ class VolumeBackupManager:
                 # the passphrase is in scope: scrubbed where the text is made, and the cause is not carried on
                 reason = exception_text(exc, passphrase, typed=False)
                 raise ValueError(f"Cannot use destination {destp}: {reason}") from None
-            if not destp.is_dir():
+            with storage_events.run_path_checked("export", via="volume-set"):
+                is_folder = destp.is_dir()
+            if not is_folder:
                 storage_events.run_refused("export", "not-a-folder", via="volume-set")
                 raise ValueError(f"{destp} is not a folder.")
             self._stop.clear()
@@ -554,7 +556,9 @@ class VolumeBackupManager:
         with self._lock:
             self._reap_or_reject("import")
             srcp = Path(src)
-            if not srcp.is_dir():
+            with storage_events.run_path_checked("import", via="volume-set"):
+                is_folder = srcp.is_dir()
+            if not is_folder:
                 storage_events.run_refused("import", "not-a-folder", via="volume-set")
                 raise ValueError(f"{srcp} is not a folder to restore from.")
             # Re-merge an artifact this corpus has already merged. Additive and
@@ -1073,7 +1077,9 @@ class VolumeBackupManager:
         with self._lock:
             self._reap_or_reject("verify")
             srcp = Path(src)
-            if not srcp.is_dir():
+            with storage_events.run_path_checked("verify", via="volume-set"):
+                is_folder = srcp.is_dir()
+            if not is_folder:
                 storage_events.run_refused("verify", "not-a-folder", via="volume-set")
                 raise ValueError(f"{srcp} is not a folder to verify.")
             self._stop.clear()

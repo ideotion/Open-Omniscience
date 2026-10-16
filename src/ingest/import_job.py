@@ -206,10 +206,13 @@ class NewsletterImportManager:
                 storage_events.run_refused("import", "import-running", via="newsletter-eml")
                 raise RuntimeError("A folder import is already running.")
             p = Path(folder).expanduser()
-            if not p.is_dir():
+            with storage_events.run_path_checked("import", via="newsletter-eml"):
+                is_folder = p.is_dir()
+                if is_folder:
+                    files = _files if _files is not None else _eml_files(p)
+            if not is_folder:
                 storage_events.run_refused("import", "not-a-folder", via="newsletter-eml")
                 raise ValueError(f"{p} is not a folder on this machine.")
-            files = _files if _files is not None else _eml_files(p)
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
