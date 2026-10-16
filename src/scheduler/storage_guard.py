@@ -639,7 +639,8 @@ def read_storage() -> dict[str, Any]:
 
 
 def _default_drain() -> dict | None:
-    """The same call the pass boundary makes: PASSIVE then TRUNCATE through the write gate,
+    """The pass boundary's call with one difference: PASSIVE runs first and WITHOUT the write gate (``passive_without_gate``: it never
+    blocks a writer or a reader, so a gate a long writer holds does not cost the drain the copy too), then TRUNCATE through the gate,
     busy timeout zero. ``force`` skips only its cadence. The gate wait is the operator's
     ``OO_CKPT_GATE_TIMEOUT_S`` but never longer than :data:`DRAIN_GATE_TIMEOUT_S`, and ``0`` (for
     ever) becomes that bound here. A checkpoint that FAILED (a pooled-connection wait that timed
@@ -654,6 +655,7 @@ def _default_drain() -> dict | None:
             force=True,
             gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S,
             errors=errors,
+            passive_without_gate=True,
         )
     if rec is None and errors:
         return {"error": errors[0]}
@@ -1733,7 +1735,8 @@ class StorageGuard:
             else:
                 log(
                     "storage guard: the WAL was not reset -- the write gate stayed busy (a writer "
-                    "is running), so TRUNCATE never ran; checkouts: %s",
+                    "is running), so TRUNCATE never ran%s; checkouts: %s",
+                    behind,
                     tops or "none listed",
                 )
         return rec
