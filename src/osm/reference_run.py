@@ -108,6 +108,15 @@ OSM_DB_PER_PBF_BYTE_HIGH = 7.5
 #: counts toward the PEAK only. The pure-Python reader's spill file starts at any size once its dict passes the memory
 #: budget, which this figure does not cover (the preflight is not told the reader).
 LOCATION_INDEX_BYTES_PER_PBF_BYTE = 3.0
+#: The history phase hands every tracked node id to ``osmium.filter.IdFilter``, which is backed by libosmium's ``IdSet``: 4 MiB for
+#: every 2**25-id window an id falls in, whatever the count (``docs/audit/osm-real-extract-2026-10-15/idfilter_probe.py``: a
+#: thousand ids spread over 1.2e10 cost the same 1,434 MiB as four million). Node ids to 1.2e10 touch at most 358 windows. The filter is
+#: freed after the pass; the 16x history run plateaued at 1,250 MB total and stayed flat for the 41 minutes that followed.
+HISTORY_NODE_FILTER_BYTES = 358 * 4 * MIB
+#: What the history phase held before the filter was built on the 16x run (213 to 224 MB over the first 193 s), rounded up.
+HISTORY_BASE_BYTES = 256 * MIB
+#: ``array('q')`` per tracked id (nodes inside the border, the cut's ways and relations); known only after the cut.
+HISTORY_BYTES_PER_TRACKED_ID = 8
 #: How long a stopped child's process group gets to leave on SIGTERM (so SQLite closes its files
 #: cleanly) before SIGKILL: long enough to flush a WAL, short enough that a guard actually guards.
 #: It never extends the disk risk: inside the grace the sampler's disk read continues, and free disk
@@ -268,8 +277,12 @@ def preflight(
     floor_factor: float = DEFAULT_FLOOR_FACTOR,
     prior_report: dict | None = None,
     min_free_override: int | None = None,
+    memory_room: dict | None = None,
 ) -> dict:
     """The disk the run needs free, how that was derived, and whether the disk has it.
+
+    ``memory_room`` (``src.osm.reader.memory_room()``) adds the history phase's memory floor against what this process may use;
+    it only ever WARNS.
 
     ``prior_report``'s measured ``peak_data_dir_bytes`` per input byte (the ingest phase) replaces
     the guessed factor. An override (``--min-free-gb``) replaces both. The basis is stated either way.
@@ -320,15 +333,48 @@ def preflight(
                    f"settled sizes of two small real extracts scaled up, NOT measured at this size, plus the node-location file for a large one"
                    f"{', and the history phase adds its own footprint (counted twice here)' if history_bytes else ''}). "
                    f"It starts: the sampler stops it cleanly if the disk reaches the reserve. Pass --min-free-gb to refuse instead")
+    history_memory = _history_memory(memory_room) if history_bytes else None
     return {
         "free_bytes": free_bytes,
         "needed_bytes": needed,
         "worst_case_bytes": worst,
         "warning": warning,
+        "history_memory": history_memory,
         "reserve_bytes": reserve_bytes,
         "floor_basis": ("operator override (--min-free-gb)" if min_free_override is not None else basis),
         "ok": ok,
     }
+
+
+def _read_memory_room() -> dict:
+    from src.osm.reader import memory_room
+
+    return memory_room()
+
+
+def _history_memory(room: dict | None) -> dict:
+    """The history phase's memory floor against the memory this process may use (see HISTORY_NODE_FILTER_BYTES)."""
+    floor = HISTORY_NODE_FILTER_BYTES + HISTORY_BASE_BYTES
+    out: dict = {
+        "floor_bytes": floor,
+        "floor_basis": (f"the node-id filter's {HISTORY_NODE_FILTER_BYTES} bytes (358 windows of 4 MiB, node ids to 1.2e10, measured) "
+                        f"plus {HISTORY_BASE_BYTES} bytes the phase holds before it, plus {HISTORY_BYTES_PER_TRACKED_ID} bytes per "
+                        f"tracked id, which is known only after the cut and is NOT in this figure"),
+        "room_bytes": None,
+        "room_source": None,
+        "warning": None,
+    }
+    if room is None:
+        out["warning"] = "the memory this process may use was not read, so the history phase's floor is unchecked"
+        return out
+    out["room_bytes"], out["room_source"] = room.get("room_bytes"), room.get("source")
+    if room.get("room_bytes") is None:
+        why = "; ".join(room.get("notes") or []) or "no reading"
+        out["warning"] = f"the memory this process may use could not be read ({why}), so the history phase's floor is unchecked"
+    elif room["room_bytes"] < floor:
+        out["warning"] = (f"this process may use {room['room_bytes']} bytes ({room.get('source')}) and the history phase needs at least "
+                          f"{floor}: {out['floor_basis']}. It starts; the kernel may kill it in the node pass")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1009,6 +1055,7 @@ def _run(
         floor_factor=floor_factor,
         prior_report=prior_report,
         min_free_override=min_free_override,
+        memory_room=_read_memory_room() if history else None,
     )
     report: dict = {
         "schema_version": SCHEMA_VERSION,

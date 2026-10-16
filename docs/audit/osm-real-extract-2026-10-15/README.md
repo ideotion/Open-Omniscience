@@ -98,8 +98,8 @@ alone on a 720 k-object lane, 417 MB before and 190 MB after reading a page of 5
 about 26 bytes a node) and not the memory: forcing it moved the peak from 2,213 to 2,195 MB.
 
 What is NOT settled: with both removed the 16 x plateau is about 650 MB, of which the in-memory location array is about 300 MB
-(18.5 M nodes at 16 bytes; below 512 MiB of FILE it is chosen whatever the node density, a Utrecht-density file just under that
-threshold would hold up to 3 GB of locations, which was not run and is not changed here) and the rest is the Python heap, SQLite
+(18.5 M nodes at 16 bytes; below 512 MiB of FILE it is chosen whatever the node density: see "The location index" below for the
+density arithmetic and the guard that now stops it by name) and the rest is the Python heap, SQLite
 and the batch lists. Whether anything still grows with the object count at a hundred times this size is for the real run.
 
 ## The real-data walk (`walk.py`, `walk.json`)
@@ -121,13 +121,73 @@ No page error, no horizontal overflow, no `undefined`/`NaN`/`[object Object]` te
 errors are four 404s for the row E artifacts that are not built (`osm_admin0.json`, `osm_admin1.json`,
 `osm_borders/admin{0,1}.world.json`), which every install without them shows on every map load.
 
+## The history phase, the pure-Python reader and the location index (night of 2026-10-16)
+
+Everything here is the same 3.5 GiB, 2-core envelope as above (`refvm.sh`), the sandbox's CPU, and **its times are an upper figure**:
+these runs shared the machine with probes and test runs (the same 16 x cut took 642 s on the quiet machine and 1,405 s here), so read the
+memory columns, which did not move, and not the seconds.
+
+**The history phase at scale.** `tile_history.py` writes a full-history file for the composite: every tagged node, way and relation with
+two or three versions (v1 one tag fewer, v2 the current object, every seventh one deleted), ids as sorted and as spread as the extract's.
+It is a SYNTHETIC history of real, tiled objects: it says what the phase costs per version, not what the planet's edits look like.
+
+| Composite | History file | Versions | Phase time | Peak RSS | Peak disk | Rows written |
+|---|---|---|---|---|---|---|
+| 2 x 2 (4 copies) | 25.3 MB | 3.04 M read | 377 s | 1,204 MB | 949 MB | 7.4 M added |
+| 4 x 4 (16 copies), in the envelope | 68.1 MB | 12.18 M read | 2,484 s | **1,250 MB** | 4,779 MB | 29.8 M added |
+
+The memory is a plateau, not a slope: 213 to 224 MB for the first 193 s, then 1,205 MB from 289 s to 1,443 s and 1,234 MB at the end, in
+both runs at the same height whatever the file's size. The plateau is `osmium.filter.IdFilter`, which the node pass hands every tracked
+node id: it is backed by the same `IdSet` as the kept-id sets (above) and costs **4 MiB for every 2**25-id window an id falls in, whatever
+the count** (`idfilter_probe.py`: 1,000 ids spread over 1.2e10 cost the same 1,434 MiB as 4,000,000; 4,000,000 ids inside 8e6 cost 4 MiB; a
+Python `set` as `ways_by_id` and `nodes_by_id` pass it costs the same; the memory is returned when the filter is deleted). So this is a
+flat price of the id RANGE, paid once per pass and freed, that no country size changes: node ids to 1.2e10 touch at most 358 windows. It
+fits the envelope and is not changed; it is now written into the runner's plan (`history_memory`, below). The BORDER pass uses the same
+filter on a border's way and node ids and would pay the same price while the border is assembled (a real border's ids are spread over
+the range); the composite's border is four invented ways and Liechtenstein's ids are 2013-era, so that one was not measured on a real
+border. **Disk:** the phase wrote 3.3 GB on top of a 1.46 GB `osm.db` (12.2 M versions, 29.8 M change rows, about 110 bytes a row);
+the preflight counts the history phase as one more ingest-sized footprint, which this synthetic file exceeded by more than two times.
+How many rows a real planet history yields per version is not known from here, so the figure is recorded and the guess is not changed.
+
+**The pure-Python reader (no `[geo]` extra) at 16 x.**
+
+| Reader | Cut time | Peak RSS | `osm.db` | Where the locations went |
+|---|---|---|---|---|
+| pyosmium (kept-id arrays) | 642 s | 823 MB | 1,462,594,696 B | `sparse_mem_array`, 18.5 M nodes at 16 B |
+| python | 902 s (979 s with the runner) | **2,263 MB** | 1,468,234,920 B | dict to 9.7 M nodes (budget 1,842,669,568 B = half the cgroup headroom), then a SQLite file |
+
+The counts, the blob sizes and the border are identical to the pyosmium run (compared as dictionaries). The peak is the dict just before
+it spills: 2,263 MB less 158 MB of baseline over 9.7 M nodes is about 217 bytes a node of resident memory, 14 % above the 190 of
+`DICT_BYTES_PER_NODE` (which the budget divides by), so the budget keeps the process near 63 % of the 3.5 GiB limit rather than 50 %; after
+the spill the process settles at 258 to 288 MB, creeping 0.04 MB/s. The pure-Python cut was 1.4 times slower than pyosmium here, where
+the database writes dominate; `reader.py` said "one to two orders of magnitude (FROM MEMORY)" and now says what was measured.
+
+**The location index.** The run record now carries `location_index` (`nodes_set`, the index chosen, the rule that chose it, the settled
+bytes, and the room it was checked against). `location_probe.py` measured libosmium's `sparse_mem_array` at **16.0 bytes a location** once
+settled, with a peak of **1.7 times** that while its vector grows (1,024 MB over 611 MB at 40 M locations). The index is chosen by the
+extract FILE's size, so what a node-dense file just under 512 MiB costs is arithmetic on the density: the 16 x composite sets 0.404
+locations per file byte (18.49 M in 45.7 MB), which at 512 MiB would be 217 M locations, 3.5 GB settled and about 5.9 GB at the growth
+peak; the planet's average, FROM MEMORY about 0.13 nodes a byte, would be 70 M locations, 1.1 GB settled and about 1.9 GB at the peak.
+A city extract is the first kind and no such file sits near 512 MiB; the second kind fits. Because the density is only known as the
+scan runs, the scan now checks itself: `reader.memory_room()` reads the tighter of the cgroup's headroom and `MemAvailable` once, naming
+what is absent, unreadable or "no limit" in `notes` (a limit that cannot be read is never read as unlimited: with nothing readable the
+file index is taken), and `_OsmiumLocations` stops with `LocationIndexTooLarge` when `1.7 x settled + 600 MB` would pass that room. The
+600 MB is the rest of the cut on the 16 x run (823 MB peak less 296 MB of locations is 527, rounded up); on a 3.5 GiB machine the stop
+comes at 115 M locations. The error carries the figures and its way out, `OO_OSM_LOCATION_INDEX=file`, and is written to the country's
+row by the ingest's existing handler before anything can be killed.
+
+**The runner's plan.** `--plan` and the start of a run with `--history` now carry `history_memory`: the node filter's 1,432 MiB plus the
+256 MiB the phase holds before it, compared with the room read from this machine, as a warning (it starts; the kernel may kill it in the
+node pass) or "unchecked" with the reason when no limit could be read. The 8 bytes per tracked id are named and not counted, because
+they are known only after the cut.
+
 ## What stays open until a real run
 
 - **Time and memory on the real 2-core VM** (above: the cut's memory no longer grows with the country in this sandbox; whether it holds at a hundred times the size is the run's to say). This sandbox's CPU is not that machine's.
 - **The true Geofabrik extract.** Sizes are the catalogue's dated estimates (the download reads the exact size
   first). By the ratios above France or Germany would settle near 25 to 35 GB of `osm.db`; that is arithmetic, not
   a measurement, and a continent file's PBF compresses differently from a 12 MB one.
-- **The full-history phase.** No real history file is reachable here; only the synthetic one has been run.
+- **The full-history phase on real history.** No real history file is reachable here; the synthetic one above ran at 16 x and says what the phase costs per version, not how many versions and rows a real country's past holds, nor how long the planet file takes to read.
 - **The Wikidata join.** Liechtenstein 2013 carries zero Wikidata tags, so there was nothing to join, and
   `www.wikidata.org` is refused.
 - **The sparse-file location index at real scale.** The on-disk branch runs only above 512 MiB; the forced run

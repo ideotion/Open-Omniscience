@@ -17,9 +17,10 @@ country row):
   while the ways are assembled, at :data:`DICT_BYTES_PER_NODE` in a Python dict. So the
   locations stay in memory while they fit :data:`MEMORY_SHARE` of what the system reports
   available when the ingest starts, and move to a work file past that
-  (:class:`_AdaptiveLocations`). Time is the cost that remains: pure Python is one to two
-  orders of magnitude slower than pyosmium (FROM MEMORY; the country row records the real
-  seconds), which is why the lane still recommends the add-on for anything large.
+  (:class:`_AdaptiveLocations`). Time is the cost that remains: pure Python cut a 45 MB
+  composite country 1.4 times slower than pyosmium (902 s against 642 s, where the database writes dominate;
+  ``docs/audit/osm-real-extract-2026-10-15/README.md``), and a file whose cost is decoding was not measured, so the lane still
+  recommends the add-on for anything large (the country row records the real seconds).
 
 :class:`GeoExtraMissing` is raised only when pyosmium is ASKED for and not installed.
 
@@ -113,27 +114,70 @@ def available_memory_bytes() -> int | None:
     return None
 
 
+#: (source, limit file, usage file): cgroup v2 first, then v1. A parameter of :func:`cgroup_reading` so a test can point at its own files.
+CGROUP_FILES: tuple[tuple[str, str, str], ...] = (
+    ("cgroup_v2", "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+    ("cgroup_v1", "/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+)
+
+
+def cgroup_reading(files: tuple[tuple[str, str, str], ...] = CGROUP_FILES) -> dict[str, Any]:
+    """What this process's cgroup says about a memory limit, and WHY when it says nothing.
+
+    ``{"source": "cgroup_v2" | "cgroup_v1" | None, "limit_bytes", "headroom_bytes", "notes": [...]}``. Absent, unreadable and "no
+    limit set" are three different facts and each is named in ``notes``: a missing file is the common case on a VM and a limit
+    that cannot be read is not a limit that is not there, so neither is ever read as unlimited by a caller that checks ``notes``.
+    """
+    notes: list[str] = []
+    for source, limit_f, used_f in files:
+        try:
+            with open(limit_f, encoding="ascii") as fh:
+                raw = fh.read().strip()
+        except FileNotFoundError:
+            notes.append(f"{source}: {limit_f} is absent")
+            continue
+        except (OSError, ValueError) as exc:
+            notes.append(f"{source}: {limit_f} is unreadable ({type(exc).__name__})")
+            continue
+        if not raw.isdigit() or int(raw) >= 1 << 60:  # "max", or v1's "no limit" sentinel
+            notes.append(f"{source}: no limit is set ({raw[:16]!r})")
+            continue
+        limit = int(raw)
+        try:
+            with open(used_f, encoding="ascii") as fh:
+                used = int(fh.read().strip())
+        except (OSError, ValueError) as exc:
+            notes.append(f"{source}: usage is unreadable ({type(exc).__name__}), so the whole limit is taken as free")
+            used = 0
+        return {"source": source, "limit_bytes": limit, "headroom_bytes": max(0, limit - used), "notes": notes}
+    return {"source": None, "limit_bytes": None, "headroom_bytes": None, "notes": notes}
+
+
 def cgroup_headroom_bytes() -> int | None:
     """What a container's memory limit leaves free, or None when there is no limit to read.
 
     psutil and ``/proc/meminfo`` report the HOST's memory; inside a container with a lower limit
     the kernel kills the process at that limit, so the budget must not exceed it.
     """
-    for limit_f, used_f in (
-        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),                  # cgroup v2
-        ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),  # v1
-    ):
-        try:
-            with open(limit_f, encoding="ascii") as fh:
-                raw = fh.read().strip()
-            if not raw.isdigit() or int(raw) >= 1 << 60:   # "max", or v1's "no limit" sentinel
-                continue
-            with open(used_f, encoding="ascii") as fh:
-                used = int(fh.read().strip())
-            return max(0, int(raw) - used)
-        except (OSError, ValueError):
-            continue
-    return None
+    return cgroup_reading()["headroom_bytes"]
+
+
+def memory_room() -> dict[str, Any]:
+    """The memory this process may use, from the tighter of a cgroup's headroom and the system's available memory.
+
+    ``{"room_bytes", "source": "cgroup_v1" | "cgroup_v2" | "mem_available" | None, "notes": [...]}``. ``room_bytes`` is None only
+    when NOTHING could be read (the notes say why); a caller then takes the cautious branch, never "unlimited".
+    """
+    cg = cgroup_reading()
+    notes = list(cg["notes"])
+    avail = available_memory_bytes()
+    if avail is None:
+        notes.append("MemAvailable is unreadable (psutil and /proc/meminfo both failed)")
+    room, source = avail, ("mem_available" if avail is not None else None)
+    head = cg["headroom_bytes"]
+    if head is not None and (room is None or head < room):
+        room, source = head, cg["source"]
+    return {"room_bytes": room, "source": source, "notes": notes}
 
 
 def memory_budget_bytes() -> int | None:
@@ -293,6 +337,30 @@ class PythonExtract:
 
 
 # --- pyosmium --------------------------------------------------------------- #
+#: The in-memory location index grows by reallocating its vector, so while it grows the process holds the old buffer and the new one:
+#: 1,024 MB at its peak over 611 MB settled (40 million locations, ``location_probe.py``) is 1.68; rounded UP to 1.7. This is what the
+#: guard in :class:`_OsmiumLocations` protects against: a peak the settled figure does not show.
+LOCATION_GROWTH_PEAK_FACTOR = 1.7
+
+#: What the rest of the cut held besides the locations on the largest composite run (2.88 million objects, 3.5 GiB envelope): 823 MB
+#: peak less 296 MB of settled locations is 527 MB, rounded up to 600 MB. It is the room the guard leaves for everything that is
+#: not the index (Python heap, SQLite, batches, the kept ids); at a hundred times that size it will be larger, and the guard then
+#: errs toward stopping too late, which the run record's ``location_index`` figures show.
+LOCATION_REST_OF_CUT_BYTES = 600 * 1024 * 1024
+
+#: ``OO_OSM_LOCATION_INDEX=file`` keeps the locations in a work file whatever the extract's size: the way out of a
+#: :class:`LocationIndexTooLarge` stop, and a way to compare the two indexes on one file.
+LOCATION_INDEX_ENV = "OO_OSM_LOCATION_INDEX"
+
+
+class LocationIndexTooLarge(RuntimeError):
+    """The in-memory node-location index would pass the memory this process has; the scan stopped before the kernel could kill it.
+
+    The extract is under the file-size threshold that picks the in-memory index and denser in nodes than that rule assumes. The
+    message carries the figures (they are numbers, not paths or secrets) so the run record states what was measured.
+    """
+
+
 class _OsmiumLocations:
     """pyosmium's own sparse index: in memory for a small extract, a file for a large one.
 
@@ -308,14 +376,26 @@ class _OsmiumLocations:
     #: 40 million locations), so the run record's figure is the SETTLED bytes, arithmetic from this constant, not a peak.
     ENTRY_BYTES = 16
 
-    def __init__(self, workdir: Path, *, on_disk: bool, extract_bytes: int | None = None) -> None:
+    def __init__(
+        self, workdir: Path, *, on_disk: bool, extract_bytes: int | None = None, rule: str | None = None,
+        room: dict[str, Any] | None = None,
+    ) -> None:
         import osmium.index
 
         self._file: Path | None = None
         self._map: Any
         self._on_disk = on_disk
         self._extract_bytes = extract_bytes
+        self._rule = rule
+        self._room = room or {}
         self._set_calls = 0
+        #: The most locations the in-memory index may take before its growth peak plus the rest of the cut passes the room read at
+        #: the start; None when it is a file or the room was not read (then the cautious file branch was already taken).
+        self._max_locations: int | None = None
+        room_bytes = self._room.get("room_bytes")
+        if not on_disk and room_bytes is not None:
+            usable = max(0, room_bytes - LOCATION_REST_OF_CUT_BYTES)
+            self._max_locations = int(usable / LOCATION_GROWTH_PEAK_FACTOR / self.ENTRY_BYTES)
         if on_disk:
             workdir.mkdir(parents=True, exist_ok=True)
             self._file = workdir / "osm-locations.idx"
@@ -326,26 +406,45 @@ class _OsmiumLocations:
 
         self._loc = Location
 
+    def _stop(self) -> None:
+        held = self._set_calls * self.ENTRY_BYTES
+        raise LocationIndexTooLarge(
+            f"the node-location index held {self._set_calls} locations ({held} bytes settled); with its growth peak "
+            f"({LOCATION_GROWTH_PEAK_FACTOR}x, measured) and the rest of the cut ({LOCATION_REST_OF_CUT_BYTES} bytes, measured) "
+            f"that passes the {self._room.get('room_bytes')} bytes this process has ({self._room.get('source')}); stopped before "
+            f"the kernel could kill it. This extract ({self._extract_bytes} bytes) is denser in nodes than the file-size rule "
+            f"assumes: set {LOCATION_INDEX_ENV}=file to keep the locations in a work file"
+        )
+
     def describe(self) -> dict[str, Any]:
         """Which index was chosen, by which rule, and the bytes it holds (no behaviour of its own)."""
         held = self._set_calls * self.ENTRY_BYTES
         return {
             "index": "sparse_file_array" if self._on_disk else "sparse_mem_array",
-            "rule": f"the extract file is {'above' if self._on_disk else 'at or below'} {PyosmiumExtract.ON_DISK_ABOVE} bytes "
-            "(the file's size, not its node count)",
+            "rule": self._rule,
             "extract_bytes": self._extract_bytes,
             "nodes_set": self._set_calls,
             "entry_bytes": self.ENTRY_BYTES,
             "memory_bytes_settled": 0 if self._on_disk else held,
             "file_bytes_settled": held if self._on_disk else 0,
+            # The guard's inputs, read once when the index was made: where the room came from, what it was, and how many
+            # locations the in-memory index could take before its measured growth peak plus the rest of the cut passed it.
+            "room_bytes": self._room.get("room_bytes"),
+            "room_source": self._room.get("source"),
+            "room_notes": self._room.get("notes", []),
+            "max_locations_in_memory": self._max_locations,
         }
 
     def set(self, node_id: int, lat: float, lon: float) -> None:
         self._set_calls += 1
+        if self._max_locations is not None and self._set_calls > self._max_locations:
+            self._stop()
         self._map.set(node_id, self._loc(lon, lat))
 
     def set_location(self, node_id: int, loc) -> None:
         self._set_calls += 1
+        if self._max_locations is not None and self._set_calls > self._max_locations:
+            self._stop()
         self._map.set(node_id, loc)
 
     def get(self, node_id: int) -> tuple[float, float] | None:
@@ -483,7 +582,24 @@ class PyosmiumExtract:
 
     def location_store(self, workdir: Path) -> LocationStore:
         size = self.path.stat().st_size
-        return _OsmiumLocations(workdir, on_disk=size > self.ON_DISK_ABOVE, extract_bytes=size)
+        big = f"the extract file is above {self.ON_DISK_ABOVE} bytes (the file's size, not its node count)"
+        if os.environ.get(LOCATION_INDEX_ENV) == "file":
+            return _OsmiumLocations(workdir, on_disk=True, extract_bytes=size, rule=f"{LOCATION_INDEX_ENV}=file asked for the file index")
+        if size > self.ON_DISK_ABOVE:
+            return _OsmiumLocations(workdir, on_disk=True, extract_bytes=size, rule=big)
+        room = memory_room()
+        if room["room_bytes"] is None:
+            # Nothing could be read: the cautious branch, as the pure-Python path takes (a limit that cannot be read is not no limit).
+            why = "; ".join(room["notes"]) or "no reading"
+            return _OsmiumLocations(
+                workdir, on_disk=True, extract_bytes=size, room=room,
+                rule=f"the memory this process may use could not be read ({why}): the file index, never an unlimited in-memory one",
+            )
+        return _OsmiumLocations(
+            workdir, on_disk=False, extract_bytes=size, room=room,
+            rule=f"the extract file is at or below {self.ON_DISK_ABOVE} bytes (the file's size, not its node count) and its "
+            "growth peak is checked against the memory this process has while the scan runs",
+        )
 
 
 def open_extract(path: str | Path, *, reader: str | None = None) -> Extract:
