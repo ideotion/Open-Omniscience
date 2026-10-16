@@ -1279,19 +1279,45 @@ def _quoting(secret: str) -> str:
     return words
 
 
+def _a_drivers_error(words: str) -> Exception:
+    """What a driver says when the statement that carried the key is the one it could not run: its text quotes the statement."""
+    return RuntimeError(f'near "key": syntax error: {words}')
+
+
 def _plant_a_refusal(monkeypatch, kind: str, words: str) -> None:
+    """A refusal made inside the ``except`` block of a driver's error. The salvage's own is raised ``from None``, which hides that error
+    from a traceback print and leaves it as the refusal's ``__context__``; a ``Declined`` here is chained to it with ``from``, so it is
+    the refusal's ``__cause__``."""
     if kind == "declined":
 
         def refuse(work, target, report, ctx):
-            raise repair.Declined("no-room", words, free_mb=1, needed_mb=2)
+            try:
+                raise _a_drivers_error(words)
+            except RuntimeError as driver:
+                raise repair.Declined("no-room", words, free_mb=1, needed_mb=2) from driver
 
         monkeypatch.setattr(repair, "_prepare", refuse)
     else:
 
         def refuse_run(self):
-            raise salvage.SalvageRefused("cannot-open", words)
+            try:
+                raise _a_drivers_error(words)
+            except RuntimeError:
+                raise salvage.SalvageRefused("cannot-open", words) from None
 
         monkeypatch.setattr(salvage.Salvage, "run", refuse_run)
+
+
+def _links(exc: BaseException) -> list[BaseException]:
+    """Every exception reachable from ``exc`` by ``__cause__`` or ``__context__``, whether or not ``__suppress_context__`` hides it."""
+    seen: list[BaseException] = []
+    todo: list[BaseException | None] = [exc]
+    while todo:
+        link = todo.pop()
+        if link is not None and not any(link is other for other in seen):
+            seen.append(link)
+            todo += [link.__cause__, link.__context__]
+    return seen
 
 
 def _nothing_of(secret: str, where: str, text: str) -> None:
@@ -1345,19 +1371,18 @@ def test_a_refusal_whose_words_hold_the_passphrase_reaches_no_log_record_status_
     row = repair.REPAIR_JOB.status()
     assert row["state"] == "error" and row["error"].startswith("Declined: ") and secret_scrub.REDACTED[:5] in row["error"]
     _nothing_of(held_secret, "the job row", json.dumps(row, default=str))
-    # the refusal the run raised, whichever way it was made, and everything chained to it: a refusal a producer raised itself is
+    # the refusal the run raised, whichever way it was made, and everything reachable from it: a refusal a producer raised itself is
     # re-raised with its words scrubbed in place, and the one this module raises in the salvage's place is made of the scrubbed words
-    # with the salvage's own refusal (scrubbed in place too) behind it
+    # with the salvage's own refusal (scrubbed in place too) behind it; neither keeps the driver's error it was raised inside
     raised = caught.value
     assert isinstance(raised, repair.Declined) and raised.detail == expected and raised.args == (expected,) and str(raised) == expected
     assert raised.__cause__ is None
-    chain = [raised]
-    while (nxt := chain[-1].__cause__ or chain[-1].__context__) is not None and nxt not in chain:
-        chain.append(nxt)
-    assert len(chain) == (1 if kind == "declined" else 2), [type(link).__name__ for link in chain]
-    for link in chain:
-        assert getattr(link, "detail", expected) == expected and link.args == (expected,), type(link).__name__
-        _nothing_of(held_secret, f"the raised {type(link).__name__}", f"{link}|{getattr(link, 'detail', '')}|{link.args!r}")
+    links = _links(raised)
+    assert [type(link) for link in links] == ([repair.Declined] if kind == "declined" else [repair.Declined, salvage.SalvageRefused]), links
+    for link in links:
+        assert link.detail == expected and link.args == (expected,), type(link).__name__
+        assert link.__cause__ is None and (link is raised or link.__context__ is None), type(link).__name__
+        _nothing_of(held_secret, f"the raised {type(link).__name__}", f"{link}|{link.detail}|{link.args!r}")
     _nothing_of(held_secret, "the traceback of the raised refusal", "".join(traceback.format_exception(raised)))
     _nothing_of(held_secret, "the registry's records", json.dumps(reg.repairs(), default=str) + (tmp_path / "database-damage.json").read_text(encoding="utf-8"))
     assert reg.repairs()[-1]["reason"] == ("no-room" if kind == "declined" else "cannot-open")

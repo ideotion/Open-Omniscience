@@ -772,11 +772,16 @@ def _words_of(refusal: Declined | salvage.SalvageRefused) -> str:
     The words enter the record and the log through ``exception_text`` (every producer says a fixed sentence today; this is what keeps
     the next one that quotes a driver from carrying a passphrase to the boot-sequence status and the diagnostics bundle). The refusal
     is then raised on, and ``raise ... from None`` still leaves the original as the new one's ``__context__``: so the scrubbed words
-    are put back into ``detail`` and ``args`` of the original, and no object that is raised, chained or logged afterwards holds the
-    words as they were. The scrub comes before any cut a reader makes."""
+    are put back into ``detail`` and ``args`` of the original. Neither does the refusal keep what it was raised inside: a refusal made
+    in an ``except`` block of a driver's error has that error as its ``__context__`` (``from None`` only stops a traceback print from
+    showing it), and a driver's words can quote the statement that carried the passphrase, so ``__cause__`` and ``__context__`` are
+    dropped. No object that is raised, chained or logged afterwards holds the words as they were. The scrub comes before any cut a
+    reader makes."""
     text = exception_text(refusal, typed=False)
     refusal.detail = text
     refusal.args = (text,)
+    refusal.__context__ = None
+    refusal.__cause__ = None
     return text
 
 
