@@ -37,6 +37,8 @@ from __future__ import annotations
 import json
 import logging
 import time
+from array import array
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,6 +93,9 @@ class IngestReport:
     #: What the name and address indexes took from this cut (S5), or None if not built.
     search_index: dict | None = None
     view_index: dict | None = None
+    #: The kept ids held for the relation pass: how many of each kind, and how many arrived OUT of ascending order (held in a
+    #: side set at a Python set's cost, not 8 bytes). A file that lists its ids in order says 0; anything else says so here.
+    id_sets: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -106,6 +111,7 @@ class IngestReport:
             "name": self.name,
             "search_index": self.search_index,
             "view_index": self.view_index,
+            "id_sets": self.id_sets,
         }
 
 
@@ -306,6 +312,8 @@ def ingest_country(
         flush()
         kept = sum(counts[k] for k in T.KINDS)
         report.counts = counts
+        report.id_sets = {"nodes": len(kept_nodes), "ways": len(kept_ways),
+                          "out_of_order": kept_nodes.out_of_order + kept_ways.out_of_order}
         report.blob = {"objects": kept, "q810_bytes": blob_q810, "extended_bytes": blob_ext}
         report.name = _country_name(report.border.get("relation_id"))
         report.status = "complete"
@@ -378,31 +386,38 @@ def _clear_derived(session, alpha3: str) -> None:
 
 
 class _IdSet:
-    """The ids already kept, for the relation pass. pyosmium's compact ``IdSet`` when present.
+    """The ids already kept, for the relation pass: 8 bytes an id, whatever the ids' span.
 
-    A country's buildings and roads run to tens of millions of ids; a Python ``set`` of that
-    many ints is gigabytes, pyosmium's chunked bitmap is a small fraction of it.
+    A file lists its nodes, then its ways, in ascending id order, so each kind arrives sorted and an ``array('q')`` with a
+    binary search holds it. That replaces ``osmium.index.IdSet``, a bitmap in 512 KB chunks whose memory follows the SPAN of
+    the ids and not their count: measured 2026-10-15, sorted node ids over today's 1.2e10 range cost 1.43 GB and way ids over
+    1.35e9 cost 164 MB however few were kept (a city, 177 k objects, peaked at 1.16 GB for it), growing steadily as the scan
+    moved through the id space, which read as memory per object. An id that arrives out of order (an unsorted file) goes to a
+    side ``set``, so the answer is right for any file and only a sorted one is compact.
     """
 
     def __init__(self) -> None:
-        try:
-            import osmium.index
+        self._sorted = array("q")
+        self._late: set[int] = set()
 
-            self._ids = osmium.index.IdSet()
-            self._py: set[int] | None = None
-        except ImportError:
-            self._py = set()
+    def __len__(self) -> int:
+        return len(self._sorted) + len(self._late)
+
+    @property
+    def out_of_order(self) -> int:
+        """Ids that arrived below the highest so far: held in the side set, which costs a Python set's bytes an id."""
+        return len(self._late)
 
     def add(self, i: int) -> None:
-        if self._py is not None:
-            self._py.add(i)
-        else:
-            self._ids.set(i)
+        last = self._sorted[-1] if self._sorted else None
+        if last is None or i > last:
+            self._sorted.append(i)
+        elif i != last:
+            self._late.add(i)
 
     def __contains__(self, i: int) -> bool:
-        if self._py is not None:
-            return i in self._py
-        return bool(self._ids.get(i))
+        k = bisect_left(self._sorted, i)
+        return (k < len(self._sorted) and self._sorted[k] == i) or i in self._late
 
 
 def _country_name(relation_id: int | None) -> str | None:
