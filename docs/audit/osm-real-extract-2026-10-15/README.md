@@ -185,7 +185,8 @@ node. The reading follows `/proc/self/cgroup` to this process's own cgroup and e
 includes page cache, so the headroom is a lower bound); a limit or usage file that cannot be read gives no room and the cautious file index
 (the pure-Python budget follows the same reading, so the two readers take the same branch on one machine; on main an unreadable cgroup
 usage fell through to `MemAvailable` alone). The `refvm.sh` envelope bind-mounts the cgroup onto the mount root, so these 3.5 GiB runs do not
-exercise the own-cgroup walk; `tests/test_osm_location_guard.py` does, on a fake tree. The error carries the figures and its way out, `OO_OSM_LOCATION_INDEX=file`, and is written to the country's
+exercise the own-cgroup walk; `tests/test_osm_location_guard.py` does, on a fake tree. A cgroup directory that `/proc/self/cgroup` names and the mount lacks (docker on cgroup v1 without a namespace, where the root IS the
+container's cgroup, looks the same) is named in the notes as not read, and the room is still bounded by `MemAvailable` and the levels above it. The error carries the figures and its way out, `OO_OSM_LOCATION_INDEX=file`, and is written to the country's
 row by the ingest's existing handler before anything can be killed.
 
 **The runner's plan.** `--plan` and the start of a run with `--history` now carry `history_memory`: the node filter's ceiling of 1,432 MiB

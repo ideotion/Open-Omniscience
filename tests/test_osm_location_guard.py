@@ -32,7 +32,7 @@ def _tree(tmp_path, *, v2=None, v1=None, proc=None):
             d.mkdir(parents=True, exist_ok=True)
             for name, content in files.items():
                 (d / name).write_text(content)
-    root.mkdir(exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
     pc = tmp_path / "proc_cgroup"
     if proc is not None:
         pc.write_text(proc)
@@ -236,3 +236,87 @@ def test_the_env_var_is_parsed_loudly(monkeypatch):
     monkeypatch.setenv(reader.LOCATION_INDEX_ENV, "disk")
     with pytest.raises(ValueError, match="must be 'file' or 'auto'"):
         reader.location_index_choice()
+
+
+@needs_osmium
+def test_a_bad_env_var_ends_the_row_failed_with_the_named_error_not_ingesting(osm_lane_dir, monkeypatch):
+    """The index is made inside the cut's try: a typo used to leave the committed row at "ingesting" with no error."""
+    monkeypatch.setenv(reader.LOCATION_INDEX_ENV, "disk")
+    with pytest.raises(ValueError, match="must be 'file' or 'auto'"):
+        ingest.ingest_country(FIXTURE, "ZZ", reader="pyosmium")
+    from src.osm.lane_models import OsmCountry
+
+    with store.lane_session("osm") as s:
+        row = s.query(OsmCountry).filter_by(alpha3="ZZZ").one()
+        assert row.status == "failed" and row.error.startswith("ValueError") and "must be 'file' or 'auto'" in row.error, row.error
+
+
+def test_the_tightest_level_wins_even_when_it_is_an_ancestor_and_over_use_clamps_to_zero(tmp_path):
+    r = _tree(
+        tmp_path / "anc",
+        v2={"a": {"memory.max": "500", "memory.current": "100"}, "a/b": {"memory.max": "2000", "memory.current": "300"}},
+        proc="0::/a/b\n",
+    )
+    assert r["headroom_bytes"] == 400 and r["path"] == "/a", r  # the leaf alone would say 1700
+    over = _tree(tmp_path / "over", v2={"": {"memory.max": "100", "memory.current": "250"}}, proc="0::/\n")
+    assert over["headroom_bytes"] == 0 and not over["unreadable"]  # never negative
+
+
+def test_the_no_limit_sentinel_is_two_to_the_sixtieth_and_nothing_below_it(tmp_path):
+    at = _tree(tmp_path / "at", v2={"": {"memory.max": str(1 << 60), "memory.current": "5"}}, proc="0::/\n")
+    assert at["headroom_bytes"] is None and any("no limit is set" in n for n in at["notes"])
+    below = _tree(tmp_path / "below", v2={"": {"memory.max": str((1 << 60) - 1), "memory.current": "5"}}, proc="0::/\n")
+    assert below["limit_bytes"] == (1 << 60) - 1 and below["headroom_bytes"] == (1 << 60) - 6
+
+
+def test_an_own_cgroup_directory_the_mount_lacks_is_named_and_still_bounded_by_mem_available(tmp_path, monkeypatch):
+    """A limit set where the mount cannot show it is not read, so it is said so; it is never reported as unlimited."""
+    seen = _tree(tmp_path / "gone", v2={"": {"memory.max": "1000", "memory.current": "100"}}, proc="0::/gone/leaf\n")
+    assert seen["headroom_bytes"] == 900 and seen["own_dir_missing"] is True and not seen["unreadable"]
+    assert any("is not in the mount" in n and "'/gone/leaf'" in n for n in seen["notes"]), seen["notes"]
+    nothing = _tree(tmp_path / "nothing", v2={}, proc="0::/gone/leaf\n")
+    assert nothing["headroom_bytes"] is None and nothing["own_dir_missing"] is True and not nothing["unreadable"]
+    monkeypatch.setattr(reader, "available_memory_bytes", lambda: 7000)
+    monkeypatch.setattr(reader, "cgroup_reading", lambda *a: nothing)
+    room = reader.memory_room()
+    assert room["room_bytes"] == 7000 and room["source"] == "mem_available"
+    assert any("is not in the mount" in n for n in room["notes"])
+
+
+def test_a_v1_mount_with_no_memory_line_in_proc_says_only_the_root_was_read(tmp_path):
+    r = _tree(
+        tmp_path, v1={"": {"memory.limit_in_bytes": "800", "memory.usage_in_bytes": "200"}}, proc="12:cpu,cpuacct:/svc\n"
+    )
+    assert r["headroom_bytes"] == 600 and r["path"] == "/"
+    assert any("cgroup_v1" in n and "no line for it, so only the mount root was read" in n for n in r["notes"]), r["notes"]
+
+
+def test_mem_available_falls_back_to_proc_meminfo_in_kib(monkeypatch):
+    import builtins
+    import io
+    import sys
+
+    monkeypatch.setitem(sys.modules, "psutil", None)  # import psutil raises ImportError
+    real_open = builtins.open
+
+    def fake_open(path, *a, **kw):
+        if path == "/proc/meminfo":
+            return io.StringIO("MemTotal:  9999 kB\nMemAvailable:  2048 kB\n")
+        return real_open(path, *a, **kw)
+
+    monkeypatch.setattr(reader, "open", fake_open, raising=False)
+    assert reader.available_memory_bytes() == 2048 * 1024
+
+
+@needs_osmium
+def test_exactly_a_million_locations_of_room_stays_in_memory_and_one_fewer_takes_the_file(osm_lane_dir, monkeypatch, tmp_path):
+    monkeypatch.delenv(reader.LOCATION_INDEX_ENV, raising=False)
+    step = int(reader.LOCATION_GROWTH_PEAK_FACTOR * reader._OsmiumLocations.ENTRY_BYTES)
+    at = reader.LOCATION_REST_OF_CUT_BYTES + reader.LOCATION_MIN_IN_MEMORY * step
+    assert reader.location_capacity(at) == reader.LOCATION_MIN_IN_MEMORY
+    monkeypatch.setattr(reader, "memory_room", lambda: _room(at))
+    li = ingest.ingest_country(FIXTURE, "ZZ", reader="pyosmium", workdir=tmp_path / "w1").to_dict()["location_index"]
+    assert li["index"] == "sparse_mem_array" and li["max_locations_in_memory"] == reader.LOCATION_MIN_IN_MEMORY
+    monkeypatch.setattr(reader, "memory_room", lambda: _room(at - step))
+    li = ingest.ingest_country(FIXTURE, "ZZ", reader="pyosmium", workdir=tmp_path / "w2").to_dict()["location_index"]
+    assert li["index"] == "sparse_file_array" and "holds fewer than" in li["rule"]

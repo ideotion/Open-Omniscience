@@ -129,8 +129,8 @@ CGROUP_LAYOUTS: tuple[tuple[str, str, str, str], ...] = (
 _NO_LIMIT_AT = 1 << 60
 
 
-def _own_cgroup_paths(proc_cgroup: str, notes: list[str]) -> tuple[dict[str, str], bool]:
-    """``({"cgroup_v2": "/a/b", "cgroup_v1": "/a"}, unreadable)``: where in each tree this process sits.
+def _own_cgroup_paths(proc_cgroup: str, notes: list[str]) -> tuple[dict[str, str], bool, bool]:
+    """``({"cgroup_v2": "/a/b", "cgroup_v1": "/a"}, unreadable, was_read)``: where in each tree this process sits.
 
     A process in a child cgroup has its limit there or in an ancestor, NOT necessarily at the mount root (a systemd service with
     ``MemoryMax=``, a container started without its own cgroup namespace). A file that does not exist (no Linux cgroups at all) is
@@ -141,10 +141,10 @@ def _own_cgroup_paths(proc_cgroup: str, notes: list[str]) -> tuple[dict[str, str
             lines = fh.read().splitlines()
     except FileNotFoundError:
         notes.append(f"{proc_cgroup} is absent: only the cgroup mount root can be read")
-        return {}, False
+        return {}, False, False
     except (OSError, ValueError) as exc:
         notes.append(f"{proc_cgroup} is unreadable ({type(exc).__name__}): this process's own cgroup is unknown")
-        return {}, True
+        return {}, True, False
     paths: dict[str, str] = {}
     for line in lines:
         parts = line.split(":", 2)
@@ -155,7 +155,7 @@ def _own_cgroup_paths(proc_cgroup: str, notes: list[str]) -> tuple[dict[str, str
             paths["cgroup_v2"] = path
         elif "memory" in controllers.split(","):
             paths["cgroup_v1"] = path
-    return paths, False
+    return paths, False, True
 
 
 def _read_int_file(path: str) -> tuple[str, int | None, str | None]:
@@ -186,15 +186,29 @@ def cgroup_reading(
     ``/proc/self/cgroup`` and every ancestor up to the mount root is read; the TIGHTEST headroom (limit less usage) wins, since the
     kernel kills at the first limit reached. Absent, unreadable, unparseable and "no limit set" are different facts and each is named
     in ``notes``; when a limit or its usage exists and cannot be read, ``unreadable`` is True and ``headroom_bytes`` is None so
-    that a caller takes its cautious branch, never "unlimited". (``headroom_bytes`` None with ``unreadable`` False is a measured
-    "no limit anywhere".) Usage includes page cache, which the kernel reclaims before it kills: the headroom is a LOWER bound.
+    that a caller takes its cautious branch, never "unlimited". (``headroom_bytes`` None with ``unreadable`` False is "no limit at any
+    level that could be read"; ``own_dir_missing`` says the process's own cgroup directory is not in the mount, so a limit set there
+    was not read, and :func:`memory_room` still bounds the room by ``MemAvailable``.) Usage includes page cache, which the kernel reclaims before it kills: the headroom is a LOWER bound.
     """
     notes: list[str] = []
-    own, unreadable = _own_cgroup_paths(proc_cgroup, notes)
+    own, unreadable, proc_read = _own_cgroup_paths(proc_cgroup, notes)
     best: dict[str, Any] | None = None
+    own_dir_missing = False
     for source, sub, limit_name, usage_name in layouts:
+        mounted = os.path.isfile(os.path.join(root, "cgroup.controllers")) if not sub else os.path.isdir(os.path.join(root, sub))
+        if source not in own and proc_read and mounted:
+            notes.append(f"{source}: {proc_cgroup} has no line for it, so only the mount root was read")
         path = own.get(source, "/")
         parts = [p for p in path.split("/") if p and p != ".."]
+        if parts and not os.path.isdir(os.path.join(root, sub, *parts)):
+            # Docker on cgroup v1 without a cgroup namespace shows the container's host path here while the mount root IS the
+            # container's cgroup, so this is legitimate; it is also what a tree we cannot see looks like. Named either way: the
+            # limit at this level, if any, was not read, and the levels above it were.
+            own_dir_missing = True
+            notes.append(
+                f"{source}: the cgroup directory {path!r} that {proc_cgroup} names is not in the mount, so a limit set there was "
+                "not read; its ancestors and the mount root were"
+            )
         # from the process's own cgroup up to the mount root
         for depth in range(len(parts), -1, -1):
             rel = "/".join(parts[:depth])
@@ -220,10 +234,12 @@ def cgroup_reading(
             if best is None or head < best["headroom_bytes"]:
                 best = {"source": source, "limit_bytes": limit, "headroom_bytes": head, "path": f"/{rel}"}
     if unreadable:
-        return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": True, "notes": notes}
+        return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": True,
+                "own_dir_missing": own_dir_missing, "notes": notes}
     if best is None:
-        return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": False, "notes": notes}
-    return {**best, "unreadable": False, "notes": notes}
+        return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": False,
+                "own_dir_missing": own_dir_missing, "notes": notes}
+    return {**best, "unreadable": False, "own_dir_missing": own_dir_missing, "notes": notes}
 
 
 def cgroup_headroom_bytes() -> int | None:

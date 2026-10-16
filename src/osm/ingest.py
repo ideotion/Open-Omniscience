@@ -238,8 +238,9 @@ def ingest_country(
         row.error = None
         s.add(row)
 
-    locations = extract.location_store(workdir or (data_dir() / "osm_work"))
+    locations = None  # made inside the try: a bad OO_OSM_LOCATION_INDEX or an unwritable work directory must end the row "failed", named
     try:
+        locations = extract.location_store(workdir or (data_dir() / "osm_work"))
         rel, border, facts = build_border(extract, alpha2)
         report.border = facts
         counts: dict[str, int] = dict.fromkeys(T.KINDS, 0)
@@ -332,7 +333,8 @@ def ingest_country(
         _LOG.warning("the %s cut from %s failed: %s", alpha2, path.name, report.error)
         raise
     finally:
-        locations.close()
+        if locations is not None:
+            locations.close()
         report.seconds = round(time.monotonic() - t0, 3)
         with store.lane_session("osm") as s:
             row = s.query(OsmCountry).filter_by(alpha3=alpha3).one()
