@@ -79,6 +79,9 @@ def find_copypasta(
         .all()
     )
 
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # distinct sources are OUTLETS: one site's several feeds share a phrase with themselves
     docs: dict[str, str] = {}
     meta: dict[str, dict] = {}
     for a, sname, sdom in rows:
@@ -89,7 +92,7 @@ def find_copypasta(
         meta[str(a.id)] = {
             "id": a.id,
             "title": a.title,
-            "source": sname or sdom or f"source-{a.source_id}",
+            "source": outlets.label(a.source_id, sname, sdom),
             "source_id": a.source_id,
             "url": a.url,
         }

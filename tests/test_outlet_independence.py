@@ -92,3 +92,74 @@ def test_story_voices_are_outlets(s):
     s.commit()
     story = max(collapse_mod.story_prominence(s, days=7)["stories"], key=lambda x: x["voices_raw"])
     assert story["voices_raw"] == 2, "four feeds of two outlets counted as four independent voices"
+
+
+_SHARED = ("officials said the measure would take effect immediately across every province and that no exceptions "
+           "would be granted to any ministry or agency under the new framework")
+
+
+def _doc(s, name, domain, feed, tail, *, days_ago=1, text=None):
+    src = Source(name=name, domain=domain, rss_url=feed)
+    s.add(src)
+    s.flush()
+    when = datetime.now(UTC) - timedelta(days=days_ago)
+    body = text or (f"{tail} " * 12 + _SHARED + f" {tail} " * 6)
+    s.add(Article(url=f"https://{domain}/{src.id}", canonical_url=f"https://{domain}/{src.id}", source_id=src.id,
+                  title=f"T {tail}", content=body, hash=f"d{src.id}", language="en",
+                  published_at=when, created_at=when))
+    s.flush()
+    return src.id
+
+
+def test_copypasta_counts_outlets_as_sources(s):
+    from src.analytics.copypasta import find_copypasta
+
+    _doc(s, "BBC News", "bbc.com", "https://bbc.com/en", "alpha story about floods")
+    _doc(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar", "bravo story about taxes")
+    _doc(s, "DW", "dw.com", "https://dw.com/rss", "charlie story about energy")
+    s.commit()
+    # three feeds, two outlets: a gate of three distinct sources must NOT fire
+    assert find_copypasta(s, k=8, min_sources=3, min_chars=50)["items"] == []
+    got = find_copypasta(s, k=8, min_sources=2, min_chars=50)["items"]
+    assert got and all(i["distinct_sources"] == 2 for i in got)
+    assert all(i["sources"] == ["BBC News", "DW"] for i in got)
+
+
+def test_recycled_claim_names_an_outlet_once(s):
+    from src.analytics.recycled_claim import find_recycled_claims
+
+    text = _TEXT
+    _doc(s, "BBC News", "bbc.com", "https://bbc.com/en", "x", days_ago=300, text=text)
+    _doc(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar", "x", days_ago=2, text=text)
+    s.commit()
+    out = find_recycled_claims(s, min_chars=50)
+    assert out["count"] == 1
+    c = out["clusters"][0]
+    assert c["distinct_sources"] == 1 and c["single_source"] is True and c["sources"] == ["BBC News"]
+
+
+def test_convergence_independence_gate_counts_outlets(s):
+    from datetime import date
+
+    from src.analytics.convergence import find_convergences
+    from src.database.models import ArticleMentionedDate, ArticleMentionedPlace
+
+    a = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en")
+    b = _feed(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar")
+    for aid in (a, b):
+        s.add(ArticleMentionedPlace(article_id=aid, name="Gaza", country="ps", kind="city", mentions=1,
+                                    lat=31.5, lon=34.45, extractor="lexical-v1"))
+        s.add(ArticleMentionedDate(article_id=aid, mentioned_on=date(2024, 5, 11), precision="day",
+                                   extractor="dateextract", status="candidate"))
+    s.commit()
+    out = find_convergences(s, window_days=7, min_articles=2, min_sources=2)
+    assert out["clusters_total"] == 0, "two feeds of one outlet read as convergence of two independent sources"
+    c = _feed(s, "DW", "dw.com", "https://dw.com/rss")
+    s.add(ArticleMentionedPlace(article_id=c, name="Gaza", country="ps", kind="city", mentions=1,
+                                lat=31.5, lon=34.45, extractor="lexical-v1"))
+    s.add(ArticleMentionedDate(article_id=c, mentioned_on=date(2024, 5, 12), precision="day",
+                               extractor="dateextract", status="candidate"))
+    s.commit()
+    out = find_convergences(s, window_days=7, min_articles=2, min_sources=2)
+    assert out["clusters_total"] == 1 and out["clusters"][0]["distinct_sources"] == 2
+    assert out["clusters"][0]["source_names"] == ["BBC News", "DW"]

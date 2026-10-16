@@ -83,6 +83,9 @@ def find_recycled_claims(
     rows = _pull(recent_cutoff, None, recent_limit) + _pull(
         lookback_cutoff, recent_cutoff, older_limit
     )
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # sources are OUTLETS here: one site's several feeds are one source
 
     docs: dict[str, str] = {}
     meta: dict[str, dict] = {}
@@ -95,7 +98,7 @@ def find_recycled_claims(
         meta[str(a.id)] = {
             "id": a.id,
             "title": a.title,
-            "source": sname or sdom or f"source-{a.source_id}",
+            "source": outlets.label(a.source_id, sname, sdom),
             "url": a.url,
             "when": when,
         }
