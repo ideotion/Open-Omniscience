@@ -1485,14 +1485,15 @@ def test_the_preflight_is_handed_over_before_the_store_exists(tmp_path):
 
 # --- the history phase's memory floor (night 2026-10-16) ------------------------------------------------------------------ #
 def test_the_history_memory_floor_warns_when_the_room_is_below_it_and_cites_its_basis():
-    floor = R.HISTORY_NODE_FILTER_BYTES + R.HISTORY_BASE_BYTES
+    reach = R.HISTORY_NODE_FILTER_BYTES + R.HISTORY_BASE_BYTES
     small = R.preflight(extract_bytes=10**6, history_bytes=10**6, free_bytes=10**12, reserve_bytes=0,
-                        memory_room={"room_bytes": floor - 1, "source": "cgroup_v2", "notes": []})["history_memory"]
-    assert small["floor_bytes"] == floor and "kernel may kill" in small["warning"] and "cgroup_v2" in small["warning"]
-    assert "measured" in small["floor_basis"] and "NOT in this figure" in small["floor_basis"]
+                        memory_room={"room_bytes": reach - 1, "source": "cgroup_v2", "notes": []})["history_memory"]
+    assert small["reach_bytes"] == reach and "kernel may kill" in small["warning"] and "cgroup_v2" in small["warning"]
+    assert "measured" in small["reach_basis"] and "NOT in this figure" in small["reach_basis"]
+    assert "can reach up to" in small["warning"] and "1,250 MB" in small["warning"] and "needs at least" not in small["warning"]
     roomy = R.preflight(extract_bytes=10**6, history_bytes=10**6, free_bytes=10**12, reserve_bytes=0,
-                        memory_room={"room_bytes": floor, "source": "mem_available", "notes": []})["history_memory"]
-    assert roomy["warning"] is None and roomy["room_bytes"] == floor
+                        memory_room={"room_bytes": reach, "source": "mem_available", "notes": []})["history_memory"]
+    assert roomy["warning"] is None and roomy["room_bytes"] == reach
 
 
 def test_an_unreadable_memory_limit_makes_the_history_floor_unchecked_with_the_reason():
@@ -1525,12 +1526,12 @@ def test_a_plan_with_a_history_file_carries_the_memory_floor_read_from_this_mach
     """run() hands the preflight the room read at the start; a plan shows the floor beside the disk it needs, runs nothing."""
     from src.osm import reader
 
-    floor = R.HISTORY_NODE_FILTER_BYTES + R.HISTORY_BASE_BYTES
-    monkeypatch.setattr(reader, "memory_room", lambda: {"room_bytes": floor // 2, "source": "cgroup_v1", "notes": []})
+    reach = R.HISTORY_NODE_FILTER_BYTES + R.HISTORY_BASE_BYTES
+    monkeypatch.setattr(reader, "memory_room", lambda: {"room_bytes": reach // 2, "source": "cgroup_v1", "notes": []})
     hist = tmp_path / "h.osm.pbf"
     hist.write_bytes(b"x" * 100)
     report, _ = _run(tmp_path, plan_only=True, history=hist)
     hm = report["preflight"]["history_memory"]
-    assert hm["room_bytes"] == floor // 2 and hm["room_source"] == "cgroup_v1" and "kernel may kill" in hm["warning"]
+    assert hm["room_bytes"] == reach // 2 and hm["room_source"] == "cgroup_v1" and "kernel may kill" in hm["warning"]
     plain, _ = _run(tmp_path, plan_only=True)
     assert plain["preflight"]["history_memory"] is None

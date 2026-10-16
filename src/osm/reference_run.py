@@ -118,6 +118,8 @@ HISTORY_DISK_MULTIPLE = 3.4
 #: every 2**25-id window an id falls in, whatever the count (``docs/audit/osm-real-extract-2026-10-15/idfilter_probe.py``: a
 #: thousand ids spread over 1.2e10 cost the same 1,434 MiB as four million). Node ids to 1.2e10 touch at most 358 windows. The filter is
 #: freed after the pass; the 16x history run plateaued at 1,250 MB total and stayed flat for the 41 minutes that followed.
+#: 358 windows is the most that span can touch, so this is a CEILING for the filter, not a floor: the synthetic run's ids reached about
+#: 1.2e10 (OSM node ids kept growing; the figure is as of the 2026-10-16 probe), and a real file's ids may touch fewer windows.
 HISTORY_NODE_FILTER_BYTES = 358 * 4 * MIB
 #: What the history phase held before the filter was built on the 16x run (213 to 224 MB over the first 193 s), rounded up.
 HISTORY_BASE_BYTES = 256 * MIB
@@ -360,27 +362,34 @@ def _read_memory_room() -> dict:
 
 
 def _history_memory(room: dict | None) -> dict:
-    """The history phase's memory floor against the memory this process may use (see HISTORY_NODE_FILTER_BYTES)."""
-    floor = HISTORY_NODE_FILTER_BYTES + HISTORY_BASE_BYTES
+    """How far the history phase can reach in memory against the memory this process may use (see HISTORY_NODE_FILTER_BYTES).
+
+    ``reach_bytes`` is an UPPER figure, the filter's ceiling plus the base, and not a floor: the synthetic 16x history run measured
+    1,250 MB in all. A machine with less than ``reach_bytes`` but more than that is warned and probably fine; a machine with less
+    than the measured figure is the one the kernel will kill.
+    """
+    reach = HISTORY_NODE_FILTER_BYTES + HISTORY_BASE_BYTES
     out: dict = {
-        "floor_bytes": floor,
-        "floor_basis": (f"the node-id filter's {HISTORY_NODE_FILTER_BYTES} bytes (358 windows of 4 MiB, node ids to 1.2e10, measured) "
-                        f"plus {HISTORY_BASE_BYTES} bytes the phase holds before it, plus {HISTORY_BYTES_PER_TRACKED_ID} bytes per "
+        "reach_bytes": reach,
+        "measured_peak_note": "1,250 MB on the synthetic 16x history (12.2 million versions), flat for the whole run",
+        "reach_basis": (f"the node-id filter's {HISTORY_NODE_FILTER_BYTES} bytes (358 windows of 4 MiB, node ids to 1.2e10, measured) "
+                        f"plus {HISTORY_BASE_BYTES} bytes the phase holds before it (a ceiling: at most 358 windows), plus {HISTORY_BYTES_PER_TRACKED_ID} bytes per "
                         f"tracked id, which is known only after the cut and is NOT in this figure"),
         "room_bytes": None,
         "room_source": None,
         "warning": None,
     }
     if room is None:
-        out["warning"] = "the memory this process may use was not read, so the history phase's floor is unchecked"
+        out["warning"] = "the memory this process may use was not read, so the history phase's memory is unchecked"
         return out
     out["room_bytes"], out["room_source"] = room.get("room_bytes"), room.get("source")
     if room.get("room_bytes") is None:
         why = "; ".join(room.get("notes") or []) or "no reading"
-        out["warning"] = f"the memory this process may use could not be read ({why}), so the history phase's floor is unchecked"
-    elif room["room_bytes"] < floor:
-        out["warning"] = (f"this process may use {room['room_bytes']} bytes ({room.get('source')}) and the history phase needs at least "
-                          f"{floor}: {out['floor_basis']}. It starts; the kernel may kill it in the node pass")
+        out["warning"] = f"the memory this process may use could not be read ({why}), so the history phase's memory is unchecked"
+    elif room["room_bytes"] < reach:
+        out["warning"] = (f"this process may use {room['room_bytes']} bytes ({room.get('source')}) and the history phase can reach up to "
+                          f"{reach}: {out['reach_basis']}; measured: {out['measured_peak_note']}. It starts; the kernel may kill it "
+                          f"in the node pass if the file's ids span as far as the synthetic one's")
     return out
 
 

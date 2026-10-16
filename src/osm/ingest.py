@@ -398,7 +398,7 @@ class _IdSet:
     A file lists its nodes, then its ways, in ascending id order, so each kind arrives sorted and an ``array('q')`` with a
     binary search holds it. That replaces ``osmium.index.IdSet``, a bitmap whose memory follows the SPAN of the ids and not
     their count: it allocates 4 MiB for every 2**25-id window an id falls in (measured 2026-10-15 with pyosmium 4.3.1), so
-    ids spread over today's node range (1.2e10, 358 windows) cost up to 1.43 GB and over the way range (1.35e9) up to 164 MB,
+    ids spread over the node range as of 2026-10-16 (about 1.2e10, 358 windows; it keeps growing) cost up to 1.43 GB and over the way range (1.35e9) up to 164 MB,
     arriving steadily as the scan moves through the id space, which read as memory per object. An id that arrives out of
     order (an unsorted file) goes to a side ``set`` at a Python set's cost (about 65 bytes an id, measured), so the answer is
     right for any file and only a sorted one is compact; the count of those is recorded so a large side set is visible.

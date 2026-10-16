@@ -166,21 +166,31 @@ the database writes dominate; `reader.py` said "one to two orders of magnitude (
 
 **The location index.** The run record now carries `location_index` (`nodes_set`, the index chosen, the rule that chose it, the settled
 bytes, and the room it was checked against). `location_probe.py` measured libosmium's `sparse_mem_array` at **16.0 bytes a location** once
-settled, with a peak of **1.7 times** that while its vector grows (1,024 MB over 611 MB at 40 M locations). The index is chosen by the
+settled, with a peak of **2.0 times** the settled bytes at each doubling of its vector (the old buffer and the new one, every entry copied:
+32.0 B a location right after N=4,194,305, and 1,024 MiB at 2**25 entries = 2 x 512 MiB; the 1,024 MiB over 611 MiB at 40 M locations is 1.68
+only because 40 M sits between two doublings, which an earlier draft of this note read as the factor). The index is chosen by the
 extract FILE's size, so what a node-dense file just under 512 MiB costs is arithmetic on the density: the 16 x composite sets 0.404
-locations per file byte (18.49 M in 45.7 MB), which at 512 MiB would be 217 M locations, 3.5 GB settled and about 5.9 GB at the growth
-peak; the planet's average, FROM MEMORY about 0.13 nodes a byte, would be 70 M locations, 1.1 GB settled and about 1.9 GB at the peak.
+locations per file byte (18.49 M in 45.7 MB), which at 512 MiB would be 217 M locations, 3.5 GB settled and about 4.3 GB at the growth
+peak (the doubling from 2**27 entries); the planet's average, FROM MEMORY about 0.13 nodes a byte, would be 70 M locations, 1.1 GB settled and about
+2.1 GB at the peak (the doubling from 2**26 entries).
 A city extract is the first kind and no such file sits near 512 MiB; the second kind fits. Because the density is only known as the
 scan runs, the scan now checks itself: `reader.memory_room()` reads the tighter of the cgroup's headroom and `MemAvailable` once, naming
 what is absent, unreadable or "no limit" in `notes` (a limit that cannot be read is never read as unlimited: with nothing readable the
-file index is taken), and `_OsmiumLocations` stops with `LocationIndexTooLarge` when `1.7 x settled + 600 MB` would pass that room. The
-600 MB is the rest of the cut on the 16 x run (823 MB peak less 296 MB of locations is 527, rounded up); on a 3.5 GiB machine the stop
-comes at 115 M locations. The error carries the figures and its way out, `OO_OSM_LOCATION_INDEX=file`, and is written to the country's
+file index is taken), and `_OsmiumLocations` stops with `LocationIndexTooLarge` when `2.0 x settled + 600 MiB` would pass that room. The
+600 MiB is the rest of the cut on the 16 x run (823 MiB peak less 282 MiB of locations is 541 MiB, rounded up); on a 3.5 GiB room the stop
+comes at 97.8 M locations. `2.0 x settled` is the envelope of every doubling: exact right after one, an over-estimate up to the next, so the
+guard can stop a run that would have squeaked through before its next doubling, and the way out (the file index) is named in the error. A room
+that cannot hold a million locations under that rule (`LOCATION_MIN_IN_MEMORY`) takes the file index up front instead of stopping on the first
+node. The reading follows `/proc/self/cgroup` to this process's own cgroup and every ancestor and takes the tightest headroom (usage
+includes page cache, so the headroom is a lower bound); a limit or usage file that cannot be read gives no room and the cautious file index
+(the pure-Python budget follows the same reading, so the two readers take the same branch on one machine; on main an unreadable cgroup
+usage fell through to `MemAvailable` alone). The `refvm.sh` envelope bind-mounts the cgroup onto the mount root, so these 3.5 GiB runs do not
+exercise the own-cgroup walk; `tests/test_osm_location_guard.py` does, on a fake tree. The error carries the figures and its way out, `OO_OSM_LOCATION_INDEX=file`, and is written to the country's
 row by the ingest's existing handler before anything can be killed.
 
-**The runner's plan.** `--plan` and the start of a run with `--history` now carry `history_memory`: the node filter's 1,432 MiB plus the
-256 MiB the phase holds before it, compared with the room read from this machine, as a warning (it starts; the kernel may kill it in the
-node pass) or "unchecked" with the reason when no limit could be read. The 8 bytes per tracked id are named and not counted, because
+**The runner's plan.** `--plan` and the start of a run with `--history` now carry `history_memory`: the node filter's ceiling of 1,432 MiB
+plus the 256 MiB the phase holds before it (`reach_bytes`, up to 1,688 MiB; the synthetic 16 x run measured 1,250 MB in all), compared with
+the room read from this machine, as a warning (it starts; the kernel may kill it in the node pass if the file's ids span as far) or "unchecked" with the reason when no limit could be read. The 8 bytes per tracked id are named and not counted, because
 they are known only after the cut.
 
 ## What stays open until a real run
