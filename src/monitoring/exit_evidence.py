@@ -68,7 +68,7 @@ _TRACE_HEADER_RE = re.compile(
 # bounded stack per thread (100 frames at most), so a crashed 40-thread process can
 # still run to a few thousand lines; the head names the fatal error and the crashing
 # thread first.
-_TRACE_REPORT_LINES = 120
+_TRACE_REPORT_LINES = 400
 # A trace line is cut at this many characters. faulthandler writes one line per frame (about 100
 # characters), so the cut only ever touches an exception's message, which can be a page of text;
 # without it a report of ten earlier ends could run to several hundred KB. The summary is one of these
@@ -565,6 +565,52 @@ def _without_torn_starts(body: list[str]) -> list[str] | None:
     return out
 
 
+def _fair_lines(ordered: list[str], max_lines: int) -> tuple[list[str], dict[str, Any] | None]:
+    """The lines a report keeps of a dump (``ordered`` has the crashing thread's block first) and, when it cut anything, the counts and
+    the rule of the cut. A dump that fits is kept whole. Otherwise: whatever precedes the first thread, then the crashing thread's block
+    (whole while it fits in the room), then every other thread to its first lines (its top frames), so a dump of 50 workers shows what
+    each was doing and not only the first few. Threads the room cannot reach are COUNTED as not listed. The cut shrinks what is printed,
+    never what is counted (``lines_total`` is the log's own)."""
+    if len(ordered) <= max_lines:
+        return ordered, None
+    heads = [i for i, ln in enumerate(ordered) if _THREAD_HEAD.match(ln)]
+    if not heads:
+        kept = ordered[:max_lines]
+        return kept, {
+            "lines_kept": len(kept),
+            "cut_note": f"the first {len(kept)} of {len(ordered)} lines are kept (the dump has no thread blocks to share the room between)",
+        }
+    pre = ordered[: heads[0]]
+    ends = heads[1:] + [len(ordered)]
+    blocks = [ordered[h:e] for h, e in zip(heads, ends, strict=True)]
+    kept = pre + blocks[0][: max(max_lines - len(pre), 0)]
+    rest = blocks[1:]
+    room = max_lines - len(kept)
+    takes: list[int] = []
+    if rest and room > 0:
+        share = max(room // len(rest), 2)  # a head line and one frame at least, while the room lasts
+        for blk in rest:
+            if room < 2:
+                break
+            take = min(len(blk), share, room)
+            takes.append(take)
+            room -= take
+        # what the shares left over (a short thread gave some back) goes to the threads cut, in order
+        for i, blk in enumerate(rest[: len(takes)]):
+            extra = min(len(blk) - takes[i], room)
+            takes[i] += extra
+            room -= extra
+    for blk, take in zip(rest, takes, strict=False):
+        kept += blk[:take]
+    listed = len(takes)
+    omitted = len(rest) - listed
+    note = (
+        f"{len(kept)} of {len(ordered)} lines are kept: the crashing thread's block first, then each other thread's first lines (its top "
+        "frames); " + (f"{omitted} of {len(rest)} other threads are not listed" if omitted else "every other thread is listed")
+    )
+    return kept, {"lines_kept": len(kept), "threads_total": len(blocks), "threads_not_listed": omitted, "cut_note": note}
+
+
 def _trace_report(
     body: list[str], source: Path, max_lines: int, *, decodable: bool = True
 ) -> dict[str, Any]:
@@ -589,12 +635,16 @@ def _trace_report(
         (ln.strip() for ln in body if ln.startswith(("Fatal Python error", "Uncaught exception"))),
         body[0].strip(),
     )
-    return {
+    kept, cut = _fair_lines(ordered, max_lines)
+    out: dict[str, Any] = {
         "summary": _trace_line(head),
-        "lines": [_trace_line(ln) for ln in ordered[:max_lines]],
+        "lines": [_trace_line(ln) for ln in kept],
         "lines_total": len(body),
         "source": Path(source).name,
     }
+    if cut:
+        out.update(cut)
+    return out
 
 
 def previous_trace(
@@ -631,7 +681,10 @@ def previous_trace(
 EARLIER_ENDS_LIMIT = 10
 #: Lines of trace kept per earlier end. 60 is the fatal-error header and the crashing thread's stack,
 #: which faulthandler writes first; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (120).
-EARLIER_TRACE_LINES = 60
+EARLIER_TRACE_LINES = 120
+#: Lines kept of the NEWEST earlier end: the one a reader opens first, and a real crash (50 collect workers, 1,336 lines) did not fit in 60.
+#: Worst case of the member: (400 + 9 x 120) x 202 bytes = about 300 KB, against the +125 KB the plan's estimate holds for it.
+NEWEST_EARLIER_TRACE_LINES = 400
 #: Signals a process can leave a faulthandler trace for. SIGKILL is not among them: nothing runs after it.
 _NATIVE_FAULT_SIGNALS = ("SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE")
 
@@ -726,8 +779,9 @@ def earlier_unclean_ends(
     out: dict[str, Any] = {
         "method": (
             "The session ledger's unclean ends before the previous session, newest first, each looked "
-            f"up in the crash trace log by the pid and machine boot its boot record carries (the first "
-            f"{max_lines} lines of its trace). A session with no trace says why, by what it ended by; "
+            f"up in the crash trace log by the pid and machine boot its boot record carries (up to "
+            f"{max_lines} lines of its trace, {NEWEST_EARLIER_TRACE_LINES} for the newest: the crashing thread whole, then the top of "
+            "every other thread; a trace that is cut says how many lines and threads it kept). A session with no trace says why, by what it ended by; "
             "a SIGKILL cannot leave one. The log keeps one rotated generation, so an old end may have "
             "lost its trace to rotation."
         ),
@@ -749,7 +803,8 @@ def earlier_unclean_ends(
                 reads[p] = None
         return reads[p]
 
-    for end in ends[:limit]:
+    for n_end, end in enumerate(ends[:limit]):
+        end_lines = max(max_lines, NEWEST_EARLIER_TRACE_LINES) if n_end == 0 and max_lines == EARLIER_TRACE_LINES else max_lines
         sid = str(end.get("session_id"))
         b = boots.get(sid)
         pid = (b or {}).get("pid")
@@ -783,7 +838,7 @@ def earlier_unclean_ends(
             if found:
                 found_any = True
                 if body:
-                    trace = _trace_report(body, cand, max_lines, decodable=read[1])
+                    trace = _trace_report(body, cand, end_lines, decodable=read[1])
                 break
         row["trace"] = trace
         if trace is None:

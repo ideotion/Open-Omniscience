@@ -114,7 +114,7 @@ def test_every_earlier_unclean_end_reports_its_own_trace_and_the_previous_sessio
     for row in out["sessions"]:
         t = row["trace"]
         assert t["summary"] == "Fatal Python error: Aborted"
-        assert len(t["lines"]) == ee.EARLIER_TRACE_LINES == 60 and t["lines_total"] == 100
+        assert len(t["lines"]) == t["lines_total"] == 100 and "cut_note" not in t, "a dump that fits is kept whole"
         assert "why_no_trace" not in row
 
 
@@ -171,15 +171,15 @@ def test_the_signal_falls_back_to_the_launcher_record_when_the_end_line_has_none
 
 
 def test_the_member_stays_far_inside_one_r115_part_on_a_crash_loop(dd):
-    """10 ends of 60 lines is what keeps the member small: about 60 KB, against a 1,000,000-byte part."""
+    """The newest end keeps 400 lines and the others 120: about 100 KB at these widths, against a 1,000,000-byte part."""
     recs = []
     for n in range(1, 40):
         recs += _session(n, pid=100 + n, signal="SIGABRT")
     _trace_log(dd, "".join(_trace(100 + n, 4000, n, width=140) for n in range(1, 40)))
     out = ee.earlier_unclean_ends(None, records=recs)
     size = len(json.dumps(out))
-    assert out["shown"] == 10 and size < 150_000, size
-    assert size < 1_000_000 / 6, "a tenth of one part, with room for the member's neighbours"
+    assert out["shown"] == 10 and size < 400_000, size
+    assert size < 1_000_000 / 2, "under half of one part, with room for the member's neighbours"
 
 
 def test_the_text_report_lists_each_session_with_its_trace_or_its_reason(dd):
@@ -556,3 +556,29 @@ def test_the_bundle_member_is_held_to_its_bound_and_the_route_keeps_the_whole_le
     assert member["cut"]["stacks_omitted_for_size"] == 1500 - ch.CHRONOLOGY_KEEP_PEAKS and len(member["sessions"]) == 1500
     assert member["sessions"][-1]["session_id"] == "s1499"
     assert len(whole["sessions"]) == 1500 and "cut" not in whole
+
+
+def test_a_big_dump_is_cut_by_a_counted_rule_and_the_newest_end_keeps_more(dd):
+    recs = _session(1, pid=501, signal="SIGABRT") + _session(2, pid=502, signal="SIGABRT")
+    _trace_log(dd, _trace(501, 900, 1) + _trace(502, 900, 2))
+    out = ee.earlier_unclean_ends(None, records=recs)
+    newest, older = out["sessions"][0]["trace"], out["sessions"][1]["trace"]
+    assert len(newest["lines"]) == ee.NEWEST_EARLIER_TRACE_LINES == 400 and len(older["lines"]) == ee.EARLIER_TRACE_LINES == 120
+    for t in (newest, older):
+        assert t["lines_total"] == 900, "what is counted is the log's own"
+        assert t["lines_kept"] == len(t["lines"]) and "of 900 lines are kept" in t["cut_note"]
+
+
+def test_a_cut_dump_shows_the_crashing_thread_and_the_top_of_every_other_thread(dd):
+    body = ["Fatal Python error: Aborted", ""]
+    for i in range(50):
+        body += [f"Thread 0x{i:016x} (most recent call first):"] + [f'  File "/app/src/w.py", line {j} in w{i}' for j in range(60)] + [""]
+    body += ["Current thread 0x00007f (most recent call first):"] + [f'  File "/app/src/c.py", line {j} in crash' for j in range(100)]
+    kept = ee._trace_report(body, ee.Path("c.log"), 400)
+    heads = [ln for ln in kept["lines"] if ln.startswith(("Thread 0x", "Current thread"))]
+    assert heads[0].startswith("Current thread") and len(heads) == 51, "all 50 workers are listed beside the crashing thread"
+    assert sum("in crash" in ln for ln in kept["lines"]) == 100, "the crashing thread is whole"
+    assert kept["threads_not_listed"] == 0 and kept["lines_total"] == len(body)
+    few = ee._trace_report(body, ee.Path("c.log"), 120)
+    assert few["threads_not_listed"] > 0 and f"{few['threads_not_listed']} of 50 other threads are not listed" in few["cut_note"]
+    assert len(few["lines"]) <= 120
