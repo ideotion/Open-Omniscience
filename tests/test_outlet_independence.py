@@ -207,3 +207,43 @@ def test_story_propagation_needs_outlets_not_feeds(tmp_path, monkeypatch):
 
 def _name(session, sid):
     return session.get(Source, sid).name
+
+
+def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path):
+    """Two feeds of one site citing a page are one path (single_origin); a second OUTLET makes two."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.models import ArticleLink
+    from src.database.session import get_db
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'l.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        a = _feed(s, "S en", "s.test", "https://s.test/en", text="alpha")
+        b = _feed(s, "S fr", "s.test", "https://s.test/fr", text="beta")
+        c = _feed(s, "O", "o.test", "https://o.test/rss", text="gamma")
+        arts = {sid: s.query(Article).filter_by(source_id=sid).one().id for sid in (a, b, c)}
+        x, y = "https://cited.example/x", "https://cited.example/y"
+        s.add_all([ArticleLink(article_id=arts[a], url=x, normalized_url=x, link_type="external"),
+                   ArticleLink(article_id=arts[b], url=x, normalized_url=x, link_type="external"),
+                   ArticleLink(article_id=arts[a], url=y, normalized_url=y, link_type="external"),
+                   ArticleLink(article_id=arts[c], url=y, normalized_url=y, link_type="external")])
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            items = {i["normalized_url"]: i for i in client.get("/api/links/corpus?min_citations=2").json()["items"]}
+    finally:
+        app.dependency_overrides.clear()
+    assert (items[x]["citations"], items[x]["citing_sources"], items[x]["independence"]) == (2, 1, "single_origin")
+    assert (items[y]["citations"], items[y]["citing_sources"], items[y]["independence"]) == (2, 2, "distinct_sources")
