@@ -2016,3 +2016,93 @@ def test_a_key_that_straddles_a_cut_is_taken_out_before_the_line_or_the_error_is
     )
     blob = V._history_path().read_text(encoding="utf-8")
     assert key[:10] not in blob
+
+
+_KEY = "hunter2-correct-horse-9f3a"
+
+
+def _hold_key(monkeypatch):
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(connect, "_passphrase", _KEY)
+    ss.forget_held()
+
+
+def _journal_text() -> str:
+    path = V._history_path()
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def test_the_installers_last_words_are_scrubbed_before_they_are_cut_into_the_error(monkeypatch):
+    """The "what uv/pip said last" text is cut to ``_ERROR_TAIL_CHARS``: a key that starts before that cut leaves no prefix in the job's
+    error or in the journal."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    _hold_key(monkeypatch)
+
+    def runner(argv, env=None, should_stop=None):
+        yield "z" * (V._ERROR_TAIL_CHARS - 10) + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as raised:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=runner)
+    assert _KEY[:10] not in str(raised.value)
+    assert _KEY[:10] not in _journal_text()
+
+
+def test_the_live_install_detail_is_scrubbed_before_it_is_cut(monkeypatch):
+    """The installer's lines are shown in the task manager through ``set_progress``, cut to 200 characters: scrubbed first."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    _hold_key(monkeypatch)
+    ctx = FakeCtx()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "q" * 190 + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_install_job(ctx, version="0.26.0", runner=runner)
+    assert ctx.details and all(_KEY[:10] not in d for d in ctx.details)
+
+
+def test_the_live_venv_detail_is_scrubbed_before_it_is_cut(monkeypatch):
+    """The venv phase shows its lines the same way, cut to 120 characters."""
+    _allow_install(monkeypatch)
+    _hold_key(monkeypatch)
+    ctx = FakeCtx()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "v" * 110 + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_install_job(ctx, version="0.26.0", runner=runner)
+    assert any(d.startswith("venv: ") for d in ctx.details) and all(_KEY[:10] not in d for d in ctx.details)
+
+
+def test_a_failed_model_download_scrubs_its_lines_in_the_detail_and_in_the_error(monkeypatch, tmp_path):
+    """The download's lines reach the live detail (cut to 200) and the ``VllmLifecycleError`` built from its last three lines."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _fake_venv()
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    _hold_key(monkeypatch)
+    ctx = FakeCtx()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "d" * 190 + _KEY
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as raised:
+        V.run_model_download_job(ctx, model="org/m", runner=runner)
+    assert ctx.details and all(_KEY[:10] not in d for d in ctx.details)
+    assert _KEY not in str(raised.value)
+
+
+def test_the_start_journal_takes_the_held_passphrase_out_of_the_server_log_excerpt_and_arguments(monkeypatch):
+    """A server's log excerpt and its arguments enter the start journal in ``_record_start_attempt``."""
+    _hold_key(monkeypatch)
+    V._record_start_attempt({"event": "exited", "excerpt": "boom: " + _KEY + " in the config", "server_args": {"model": _KEY}})
+    blob = V._start_history_path().read_text(encoding="utf-8")
+    assert _KEY not in blob and "boom" in blob

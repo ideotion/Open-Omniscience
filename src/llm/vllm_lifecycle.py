@@ -1692,7 +1692,8 @@ def _record_start_attempt(record: dict) -> None:
         path = _start_history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         _migrate_start_history(path)
-        line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+        # the server's log excerpt and its arguments enter the journal here, so the held passphrase (and a credential shape) is taken out here
+        line = json.dumps(_scrub_history(record), ensure_ascii=False, separators=(",", ":"))
         with path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -3391,7 +3392,7 @@ def run_model_download_job(
         raise VllmLifecycleError(
             f"downloading {model} failed"
             + (f" (exit code {exit_code})" if exit_code is not None else "")
-            + (": " + " | ".join(list(tail)[-3:]) if tail else "")
+            + (": " + scrubbed(" | ".join(list(tail)[-3:])) if tail else "")
         )
     # D6: what ARRIVED against what was PINNED. Raises PinMismatch on a genuine
     # mismatch -- the bytes changed under the operator, which is the one thing the pin
@@ -3772,7 +3773,8 @@ def run_install_job(
                 # "aborted for unknown reasons" while the reason sat in the captured
                 # output -- a cause that reaches no surface is not a captured cause.
                 said = [ln.strip() for ln in tail if ln.strip()][-_ERROR_TAIL_LINES:]
-                detail = "\n".join(said)[:_ERROR_TAIL_CHARS]
+                # scrubbed BEFORE the cut: this text becomes the job's error and the journal's, and a cut inside a key keeps its start
+                detail = scrubbed("\n".join(said))[:_ERROR_TAIL_CHARS]
                 msg = f"{resolver} install vllm=={version} failed (exit code {exit_code})."
                 if detail:
                     msg += f"\n\nWhat {resolver} said last:\n{detail}"
