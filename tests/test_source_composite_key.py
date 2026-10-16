@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, FeedFetchState, Source
@@ -309,3 +309,28 @@ def test_the_alembic_path_commits_an_earlier_revisions_open_transaction_and_stil
             upgrade_sources_to_composite_key(conn)  # the boot path never commits for a caller
         assert upgrade_sources_to_composite_key(conn, commit_open_transaction=True)["state"] == "rebuilt"
     assert _counts(legacy) == before
+
+
+def test_a_refused_rebuild_still_leaves_the_feed_key_column_the_model_reads(tmp_path):
+    """Opus read, finding 5: the additive column and backfill run before any refusal, so a store whose rebuild is
+    refused keeps answering queries on ``sources`` (one feed per domain) instead of failing on a missing column."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'odd.db'}", future=True)
+    with engine.begin() as conn:
+        # no UNIQUE key on the domain at all: ``unreadable``, which the rebuild refuses
+        conn.exec_driver_sql("CREATE TABLE sources (id INTEGER PRIMARY KEY, name VARCHAR(255), domain VARCHAR(255), rss_url VARCHAR(500))")
+        conn.exec_driver_sql("INSERT INTO sources VALUES (1, 'A', 'a.com', 'https://a.com/rss')")
+    assert ensure_source_composite_key(engine)["state"] == "refused"
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT feed_key FROM sources").scalar_one() == "f:a.com/rss"
+
+
+def test_the_rebuild_refuses_a_column_it_would_otherwise_drop(legacy):
+    """Opus read, finding 4: only the shared columns are copied, so a column the model no longer declares would vanish
+    without a word; the rebuild names it and stops."""
+    with legacy.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE sources ADD COLUMN retired_note TEXT")
+    with legacy.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, pytest.raises(
+        SourceIdentityRefused, match="retired_note"
+    ):
+        upgrade_sources_to_composite_key(conn)
+    assert source_identity_state(legacy.connect()) == "legacy"  # nothing was changed

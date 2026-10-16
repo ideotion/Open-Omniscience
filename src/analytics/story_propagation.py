@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import distinct, func
 
@@ -85,7 +85,7 @@ def find_story_propagation(
     """
     from src.analytics.queries import _hidden_predicate
 
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(UTC).date()
     from datetime import timedelta
 
     cutoff = today - timedelta(days=lookback_days)
@@ -122,16 +122,10 @@ def find_story_propagation(
     # denominator, S1.2) -- one small query, not per-candidate.
     from src.analytics.generic_terms import is_generic_by_df_ubiquity
     from src.analytics.managed import normalize_lang
+    from src.database.outlet import outlets_per_language
 
-    active_sids = sorted({outlets.primary_id(r[0]) for r in session.query(distinct(KeywordMentionRead.source_id)).filter(*win)})
-    active_by_lang: dict[str, int] = {}
-    for chunk in _chunks(active_sids):
-        for _sid, lang in session.query(Source.id, Source.language).filter(
-            Source.id.in_(chunk)
-        ):
-            lg = normalize_lang(lang)
-            if lg:
-                active_by_lang[lg] = active_by_lang.get(lg, 0) + 1
+    active_by_lang = outlets_per_language(
+        session, [r[0] for r in session.query(distinct(KeywordMentionRead.source_id)).filter(*win)], outlets, normalize_lang)
 
     # One grouped query: per (keyword, source) FIRST mention date in the window.
     first_seen: dict[int, dict[int, date]] = defaultdict(dict)

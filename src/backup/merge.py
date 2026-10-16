@@ -2791,7 +2791,31 @@ def _same_source(i: str = "i", m: str = "m") -> str:
     )
 
 
+def _refuse_feeds_a_legacy_store_cannot_hold(con) -> None:
+    """A backup that carries several feeds of one domain cannot be merged into a store whose ``sources`` is still keyed
+    on the domain alone (the rebuild was refused at boot): the INSERT below would break UNIQUE (domain) and roll the
+    whole merge back as a raw integrity error. Refused here instead, in words, with the live store untouched."""
+    legacy = False
+    for name, unique in _q(con, "SELECT name, \"unique\" FROM pragma_index_list('sources')"):
+        if unique and [c[0] for c in _q(con, f"SELECT name FROM pragma_index_info('{name}')")] == ["domain"]:  # nosec B608 - an index name read from sqlite_master
+            legacy = True
+    if not legacy:
+        return
+    several = _count(
+        con,
+        "SELECT COUNT(*) FROM (SELECT domain FROM inc.sources GROUP BY domain"
+        " HAVING COUNT(DISTINCT oo_feed_key(rss_url)) > 1)",
+    )
+    if several:
+        raise MergeError(
+            f"this backup holds {several} site(s) with several feeds, and this store still keys a source on its"
+            " domain alone (the boot step that moves it to (domain, feed) did not complete: see the log); nothing was"
+            " merged. Restart the app so the step can run, or contact the maintainers if it keeps refusing."
+        )
+
+
 def _merge_sources(con, batch_id, results) -> None:
+    _refuse_feeds_a_legacy_store_cannot_hold(con)
     r = DomainResult()
     _SAME = _same_source()
     r.duplicate = _count(

@@ -34,6 +34,7 @@ from src.database.models import (
     WikiPage,
     WikiRevision,
 )
+from src.database.outlet import OutletMap
 from src.database.stand_in import not_a_stand_in_article_id
 from src.monitoring.secret_scrub import log_failure
 
@@ -272,7 +273,7 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
 # --------------------------------------------------------------------------- #
 #  Rising now — trending keywords/entities (composes /api/insights/trending)
 # --------------------------------------------------------------------------- #
-def rising_now(session, *, as_of: "date | None" = None) -> list[Card]:
+def rising_now(session, *, as_of: date | None = None) -> list[Card]:
     """``as_of`` (EXCLUSIVE) anchors every window here to a CLOSED period.
 
     Both halves have to take it or the card is anchored in name only: the trending
@@ -365,7 +366,7 @@ def rising_now(session, *, as_of: "date | None" = None) -> list[Card]:
 # --------------------------------------------------------------------------- #
 #  Framing split — same topic, divergent tone per source (needs [analysis])
 # --------------------------------------------------------------------------- #
-def framing_split(session, *, as_of: "date | None" = None) -> list[Card]:
+def framing_split(session, *, as_of: date | None = None) -> list[Card]:
     """``as_of`` anchors the trending pick AND the article rows it reads tone over."""
     try:
         from src.analytics import queries as q
@@ -378,6 +379,7 @@ def framing_split(session, *, as_of: "date | None" = None) -> list[Card]:
     trending = q.trending(
         session, limit=3, min_recent=2 if young else 3, end=as_of
     ).get("terms", [])
+    outlets = OutletMap(session)
     for term in trending:
         kw = resolve_keyword(session, term["term"])
         if kw is None:
@@ -389,7 +391,8 @@ def framing_split(session, *, as_of: "date | None" = None) -> list[Card]:
         for article, source_name in rows:
             if not source_name:
                 continue
-            by_source.setdefault(source_name, []).append(
+            # an OUTLET, not a feed: one site's two feeds are not two outlets framing a term differently (row J, R146)
+            by_source.setdefault(outlets.label(article.source_id, source_name), []).append(
                 {
                     "title": article.title,
                     "content": article.get_content(),
@@ -1414,7 +1417,7 @@ _MAX_DEAL = 4
 _IP_DAYS = 30
 
 
-def ip_litigation_pulse(session, *, as_of: "date | None" = None) -> list[Card]:
+def ip_litigation_pulse(session, *, as_of: date | None = None) -> list[Card]:
     """Surface rising IP/legal terms in the news (a pulse, not a verdict).
 
     ``as_of`` anchors both the rising pick and the evidence rows to a closed period.
@@ -3293,7 +3296,7 @@ def supergroup_rising(session) -> list[Card]:
 #  S6.4 — the two attention producers the board was missing.
 # --------------------------------------------------------------------------- #
 def on_the_horizon(
-    session, *, today: "date | None" = None, events=None, as_of: "date | None" = None
+    session, *, today: date | None = None, events=None, as_of: date | None = None
 ) -> list[Card]:
     """Upcoming agenda dates that touch a topic currently MOVING in the corpus — a heads-up,
     never a forecast. An agenda event (scheduled or deduced) whose title/tags contain a
@@ -3391,7 +3394,7 @@ def on_the_horizon(
 
 
 def through_time(
-    session, *, today: "date | None" = None, as_of: "date | None" = None
+    session, *, today: date | None = None, as_of: date | None = None
 ) -> list[Card]:
     """An anniversary LENS: articles the corpus holds that were published on TODAY's calendar
     date in earlier years — a way to revisit how a day was covered over time. Counts only, no

@@ -162,7 +162,11 @@ def find_rising_supergroups(
     driven_share, distinct_sources, article_ids}``. Empty when nothing survives —
     NEVER a fabricated rise."""
     from src.analytics.generic_terms import is_generic_by_df_ubiquity
-    from src.analytics.supergroup_stats import _per_id_mentions, distinct_ids, resolve_member_keyword_ids
+    from src.analytics.supergroup_stats import (
+        _per_id_mentions,
+        distinct_ids,
+        resolve_member_keyword_ids,
+    )
     from src.database.models import KeywordSuperGroup
     from src.stats.fdr import benjamini_hochberg
 
@@ -204,7 +208,6 @@ def find_rising_supergroups(
 
     from src.analytics.managed import normalize_lang
     from src.database.derived_views import KeywordMentionRead
-    from src.database.models import Source
     from src.database.outlet import OutletMap
     from src.database.stand_in import not_a_stand_in_article_id
 
@@ -222,14 +225,9 @@ def find_rising_supergroups(
         .group_by(KeywordMentionRead.source_id)
         .all()
     )
-    active_by_lang: dict[str, int] = {}
-    if src_recent:
-        sids = sorted({outlets.primary_id(int(x)) for x in src_recent})
-        for chunk in _chunks(sids):
-            for _sid, lang in db.query(Source.id, Source.language).filter(Source.id.in_(chunk)):
-                lg = normalize_lang(lang)
-                if lg:
-                    active_by_lang[lg] = active_by_lang.get(lg, 0) + 1
+    from src.database.outlet import outlets_per_language
+
+    active_by_lang = outlets_per_language(db, src_recent, outlets, normalize_lang)
 
     tests: list[dict] = []
     pvals: list[float] = []

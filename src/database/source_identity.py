@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import MetaData, text
+from sqlalchemy import MetaData
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 
@@ -131,6 +131,10 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         old_cols = _columns(conn, "sources")
         new_table = Source.__table__.to_metadata(MetaData(), name=_NEW)
         new_cols = [c.name for c in new_table.columns]
+        unknown = [c for c in old_cols if c not in new_cols]
+        if unknown:
+            # Copying only the shared columns would drop these silently, and local data never gives way (R100).
+            raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
         copy = [c for c in new_cols if c in old_cols]
         missing = [c.name for c in new_table.columns
                    if c.name not in old_cols and not c.nullable and c.server_default is None and c.default is None]
@@ -184,6 +188,10 @@ def ensure_source_composite_key(engine: Engine) -> dict[str, Any]:
         if state in {"absent", "composite"}:
             return {"state": state}
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            # Additive and always safe, and done BEFORE the rebuild can refuse: the model reads ``feed_key`` whatever
+            # the rebuild decides, so a refused store must still have the column or every query on sources fails.
+            add_feed_key_column(conn)
+            backfill_feed_keys(conn)
             result = upgrade_sources_to_composite_key(conn)
         from src.database.derived_views import ensure_derived_views
 

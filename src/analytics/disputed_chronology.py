@@ -33,6 +33,7 @@ from src.database.models import (
     ArticleMentionedDate,
     Source,
 )
+from src.database.outlet import OutletMap
 
 _LOG = logging.getLogger(__name__)
 
@@ -140,6 +141,8 @@ def find_disputed_chronology(
         session.query(
             Article.id,
             Source.name,
+            Article.source_id,
+            Source.domain,
             Article.title,
             Article.content,
             Article.compressed_content,
@@ -157,13 +160,16 @@ def find_disputed_chronology(
 
     texts: dict[str, str] = {}
     src_of: dict[str, str | None] = {}
-    for aid, sname, title, content, compressed in rows:
+    # A source here is an OUTLET: one site's several feeds are one voice, so two of them can never "disagree" with
+    # each other (row J, R146). The label is the outlet's oldest source's name.
+    outlets = OutletMap(session)
+    for aid, sname, source_id, sdomain, title, content, compressed in rows:
         text = _plain_text(content, compressed) or (title or "")
         if len(text) < 200:
             continue
         sid = str(aid)
         texts[sid] = text
-        src_of[sid] = sname
+        src_of[sid] = outlets.label(source_id, sname, sdomain) if sname else None
     if len(texts) < 2:
         return _empty(lookback_days, min_sources, tolerance_days)
 

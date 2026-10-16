@@ -370,3 +370,84 @@ def test_a_feed_level_count_says_it_counts_feeds_on_every_surface(tmp_path, monk
         app.dependency_overrides.clear()
     assert r.status_code == 200, r.text
     assert r.json()["sources"] == 2 and r.json()["sources_note"] == FEEDS_NOT_OUTLETS
+
+
+# --- the language-ubiquity denominator is the same unit as its numerator (Opus read, finding 1) ---------------------
+def _lang_feed(s, name, dom, url, lang):
+    sid = _feed(s, name, dom, url)
+    s.get(Source, sid).language = lang
+    return sid
+
+
+def _lang_mention(session, term, lang, pairs):
+    from src.database.models import Keyword, KeywordMention
+
+    kw = Keyword(term=term, normalized_term=term, language=lang)
+    session.add(kw)
+    session.flush()
+    today = datetime.now(UTC).date()
+    for sid, ago in pairs:
+        art = session.query(Article).filter_by(source_id=sid).first()
+        session.add(KeywordMention(keyword_id=kw.id, article_id=art.id, count=2,
+                                   observed_on=today - timedelta(days=ago), source_id=sid))
+    session.commit()
+
+
+def test_an_outlets_second_language_service_counts_in_that_languages_denominator(tmp_path, monkeypatch):
+    """Three outlets whose OLDEST feed is English carry a Spanish service; five native Spanish outlets are active.
+    3 of 8 Spanish-active outlets (0.375) is below the 0.40 furniture line, so the term is a story: dividing by the
+    5 natives alone (0.6) hid it, and only because of which sibling happened to be created first."""
+    from src.analytics.story_propagation import find_story_propagation
+
+    s = _kw_session(tmp_path, monkeypatch)
+    multi_es = []
+    for dom in ("bbc.com", "dw.com", "france24.com"):
+        _lang_feed(s, f"{dom} en", dom, f"https://{dom}/en/rss", "en")
+        multi_es.append(_lang_feed(s, f"{dom} es", dom, f"https://{dom}/es/rss", "es"))
+    natives = [_lang_feed(s, f"n{i}", f"native{i}.es", f"https://native{i}.es/rss", "es") for i in range(5)]
+    s.commit()
+    _lang_mention(s, "otrotermino", "es", [(n, 2) for n in natives])
+    _lang_mention(s, "reformatermino", "es", [(multi_es[0], 8), (multi_es[1], 4), (multi_es[2], 1)])
+    assert "reformatermino" in [i["term"] for i in find_story_propagation(s)["items"]]
+
+
+def test_outlets_per_language_counts_an_outlet_once_per_language_it_is_active_in(tmp_path, monkeypatch):
+    """The shared helper both language-ubiquity gates read (story propagation, rising themes)."""
+    from src.analytics.managed import normalize_lang
+    from src.database.outlet import OutletMap, outlets_per_language
+
+    s = _kw_session(tmp_path, monkeypatch)
+    en = _lang_feed(s, "bbc en", "bbc.com", "https://bbc.com/en/rss", "en")
+    es = _lang_feed(s, "bbc es", "bbc.com", "https://bbc.com/es/rss", "es")
+    es2 = _lang_feed(s, "bbc es2", "bbc.com", "https://bbc.com/es2/rss", "es")
+    nat = _lang_feed(s, "nat", "nat.es", "https://nat.es/rss", "es")
+    s.commit()
+    got = outlets_per_language(s, [en, es, es2, nat], OutletMap(s), normalize_lang)
+    assert got == {"en": 1, "es": 2}  # bbc is one Spanish outlet however many Spanish feeds it has
+    assert outlets_per_language(s, [en], OutletMap(s), normalize_lang) == {"en": 1}  # only the ACTIVE feeds count
+
+
+def test_galaxy_breadth_counts_outlets_not_feeds(tmp_path, monkeypatch):
+    """The breadth every galaxy is ranked by (and the Observatory's radius) reads outlets (Opus read, finding 3)."""
+    from src.analytics.supergroup_stats import _distinct_source_count
+    from src.database.models import Keyword
+
+    s = _kw_session(tmp_path, monkeypatch)
+    ids = [_feed(s, n, "bbc.com", f"https://bbc.com/{n}") for n in ("a", "b", "c")]
+    other = _feed(s, "DW", "dw.com", "https://dw.com/rss")
+    s.commit()
+    _mention_spread(s, "breadthterm", [(i, 1) for i in ids])
+    kid = s.query(Keyword.id).filter_by(normalized_term="breadthterm").scalar()
+    assert _distinct_source_count(s, [kid]) == 1  # one outlet, three feeds
+    _mention_spread(s, "breadthterm2", [(i, 1) for i in ids] + [(other, 1)])
+    kid2 = s.query(Keyword.id).filter_by(normalized_term="breadthterm2").scalar()
+    assert _distinct_source_count(s, [kid2]) == 2
+
+
+def test_the_framing_split_producer_groups_by_outlet():
+    """A tone comparison is between outlets; one site's two feeds are not two outlets framing a term differently."""
+    import inspect
+
+    from src.briefing import producers
+
+    assert "outlets.label(" in inspect.getsource(producers.framing_split)

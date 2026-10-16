@@ -19,6 +19,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.database.models import Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.ingest.archive_backfill import (
     advance_backfill,
@@ -26,7 +27,6 @@ from src.ingest.archive_backfill import (
     load_state,
 )
 from src.ingest.pipeline import IngestOutcome, IngestResult
-from src.database.models import Base, Source
 
 
 @pytest.fixture()
@@ -378,3 +378,27 @@ def test_a_sibling_feed_of_an_already_backfilled_outlet_is_not_backfilled_again(
                          ingest_fn=_ingest_always(IngestResult.STORED), discover_fn=discover)
     assert seen == [source.id, other.id]  # the sibling never enumerated a second time
     assert twin.id in load_state(sp)["done_sources"]
+
+
+def test_a_failed_enumeration_on_one_feed_leaves_its_sibling_its_own_attempt(db, source, tmp_path):
+    """Row J, D1 (Opus read, finding 2): ``done_sources`` also holds a failed enumeration, so it must not stand for
+    "the outlet's archive was backfilled": a transient error on one feed would otherwise mark its siblings done unread."""
+    twin = Source(name="Example News Arabic", domain="example.com", rss_url="https://example.com/ar.xml", enabled=True)
+    db.add(twin)
+    db.commit()
+    sp = tmp_path / "s.json"
+    seen: list[int] = []
+
+    def discover(fetcher, src, *, full_history):
+        seen.append(src.id)
+        if src.id == source.id:
+            raise ConnectionError("transient")
+        return _urls(2)
+
+    for sid in (source.id, twin.id):
+        enqueue_source(sid, state_path=sp)
+    for _ in range(8):
+        advance_backfill(db, fetcher=object(), per_pass=5, state_path=sp,
+                         ingest_fn=_ingest_always(IngestResult.STORED), discover_fn=discover)
+    assert seen == [source.id, twin.id]  # the sibling got its attempt
+    assert "example.com" in load_state(sp)["completed_outlets"]  # and its run to the end is what marks the outlet

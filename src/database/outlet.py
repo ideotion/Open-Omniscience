@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Source
 
-
 FEEDS_NOT_OUTLETS = (
     "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several."
 )
@@ -67,3 +66,22 @@ class OutletMap:
         if d in self._label:
             return self._label[d]
         return name or domain or f"source-{source_id}"
+
+
+def outlets_per_language(session: Session, source_ids: Any, outlets: OutletMap, normalize_lang: Any) -> dict[str, int]:
+    """``language -> number of distinct OUTLETS with at least one source of that language among ``source_ids``.
+
+    The denominator of a language-ubiquity ratio whose numerator counts outlets: an outlet that carries a Spanish
+    service counts as a Spanish outlet whichever of its feeds happens to be the oldest, so numerator and denominator
+    are the same unit (the ratio of 3 of 8 must not read 3 of 5 because a sibling's language was ignored)."""
+    ids = sorted({int(x) for x in source_ids})
+    pairs: set[tuple[str, str]] = set()
+    for i in range(0, len(ids), 500):
+        for sid, lang in session.query(Source.id, Source.language).filter(Source.id.in_(ids[i:i + 500])):
+            lg = normalize_lang(lang)
+            if lg:
+                pairs.add((lg, outlets.key(int(sid))))
+    by_lang: dict[str, int] = {}
+    for lg, _outlet in pairs:
+        by_lang[lg] = by_lang.get(lg, 0) + 1
+    return by_lang

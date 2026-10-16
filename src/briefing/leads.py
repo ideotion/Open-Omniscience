@@ -268,6 +268,8 @@ def assemble_leads_view(
     ``sort`` (fail loud)."""
     if sort not in ("default", "prominence"):
         raise ValueError("sort must be 'default' or 'prominence'")
+    from src.database.outlet import FEEDS_NOT_OUTLETS
+
     eff_floors = {**DEFAULT_MAJOR_FLOORS, **(floors or {})}
     pairs = [(d, _wrap_dict(d)) for d in card_dicts]
     if sort == "prominence":
@@ -292,6 +294,8 @@ def assemble_leads_view(
         )
     out: dict = {
         "schema": "oo-leads-view-1",
+        # the chips count the distinct source LABELS a card's evidence carries, which are feeds (row J, R146)
+        "sources_note": FEEDS_NOT_OUTLETS,
         "sort": sort,
         "floors": eff_floors,
         "count": len(leads),

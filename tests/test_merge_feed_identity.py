@@ -133,3 +133,32 @@ def test_a_verdict_is_adopted_by_the_sibling_it_belongs_to_and_only_that_one(tmp
 
     working = _run(tmp_path, local, incoming)
     assert _rows(working) == [("y.com", "f:y.com/a", "unqualified"), ("y.com", "f:y.com/b", "disqualified")]
+
+
+def _legacy_working(s):
+    """A store whose rebuild was refused at boot: ``sources`` still carries a UNIQUE key on the domain alone."""
+    s.execute(__import__("sqlalchemy").text("CREATE UNIQUE INDEX legacy_domain ON sources(domain)"))
+
+
+def test_a_backup_with_two_feeds_of_a_site_is_refused_by_name_when_the_store_cannot_hold_them(tmp_path):
+    """Opus read, finding 6: without the check the INSERT breaks UNIQUE (domain) and the merge rolls back as a raw
+    integrity error nobody can read; with it, a MergeError in words and the live store untouched."""
+    import pytest
+
+    from src.backup.merge import MergeError
+
+    with pytest.raises(MergeError, match="several feeds"):
+        _run(
+            tmp_path,
+            lambda s: (_src(s, "bbc.com", "https://bbc.com/en"), _legacy_working(s)),
+            lambda s: (_src(s, "bbc.com", "https://bbc.com/en"), _src(s, "bbc.com", "https://bbc.com/ar")),
+        )
+
+
+def test_a_one_feed_per_site_backup_still_merges_into_a_legacy_store(tmp_path):
+    working = _run(
+        tmp_path,
+        lambda s: (_src(s, "bbc.com", "https://bbc.com/en"), _legacy_working(s)),
+        lambda s: (_src(s, "bbc.com", "https://bbc.com/en"), _src(s, "dw.com", "https://dw.com/rss")),
+    )
+    assert [r[0] for r in _rows(working)] == ["bbc.com", "dw.com"]
