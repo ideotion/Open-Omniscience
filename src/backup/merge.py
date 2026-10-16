@@ -2825,11 +2825,12 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -
     new sibling feed under that outlet (never mapped onto the oldest local row, which would file its articles under
     the wrong feed). Two things follow from it, both done HERE, before anything reads the incoming stamps:
 
-    * the sibling receives the OUTLET's measured verdict (R145 (2)): its stamp becomes the oldest local row's measured
-      ``qualified`` / ``disqualified`` (a catalogue-curated stamp is provenance, not a verdict, and is not handed on),
+    * the sibling receives the OUTLET's measured verdict (R145 (2)): its stamp becomes the outlet's measured
+      ``qualified`` / ``disqualified``: the STRICTER one wins (R150 -- any measured local feed that is disqualified decides),
+      otherwise the oldest measured row does (a catalogue-curated stamp is provenance, not a verdict, and is not handed on),
       so a locally disqualified outlet is never laundered back into collection by a sibling another instance judged,
       and the qualification tally reads what actually lands (``temp.sib_verdict``, read through ``COALESCE``);
-    * the report lists each one with its reason and counts it.
+    * the report lists each one with its reason and the rule that decided its verdict (``verdict_rule``), and counts it.
 
     Returns the incoming ids whose verdict was taken from the outlet, for the ``inherited`` attempt rows written after
     the id map exists."""
@@ -2838,6 +2839,10 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -
         con,
         "SELECT i.id, i.domain, i.rss_url, i.status,"  # nosec B608 - constant-only text and the module's own curated-version constant
         " (SELECT o.name FROM main.sources o WHERE o.domain = i.domain ORDER BY o.id LIMIT 1),"
+        # R150: the STRICTER verdict wins -- any measured local feed of the outlet that is disqualified decides ...
+        " (SELECT o.id FROM main.sources o WHERE o.domain = i.domain AND o.status = 'disqualified'"
+        "   ORDER BY o.id LIMIT 1),"
+        # ... and otherwise the oldest measured row does (R148).
         " (SELECT o.id FROM main.sources o WHERE o.domain = i.domain AND o.status IN ('qualified', 'disqualified')"
         f"   AND NOT (o.status = 'qualified' AND COALESCE(o.qualification_criteria_version, '') = '{cur}')"
         "   ORDER BY o.id LIMIT 1)"
@@ -2852,8 +2857,12 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -
     con.execute("DROP TABLE IF EXISTS temp.sib_verdict")
     con.execute("CREATE TEMP TABLE sib_verdict (old INTEGER PRIMARY KEY, status TEXT, qualified_at TEXT, criteria TEXT)")
     inherited: list[int] = []
-    for inc_id, domain, feed, status, outlet, verdict_src in rows:
+    for inc_id, domain, feed, status, outlet, strict_src, oldest_src in rows:
         takes = False
+        verdict_src = strict_src if strict_src is not None else oldest_src
+        rule = ("a measured feed of the outlet is disqualified" if strict_src is not None
+                else "oldest measured feed of the outlet" if oldest_src is not None
+                else "the outlet has no measured verdict")
         if verdict_src is not None:
             o = con.execute(
                 "SELECT status, qualified_at, qualification_criteria_version FROM main.sources WHERE id = ?",
@@ -2869,7 +2878,7 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -
         r.siblings_total += 1
         if len(r.siblings) < _SAMPLE_LIMIT:
             r.siblings.append({
-                "domain": domain, "incoming_feed": feed, "outlet": outlet, "verdict_inherited": takes,
+                "domain": domain, "incoming_feed": feed, "outlet": outlet, "verdict_inherited": takes, "verdict_rule": rule,
                 "reason": (f"feed not present locally, added under outlet {outlet}" if feed
                            else f"entry without a feed, added beside the feeds of outlet {outlet}"),
             })

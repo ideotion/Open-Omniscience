@@ -259,3 +259,24 @@ def test_an_incoming_row_without_a_feed_is_not_reported_as_a_feed(tmp_path):
     entry = _report_of(tmp_path)["sources"]["siblings"][0]
     assert entry["incoming_feed"] is None
     assert entry["reason"].startswith("entry without a feed")
+
+
+def test_when_the_outlets_feeds_disagree_the_stricter_verdict_wins_and_the_report_names_the_rule(tmp_path):
+    """R150: en (oldest measured) is qualified, de is disqualified; an incoming QUALIFIED feed lands disqualified,
+    and the report says a measured feed decided. With no disqualified feed the oldest measured row decides."""
+    def local(s):
+        _src(s, "dw.com", "https://dw.com/en", status="qualified")
+        _src(s, "dw.com", "https://dw.com/de", status="disqualified")
+        _src(s, "bbc.com", "https://bbc.com/a", status="qualified")
+        _src(s, "bbc.com", "https://bbc.com/b", status="unqualified")
+
+    def incoming(s):
+        _src(s, "dw.com", "https://dw.com/old-feed", status="qualified")
+        _src(s, "bbc.com", "https://bbc.com/old-feed", status="disqualified")
+
+    working = _run(tmp_path, local, incoming)
+    rows = {r[1]: r for r in _rows(working)}
+    assert rows["f:dw.com/old-feed"][2] == "disqualified"  # stricter wins over the oldest measured (qualified)
+    assert rows["f:bbc.com/old-feed"][2] == "qualified"  # nothing disqualified: the oldest measured row decides
+    rules = {e["domain"]: e["verdict_rule"] for e in _report_of(tmp_path)["sources"]["siblings"]}
+    assert rules == {"dw.com": "a measured feed of the outlet is disqualified", "bbc.com": "oldest measured feed of the outlet"}
