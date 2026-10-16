@@ -24,6 +24,7 @@ from typing import Any
 # runlog imports nothing but stdlib at module scope, so this cannot cycle.
 from src.backup import runlog
 from src.backup.newsletter_export import NewsletterFilterRefused
+from src.monitoring import storage_events
 
 # The passphrase never reaches a status, a log record or the run journal through a caught exception: every
 # handler below writes its text through these (stdlib only, so this cannot cycle either).
@@ -230,9 +231,10 @@ class VolumeBackupManager:
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def _reap_or_reject(self) -> None:
+    def _reap_or_reject(self, what: str = "") -> None:
         """Reject only a GENUINELY-running job; otherwise reap a finished worker so the
-        next one can start. Call under ``self._lock``.
+        next one can start. Call under ``self._lock``. ``what`` (``export``, ``import`` or
+        ``verify``) names the start being refused, for the storage-events journal.
 
         Fixes the back-to-back race (field report 2026-07-02: "A volume backup/restore
         is already running" when importing several archives one after another): the
@@ -242,6 +244,7 @@ class VolumeBackupManager:
         lingering thread so exactly one worker ever runs. Sequential imports now hand
         off cleanly (parallel volume restores stay disallowed by design — one writer)."""
         if self._state == "running" and self._alive():
+            storage_events.run_refused(what, "already-running", via="volume-set")
             raise RuntimeError("A volume backup/restore is already running.")
         if self._thread is not None:
             self._thread.join(timeout=5)  # instant once the work is done; a safety cap
@@ -269,17 +272,20 @@ class VolumeBackupManager:
         _backup_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
-            self._reap_or_reject()
+            self._reap_or_reject("export")
             if not passphrase:
+                storage_events.run_refused("export", "no-passphrase", via="volume-set")
                 raise ValueError("the volume backup is always encrypted: a passphrase is required")
             destp = Path(dest)
             try:
                 destp.mkdir(parents=True, exist_ok=True)
             except OSError as exc:
+                storage_events.run_refused("export", "destination-unusable", failure=type(exc).__name__, via="volume-set")
                 # the passphrase is in scope: scrubbed where the text is made, and the cause is not carried on
                 reason = exception_text(exc, passphrase, typed=False)
                 raise ValueError(f"Cannot use destination {destp}: {reason}") from None
             if not destp.is_dir():
+                storage_events.run_refused("export", "not-a-folder", via="volume-set")
                 raise ValueError(f"{destp} is not a folder.")
             self._stop.clear()
             self._pause_requested = False
@@ -393,6 +399,10 @@ class VolumeBackupManager:
             include_newsletters=include_newsletters, parity_fraction=parity_fraction,
             include_blobs=list(include_blobs or ()),
         )
+        # The storage-events journal keeps the last ten of these runs and writes this one OPEN, so a kill in the middle leaves "started,
+        # never ended". The free bytes come after the open record: a stat that hangs on a dead mount leaves the run open, which is the fact.
+        note = storage_events.run_started("export", via="volume-set")
+        storage_events.run_free_space(note, "dest_free_bytes", destp)
         try:
             fn = backup_fn
             if fn is None:
@@ -424,7 +434,7 @@ class VolumeBackupManager:
             # there, and a page that was reloaded mid-export is not needed at all.
             from src.backup.export_summary import write_summary_for_export_job
 
-            write_summary_for_export_job(destp, volume_status=done_status)
+            write_summary_for_export_job(destp, volume_status=done_status, run_note=note)
             with self._lock:
                 self._state = "done"
                 self._summary = kept
@@ -438,6 +448,17 @@ class VolumeBackupManager:
                 engine_wall_s=summary.get("wall_s"),
                 gate_held_s=summary.get("gate_held_s"),
             )
+            storage_events.run_ended(
+                note,
+                "ok",
+                volumes=summary.get("volumes"),
+                bytes=summary.get("total_bytes") or summary.get("bytes"),
+                engine_wall_s=summary.get("wall_s"),
+                gate_held_s=summary.get("gate_held_s"),
+                snapshot_s=summary.get("snapshot_s"),
+                snapshot_bytes=summary.get("snapshot_bytes"),
+                verify=kept["verify"].get("state"),
+            )
         except VolumeStopped:
             with self._lock:
                 paused = self._pause_requested
@@ -450,6 +471,7 @@ class VolumeBackupManager:
                 with self._lock:
                     self._state = "paused"
                 runlog.end("paused")
+                storage_events.run_ended(note, "paused")
             else:
                 # END AFTER the cleanup, not before: deleting the partial set is
                 # part of this run, it touches the destination drive, and it is
@@ -461,6 +483,7 @@ class VolumeBackupManager:
                 with self._lock:
                     self._state = "cancelled"
                 runlog.end("cancelled")
+                storage_events.run_ended(note, "cancelled")
         except NewsletterFilterRefused as refused:
             # A stopped newsletter-free backup is served as it is: its text is one of two fixed
             # sentences whose only slot holds this module's own text or a class name, and the page
@@ -474,6 +497,7 @@ class VolumeBackupManager:
                 traceback=record_traceback(refused, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(refused).__name__)
+            storage_events.run_ended(note, "refused", failure=type(refused).__name__)
             with self._lock:
                 self._state, self._error = "error", refused.served_text
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
@@ -487,12 +511,14 @@ class VolumeBackupManager:
                 traceback=record_traceback(exc, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
+            storage_events.run_ended(note, "error", failure=type(exc).__name__)
             with self._lock:
                 self._state, self._error = "error", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
             runlog.end("ended-without-a-recorded-outcome")
+            storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
     # -- restore ------------------------------------------------------------ #
     def start_restore(
@@ -526,9 +552,10 @@ class VolumeBackupManager:
         what it has put in the copy and says so.
         """
         with self._lock:
-            self._reap_or_reject()
+            self._reap_or_reject("import")
             srcp = Path(src)
             if not srcp.is_dir():
+                storage_events.run_refused("import", "not-a-folder", via="volume-set")
                 raise ValueError(f"{srcp} is not a folder to restore from.")
             # Re-merge an artifact this corpus has already merged. Additive and
             # off by default: the skip exists because the redundant work is
@@ -584,6 +611,8 @@ class VolumeBackupManager:
         # sequential imports at ~10 h each sharing one run_id would wrap the beat
         # ring and lose the early hours of every item but the last.
         runlog.begin("import", label=srcp.name, dest=str(srcp), force=self._force)
+        # Written OPEN to the storage-events journal (a kill in the middle leaves "started, never ended"); see _run_backup.
+        note = storage_events.run_started("import", via="volume-set")
         try:
             if restore_fn is not None:
                 summary = restore_fn(srcp, passphrase)
@@ -591,6 +620,7 @@ class VolumeBackupManager:
                     self._state, self._summary = "done", summary
                     self._progress = {"phase": "done"}
                 runlog.end("ok", injected_restore_fn=True)
+                storage_events.run_ended(note, "ok")
                 return
             from src.backup.artifact import cleanup_staging, read_volume_backup
             from src.backup.merge import (
@@ -659,7 +689,11 @@ class VolumeBackupManager:
                     "skipped-already-merged",
                     merged_as_batch=_already["batch_id"], merged_at=_already["imported_at"],
                 )
+                storage_events.run_ended(note, "skipped-already-merged")
                 return
+
+            # Where the restore stages (the data folder) and so what a full drive would stop; read after the skip above, which writes nothing.
+            storage_events.run_free_space(note, "data_free_bytes")
 
             # The memory an ENCRYPTED corpus's merge needs, asked before the hours of reassembly and
             # staging rather than after them (the merge's own check stays, with the exact figure).
@@ -939,6 +973,9 @@ class VolumeBackupManager:
                         k: report.get(k) for k in ("batch_id", "reindexed", "articles_merged")
                         if report.get(k) is not None
                     })
+                    storage_events.run_ended(
+                        note, "ok", articles_merged=report.get("articles_merged"), reindexed=report.get("reindexed")
+                    )
                 finally:
                     cleanup_staging(staged)
             finally:
@@ -970,6 +1007,7 @@ class VolumeBackupManager:
             said = record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
             runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="barrier")
             with self._lock:
                 self._state = "error"
                 self._error = said
@@ -981,6 +1019,7 @@ class VolumeBackupManager:
             said = record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.info("volume restore stopped by the operator: %s", said)
             runlog.end("stopped-by-operator", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
+            storage_events.run_ended(note, "stopped-by-operator", failure=type(exc).__name__)
             with self._lock:
                 self._state = "cancelled"
                 self._error = None
@@ -1008,6 +1047,7 @@ class VolumeBackupManager:
                 traceback=record_traceback(exc, passphrase, corpus_passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
+            storage_events.run_ended(note, "error", failure=type(exc).__name__)
             with self._lock:
                 self._state, self._error = "error", detail
         finally:
@@ -1016,6 +1056,7 @@ class VolumeBackupManager:
             # never overwrite a real one -- and it names its own ignorance rather
             # than guessing "ok".
             runlog.end("ended-without-a-recorded-outcome")
+            storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
     # -- verify -------------------------------------------------------------- #
     def start_verify(
@@ -1030,9 +1071,10 @@ class VolumeBackupManager:
         signature + every checksum; with it: every volume is also stream-decrypted
         into a hash sink. The report lands in ``summary``."""
         with self._lock:
-            self._reap_or_reject()
+            self._reap_or_reject("verify")
             srcp = Path(src)
             if not srcp.is_dir():
+                storage_events.run_refused("verify", "not-a-folder", via="volume-set")
                 raise ValueError(f"{srcp} is not a folder to verify.")
             self._stop.clear()
             self._pause_requested = False
@@ -1050,6 +1092,7 @@ class VolumeBackupManager:
             return self.status()
 
     def _run_verify(self, srcp, passphrase, verify_fn):
+        note = storage_events.run_started("verify", via="volume-set")  # written open; see _run_backup
         try:
             fn = verify_fn
             if fn is None:
@@ -1061,10 +1104,15 @@ class VolumeBackupManager:
                 self._state = "done"
                 self._summary = {"report": report}
                 self._progress = {"phase": "done"}
+            # The run finished; whether the SET passed is its own fact (a verification that found a bad set is not a failed run).
+            storage_events.run_ended(note, "ok", set_ok=report.get("ok") if isinstance(report, dict) else None)
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             log_failure(_LOG, "volume verify failed", exc, passphrase)
+            storage_events.run_ended(note, "error", failure=type(exc).__name__)
             with self._lock:
                 self._state, self._error = "error", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+        finally:
+            storage_events.run_ended(note, "ended-without-a-recorded-outcome")  # a no-op once an outcome was written
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:

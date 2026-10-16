@@ -35,8 +35,15 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
-from src.backup.merge import MergeError, RestoreRefused, check_memory_before_staging, run_restore
+from src.backup.merge import (
+    MergeError,
+    RestoreAborted,
+    RestoreRefused,
+    check_memory_before_staging,
+    run_restore,
+)
 from src.jobs.background import BackgroundJob, Framed, register_job
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import http_detail, log_failure, scrub_and_reraise
 from src.scheduler.runner import exclusive_window_open
 
@@ -208,67 +215,91 @@ def restore_legacy_path(
 
     p = _Path(path)
     if not p.is_file():
+        storage_events.run_refused("import", "not-a-file", via="single-file")
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
     # The passphrase handed in is not held by the process (a backup's own), so the nets that read what it holds cannot know it,
     # and an engine's error can quote the statement that carried it: what escapes the block is converted.
     with scrub_and_reraise(_LOG, "legacy restore failed", passphrase):
-        # Before a byte is read or staged: an encrypted corpus that this machine cannot hold a merge
-        # for is told so now, not after the staging (see check_memory_before_staging).
+        # Written OPEN to the storage-events journal (a process killed in the middle leaves "started, never ended"), as the volume
+        # restore does. What it may carry is numbers, a class name and the keys of fixed tables, never a path or a message.
+        note = storage_events.run_started("import", via="single-file")
+        storage_events.run_free_space(note, "data_free_bytes")
         try:
-            check_memory_before_staging()
-        except MergeError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
-        try:
-            data = p.read_bytes()
-        except OSError as exc:
-            raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
-        staged = _stage_upload(data, passphrase or None)
-        _apply_restore_selection(staged, include_newsletters=include_newsletters)
-        from src.backup import runlog
-        from src.backup.volume_job import defer_reindex, hand_off_reindex
+            # Before a byte is read or staged: an encrypted corpus that this machine cannot hold a merge
+            # for is told so now, not after the staging (see check_memory_before_staging).
+            try:
+                check_memory_before_staging()
+            except MergeError as exc:
+                storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="memory")
+                raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
+            try:
+                data = p.read_bytes()
+            except OSError as exc:
+                storage_events.run_ended(note, "error", failure=type(exc).__name__)
+                raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
+            try:
+                staged = _stage_upload(data, passphrase or None)
+            except Exception as exc:  # noqa: BLE001 - a refusal to open the file, or anything else: named by its class, then re-raised as it was
+                storage_events.run_ended(note, "error", failure=type(exc).__name__)
+                raise
+            _apply_restore_selection(staged, include_newsletters=include_newsletters)
+            from src.backup import runlog
+            from src.backup.volume_job import defer_reindex, hand_off_reindex
 
-        try:
-            with runlog.run(
-                "import", label=p.name, dest=str(p), secrets=(passphrase,), legacy_single_file=True
-            ):
-                report = run_restore(
-                    staged,
-                    commit=True,
-                    allow_unverified=allow_unverified,
-                    # The Q701-note answer for THIS import; None falls back to the stored
-                    # first-launch choice inside run_restore, so the endpoint wrapper that
-                    # sends nothing is byte-identical to today.
-                    trust_fetch_history=trust_fetch_history,
-                    should_stop=should_stop,
-                    # The import queue holds ONE exclusive window across the whole run, so
-                    # a restore driven from it owns the machine: the whole-corpus snapshots
-                    # may take the byte-copy fast path instead of re-encrypting the corpus
-                    # row by row. Read live rather than passed in, so the plain endpoint
-                    # wrapper (a user-facing request that must NOT stall the app) keeps the
-                    # default.
-                    exclusive=exclusive_window_open(),
-                    # Deferred from the same switch as every other committing path -- this
-                    # one is queue-driven, so a folder of mixed volume and legacy backups
-                    # would otherwise defer for some items and block for hours on others
-                    # inside a single run.
-                    reindex_imported=not defer_reindex(),
+            try:
+                with runlog.run(
+                    "import", label=p.name, dest=str(p), secrets=(passphrase,), legacy_single_file=True
+                ):
+                    report = run_restore(
+                        staged,
+                        commit=True,
+                        allow_unverified=allow_unverified,
+                        # The Q701-note answer for THIS import; None falls back to the stored
+                        # first-launch choice inside run_restore, so the endpoint wrapper that
+                        # sends nothing is byte-identical to today.
+                        trust_fetch_history=trust_fetch_history,
+                        should_stop=should_stop,
+                        # The import queue holds ONE exclusive window across the whole run, so
+                        # a restore driven from it owns the machine: the whole-corpus snapshots
+                        # may take the byte-copy fast path instead of re-encrypting the corpus
+                        # row by row. Read live rather than passed in, so the plain endpoint
+                        # wrapper (a user-facing request that must NOT stall the app) keeps the
+                        # default.
+                        exclusive=exclusive_window_open(),
+                        # Deferred from the same switch as every other committing path -- this
+                        # one is queue-driven, so a folder of mixed volume and legacy backups
+                        # would otherwise defer for some items and block for hours on others
+                        # inside a single run.
+                        reindex_imported=not defer_reindex(),
+                    )
+                    if defer_reindex():
+                        hand_off_reindex(report)
+                    storage_events.run_ended(
+                        note, "ok", articles_merged=report.get("articles_merged"), reindexed=report.get("reindexed")
+                    )
+                    return report
+            except (MergeError, RestoreRefused) as exc:
+                # See restore_commit above: a refusal keeps its own message.
+                storage_events.run_ended(note, "refused", failure=type(exc).__name__)
+                raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
+            except HTTPException as exc:
+                storage_events.run_ended(note, "error", failure=type(exc).__name__)
+                raise
+            except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
+                # The passphrase is in scope: the record is written with it taken out of the exception's line and of its
+                # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is built from
+                # the scrubbed text, and the recorders that keep a response text scrub it again where they make the record.
+                log_failure(_LOG, "legacy restore failed", exc, passphrase)
+                # The operator's own Stop is not a failure (the volume restore keeps the two apart too); anything else is an error.
+                storage_events.run_ended(
+                    note, "stopped-by-operator" if isinstance(exc, RestoreAborted) else "error", failure=type(exc).__name__
                 )
-                if defer_reindex():
-                    hand_off_reindex(report)
-                return report
-        except (MergeError, RestoreRefused) as exc:
-            # See restore_commit above: a refusal keeps its own message.
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
-        except HTTPException:
-            raise
-        except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
-            # The passphrase is in scope: the record is written with it taken out of the exception's line and of its
-            # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is built from
-            # the scrubbed text, and the recorders that keep a response text scrub it again where they make the record.
-            log_failure(_LOG, "legacy restore failed", exc, passphrase)
-            raise _restore_error("restore", exc, passphrase) from None
+                raise _restore_error("restore", exc, passphrase) from None
+            finally:
+                cleanup_staging(staged)
         finally:
-            cleanup_staging(staged)
+            # A net for an exit no branch above names; a no-op once an outcome was written.
+            storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
 
 @router.get("/v2/batches")

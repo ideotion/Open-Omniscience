@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from src.wiki.identity import parse_external_id
 from src.wiki.tiers import HotSet
@@ -72,6 +72,18 @@ def corpus_mention_titles(corpus: Any, *, limit: int = MENTION_LIMIT) -> tuple[s
     TWO RETURN VALUES ON PURPOSE. A caller that got only the set could not tell a
     corpus with 4,000 keywords from one with 400,000 truncated to 5,000, and those
     lead to opposite readings of the same HOT tier size.
+
+    THE ORDER IS THE INDEX'S, NOT AN EXPRESSION OF IT. ``ORDER BY coalesce(frequency, 0) DESC, term``
+    was a scan of every keyword and a sort of all of them for the first 5,001: no index serves an
+    expression, and on the 2.26 million keywords of the 16 Oct 2026 bundles it took 9.5 s on average
+    over 224 calls (max 78 s) and held a read snapshot the whole time (the 08:34 pin report names
+    this select, 56 s old). ``ORDER BY frequency DESC, term`` is read from ``idx_keyword_frequency``
+    and the sort is only of the ties inside one frequency, so the first 5,001 are the first 5,001
+    index entries (0.22 s to 0.013 s on a synthetic 2.3 million-keyword table). ONE DIFFERENCE, stated:
+    a keyword with no frequency (NULL) now sorts after the ones with frequency 0 instead of tied
+    with them, which can only change WHICH zero-frequency terms fill the last slots, and only on a
+    corpus with fewer than 5,000 keywords that have a frequency of 1 or more. SQLAlchemy renders the
+    ``limit`` as ``LIMIT ? OFFSET ?`` on SQLite (an OFFSET bound to 0): this is one page, not a pager.
     """
     from src.database.models import Keyword
 
@@ -79,7 +91,7 @@ def corpus_mention_titles(corpus: Any, *, limit: int = MENTION_LIMIT) -> tuple[s
         corpus.execute(
             select(Keyword.term)
             .where(Keyword.term.is_not(None))
-            .order_by(func.coalesce(Keyword.frequency, 0).desc(), Keyword.term)
+            .order_by(Keyword.frequency.desc(), Keyword.term)
             .limit(limit + 1)
         )
         .scalars()
