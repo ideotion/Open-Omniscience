@@ -33,7 +33,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
-from src.database.session import release_idle_connection
+from src.database.session import _note_rows_changed_at_begin, release_idle_connection
 from src.ingest.fetch_release import SessionReleasingFetcher, wrap_fetcher
 
 
@@ -292,6 +292,29 @@ class _RecordingFetcher:
         return {"n": 1}
 
 
+class _DriverConnection:
+    """What ``session.connection()`` returns, as far as the guard looks: ``.connection.dbapi_connection.total_changes`` and the ``.info``
+    dict the statement listener flags a statement that is not a plain read on."""
+
+    def __init__(self, rows_changed: int | None = 0):
+        self.rows_changed = rows_changed
+        self.info: dict = {}
+
+    @property
+    def connection(self):
+        return self
+
+    @property
+    def dbapi_connection(self):
+        return self
+
+    @property
+    def total_changes(self):
+        if self.rows_changed is None:
+            raise AttributeError("total_changes")
+        return self.rows_changed
+
+
 class _CountingSession:
     """A double for a READ-ONLY session in an open transaction.
 
@@ -309,6 +332,13 @@ class _CountingSession:
         self.rollbacks = 0
         self._in_txn = True
         self._in_nested = False
+        # The driver connection the guard asks how many rows it has changed, and the baseline the real Session records when its
+        # transaction begins (the listener is the real one: a double that wrote its own baseline would test the double).
+        self._connection = _DriverConnection()
+        _note_rows_changed_at_begin(self, None, self._connection)
+
+    def connection(self):
+        return self._connection
 
     def in_transaction(self):
         return self._in_txn

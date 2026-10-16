@@ -428,6 +428,7 @@ def catalog_candidates(
     for why that matters and is safe). Small/bounded by construction (the packaged
     catalog is a static file), so no scan budget is needed here -- unlike the
     citation channel's article_links scan (finding A2)."""
+    from src.catalog.countries import config_country
     from src.catalog.coverage import country_counts_from_session, coverage_report
     from src.ingest.seed_sources import load_sources_from_yaml
 
@@ -448,7 +449,7 @@ def catalog_candidates(
         if len(decisions) >= cap:
             break
         dom = str(entry.get("domain") or "").lower()
-        country = str(entry.get("country") or "").lower()
+        country = str(config_country(entry.get("country")) or "").lower()
         # `dom in known` also catches a domain ALREADY proposed earlier in THIS
         # batch (we add each decided domain to `known` below): the packaged
         # catalog can list the same domain more than once (e.g. several language

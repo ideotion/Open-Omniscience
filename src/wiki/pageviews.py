@@ -147,8 +147,10 @@ def parse_top(payload: dict) -> list[dict[str, Any]]:
 def fetch_top(session: Any, edition: str, day: date, *, timeout: float = 30.0) -> list[dict[str, Any]]:
     """One request, one edition, one day. The session is HANDED IN.
 
-    In production that is ``guarded_session(user_agent=WIKI_USER_AGENT)`` — so the
-    kill switch, the protected-mode proxy and the honest bot UA all apply, and
+    In production that is the wiki client's session (``WikiClient.session``, a
+    ``following_session`` carrying ``WIKI_SESSION_HOSTS``, which names ``wikimedia.org``
+    for this request) — so the kill switch, the protected-mode proxy, the honest bot
+    UA and the host list all apply, and
     airplane mode refuses it exactly as it refuses everything else. In CI it is a
     fixture that reads a file. This module builds no session of its own, which is
     what keeps Q1018's "runs in CI without a socket" true of this path too.

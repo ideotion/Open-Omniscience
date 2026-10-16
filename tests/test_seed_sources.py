@@ -123,14 +123,16 @@ def test_catalog_honours_its_own_country_suffix_convention():
     Spain must not be invisible to every geographic view). Regression guard for
     the country-provenance fix.
     """
+    from src.catalog.countries import config_country
     from src.catalog.normalize import country_from_title
 
     rows = load_sources_from_yaml(DEFAULT_SOURCES_PATH)
+    # The catalogue holds the wire's alpha-3 (S05-02 S3); the title suffix is read as the app's alpha-2.
     missing = [
         r["name"]
         for r in rows
         if (code := country_from_title(r.get("name")))
-        and (r.get("country") or "").strip().lower() != code
+        and str(config_country(r.get("country")) or "").strip().lower() != code
     ]
     assert not missing, f"{len(missing)} catalog entries name a country but omit it: {missing[:10]}"
 

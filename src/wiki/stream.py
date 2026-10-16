@@ -28,10 +28,11 @@ is already open, which is precisely the hole this loop closes from above.
 
 WHAT IT DOES NOT DO, and why each absence is deliberate:
 
-* **It builds no session.** The caller passes one. In production that is
-  ``guarded_session(user_agent=WIKI_USER_AGENT)`` — the kill switch, the
-  protected-mode proxy (so Q722/Q1014's "never a silent Tor -> clearnet downgrade"
-  holds by construction) and the honest bot UA. In CI it is a fixture that reads a
+* **It builds no session.** The caller passes one. In production that is the wiki
+  client's session (``WikiClient.session``, a ``following_session`` carrying
+  ``WIKI_SESSION_HOSTS``, which names ``stream.wikimedia.org`` for this connection) — the
+  kill switch, the protected-mode proxy (so Q722/Q1014's "never a silent Tor -> clearnet
+  downgrade" holds by construction), the honest bot UA and the host list. In CI it is a fixture that reads a
   file, which is what lets the whole path run under the airplane socket guard with
   zero name resolutions.
 * **It never widens what it was asked for.** The editions are a required argument.
