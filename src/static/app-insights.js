@@ -311,7 +311,7 @@
         // that knows a code this app made up), and `ooCountryName` is the fallback
         // rather than an uppercased alpha-2, which was never the name it claimed.
         const cc = esc(ooCountryCode(r.country) || String(r.country || "").toUpperCase());
-        const nm = esc((names && names[r.country]) || ooCountryName(r.country, "") || cc);
+        const nm = esc((names && names[ooCountryKey(r.country)]) || ooCountryName(r.country, "") || cc);
         const clickable = ringId
           ? ` style="cursor:pointer" data-on-click="_conceptDrillCountry('${esc(ringId)}','${esc(r.country)}')"` : "";
         return `<g${clickable}><title>${nm}</title>`
@@ -490,8 +490,10 @@
         const values = {}, names = {}; let unloc = null;
         (d.countries || []).forEach(c => {
           if (!c.country) { unloc = c; return; }            // unlocated bucket — never mapped
-          values[c.country] = c.articles;                  // distinct-article spread per country
-          names[c.country] = (typeof ooRegionName === "function") ? ooRegionName(c.country) : String(c.country).toUpperCase();
+          // Keyed by the map's own (alpha-2) key: the payload's `country` is alpha-3 (Q304).
+          const key = ooCountryKey(c.country);
+          values[key] = c.articles;                        // distinct-article spread per country
+          names[key] = (typeof ooRegionName === "function") ? ooRegionName(c.country) : String(c.country).toUpperCase();
         });
         const label = d.label || ringId;
         // Anti-capping: the polygons are a bounded LIST, so the figure announced beside

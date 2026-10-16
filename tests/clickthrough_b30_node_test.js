@@ -54,6 +54,9 @@ const NAMES = {
 };
 const A3 = { DE: "DEU", FR: "FRA", AL: "ALB", DZ: "DZA", BR: "BRA", RU: "RUS" };
 function ooCountryCode(x) { return A3[String(x).toUpperCase()] || String(x).toUpperCase(); }
+const A2 = Object.fromEntries(Object.entries(A3).map(([a2, a3]) => [a3, a2.toLowerCase()]));
+// The key the polygon tables use: lowercase alpha-2, whichever form came in (the real helper's contract).
+function ooCountryKey(x) { const s = String(x).trim(); return A2[s.toUpperCase()] || s.toLowerCase(); }
 function ooCountryName(x, fb) { return (NAMES[I18N.lang] || {})[String(x).toUpperCase()] || fb; }
 function ooCountryCompare(a, b) { return ooCountryName(a, a).localeCompare(ooCountryName(b, b), I18N.lang); }
 function ooCountryCell(x) { return `<span title="${ooCountryName(x, "")}">${ooCountryCode(x)}</span>`; }
@@ -192,8 +195,8 @@ const src = [
     + " _lawBytes, _lawCodeLabel, _lawFlagReason, loadLawChanges, loadLawDocs, ooAreaCell };",
 ].join("\n");
 const M = new Function("window", "OOI18N", "document", "$", "api", "ooCountryCode", "ooCountryName",
-  "ooCountryCompare", "ooCountryCell", src)(WIN, I18N, DOC, $, api, ooCountryCode, ooCountryName,
-  ooCountryCompare, ooCountryCell);
+  "ooCountryCompare", "ooCountryCell", "ooCountryKey", src)(WIN, I18N, DOC, $, api, ooCountryCode, ooCountryName,
+  ooCountryCompare, ooCountryCell, ooCountryKey);
 
 let n = 0;
 async function test(name, fn) { await fn(); n++; console.log("ok  - " + name); }

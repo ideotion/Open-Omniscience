@@ -17,9 +17,10 @@ import os
 from datetime import datetime
 
 from fastapi import Depends, Query
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.session import get_db
 
 from ._base import router

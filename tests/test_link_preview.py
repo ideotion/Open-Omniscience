@@ -84,7 +84,7 @@ def test_preview_extracts_what_the_db_knows(client, linked_world):
 def test_preview_matches_tracked_law_url(client, linked_world):
     d = client.get("/api/links/preview", params={"url": "https://lpseed.example/law"}).json()
     assert d["law_document"]["title"] == "LP Seed Act"
-    assert d["law_document"]["jurisdiction"] == "eu"
+    assert d["law_document"]["jurisdiction"] == "EUU"
 
 
 def test_preview_unknown_url_is_honestly_empty(client):

@@ -2081,13 +2081,15 @@
       const contAgg = continentMode ? _ooMapContinentAgg(rows, dim) : null;
       const values = {}, names = {}, points = [], rowBy = {};
       rows.forEach(r => {
-        names[r.country] = ooRegionName(r.country, r.name); rowBy[r.country] = r;
+        // Keyed on alpha-2, the polygons' own key; the payload's `country` is alpha-3 (Q304).
+        const key = ooCountryKey(r.country);
+        names[key] = ooRegionName(r.country, r.name); rowBy[key] = r;
         let v;
         if (continentMode) { const ca = r.continent && contAgg[r.continent]; if (!ca) return; v = ca.value; }
         else v = r[dim.id];
         if (v != null && isFinite(v)) {
-          values[r.country] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[r.country]) });
+          values[key] = v;
+          if (r.lat != null && r.lon != null) points.push({ iso2: key, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[key]) });
         }
       });
       const nWith = Object.keys(values).length;
@@ -2107,7 +2109,7 @@
       const serverPoints = (_ooMapServerOn && _ooMapServerLoc && Array.isArray(_ooMapServerLoc.countries))
         ? _ooMapServerLoc.countries.filter(c => c.lat != null && c.lon != null)
             .map(c => ({ lat: c.lat, lon: c.lon, value: c.articles,
-                         label: (names[c.country] || ooCountryCode(c.country)) })) : [];
+                         label: (names[ooCountryKey(c.country)] || ooCountryCode(c.country)) })) : [];
       let serverMeta = "";
       if (_ooMapServerOn && _ooMapServerLoc) {
         caveat += `  ${_ooMapServerLoc.caveat || t("Server location is our vantage point (CDN edge / anycast), not the publisher's origin; unavailable over Tor.")}`;
@@ -2371,7 +2373,7 @@
     }
     function _ooMapCountryDetail(row, dim, clickedIso) {
       const host = _ooMapDetailHost(); if (!host) return;
-      const isoKey = (clickedIso || (row && row.country) || "").toLowerCase();
+      const isoKey = ooCountryKey(clickedIso || (row && row.country) || "");
       _ooMapDetailLast = { kind: "country", row, dim, iso: isoKey };
       _ooMapMarkSelected(isoKey);
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
@@ -2383,7 +2385,7 @@
         if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: _ooMapScrollBehavior(), block: "nearest" });
         return;
       }
-      const iso = (row.country || "").toLowerCase();
+      const iso = ooCountryKey(row.country || "");
       // The heading of a panel the reader OPENED: the code identifies it and the
       // title carries the name, which is the ordinary Q302 pair -- written through
       // the one cell, because the earlier `esc(ooCountryCode(iso))` printed the code

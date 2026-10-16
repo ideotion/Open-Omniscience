@@ -16,10 +16,11 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import Depends, Query
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.session import get_db
 from src.utils.export_envelope import envelope
 

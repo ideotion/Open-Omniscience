@@ -14,9 +14,9 @@ register on one router in that order.
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring.secret_scrub import http_detail
@@ -98,9 +98,14 @@ def discover_sources_endpoint(
     under airplane mode, egresses through the guarded factory. Bounded to a handful of
     countries per call (each queries several media types); pick UNDER-REPRESENTED
     countries to keep the catalogue's coverage balanced."""
-    codes = [c.strip().lower() for c in countries.split(",") if c.strip()]
+    # Both forms in (S05-02 S2); discovery speaks alpha-2 inside (Wikidata's P297).
+    from src.catalog.countries import to_iso2
+
+    codes = [to_iso2(c.strip()) or "" for c in countries.split(",") if c.strip()]
     if not codes or not all(len(c) == 2 and c.isalpha() for c in codes):
-        raise HTTPException(status_code=400, detail="countries must be ISO-2 codes, e.g. ke,ng,br")
+        raise HTTPException(
+            status_code=400, detail="countries must be ISO country codes, alpha-2 or alpha-3, e.g. ke,ng,br"
+        )
     if len(codes) > 12:
         raise HTTPException(status_code=400, detail="at most 12 countries per call (be polite)")
     from src.catalog.discover import discover_sources
@@ -151,14 +156,15 @@ def discover_world_sources(
         raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
     codes = None
     if countries:
-        from src.catalog.countries import ISO_3166_1_ALPHA2
+        from src.catalog.countries import ISO_3166_1_ALPHA2, to_iso2
 
-        codes = [c.strip().lower() for c in countries.split(",") if c.strip()]
+        # Both spellings, like discover-sources: ``KEN`` and ``ke`` name one country.
+        codes = [to_iso2(c.strip()) or c.strip().lower() for c in countries.split(",") if c.strip()]
         bad = [c for c in codes if c not in ISO_3166_1_ALPHA2]
         if not codes or bad:
             raise HTTPException(
                 status_code=400,
-                detail=f"countries must be ISO-2 codes, e.g. ke,ng,br (unrecognised: {bad})",
+                detail=f"countries must be ISO alpha-2 or alpha-3 codes, e.g. ke,ng,br or KEN,NGA,BRA (unrecognised: {bad})",
             )
     try:
         return JSONResponse(

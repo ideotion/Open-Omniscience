@@ -16,10 +16,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.models import Article, Keyword, Source
 from src.database.session import get_db
 from src.monitoring.secret_scrub import http_detail

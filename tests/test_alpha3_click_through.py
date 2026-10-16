@@ -250,11 +250,13 @@ def test_l14_the_examples_and_the_csv_hint_use_the_codes_the_app_shows():
     assert 'placeholder="FRA or all"' in html and 'placeholder="FR or all"' not in html
     assert 'id="statfig-view-area" placeholder="FRA"' in html
     assert "Country is a 2-letter code" not in html
-    assert "<code>country_iso3</code>" in html
-    # The hint says what csv_io.py DOES: the fall-back is keyed on the result, so an
-    # unreadable `country` falls back too, and a disagreement is refused.
-    assert "falls back to it when country is empty or unreadable" in html
-    assert "refuses a row where the two disagree" in html
+    # S05-02 S2 / Q313: the export has ONE country column (alpha-3); the legacy
+    # `country_iso3` is no longer a column the export writes, so the column list does not
+    # offer it -- but the hint still says an older sheet imports and a disagreement is refused.
+    assert "<code>country_iso3</code>" not in html
+    assert "the export writes it as a 3-letter code" in html
+    assert "its country_iso3 column is read" in html
+    assert "a row where it and country disagree is refused" in html
     assert "(e.g. FRA)" in read_static("app-map.js")
 
 

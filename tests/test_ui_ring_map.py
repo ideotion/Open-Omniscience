@@ -56,7 +56,7 @@ def test_language_breakdown_surfaced_from_grouped_top():
 
 def test_counts_only_no_score():
     # the map colours by distinct-article spread + shows mentions; never a composite score
-    assert "values[c.country] = c.articles" in _JS
+    assert "values[key] = c.articles" in _JS  # `key` = ooCountryKey(c.country): the polygon tables key on alpha-2
     assert "ringScore" not in _JS and "c.score" not in _JS
     # method + caveat from the endpoint ride the ooMap render (honesty visible). The caveat goes through the
     # empty-state-aware ringCaveat (the T5 layout PR: a template the UI translates, else the plain sentence), which

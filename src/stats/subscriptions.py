@@ -28,6 +28,7 @@ from typing import Any, Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import country_payload_iso2
 from src.database.models import StatSubscription
 
 Getter = Callable[[str], Any]
@@ -77,6 +78,9 @@ def record_subscription(
 def _sub_dict(s: StatSubscription) -> dict:
     return {
         "id": s.id, "source": s.source, "indicator": s.indicator, "country": s.country,
+        # An external contract (World Bank / FRED / OECD ids): alpha-2 rides beside the
+        # alpha-3 `country` the wire carries (Q304). `all` has none and gets None.
+        "country_iso2": country_payload_iso2(s.country),
         "dataset": s.dataset, "params": json.loads(s.params_json) if s.params_json else None,
         "agency": s.agency, "interval_days": s.interval_days, "enabled": bool(s.enabled),
         "created_at": s.created_at.isoformat() if s.created_at else None,

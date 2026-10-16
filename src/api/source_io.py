@@ -19,10 +19,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 from starlette.concurrency import run_in_threadpool
 
+from src.catalog.countries import country_payload
 from src.catalog.csv_io import (
     EXPORT_COLUMNS,
     parse_sources_csv,
     template_csv,
+    unreadable_country_rows,
     upsert_sources,
     write_csv,
 )
@@ -48,36 +50,15 @@ def _display_name(country: str | None) -> str | None:
     return country_display_name(country)
 
 
-def _iso3(country: str | None) -> str | None:
-    """The DERIVED alpha-3 form of a stored country (Q313 = a, for one release).
-
-    Derived at the one place a row is built, never stored beside the alpha-2 value and
-    never editable on import: two independently writable columns for one fact is how an
-    operator's edit gets silently discarded. Fails closed -- an aggregate or a code we do
-    not recognise has no alpha-3, and an empty cell is the honest answer.
-    """
-    if not country:
-        return None
-    # DELEGATES since S04-05. The rule was `to_iso3`, which is right about aggregates
-    # and blanked Q303's four -- `eu`, `int`, `an` are values the catalogues really
-    # hold, and an export that reported "no alpha-3" for a code the UI displays two
-    # panels away is two answers to one fact. `country_payload_iso3` is that rule plus
-    # those four, and it is now the ONE definition of what a `country_iso3` field
-    # means, everywhere one is emitted.
-    from src.catalog.countries import country_payload_iso3
-
-    return country_payload_iso3(country)
-
-
 def _source_to_row(s: Source) -> dict:
     return {
         "name": s.name,
         "domain": s.domain,
         "rss_url": s.rss_url,
         "source_type": s.source_type,
-        "country": s.country,
-        # Q313 = a: both forms travel for one release; 0.5 (S05-02) drops the old one.
-        "country_iso3": _iso3(s.country),
+        # Q313 (S05-02 S2): the export has ONE country column, alpha-3. It is not a JSON
+        # response, so the wire layer never sees it and the form is chosen here.
+        "country": country_payload(s.country),
         "language": s.language,
         "region": s.region,
         "tags": s.tags,
@@ -229,8 +210,7 @@ def list_sources(
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "source_type": s.source_type,
-                "country": s.country,
-                "country_iso3": _iso3(s.country),  # Q313 = a: both forms for one release
+                "country": country_payload(s.country),
                 "country_name": _display_name(s.country),
                 "language": s.language,
                 "article_count": _count(s),
@@ -297,4 +277,6 @@ async def import_csv(file: UploadFile, db: Session = Depends(get_db)) -> dict:
     result["parse_errors"] = parse_errors[:50]
     result["skipped"] += len(parse_errors)
     result["received_rows"] = len(rows)
+    # A country that is not a code or a name is kept as typed; say so, with the count, rather than let it pass unseen.
+    result["unreadable_country"] = unreadable_country_rows(rows)
     return result

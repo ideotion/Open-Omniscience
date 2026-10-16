@@ -806,8 +806,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const values = {}, names = {};
       (data.by_country || []).forEach(r => {
-        if (r.value != null) values[r.country] = r.value;
-        names[r.country] = ooRegionName(r.country);
+        // The map keys on alpha-2; the payload's `country` is alpha-3 (Q304).
+        const key = ooCountryKey(r.country);
+        if (r.value != null) values[key] = r.value;
+        names[key] = ooRegionName(r.country);
       });
       await ooMap(host, {
         values, names,
@@ -827,7 +829,11 @@
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
           if (_govSubtabs) _govSubtabs.select("countries");
           const cs = $("gov-country");
-          if (cs) { cs.value = iso; if (cs.value === iso) loadGovCountry(iso); }
+          // The picker's option values are the payload's `country` (alpha-3); the map hands over its own
+          // polygon key (alpha-2). Compare in the picker's form, or no option matches and the grid keeps
+          // showing the PREVIOUS country under the click.
+          const want = ooCountryCode(iso);
+          if (cs) { cs.value = want; if (cs.value === want) loadGovCountry(want); }
         },
       });
       _govMapLast = {meta, data};

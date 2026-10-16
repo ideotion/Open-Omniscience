@@ -79,7 +79,8 @@ def unfinished_message(state: object, backup: object = None) -> str:
         "alpha-3 while the store still says alpha-2, so the app will not open or write it until the run is finished. Close "
         "everything that has the store open and run `open-omniscience migrate-countries`: it resumes where it stopped. If it "
         f"reports that it cannot finish, the verified safety copy taken before the run began{where} can be put back, which "
-        "returns the store to how it was before the run."
+        "returns the store to how it was before the run: with the app closed, copy that file over the store file, delete "
+        "the -wal and -shm files that sit beside the store file, and start again."
     )
 
 

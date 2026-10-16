@@ -15,7 +15,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from src.catalog.countries import country_payload_iso3
 from src.database.session import get_db
 from src.monitoring.secret_scrub import http_detail
 from src.timemap.collect import (
@@ -153,9 +152,6 @@ def _article_signals(db: Session, days: int | None, limit: int) -> list[dict]:
                 "published": a.published_at,
                 "language": a.language,
                 "country": a.country or (getattr(src, "country", None) if src else None),
-                "country_iso3": country_payload_iso3(
-                    a.country or (getattr(src, "country", None) if src else None)
-                ),
                 "city": getattr(meta, "city", None) if meta else None,
             }
         )
@@ -183,9 +179,6 @@ def _mention_signals(db: Session, days: int | None, limit: int) -> list[dict]:
                 "url": a.url,
                 "content": a.content,
                 "country": a.country or (getattr(src, "country", None) if src else None),
-                "country_iso3": country_payload_iso3(
-                    a.country or (getattr(src, "country", None) if src else None)
-                ),
                 "city": getattr(meta, "city", None) if meta else None,
             }
         )

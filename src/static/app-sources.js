@@ -53,12 +53,14 @@
         // "top values" list and its <title> tooltip, and a tooltip IS the hover
         // Q302 puts the name in. The CODE goes on the drawn label and the ranked
         // table, where a code can be read and a hover can carry the name.
-        names[r.country] = ooRegionName(r.country, r.name);
+        // Keyed on alpha-2, the map's own key; the payload's `country` is alpha-3 (Q304).
+        const key = ooCountryKey(r.country);
+        names[key] = ooRegionName(r.country, r.name);
         const v = r.articles;
         if (v != null && isFinite(v) && v > 0) {
-          values[r.country] = v;
+          values[key] = v;
           if (r.lat != null && r.lon != null) {
-            points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: names[r.country] });
+            points.push({ iso2: key, lat: r.lat, lon: r.lon, value: v, label: names[key] });
           }
         }
       });
@@ -638,7 +640,10 @@
     // coverage→sources jump). If the facets list hasn't loaded the value yet, no-op.
     function srcMselCheck(id, value) {
       const det = $(id); if (!det) return false;
-      const cb = [...det.querySelectorAll(".msel-list input")].find(c => c.value === value);
+      // The country picker is compared through the key (the facet and the coverage rollup may speak
+      // different forms); every other picker compares the value as it is.
+      const same = id === "src-msel-country" ? (c) => ooCountryKey(c.value) === ooCountryKey(value) : (c) => c.value === value;
+      const cb = [...det.querySelectorAll(".msel-list input")].find(same);
       if (cb) { cb.checked = true; updateMselSummary(id); return true; }
       return false;
     }
@@ -685,7 +690,10 @@
         $("imp-result").innerHTML =
           `<span class="pill ok">imported</span> created ${d.created}, updated ${d.updated}, ` +
           `skipped ${d.skipped}.` +
-          (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "");
+          (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "") +
+          // Countries that are not a code or a name are kept as typed and never overwrite a stored country: say so.
+          ((d.unreadable_country && d.unreadable_country.count > 0)
+            ? ` <span class="muted">${esc(tf("{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.", {n: d.unreadable_country.count}))}</span>` : "");
         toast(`Import: +${d.created} new, ${d.updated} updated.`);
         loadManagedSources(); loadSources(); loadDbStats(); loadCoverage();
       } catch (e) { $("imp-result").textContent = ""; toast(_failMsg("Import failed: {error}", e), "err"); }

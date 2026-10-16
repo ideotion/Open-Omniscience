@@ -132,7 +132,8 @@ async function viewQuietRegion() {
   let cov = '<p class="muted">Coverage summary unavailable.</p>';
   try {
     const r = await api("/api/database/coverage");
-    const thin = (r.thin || []).map(esc).join(", ");
+    // The payload's own names, keyed by the code it lists (a bare "fr" says less than "France").
+    const thin = (r.thin || []).map((c) => esc((r.names || {})[c] || c)).join(", ");
     const missing = (r.missing || []).length;
     cov = `<p>Catalog-wide: <b>${esc(r.covered ?? "?")}</b> countries covered, ` +
           `<b>${missing}</b> with no source at all.` +

@@ -17,9 +17,10 @@ import os
 from datetime import datetime
 
 from fastapi import HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring.secret_scrub import http_detail
 

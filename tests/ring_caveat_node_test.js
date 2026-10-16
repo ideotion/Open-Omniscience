@@ -72,11 +72,11 @@ async function render(payload, code, opts) {
   const els = { "sg-ringmap": { innerHTML: "" }, "sg-ringmap-detail": { innerHTML: "" } };
   const drawn = [];
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
-    "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
+    "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry", "ooCountryKey",
     "let _ringMapLast = null; let _ringSeq = 0; let _ringHostNote = ''; const _ringLangIndex = {};\n" + SHOW + "\nreturn showRingMap;");
   const fn = run({ OOI18N: opts.noTf ? { t } : { t, tf } }, opts.noTf ? { t } : { t, tf }, (id) => els[id] || null, ESC,
     async () => payload, (c) => c, async (host, o) => { drawn.push(o); }, (a, b) => a + b, (x) => x, (x) => x,
-    () => "", () => {});
+    () => "", () => {}, (c) => String(c).toLowerCase());
   await fn("news-media", null);
   return { host: els["sg-ringmap"].innerHTML, detail: els["sg-ringmap-detail"].innerHTML, drawn };
 }
@@ -92,10 +92,10 @@ function session(code, apiFn, ooMapFn) {
   const t = (s) => (map[s] == null ? s : map[s]);
   const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",
-    "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry",
+    "ooCountryCell", "ringDumbbellSvg", "_conceptDrillCountry", "ooCountryKey",
     "let _ringMapLast = null; let _ringSeq = 0; let _ringHostNote = ''; const _ringLangIndex = {};\n" + SHOW + "\n" + REPAINT + "\nreturn { showRingMap, repaintRingMapFromCache };");
   const fns = run({ OOI18N: { t, tf } }, { t, tf }, (id) => els[id] || null, ESC, apiFn, (c) => c, ooMapFn || (async () => {}),
-    (a, b) => a + b, (x) => x, (x) => x, () => "", () => {});
+    (a, b) => a + b, (x) => x, (x) => x, () => "", () => {}, (c) => String(c).toLowerCase());
   return { show: (ring) => fns.showRingMap(ring, null), repaint: fns.repaintRingMapFromCache,
            switchTo: (c) => load(c), host: () => els["sg-ringmap"].innerHTML, detail: () => els["sg-ringmap-detail"].innerHTML };
 }

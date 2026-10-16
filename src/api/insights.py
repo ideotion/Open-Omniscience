@@ -31,6 +31,7 @@ from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
+from src.catalog.countries import country_param
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.session import get_db
 from src.database.stand_in import (
@@ -1763,6 +1764,7 @@ def insights_top(
 
     ``target_lang`` makes the rows language-aware: a foreign keyword whose concept is
     in a cross-language ring gains its verified translation into that language."""
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     tl = _tlang(target_lang)
     key = top_key(days=days, country=country, kind=kind, limit=limit, group=group, tl=tl)
 
@@ -1803,6 +1805,7 @@ def insights_trending(
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords by a transparent recent-vs-prior ratio."""
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     tl = _tlang(target_lang)
     key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
                 country=country, kind=kind, limit=limit, tl=tl)
@@ -1840,6 +1843,7 @@ def insights_trending_windows(
     ADDITIVE: ``series_top > 0`` attaches a per-term daily ``series`` (reusing the
     /trend day buckets) to the top terms so the frontend can draw an ooChart each;
     ``series_top=0`` (default) is byte-identical to the prior response."""
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     tl = _tlang(target_lang)
     # S3.3: cache the AGGREGATION (language-neutral), annotate the translation
     # onto a copy afterwards. The annotation is a pure in-memory pass over the
@@ -2083,6 +2087,7 @@ def insights_trend(
     ``target_lang`` (M7): the resolved keyword is DRAWN as a label ("Resolved to …"), so
     it walks the same translation ladder as every other keyword row and carries its tier
     fields; without it the payload is unchanged."""
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     out = q.trend(
         db, term, bucket=bucket, country=country,
         concept=_concept_for(
@@ -2762,6 +2767,7 @@ def insights_who(
     mentions). No scores; names are lexical surface forms, deduced never
     confirmed. Optionally windowed (``days``), per-country, or class-filtered.
     """
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     key = _ckey("who", entity_class=entity_class, days=days, country=country,
                 limit=limit, min_articles=min_articles)
     return _deadlined(db, key, lambda: q.who_aggregate(
@@ -2789,6 +2795,7 @@ def insights_where(
     ``country`` selects places located in that country. Optionally windowed
     (``days``) or kind-filtered (``city`` | ``country``).
     """
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     key = _ckey("where", kind=kind, days=days, country=country,
                 limit=limit, min_articles=min_articles)
     return _deadlined(db, key, lambda: q.where_aggregate(
@@ -2911,6 +2918,7 @@ def insights_ring_country_articles(
     — the largest bucket is often unlocated, and it must be investigable too,
     never a dead end). Same keyword resolution as ring-countries, so the drilled
     set can never disagree with the number beside it. Bounded and disclosed."""
+    country = country_param(country)  # both forms in (S05-02 S2); never a guess
     from src.analytics.queries import ring_country_article_ids
 
     limit = limit if isinstance(limit, int) else 2000

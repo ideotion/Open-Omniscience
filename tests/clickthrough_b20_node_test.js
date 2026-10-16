@@ -236,9 +236,9 @@ async function run() {
         + extract("_govMapDraw", "async function _govMapDraw(", GOV) + "\nreturn _govMapDraw;";
       // eslint-disable-next-line no-new-func
       const draw = new Function("window", "OOI18N", "$", "ooMap", "ooRegionName", "_govIndLabel",
-        "ooLabelText", "ooCountryCode", "ooCountryTitle", "_govFmt", src)(
+        "ooLabelText", "ooCountryCode", "ooCountryTitle", "_govFmt", "ooCountryKey", src)(
         { OOI18N }, OOI18N, () => ({ textContent: "" }), async (host, opts) => { seen.push(opts.unit); },
-        (c) => c, (s) => s, (a, b) => a + ": " + b, (c) => c, (c) => c, (v) => String(v));
+        (c) => c, (s) => s, (a, b) => a + ": " + b, (c) => c, (c) => c, (v) => String(v), (c) => String(c).toLowerCase());
       await draw({}, { label: "Life expectancy at birth (years)", unit }, { by_country: [{ country: "fr", value: 82 }] });
       return seen[seen.length - 1];
     };

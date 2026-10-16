@@ -14,10 +14,10 @@ register on one router in that order.
 from __future__ import annotations
 
 from fastapi import Depends, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.models import Article
 from src.database.session import get_db
 from src.utils.export_envelope import envelope

@@ -48,6 +48,7 @@ from src.backup.attribution import (
     signals_from_sources,
 )
 from src.bulletin.period import Period
+from src.catalog.countries import country_payload
 from src.database.models import Article, Source
 from src.monitoring.secret_scrub import exception_text, log_failure
 
@@ -318,7 +319,11 @@ def build_evidence_archive(
     try:
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             _add(zf, "README.md", _readme(edition, period, len(ids)))
-            _add(zf, "edition.json", json.dumps(edition, indent=2, default=str))
+            # A JSON FILE is not a response, so it does not pass the app's country boundary by itself: through it
+            # explicitly, or a published record reads `fr` in the archive and `FRA` over the API (S05-02 S2).
+            from src.api.country_wire import to_wire
+
+            _add(zf, "edition.json", json.dumps(to_wire(edition), indent=2, default=str))
             # The enumeration travels INSIDE the archive too: the person who opens
             # this file months from now is not always the one who exported it, and
             # by then the panel that stated this is somewhere else entirely.
@@ -378,7 +383,7 @@ def build_evidence_archive(
                                 "created_at": str(art.created_at) if art.created_at else None,
                                 "language": art.language,
                                 "detected_language": art.detected_language,
-                                "country": art.country,
+                                "country": country_payload(art.country),
                                 "author": art.author,
                                 "word_count": art.word_count,
                                 "hash": art.hash,
@@ -399,7 +404,7 @@ def build_evidence_archive(
                 zf,
                 "sources.json",
                 json.dumps(
-                    [srcs[s] for s in sorted(contributed) if s in srcs], indent=2, default=str
+                    to_wire([srcs[s] for s in sorted(contributed) if s in srcs]), indent=2, default=str
                 ),
             )
             # THE LICENCE LINES THAT APPLY (Q1008 = a), measured against the sources that

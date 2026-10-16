@@ -67,10 +67,10 @@ def test_indicators_catalog(client):
 
 def test_map_latest_per_country(client):
     r = client.get("/api/governments/map", params={"indicator": "NY.GDP.MKTP.CD"}).json()
-    by = {c["country"]: c for c in r["by_country"]}
-    # keyed by alpha-2 for the choropleth (converted from the stored alpha-3)
+    by = {c["country_iso2"]: c for c in r["by_country"]}
+    # the wire says alpha-3 in `country` (Q304); the choropleth keys on the alpha-2 beside it (`country_iso2`)
     assert by["fr"]["year"] == "2022" and by["fr"]["value"] == 3.0e12
-    assert by["fr"]["iso3"] == "FRA"
+    assert by["fr"]["iso3"] == "FRA" and by["fr"]["country"] == "FRA"
     assert by["us"]["year"] == "2022" and by["us"]["value"] == 25.0e12
     assert "wld" not in by and "WLD" not in by  # the aggregate is dropped, never mapped
     assert r["years"] == ["2021", "2022"]   # the slider's history range
@@ -80,7 +80,7 @@ def test_map_latest_per_country(client):
 def test_map_specific_year(client):
     r = client.get("/api/governments/map",
                    params={"indicator": "NY.GDP.MKTP.CD", "year": "2021"}).json()
-    by = {c["country"]: c for c in r["by_country"]}
+    by = {c["country_iso2"]: c for c in r["by_country"]}
     assert by["fr"]["value"] == 2.9e12 and by["us"]["value"] == 23.0e12
 
 

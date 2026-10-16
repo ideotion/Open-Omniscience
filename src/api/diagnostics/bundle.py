@@ -26,12 +26,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api import diagnostics_plan as _plan
 from src.api import diagnostics_slots as _slots
+from src.api.country_wire import CountryWireResponse as JSONResponse
+from src.api.country_wire import to_wire
 from src.database.country_form import order_key
 from src.database.derived_views import KeywordMentionRead
 from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
@@ -582,8 +584,12 @@ def _member_bytes(value) -> bytes:
     """Encode any diagnostics endpoint return (a plain dict, a JSONResponse, or a
     StreamingResponse) into the bytes to write into the all-diagnostics ZIP."""
     if isinstance(value, (dict, list)):
+        # THE WIRE FORM (Q313: "diagnostics switch with storage"): a member that is a plain
+        # dict never went through an HTTP response, so the boundary every response passes
+        # (src/api/country_wire.py) is applied here too. A JSONResponse member below was
+        # rendered through it already.
         return json.dumps(
-            value, ensure_ascii=False, separators=(",", ":"), default=_member_default
+            to_wire(value), ensure_ascii=False, separators=(",", ":"), default=_member_default
         ).encode("utf-8")
     body_iter = getattr(value, "body_iterator", None)
     if body_iter is not None:

@@ -318,17 +318,25 @@ _ALREADY_THERE = (
 )
 
 
-def _path_exists(path: Path) -> bool:
+_BACKUP_DIR_HINT = "Pass --backup-dir with a folder this command can read and write."
+
+
+def _path_exists(path: Path, *, follow: bool = False, hint: str = _BACKUP_DIR_HINT) -> bool:
     """Whether ``path`` is there. Only "no such file" means absent: a path that cannot be examined (no permission, a loop)
-    is refused with the class, never read as free to write over."""
+    is refused with the class, never read as free to write over.
+
+    ``follow`` is the question being asked. Writing a NEW copy asks "is this name taken", and a dangling symlink IS taken
+    (writing through it would land somewhere nobody looked), so that check does not follow (``lstat``). Resuming asks "is the
+    copy the journal names still THERE to be put back", and a dangling link is not a copy, so that check follows (``stat``)
+    and reads it as absent. ``hint`` is what the refusal tells the operator to do, because the two callers need different
+    advice (a resume has no ``--backup-dir`` to change)."""
     try:
-        os.lstat(path)
+        (os.stat if follow else os.lstat)(path)
     except FileNotFoundError:
         return False
     except OSError as exc:
         raise MigrationRefused(
-            f"the place for the safety copy could not be examined ({type(exc).__name__}): {path}. Nothing was changed. "
-            "Pass --backup-dir with a folder this command can read and write."
+            f"the place for the safety copy could not be examined ({type(exc).__name__}): {path}. Nothing was changed. {hint}"
         ) from None
     return True
 
@@ -390,10 +398,25 @@ def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
         partial.unlink(missing_ok=True)
         raise MigrationRefused(_ALREADY_THERE.format(dest=dest)) from None
     except OSError:
-        if _path_exists(dest):
+        try:
+            there = _path_exists(dest)
+        except Exception:
+            # The question itself failed (refused by class inside the helper): no ``.partial`` is left behind either way.
+            partial.unlink(missing_ok=True)
+            raise
+        if there:
             partial.unlink(missing_ok=True)
             raise MigrationRefused(_ALREADY_THERE.format(dest=dest)) from None
-        os.replace(partial, dest)
+        try:
+            os.replace(partial, dest)
+        except OSError as exc:
+            # The copy was checked and cannot be published: say so by class, and take the half-named file away so no
+            # ``.partial`` is left to be mistaken for a copy.
+            partial.unlink(missing_ok=True)
+            raise MigrationRefused(
+                f"the safety copy was written and checked but could not be put under its final name "
+                f"({type(exc).__name__}): {dest}. It was removed and nothing was changed."
+            ) from None
     else:
         partial.unlink(missing_ok=True)
     return BackupInfo(str(dest), dest.stat().st_size, live, datetime.now(UTC).isoformat(), verdict)
@@ -621,7 +644,14 @@ def migrate(
 
         # ---- the safety copy: once per migration, and kept
         bk = journal.get("backup")
-        if not (bk and _path_exists(Path(bk["path"]))):
+        if not (
+            bk
+            and _path_exists(
+                Path(bk["path"]),
+                follow=True,
+                hint="Put the safety copy back where the journal says it was, or restore from your own backup.",
+            )
+        ):
             if journal.get("cursors") or journal.get("rewritten"):
                 raise MigrationRefused(
                     "an earlier run converted rows and its safety copy is gone, so a new copy would already be "
@@ -843,6 +873,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Left exactly as stored inside recorded differences (no ISO meaning):")
         for key, vals in left_in_json.items():
             print(f"  {key}: " + ", ".join(f"{v!r} x{n:,}" for v, n in vals.items()))
+    unreadable_json = int((rep.alternates or {}).get("left_unreadable") or 0)
+    if unreadable_json:
+        # Counted in the report already (R100); said here too, because a count only the --json file carries is a count the
+        # operator at the console never sees.
+        print(
+            f"Recorded differences whose stored JSON could not be read, left untouched: {unreadable_json:,} "
+            "(a code inside one of them was not converted; nothing was dropped)."
+        )
     if args.json:
         args.json.write_text(json.dumps(rep.__dict__, indent=1, default=str, sort_keys=True), encoding="utf-8")
     return 0 if rep.state in ("done", "already-done", "declined") else 3

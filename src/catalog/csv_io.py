@@ -17,7 +17,7 @@ from __future__ import annotations
 import csv
 import io
 
-from src.catalog.countries import normalize_country, to_iso2, to_iso3
+from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
 
@@ -35,20 +35,17 @@ EXPORT_COLUMNS: list[str] = [
     "rate_limit_ms",
     "enabled",
     "reliability_score",
-    # Q313 = a (2026-09-15): for ONE release a CSV carries the country in BOTH forms,
-    # so an operator's spreadsheet, and anything downstream of it, keeps working across
-    # the alpha-2 -> alpha-3 storage move (Q301 = c; the storage half is 0.5 / S05-02).
-    # `country` stays the old, stored form and is what an import reads; `country_iso3`
-    # is derived from it on the way out. The OLD column is what drops in 0.5, not this
-    # one -- so nothing downstream has to change twice.
-    "country_iso3",
 ]
 
-#: Columns an IMPORT reads. Identical to the export set minus `country_iso3`, which is
-#: DERIVED: two columns for one fact would let a spreadsheet arrive saying `fr` in one
-#: and `DEU` in the other, and picking a winner silently is how an edit gets discarded.
-#: `parse_sources_csv` refuses that row by name instead.
-IMPORT_COLUMNS: list[str] = [c for c in EXPORT_COLUMNS if c != "country_iso3"]
+#: Q313 (S05-02 S2): the export carries ONE country column -- `country`, alpha-3. The
+#: transitional second column (`country_iso3`, 0.4) and the old alpha-2 value are gone
+#: from the OUTPUT; `parse_sources_csv` still reads `country_iso3` on the way IN, forever,
+#: because a sheet exported by 0.4 must import (the same promise the restore path makes
+#: to old backups). A file carrying both spellings that disagree is refused by name.
+LEGACY_IMPORT_COLUMNS: tuple[str, ...] = ("country_iso3",)
+
+#: Columns an IMPORT reads: what the export writes, plus the legacy column above.
+IMPORT_COLUMNS: list[str] = list(EXPORT_COLUMNS)
 
 # Integer columns and their (lo, hi) clamps; out-of-range -> reported as an error.
 _INT_FIELDS = {
@@ -81,7 +78,7 @@ def template_csv() -> str:
             "domain": "example.com",
             "rss_url": "https://example.com/feed.xml",
             "source_type": "news",
-            "country": "us",
+            "country": "USA",
             "language": "en",
             "region": "north-america",
             "tags": "politics,world",
@@ -105,9 +102,8 @@ def template_csv() -> str:
             "reliability_score": 8,
         },
     ]
-    # The TEMPLATE documents what an import READS. `country_iso3` is derived on export
-    # and refused on import when it disagrees with `country`, so offering an operator a
-    # blank column to fill in would be offering them a way to be refused.
+    # The TEMPLATE documents what an import READS: one `country` column, alpha-3 (an
+    # alpha-2, a name or a slug is read too). The legacy `country_iso3` is not offered.
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=IMPORT_COLUMNS, extrasaction="ignore")
     writer.writeheader()
@@ -131,9 +127,10 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
 
     # Case-insensitive header -> canonical column.
     colmap = {raw: raw.strip().lower() for raw in reader.fieldnames}
-    # `country_iso3` is read too -- not to be stored, but so a row where the two
-    # country columns DISAGREE can be refused rather than silently resolved.
-    known = set(EXPORT_COLUMNS)
+    # The LEGACY `country_iso3` is read too (a sheet exported by 0.4 carries it) -- not
+    # to be stored, but so a row where the two country columns DISAGREE can be refused
+    # rather than silently resolved.
+    known = set(EXPORT_COLUMNS) | set(LEGACY_IMPORT_COLUMNS)
 
     rows: list[dict] = []
     errors: list[str] = []
@@ -165,37 +162,46 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
         if "language" in out:
             out["language"] = language_storage_code(out["language"]) or out["language"]
         # Country: canonical lowercase ISO-2 via the one conversion layer —
-        # accepts codes, full names and slugs; unrecognisable values are dropped
-        # (never stored as junk).
+        # accepts codes, full names and slugs. A value it cannot read is KEPT AS TYPED
+        # (lowercased, like every country value) and COUNTED by the import
+        # (``unreadable_country_rows``): dropping it would erase a statement the operator
+        # made, and the screens already show an unreadable code as itself with the reason
+        # on hover (R100: local data never gives way, an unreadable value is a fact).
         iso3_raw = (rec.get("country_iso3") or "").strip()
+        unreadable_country = None
         if "country" in out:
             cc = normalize_country(out["country"])
             if cc:
                 out["country"] = cc
             else:
-                out.pop("country")
+                unreadable_country = out.pop("country")
         # NOT an `elif`: the branch above can DROP an unrecognisable `country`, and an
         # `elif` would then throw away a perfectly readable `country_iso3` in the same
         # row -- leaving the source with no country at all although the operator stated
         # one in a form we understand. So the fall-back is keyed on the RESULT ("is
         # there a country now?"), never on which column happened to be present.
         if "country" not in out and iso3_raw:
-            # Through `to_iso2`, not `normalize_country`. The claim this comment used
-            # to make -- that `normalize_country("DEU")` is None -- was measured and
-            # TRUE until S04-05 taught that function the alpha-3 forms; either call
-            # now answers `de`. `to_iso2` is kept because it is the narrower one: this
-            # column is declared to hold an alpha-3, so reading it with the alpha-3
-            # converter says what the column means, and both fail closed on an
+            # Through `normalize_country`: it reads the alpha-3 forms AND Q303's four
+            # (`EUU`, `INT`, `XKX`, `ANT`), which `to_iso2` refuses because they are not ISO
+            # countries -- values the 0.4 export itself wrote -- and both fail closed on an
             # aggregate or an unknown code.
-            cc = to_iso2(iso3_raw)
+            cc = normalize_country(iso3_raw)
             if cc:
                 out["country"] = cc
-        if iso3_raw and "country" in out and to_iso3(out["country"]) != to_iso3(iso3_raw):
+                unreadable_country = None
+        if "country" not in out and (unreadable_country or iso3_raw):
+            # Neither column could be read: keep what the operator typed (the alpha-3 column's
+            # value only when `country` was empty), so the row says what the sheet said.
+            out["country"] = (unreadable_country or iso3_raw).lower()
+        if iso3_raw and "country" in out and normalize_country(out["country"]) != normalize_country(iso3_raw):
             # TWO STATEMENTS OF ONE FACT THAT DISAGREE. Refused by name: picking
             # `country` would discard an edit the operator made in the other column,
             # and picking `country_iso3` would discard the one they made here. Compared
-            # through to_iso3 on BOTH sides, so `fr` vs `FRA` is agreement, not a
-            # conflict -- the recorded "normalise on both sides of a comparison" rule.
+            # through normalize_country on BOTH sides, so `fr` vs `FRA` is agreement, not a
+            # conflict -- and so `eu` vs `INT` is NOT: an unreadable side is None, and
+            # `country` is readable here, so a column that cannot be read never reads as
+            # agreement (the old to_iso3 pair compared None with None for the four non-ISO
+            # codes and let the operator's edit vanish).
             errors.append(
                 f"row {i}: country {out['country']!r} and country_iso3 {iso3_raw!r} "
                 "disagree; correct one of them (they are the same fact in two forms)"
@@ -234,10 +240,24 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
     return rows, errors
 
 
+def unreadable_country_rows(rows: list[dict]) -> dict:
+    """The rows of a parsed sheet whose ``country`` is kept as typed because it is not a country code or name.
+
+    ``{"count": n, "examples": [...], "reason": ...}``: the count is exact, only the listed examples are
+    bounded. An empty result is ``{"count": 0, ...}``, never absent, so a caller can always say "none".
+    """
+    odd = [(r["domain"], r["country"]) for r in rows if r.get("country") and normalize_country(r["country"]) is None]
+    return {
+        "count": len(odd),
+        "examples": [{"domain": d, "country": c} for d, c in odd[:10]],
+        "reason": "kept as typed: not a recognised country code or name",
+    }
+
+
 def upsert_sources(session, rows: list[dict]) -> dict:
     """Create new sources and update existing ones (matched by domain).
 
-    Returns ``{created, updated, skipped, errors}``. A row whose domain already
+    Returns ``{created, updated, skipped, errors, country_kept_stored}``. A row whose domain already
     exists updates only the fields present in that row.
 
     Each row runs inside its own SAVEPOINT (``begin_nested``), so a mid-batch
@@ -250,6 +270,7 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     from src.database.models import Source
 
     created = updated = 0
+    kept_stored: list[str] = []
     errors: list[str] = []
     existing = {d: sid for sid, d in session.query(Source.id, Source.domain).all()}
 
@@ -263,8 +284,14 @@ def upsert_sources(session, rows: list[dict]) -> dict:
                 if is_update:
                     src = session.query(Source).filter_by(domain=domain).first()
                     for k, v in row.items():
-                        if k != "domain":
-                            setattr(src, k, v)
+                        if k == "domain":
+                            continue
+                        if k == "country" and src.country and normalize_country(v) is None:
+                            # A kept-as-typed value that is not a country ("n/a", "-", "unknown") never replaces a
+                            # country the source already has (R100: local data never gives way on import).
+                            kept_stored.append(domain)
+                            continue
+                        setattr(src, k, v)
                 else:
                     # Language gating (maintainer 2026-06-18): a NEW source in a
                     # language the keyword engine cannot manage seeds DISABLED by
@@ -287,4 +314,14 @@ def upsert_sources(session, rows: list[dict]) -> dict:
             errors.append(f"{domain}: {exc}")
             continue
     session.commit()
-    return {"created": created, "updated": updated, "skipped": len(errors), "errors": errors}
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": len(errors),
+        "errors": errors,
+        "country_kept_stored": {
+            "count": len(kept_stored),
+            "examples": kept_stored[:10],
+            "reason": "the sheet's country is not a country code or name, so the country already stored was kept",
+        },
+    }

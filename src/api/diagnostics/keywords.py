@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
@@ -70,6 +70,7 @@ from src.analytics.keyword_log_scan import (
     scan_keywords,
 )
 from src.analytics.upload_parts import UPLOAD_PART_BYTES, sha256_file
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.maintenance import (
     StatementTimeout,
     raise_if_memory_short,

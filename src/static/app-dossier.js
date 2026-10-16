@@ -89,9 +89,9 @@
       if (p.no_country) gaps.push(tf("{n} without a country", {n: num(p.no_country)}));
       if (p.no_language) gaps.push(tf("{n} without a language", {n: num(p.no_language)}));
       if (p.undated && p.first) gaps.push(tf("{n} undated", {n: num(p.undated)}));
-      const codes = (list) => (list || []).map((c) => c.code + " " + c.articles).join(", ");
+      const codes = (list, form) => (list || []).map((c) => (form ? form(c.code) : c.code) + " " + c.articles).join(", ");
       const hover = [t(p.method || ""),
-        p.country_codes && p.country_codes.length ? t("Countries") + ": " + codes(p.country_codes) : "",
+        p.country_codes && p.country_codes.length ? t("Countries") + ": " + codes(p.country_codes, ooCountryCode) : "",
         p.language_codes && p.language_codes.length ? t("Languages") + ": " + codes(p.language_codes) : ""]
         .filter(Boolean).join(" — ");
       return `<div class="dossier-passport small" title="${esc(hover)}">`

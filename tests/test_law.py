@@ -599,7 +599,7 @@ def test_add_document_tracks_it_immediately_and_returns_the_verdict(monkeypatch,
         })
         assert r.status_code == 200
         body = r.json()
-        assert body["jurisdiction"] == "kh" and body["language"] == "fr"
+        assert body["jurisdiction"] == "KHM" and body["language"] == "fr"
         assert body["track_result"]["status"] == "baseline"
         assert body["has_baseline"] is True
 

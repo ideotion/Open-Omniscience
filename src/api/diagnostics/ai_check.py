@@ -14,9 +14,10 @@ register on one router in that order.
 from __future__ import annotations
 
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring.secret_scrub import http_detail
 
