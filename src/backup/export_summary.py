@@ -57,6 +57,7 @@ from src.backup.attribution import (
     signals_from_tables,
 )
 from src.backup.export_folder import REQUEST_NAME, read_export_request
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
@@ -611,4 +612,7 @@ def write_summary_for_export_job(
         return write_backup_summary(d, export_facts(d, volume_status=volume_status))
     except Exception as exc:  # noqa: BLE001 - see the docstring: never fail the backup over this
         log_failure(_LOG, f"export summary: could not write {SUMMARY_NAME} in {d}", exc, level=logging.WARNING)
+        # The backup run in flight (if one is) keeps the CLASS of this failure in the storage-events journal, so a backup that ended "ok"
+        # with no summary beside it says why; a folder backup, which opens no run there, leaves it at the log line.
+        storage_events.run_part("export", summary_error=type(exc).__name__)
         return None
