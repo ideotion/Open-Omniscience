@@ -150,6 +150,9 @@ def test_t6_divergent_merge_full(corpora):
 
 def test_t2_duplicate_flood_is_idempotent(corpora):
     a, art = corpora["A"], corpora["artifact"]
+    # Flooding repeats a merge that already happened (test_t6 makes the first); alone, the first run here would create the
+    # rows and read as growth, so the first is done here too.
+    _run(a, "merge", str(art), "--passphrase", "pw-torture", "--commit")
     before = _run(a, "dump")["dump"]
     for _ in range(3):
         rep = _run(a, "merge", str(art), "--passphrase", "pw-torture", "--commit")["report"]
@@ -161,6 +164,10 @@ def test_t2_duplicate_flood_is_idempotent(corpora):
 
 def test_t9_custody_verified_not_trusted(corpora):
     a = corpora["A"]
+    # The imported chains exist only once B has been merged into A, which test_t6 does; run alone (-k, a node id, or a worker of
+    # xdist that did not get t6) this test saw none and failed on `imported`. The merge is idempotent (T2 pins that), so it is
+    # done here too and the test no longer depends on which others ran before it.
+    _run(a, "merge", str(corpora["artifact"]), "--passphrase", "pw-torture", "--commit")
     state = _run(a, "verify-custody")
     assert state["local_ok"] is True, "local chain must stay intact after merges"
     assert state["imported"] and all(c["verified"] for c in state["imported"])
