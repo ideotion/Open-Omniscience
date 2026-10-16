@@ -892,6 +892,19 @@ class StorageGuard:
         with self._lock:
             return self._wal or self._disk
 
+    def wal_engaged(self) -> bool:
+        """True while the LOG latch is engaged and the guard is on, whether or not the drive latch is too.
+
+        ``kind()`` names the drive first when both hold, so a caller that must pause for the log (the reads
+        that keep a reader open, ``api/heavy.py``) asks this instead of comparing ``kind()`` to ``"wal"``.
+        Like :meth:`wait_if_engaged` it follows the LATCH and not the operator's "Resume anyway": that forces
+        COLLECTION on, and a scan is not collection. A non-blocking read; it samples nothing and never raises.
+        """
+        if not self.enabled():
+            return False
+        with self._lock:
+            return bool(self._wal)
+
     def kind(self) -> str | None:
         """``"disk"`` (the more severe, wins), ``"wal"``, ``"damage"`` (the corpus file was reported
         damaged), ``"verifying"`` (the check after an unexpected stop is reading the data files) or None."""

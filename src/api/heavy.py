@@ -25,6 +25,14 @@ heavy read:
     result, and otherwise degrade honestly (429) — either way only ONE compute runs, so a
     burst of duplicate polls can never launch a burst of duplicate scans.
 
+  * A PAUSE WHILE THE LOG IS PINNED — while the storage guard's write-ahead-log latch is engaged
+    (``storage_guard.wal_engaged()``), a request that would START a compute does not: it raises the typed
+    :class:`HeavyPaused` (a 503 with ``Retry-After`` at the drain cadence and a body that names the
+    pause). The scans are the readers that hold the log's checkpoint back (the 16 Oct 2026 bundles'
+    pin reports named trending-windows and the briefing trending scan), so starting no new one lets the
+    drain finish. Cached answers are still served (a cache hit never reaches this module) and a duplicate
+    that only shares a flight already running starts nothing, so it is not paused.
+
 Guarantees / honesty:
   * The value returned is the leader's REAL computed value — single-flight collapses the
     DUPLICATE work, it never fabricates or summarises a result.
@@ -47,6 +55,7 @@ import threading
 import uuid
 from typing import Any, Callable
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from src.monitoring.secret_scrub import http_detail
@@ -56,6 +65,44 @@ class HeavyBusy(RuntimeError):
     """The server is at heavy-read capacity (cap reached / a duplicate leader was slow).
 
     Routers map this to a fast, honest HTTP 429 "busy, retry" — NEVER an unbounded hang."""
+
+
+PAUSED_DETAIL = "Paused while the write-ahead log is pinned; resumes by itself."
+
+#: The response header that tells a client this 503 is the named pause and not a failure: the client keeps
+#: its answer, backs off and says why, instead of showing "No data".
+PAUSED_HEADER = "X-OO-Paused"
+PAUSED_HEADER_VALUE = "wal"
+
+
+class HeavyPaused(HTTPException):
+    """A heavy compute was not started because the write-ahead log is pinned (HTTP 503, named).
+
+    Routers do not map it: it IS the response (FastAPI renders an HTTPException), so it passes through
+    ``_deadlined`` and :func:`guarded_read`, which catch :class:`HeavyBusy` and ``StatementTimeout`` only.
+    It is raised, never returned, so nothing is cached by an upstream TTL cache. ``Retry-After`` is the
+    guard's drain cadence: the pause is re-read that often and ends by itself."""
+
+    def __init__(self, retry_after_s: int) -> None:
+        super().__init__(
+            status_code=503,
+            detail=PAUSED_DETAIL,
+            headers={"Retry-After": str(max(1, int(retry_after_s))), PAUSED_HEADER: PAUSED_HEADER_VALUE},
+        )
+
+
+def _paused() -> HeavyPaused | None:
+    """The pause to raise, or None: the guard's LOG latch only (not the drive latch, not the override).
+
+    Only while the guard's supervisor runs: it is what takes the readings and the drain that end the
+    latch, and a pause must never outlive its cause. Without it (it failed to start, which is logged) the
+    latch could stand for ever with nobody sampling, so a read is not held up by it; the places that wait
+    on the latch (the pass loop, ``wait_if_engaged``) take the readings themselves and are not affected."""
+    from src.scheduler.storage_guard import DRAIN_EVERY_S, storage_guard, supervisor_running
+
+    if not (storage_guard.wal_engaged() and supervisor_running()):
+        return None
+    return HeavyPaused(int(DRAIN_EVERY_S))
 
 
 def _cap() -> int:
@@ -109,7 +156,7 @@ _SEM: threading.BoundedSemaphore | None = None
 _SEM_CAP: int | None = None
 
 # Honest counters for diagnostics/tests (no score, local only).
-_STATS = {"runs": 0, "shared": 0, "busy": 0, "errors": 0}
+_STATS = {"runs": 0, "shared": 0, "busy": 0, "errors": 0, "paused": 0}
 
 
 def _semaphore() -> threading.BoundedSemaphore:
@@ -158,10 +205,22 @@ def run_heavy(key: str, compute: Callable[[], Any]) -> Any:
     """Run ``compute`` under the global heavy-read cap + single-flight; return its result.
 
     Raises :class:`HeavyBusy` if the server is at capacity (the caller maps it to a fast
-    429). Propagates any exception ``compute`` raises (e.g. a ``StatementTimeout`` from an
+    429) and :class:`HeavyPaused` (a 503 as it stands) when this call would START a compute while the
+    write-ahead log is pinned. Propagates any exception ``compute`` raises (e.g. a ``StatementTimeout`` from an
     inner deadline) — to the leader AND to any followers that shared the flight, so the
     caller's existing timeout handling fires uniformly.
     """
+    with _LOCK:
+        running = key in _FLIGHTS
+    if not running:
+        # Only a call that would start a scan is paused: a duplicate of a flight already running starts
+        # nothing. Asked outside _LOCK (the guard has its own lock), and before a flight is registered,
+        # so a pause leaves no flight behind for followers to wait on.
+        paused = _paused()
+        if paused is not None:
+            _bump("paused")
+            raise paused
+
     with _LOCK:
         fl = _FLIGHTS.get(key)
         if fl is None:
@@ -224,8 +283,6 @@ def guarded_read(
     HTTP 429 "busy, retry". Both fall-back paths return a value WITHOUT caching it (there is
     no cache here) — a partial is never mistaken for the real answer.
     """
-    from fastapi import HTTPException
-
     from src.database.maintenance import StatementTimeout, statement_deadline
 
     def _run() -> Any:

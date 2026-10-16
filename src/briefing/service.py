@@ -71,6 +71,12 @@ def _bg_refresh() -> None:
             _refresh_state["total"] = total
 
     try:
+        # A rebuild is a run of whole-corpus scans, the readers that hold the write-ahead log's
+        # checkpoint back. While the storage guard is engaged this waits (the pattern the guard documents
+        # for background work at a chunk boundary); the old cards stay on screen meanwhile.
+        from src.scheduler.storage_guard import storage_guard
+
+        storage_guard.wait_if_engaged()
         with session_scope() as session:
             refresh_briefing(session, on_progress=_progress)
     except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the app
