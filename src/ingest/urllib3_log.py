@@ -175,7 +175,8 @@ def _drop_traces(record: logging.LogRecord) -> None:
 
 def _withhold_whole(record: logging.LogRecord) -> None:
     """Replace the record's message with :data:`UNRECOGNISED`, keeping its logger and level, and the class name of the exception it carried."""
-    caught = record.exc_info[0] if isinstance(record.exc_info, tuple) and record.exc_info else None
+    info = record.exc_info
+    caught = info[0] if isinstance(info, tuple) and info else None
     named = getattr(caught, "__name__", None)
     if not _is_withheld_message(record.msg):  # a second pass over the same record keeps what the first one left
         record.msg = f"{UNRECOGNISED} ({named})" if isinstance(named, str) else UNRECOGNISED
