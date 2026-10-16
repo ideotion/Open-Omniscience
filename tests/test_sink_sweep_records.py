@@ -570,6 +570,48 @@ def _api_chain_taken_off(rel: str, source: str) -> str:
     return _RAISE_FROM.sub("", source) if (rel.startswith("src/api/") or rel in _S5_MODULES) else source
 
 
+#: Outside ``src/api`` a ``raise X from exc`` chains an ORDINARY exception, whose chain whoever logs X prints (through ``record_traceback``,
+#: which reads every link), so the reading above does not follow it. Instead the sites are COUNTED per module: a new one fails here until
+#: its cause has been read and the count raised, so a wrapper raised from a driver's error cannot arrive unseen.
+_S5_CHAINED_RAISES: dict[str, int] = {
+    "src/ai_layer/bench_batch.py": 2,
+    "src/ai_layer/source_tags_job.py": 1,
+    "src/ai_layer/triage_job.py": 1,
+    "src/analytics/ir_eval.py": 2,
+    "src/analytics/keyword_log_export.py": 3,
+    "src/analytics/keyword_log_scan.py": 2,
+    "src/analytics/watches.py": 1,
+    "src/catalog/discover.py": 1,
+    "src/catalog/qualification_integrity.py": 1,
+    "src/catalog/qualification_merge.py": 12,
+    "src/config/app_settings.py": 3,
+    "src/custody/anchor.py": 2,
+    "src/law/adapters/clml.py": 3,
+    "src/llm/ollama.py": 10,
+    "src/llm/ollama_lifecycle.py": 1,
+    "src/llm/vllm_client.py": 5,
+    "src/llm/vllm_lifecycle.py": 1,
+    "src/safety/crypto.py": 4,
+    "src/safety/settings.py": 1,
+    "src/services/duckduckgo.py": 1,
+    "src/stats/fdr.py": 1,
+    "src/stats/fetch.py": 1,
+    "src/utils/compression.py": 2,
+    "src/verification/metadata.py": 1,
+    "src/versioned/budget.py": 2,
+}
+
+
+def test_a_raise_that_chains_an_ordinary_exception_is_counted_not_skipped():
+    pattern = re.compile(r"(?<=[)\w\]\"]) from (?:exc|e|err|ex)[ \t]*$")
+    found: dict[str, int] = {}
+    for rel in sorted(_S5_MODULES):
+        n = sum(1 for ln in (ROOT / rel).read_text(encoding="utf-8").split("\n") if pattern.search(ln) and "HTTPException" not in ln)
+        if n:
+            found[rel] = n
+    assert found == _S5_CHAINED_RAISES
+
+
 def _found(rel: str, source: str) -> list[str]:
     source = _api_chain_taken_off(rel, source)
     table = {k: v for k, v in KEPT.get(rel, {}).items() if v}
@@ -734,15 +776,15 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_build_inmemory_and_swap', 'skip = {"reason": stop.reason, "at": time.time(), **stop.detail}'): 2,
     },
     'src/analytics/store.py': {
-        # _skip_error writes engine_text (record_text); its body is pinned by test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub
+        # _skip_error writes engine_text (record_text); its body is pinned by tests/test_engine_text.py (the helper check)
         ('maybe_cleanup_keywords', 'tally["entity_status"] = _skip_error(exc)'): 1,
-        # _skip_error writes engine_text (record_text); its body is pinned by test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub
+        # _skip_error writes engine_text (record_text); its body is pinned by tests/test_engine_text.py (the helper check)
         ('maybe_cleanup_keywords', 'tally["language"] = _skip_error(exc)'): 1,
-        # _skip_error writes engine_text (record_text); its body is pinned by test_a_helper_the_api_guard_trusts_by_name_is_still_one_call_into_the_scrub
+        # _skip_error writes engine_text (record_text); its body is pinned by tests/test_engine_text.py (the helper check)
         ('maybe_cleanup_keywords', 'tally["prune"] = _skip_error(exc)'): 2,
     },
     'src/analytics/watches.py': {
-        # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
+        # the ValueError's text is the HTTPException detail an upstream http_detail made, or record_text's own output
         ('_filters_blob', 'raise ValueError(getattr(exc, "detail", None) or record_text(exc))'): 1,
     },
     'src/catalog/discover_job.py': {
@@ -750,7 +792,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('run_world_discovery', 'if "airplane" in str(exc):  # the kill switch raced the loop check'): 1,
     },
     'src/catalog/qualification_merge.py': {
-        # hands the JSON error on to the YAML reader, which reads only its class and fixed words
+        # hands the JSON error to the YAML reader as its parse-failure cause; the reader writes record_text of the YAML error and the class of this one
         ('rows_from_export_bytes', 'return _rows_from_export_yaml(text, origin, json_exc)'): 1,
     },
     'src/config/kv_store.py': {
@@ -1247,3 +1289,28 @@ def test_engine_text_and_bounded_error_never_return_a_drivers_words_or_a_held_pa
     for exc in (sqlite3.OperationalError(f"no such table: {secret}"), ValueError("with kQ7!vLm-held-key inside")):
         for out in (engine_text(exc), engine_text(exc, 200, typed=True), bounded_error(exc, 200)):
             assert secret not in out and "kQ7!vLm-held-key" not in out, out
+
+
+# --- an excused classification read is followed to where its text goes ---------------------------------------------------------------
+# ``said = str(exc).lower()`` is excused by its exact line because the text is only searched for keywords; the scan does not follow the
+# variable, so THIS test does: every load of it must be an operand of ``in``/``not in`` or the receiver of a search method.
+_TEXT_READS = (
+    ("src/analytics/keyword_log_scan.py", "_refuse_when_the_disk_is_full", "said"),
+    ("src/markets/csv_feeds.py", "classify_fetch_failure", "low"),
+    ("src/llm/ollama.py", "is_context_overflow", "text"),
+)
+_SEARCH_METHODS = {"startswith", "endswith", "find", "count", "index"}
+
+
+@pytest.mark.parametrize(("rel", "func", "var"), _TEXT_READS, ids=[f"{r}:{v}" for r, _f, v in _TEXT_READS])
+def test_a_classification_read_of_the_exceptions_text_only_searches_it(rel, func, var):
+    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == func)
+    parent = {c: n for n in ast.walk(fn) for c in ast.iter_child_nodes(n)}
+    loads = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == var and isinstance(n.ctx, ast.Load)]
+    assert loads, f"{rel}:{func} no longer reads {var!r}: drop the entry"
+    for use in loads:
+        up = parent.get(use)
+        in_test = isinstance(up, ast.Compare) and all(isinstance(op, (ast.In, ast.NotIn)) for op in up.ops) and use in up.comparators
+        search = isinstance(up, ast.Attribute) and up.attr in _SEARCH_METHODS and isinstance(parent.get(up), ast.Call)
+        assert in_test or search, f"{rel}:{use.lineno} {var!r} (a caught exception's text) is used other than to search it"

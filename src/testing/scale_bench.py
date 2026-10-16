@@ -133,7 +133,7 @@ def corpus_fingerprint(db_path: str | Path, passphrase: str | None = None) -> di
         finally:
             conn.close()
     except Exception as exc:  # noqa: BLE001 - report the read failure honestly
-        out["row_counts_error"] = record_text(exc)
+        out["row_counts_error"] = record_text(exc, *([passphrase] if passphrase else []))
     out["row_counts"] = counts
     return out
 
