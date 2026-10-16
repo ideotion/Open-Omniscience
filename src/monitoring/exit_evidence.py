@@ -192,20 +192,57 @@ def launcher_exit(pid: int | None, boot_id: str | None = None) -> dict[str, Any]
 #  1b. What the C library said as the process aborted (the launcher's stderr filter)
 # --------------------------------------------------------------------------- #
 
-#: Lines of the launcher's stderr record shown per session (the launcher keeps up to 20), each at most ``_STDERR_LINE_CHARS`` characters.
-#: WHAT THEY PROTECT: the report's byte budget (the record is a few fixed glibc messages, so a real abort is one or two lines; a crash loop
-#: is the case that could repeat them), not a view of how many there were: ``lines_recorded`` is always the full count the launcher kept.
-STDERR_LINES_SHOWN = 3
-_STDERR_LINE_CHARS = 100
-#: The same fixed set of messages the launcher's awk filter admits, checked AGAIN here because the file is on disk and anything may have
-#: written to it; a line that does not match is not shown, only counted in ``rejected_lines``.
-_ABORT_LINE = re.compile(
-    r"^(?:(?:malloc|free|realloc|calloc|malloc_consolidate|munmap_chunk)\(\): "
-    r"(?:corrupted|invalid|unsorted|smallbin|largebin|mismatching|memory corruption|unaligned|double free|too many)[a-z0-9 >().!-]*"
-    r"|double free or corruption \((?:out|!prev|fasttop)\)"
-    r"|corrupted (?:size vs\. prev_size|double-linked list)[a-z ()]*"
-    r"|Fatal Python error: (?:Aborted|Segmentation fault|Bus error|Illegal instruction|Floating point exception))$"
-)
+#: Lines of the launcher's stderr record shown per session (the launcher keeps up to 20): 2. WHAT IT PROTECTS: the report's byte budget
+#: (a real abort is one or two messages; a crash loop is what could repeat them), not a view of how many there were: ``lines_recorded``
+#: is always the full count the launcher kept. Worst case per session about 245 B, 11 sessions about 2.7 KB, typical about 100 B.
+STDERR_LINES_SHOWN = 2
+#: The fixed messages the launcher's stderr filter admits (scripts/launch.sh ``STDERR_MESSAGES``, which a test pins equal to this set):
+#: glibc 2.41's heap-corruption messages and the interpreter's fatal-error headers. A line is shown only when it IS one of these, whole
+#: (no pattern, no tail), checked AGAIN here because the file is on disk and anything may have written to it; any other line is not
+#: shown, only counted in ``rejected_lines``. A message from another libc (musl, macOS) is not here and so is never recorded.
+ABORT_MESSAGES = frozenset({
+    "malloc(): unaligned fastbin chunk detected",
+    "malloc(): unaligned fastbin chunk detected 2",
+    "malloc(): unaligned fastbin chunk detected 3",
+    "malloc(): memory corruption",
+    "malloc(): memory corruption (fast)",
+    "malloc(): unaligned tcache chunk detected",
+    "malloc(): smallbin double linked list corrupted",
+    "malloc(): invalid size (unsorted)",
+    "malloc(): invalid next size (unsorted)",
+    "malloc(): mismatching next->prev_size (unsorted)",
+    "malloc(): unsorted double linked list corrupted",
+    "malloc(): largebin double linked list corrupted (nextsize)",
+    "malloc(): largebin double linked list corrupted (bk)",
+    "malloc(): corrupted top size",
+    "malloc_consolidate(): unaligned fastbin chunk detected",
+    "malloc_consolidate(): invalid chunk size",
+    "munmap_chunk(): invalid pointer",
+    "realloc(): invalid pointer",
+    "realloc(): invalid next size",
+    "realloc(): invalid old size",
+    "free(): invalid pointer",
+    "free(): invalid size",
+    "free(): too many chunks detected in tcache",
+    "free(): unaligned chunk detected in tcache 2",
+    "free(): double free detected in tcache 2",
+    "free(): invalid next size (fast)",
+    "free(): invalid next size (normal)",
+    "free(): corrupted unsorted chunks",
+    "double free or corruption (fasttop)",
+    "double free or corruption (top)",
+    "double free or corruption (out)",
+    "double free or corruption (!prev)",
+    "corrupted size vs. prev_size",
+    "corrupted size vs. prev_size while consolidating",
+    "corrupted double-linked list",
+    "corrupted double-linked list (not small)",
+    "Fatal Python error: Aborted",
+    "Fatal Python error: Segmentation fault",
+    "Fatal Python error: Bus error",
+    "Fatal Python error: Illegal instruction",
+    "Fatal Python error: Floating point exception",
+})
 
 
 def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
@@ -223,7 +260,7 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
         return None
     from src.monitoring.secret_scrub import scrubbed
 
-    shown: list[dict[str, Any]] = []
+    shown: list[str] = []
     summary: dict[str, Any] | None = None
     recorded = rejected = 0
     for line in raw.splitlines():
@@ -237,11 +274,11 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
             summary = rec
             continue
         text = rec.get("line")
-        if not isinstance(text, str) or len(text) > _STDERR_LINE_CHARS or not _ABORT_LINE.match(text):
+        if not isinstance(text, str) or text not in ABORT_MESSAGES:
             rejected += 1
             continue
         recorded += 1
-        shown.append({"at": rec.get("at") if isinstance(rec.get("at"), str) else None, "line": scrubbed(text)})
+        shown.append(scrubbed(text))
     if summary is None and not shown and not rejected:
         return None
     out: dict[str, Any] = {"lines": shown[-STDERR_LINES_SHOWN:], "lines_recorded": recorded}

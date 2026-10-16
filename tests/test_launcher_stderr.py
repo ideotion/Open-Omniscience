@@ -111,7 +111,7 @@ def test_the_reader_shows_the_message_for_its_pid_and_boot_only(dd):
         {"pid": 5, "boot_id": "b1", "summary": True, "kept_lines": 1, "dropped_lines": 40, "over_cap_lines": 0},
     ])
     out = ee.launcher_stderr(5, "b1")
-    assert out == {"lines": [{"at": "t1", "line": "free(): invalid pointer"}], "lines_recorded": 1, "dropped_lines": 40}
+    assert out == {"lines": ["free(): invalid pointer"], "lines_recorded": 1, "dropped_lines": 40}
     assert ee.launcher_stderr(7, "b1") is None
 
 
@@ -122,14 +122,14 @@ def test_a_line_the_filter_would_not_have_kept_is_never_shown(dd):
         {"pid": 5, "boot_id": "b1", "at": "t", "line": "free(): invalid " + "x" * 200},
     ])
     out = ee.launcher_stderr(5, "b1")
-    assert [x["line"] for x in out["lines"]] == ["free(): invalid pointer"] and out["rejected_lines"] == 2
+    assert out["lines"] == ["free(): invalid pointer"] and out["rejected_lines"] == 2
     assert out["no_summary"] is True and out["dropped_lines"] is None, "a launcher killed before its summary says so, not zero"
 
 
 def test_the_reader_shows_the_newest_few_and_the_full_count(dd):
     _write(dd, [{"pid": 5, "boot_id": "b1", "at": f"t{i}", "line": "free(): invalid pointer"} for i in range(8)])
     out = ee.launcher_stderr(5, "b1")
-    assert len(out["lines"]) == ee.STDERR_LINES_SHOWN and out["lines_recorded"] == 8 and out["lines"][-1]["at"] == "t7"
+    assert len(out["lines"]) == ee.STDERR_LINES_SHOWN and out["lines_recorded"] == 8
 
 
 def test_an_unreadable_or_absent_file_is_none_not_an_error(dd):
@@ -148,4 +148,48 @@ def test_an_earlier_end_carries_the_launcher_stderr_beside_its_trace(dd):
     boot = next(r for r in recs if r.get("kind") == "boot").get("machine_boot_id")
     _write(dd, [{"pid": 801, "boot_id": boot, "at": "t", "line": "free(): invalid pointer"}])
     row = ee.earlier_unclean_ends(None, records=recs)["sessions"][0]
-    assert row["launcher_stderr"]["lines"] == [{"at": "t", "line": "free(): invalid pointer"}]
+    assert row["launcher_stderr"]["lines"] == ["free(): invalid pointer"]
+
+
+# ---- a stem is not a message: only a line that IS a known message, whole, is stored (the coordinator's check 1, 10-17) ----
+
+FREE_TEXT_AFTER_A_STEM = [
+    "free(): invalid pointer 0x7ffd",
+    "free(): invalid",
+    "free(): hunter2-secret",
+    "malloc(): corrupted top size and then some words",
+    "double free or corruption (out) extra",
+    "corrupted size vs. prev_size, passphrase=abc",
+    "Fatal Python error: Aborted: the passphrase was abc",
+    " free(): invalid pointer",
+    "free(): invalid pointer ",
+]
+
+
+@posix_only
+def test_a_line_that_only_starts_like_a_message_is_never_stored_by_the_launcher(tmp_path):
+    body = "sleep 0.2\n" + "".join(f"printf '%s\\n' {json.dumps(line)} >&2\n" for line in FREE_TEXT_AFTER_A_STEM) + "echo 'free(): invalid pointer' >&2\nexit 3\n"
+    root, env = _launcher_tree(tmp_path, body)
+    _run_launcher(root, env)
+    recs = _records(root)
+    assert [r["line"] for r in recs if not r.get("summary")] == ["free(): invalid pointer"]
+    assert [r for r in recs if r.get("summary")][0]["dropped_lines"] == len(FREE_TEXT_AFTER_A_STEM)
+    raw = (root / "data" / "diagnostics" / ee.LAUNCHER_STDERR).read_text(encoding="utf-8")
+    assert "hunter2" not in raw and "passphrase" not in raw
+
+
+@pytest.mark.parametrize("line", FREE_TEXT_AFTER_A_STEM)
+def test_the_reader_rejects_a_stem_with_a_tail_too(dd, line):
+    _write(dd, [{"pid": 5, "boot_id": "b1", "at": "t", "line": line}])
+    out = ee.launcher_stderr(5, "b1")
+    assert out["lines"] == [] and out["rejected_lines"] == 1
+
+
+def test_the_launchers_list_of_messages_and_the_readers_are_the_same_list():
+    import re as _re
+
+    src = (Path(__file__).resolve().parent.parent / "scripts" / "launch.sh").read_text(encoding="utf-8")
+    block = _re.search(r"^STDERR_MESSAGES='(.*?)'\n", src, _re.S | _re.M)
+    assert block, "launch.sh must define STDERR_MESSAGES"
+    assert set(block.group(1).split("\n")) == set(ee.ABORT_MESSAGES)
+    assert all(m.strip() == m and m and "|" not in m for m in ee.ABORT_MESSAGES), "the launcher joins them with | and compares whole lines"

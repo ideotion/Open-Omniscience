@@ -133,19 +133,66 @@ record_exit() {
 # "free(): invalid pointer" and its kind to STDERR, which is the launcher window, and nothing kept it -- the app's own
 # crash trace holds the Python stacks and not this line, which is what separates heap corruption from an assert.
 # The server's stderr now passes through a filter that (1) hands EVERY line on to the window unchanged, as before, and
-# (2) records only the lines that match a fixed set of glibc and interpreter abort messages, at most
-# STDERR_KEEP of them per launch; every other line is COUNTED and dropped, never stored. A line is recorded only if
-# it matches an anchored pattern of the messages themselves (a stem such as "free(): invalid" plus a short tail of
-# plain letters and brackets), so no log line carrying anything else, a passphrase included, can reach the file.
-# The app reads it at the next boot and scrubs it again. If awk is missing the server starts exactly as before.
-# One summary line per launch (the count of lines dropped) tells "the filter ran and saw nothing" from "no filter".
+# (2) records a line ONLY when the WHOLE line is exactly one of the fixed messages below (string equality, no pattern, no tail:
+# "free(): anything else" is not one), at most STDERR_KEEP of them per launch; every other line is COUNTED and dropped, never
+# stored, so nothing a log line could carry, a passphrase included, can reach the file. The app reads it at the next boot, checks
+# each line against the same list (a test pins the two lists equal) and scrubs it again. If awk is missing the server starts
+# exactly as before. One summary line per launch (the count of lines dropped) tells "the filter ran and saw nothing" from "no filter".
+# glibc 2.41's messages (and the interpreter's fatal-error headers); musl, macOS libc and a newer glibc word theirs differently and
+# are an OPEN ITEM, not covered: a message missing from this list is counted as dropped, never stored.
+#
+# THE NUMBERS. STDERR_KEEP (20 per launch) is what protects the file from one launch that prints the same message in a loop; the
+# overflow is still counted (over_cap_lines). The file is trimmed to its newest 100 lines at each launch: five full launches of
+# a crash loop, a bound on the file, not a view of how many launches there were.
 STDERR_KEEP=20
 STDERR_RECORD=""
 STDERR_PIDFILE=""
+STDERR_MESSAGES='malloc(): unaligned fastbin chunk detected
+malloc(): unaligned fastbin chunk detected 2
+malloc(): unaligned fastbin chunk detected 3
+malloc(): memory corruption
+malloc(): memory corruption (fast)
+malloc(): unaligned tcache chunk detected
+malloc(): smallbin double linked list corrupted
+malloc(): invalid size (unsorted)
+malloc(): invalid next size (unsorted)
+malloc(): mismatching next->prev_size (unsorted)
+malloc(): unsorted double linked list corrupted
+malloc(): largebin double linked list corrupted (nextsize)
+malloc(): largebin double linked list corrupted (bk)
+malloc(): corrupted top size
+malloc_consolidate(): unaligned fastbin chunk detected
+malloc_consolidate(): invalid chunk size
+munmap_chunk(): invalid pointer
+realloc(): invalid pointer
+realloc(): invalid next size
+realloc(): invalid old size
+free(): invalid pointer
+free(): invalid size
+free(): too many chunks detected in tcache
+free(): unaligned chunk detected in tcache 2
+free(): double free detected in tcache 2
+free(): invalid next size (fast)
+free(): invalid next size (normal)
+free(): corrupted unsorted chunks
+double free or corruption (fasttop)
+double free or corruption (top)
+double free or corruption (out)
+double free or corruption (!prev)
+corrupted size vs. prev_size
+corrupted size vs. prev_size while consolidating
+corrupted double-linked list
+corrupted double-linked list (not small)
+Fatal Python error: Aborted
+Fatal Python error: Segmentation fault
+Fatal Python error: Bus error
+Fatal Python error: Illegal instruction
+Fatal Python error: Floating point exception'
 stderr_filter() {
-    awk -v out="$STDERR_RECORD" -v pidfile="$STDERR_PIDFILE" -v boot="$1" -v keep="$STDERR_KEEP" '
+    awk -v out="$STDERR_RECORD" -v pidfile="$STDERR_PIDFILE" -v boot="$1" -v keep="$STDERR_KEEP" -v msgs="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" '
     BEGIN {
-        re = "^(((malloc|free|realloc|calloc|malloc_consolidate|munmap_chunk)\\(\\): (corrupted|invalid|unsorted|smallbin|largebin|mismatching|memory corruption|unaligned|double free|too many)[a-z0-9 >().!-]*)|(double free or corruption \\((out|!prev|fasttop)\\))|(corrupted (size vs\\. prev_size|double-linked list)[a-z ()]*)|(Fatal Python error: (Aborted|Segmentation fault|Bus error|Illegal instruction|Floating point exception)))$"
+        n = split(msgs, list, "|")
+        for (i = 1; i <= n; i++) ok[list[i]] = 1
         kept = 0; dropped = 0; over = 0
     }
     function stamp(   t) { t = ""; "date -u +%Y-%m-%dT%H:%M:%SZ" | getline t; close("date -u +%Y-%m-%dT%H:%M:%SZ"); return t }
@@ -153,7 +200,7 @@ stderr_filter() {
     function bootj() { return (boot ~ /^[0-9a-f-]+$/) ? "\"" boot "\"" : "null" }
     {
         print $0 > "/dev/stderr"
-        if (length($0) <= 100 && $0 ~ re) {
+        if ($0 in ok) {
             if (kept < keep) {
                 printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"line\":\"%s\"}\n", stamp(), pid(), bootj(), $0 >> out
                 kept++
