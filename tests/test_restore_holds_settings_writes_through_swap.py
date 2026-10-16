@@ -119,7 +119,7 @@ def test_a_settings_save_started_during_the_hold_waits_and_lands_in_the_new_file
         saver["thread"].start()
         time.sleep(0.5)  # long enough for it to have run to the end if the hold did not stop it
         assert "settings.saved_during_the_hold" not in _rows(live), "the save ran inside the hold"
-        assert saver["thread"].is_alive() and kv_store._inflight == 0, "the save is not waiting at the door"
+        assert saver["thread"].is_alive() and not kv_store._inflight, "the save is not waiting at the door"
         real_swap(w, t, **kw)
 
     report: dict = {}
@@ -267,7 +267,7 @@ def test_a_save_in_flight_is_waited_for_before_the_carry(world, monkeypatch):
     saver = threading.Thread(target=lambda: kv_store.kv_set_json("settings.queued_behind_the_gate", {"v": 9}))
     saver.start()
     deadline = time.monotonic() + _PATIENCE_S
-    while kv_store._inflight < 1:
+    while not kv_store._inflight:
         assert time.monotonic() < deadline
         time.sleep(0.01)
     threading.Timer(0.3, release.set).start()  # the gate frees while the restore is waiting for the save
@@ -298,7 +298,7 @@ def test_a_restore_that_cannot_start_its_hold_refuses_and_touches_nothing(world,
     assert held.wait(_PATIENCE_S)
     saver = threading.Thread(target=lambda: kv_store.kv_set_json("settings.stuck", {"v": 1}))
     saver.start()
-    while kv_store._inflight < 1:
+    while not kv_store._inflight:
         time.sleep(0.01)
     try:
         before = (_rows(live), working.exists())

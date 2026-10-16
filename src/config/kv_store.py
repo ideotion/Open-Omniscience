@@ -96,7 +96,12 @@ class KvWriteBusy(RuntimeError):
 
 _hold = threading.Condition()  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
-_inflight = 0  # settings writes between their start and their end (they may be waiting for the gate)
+#: One token per settings write between its start and its end (they may be waiting for the gate). A SET and not a count: a write is
+#: counted by ONE call (``add``) and released by an idempotent one (``discard``), so an exception that arrives between any two
+#: statements of the slot (a signal handler's KeyboardInterrupt on the main thread) can neither leave a write counted for ever (the
+#: hold would then refuse to start until the process restarts) nor release one that was never counted (the hold would start with a
+#: save still writing the old file).
+_inflight: set[object] = set()
 
 
 def _caller_of_the_write() -> str:
@@ -120,7 +125,6 @@ def _write_slot() -> Iterator[int]:
     NO LOCK IS HELD WHILE WAITING FOR THE GATE: the count is all a restore looks at, so a write queued behind a long writer
     blocks nobody else and nobody blocks it; the gate stays free for the threads that hold a connection to the old file and
     must take it to be refused and let go (a restore that held the gate itself would wait for exactly those handles)."""
-    global _inflight
     me = threading.get_ident()
     if os.environ.get(_STRICT_GATE_ENV) == "1":
         from src.database.writer import write_gate
@@ -134,7 +138,7 @@ def _write_slot() -> Iterator[int]:
             STRICT_VIOLATIONS.append(f"{what}; called from {_caller_of_the_write()} on thread {threading.current_thread().name!r}")
             raise AssertionError(what)
     passthrough = False
-    counted = False
+    token = object()
     try:
         with _hold:
             if _hold_by == me:
@@ -151,15 +155,14 @@ def _write_slot() -> Iterator[int]:
                         raise KvWriteRefused(_REFUSED_TEXT)
                     _hold.wait(left)
             if not passthrough:
-                _inflight += 1
-                counted = True
+                _inflight.add(token)  # the one statement that counts this write
         with _lock:
             epoch = _epoch
         yield epoch
     finally:
-        if counted:
+        if token in _inflight:  # one read; only this thread ever adds or removes its own token
             with _hold:
-                _inflight -= 1
+                _inflight.discard(token)
                 _hold.notify_all()
 
 
