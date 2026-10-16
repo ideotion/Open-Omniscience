@@ -935,6 +935,46 @@ def test_the_scan_passes_a_positional_only_parameter_before_the_statement_and_a_
     assert _scan(snippet) == [], snippet
 
 
+# MUTANTS THE WIDER SWEEP LEFT ALIVE (2026-10-16, 136 operator mutants of the scan's logic, run on copies of this file). Each case below
+# kills one; the survivors that remain are listed in the commit message as EQUIVALENT with the reason (comment or message text, or a loop that
+# never ends and is killed by the hang).
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # a CREATE the scan has no rule for is "cannot classify", whatever follows it (`or` for `and` in the TEMP rule would skip it)
+        'def f(con):\n    con.execute("CREATE MATERIALIZED THING x")',
+        # a module-level statement reads module-level names; a PARAMETER that shadows a module constant is not that constant
+        'SQL = "DEL" + "ETE FROM t"\ncon.execute(SQL)',
+        'SQL = "SELECT 1"\ndef f(con, SQL):\n    con.execute(SQL + " WHERE 1")',
+        # .format keeps the template (its pieces are run-time); .join is run-time through and through
+        'def f(con, t):\n    con.execute("DELETE FROM {}".format(t))',
+        'def f(con, parts):\n    con.execute(", ".join(parts))',
+    ],
+)
+def test_the_scan_fails_on_the_shapes_the_wider_sweep_found_unpinned(snippet):
+    assert _scan(snippet), snippet
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # an annotated assignment is an assignment
+        'def f(con):\n    sql: str = "DELETE FROM main.t"\n    con.execute(sql)',
+        'sql: str = "DELETE FROM main.t"\ncon.execute(sql)',
+        'SQL = "DELETE FROM main.t"\ncon.execute(SQL)',
+        # .format on a template that names its schema is that template
+        'def f(con, v):\n    con.execute("DELETE FROM main.t WHERE a = {}".format(v))',
+    ],
+)
+def test_the_scan_passes_the_shapes_the_wider_sweep_found_unpinned(snippet):
+    assert _scan(snippet) == [], snippet
+
+
+def test_a_callable_used_as_a_value_names_what_it_is():
+    assert any("an execute method used as a value" in p for p in _scan("def f(con, rows):\n    list(map(con.execute, rows))"))
+    assert any(p.endswith("run used as a value") for p in _scan("def run(con, sql):\n    con.execute(sql)\ndef f(con, rows):\n    list(map(run, rows))"))
+
+
 #: The functions OUTSIDE ``merge.py`` that receive the merge connection, each with why it is not a way to write unqualified. The scan reads
 #: ``merge.py`` only, so a callee in another module is read by a person once, here, and a NEW one fails the test below until it is.
 _CROSS_MODULE_CALLEES: dict[str, str] = {
