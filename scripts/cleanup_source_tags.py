@@ -45,6 +45,7 @@ import yaml
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 from src.catalog.cctld import infer_country, infer_language  # noqa: E402
+from src.catalog.countries import country_payload  # noqa: E402
 
 _SOURCES = _ROOT / "configs" / "sources.yml"
 
@@ -98,7 +99,7 @@ def clean(sources: list[dict], *, do_cctld: bool) -> dict:
                 continue
             if t in TERRITORY_TAGS:
                 if not s.get("country"):
-                    s["country"] = TERRITORY_TAGS[t]
+                    s["country"] = country_payload(TERRITORY_TAGS[t])  # the configs speak alpha-3 (S05-02 S3)
                     stats["country_from_tag"] += 1
                 stats["tags_removed"] += 1
                 touched = True
@@ -110,7 +111,7 @@ def clean(sources: list[dict], *, do_cctld: bool) -> dict:
             if not s.get("country"):
                 cc = infer_country(s.get("domain"))
                 if cc:
-                    s["country"] = cc
+                    s["country"] = country_payload(cc)
                     stats["country_from_cctld"] += 1
                     touched = True
             if not s.get("language"):

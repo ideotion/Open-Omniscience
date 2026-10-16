@@ -22,7 +22,7 @@
 
 # General legal settings
 legal:
-  jurisdiction: "EU"  # Primary jurisdiction for compliance
+  jurisdiction: "EUU"  # Primary jurisdiction for compliance
   data_protection_officer: "dpo@ideotion.com"
   organization: "Ideotion"
   

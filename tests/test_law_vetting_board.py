@@ -85,7 +85,7 @@ def test_the_two_honest_gaps_are_both_data_and_both_on_the_board():
     """North Korea's gap used to live ONLY in a YAML comment, so no tool could read it
     while Yemen's identical record was a domain-less lead row. Both are rows now."""
     gaps = {str(s.get("country")) for s in board.classify(_all_sources())["gap"]}
-    assert gaps == {"kp", "ye"}, gaps
+    assert gaps == {"PRK", "YEM"}, gaps  # the shipped catalogues speak alpha-3 (S05-02 S3)
     text = _rendered()
     assert "North Korea" in text and "Yemen" in text
 

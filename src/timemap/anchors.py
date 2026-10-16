@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 
+from src.catalog.countries import config_country
 from src.timemap import year_float
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_timeline.yml"
@@ -58,7 +59,7 @@ def _normalise(a: dict) -> dict | None:
         "date_precision": str(a.get("date_precision", "day")),
         "confirmed": bool(a.get("confirmed", False)),
         "place": a.get("place"),
-        "country": (str(a["country"]).lower() if a.get("country") else None),
+        "country": (str(config_country(a["country"])).lower() if a.get("country") else None),
         "url": a.get("url"),
         "note": a.get("note"),
         "source": "anchor",

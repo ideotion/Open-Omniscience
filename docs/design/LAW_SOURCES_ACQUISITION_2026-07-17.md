@@ -39,7 +39,7 @@ Each `sources:` entry (one per official portal/gazette; a jurisdiction may have 
 - name: "Official name (English)"          # required
   native_name: "Nom officiel"              # when it differs
   domain: example.gov.xx                   # required; the registrable domain
-  country: kh                              # required; ISO-2 (or eu/int for supranational)
+  country: kh                              # required; ISO-2 (or eu/int for supranational) as a session writes it; the committed file holds the alpha-3 (KHM, EUU, INT), put there by `python scripts/rewrite_config_countries.py --write` (S05-02 S3)
   jurisdiction_note: ""                    # subnational/supranational scope if any
   languages: [km, fr]                      # required; the languages THE LAW IS PUBLISHED IN —
                                            # NOT the country's spoken languages. Cambodia's

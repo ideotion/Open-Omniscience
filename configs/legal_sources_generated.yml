@@ -30,7 +30,7 @@ sources:
 - name: Journal Officiel de la République du Sénégal
   native_name: JORS
   domain: jo.gouv.sn
-  country: sn
+  country: SEN
   languages:
   - fr
   legal_system: civil_law
@@ -60,7 +60,7 @@ sources:
     which also references JORS.
 - name: Vie-Publique.sn
   domain: vie-publique.sn
-  country: sn
+  country: SEN
   languages:
   - fr
   legal_system: civil_law
@@ -99,7 +99,7 @@ sources:
 - name: Centre National de Documentation Juridique — Bibliothèque numérique
   native_name: Bibliothèque Numérique du CNDJ
   domain: biblio.cndj.ci
-  country: ci
+  country: CIV
   languages:
   - fr
   legal_system: civil_law
@@ -136,7 +136,7 @@ sources:
     also advertises JO search but was not independently verified this session.
 - name: Journal Officiel de la République de Côte d'Ivoire
   domain: sgg.gouv.ci
-  country: ci
+  country: CIV
   languages:
   - fr
   legal_system: civil_law
@@ -163,7 +163,7 @@ sources:
 - name: Ghana Legal Information Institute
   native_name: GhaLII
   domain: ghalii.org
-  country: gh
+  country: GHA
   languages:
   - en
   legal_system: common_law
@@ -201,7 +201,7 @@ sources:
     the newest Acts — spot-check currency before relying on it.
 - name: Ghana Publishing Company — Ghana Gazette
   domain: ghanapublishing.gov.gh
-  country: gh
+  country: GHA
   languages:
   - en
   legal_system: common_law
@@ -230,7 +230,7 @@ sources:
 - name: Nigeria Legal Information Institute
   native_name: NigeriaLII
   domain: nigerialii.org
-  country: ng
+  country: NGA
   languages:
   - en
   legal_system: mixed:common_law/customary/islamic(sub-national)
@@ -270,7 +270,7 @@ sources:
     Centre). Treat the 0 as this portal''s build state, not as ''no Nigerian law online''.'
 - name: Federal Republic of Nigeria Official Gazette
   domain: nigerialii.org
-  country: ng
+  country: NGA
   languages:
   - en
   legal_system: mixed:common_law/customary/islamic(sub-national)
@@ -304,7 +304,7 @@ sources:
     but are not confirmed live today. Genuine coverage gap.
 - name: Secrétariat Général du Gouvernement du Mali — Codes en vigueur
   domain: sgg-mali.ml
-  country: ml
+  country: MLI
   languages:
   - fr
   legal_system: civil_law
@@ -339,7 +339,7 @@ sources:
     and regional-law sections for CIMA, CIPRES, OAPI, OHADA, UEMOA (not separately catalogued).
 - name: Journal Officiel de la République du Mali
   domain: sgg-mali.ml
-  country: ml
+  country: MLI
   languages:
   - fr
   legal_system: civil_law
@@ -374,7 +374,7 @@ sources:
 - name: Légiburkina
   native_name: Légiburkina — Plateforme de diffusion du droit burkinabé
   domain: legiburkina.gov.bf
-  country: bf
+  country: BFA
   languages:
   - fr
   legal_system: civil_law
@@ -404,7 +404,7 @@ sources:
 - name: Journal Officiel du Burkina Faso
   native_name: JOBF
   domain: jobf.gov.bf
-  country: bf
+  country: BFA
   languages:
   - fr
   legal_system: civil_law
@@ -432,7 +432,7 @@ sources:
     access requires a paid subscription.
 - name: Journal Officiel de la République du Niger
   domain: sgg.ne
-  country: ne
+  country: NER
   languages:
   - fr
   legal_system: civil_law
@@ -462,7 +462,7 @@ sources:
     substantial single official artifact found.'
 - name: Journal Officiel de la République Togolaise
   domain: jo.gouv.tg
-  country: tg
+  country: TGO
   languages:
   - fr
   legal_system: civil_law
@@ -490,7 +490,7 @@ sources:
     portals — flagged as a probable but unconfirmed gap.
 - name: Secrétariat Général du Gouvernement du Bénin — Documenthèque
   domain: sgg.gouv.bj
-  country: bj
+  country: BEN
   languages:
   - fr
   legal_system: civil_law
@@ -524,7 +524,7 @@ sources:
     and Décisions (not separately catalogued).
 - name: Journal Officiel du Bénin
   domain: journalofficiel.gouv.bj
-  country: bj
+  country: BEN
   languages:
   - fr
   legal_system: civil_law
@@ -550,7 +550,7 @@ sources:
   notes: Distinct domain from sgg.gouv.bj; not independently fetched this session.
 - name: Journal Officiel de la République de Guinée — Codes en vigueur
   domain: journal-officiel.sgg.gov.gn
-  country: gn
+  country: GIN
   languages:
   - fr
   legal_system: civil_law
@@ -585,7 +585,7 @@ sources:
     msgg.gov.mr (identical Google site-verification meta tag across all three).
 - name: Journal Officiel de la République de Guinée
   domain: journal-officiel.sgg.gov.gn
-  country: gn
+  country: GIN
   languages:
   - fr
   legal_system: civil_law
@@ -613,7 +613,7 @@ sources:
 - name: Legis-PALOP+TL
   native_name: Legis-PALOP+TL — Base de Dados Jurídica Oficial
   domain: legis-palop.org
-  country: gw
+  country: GNB
   languages:
   - pt
   legal_system: civil_law
@@ -652,7 +652,7 @@ sources:
 - name: Liberia Legal Information Institute
   native_name: LiberLII
   domain: liberlii.org
-  country: lr
+  country: LBR
   languages:
   - en
   legal_system: mixed:common_law/customary
@@ -689,7 +689,7 @@ sources:
 - name: Sierra Leone Legal Information Institute
   native_name: SierraLII
   domain: sierralii.gov.sl
-  country: sl
+  country: SLE
   languages:
   - en
   legal_system: common_law
@@ -728,7 +728,7 @@ sources:
     full historical coverage.
 - name: Sierra Leone Gazette
   domain: sierralii.gov.sl
-  country: sl
+  country: SLE
   languages:
   - en
   legal_system: common_law
@@ -755,7 +755,7 @@ sources:
   notes: Same domain/platform as the legislation entry above.
 - name: National Assembly of The Gambia — legislation portal
   domain: assembly.gm
-  country: gm
+  country: GMB
   languages:
   - en
   legal_system: common_law
@@ -789,7 +789,7 @@ sources:
     volumes since 1993) — no confirmed digital versions of either.
 - name: Secrétariat Général du Gouvernement de Mauritanie — Principaux codes en vigueur
   domain: msgg.gov.mr
-  country: mr
+  country: MRT
   languages:
   - ar
   - fr
@@ -828,7 +828,7 @@ sources:
     (identical Google site-verification code across all three).
 - name: Journal Officiel de la République Islamique de Mauritanie
   domain: msgg.gov.mr
-  country: mr
+  country: MRT
   languages:
   - ar
   - fr
@@ -864,7 +864,7 @@ sources:
 - name: Boletim Oficial Eletrónico de Cabo Verde
   native_name: BOE
   domain: boe.incv.cv
-  country: cv
+  country: CPV
   languages:
   - pt
   legal_system: civil_law
@@ -901,7 +901,7 @@ sources:
     partner logo, tying Cabo Verde into the same regional Legis-PALOP+TL database noted for Guinea-Bissau.
 - name: Boletim Oficial Eletrónico — Legislação (Leis e Decretos-Lei)
   domain: boe.incv.cv
-  country: cv
+  country: CPV
   languages:
   - pt
   legal_system: civil_law
@@ -933,7 +933,7 @@ sources:
 # ===================== batch: africa-east =====================
 - name: Ministry of Justice – Laws Portal
   domain: justice.gov.et
-  country: et
+  country: ETH
   languages:
   - am
   - en
@@ -967,7 +967,7 @@ sources:
     (Google Play listing) source. Re-attempt fetch with a real browser session to get a corpus count.
 - name: Office of the Attorney General – Online Laws Catalogue (OAG-MIS)
   domain: oagmis.oag.go.tz
-  country: tz
+  country: TZA
   languages:
   - en
   - sw
@@ -999,7 +999,7 @@ sources:
     AfricanLII/Laws.Africa (NGO) — treat as fallback, not the government's sole own domain.
 - name: Office of the Solicitor General e-Library – Government Gazette
   domain: elibrary.osg.go.tz
-  country: tz
+  country: TZA
   languages:
   - en
   - sw
@@ -1027,7 +1027,7 @@ sources:
     to be its digital archive arm. Not independently fetched this session.
 - name: Uganda Law Reform Commission – Laws of Uganda
   domain: ulrc.go.ug
-  country: ug
+  country: UGA
   languages:
   - en
   legal_system: common_law
@@ -1057,7 +1057,7 @@ sources:
     — verify live before automated ingestion.
 - name: Uganda Gazette – Uganda Printing and Publishing Corporation
   domain: uppc.go.ug
-  country: ug
+  country: UGA
   languages:
   - en
   legal_system: common_law
@@ -1084,7 +1084,7 @@ sources:
     current relaunch — live-verify before ingestion. Not fetched this session.
 - name: Amategeko Portal – Rwanda Law Reform Commission
   domain: amategeko.gov.rw
-  country: rw
+  country: RWA
   languages:
   - rw
   - en
@@ -1121,7 +1121,7 @@ sources:
     + rlrc.gov.rw together function as a de facto combined laws+gazette+case-law system.
 - name: Amategeko.gov.bi – Bulletin Officiel du Burundi
   domain: amategeko.gov.bi
-  country: bi
+  country: BDI
   languages:
   - fr
   - rn
@@ -1154,7 +1154,7 @@ sources:
     publishes promulgated laws as individual PDFs and is not robots-blocked in the same way.'
 - name: Ministry of Justice and Constitutional Affairs
   domain: moj.gov.so
-  country: so
+  country: SOM
   languages:
   - so
   - en
@@ -1190,7 +1190,7 @@ sources:
     maintains its own separate legal materials, not covered by this entry.
 - name: Journal Officiel Électronique (eJO) – Présidence de la République
   domain: journalofficiel.dj
-  country: dj
+  country: DJI
   languages:
   - fr
   - ar
@@ -1225,7 +1225,7 @@ sources:
     code compilations.
 - name: Ministry of Justice – Laws
   domain: mojeritrea.net
-  country: er
+  country: ERI
   languages:
   - en
   - ti
@@ -1266,7 +1266,7 @@ sources:
     Laws' (est. Proclamation No. 9/1991) is elsewhere described as limited to domestic circulation.
 - name: Ministry of Justice and Constitutional Affairs – Laws of the Republic of South Sudan
   domain: mojca.gov.ss
-  country: ss
+  country: SSD
   languages:
   - en
   legal_system: mixed:common_law_and_customary_law
@@ -1303,7 +1303,7 @@ sources:
     ministry but no separate gazette URL/archive was located.
 - name: Ministry of Justice – Official Gazette
   domain: moj.gov.sd
-  country: sd
+  country: SDN
   languages:
   - ar
   - en
@@ -1338,7 +1338,7 @@ sources:
     session.
 - name: CNLEGIS – Centre National LEGIS (Primature / SGG)
   domain: cnlegis.gov.mg
-  country: mg
+  country: MDG
   languages:
   - fr
   - mg
@@ -1380,7 +1380,7 @@ sources:
     gazette exists' for Madagascar is incorrect/outdated based on this finding — do not repeat it.
 - name: Attorney-General's Office – Laws of Mauritius
   domain: attorneygeneral.govmu.org
-  country: mu
+  country: MUS
   languages:
   - en
   - fr
@@ -1418,7 +1418,7 @@ sources:
     (e-Gazette since 2020, under the Prime Minister's Office); not independently fetched this session.
 - name: Official Gazette, Republic of Seychelles
   domain: gazette.sc
-  country: sc
+  country: SYC
   languages:
   - en
   legal_system: mixed:civil_law_and_common_law
@@ -1453,7 +1453,7 @@ sources:
     fallback for consolidated, cross-referenced legislation.
 - name: MUNGANYO – Secrétariat Général du Gouvernement
   domain: munganyo.km
-  country: km
+  country: COM
   languages:
   - fr
   legal_system: mixed:civil_law_and_islamic_law
@@ -1490,7 +1490,7 @@ sources:
 - name: Journal Officiel de la République Démocratique du Congo
   native_name: Journal Officiel
   domain: journalofficiel.cd
-  country: cd
+  country: COD
   languages:
   - fr
   legal_system: civil_law
@@ -1525,7 +1525,7 @@ sources:
 - name: Journal Officiel de la République du Congo
   native_name: Journal officiel, édition ordinaire
   domain: sgg.cg
-  country: cg
+  country: COG
   languages:
   - fr
   legal_system: civil_law
@@ -1556,7 +1556,7 @@ sources:
     régional" — out of scope for this entry but worth knowing for a future regional-bodies batch.
 - name: Codes en vigueur — Secrétariat Général du Gouvernement (Congo)
   domain: sgg.cg
-  country: cg
+  country: COG
   languages:
   - fr
   legal_system: civil_law
@@ -1593,7 +1593,7 @@ sources:
     PDFs, not necessarily 18 distinct subject areas.
 - name: LEGALIS Cameroun — Ministère de la Justice
   domain: minjustice.gov.cm
-  country: cm
+  country: CMR
   languages:
   - fr
   - en
@@ -1630,7 +1630,7 @@ sources:
     was a print/microfilm publication. Cameroon is an OHADA member.
 - name: Journal Officiel de la République Gabonaise
   domain: journal-officiel.ga
-  country: ga
+  country: GAB
   languages:
   - fr
   legal_system: civil_law
@@ -1659,7 +1659,7 @@ sources:
   notes: Parent body's own site is sgg.gouv.ga. Gabon is an OHADA member.
 - name: Codes en vigueur — Journal Officiel du Gabon
   domain: journal-officiel.ga
-  country: ga
+  country: GAB
   languages:
   - fr
   legal_system: civil_law
@@ -1695,7 +1695,7 @@ sources:
     non-code règlement also shown on the page.
 - name: Boletín Oficial del Estado (Guinea Ecuatorial)
   domain: boe.gob.gq
-  country: gq
+  country: GNQ
   languages:
   - es
   legal_language_note: Spanish is the primary drafting/legal language. Constitution Art. 4 also names
@@ -1730,7 +1730,7 @@ sources:
     codes-enumeration page was identified for Equatorial Guinea. EG is an OHADA member.
 - name: Publications — Ministère de la Justice, RCA
   domain: justice.gouv.cf
-  country: cf
+  country: CAF
   languages:
   - fr
   legal_system: civil_law
@@ -1766,7 +1766,7 @@ sources:
     CAR's own site). CAR is an OHADA member.
 - name: Journal Officiel de la République du Tchad
   domain: journalofficiel.gouv.td
-  country: td
+  country: TCD
   languages:
   - fr
   - ar
@@ -1801,7 +1801,7 @@ sources:
     not government-run. Chad is an OHADA member.
 - name: Diário da República — Imprensa Nacional de Angola
   domain: imprensanacional.gov.ao
-  country: ao
+  country: AGO
   languages:
   - pt
   legal_system: civil_law
@@ -1830,7 +1830,7 @@ sources:
   notes: robots.txt blocked a direct fetch this session.
 - name: Legislação — Portal Oficial do Governo de Angola
   domain: governo.gov.ao
-  country: ao
+  country: AGO
   languages:
   - pt
   legal_system: civil_law
@@ -1860,7 +1860,7 @@ sources:
     not an exhaustive enumeration.
 - name: Boletim da República — Imprensa Nacional de Moçambique
   domain: inm.gov.mz
-  country: mz
+  country: MOZ
   languages:
   - pt
   legal_system: civil_law
@@ -1892,7 +1892,7 @@ sources:
     flagged only as a non-official alternative.
 - name: Diário da República — Governo de São Tomé e Príncipe
   domain: stp.gov.st
-  country: st
+  country: STP
   languages:
   - pt
   legal_system: civil_law
@@ -1923,7 +1923,7 @@ sources:
     current or complete this session. No enumeration/count located for either source.
 - name: Laws of Zambia — Ministry of Justice
   domain: moj.gov.zm
-  country: zm
+  country: ZMB
   languages:
   - en
   legal_system: common_law
@@ -1963,7 +1963,7 @@ sources:
     project, not government-run) for online access.
 - name: Government Gazette — Judicial Service Commission of Zimbabwe
   domain: jsc.org.zw
-  country: zw
+  country: ZWE
   languages:
   - en
   legal_system: mixed:roman_dutch_and_english_common_law
@@ -1998,7 +1998,7 @@ sources:
     below).
 - name: Laws and Regulations — Ministry of Justice (Malawi)
   domain: justice.gov.mw
-  country: mw
+  country: MWI
   languages:
   - en
   legal_system: common_law
@@ -2032,7 +2032,7 @@ sources:
     — the gazette (published continuously since 1964) appears to remain primarily a print/purchase product.
 - name: Botswana e-Laws — Attorney General's Chambers
   domain: elaws.gov.bw
-  country: bw
+  country: BWA
   languages:
   - en
   legal_system: mixed:roman_dutch_and_english_common_law
@@ -2065,7 +2065,7 @@ sources:
     so it is not catalogued as a source here.
 - name: NamibLII — Law Reform and Development Commission
   domain: namiblii.org
-  country: na
+  country: NAM
   languages:
   - en
   legal_system: mixed:roman_dutch_and_english_common_law
@@ -2106,7 +2106,7 @@ sources:
     an NGO) separately mirrors gazette PDFs as an additional unofficial fallback.
 - name: Gazettes — Government of the Kingdom of Eswatini
   domain: gov.sz
-  country: sz
+  country: SWZ
   languages:
   - en
   - ss
@@ -2137,7 +2137,7 @@ sources:
     law, which is not fully captured by the single legal_system tag above.
 - name: eSwatiniLII — Judiciary of Eswatini
   domain: eswatinilii.org
-  country: sz
+  country: SWZ
   languages:
   - en
   legal_system: mixed:roman_dutch_and_english_common_law
@@ -2172,7 +2172,7 @@ sources:
     rather than an independent NGO — treated here as quasi-official rather than a generic fallback.
 - name: LesLII — Office of Parliamentary Counsel / Judiciary of Lesotho
   domain: lesotholii.org
-  country: ls
+  country: LSO
   languages:
   - en
   legal_language_note: Sesotho is co-official in Lesotho, but all legislation seen on this platform this
@@ -2222,7 +2222,7 @@ sources:
 - name: Secrétariat Général du Gouvernement — Législation & Bulletin Officiel
   native_name: الأمانة العامة للحكومة
   domain: sgg.gov.ma
-  country: ma
+  country: MAR
   languages:
   - ar
   - fr
@@ -2257,7 +2257,7 @@ sources:
 - name: Journal Officiel de la République Algérienne (JORADP) — SGG Algérie
   native_name: الجريدة الرسمية للجمهورية الجزائرية الديمقراطية الشعبية
   domain: joradp.dz
-  country: dz
+  country: DZA
   languages:
   - ar
   - fr
@@ -2289,7 +2289,7 @@ sources:
 - name: Imprimerie Officielle de la République Tunisienne (IORT) — JORT
   native_name: المطبعة الرسمية للجمهورية التونسية
   domain: iort.gov.tn
-  country: tn
+  country: TUN
   languages:
   - ar
   - fr
@@ -2323,7 +2323,7 @@ sources:
     the similar name.
 - name: Libya — no unified official portal (dual governance)
   domain: aladel.gov.ly
-  country: ly
+  country: LBY
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2355,7 +2355,7 @@ sources:
 - name: Al-Amiria Printing Press (State Printing Authority) — Official Gazette
   native_name: الهيئة العامة لشئون المطابع الأميرية
   domain: alamiria.com
-  country: eg
+  country: EGY
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2387,7 +2387,7 @@ sources:
 - name: Legislation and Opinion Bureau (LOB)
   native_name: ديوان التشريع والرأي
   domain: lob.gov.jo
-  country: jo
+  country: JOR
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2415,7 +2415,7 @@ sources:
 - name: Presidency of the Council of Ministers — Official Gazette
   native_name: رئاسة مجلس الوزراء - الجريدة الرسمية
   domain: pcm.gov.lb
-  country: lb
+  country: LBN
   languages:
   - ar
   legal_system: mixed:civil_and_religious
@@ -2447,7 +2447,7 @@ sources:
 - name: Syria — People's Assembly decrees/laws section (no confirmed unified official gazette portal)
   native_name: مجلس الشعب السوري - مراسيم وقوانين
   domain: parliament.gov.sy
-  country: sy
+  country: SYR
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2479,7 +2479,7 @@ sources:
 - name: Supreme Judicial Council — Iraqi Legislation Database
   native_name: قاعدة التشريعات العراقية - مجلس القضاء الأعلى
   domain: iraqld.e-sjc-services.iq
-  country: iq
+  country: IRQ
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2509,7 +2509,7 @@ sources:
 - name: Bureau of Experts at the Council of Ministers (BOE)
   native_name: هيئة الخبراء بمجلس الوزراء
   domain: boe.gov.sa
-  country: sa
+  country: SAU
   languages:
   - ar
   - en
@@ -2544,7 +2544,7 @@ sources:
 - name: UAE Legislation (official platform, General Secretariat of the UAE Cabinet)
   native_name: التشريعات الاتحادية
   domain: uaelegislation.gov.ae
-  country: ae
+  country: ARE
   languages:
   - ar
   - en
@@ -2575,7 +2575,7 @@ sources:
 - name: Al-Meezan — Qatar Legal Portal (Ministry of Justice)
   native_name: البوابة القانونية القطرية (الميزان)
   domain: almeezan.qa
-  country: qa
+  country: QAT
   languages:
   - ar
   - en
@@ -2606,7 +2606,7 @@ sources:
 - name: Kuwait Al-Youm (Official Gazette) — Ministry of Information
   native_name: الكويت اليوم - وزارة الإعلام
   domain: e.gov.kw
-  country: kw
+  country: KWT
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2637,7 +2637,7 @@ sources:
 - name: Legislation and Legal Opinion Commission (LLOC)
   native_name: هيئة التشريع والرأي القانوني
   domain: lloc.gov.bh
-  country: bh
+  country: BHR
   languages:
   - ar
   - en
@@ -2668,7 +2668,7 @@ sources:
 - name: Ministry of Legal Affairs — Official Gazette
   native_name: وزارة الشؤون القانونية - الجريدة الرسمية
   domain: mola.gov.om
-  country: om
+  country: OMN
   languages:
   - ar
   legal_language_note: Published in Arabic only in practice; Royal Decree 84/2011 (Art. 4) authorizes
@@ -2696,7 +2696,7 @@ sources:
     an electronic index per issue rather than full text — a real limitation for a bulk fetcher.
 - name: Yemen — Ministry of Legal and Parliamentary Affairs (no confirmed working online gazette)
   native_name: وزارة الشؤون القانونية والبرلمانية
-  country: ye
+  country: YEM
   languages:
   - ar
   legal_system: mixed:civil_islamic_customary
@@ -2722,7 +2722,7 @@ sources:
 - name: Official Gazette of the Islamic Republic of Iran (Judiciary-affiliated)
   native_name: روزنامه رسمی جمهوری اسلامی ایران
   domain: rrk.ir
-  country: ir
+  country: IRN
   languages:
   - fa
   legal_system: mixed:civil_and_islamic
@@ -2752,7 +2752,7 @@ sources:
 - name: Official Gazette Bureau — Electronic Reference for the Official Gazette
   native_name: ديوان الجريدة الرسمية - المرجع الإلكتروني للجريدة الرسمية
   domain: mjr.ogb.gov.ps
-  country: ps
+  country: PSE
   languages:
   - ar
   legal_system: mixed:civil_and_islamic
@@ -2803,7 +2803,7 @@ sources:
 # board and to every other tool that reads this catalog as data.
 - name: North Korea — no state legal database, gazette portal or enumeration page (confirmed gap)
   native_name: 조선민주주의인민공화국
-  country: kp
+  country: PRK
   languages:
   - ko
   legal_system: civil_law
@@ -2833,7 +2833,7 @@ sources:
 - name: Adilet Legal Information System (Ministry of Justice of the Republic of Kazakhstan)
   native_name: Әділет ақпараттық-құқықтық жүйесі / ИПС «Әділет»
   domain: adilet.zan.kz
-  country: kz
+  country: KAZ
   languages:
   - kk
   - ru
@@ -2874,7 +2874,7 @@ sources:
 - name: Lex.uz — National Database of Legislation of the Republic of Uzbekistan
   native_name: LexUZ — Ўзбекистон Республикаси қонунчилигининг миллий маълумотлар базаси
   domain: lex.uz
-  country: uz
+  country: UZB
   languages:
   - uz
   - ru
@@ -2912,7 +2912,7 @@ sources:
 - name: Centralized Data Bank of Legal Information of the Kyrgyz Republic (Ministry of Justice)
   native_name: Централизованный банк данных правовой информации Кыргызской Республики (ЦБД)
   domain: cbd.minjust.gov.kg
-  country: kg
+  country: KGZ
   languages:
   - ky
   - ru
@@ -2944,7 +2944,7 @@ sources:
 - name: National Center of Legislation under the President of the Republic of Tajikistan (light version)
   native_name: Маркази миллии қонунгузории назди Президенти Ҷумҳурии Тоҷикистон
   domain: mmk.tj
-  country: tj
+  country: TJK
   languages:
   - tg
   - ru
@@ -2981,7 +2981,7 @@ sources:
 - name: Ministry of Adalat (Justice) of Turkmenistan — legislation pages
   native_name: Türkmenistanyň Adalat ministrligi
   domain: minjust.gov.tm
-  country: tm
+  country: TKM
   languages:
   - tk
   - ru
@@ -3016,7 +3016,7 @@ sources:
 - name: Database of Afghanistan Laws and Decrees (Ministry of Justice)
   native_name: مجموعه قوانین افغانستان
   domain: laws.moj.gov.af
-  country: af
+  country: AFG
   languages:
   - prs
   - ps
@@ -3051,7 +3051,7 @@ sources:
     and Hanafi texts. This is a current-affairs classification worth revisiting as the situation develops.
 - name: Official Gazette of Afghanistan (Ministry of Justice)
   domain: moj.gov.af
-  country: af
+  country: AFG
   languages:
   - prs
   - ps
@@ -3083,7 +3083,7 @@ sources:
     decrees as of early-to-mid 2026.
 - name: The Pakistan Code (Ministry of Law and Justice)
   domain: pakistancode.gov.pk
-  country: pk
+  country: PAK
   languages:
   - en
   - ur
@@ -3128,7 +3128,7 @@ sources:
 - name: Laws of Bangladesh (Bangladesh Code) — Ministry of Law, Justice and Parliamentary Affairs
   native_name: বাংলাদেশ কোড
   domain: bdlaws.minlaw.gov.bd
-  country: bd
+  country: BGD
   languages:
   - en
   - bn
@@ -3170,7 +3170,7 @@ sources:
     identified, so no separate gazette entry is given.
 - name: LawNet — Sri Lanka legal information system (Ministry of Justice)
   domain: lawnet.gov.lk
-  country: lk
+  country: LKA
   languages:
   - si
   - ta
@@ -3208,7 +3208,7 @@ sources:
     personal-status matters.'
 - name: The Sri Lanka Gazette (Department of Government Printing)
   domain: documents.gov.lk
-  country: lk
+  country: LKA
   languages:
   - si
   - ta
@@ -3241,7 +3241,7 @@ sources:
 - name: Nepal Law Commission
   native_name: नेपाल कानून आयोग
   domain: lawcommission.gov.np
-  country: np
+  country: NPL
   languages:
   - ne
   legal_language_note: Nepali is the sole authoritative language; circulating English versions (including
@@ -3276,7 +3276,7 @@ sources:
 - name: Nepal Gazette (Rajpatra) — Department of Printing
   native_name: नेपाल राजपत्र
   domain: rajpatra.dop.gov.np
-  country: np
+  country: NPL
   languages:
   - ne
   legal_system: mixed:civil_law_and_common_law
@@ -3305,7 +3305,7 @@ sources:
   notes: No RSS/Atom feed found or verified.
 - name: Office of the Attorney General of Bhutan — Acts
   domain: oag.gov.bt
-  country: bt
+  country: BTN
   languages:
   - dz
   - en
@@ -3341,7 +3341,7 @@ sources:
     (nab.gov.bt) sites also carry bills/acts but were not evaluated this session.'
 - name: Government Gazette of the Maldives (President's Office)
   domain: gazette.gov.mv
-  country: mv
+  country: MDV
   languages:
   - dv
   legal_language_note: Dhivehi is the sole authoritative language; private/unofficial English-translation
@@ -3381,7 +3381,7 @@ sources:
     and Internal Affairs)
   native_name: Эрх зүйн мэдээллийн нэгдсэн систем
   domain: legalinfo.mn
-  country: mn
+  country: MNG
   languages:
   - mn
   legal_language_note: Mongolian is the sole authoritative language; the site separately hosts unofficial
@@ -3417,7 +3417,7 @@ sources:
 - name: Laws & Regulations Database of the Republic of China (Ministry of Justice)
   native_name: 全國法規資料庫
   domain: law.moj.gov.tw
-  country: tw
+  country: TWN
   languages:
   - zh
   legal_language_note: Traditional Chinese is the sole authoritative language; an /Eng interface translates
@@ -3453,7 +3453,7 @@ sources:
 - name: e-Sbírka (Czech Collection of Laws and International Treaties)
   native_name: e-Sbírka právních předpisů
   domain: e-sbirka.gov.cz
-  country: cz
+  country: CZE
   languages:
   - cs
   legal_system: civil_law
@@ -3492,7 +3492,7 @@ sources:
 - name: Slov-Lex (Legislative and Information Portal of the Ministry of Justice)
   native_name: Slov-Lex — elektronická Zbierka zákonov (eZbierka)
   domain: slov-lex.sk
-  country: sk
+  country: SVK
   languages:
   - sk
   legal_language_note: Slovak is the only legally authentic language; an English interface/partial translations
@@ -3523,7 +3523,7 @@ sources:
 - name: Nemzeti Jogszabálytár (National Legislation Database)
   native_name: Nemzeti Jogszabálytár
   domain: njt.hu
-  country: hu
+  country: HUN
   languages:
   - hu
   legal_language_note: English translations of selected laws are published on the same site per a Justice
@@ -3554,7 +3554,7 @@ sources:
 - name: Magyar Közlöny (Hungarian Official Gazette)
   native_name: Magyar Közlöny
   domain: magyarkozlony.hu
-  country: hu
+  country: HUN
   languages:
   - hu
   legal_system: civil_law
@@ -3583,7 +3583,7 @@ sources:
 - name: Portal Legislativ (Legislative Portal, Ministry of Justice)
   native_name: Portal Legislativ
   domain: legislatie.just.ro
-  country: ro
+  country: ROU
   languages:
   - ro
   legal_system: civil_law
@@ -3610,7 +3610,7 @@ sources:
 - name: Monitorul Oficial al României (Official Gazette of Romania)
   native_name: Monitorul Oficial al României
   domain: monitoruloficial.ro
-  country: ro
+  country: ROU
   languages:
   - ro
   legal_system: civil_law
@@ -3639,7 +3639,7 @@ sources:
 - name: Darzhaven Vestnik (State Gazette of the Republic of Bulgaria)
   native_name: Държавен вестник
   domain: dv.parliament.bg
-  country: bg
+  country: BGR
   languages:
   - bg
   legal_system: civil_law
@@ -3672,7 +3672,7 @@ sources:
 - name: National Printing House / Government Gazette (ΦΕΚ) and legal database
   native_name: Εθνικό Τυπογραφείο
   domain: et.gr
-  country: gr
+  country: GRC
   languages:
   - el
   legal_system: civil_law
@@ -3704,7 +3704,7 @@ sources:
 - name: Narodne novine (Official Gazette of the Republic of Croatia)
   native_name: Narodne novine
   domain: nn.hr
-  country: hr
+  country: HRV
   languages:
   - hr
   legal_system: civil_law
@@ -3736,7 +3736,7 @@ sources:
 - name: PISRS (Pravno-informacijski sistem Republike Slovenije)
   native_name: Pravno-informacijski sistem RS
   domain: pisrs.si
-  country: si
+  country: SVN
   languages:
   - sl
   legal_system: civil_law
@@ -3771,7 +3771,7 @@ sources:
 - name: TAR — Teisės aktų registras (Register of Legal Acts)
   native_name: Teisės aktų registras
   domain: e-tar.lt
-  country: lt
+  country: LTU
   languages:
   - lt
   legal_system: civil_law
@@ -3803,7 +3803,7 @@ sources:
 - name: likumi.lv (Database of Laws and Regulations)
   native_name: likumi.lv
   domain: likumi.lv
-  country: lv
+  country: LVA
   languages:
   - lv
   legal_language_note: key legislation also carries English translations under the site's 'Tulkojums'
@@ -3834,7 +3834,7 @@ sources:
 - name: Latvijas Vēstnesis (Official Gazette of the Republic of Latvia)
   native_name: Latvijas Vēstnesis
   domain: vestnesis.lv
-  country: lv
+  country: LVA
   languages:
   - lv
   legal_system: civil_law
@@ -3864,7 +3864,7 @@ sources:
 - name: Riigi Teataja (State Gazette)
   native_name: Riigi Teataja
   domain: riigiteataja.ee
-  country: ee
+  country: EST
   languages:
   - et
   legal_system: civil_law
@@ -3899,7 +3899,7 @@ sources:
 - name: Laws of Malta (legislation.mt)
   native_name: Laws of Malta
   domain: legislation.mt
-  country: mt
+  country: MLT
   languages:
   - mt
   - en
@@ -3935,7 +3935,7 @@ sources:
 - name: Government Gazette of Malta
   native_name: Gazzetta tal-Gvern ta' Malta
   domain: gov.mt
-  country: mt
+  country: MLT
   languages:
   - mt
   - en
@@ -3965,7 +3965,7 @@ sources:
 - name: Official Gazette of the Republic of Cyprus
   native_name: Επίσημη Εφημερίδα της Κυπριακής Δημοκρατίας
   domain: mof.gov.cy
-  country: cy
+  country: CYP
   languages:
   - el
   legal_language_note: only the Greek-language text is legally binding
@@ -4000,7 +4000,7 @@ sources:
 - name: Legilux (Journal officiel du Grand-Duché de Luxembourg)
   native_name: Legilux — Journal officiel du Grand-Duché de Luxembourg
   domain: legilux.public.lu
-  country: lu
+  country: LUX
   languages:
   - fr
   legal_language_note: French is the near-exclusive language of legal texts since WWII; German was co-used
@@ -4040,7 +4040,7 @@ sources:
 - name: Lagasafn (Law Collection, Althingi)
   native_name: Lagasafn
   domain: althingi.is
-  country: is
+  country: ISL
   languages:
   - is
   legal_system: civil_law
@@ -4069,7 +4069,7 @@ sources:
 - name: Stjórnartíðindi (Government/Legal Gazette of Iceland)
   native_name: Stjórnartíðindi
   domain: stjornartidindi.is
-  country: is
+  country: ISL
   languages:
   - is
   legal_system: civil_law
@@ -4102,7 +4102,7 @@ sources:
 - name: LILEX (Liechtenstein Legal Database)
   native_name: Liechtensteinische Gesetzessammlung (LILEX)
   domain: gesetze.li
-  country: li
+  country: LIE
   languages:
   - de
   legal_system: civil_law
@@ -4134,7 +4134,7 @@ sources:
 - name: Légimonaco (Codes et Lois Monégasques)
   native_name: Légimonaco
   domain: legimonaco.mc
-  country: mc
+  country: MCO
   languages:
   - fr
   legal_system: civil_law
@@ -4163,7 +4163,7 @@ sources:
 - name: Journal de Monaco (Official Bulletin)
   native_name: Journal de Monaco
   domain: journaldemonaco.gouv.mc
-  country: mc
+  country: MCO
   languages:
   - fr
   legal_system: civil_law
@@ -4192,7 +4192,7 @@ sources:
 - name: Portal Jurídic del Principat d'Andorra
   native_name: Portal Jurídic del Principat d'Andorra
   domain: portaljuridicandorra.ad
-  country: ad
+  country: AND
   languages:
   - ca
   legal_system: mixed:civil_law_roman_catalan_customary_with_french_spanish_influence
@@ -4225,7 +4225,7 @@ sources:
 - name: BOPA (Butlletí Oficial del Principat d'Andorra)
   native_name: Butlletí Oficial del Principat d'Andorra
   domain: bopa.ad
-  country: ad
+  country: AND
   languages:
   - ca
   legal_system: mixed:civil_law_roman_catalan_customary_with_french_spanish_influence
@@ -4255,7 +4255,7 @@ sources:
 - name: Bollettino Ufficiale della Repubblica di San Marino (BURSM)
   native_name: Bollettino Ufficiale della Repubblica di San Marino
   domain: bollettinoufficiale.sm
-  country: sm
+  country: SMR
   languages:
   - it
   legal_system: civil_law
@@ -4289,7 +4289,7 @@ sources:
 - name: Acta Apostolicae Sedis (Official Gazette of the Holy See)
   native_name: Acta Apostolicae Sedis
   domain: vatican.va
-  country: va
+  country: VAT
   languages:
   - la
   - it
@@ -4332,7 +4332,7 @@ sources:
 - name: Legislation of Ukraine (Verkhovna Rada Legislative Database)
   native_name: Законодавство України
   domain: zakon.rada.gov.ua
-  country: ua
+  country: UKR
   languages:
   - uk
   legal_system: civil_law
@@ -4369,7 +4369,7 @@ sources:
 - name: National Legal Internet Portal of the Republic of Belarus (Pravo.by)
   native_name: Национальный правовой Интернет-портал Республики Беларусь
   domain: pravo.by
-  country: by
+  country: BLR
   languages:
   - ru
   - be
@@ -4412,7 +4412,7 @@ sources:
 - name: State Register of Legal Acts of the Republic of Moldova (Registrul de stat al actelor juridice)
   native_name: Registrul de stat al actelor juridice al Republicii Moldova
   domain: legis.md
-  country: md
+  country: MDA
   languages:
   - ro
   legal_language_note: Romanian is the authoritative legal language; legis.md's interface also offers
@@ -4442,7 +4442,7 @@ sources:
     page, so no discrete corpus count is available.
 - name: Monitorul Oficial al Republicii Moldova (Official Gazette)
   domain: monitorul.gov.md
-  country: md
+  country: MDA
   languages:
   - ro
   - ru
@@ -4477,7 +4477,7 @@ sources:
 - name: Legal Information System of the Republic of Serbia (Pravno-informacioni sistem)
   native_name: Правно-информациони систем Републике Србије
   domain: pravno-informacioni-sistem.rs
-  country: rs
+  country: SRB
   languages:
   - sr
   legal_language_note: Site interface and case-law guides are also offered in English alongside the authoritative
@@ -4514,7 +4514,7 @@ sources:
 - name: Official Gazette of Bosnia and Herzegovina (Službeni glasnik/list BiH)
   native_name: Службени гласник Босне и Херцеговине / Službeni glasnik Bosne i Hercegovine
   domain: sluzbenilist.ba
-  country: ba
+  country: BIH
   languages:
   - bs
   - hr
@@ -4553,7 +4553,7 @@ sources:
 - name: Official Gazette of the Republic of North Macedonia (Службен весник)
   native_name: Службен весник на Република Северна Македонија
   domain: slvesnik.com.mk
-  country: mk
+  country: MKD
   languages:
   - mk
   legal_language_note: Albanian is co-official under North Macedonia's language law; bilingual gazette
@@ -4590,7 +4590,7 @@ sources:
 - name: Official Publishing Center — Electronic Archive of Acts (Qendra e Botimeve Zyrtare)
   native_name: Qendra e Botimeve Zyrtare (QBZ)
   domain: qbz.gov.al
-  country: al
+  country: ALB
   languages:
   - sq
   legal_system: civil_law
@@ -4625,7 +4625,7 @@ sources:
 - name: Official Gazette of Montenegro (Službeni list Crne Gore)
   native_name: Службени лист Црне Горе / Službeni list Crne Gore
   domain: sluzbenilist.me
-  country: me
+  country: MNE
   languages:
   - cnr
   legal_system: civil_law
@@ -4660,7 +4660,7 @@ sources:
 - name: Official Gazette of the Republic of Kosovo (Gazeta Zyrtare)
   native_name: Gazeta Zyrtare e Republikës së Kosovës
   domain: gzk.rks-gov.net
-  country: xk
+  country: XKX
   languages:
   - sq
   - sr
@@ -4702,7 +4702,7 @@ sources:
 - name: Legislative Herald of Georgia (Matsne) — Active Codes / Consolidated Legislation
   native_name: საქართველოს საკანონმდებლო მაცნე
   domain: matsne.gov.ge
-  country: ge
+  country: GEO
   languages:
   - ka
   legal_language_note: Georgian is the sole authoritative language; English and Russian parallel-view
@@ -4754,7 +4754,7 @@ sources:
 - name: Armenian Legal Information System (ARLIS)
   native_name: Հայաստանի իրավական տեղեկատվական համակարգ (ARLIS)
   domain: arlis.am
-  country: am
+  country: ARM
   languages:
   - hy
   legal_language_note: Armenian is the authoritative legal language; the site interface also offers English
@@ -4795,7 +4795,7 @@ sources:
 - name: Unified Electronic Database of Legal Acts (E-QANUN)
   native_name: Normativ Hüquqi Aktların Vahid Elektron Bazası (E-QANUN)
   domain: e-qanun.az
-  country: az
+  country: AZE
   languages:
   - az
   legal_system: civil_law
@@ -4830,7 +4830,7 @@ sources:
 - name: Sistema Único de Información Normativa (SUIN-Juriscol)
   native_name: SUIN-Juriscol
   domain: suin-juriscol.gov.co
-  country: co
+  country: COL
   languages:
   - es
   legal_system: civil_law
@@ -4866,7 +4866,7 @@ sources:
     (about 88.8K rows, data last updated 2026-02-03) rather than crawling suin-juriscol.gov.co directly.
 - name: Diario Oficial (Colombia)
   domain: imprenta.gov.co
-  country: co
+  country: COL
   languages:
   - es
   legal_system: civil_law
@@ -4895,7 +4895,7 @@ sources:
     on a different subdomain (svrpubindc.imprenta.gov.co) than the institutional site.
 - name: Sistema Peruano de Informacion Juridica (SPIJ)
   domain: spijweb.minjus.gob.pe
-  country: pe
+  country: PER
   languages:
   - es
   legal_system: civil_law
@@ -4925,7 +4925,7 @@ sources:
     which matters for a fetcher expecting free bulk access.
 - name: Diario Oficial El Peruano
   domain: elperuano.pe
-  country: pe
+  country: PER
   languages:
   - es
   legal_system: civil_law
@@ -4957,7 +4957,7 @@ sources:
     (normas archive).'
 - name: Gaceta Oficial de la Republica Bolivariana de Venezuela
   domain: gacetaoficial.gob.ve
-  country: ve
+  country: VEN
   languages:
   - es
   legal_system: civil_law
@@ -4987,7 +4987,7 @@ sources:
     (Supreme Tribunal of Justice).
 - name: Asamblea Nacional de Venezuela - Leyes Vigentes
   domain: asambleanacional.gob.ve
-  country: ve
+  country: VEN
   languages:
   - es
   legal_system: civil_law
@@ -5019,7 +5019,7 @@ sources:
     only the .gob.ve domain is catalogued pending clearer confirmation of which is currently authoritative.
 - name: Registro Oficial del Ecuador
   domain: registroficial.gob.ec
-  country: ec
+  country: ECU
   languages:
   - es
   legal_system: civil_law
@@ -5049,7 +5049,7 @@ sources:
     entry below for the closest free official substitute.
 - name: Asamblea Nacional del Ecuador - Leyes Aprobadas
   domain: asambleanacional.gob.ec
-  country: ec
+  country: ECU
   languages:
   - es
   legal_system: civil_law
@@ -5079,7 +5079,7 @@ sources:
     consolidated portal.
 - name: Gaceta Oficial del Estado Plurinacional de Bolivia
   domain: gacetaoficialdebolivia.gob.bo
-  country: bo
+  country: BOL
   languages:
   - es
   legal_language_note: Bolivia recognizes 37 co-official languages, but the gazette and normas search
@@ -5112,7 +5112,7 @@ sources:
     is unconfirmed.
 - name: Legislacion de la Republica del Paraguay (Corte Suprema de Justicia / Presidencia)
   domain: csj.gov.py
-  country: py
+  country: PRY
   languages:
   - es
   legal_language_note: Guarani is co-official but the legislation database itself is Spanish-only
@@ -5144,7 +5144,7 @@ sources:
     to see whether it supersedes or complements csj.gov.py/legislacion.
 - name: Gaceta Oficial de la Republica del Paraguay
   domain: gacetaoficial.gov.py
-  country: py
+  country: PRY
   languages:
   - es
   legal_system: civil_law
@@ -5173,7 +5173,7 @@ sources:
 - name: IMPO - Centro de Informacion Oficial
   native_name: Direccion Nacional de Impresiones y Publicaciones Oficiales
   domain: impo.com.uy
-  country: uy
+  country: URY
   languages:
   - es
   legal_system: civil_law
@@ -5222,7 +5222,7 @@ sources:
     Also publishes 4 subject-specific Bases Tematicas (Presupuestal, Ambiental, Salud, Lavado de Activos).
 - name: Laws of Guyana (Ministry of Legal Affairs and Attorney General's Chambers)
   domain: mola.gov.gy
-  country: gy
+  country: GUY
   languages:
   - en
   legal_system: common_law
@@ -5256,7 +5256,7 @@ sources:
     fetched this session.
 - name: Official Gazette of Guyana
   domain: officialgazette.gov.gy
-  country: gy
+  country: GUY
   languages:
   - en
   legal_system: common_law
@@ -5284,7 +5284,7 @@ sources:
   notes: ''
 - name: Surinaamse Wetten (De Nationale Assemblee)
   domain: dna.sr
-  country: sr
+  country: SUR
   languages:
   - nl
   legal_system: civil_law
@@ -5316,7 +5316,7 @@ sources:
     gazette portal.'
 - name: Sistema Nacional de Legislacion Vigente (SINALEVI)
   domain: sinalevi.go.cr
-  country: cr
+  country: CRI
   languages:
   - es
   legal_system: civil_law
@@ -5348,7 +5348,7 @@ sources:
     fetcher - page-level access may need a different route than crawling.'
 - name: La Gaceta (Costa Rica) / Imprenta Nacional
   domain: imprentanacional.go.cr
-  country: cr
+  country: CRI
   languages:
   - es
   legal_system: civil_law
@@ -5379,7 +5379,7 @@ sources:
     on it.
 - name: LegisPan (Asamblea Nacional de Panama)
   domain: legispan.asamblea.gob.pa
-  country: pa
+  country: PAN
   languages:
   - es
   legal_system: civil_law
@@ -5406,7 +5406,7 @@ sources:
   notes: ''
 - name: Gaceta Oficial Digital de Panama
   domain: gacetaoficial.gob.pa
-  country: pa
+  country: PAN
   languages:
   - es
   legal_system: civil_law
@@ -5436,7 +5436,7 @@ sources:
   notes: ''
 - name: Digesto Juridico Nicaraguense (Asamblea Nacional)
   domain: digesto.asamblea.gob.ni
-  country: ni
+  country: NIC
   languages:
   - es
   legal_system: civil_law
@@ -5471,7 +5471,7 @@ sources:
     is unconfirmed.
 - name: La Gaceta, Diario Oficial de la Republica de Honduras
   domain: congresonacional.hn
-  country: hn
+  country: HND
   languages:
   - es
   legal_system: civil_law
@@ -5504,7 +5504,7 @@ sources:
     separate consolidated-code portal beyond the gazette archive itself was found.'
 - name: Asamblea Legislativa de El Salvador - Busqueda de Leyes y Decretos
   domain: asamblea.gob.sv
-  country: sv
+  country: SLV
   languages:
   - es
   legal_system: civil_law
@@ -5532,7 +5532,7 @@ sources:
   notes: ''
 - name: Diario Oficial de El Salvador (Imprenta Nacional)
   domain: diariooficial.gob.sv
-  country: sv
+  country: SLV
   languages:
   - es
   legal_system: civil_law
@@ -5561,7 +5561,7 @@ sources:
     be the more structured, searchable interface - worth checking directly in a follow-up pass.
 - name: Congreso de la Republica de Guatemala - Informacion Legislativa
   domain: congreso.gob.gt
-  country: gt
+  country: GTM
   languages:
   - es
   legal_system: civil_law
@@ -5590,7 +5590,7 @@ sources:
     than the gazette entry below pending a clearer enumeration page.
 - name: Diario de Centro America
   domain: dca.gob.gt
-  country: gt
+  country: GTM
   languages:
   - es
   legal_system: civil_law
@@ -5619,7 +5619,7 @@ sources:
   notes: ''
 - name: Laws of Belize (Attorney General's Ministry)
   domain: agm.gov.bz
-  country: bz
+  country: BLZ
   languages:
   - en
   legal_system: common_law
@@ -5656,7 +5656,7 @@ sources:
     is the current official custodian under the Law Revision Act.
 - name: Belize Gazette
   domain: agm.gov.bz
-  country: bz
+  country: BLZ
   languages:
   - en
   legal_system: common_law
@@ -5688,7 +5688,7 @@ sources:
 - name: Ministry of Justice — Legal Search Engine / Law & Regulations
   native_name: ក្រសួងយុត្តិធម៌
   domain: moj.gov.kh
-  country: kh
+  country: KHM
   languages:
   - km
   - fr
@@ -5726,7 +5726,7 @@ sources:
 - name: Lao Official Gazette (Ministry of Justice)
   native_name: ຈົດໝາຍເຫດທາງລັດຖະການ ແຫ່ງ ສປປ ລາວ
   domain: laoofficialgazette.gov.la
-  country: la
+  country: LAO
   languages:
   - lo
   legal_language_note: Site interface and some material also render in English, but the English PDF column
@@ -5768,7 +5768,7 @@ sources:
 - name: National Database on Legal Documents (Ministry of Justice)
   native_name: Cơ sở dữ liệu quốc gia về pháp luật
   domain: vbpl.vn
-  country: vn
+  country: VNM
   languages:
   - vi
   legal_language_note: Vietnamese is authoritative; unofficial English translations exist for some documents,
@@ -5798,7 +5798,7 @@ sources:
     explicitly permitted. No enumeration/count page could be checked as a result.
 - name: Công báo điện tử Nước CHXHCN Việt Nam (Electronic Official Gazette)
   domain: congbao.chinhphu.vn
-  country: vn
+  country: VNM
   languages:
   - vi
   legal_system: mixed:socialist_civil_law
@@ -5838,7 +5838,7 @@ sources:
 - name: Office of the Council of State — Thai Law Database (Krisdika)
   native_name: สำนักงานคณะกรรมการกฤษฎีกา
   domain: krisdika.ocs.go.th
-  country: th
+  country: THA
   languages:
   - th
   legal_language_note: Only the original Thai text has legal effect; the site provides some English translations
@@ -5872,7 +5872,7 @@ sources:
 - name: Royal Thai Government Gazette
   native_name: ราชกิจจานุเบกษา (Ratchakitchanubeksa)
   domain: ratchakitcha.soc.go.th
-  country: th
+  country: THA
   languages:
   - th
   legal_system: civil_law
@@ -5901,7 +5901,7 @@ sources:
     are served as direct PDF links rather than through a browsable index that was reachable this session.
 - name: Myanmar Law Information System (Union Attorney General's Office)
   domain: mlis.gov.mm
-  country: mm
+  country: MMR
   languages:
   - my
   legal_system: common_law
@@ -5932,7 +5932,7 @@ sources:
 - name: Gazette of the Republic of the Union of Myanmar
   native_name: ပြည်ထောင်စုသမ္မတမြန်မာနိုင်ငံတော်ပြန်တမ်း
   domain: moi.gov.mm
-  country: mm
+  country: MMR
   languages:
   - my
   legal_system: common_law
@@ -5962,7 +5962,7 @@ sources:
     the more reliable practical route to enacted text.
 - name: Federal Legislation Portal — Laws of Malaysia (LOM)
   domain: lom.agc.gov.my
-  country: my
+  country: MYS
   languages:
   - ms
   - en
@@ -5999,7 +5999,7 @@ sources:
 - name: e-Federal Gazette (Attorney General's Chambers)
   native_name: Warta Kerajaan Persekutuan
   domain: federalgazette.agc.gov.my
-  country: my
+  country: MYS
   languages:
   - ms
   - en
@@ -6028,7 +6028,7 @@ sources:
   notes: ''
 - name: Peraturan.go.id — National Regulations Portal (Cabinet Secretariat)
   domain: peraturan.go.id
-  country: id
+  country: IDN
   languages:
   - id
   legal_system: civil_law
@@ -6061,7 +6061,7 @@ sources:
     robots-disallowed and not independently verified this session, so omitted as its own entry.
 - name: Attorney General's Chambers — Laws of Brunei Darussalam (BRULAW)
   domain: agc.gov.bn
-  country: bn
+  country: BRN
   languages:
   - en
   - ms
@@ -6097,7 +6097,7 @@ sources:
     total displayed; a real count would need paging through all of them.
 - name: Brunei Darussalam Government Gazette
   domain: agc.gov.bn
-  country: bn
+  country: BRN
   languages:
   - en
   - ms
@@ -6127,7 +6127,7 @@ sources:
     hosted system.
 - name: Jornal da República (Ministry of Justice)
   domain: mj.gov.tl
-  country: tl
+  country: TLS
   languages:
   - pt
   - tet
@@ -6168,7 +6168,7 @@ sources:
 # ===================== batch: caribbean =====================
 - name: Gaceta Oficial de la República de Cuba
   domain: gacetaoficial.gob.cu
-  country: cu
+  country: CUB
   languages:
   - es
   legal_system: civil_law
@@ -6200,7 +6200,7 @@ sources:
     found. MINJUS main site: minjus.gob.cu.'
 - name: Consultoría Jurídica del Poder Ejecutivo — Consulta Externa
   domain: consultoria.gov.do
-  country: do
+  country: DOM
   languages:
   - es
   legal_system: civil_law
@@ -6230,7 +6230,7 @@ sources:
     static total count observed.
 - name: Le Moniteur — Presses Nationales d'Haïti
   domain: pressesnationales.ht
-  country: ht
+  country: HTI
   languages:
   - fr
   legal_language_note: Haitian Creole is co-official under the 1987 Constitution, but gazette/legal texts
@@ -6262,7 +6262,7 @@ sources:
     Lex carries some Haitian codes as a fallback aggregator only. Treat as a genuine coverage gap.
 - name: Laws of Jamaica — Ministry of Justice
   domain: laws.moj.gov.jm
-  country: jm
+  country: JAM
   languages:
   - en
   legal_system: common_law
@@ -6298,7 +6298,7 @@ sources:
     library section on this same site, not a separate portal.
 - name: Digital Legislative Library — Law Revision Commission
   domain: laws.gov.tt
-  country: tt
+  country: TTO
   languages:
   - en
   legal_system: common_law
@@ -6331,7 +6331,7 @@ sources:
     even though it was reached over https; no single total-count figure found without a full crawl.
 - name: Bahamas Laws On-line — Office of the Attorney General
   domain: laws.bahamas.gov.bs
-  country: bs
+  country: BHS
   languages:
   - en
   legal_system: common_law
@@ -6363,7 +6363,7 @@ sources:
     through all 26 letters.
 - name: Barbados Parliament — Laws
   domain: barbadosparliament-laws.com
-  country: bb
+  country: BRB
   languages:
   - en
   legal_system: common_law
@@ -6400,7 +6400,7 @@ sources:
     cross-links.
 - name: Laws of Grenada
   domain: laws.gov.gd
-  country: gd
+  country: GRD
   languages:
   - en
   legal_system: common_law
@@ -6430,7 +6430,7 @@ sources:
     session — a fetcher should expect this URL to fail or serve a maintenance page until the site is restored.
 - name: Grenada Government Gazette
   domain: gazettes.gov.gd
-  country: gd
+  country: GRD
   languages:
   - en
   legal_system: common_law
@@ -6458,7 +6458,7 @@ sources:
     Gazettes are issued ad hoc outside the regular Friday schedule.
 - name: Revised Laws of Saint Lucia — Attorney General's Chambers
   domain: attorneygeneralchambers.com
-  country: lc
+  country: LCA
   languages:
   - en
   legal_system: mixed:french_civil_code_and_english_common_law
@@ -6490,7 +6490,7 @@ sources:
     mixed jurisdiction.'
 - name: Saint Lucia Government Gazette — National Printing Corporation
   domain: npc.govt.lc
-  country: lc
+  country: LCA
   languages:
   - en
   legal_system: mixed:french_civil_code_and_english_common_law
@@ -6519,7 +6519,7 @@ sources:
     from the Government Printing Establishment in 2002).
 - name: Ministry of Legal Affairs and Justice — Gazettes
   domain: legal.gov.vc
-  country: vc
+  country: VCT
   languages:
   - en
   legal_system: common_law
@@ -6557,7 +6557,7 @@ sources:
     consolidation.
 - name: The Laws of Antigua and Barbuda
   domain: laws.gov.ag
-  country: ag
+  country: ATG
   languages:
   - en
   legal_system: common_law
@@ -6588,7 +6588,7 @@ sources:
     Legal Affairs. Also organised by Volume (Revised Edition 1992) and by Year.
 - name: Antigua and Barbuda Official Gazette
   domain: gazette.laws.gov.ag
-  country: ag
+  country: ATG
   languages:
   - en
   legal_system: common_law
@@ -6618,7 +6618,7 @@ sources:
     before relying on https for this host.
 - name: St. Kitts and Nevis Law Commission
   domain: lawcommission.gov.kn
-  country: kn
+  country: KNA
   languages:
   - en
   legal_system: common_law
@@ -6649,7 +6649,7 @@ sources:
     Nevis has its own parallel stream of Ordinances alongside the federal Acts.
 - name: Official Gazette of St. Christopher and Nevis
   domain: gazette.gov.kn
-  country: kn
+  country: KNA
   languages:
   - en
   legal_system: common_law
@@ -6678,7 +6678,7 @@ sources:
     this session — check directly before relying on it.
 - name: Laws of Dominica
   domain: dominica.gov.dm
-  country: dm
+  country: DMA
   languages:
   - en
   legal_system: common_law
@@ -6707,7 +6707,7 @@ sources:
     2020 — unclear whether that later revision is reflected in this search tool.
 - name: Dominica Official Gazette — Government Printery
   domain: printery.dominica.gov.dm
-  country: dm
+  country: DMA
   languages:
   - en
   legal_system: common_law
@@ -6746,7 +6746,7 @@ sources:
 # ===================== batch: oceania =====================
 - name: Laws of Fiji (Consolidated Laws)
   domain: laws.gov.fj
-  country: fj
+  country: FJI
   languages:
   - en
   legal_system: mixed:common_law+customary
@@ -6796,7 +6796,7 @@ sources:
     the mixed classification.'
 - name: PacLII - Papua New Guinea Consolidated & Sessional Legislation
   domain: paclii.org
-  country: pg
+  country: PNG
   languages:
   - en
   legal_system: mixed:common_law+customary
@@ -6849,7 +6849,7 @@ sources:
     plain common_law.'
 - name: PacLII - Solomon Islands Consolidated Legislation & AG Index of Acts
   domain: paclii.org
-  country: sb
+  country: SLB
   languages:
   - en
   legal_system: mixed:common_law+customary
@@ -6901,7 +6901,7 @@ sources:
     common-law court hierarchy, hence the mixed classification.'
 - name: Vanuatu Consolidated Legislation & Acts of Parliament
   domain: parliament.gov.vu
-  country: vu
+  country: VUT
   languages:
   - en
   - fr
@@ -6952,7 +6952,7 @@ sources:
     mixed systems in this batch.'
 - name: Vanuatu Official Gazette / Journal Officiel
   domain: gov.vu
-  country: vu
+  country: VUT
   languages:
   - en
   - fr
@@ -6988,7 +6988,7 @@ sources:
     through a browsable gazette archive.'
 - name: Consolidation of Laws of Samoa
   domain: ag.gov.ws
-  country: ws
+  country: WSM
   languages:
   - en
   legal_language_note: Samoan and English are both official languages of Samoa, but the consolidated Statutes
@@ -7035,7 +7035,7 @@ sources:
     classification.'
 - name: Tongan Legislation (Attorney General's Office / Crown Law)
   domain: ago.gov.to
-  country: to
+  country: TON
   languages:
   - en
   - to
@@ -7079,7 +7079,7 @@ sources:
     estimated by manually counting across all 26 pages.'
 - name: Tonga Government Gazettes
   domain: ago.gov.to
-  country: to
+  country: TON
   languages:
   - en
   - to
@@ -7113,7 +7113,7 @@ sources:
     legislation entry above. No RSS/Atom feed was identified.'
 - name: PacLII - Kiribati Consolidated & Sessional Legislation
   domain: paclii.org
-  country: ki
+  country: KIR
   languages:
   - en
   legal_language_note: Gilbertese (te taetae ni Kiribati) is the national language; legislation is published
@@ -7161,7 +7161,7 @@ sources:
     classification.'
 - name: Legal Information System of the Federated States of Micronesia (FSM Code)
   domain: fsmlaw.org
-  country: fm
+  country: FSM
   languages:
   - en
   legal_system: mixed:common_law+customary
@@ -7225,7 +7225,7 @@ sources:
     classification.'
 - name: Nitijela Legislation (Acts of the Republic of the Marshall Islands)
   domain: rmiparliament.org
-  country: mh
+  country: MHL
   languages:
   - en
   - mh
@@ -7277,7 +7277,7 @@ sources:
     customary matters.'
 - name: RONLAW - Republic of Nauru Law
   domain: ronlaw.gov.nr
-  country: nr
+  country: NRU
   languages:
   - en
   legal_system: common_law
@@ -7332,7 +7332,7 @@ sources:
     carries no browsable index.'
 - name: Palau National Code (Code Commission / Palau Legal Information Access)
   domain: codecommission.pw
-  country: pw
+  country: PLW
   languages:
   - en
   legal_language_note: Palauan and English are both official languages of Palau; the Palau National Code
@@ -7393,7 +7393,7 @@ sources:
     custom", hence the mixed classification.'
 - name: Tuvalu On-line Legislation
   domain: tuvalu-legislation.tv
-  country: tv
+  country: TUV
   languages:
   - en
   - tvl
@@ -7443,7 +7443,7 @@ sources:
     mixed classification.'
 - name: Tuvalu Government Gazettes
   domain: tuvalu-legislation.tv
-  country: tv
+  country: TUV
   languages:
   - en
   - tvl
@@ -7478,7 +7478,7 @@ sources:
 - name: African Union
   native_name: ''
   domain: au.int
-  country: int
+  country: INT
   jurisdiction_note: African Union
   languages:
   - en
@@ -7524,7 +7524,7 @@ sources:
 - name: Organization of American States
   native_name: ''
   domain: oas.org
-  country: int
+  country: INT
   jurisdiction_note: Organization of American States
   languages:
   - en
@@ -7563,7 +7563,7 @@ sources:
 - name: ASEAN
   native_name: ''
   domain: asean.org
-  country: int
+  country: INT
   jurisdiction_note: Association of Southeast Asian Nations
   languages:
   - en
@@ -7598,7 +7598,7 @@ sources:
 - name: Gulf Cooperation Council
   native_name: مجلس التعاون لدول الخليج العربية
   domain: gcc-sg.org
-  country: int
+  country: INT
   jurisdiction_note: Gulf Cooperation Council
   languages:
   - ar
@@ -7634,7 +7634,7 @@ sources:
 - name: Economic Community of West African States
   native_name: ''
   domain: documentation.ecowas.int
-  country: int
+  country: INT
   jurisdiction_note: ECOWAS
   languages:
   - en
@@ -7674,7 +7674,7 @@ sources:
 - name: East African Community
   native_name: ''
   domain: eac.int
-  country: int
+  country: INT
   jurisdiction_note: East African Community
   languages:
   - en
@@ -7715,7 +7715,7 @@ sources:
 - name: Southern African Development Community
   native_name: ''
   domain: sadc.int
-  country: int
+  country: INT
   jurisdiction_note: SADC
   languages:
   - en
@@ -7758,7 +7758,7 @@ sources:
 - name: Commonwealth of Independent States
   native_name: Содружество Независимых Государств (СНГ)
   domain: eccis.org
-  country: int
+  country: INT
   jurisdiction_note: Commonwealth of Independent States
   languages:
   - ru
@@ -7796,7 +7796,7 @@ sources:
 - name: Council of Europe (Treaty Office)
   native_name: ''
   domain: coe.int
-  country: int
+  country: INT
   jurisdiction_note: Council of Europe
   languages:
   - en
@@ -7842,7 +7842,7 @@ sources:
 - name: United Nations Treaty Collection
   native_name: ''
   domain: treaties.un.org
-  country: int
+  country: INT
   jurisdiction_note: United Nations (Treaty Section, Office of Legal Affairs)
   languages:
   - ar
@@ -7890,7 +7890,7 @@ sources:
 - name: International Court of Justice
   native_name: ''
   domain: icj-cij.org
-  country: int
+  country: INT
   jurisdiction_note: International Court of Justice
   languages:
   - en
@@ -7931,7 +7931,7 @@ sources:
 - name: International Criminal Court
   native_name: ''
   domain: icc-cpi.int
-  country: int
+  country: INT
   jurisdiction_note: International Criminal Court
   languages:
   - ar
@@ -7980,49 +7980,49 @@ documents:
 # ===================== batch: africa-west =====================
 - title: Recueil thématique de textes législatifs et réglementaires (Niger)
   url: https://justice.gouv.ne/images/lois/pdfs/recueil_thematique_de_textes_legislatifs_et_reglementaires.pdf
-  jurisdiction: ne
+  jurisdiction: NER
   note: Single compiled PDF hosted on the Ministry of Justice's own domain (justice.gouv.ne) — the most
     substantial official artifact found for Niger in the absence of a searchable database
   verification:
     status: lead
 
 # ===================== batch: southeast-asia =====================
-- jurisdiction: tl
+- jurisdiction: TLS
   title: Código Civil
   url: https://www.mj.gov.tl/jornal/files/Codigo_Civil.pdf
   language: pt
   verification:
     status: fetched
     retrieved_at: '2026-07-17'
-- jurisdiction: tl
+- jurisdiction: TLS
   title: Código Penal
   url: https://www.mj.gov.tl/jornal/files/Codigo_Penal.pdf
   language: pt
   verification:
     status: fetched
     retrieved_at: '2026-07-17'
-- jurisdiction: tl
+- jurisdiction: TLS
   title: Código de Processo Civil
   url: https://www.mj.gov.tl/jornal/files/Codigo_de_Processo_Civil.pdf
   language: pt
   verification:
     status: fetched
     retrieved_at: '2026-07-17'
-- jurisdiction: tl
+- jurisdiction: TLS
   title: Código de Processo Penal
   url: https://www.mj.gov.tl/jornal/files/Codigo_Processo_Penal.pdf
   language: pt
   verification:
     status: fetched
     retrieved_at: '2026-07-17'
-- jurisdiction: tl
+- jurisdiction: TLS
   title: Constituição da RDTL (Tetum)
   url: https://www.mj.gov.tl/jornal/public/docs/ConstituicaoRDTL_tetum.pdf
   language: tet
   verification:
     status: fetched
     retrieved_at: '2026-07-17'
-- jurisdiction: tl
+- jurisdiction: TLS
   title: Constituição da RDTL (Português)
   url: https://www.mj.gov.tl/jornal/public/docs/ConstituicaoRDTL_Portugues.pdf
   language: pt

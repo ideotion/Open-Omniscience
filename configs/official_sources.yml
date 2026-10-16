@@ -12,7 +12,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: en
-  country: bb
+  country: BRB
   region: north-america
   source_type: government-primary
   tags:
@@ -27,7 +27,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: en
-  country: na
+  country: NAM
   region: africa
   source_type: government-primary
   tags:
@@ -42,7 +42,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: ja
-  country: jp
+  country: JPN
   region: asia
   source_type: government-primary
   tags:
@@ -57,7 +57,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: ja
-  country: jp
+  country: JPN
   region: asia
   source_type: think-tank
   tags:
@@ -72,7 +72,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pl
-  country: pl
+  country: POL
   region: europe
   source_type: think-tank
   tags:
@@ -87,7 +87,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: sv
-  country: se
+  country: SWE
   region: europe
   source_type: think-tank
   tags:
@@ -104,7 +104,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -119,7 +119,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -134,7 +134,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -149,7 +149,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -164,7 +164,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -179,7 +179,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -194,7 +194,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -209,7 +209,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -224,7 +224,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -239,7 +239,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -254,7 +254,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -269,7 +269,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -284,7 +284,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: pt
-  country: br
+  country: BRA
   region: south-america
   source_type: government-primary
   tags:
@@ -299,7 +299,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: es
-  country: cr
+  country: CRI
   region: north-america
   source_type: government-primary
   tags:
@@ -316,7 +316,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: en
-  country: ie
+  country: IRL
   region: europe
   source_type: government-primary
   tags:
@@ -333,7 +333,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: es
-  country: mx
+  country: MEX
   region: north-america
   source_type: government-primary
   tags:
@@ -350,7 +350,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: en
-  country: ng
+  country: NGA
   region: africa
   source_type: government-primary
   tags:
@@ -367,7 +367,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: sv
-  country: pl
+  country: POL
   region: europe
   source_type: statistics
   tags:
@@ -384,7 +384,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: sk
-  country: sk
+  country: SVK
   region: europe
   source_type: government-primary
   tags:
@@ -400,7 +400,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: uk
-  country: ua
+  country: UKR
   region: europe
   source_type: government-primary
   tags:
@@ -416,7 +416,7 @@ sources:
   verified: true
   last_verified: '2026-09-10'
   language: en
-  country: za
+  country: ZAF
   region: africa
   source_type: government-primary
   tags:

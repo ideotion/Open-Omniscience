@@ -63,6 +63,8 @@ def test_generate_catalog_dedups_and_excludes(tmp_path):
 
     loaded = yaml.safe_load(out.read_text(encoding="utf-8"))["sources"]
     assert {s["domain"] for s in loaded} == domains
+    # The shipped configs speak alpha-3 (S05-02 S3): a regenerated file must not put the old spelling back.
+    assert all(s["country"].isupper() and len(s["country"]) == 3 for s in loaded if s.get("country")), loaded
 
 
 def test_generate_catalog_records_errors_without_aborting():
