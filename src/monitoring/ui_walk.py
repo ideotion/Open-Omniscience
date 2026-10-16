@@ -79,7 +79,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -379,7 +379,7 @@ def walk(driver: UiWalkDriver, surfaces: tuple[Surface, ...] = FLAGSHIP_SURFACES
                     surface=surface.id,
                     label=surface.label,
                     ok=False,
-                    error=exception_text(exc),
+                    error=record_text(exc, typed=True),
                 )
             )
     return results

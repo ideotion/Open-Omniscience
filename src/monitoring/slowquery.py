@@ -34,7 +34,7 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 _CAP = 200  # newest slow-query records kept
 _LOCK = threading.Lock()
@@ -188,7 +188,7 @@ def explain_probes(session: Session) -> list[dict[str, Any]]:
                 }
             )
         except Exception as exc:  # noqa: BLE001 - one probe failing must not abort the rest
-            out.append({"name": name, "error": exception_text(exc, limit=200, typed=False)})
+            out.append({"name": name, "error": record_text(exc, limit=200, typed=False)})
     return out
 
 

@@ -233,3 +233,61 @@ def test_the_on_disk_location_index_is_used_and_then_deleted(osm_lane_dir, monke
     assert rep.counts["building"] == 1, "the ways read no locations from the file index"
     assert made and made[0] is not None
     assert not made[0].exists(), "the location index outlived the ingest"
+
+
+def test_the_kept_id_set_costs_eight_bytes_an_id_whatever_the_span_and_answers_for_any_order():
+    """``osmium.index.IdSet`` allocates 4 MiB for every 2**25-id window an id falls in: ids spread over today's 1.2e10 node
+    range cost up to 1.43 GB (4 MiB per window touched), and the cost arrived steadily as the scan walked the id space, which read
+    as memory per object. An array of the ids as they arrive (a file lists them ascending) costs about 8 bytes an id whether
+    they span ten thousand or twelve billion, and an id out of order still answers correctly."""
+    import sys
+
+    s = ingest._IdSet()
+    spread = [(i + 1) * 12_000 for i in range(1000)]            # 1000 ids over 12 million (one bitmap window)
+    wide = [(i + 1) * 12_000_000_000 // 1000 for i in range(1000)]  # the same count over 12 billion (358 windows)
+    for i in spread:
+        s.add(i)
+    w = ingest._IdSet()
+    for i in wide:
+        w.add(i)
+    assert sys.getsizeof(s._sorted) == sys.getsizeof(w._sorted) < 8 * 1000 * 1.25, "the span changed what the ids cost"
+    assert all(i in s for i in spread) and all(i in w for i in wide)
+    assert 1 not in s and 12_001 not in s and 13_000_000_000 not in w
+    # a repeat of the last id is not stored twice and is not disorder; a lower id after a higher one lands in the side set
+    s.add(spread[-1])
+    assert len(s) == 1000 and s.out_of_order == 0
+    s.add(5)
+    s.add(5)
+    assert len(s) == 1001 and 5 in s and 6 not in s and s.out_of_order == 1
+    # a repeat of an id that is not the last one is the same id: counted once
+    s.add(spread[10])
+    assert len(s) == 1001 and s.out_of_order == 1
+    assert ingest._IdSet().__contains__(0) is False
+
+
+@pytest.mark.parametrize("order", ["ascending", "reversed", "shuffled"])
+def test_the_kept_id_set_answers_every_membership_for_any_arrival_order_and_counts_the_disorder(order):
+    """A file that lists its ids out of order must still be cut correctly (a relation keeps a member the pass already saw),
+    and the disorder is counted so the run record can show how much of the set sits in the side set."""
+    import random
+
+    ids = sorted([(i + 1) * 7_919 for i in range(2_000)] + [-3, -2, 0])  # OSM files can carry non-positive ids
+    stream = {"ascending": ids, "reversed": ids[::-1], "shuffled": random.Random(20261015).sample(ids, len(ids))}[order]
+    s = ingest._IdSet()
+    for i in stream:
+        s.add(i)
+    assert len(s) == len(ids) and all(i in s for i in ids)
+    absent = [i for i in [j + 1 for j in ids] + [-1, 10**13] if i not in set(ids)]
+    assert not any(i in s for i in absent)
+    if order == "ascending":
+        assert s.out_of_order == 0
+    elif order == "reversed":
+        assert s.out_of_order == len(ids) - 1
+    else:
+        assert 0 < s.out_of_order < len(ids)
+
+
+def test_the_run_record_says_how_many_kept_ids_arrived_out_of_order(osm_lane_dir):
+    report = ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    ids = report.to_dict()["id_sets"]
+    assert ids["nodes"] > 0 and ids["ways"] > 0 and ids["out_of_order"] == 0, ids

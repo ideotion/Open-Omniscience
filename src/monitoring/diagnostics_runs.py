@@ -70,7 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import UNICODE_WITHHELD, exception_text
+from src.monitoring.secret_scrub import UNICODE_WITHHELD, record_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -356,7 +356,7 @@ def exc_line(exc: BaseException) -> str:
     when a ``UnicodeError`` is reachable from the exception (its message names a character and its offset, which is a piece of
     a key that no scrub of the text can know). Never raises. ``tidy_error`` and the callers' own scrub then take out what
     this does not: a key statement's literal and the person's folders."""
-    return exception_text(exc)
+    return record_text(exc, typed=True)
 
 
 def tidy_error(error: Any, limit: int = ERROR_CHARS) -> str:

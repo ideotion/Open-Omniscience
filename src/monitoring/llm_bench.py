@@ -48,7 +48,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.llm.ollama import bounded_error
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 SCHEMA = "oo-llm-bench-1"
 
@@ -223,7 +223,7 @@ def run_llm_bench(
                 "schema": SCHEMA,
                 "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "available": False,
-                "reason": f"could not resolve a backend: {exception_text(exc)}",
+                "reason": f"could not resolve a backend: {record_text(exc, typed=True)}",
             }
 
     chosen = [s for s in _SHAPES if shapes is None or s[0] in shapes]

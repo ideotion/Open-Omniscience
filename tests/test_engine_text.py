@@ -413,7 +413,7 @@ def _uses_outside(rel: str, name: str, nodes, parent, *, helpers: bool) -> list[
             first = isinstance(call, ast.Call) and bool(call.args) and call.args[0] is use
             ok = isinstance(call, ast.Call) and (
                 (_is_call_to(call, {"engine_text"} | (_ALLOWED_HELPERS if helpers else set())) and first)
-                or _is_call_to(call, {"type", "isinstance"})
+                or _is_call_to(call, {"type", "isinstance", "is_pool_timeout"})
             )
             if not ok:
                 out.append(f"{rel}:{use.lineno} uses {name!r} outside engine_text()")

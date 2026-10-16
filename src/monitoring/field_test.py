@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def _run_step(step: str, fn) -> None:
         rec["ok"] = True
     except Exception as exc:  # noqa: BLE001 - the verdict IS the data we want
         rec["ok"] = False
-        rec["error"] = exception_text(exc, limit=300)
+        rec["error"] = record_text(exc, limit=300, typed=True)
     _append(rec)
     _LOG.info("field-test step %s: ok=%s", step, rec["ok"])
 
@@ -152,7 +152,7 @@ def run_field_test(session, fetcher) -> dict | None:
                         failures.append({"key": feed.key, "status": r.status, "detail": r.detail})
                 except Exception as exc:  # noqa: BLE001
                     failed += 1
-                    failures.append({"key": feed.key, "status": "error", "detail": exception_text(exc, limit=200, typed=False)})
+                    failures.append({"key": feed.key, "status": "error", "detail": record_text(exc, limit=200, typed=False)})
             return {"imported": ok, "failed": failed, "failures": failures[:40]}
 
         _run_step(step, _import)
