@@ -36,8 +36,13 @@ How it stays safe, in the order it matters:
   boundary uses -- so a catalogue and a payload can never disagree about a country's alpha-3. A value it
   cannot place (an unrecognised code, a prose token) is left exactly as written and LISTED with its reason, never
   guessed, and it never blocks the other rewrites (the exit code says there is something left, 1).
-* The write is atomic as a SET: every new file is staged beside its target and fsynced first, then renamed over the
-  originals; a failure leaves every original as it was (a refusal to prove one file writes none).
+* The write is atomic PER FILE, and an ERROR (a full disk, a refused rename, a file changed since it was read) puts back
+  every file already replaced and leaves every original byte-identical; a refusal to prove one file writes none. A CRASH
+  or power loss between two renames cannot be undone by the process that died: it leaves a mix of old and new files,
+  and the way out is to run the script again, which finishes the set because the rewrite is idempotent (the targets
+  are also tracked in git). Temporary files a crash left beside the targets (``.<name>.*.tmp``) are swept at the next
+  start and counted in the report. Not preserved by the replace, and accepted: owner and group, extended attributes,
+  and a symlinked target (it becomes a regular file); the mode is kept.
 * After writing it PARSES the old and the new text and proves they differ ONLY in country/jurisdiction
   values, and that each differing value satisfies ``normalize_country(new) == normalize_country(old)``:
   the loaders read countries through that function, so the data they produce is unchanged.
@@ -101,6 +106,8 @@ def _split_comment(body: str) -> tuple[str, str]:
         elif quote:
             if ch == "\\" and quote == '"':
                 escaped = True
+            elif ch == quote and quote == "'" and body[i + 1 : i + 2] == "'":
+                escaped = True  # '' inside a single-quoted scalar is one literal quote
             elif ch == quote:
                 quote = ""
         elif ch in "\"'":
@@ -221,15 +228,43 @@ def _fsync_dir(directory: Path) -> None:
         os.close(fd)
 
 
-def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
-    """Replace each ``(path, old_bytes, new_bytes)`` so that a failure leaves EVERY original as it was.
+class PutBackFailed(RuntimeError):
+    """A rename failed and some files already replaced could not be put back; ``files`` names them."""
 
-    Every new file is first written beside its target (same directory, so the rename stays on one filesystem),
-    flushed and fsynced; only when all of them are on disk are they renamed over the originals, then the
-    directories are synced. A failure while staging removes the temporary files and touches no original. A failure
-    during the renames puts back the ones already replaced; a file that cannot be put back is named in the error,
-    never hidden."""
+    def __init__(self, files: list[str]):
+        super().__init__("rewritten and could not be put back (git checkout restores them): " + ", ".join(files))
+        self.files = files
+
+
+class ChangedSinceRead(RuntimeError):
+    """A target was edited after the script read it; replacing it would overwrite that edit."""
+
+    def __init__(self, name: str):
+        super().__init__(f"{name} changed since it was read: nothing was written")
+        self.name = name
+
+
+def sweep_stale_temporaries(paths: list[Path]) -> list[str]:
+    """Remove the ``.<name>.*.tmp`` files a killed run left beside the targets; returns what was removed."""
+    removed = []
+    for path in paths:
+        for stale in sorted(path.parent.glob(f".{path.name}.*.tmp")):
+            stale.unlink(missing_ok=True)
+            removed.append(stale.name)
+    return removed
+
+
+def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
+    """Replace each ``(path, old_bytes, new_bytes)``; an ERROR leaves every original as it was.
+
+    Every new file is first written beside its target (same directory, so the rename stays on one filesystem), flushed
+    and fsynced; only when all of them are on disk are they renamed over the originals, then the directories are
+    synced. Just before its rename each target is read again and must still be the bytes this run read; if it is not,
+    that file is refused by name and nothing further is replaced. A failure during the renames puts back the ones
+    already replaced; a file that cannot be put back is named (:class:`PutBackFailed`). A CRASH between two renames is
+    not covered (see the module docstring): the next run finishes the set."""
     staged: list[tuple[Path, Path, bytes]] = []
+    replaced: list[tuple[Path, bytes]] = []
     try:
         for path, old, new in items:
             fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
@@ -240,28 +275,26 @@ def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
                 handle.flush()
                 os.fsync(handle.fileno())
             shutil.copymode(path, tmp)
-    except BaseException:
-        for _path, tmp, _old in staged:
-            tmp.unlink(missing_ok=True)
-        raise
-    replaced: list[tuple[Path, bytes]] = []
-    try:
         for path, tmp, old in staged:
+            if path.read_bytes() != old:
+                raise ChangedSinceRead(path.name)
             os.replace(tmp, path)
             replaced.append((path, old))
         for directory in {path.parent for path, _tmp, _old in staged}:
             _fsync_dir(directory)
     except BaseException:
-        stuck = []
-        for path, old in replaced:
-            try:
-                _write_one(path, old)
-            except OSError:
-                stuck.append(str(path))
-        for _path, tmp, _old in staged:
-            tmp.unlink(missing_ok=True)
+        stuck: list[str] = []
+        try:
+            for path, old in replaced:
+                try:
+                    _write_one(path, old)
+                except OSError:
+                    stuck.append(path.name)
+        finally:
+            for _path, tmp, _old in staged:
+                tmp.unlink(missing_ok=True)
         if stuck:
-            raise RuntimeError("rewritten and could not be put back (git checkout restores them): " + ", ".join(stuck)) from None
+            raise PutBackFailed(stuck) from None
         raise
 
 
@@ -293,14 +326,26 @@ def main() -> int:
     ap.add_argument("--report", help="write a JSON report of every value looked at")
     args = ap.parse_args()
 
-    report: dict = {"files": {}, "unplaced": [], "left": [], "refused": None}
+    report: dict = {"files": {}, "unplaced": [], "left": [], "refused": None, "stale_temporaries_removed": []}
     would_change = 0
+    if args.write:
+        report["stale_temporaries_removed"] = sweep_stale_temporaries([ROOT / rel for rel in TARGETS])
+        if report["stale_temporaries_removed"]:
+            print(f"removed {len(report['stale_temporaries_removed'])} temporary file(s) a killed run left behind")
     # PROVE EVERY FILE FIRST, write after: a refusal on the last file must not leave the first ones rewritten.
     planned: list[tuple[str, str, str, list[dict]]] = []
     for rel in TARGETS:
-        old_text = (ROOT / rel).read_bytes().decode("utf-8")
-        new_text, changes = rewrite_text(old_text)
-        problems = prove_equivalent(old_text, new_text)
+        try:
+            old_text = (ROOT / rel).read_bytes().decode("utf-8")
+            new_text, changes = rewrite_text(old_text)
+            problems = prove_equivalent(old_text, new_text)
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            # Unreadable is not absent, and not "nothing to do": the run ends, names the file and the class, and
+            # still writes the report.
+            print(f"REFUSED {rel}: it could not be read or parsed ({type(exc).__name__})", file=sys.stderr)
+            report["refused"] = {"file": rel, "unreadable": type(exc).__name__}
+            _write_report(args.report, report)
+            return 2
         if problems:
             print(f"REFUSED {rel}: {problems[:5]}", file=sys.stderr)
             report["refused"] = {"file": rel, "problems": problems[:5]}
@@ -325,8 +370,12 @@ def main() -> int:
         try:
             write_all_atomically(to_write)
         except (OSError, RuntimeError) as exc:
-            print(f"WRITE FAILED ({type(exc).__name__}): every original was left as it was unless said otherwise: {exc}", file=sys.stderr)
+            print(f"WRITE FAILED ({type(exc).__name__}): {exc}", file=sys.stderr)
             report["refused"] = {"write_failed": type(exc).__name__}
+            if isinstance(exc, PutBackFailed):
+                report["refused"]["not_put_back"] = exc.files
+            if isinstance(exc, ChangedSinceRead):
+                report["refused"]["changed_since_read"] = exc.name
             _write_report(args.report, report)
             return 2
     print(f"total rewritten: {would_change}")

@@ -93,6 +93,20 @@ except PackageNotFoundError:  # pragma: no cover - only when not pip-installed
     APP_VERSION = "0.0.0+local"
 
 
+
+def _seed_law_catalogue(session, seed_legal_sources, register_documents) -> None:
+    """Seed the law portals and register the trackable documents; a catalogue file that is there and cannot be read
+    ends THIS step, named in the log, and never the rest of the boot's seeding (unreadable is not absent: it is not
+    read as an empty catalogue either, and the next boot tries again)."""
+    from src.law.catalog import LawCatalogUnreadable
+
+    try:
+        seed_legal_sources(session)
+        register_documents(session)
+    except LawCatalogUnreadable as exc:
+        log_failure(logger, "the law catalogue could not be read; its sources and documents were not seeded this boot", exc, level=logging.WARNING)
+
+
 def _note_boot_init_db() -> None:
     """Keep the per-step time of this process's cold ``init_db`` in the sentinel (STORE-02).
 
@@ -353,8 +367,7 @@ def _run_startup_upkeep() -> None:
 
             with session_scope() as session:
                 seeded = seed_default_sources(session)
-                seed_legal_sources(session)
-                register_documents(session)
+                _seed_law_catalogue(session, seed_legal_sources, register_documents)
                 # Channel-implied tags (2026-07-17): law/wikipedia/statistics/… sources
                 # carry their class tag so tag-based filters find their articles.
                 # Idempotent append-only heal over a bounded candidate set.
@@ -3619,8 +3632,7 @@ def _serve() -> None:
                 result = seed_default_sources(session)
                 # Worldwide law & IP catalog (portals as ingestible sources) + the
                 # curated set of trackable consolidated-law documents — on by default.
-                seed_legal_sources(session)
-                register_documents(session)
+                _seed_law_catalogue(session, seed_legal_sources, register_documents)
                 from src.catalog.provenance import ensure_channel_tags
 
                 ensure_channel_tags(session)

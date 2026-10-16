@@ -566,3 +566,171 @@ def test_the_legal_validator_finds_a_duplicate_domain_kind_country_across_the_tw
     generated["sources"][1]["country"] = "FRA"
     errors = vlc.validate(generated, {"sources": [], "documents": []})["errors"]
     assert not any("duplicate (domain, kind, country)" in e for e in errors)
+
+
+def test_a_doubled_quote_inside_a_single_quoted_scalar_does_not_end_it():
+    mod = _script()
+    new, _ = mod.rewrite_text("sources:\n  - {name: 'it''s # x', country: fr}  # c, country: fr\n")
+    assert new == "sources:\n  - {name: 'it''s # x', country: FRA}  # c, country: fr\n"
+
+
+def test_a_file_that_cannot_be_put_back_is_named_in_the_report_too(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write", "--report", str(report))
+    real = os.replace
+    calls = {"n": 0}
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] >= 2:  # the second rename dies, and so does every put-back after it
+            raise OSError("disk went away")
+        return real(src, dst)
+
+    monkeypatch.setattr(mod.os, "replace", flaky)
+    assert mod.main() == 2
+    refused = json.loads(report.read_text(encoding="utf-8"))["refused"]
+    assert refused["write_failed"] == "PutBackFailed" and refused["not_put_back"] == ["a.yml"]
+    assert not list((tmp_path / "configs").glob(".*.tmp")), "the temporaries must go even when the put-back fails"
+
+
+def test_a_file_edited_after_it_was_read_is_refused_by_name_and_nothing_is_written(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write", "--report", str(report))
+    real = mod.rewrite_text
+
+    def edit_b_while_working(text):
+        out = real(text)
+        if "name: B" in text:  # someone saves b.yml between the read and the write
+            (tmp_path / "configs" / "b.yml").write_text(B_OLD + "# edited\n", encoding="utf-8")
+        return out
+
+    monkeypatch.setattr(mod, "rewrite_text", edit_b_while_working)
+    assert mod.main() == 2
+    assert (tmp_path / "configs" / "a.yml").read_bytes() == A_OLD.encode(), "the first file must be put back"
+    assert (tmp_path / "configs" / "b.yml").read_text(encoding="utf-8") == B_OLD + "# edited\n", "the edit was overwritten"
+    assert json.loads(report.read_text(encoding="utf-8"))["refused"]["changed_since_read"] == "b.yml"
+
+
+def test_an_unreadable_or_unparsable_target_ends_the_run_with_a_report_and_exit_two(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(report))
+    (tmp_path / "configs" / "a.yml").write_bytes(b"sources: [\xff\xfe]\n")  # not UTF-8
+    assert mod.main() == 2
+    assert json.loads(report.read_text(encoding="utf-8"))["refused"] == {"file": "configs/a.yml", "unreadable": "UnicodeDecodeError"}
+    (tmp_path / "configs" / "a.yml").write_text("sources: [unclosed\n", encoding="utf-8")  # not YAML
+    assert mod.main() == 2
+    assert json.loads(report.read_text(encoding="utf-8"))["refused"]["unreadable"].endswith("Error")
+    (tmp_path / "configs" / "a.yml").unlink()  # not there at all: also not "nothing to do"
+    assert mod.main() == 2
+
+
+def test_temporaries_a_killed_run_left_are_swept_and_counted(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD}, "--write", "--report", str(report))
+    (tmp_path / "configs" / ".a.yml.k3j2x1.tmp").write_text("half", encoding="utf-8")
+    (tmp_path / "configs" / ".other.yml.zz.tmp").write_text("not ours", encoding="utf-8")
+    assert mod.main() == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["stale_temporaries_removed"] == [".a.yml.k3j2x1.tmp"]
+    assert (tmp_path / "configs" / ".other.yml.zz.tmp").exists(), "only the targets' own temporaries are swept"
+    # a second run is a no-op (idempotent: the way out of a crash between two renames)
+    assert mod.main() == 0
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")])
+def test_the_law_catalogue_ends_with_the_named_error_for_every_read_failure(tmp_path, monkeypatch, error):
+    from src.law import catalog as law_catalog
+
+    target = tmp_path / "law.yml"
+    target.write_text("sources: []\n", encoding="utf-8")
+
+    def refuse(self, *a, **k):
+        raise error
+
+    monkeypatch.setattr(Path, "read_text", refuse)
+    with pytest.raises(law_catalog.LawCatalogUnreadable, match=type(error).__name__) as info:
+        law_catalog._read_catalog_yaml(target)
+    assert str(tmp_path) not in str(info.value), "the message names the file and the class, never the path or the text"
+
+
+# --- every caller of an unreadable law catalogue ends with the named error or shows it unchecked ----------------------
+
+
+def _unreadable(monkeypatch):
+    from src.law import catalog as law_catalog
+
+    def boom(*_a, **_k):
+        raise law_catalog.LawCatalogUnreadable("the law catalogue legal_sources.yml could not be read (PermissionError)")
+
+    monkeypatch.setattr(law_catalog, "load_legal_catalog", boom)
+    return law_catalog
+
+
+def test_the_boot_seeding_logs_it_by_name_and_does_not_stop_the_other_steps(monkeypatch, caplog):
+    import logging
+
+    from src.api import main as api_main
+
+    _unreadable(monkeypatch)
+    calls = []
+
+    def seed(_s):
+        calls.append("seed")
+        from src.law.catalog import load_legal_catalog
+
+        load_legal_catalog()
+
+    with caplog.at_level(logging.WARNING):
+        api_main._seed_law_catalogue(object(), seed, lambda _s: calls.append("register"))  # must not raise
+    assert calls == ["seed"] and "law catalogue could not be read" in caplog.text and "PermissionError" in caplog.text
+
+
+def test_the_law_seed_endpoint_answers_503_with_the_named_error(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    _unreadable(monkeypatch)
+    with TestClient(app) as client:
+        r = client.post("/api/law/seed")
+    assert r.status_code == 503 and "PermissionError" in r.json()["detail"]
+
+
+def test_the_coverage_report_shows_the_denominators_unchecked_with_the_reason(monkeypatch):
+    from src.database.models import Base as _Base  # noqa: F401
+    from src.law.coverage import COVERAGE_UNCHECKED, law_coverage_report
+
+    _unreadable(monkeypatch)
+    engine = create_engine("sqlite://", future=True)
+    from src.database.models import Base
+
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as session:
+        from src.database.models import LawDocument
+
+        session.add(LawDocument(jurisdiction="uk", title="HRA", url="https://example.org/hra", country="gb"))
+        session.commit()
+        report = law_coverage_report(session)
+    assert report["catalog"]["readable"] is False and "PermissionError" in report["catalog"]["error"]
+    assert report["extraction"]["state"] == "unchecked" and report["enumeration"]["state"] == "unchecked"
+    assert report["jurisdictions"][0]["coverage"]["state"] == COVERAGE_UNCHECKED, "never read as 'no enumeration exists'"
+    assert report["documents"] == 1, "the counts that come from the database stay true"
+
+
+def test_the_helpers_that_read_the_catalogue_themselves_end_with_the_named_error(monkeypatch):
+    from src.law.catalog import LawCatalogUnreadable
+    from src.law.coverage import _pdf_reach, official_enumerations
+
+    _unreadable(monkeypatch)
+    with pytest.raises(LawCatalogUnreadable):
+        official_enumerations()
+    with pytest.raises(LawCatalogUnreadable):
+        _pdf_reach(None)
+
+
+def test_the_release_runs_live_probe_ends_with_the_named_error_which_its_caller_records(monkeypatch):
+    from src.law.catalog import LawCatalogUnreadable
+    from src.monitoring import release_run
+
+    _unreadable(monkeypatch)
+    with pytest.raises(LawCatalogUnreadable):
+        release_run._law_live_checks()
