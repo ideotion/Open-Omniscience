@@ -146,8 +146,10 @@ fits the envelope and is not changed; it is now written into the runner's plan (
 filter on a border's way and node ids and would pay the same price while the border is assembled (a real border's ids are spread over
 the range); the composite's border is four invented ways and Liechtenstein's ids are 2013-era, so that one was not measured on a real
 border. **Disk:** the phase wrote 3.3 GB on top of a 1.46 GB `osm.db` (12.2 M versions, 29.8 M change rows, about 110 bytes a row);
-the preflight counts the history phase as one more ingest-sized footprint, which this synthetic file exceeded by more than two times.
-How many rows a real planet history yields per version is not known from here, so the figure is recorded and the guess is not changed.
+the preflight had counted the history phase as one more ingest-sized footprint, which this file beat. The disk worst case it warns with
+now counts 3.4 times the cut (`HISTORY_DISK_MULTIPLE`: this run's 4,779 MB over the ingest's 1,436 MB, rounded up) and says so, with the
+word SYNTHETIC: how many change rows a real planet history yields per version is not known from here, so the figure is an observed upper
+figure for one shape, not a model. The refusal floor stays the guess it says it is.
 
 **The pure-Python reader (no `[geo]` extra) at 16 x.**
 

@@ -271,14 +271,16 @@ def test_a_big_share_country_is_warned_by_name_with_the_extrapolated_worst_case(
                        prior_report=prior)["warning"] is None
     assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB,
                        min_free_override=10 * GB)["warning"] is None
-    # The history phase writes into the same store after the ingest: the worst case doubles.
-    hist = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=400 * GB, reserve_bytes=2 * GB)
-    assert hist["worst_case_bytes"] == 2 * int(10.5 * 14 * GB) + 2 * GB
+    # The history phase writes into the same store after the ingest: the worst case is HISTORY_DISK_MULTIPLE times the cut, the most
+    # a synthetic 16x history wrote (4,779 MB against the ingest's 1,436 MB, which a doubling would have understated).
+    assert R.HISTORY_DISK_MULTIPLE >= 4779 / 1436, "the figure told to an operator must cover what the run measured"
+    hist = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=2000 * GB, reserve_bytes=2 * GB)
+    assert hist["worst_case_bytes"] == int(R.HISTORY_DISK_MULTIPLE * int(10.5 * 14 * GB)) + 2 * GB
     # A refusal stays by name: the floor itself is not met.
     refused = R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=20 * GB, reserve_bytes=2 * GB)
     assert refused["ok"] is False and refused["warning"] is None, "a refusal says so by name; it is not also a warning"
-    assert "history phase" in R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=100 * GB,
-                                          reserve_bytes=2 * GB)["warning"]
+    w = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=100 * GB, reserve_bytes=2 * GB)["warning"]
+    assert "history phase" in w and "SYNTHETIC" in w and "unmeasured" in w
 
 
 def test_free_disk_falling_below_the_reserve_stops_the_child_cleanly_and_ends_the_run(tmp_path):

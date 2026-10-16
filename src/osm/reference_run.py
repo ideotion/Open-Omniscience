@@ -108,6 +108,12 @@ OSM_DB_PER_PBF_BYTE_HIGH = 7.5
 #: counts toward the PEAK only. The pure-Python reader's spill file starts at any size once its dict passes the memory
 #: budget, which this figure does not cover (the preflight is not told the reader).
 LOCATION_INDEX_BYTES_PER_PBF_BYTE = 3.0
+#: What the history phase wrote, as a multiple of the ingest's own peak disk: a SYNTHETIC history of the 16x composite (12.2 million
+#: versions, 29.8 million change rows) peaked at 4,779 MB where the ingest alone peaked at 1,436 MB (3.3 times), 2,484 s later. The
+#: synthetic file tags every object heavily and holds 2.3 versions an object, so how many change rows a REAL country's past yields is
+#: not known from here; 3.4 is that measurement rounded up, an observed upper figure for one synthetic shape and not a model. The
+#: refusal floor above stays the guess it says it is (the warning is where this figure is used, and it only warns).
+HISTORY_DISK_MULTIPLE = 3.4
 #: The history phase hands every tracked node id to ``osmium.filter.IdFilter``, which is backed by libosmium's ``IdSet``: 4 MiB for
 #: every 2**25-id window an id falls in, whatever the count (``docs/audit/osm-real-extract-2026-10-15/idfilter_probe.py``: a
 #: thousand ids spread over 1.2e10 cost the same 1,434 MiB as four million). Node ids to 1.2e10 touch at most 358 windows. The filter is
@@ -313,7 +319,8 @@ def preflight(
     # is one more ingest-sized footprint, and the basis says so.
     history_footprint = footprint if history_bytes else 0
     if history_bytes:
-        basis += "; the history phase is assumed to add one more ingest-sized footprint (also a guess)"
+        basis += ("; the history phase is assumed to add one more ingest-sized footprint (also a guess: a synthetic 16x history "
+                  f"measured {HISTORY_DISK_MULTIPLE:g} times the ingest's peak in all, see the warning)")
     needed = min_free_override if min_free_override is not None else footprint + history_footprint + reserve_bytes
     ok = free_bytes >= needed
     # THE WORST CASE, EXTRAPOLATED FROM TWO SMALL MEASUREMENTS (a 0.6 MB and a 12 MB file settled at 6.0 and 7.5 x), NOT
@@ -325,13 +332,13 @@ def preflight(
 
     per_byte = OSM_DB_PER_PBF_BYTE_HIGH + (LOCATION_INDEX_BYTES_PER_PBF_BYTE if extract_bytes > PyosmiumExtract.ON_DISK_ABOVE else 0)
     worst_footprint = int(per_byte * extract_bytes)
-    worst = worst_footprint * (2 if history_bytes else 1) + reserve_bytes
+    worst = int(worst_footprint * (HISTORY_DISK_MULTIPLE if history_bytes else 1)) + reserve_bytes
     warning = None
     if ok and ratio is None and min_free_override is None and free_bytes < worst:
         warning = (f"free disk is {free_bytes} bytes; if this country is most of the {extract_bytes}-byte extract the run can need "
                    f"{worst} (osm.db at {OSM_DB_PER_PBF_BYTE_LOW:g} to {OSM_DB_PER_PBF_BYTE_HIGH:g} times the country's own bytes, "
                    f"settled sizes of two small real extracts scaled up, NOT measured at this size, plus the node-location file for a large one"
-                   f"{', and the history phase adds its own footprint (counted twice here)' if history_bytes else ''}). "
+                   f"{f', and the history phase adds its own: counted {HISTORY_DISK_MULTIPLE:g} times the cut here, the most a SYNTHETIC 16x history wrote (real history is unmeasured)' if history_bytes else ''}). "
                    f"It starts: the sampler stops it cleanly if the disk reaches the reserve. Pass --min-free-gb to refuse instead")
     history_memory = _history_memory(memory_room) if history_bytes else None
     return {
