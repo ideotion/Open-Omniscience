@@ -267,3 +267,27 @@ def test_a_scheduler_run_report_is_scrubbed_where_it_is_recorded_and_where_it_is
     rows = runlog.recent_runs()
     assert len(rows) == 2 and _KEY not in json.dumps(rows)
     assert any("older build wrote" in json.dumps(r) for r in rows)
+
+
+def test_a_skipped_ledger_note_is_checked_whole_before_it_is_cut():
+    """The note is cut at 200 characters: a key that straddles the cut must not leave its first half behind."""
+    from src.monitoring import activity_ledger as al
+
+    reason = "x" * (200 - len(_KEY) // 2) + _KEY + " tail"
+    e = al.build_entry("lane:world_discovery", {"enabled": True, "skipped": reason})
+    note = e.as_record()["note"]
+    assert _KEY not in note and _KEY[: len(_KEY) // 2] not in note, "the first half of a cut key stays too"
+    assert len(note) <= 200 and note.startswith("x")
+
+
+def test_a_field_test_step_that_fails_does_not_record_the_key(monkeypatch, tmp_path):
+    from src.monitoring import field_test as ft
+
+    monkeypatch.setattr(ft, "_log_path", lambda: tmp_path / "field_test.jsonl")
+
+    def boom():
+        raise RuntimeError(f"driver said PRAGMA key = '{_KEY}'")
+
+    ft._run_step("probe", boom)
+    raw = (tmp_path / "field_test.jsonl").read_text(encoding="utf-8")
+    assert _KEY not in raw and "probe" in raw and "false" in raw
