@@ -32,7 +32,9 @@ def test_home_trends_panel_and_loader_exist():
 
 def test_strip_is_fail_safe_hidden_when_nothing_trending():
     # Home never blank-and-silent: no terms -> the panel hides, the Briefing remains.
-    assert "if (!terms.length) { if (panel) panel.hidden = true;" in _JS
+    # A partial answer with its own words is shown (not computed is not "nothing is trending"); every other empty answer hides.
+    assert "if (!terms.length) {" in _JS
+    assert 'else { if (panel) panel.hidden = true; box.innerHTML = ""; }' in _JS
 
 
 def test_each_term_deeplinks_and_shows_a_sparkline():

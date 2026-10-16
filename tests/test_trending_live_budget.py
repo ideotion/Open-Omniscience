@@ -183,13 +183,11 @@ def test_the_endpoint_passes_the_budget_and_returns_the_partial_payload_untouche
 
 def test_insights_says_not_computed_for_a_partial_answer_with_no_window():
     """The defect: ``windows: []`` printed "No rising keywords in this window yet.", the misreading the leave-out prevents."""
-    import pathlib
+    from tests.js_source_helper import function_body, read_static
 
-    js = (pathlib.Path(__file__).resolve().parents[1] / "src" / "static" / "app-corpus.js").read_text(encoding="utf-8")
-    body = js[js.index("async function loadTrendWindows()"):]
-    body = body[:body.index("// Click-to-enlarge")]
+    body = function_body(read_static("app-corpus.js"), "loadTrendWindows")
     i = body.index('.join("") ||')
-    tail = body[i:body.index('const note = $("trd-windows-note")')]
+    tail = body[i:]
     assert "d.partial && d.caveat" in tail and "t(d.caveat)" in tail
     assert tail.index("d.partial && d.caveat") < tail.index("No rising keywords in this window yet."), \
         "the partial branch is chosen before the empty state"
