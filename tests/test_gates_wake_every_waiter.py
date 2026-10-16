@@ -71,8 +71,8 @@ def test_a_permit_given_back_reaches_the_real_waiter_behind_a_stale_entry():
     t.join(_PATIENCE_S)
 
 
-def test_a_woken_waiter_that_finds_the_gate_still_full_waits_again():
-    """notify_all wakes the others too: only the waiters whose predicate holds proceed."""
+def test_two_waiters_woken_together_do_not_take_one_slot():
+    """notify_all wakes both waiters for the one slot freed: each re-checks the gate, one proceeds, the other waits for the next release."""
     slots = _Slots(1)
     assert slots.acquire(1, 1.0)
     results: dict[int, bool] = {}

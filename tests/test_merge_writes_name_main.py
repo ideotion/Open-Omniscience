@@ -146,10 +146,21 @@ def _pragma_problems(stmt: str) -> list[str]:
     return []
 
 
+#: SQLite's TCL-style parameters (`$name(...)`, `:name(...)`, `@name(...)`, `#name(...)`): one token up to the `)`, so a quote or a comment opener inside it opens nothing.
+_TCL_PARAMETER = re.compile(r"[$@:#][\w:]*\w\(")
+
+
 def _statements(sql: str) -> list[str]:
     """The statements of one text, split at the ``;`` that SQLite itself would end a statement at: a ``;`` inside a string literal (``'a;b'``),
-    a quoted name (``"a;b"``, backtick, ``[a;b]``) or a comment (``-- x;`` / ``/* x; */``) does not end one. A text this reading cannot close
-    (an unterminated quote or comment) falls back to splitting at every ``;``, which can only report MORE statements, never hide one."""
+    a quoted name (``"a;b"``, backtick, ``[a;b]``) or a comment (``-- x;`` / ``/* x; */``) does not end one. A text this reading cannot trust
+    (an unterminated quote or comment, a TCL-style parameter, or a run-time ``{}`` piece) falls back to
+    splitting at every ``;``, which can only report MORE statements, never hide one."""
+    if _TCL_PARAMETER.search(sql):  # `$a(') ; DELETE FROM u ; SELECT $b(')`: SQLite reads `$a(...)` as one token, so its quote opens nothing
+        return sql.split(";")
+    if "{" in sql:
+        # a `{}` stands for a piece the source builds at run time, and that piece may hold the quote this reading assumed was open (or
+        # shut), so what looks like "inside a literal" cannot be trusted
+        return sql.split(";")
     out: list[str] = []
     start = i = 0
     n = len(sql)
@@ -833,6 +844,14 @@ def test_the_scan_passes_the_qualified_and_the_read_shapes(snippet):
         ("SELECT 1 /* a; DELETE FROM u", ["SELECT 1 /* a", " DELETE FROM u"]),
         ("", [""]),
         ("SELECT 1;", ["SELECT 1", ""]),
+        # a TCL-style parameter: SQLite reads `$a(')` as one token, so the quote opens nothing and the `;` after it ends a statement
+        ("SELECT $a(') ; DELETE FROM u ; SELECT $b(')", ["SELECT $a(') ", " DELETE FROM u ", " SELECT $b(')"]),
+        ("SELECT :a(--) ; DELETE FROM u", ["SELECT :a(--) ", " DELETE FROM u"]),
+        ("SELECT @a(/*) ; DELETE FROM u ; SELECT @b(*/)", ["SELECT @a(/*) ", " DELETE FROM u ", " SELECT @b(*/)"]),
+        # a run-time piece may carry the quote this reading took as open: with a `;` skipped, every `;` counts
+        ("SELECT '{}; DELETE FROM u -- '\n", ["SELECT '{}", " DELETE FROM u -- '\n"]),
+        ("INSERT INTO main.{} VALUES ('a')", ["INSERT INTO main.{} VALUES ('a')"]),
+        ("SELECT '{};' ", ["SELECT '{}", "' "]),  # over-reports (a `;` in a literal beside a run-time piece); never hides
     ],
 )
 def test_statements_ends_a_statement_where_sqlite_does(text, expected):
@@ -870,6 +889,11 @@ def test_a_semicolon_in_a_literal_and_an_update_conflict_clause_are_not_reported
         # the conflict clause does not hide an unqualified target
         'def f(con):\n    con.execute("UPDATE OR IGNORE t SET a = 1")',
         'def f(con):\n    con.execute("UPDATE OR REPLACE main_t SET a = 1")',
+        # SQLite runs the DELETE in both of these (measured on 3.45 with executescript); neither may read as one string / one comment
+        'def f(con):\n    con.executescript("SELECT $a(\') ; DELETE FROM u ; SELECT $b(\')")',
+        'def f(con):\n    con.executescript("SELECT :a(--) ; DELETE FROM u")',
+        'def f(con, v):\n    con.executescript("SELECT \'" + v + "; DELETE FROM u -- \'\\n")',
+        'def f(con, v):\n    con.executescript(f"SELECT \'{v}; DELETE FROM u -- \'\\n")',
     ],
 )
 def test_the_scan_still_fails_on_the_shapes_the_semicolon_reading_could_hide(snippet):

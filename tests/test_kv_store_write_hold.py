@@ -48,12 +48,15 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{live}")
     kv_store.kv_invalidate()
     _reset_hold_state()
+    real_inflight = kv_store._inflight  # the real set: a test may have patched the module's name by the time this runs
     yield live
     kv_store.kv_invalidate()
-    _reset_hold_state()
+    leaked = (set(real_inflight), kv_store._hold_by)
+    _reset_hold_state()  # so a leak fails the test that made it, not the twenty after it
+    assert leaked == (set(), None), "the test ended with a settings write counted in flight or a hold taken"
 
 
-def test_the_store_fixture_clears_a_hold_and_a_write_a_failed_test_left():
+def test_the_reset_helper_clears_a_hold_and_a_write_a_failed_test_left():
     kv_store._inflight.add(object())
     kv_store._hold_by = threading.get_ident()
     _reset_hold_state()
