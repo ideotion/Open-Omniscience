@@ -60,6 +60,7 @@ def find_manufactured_emergence(
     """
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Article, ArticleMentionedDate, Keyword
+    from src.database.outlet import OutletMap
     from src.database.stand_in import not_a_stand_in_article_id
 
     today = date.today()
@@ -108,6 +109,7 @@ def find_manufactured_emergence(
     from src.analytics.queries import _hidden_predicate
 
     is_hidden = _hidden_predicate()
+    outlets = OutletMap(session)
     items: list[dict] = []
     for kid, _rc in cands:
         kw = session.get(Keyword, kid)
@@ -127,7 +129,7 @@ def find_manufactured_emergence(
             .all()
         )
         article_ids = sorted({r[0] for r in rows})
-        sources = {r[1] for r in rows if r[1] is not None}
+        sources = {outlets.key(r[1]) for r in rows if r[1] is not None}  # outlets: a site's feeds are one voice (R146)
         if len(sources) < min_sources:
             continue  # a chatty single/few source(s) can't manufacture an emergence
 

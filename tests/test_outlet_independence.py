@@ -247,3 +247,35 @@ def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path):
         app.dependency_overrides.clear()
     assert (items[x]["citations"], items[x]["citing_sources"], items[x]["independence"]) == (2, 1, "single_origin")
     assert (items[y]["citations"], items[y]["citing_sources"], items[y]["independence"]) == (2, 2, "distinct_sources")
+
+
+def test_a_term_born_wide_across_feeds_of_one_site_is_not_born_wide(tmp_path, monkeypatch):
+    from src.analytics.emergence import find_manufactured_emergence
+
+    session = _kw_session(tmp_path, monkeypatch)
+    ids = [_feed(session, n, "bbc.com", f"https://bbc.com/{n}", text=n) for n in ("a", "b", "c")]
+    session.commit()
+    _mention_spread(session, "bornwide", [(i, 1) for i in ids])
+    gates = {"min_recent_articles": 3, "min_sources": 2}
+    assert find_manufactured_emergence(session, **gates)["items"] == []  # three feeds, one outlet
+    other = _feed(session, "DW", "dw.com", "https://dw.com/rss", text="dw")
+    session.commit()
+    _mention_spread(session, "bornwide2", [(ids[0], 1), (ids[1], 1), (other, 1)])  # the positive control
+    items = find_manufactured_emergence(session, **gates)["items"]
+    assert [(i["term"], i["recent_sources"]) for i in items] == [("bornwide2", 2)]
+
+
+def test_a_rising_theme_reports_distinct_outlets(tmp_path, monkeypatch):
+    from src.analytics.supergroup_rising import _distinct_sources_windowed
+
+    session = _kw_session(tmp_path, monkeypatch)
+    a = _feed(session, "BBC News", "bbc.com", "https://bbc.com/en", text="a")
+    b = _feed(session, "BBC Arabic", "bbc.com", "https://bbc.com/ar", text="b")
+    c = _feed(session, "DW", "dw.com", "https://dw.com/rss", text="c")
+    session.commit()
+    _mention_spread(session, "risingterm", [(a, 1), (b, 1), (c, 1)])
+    from src.database.models import Keyword
+
+    kid = session.query(Keyword).filter_by(normalized_term="risingterm").one().id
+    today = datetime.now(UTC).date()
+    assert _distinct_sources_windowed(session, {kid}, today - timedelta(days=5), today + timedelta(days=1)) == 2

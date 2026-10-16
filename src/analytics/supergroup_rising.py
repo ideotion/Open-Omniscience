@@ -70,14 +70,18 @@ def _corpus_volume(db, lo: date, hi: date) -> int:
     return int(total or 0)
 
 
-def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
+def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date, outlets=None) -> int:
+    """Distinct OUTLETS (a site's several feeds are one voice: row J, R146) that carried any of the keywords."""
     from src.database.derived_views import KeywordMentionRead
+    from src.database.outlet import OutletMap
     from src.database.stand_in import not_a_stand_in_article_id
+
+    outlets = outlets or OutletMap(db)
 
     ids = sorted(keyword_ids)
     if not ids:
         return 0
-    seen: set[int] = set()
+    seen: set[str] = set()
     for chunk in _chunks(ids):
         for (sid,) in (
             db.query(KeywordMentionRead.source_id)
@@ -91,7 +95,7 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
             )
             .distinct()
         ):
-            seen.add(int(sid))
+            seen.add(outlets.key(int(sid)))
     return len(seen)
 
 
@@ -201,9 +205,11 @@ def find_rising_supergroups(
     from src.analytics.managed import normalize_lang
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Source
+    from src.database.outlet import OutletMap
     from src.database.stand_in import not_a_stand_in_article_id
 
-    # Active same-language source counts over the recent window — the DF-ubiquity
+    outlets = OutletMap(db)
+    # Active same-language OUTLET counts over the recent window — the DF-ubiquity
     # gate's denominator, built ONCE (the find_flooded_topics pattern), not per group.
     src_recent = dict(
         db.query(KeywordMentionRead.source_id, func.count(distinct(KeywordMentionRead.article_id)))
@@ -218,7 +224,7 @@ def find_rising_supergroups(
     )
     active_by_lang: dict[str, int] = {}
     if src_recent:
-        sids = list(src_recent)
+        sids = sorted({outlets.primary_id(int(x)) for x in src_recent})
         for chunk in _chunks(sids):
             for _sid, lang in db.query(Source.id, Source.language).filter(Source.id.in_(chunk)):
                 lg = normalize_lang(lang)
@@ -285,7 +291,7 @@ def find_rising_supergroups(
         top_ids = id_sets.get(top_key, set())
         dom_lang = _dominant_language(db, top_ids, recent_by_id)
         if dom_lang:
-            n_with = _distinct_sources_windowed(db, top_ids, w_start, hi)
+            n_with = _distinct_sources_windowed(db, top_ids, w_start, hi, outlets)
             n_active = active_by_lang.get(dom_lang, 0)
             if is_generic_by_df_ubiquity(n_with, n_active):
                 continue  # a rise driven by a generic/ubiquitous word is not a Lead
@@ -301,7 +307,7 @@ def find_rising_supergroups(
                 "prior_mentions": t["group_prior"],
                 "driven_by": top_key,
                 "driven_share": round(driven_share, 3),
-                "distinct_sources": _distinct_sources_windowed(db, t["group_ids"], w_start, hi),
+                "distinct_sources": _distinct_sources_windowed(db, t["group_ids"], w_start, hi, outlets),
                 "article_ids": _article_ids_windowed(db, t["group_ids"], w_start, hi),
             }
         )
