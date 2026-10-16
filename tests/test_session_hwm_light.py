@@ -621,9 +621,9 @@ def test_the_real_guard_line_is_read_from_the_memory_guards_own_attributes(monke
     guard = memguard.MemoryGuard(avail_floor_mb=300, rss_pct=70)
     monkeypatch.setattr(memguard, "memory_guard", guard)
     assert session_hwm._guard_line() == (300.0, 70.0)
-    near = session_hwm._light_near({"avail_mb": 440.0, "total_mb": 5000.0, "rss_mb": 100.0}, None)
+    near = session_hwm._light_near({"avail_mb": 440.0, "total_mb": 2000.0, "rss_mb": 100.0}, None)
     assert near == "available memory near the guard's floor", "1.5 x 300 MB is 450 MB, so 440 MB is near it"
-    assert session_hwm._light_near({"avail_mb": 460.0, "total_mb": 5000.0, "rss_mb": 100.0}, None) is None
+    assert session_hwm._light_near({"avail_mb": 460.0, "total_mb": 2000.0, "rss_mb": 100.0}, None) is None
     monkeypatch.setattr(guard, "avail_floor_mb", None)  # unreadable is None, never a zero line
     monkeypatch.setattr(guard, "rss_pct", 0)
     assert session_hwm._guard_line() == (None, None)
@@ -683,3 +683,37 @@ def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(mon
     assert "omitted" in session_hwm.diagnostics_member(-5), "a nonsense budget is named, not an error"
     monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError("boom\nsecond line")))
     assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError"}
+
+
+# --- the triggers that read THIS tick's memory, not the boot-time budget the guard's line comes from ---
+def test_swap_in_use_with_ram_headroom_takes_a_light_snapshot(rig, no_heavy):
+    """The October VM: swap full for hours, available memory comfortable by the boot numbers, no snapshot ever taken.
+    MUTATION TARGET: remove the swap trigger and this takes nothing."""
+    headroom = dict(HEALTHY, avail_mb=0.6 * TOTAL, rss_mb=0.1 * TOTAL, swap_used_mb=0.3 * TOTAL)
+    assert session_hwm._light_near(headroom, None) == "swap in use"
+    assert _whys(rig(5.0, readings=headroom)) == ["swap in use"]
+
+
+def test_a_little_swap_on_a_healthy_machine_is_not_a_trigger(rig, no_heavy):
+    """The kernel parks idle pages for days: below max(256 MB, 5% of the RAM read now) nothing is taken."""
+    floor = max(session_hwm._LIGHT_SWAP_MIN_MB, session_hwm._LIGHT_SWAP_SHARE * TOTAL)
+    ok = dict(HEALTHY, avail_mb=0.6 * TOTAL, rss_mb=0.1 * TOTAL)
+    assert rig(5.0, readings=dict(ok, swap_used_mb=floor - 1.0)) == []
+    assert _whys(rig(5.0, readings=dict(ok, swap_used_mb=floor))) == ["swap in use"]
+    assert session_hwm._light_near(dict(ok), None) is None, "no swap reading is no trigger, never a zero"
+
+
+def test_the_swap_floor_follows_the_ram_read_now_not_a_boot_number():
+    big = {"avail_mb": 9000.0, "total_mb": 32000.0, "rss_mb": 100.0}
+    assert session_hwm._light_near(dict(big, swap_used_mb=1500.0), None) is None, "5% of 32 GB is 1,600 MB"
+    assert session_hwm._light_near(dict(big, swap_used_mb=1600.0), None) == "swap in use"
+
+
+def test_available_memory_below_the_pressure_line_of_the_ram_read_now_is_near(monkeypatch):
+    monkeypatch.setattr(session_hwm, "_guard_line", lambda: (None, None))  # the guard's own numbers unreadable: still fires
+    line = session_hwm._pressure_line_mb(8000.0)
+    assert session_hwm._light_near({"avail_mb": line, "total_mb": 8000.0, "rss_mb": 100.0}, None) == (
+        "available memory below the pressure line of the RAM read now")
+    assert session_hwm._light_near({"avail_mb": line + 1.0, "total_mb": 8000.0, "rss_mb": 100.0}, None) is None
+    # the same available memory is fine on a bigger machine: the line is a share of the total read now
+    assert session_hwm._light_near({"avail_mb": line, "total_mb": 2000.0, "rss_mb": 100.0}, None) is None

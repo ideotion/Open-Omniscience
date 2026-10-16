@@ -144,6 +144,13 @@ _PLATEAU_INTERVAL_S = 300.0
 _LIGHT_FILE = "session_pressure_light.json"
 _LIGHT_INTERVAL_S = 15.0
 _LIGHT_NEAR_FACTOR = 1.5
+# SWAP IN USE is the other way the guard's line fails to see a machine in trouble: the guard's numbers are fixed from the RAM read at
+# boot, a VM whose RAM was taken back by its host (ballooning) keeps the boot numbers while it pages, and one October instance sat with
+# its swap full for hours and took no light snapshot at all. Swap in use means pages the machine has already moved out and will have to
+# read back, which is where the stalls and the kills come from. A small amount is not that: the kernel parks idle pages on a healthy machine
+# for days. So the trigger is swap holding at least this much, or this share of the RAM read NOW, whichever is larger.
+_LIGHT_SWAP_MIN_MB = 256.0
+_LIGHT_SWAP_SHARE = 0.05
 _LIGHT_KEEP = 8
 _LIGHT_THREADS = 3
 # CPU is read for at most this many working threads: every read waits for the GIL under a burst
@@ -155,7 +162,9 @@ _MEMBER_SLACK = 32
 _LIGHT_METHOD = (
     "taken at most every 15 s (a tick that a heavy snapshot takes is skipped, so the gap can be "
     "longer) while available memory is within 1.5 times the memory guard's floor, the process "
-    "holds at least 1/1.5 of the share of RAM at which the guard trips, or the guard is engaged: "
+    "holds at least 1/1.5 of the share of RAM at which the guard trips, the guard is engaged, swap holds "
+    "at least 256 MB or 5% of the RAM read at that moment (the larger), or available memory is below 15% "
+    "of the RAM read at that moment (at most 1,024 MB): "
     "the kernel's memory counters, the Python block count and the blocks gained since the previous "
     "light snapshot (over_s says over how long, for the threads' CPU too), and the threads that "
     "spent the most CPU in that time, with their stacks, chosen among the first 16 working threads "
@@ -1055,6 +1064,12 @@ def _light_near(readings: dict[str, float], guard: dict[str, Any] | None) -> str
         return "available memory near the guard's floor"
     if rss is not None and total and pct is not None and 100.0 * rss / total >= pct / _LIGHT_NEAR_FACTOR:
         return "process memory near the guard's share"
+    # Both of these use the readings of THIS tick (the RAM total included), never the boot-time budget the guard's line comes from.
+    swap = readings.get("swap_used_mb")
+    if swap is not None and swap >= max(_LIGHT_SWAP_MIN_MB, (total or 0.0) * _LIGHT_SWAP_SHARE):
+        return "swap in use"
+    if avail is not None and total and avail <= _pressure_line_mb(total):
+        return "available memory below the pressure line of the RAM read now"
     return None
 
 
