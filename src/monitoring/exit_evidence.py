@@ -47,6 +47,7 @@ from src.monitoring.kernel_log import (
     _run,
     journal_boot_arg,
     journal_notice,
+    published_lines,
 )
 from src.paths import data_dir
 
@@ -340,7 +341,7 @@ def read_userspace_killers(
         return out
     lines = _kernel_lines(text)
     matched = [ln for ln in lines if _names_us(ln, pid, cgroup)]
-    out["lines"] = matched[-20:]
+    out["lines"] = published_lines(matched, 20)
     if matched:
         out["verdict"] = _classify_killer(matched)
         return out
