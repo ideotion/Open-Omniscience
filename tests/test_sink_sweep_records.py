@@ -570,9 +570,10 @@ def _api_chain_taken_off(rel: str, source: str) -> str:
     return _RAISE_FROM.sub("", source) if (rel.startswith("src/api/") or rel in _S5_MODULES) else source
 
 
-#: Outside ``src/api`` a ``raise X from exc`` chains an ORDINARY exception, whose chain whoever logs X prints (through ``record_traceback``,
-#: which reads every link), so the reading above does not follow it. Instead the sites are COUNTED per module: a new one fails here until
-#: its cause has been read and the count raised, so a wrapper raised from a driver's error cannot arrive unseen.
+#: Outside ``src/api`` a ``raise`` inside an ``except`` that chains the caught exception (``from exc``, or implicitly with no ``from``) hands
+#: an ORDINARY exception's chain to whoever logs the new one (through ``record_traceback``, which reads every link), so the reading above
+#: does not follow it. Instead the sites are COUNTED per module, an HTTPException raise among them: a new one fails here until its cause
+#: has been read and the count raised, so a wrapper raised from a driver's error cannot arrive unseen. ``from None`` chains nothing.
 _S5_CHAINED_RAISES: dict[str, int] = {
     "src/ai_layer/bench_batch.py": 2,
     "src/ai_layer/source_tags_job.py": 1,
@@ -602,14 +603,21 @@ _S5_CHAINED_RAISES: dict[str, int] = {
 }
 
 
+def _chained_raises(source: str) -> int:
+    seen = set()
+    for handler in (n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.ExceptHandler)):
+        for r in ast.walk(handler):
+            if isinstance(r, ast.Raise) and r.exc is not None and not (isinstance(r.cause, ast.Constant) and r.cause.value is None):
+                seen.add(id(r))
+    return len(seen)
+
+
 def test_a_raise_that_chains_an_ordinary_exception_is_counted_not_skipped():
-    pattern = re.compile(r"(?<=[)\w\]\"]) from (?:exc|e|err|ex)[ \t]*$")
-    found: dict[str, int] = {}
-    for rel in sorted(_S5_MODULES):
-        n = sum(1 for ln in (ROOT / rel).read_text(encoding="utf-8").split("\n") if pattern.search(ln) and "HTTPException" not in ln)
-        if n:
-            found[rel] = n
+    found = {rel: n for rel in sorted(_S5_MODULES) if (n := _chained_raises((ROOT / rel).read_text(encoding="utf-8")))}
     assert found == _S5_CHAINED_RAISES
+    assert _chained_raises("try:\n    pass\nexcept A as e:\n    raise B('x')\n") == 1, "an implicit chain is counted"
+    assert _chained_raises("try:\n    pass\nexcept A as e:\n    raise HTTPException(400) from e\n") == 1, "an HTTPException is counted"
+    assert _chained_raises("try:\n    pass\nexcept A as e:\n    raise B('x') from None\n") == 0
 
 
 def _found(rel: str, source: str) -> list[str]:
@@ -784,7 +792,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('maybe_cleanup_keywords', 'tally["prune"] = _skip_error(exc)'): 2,
     },
     'src/analytics/watches.py': {
-        # the ValueError's text is the HTTPException detail an upstream http_detail made, or record_text's own output
+        # the ValueError's detail is the HTTPException detail of the filter parser, or record_text's own output (search_filters does not use http_detail)
         ('_filters_blob', 'raise ValueError(getattr(exc, "detail", None) or record_text(exc))'): 1,
     },
     'src/catalog/discover_job.py': {
@@ -792,7 +800,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('run_world_discovery', 'if "airplane" in str(exc):  # the kill switch raced the loop check'): 1,
     },
     'src/catalog/qualification_merge.py': {
-        # hands the JSON error to the YAML reader as its parse-failure cause; the reader writes record_text of the YAML error and the class of this one
+        # hands the JSON error to the YAML reader, which records it through record_text(json_exc) and chains only the YAML error
         ('rows_from_export_bytes', 'return _rows_from_export_yaml(text, origin, json_exc)'): 1,
     },
     'src/config/kv_store.py': {
@@ -898,7 +906,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_status_line', 'text = str(exc)'): 1,
         # a parameter named error holding a text its caller made through record_text; not an exception here
         ('is_context_overflow', 'if error is None:'): 1,
-        # read for a keyword to CLASSIFY the failure; the text goes nowhere
+        # read for a keyword to CLASSIFY the failure (callers pass the caught exception, triage_job and source_tags_job among them); the variable is followed by test_a_classification_read_of_the_exceptions_text_only_searches_it
         ('is_context_overflow', 'text = str(error).lower()'): 1,
     },
     'src/llm/vllm_client.py': {
@@ -1312,5 +1320,6 @@ def test_a_classification_read_of_the_exceptions_text_only_searches_it(rel, func
     for use in loads:
         up = parent.get(use)
         in_test = isinstance(up, ast.Compare) and all(isinstance(op, (ast.In, ast.NotIn)) for op in up.ops) and use in up.comparators
-        search = isinstance(up, ast.Attribute) and up.attr in _SEARCH_METHODS and isinstance(parent.get(up), ast.Call)
+        call = parent.get(up)
+        search = isinstance(up, ast.Attribute) and up.attr in _SEARCH_METHODS and isinstance(call, ast.Call) and call.func is up
         assert in_test or search, f"{rel}:{use.lineno} {var!r} (a caught exception's text) is used other than to search it"
