@@ -420,7 +420,12 @@ def _fill_like_the_hooks(long_names: bool) -> None:
              "route": nm("POST /api/keywords/reindex/{job_id}/resume"), "frames": frames},
             key=("hold", i),
         )
-        se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume")})
+        # The widest a long hold's record gets: the phase and its sample counts (a day of 15 s samples in each of the four), and what the
+        # holder thread did over the hold and the machine's memory at its end, each at ten digits.
+        se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760}})
+        se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume"),
+                                           "cpu_ms": 86_400_000.0, "nvcsw": 9_999_999_999, "nivcsw": 9_999_999_999, "majflt": 9_999_999_999,
+                                           "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999})
     for _ in range(se.KEEP["guard"] + 4):
         se.record("guard", {"kind": "wal", "since": "2026-10-13T12:00:00+00:00", "wal_bytes_at_trip": 12_345_678_901,
                             "disk_free_bytes_at_trip": 9_876_543_210, "corpus_bytes_at_trip": 98_765_432_101,
