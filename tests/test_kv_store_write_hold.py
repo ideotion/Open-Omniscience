@@ -222,7 +222,9 @@ def test_a_hold_that_starts_right_after_a_write_passed_the_check_waits_for_that_
     """The count is taken in the SAME locked section as the hold check. A write that checked the hold and left the lock before counting
     itself leaves a gap in which a restore sets its hold, finds nothing in flight and starts switching the file, while the write goes
     on into the old one. The hold is started in that gap: it must find the write counted (zero budget, so it refuses at once).
-    MUTATION TARGET: the ``_inflight.add(token)`` moved out of ``with _hold`` (after it, or into the ``with _lock`` block)."""
+    MUTATION TARGET: the ``_inflight.add(token)`` moved out of ``with _hold`` (after it, or into the ``with _lock`` block). The hook fires
+    on the FIRST release of ``_hold`` in the slot, which is the section that checks the hold and counts; a new ``with _hold`` in front of it
+    would move the instant, and this test would then need the hook moved with it."""
     seen: list[str] = []
 
     def hold_in_the_gap() -> None:
