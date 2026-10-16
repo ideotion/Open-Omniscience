@@ -147,8 +147,8 @@ def test_the_record_stays_within_its_stated_size_at_its_largest(stop):
     _c, _d, data = stop
     big_guard = _Guard()
     big_guard.state = lambda: {"since": "x" * 40, "reason": "y" * 300, "engagements": 10**6,
-                               "thresholds": {k: 10**9 for k in ("rss_pct_of_total", "avail_floor_mb", "trip_after_samples", "resume_after_samples", "resume_rss_pct")},
-                               "last_reading": {k: 123456.789 for k in ("rss_mb", "mem_avail_mb", "mem_total_mb", "proc_swap_mb")}}
+                               "thresholds": dict.fromkeys(("rss_pct_of_total", "avail_floor_mb", "trip_after_samples", "resume_after_samples", "resume_rss_pct"), 10 ** 9),
+                               "last_reading": dict.fromkeys(("rss_mb", "mem_avail_mb", "mem_total_mb", "proc_swap_mb"), 123456.789)}
     memstop.execute({**DECISION, "extra": "z" * 100}, big_guard)
     got = memstop.read_record("sess-1")
     assert got["bytes_read"] == (data / "memory_stop.json").stat().st_size

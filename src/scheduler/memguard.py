@@ -94,7 +94,7 @@ STOP_HELD_SHARE = 1.0 / 3.0
 
 
 def stall_decision(
-    samples: "list[tuple[float, float]] | deque[tuple[float, float]]",
+    samples: list[tuple[float, float]] | deque[tuple[float, float]],
     now: float,
     *,
     window_s: float = STOP_WINDOW_S,
