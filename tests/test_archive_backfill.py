@@ -356,3 +356,25 @@ def test_default_enqueue_is_bounded_not_full_history(db, source, tmp_path):
     enqueue_source(source.id, state_path=sp)  # full_history defaults False
     state = load_state(sp)
     assert state["queue"][0]["full_history"] is False
+
+
+def test_a_sibling_feed_of_an_already_backfilled_outlet_is_not_backfilled_again(db, source, tmp_path):
+    """Row J, D1: a sitemap is the site's. Two feeds of one domain read the same pages once, not twice."""
+    twin = Source(name="Example News Arabic", domain="example.com", rss_url="https://example.com/ar.xml", enabled=True)
+    other = Source(name="Other", domain="other.example", enabled=True)
+    db.add_all([twin, other])
+    db.commit()
+    sp = tmp_path / "s.json"
+    seen: list[int] = []
+
+    def discover(fetcher, src, *, full_history):
+        seen.append(src.id)
+        return _urls(1)
+
+    for sid in (source.id, twin.id, other.id):
+        enqueue_source(sid, state_path=sp)
+    for _ in range(8):
+        advance_backfill(db, fetcher=object(), per_pass=5, state_path=sp,
+                         ingest_fn=_ingest_always(IngestResult.STORED), discover_fn=discover)
+    assert seen == [source.id, other.id]  # the sibling never enumerated a second time
+    assert twin.id in load_state(sp)["done_sources"]

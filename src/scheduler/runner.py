@@ -529,7 +529,22 @@ def _select_crawl_candidates(session, settings: SchedulerSettings, limit: int) -
         Source.last_crawled_at.is_(None).desc(),  # never-crawled (True=1) first
         Source.last_crawled_at.asc(),  # then oldest-crawled first
     )
-    return q.limit(limit).all()
+    # ONE source per OUTLET per pass (row J, D1): a sitemap and a crawl are a SITE's, so thirty-one feeds of one domain
+    # read the same pages thirty-one times. The ordering decides which feed stands for its outlet; the rest follow when
+    # ``_lane_step_crawl`` stamps the whole domain, so the rotation advances and the siblings never crowd it.
+    picked: list[int] = []
+    seen: set[str] = set()
+    for sid, domain in q.with_entities(Source.id, Source.domain):
+        if domain in seen:
+            continue
+        seen.add(domain)
+        picked.append(int(sid))
+        if len(picked) >= limit:
+            break
+    if not picked:
+        return []
+    by_id = {s.id: s for s in session.query(Source).filter(Source.id.in_(picked))}
+    return [by_id[i] for i in picked if i in by_id]
 
 
 # --- Live run progress (maintainer-ruled 2026-06-10: the activity chip opens -- #
@@ -1417,6 +1432,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     BFS ``crawl_source``; a confirmed sitemap is persisted (consumer c). A
     source with no discoverable sitemap keeps the ORIGINAL BFS crawl
     unchanged -- this rung never regresses a source it previously covered."""
+    from src.database.models import Source
     from src.ingest.crawl import CrawlConfig, crawl_source
     from src.ingest.pipeline import ingest_url
     from src.ingest.sitemap import discover_sitemap_urls, update_source_sitemap_url
@@ -1448,7 +1464,11 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                     start_url=crawl_start_url_for(source),
                 )
                 pages_fetched += report.pages_fetched
-            source.last_crawled_at = datetime.now(UTC)
+            now = datetime.now(UTC)
+            source.last_crawled_at = now
+            # The outlet was crawled once; its other feeds are not due again before the rest of the rotation.
+            session.query(Source).filter(Source.domain == source.domain, Source.id != source.id).update(
+                {Source.last_crawled_at: now}, synchronize_session=False)
             sources_crawled += 1
         except Exception as exc:  # noqa: BLE001 - one source's failure must not skip the rest
             log_failure(_LOG, f"crawl supplement: source {source.domain!r} failed", exc, level=logging.WARNING)
