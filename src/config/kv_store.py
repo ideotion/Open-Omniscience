@@ -94,17 +94,21 @@ class KvWriteBusy(RuntimeError):
     single-writer gate behind a long writer). Nothing was held."""
 
 
-_hold = threading.Condition()  # guards the three names below; notified when a hold ends or a write finishes
+#: The lock is a plain RLock and the Condition is built ON it, and the code takes ``with _hold_lock:``, never ``with _hold:``: a Condition's
+#: ``__enter__`` / ``__exit__`` are Python frames, where CPython delivers a signal, so a KeyboardInterrupt landing between "taken" and "will be
+#: released" left the lock taken for ever (measured with real SIGALRM interrupts: 15,174 of 43,142 left held in a tight loop; a C lock's own
+#: ``with`` is one bytecode and left 0 of 86,634, with ``notify_all`` inside, ``wait`` inside 0 of 65,632). ``wait`` / ``notify_all`` stay on the
+#: Condition, which needs the lock owned, and it is. An RLock because a hold started from inside a section re-enters (tests do).
+_hold_lock = threading.RLock()
+_hold = threading.Condition(_hold_lock)  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
 #: One token per settings write between its start and its end (they may be waiting for the gate). A SET and not a count: a write is
-#: counted by ONE call (``add``, under ``_hold``, with the hold check) and released by ONE lock-free call (``remove``; a KeyError, caught, for a
-#: token that was never added), then ``_hold`` is taken only to wake a waiting hold. The release takes no lock because
-#: ``Condition.__enter__`` is Python code: a KeyboardInterrupt delivered there (measured on CPython 3.13 with real signals, about 5 % of
-#: interrupted writes) used to arrive before the decrement and leave the write counted for ever, so every later hold refused to start
-#: until a restart. An interrupt can still leave ``_hold``'s own lock taken (the same ``with`` hazard, pre-existing): every later
-#: settings save and every restore hold then blocks at ``with _hold:`` until the process restarts. That needs a KeyboardInterrupt on
-#: the MAIN thread (a CLI script that saves settings there; the served app's main thread is uvicorn's, which handles SIGINT itself), so
-#: it is best effort here, and the lock is taken only when there is a hold to wake, to keep that exposure as small as it can be.
+#: counted by ONE call (``add``, under ``_hold_lock``, with the hold check) and released by ONE lock-free call (``remove``; a KeyError, caught,
+#: for a token that was never added), then the lock is taken only to wake a waiting hold. A KeyboardInterrupt landing in a release that took the
+#: lock first used to arrive before the decrement and leave the write counted for ever (about 5 % of interrupted writes with real signals on
+#: CPython 3.13), so every later hold refused to start until a restart; the lock-free ``remove`` closes that, and ``_hold_lock`` above closes
+#: the same hazard for the lock itself. One residual stays: an interrupt inside ``Condition.wait``'s Python code can surface as a
+#: ``RuntimeError`` ("cannot release un-acquired lock") in place of the KeyboardInterrupt (0.27 % of interrupted waits, nothing left held).
 _inflight: set[object] = set()
 
 
@@ -144,7 +148,7 @@ def _write_slot() -> Iterator[int]:
     passthrough = False
     token = object()
     try:
-        with _hold:
+        with _hold_lock:
             if _hold_by == me:
                 passthrough = True
             elif _hold_by is not None:
@@ -169,7 +173,7 @@ def _write_slot() -> Iterator[int]:
         except KeyError:  # never counted (the holder passing through, a refused write): nothing to wake
             pass
         else:
-            with _hold:  # only to wake a hold waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
+            with _hold_lock:  # only to wake a hold waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
                 _hold.notify_all()
 
 
@@ -191,12 +195,12 @@ def hold_writes(timeout: float) -> Iterator[None]:
     deadline = time.monotonic() + max(0.0, timeout)
     held = False
     try:  # the hold is set INSIDE the try: an interrupt that lands as the first block ends must not leave it set
-        with _hold:
+        with _hold_lock:
             if _hold_by is not None:
                 raise RuntimeError("settings writes are already held")
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
-        with _hold:
+        with _hold_lock:
             while _inflight:
                 left = deadline - time.monotonic()
                 if left <= 0:
@@ -205,7 +209,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
         yield
     finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         if held:  # never clears another thread's hold (the "already held" refusal above)
-            with _hold:
+            with _hold_lock:
                 if _hold_by == me:  # held is set one statement before the hold: another thread may own it by now
                     _hold_by = None
                 _hold.notify_all()

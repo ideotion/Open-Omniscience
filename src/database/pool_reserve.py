@@ -86,14 +86,17 @@ class _Slots:
 
     def __init__(self, limit: int) -> None:
         self.limit = max(1, int(limit))
-        self._cond = threading.Condition()
+        # a plain RLock under the Condition and `with self._lock:` everywhere: a Condition's own __enter__/__exit__ are Python frames, where a
+        # KeyboardInterrupt can land between "taken" and "released" and leave the lock taken for ever (see src/config/kv_store.py::_hold_lock)
+        self._lock = threading.RLock()
+        self._cond = threading.Condition(self._lock)
         self._held: dict[int, threading.Thread] = {}  # slot key -> the thread that took it
         self.waits = 0  # checkouts that had to queue, ever (a reading, not a control)
         self.nested = 0  # checkouts by a thread that already held a slot (see holds())
 
     def acquire(self, key: int, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
-        with self._cond:
+        with self._lock:
             queued = False
             while len(self._held) >= self.limit:
                 if not queued:
@@ -107,7 +110,7 @@ class _Slots:
             return True
 
     def note_nested(self) -> None:
-        with self._cond:
+        with self._lock:
             self.nested += 1
 
     def holds(self, thread: threading.Thread) -> bool:
@@ -118,19 +121,19 @@ class _Slots:
         could ever release one -- the pool's own exhaustion deadlock, moved up a level.
         Such a checkout goes through unreserved and is counted in ``nested``.
         """
-        with self._cond:
+        with self._lock:
             # Compared by OBJECT, not ident: a finished thread's ident is reused by the next one.
             return any(t is thread for t in self._held.values())
 
     def release(self, key: int) -> None:
-        with self._cond:
+        with self._lock:
             if key in self._held:
                 del self._held[key]
                 self._cond.notify()
 
     @property
     def held(self) -> int:
-        with self._cond:
+        with self._lock:
             return len(self._held)
 
 
