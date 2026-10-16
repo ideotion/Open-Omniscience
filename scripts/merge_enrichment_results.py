@@ -38,6 +38,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _SOURCES = _ROOT / "configs" / "sources.yml"
 sys.path.insert(0, str(_ROOT))
 
+from src.catalog.countries import country_payload  # noqa: E402
 from src.catalog.taxonomy import LEAN_TAGS as _LEAN  # noqa: E402
 from src.catalog.taxonomy import OWNERSHIP_TAGS as _OWNERSHIP  # noqa: E402
 
@@ -126,7 +127,7 @@ def merge(
         # country / language: fill only when absent
         cc = str(r.get("country") or "").strip().lower()
         if cc and len(cc) == 2 and not src.get("country"):
-            src["country"] = cc
+            src["country"] = country_payload(cc)  # the shipped configs speak alpha-3 (S05-02 S3)
             stats["country_set"] += 1
         lang = str(r.get("language") or "").strip().lower()
         if lang and not src.get("language"):

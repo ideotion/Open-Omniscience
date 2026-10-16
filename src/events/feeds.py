@@ -106,7 +106,7 @@ def load_families() -> list[dict]:
                 "key": str(fam["key"]),
                 "name": str(fam.get("name", fam["key"])),
                 "kind": str(fam.get("kind", "other")),
-                "country": config_country(fam.get("country")),
+                "country": config_country(fam.get("country"), upper=True),
                 "feeds": feeds,
             }
         )

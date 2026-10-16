@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 
+from src.catalog.countries import country_payload
 from src.catalog.normalize import dedup_entries
 from src.catalog.wikidata import parse_results
 
@@ -112,6 +113,12 @@ def write_catalog_yaml(path: Path, sources: list[dict], *, header: str | None = 
         "News organisations + official institutions by country. Re-run to refresh.\n"
         "Social networks are excluded. Edit configs/catalog_query.yml to tune types."
     )
+    # The shipped configs speak the wire's alpha-3 (S05-02 S3, Q305); the loaders read either, and a regenerated file
+    # in the old spelling would put back what the rewrite took out. An unplaced value is written as it came.
+    sources = [
+        {**s, "country": country_payload(s["country"])} if isinstance(s.get("country"), str) and s["country"].strip() else s
+        for s in sources
+    ]
     body = yaml.safe_dump({"sources": sources}, allow_unicode=True, sort_keys=False, width=4096)
     path.write_text("# " + note.replace("\n", "\n# ") + "\n\n" + body, "utf-8")
     return path

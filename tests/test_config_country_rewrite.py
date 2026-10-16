@@ -89,7 +89,10 @@ def test_the_configs_are_not_empty_of_countries():
 @pytest.mark.parametrize("config", CONFIGS, ids=lambda p: p.name)
 def test_no_country_or_jurisdiction_is_left_in_an_old_spelling(config):
     bad = offenders(config.read_text("utf-8"))
-    assert not bad, f"{config.name}: {len(bad)} value(s) not in the wire form, first: {bad[:5]}"
+    assert not bad, (
+        f"{config.name}: {len(bad)} value(s) not in the wire form, first: {bad[:5]}; "
+        "run `python scripts/rewrite_config_countries.py --write` (it edits only country values and proves it)"
+    )
 
 
 def test_the_check_reddens_by_name_when_one_alpha2_comes_back():
@@ -265,8 +268,9 @@ def test_an_event_and_a_feed_family_read_in_any_spelling(tmp_path, monkeypatch, 
     for fn in (events._raw, events.load_events, feeds._raw, feeds.load_families):
         fn.cache_clear()
     try:
-        assert [e["country"] for e in events.load_events()] == ["fr"]
-        assert [f["country"] for f in feeds.load_families()] == ["fr"]
+        # these two catalogues have always been read in UPPERCASE alpha-2 (their consumers compare with .upper())
+        assert [e["country"] for e in events.load_events()] == ["FR"]
+        assert [f["country"] for f in feeds.load_families()] == ["FR"]
     finally:
         for fn in (events._raw, events.load_events, feeds._raw, feeds.load_families):
             fn.cache_clear()
@@ -289,3 +293,74 @@ def test_catalog_discovery_finds_an_entry_in_either_spelling(tmp_path, monkeypat
     with sessionmaker(bind=engine)() as s:
         out = channels.catalog_candidates(s, cap=10)
     assert [(d["domain"], d["evidence"]["country"]) for d in out["decisions"]] == [("lemonde.example", "fr")]
+
+
+# --- the maintainer tooling that writes, reads or checks these files must follow ---------------------------------
+
+
+def _tool(name: str):
+    path = ROOT / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"cfg_tool_{name}", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[f"cfg_tool_{name}"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_a_merged_batch_is_written_in_the_files_form_so_the_next_merge_does_not_undo_the_rewrite():
+    merge = _tool("merge_source_batch")
+    text = merge.render([{"name": "Le Monde (France)", "domain": "lemonde.example", "country": "fr", "language": "fr"}])
+    assert yaml.safe_load(text)[0]["country"] == "FRA"
+    # what it appends is exactly what the repo test accepts
+    assert offenders("sources:\n" + "".join("  " + line + "\n" for line in text.splitlines())) == []
+
+
+def test_the_batch_check_still_compares_a_title_country_with_the_entry_in_either_spelling():
+    merge = _tool("merge_source_batch")
+    entry = {"name": "Le Monde (France)", "domain": "lemonde.example", "source_type": "news", "language": "fr",
+             "verified": True, "rss_url": "https://lemonde.example/rss", "last_verified": "2026-10-16", "tags": []}
+    ok = [merge.check_entry({**entry, "country": c}, existing=set(), seen=set()) for c in ("fr", "FRA")]
+    assert all(why is None or "states country" not in why for why in ok), ok
+    why = merge.check_entry({**entry, "country": "DEU"}, existing=set(), seen=set())
+    assert why and "states country" in why, why
+
+
+def test_the_enrichment_and_tag_cleanup_write_alpha3():
+    enrich = _tool("merge_enrichment_results")
+    sources = [{"domain": "a.example", "name": "A"}]
+    stats = enrich.merge(sources, [{"domain": "a.example", "country": "fr", "confidence": "high"}], min_conf="low")["stats"]
+    assert stats["country_set"] == 1 and sources[0]["country"] == "FRA"
+    cleanup = _tool("cleanup_source_tags")
+    rows = [{"name": "B", "domain": "b.example", "tags": ["guam"]}, {"name": "C", "domain": "c.fr", "tags": []}]
+    cleanup.clean(rows, do_cctld=True)
+    assert [r.get("country") for r in rows] == ["GUM", "FRA"]
+
+
+def test_the_legal_validator_reads_the_shipped_form_and_the_committed_catalogue_is_clean():
+    vlc = _tool("validate_legal_catalog")
+    assert vlc._is_wire_country("GBR") and vlc._is_wire_country("EUU") and vlc._is_wire_country("INT")
+    assert not vlc._is_wire_country("gbr") and not vlc._is_wire_country("XXX") and not vlc._is_wire_country("fr")
+    generated = yaml.safe_load((ROOT / "configs" / "legal_sources_generated.yml").read_text("utf-8"))
+    curated = yaml.safe_load((ROOT / "configs" / "legal_sources.yml").read_text("utf-8"))
+    assert vlc.validate(generated, curated)["errors"] == []
+
+
+def test_the_splice_report_counts_the_shipped_catalogue_by_alpha2_whatever_the_file_holds():
+    spec = importlib.util.spec_from_file_location("cfg_tool_splice", ROOT / "scripts" / "analysis" / "stage_b_splice_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["cfg_tool_splice"] = mod
+    spec.loader.exec_module(mod)
+    counts = mod._shipped_country_counts()
+    assert counts.get("fr", 0) > 20 and "fra" not in counts and "FRA" not in counts, sorted(counts)[:10]
+
+
+def test_the_real_events_keep_their_uppercase_alpha2_and_norway_is_a_string_now():
+    from src.events import catalog as events
+
+    countries = {e["title"]: e["country"] for e in events.load_events()}
+    assert all(isinstance(c, str) and c == c.upper() and len(c) in (2, 3) for c in countries.values()), {
+        t: c for t, c in countries.items() if not (isinstance(c, str) and c == c.upper())
+    }
+    # The unquoted `NO` this event carried was YAML's boolean false: it never said Norway to a loader.
+    assert countries["Norges Bank policy rate decision"] == "NO"
+    assert {"US", "EU", "INT"} <= set(countries.values())

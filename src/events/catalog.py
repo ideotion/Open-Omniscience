@@ -87,7 +87,7 @@ def load_events() -> list[dict]:
                 "title": str(e["title"]),
                 "calendar": str(e.get("calendar", "other")),
                 "category": str(e.get("category", "other")),
-                "country": config_country(e.get("country")),
+                "country": config_country(e.get("country"), upper=True),
                 "region": e.get("region"),
                 "cadence": str(e.get("cadence", "annual")),
                 "month": e.get("month"),

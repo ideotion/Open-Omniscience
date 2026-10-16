@@ -78,6 +78,17 @@ LEGAL_SYSTEMS_RE = re.compile(r"^(civil_law|common_law|mixed(:.+)?|religious|cus
 SOURCE_TYPES = ("legal", "ip", "case_law", "gazette")
 SPECIAL_COUNTRIES = ("eu", "int")
 
+
+def _is_wire_country(value: object) -> bool:
+    """The shipped catalogues' own form (uppercase alpha-3, S05-02 S3): a session's raw output arrives in
+    lowercase alpha-2 and the committed file holds this, so the shape check reads both. Which of the two a COMMITTED
+    catalogue holds is ``tests/test_config_country_rewrite.py``'s question."""
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+    from src.catalog.countries import country_payload_iso3
+
+    return isinstance(value, str) and len(value) == 3 and value.isupper() and country_payload_iso3(value) == value
+
 #: Q924 = a's tier, validated here so a typo cannot reach the coverage surface as an
 #: unverified row nobody meant. See ``src/law/catalog.py``'s ``VERIFIED_TIERS`` for why
 #: this is a DIFFERENT question from ``verification.status`` above: that one is about the
@@ -193,8 +204,8 @@ def validate(generated: dict, curated: dict) -> dict:
             if not s.get(field):
                 _err(errors, where, f"missing required field {field!r}")
         country = s.get("country", "")
-        if country not in SPECIAL_COUNTRIES and not COUNTRY_RE.match(str(country)):
-            _err(errors, where, f"country must be ISO-2 lowercase or eu/int (got {country!r})")
+        if country not in SPECIAL_COUNTRIES and not COUNTRY_RE.match(str(country)) and not _is_wire_country(country):
+            _err(errors, where, f"country must be ISO-2 lowercase, eu/int, or the shipped alpha-3 (got {country!r})")
         for lang in s.get("languages") or []:
             if not LANG_RE.match(str(lang)):
                 _err(errors, where, f"language code {lang!r} is not ISO-shaped")

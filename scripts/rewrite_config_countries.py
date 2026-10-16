@@ -58,7 +58,11 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.catalog.countries import country_payload, country_payload_iso3, normalize_country  # noqa: E402
+from src.catalog.countries import (  # noqa: E402
+    country_payload,
+    country_payload_iso3,
+    normalize_country,
+)
 
 #: The YAML files the loaders read. Research artefacts under ``docs/`` are records, not configs.
 TARGETS = tuple(sorted(str(p.relative_to(ROOT)) for p in (ROOT / "configs").glob("*.yml")))
@@ -74,10 +78,7 @@ _VALUE = re.compile(
 
 def _is_flow_or_block_line(line: str) -> bool:
     """A line that can hold keys: a block mapping line or a flow mapping entry, not a comment."""
-    stripped = line.lstrip()
-    if stripped.startswith("#"):
-        return False
-    return True
+    return not line.lstrip().startswith("#")
 
 
 def rewrite_text(text: str) -> tuple[str, list[dict]]:
@@ -91,7 +92,7 @@ def rewrite_text(text: str) -> tuple[str, list[dict]]:
         body = line.rstrip("\r\n")
         eol = line[len(body):]
 
-        def sub(m: re.Match) -> str:
+        def sub(m: re.Match, number: int = number) -> str:
             val = m.group("val")
             # Only a flow mapping or a real key line can carry a value here; the `lead` alternatives enforce it.
             new = country_payload(val)

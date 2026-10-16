@@ -17,6 +17,7 @@ from src.catalog.countries import (
     ISO_3166_1_ALPHA2,
     continent_of,
     country_display_name,
+    country_payload_iso3,
     normalize_country,
 )
 from src.catalog.coverage import coverage_report, regional_report
@@ -79,11 +80,14 @@ def test_reference_data_is_complete():
 
 
 def test_shipped_catalogs_use_canonical_country_codes():
-    """Every country value in the source catalogs is exactly the canonical form.
+    """Every country value in the source catalogs is exactly the shipped form.
 
     This is the guard against the 0.0.8 live-test finding (mixed 'US' /
     'united-states' encodings): a new catalog entry with a name, slug or
-    uppercase code fails here with a precise message.
+    lowercase code fails here with a precise message. The form moved with the
+    S05-02 S3 rewrite (Q305): the catalogues speak the wire's uppercase alpha-3
+    and the loaders convert it to the app's own alpha-2 on the way in
+    (``tests/test_config_country_rewrite.py`` pins that half).
     """
     import yaml
 
@@ -104,10 +108,10 @@ def test_shipped_catalogs_use_canonical_country_codes():
                 c = entry.get("country")
                 if c is None:
                     continue
-                if not isinstance(c, str) or normalize_country(c) != c:
+                if not isinstance(c, str) or country_payload_iso3(c) != c:
                     offenders.append(f"{fname}: {entry.get('name')!r} country={c!r}")
     assert not offenders, (
-        "non-canonical country values (store lowercase ISO-2; "
+        "non-canonical country values (the catalogues hold uppercase alpha-3; "
         f"see src/catalog/countries.py): {offenders[:10]}"
     )
 
