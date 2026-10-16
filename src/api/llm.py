@@ -884,7 +884,9 @@ def llm_install_prepare() -> dict:
     attested SHA-256 before anything runs (never an unverified script). A network
     action over CLEARNET via the guarded factory — refused under airplane mode,
     gated by the ONE consent (#14). Returns the verified version + sha + the exact
-    command to run it (and the app can run it when elevation is non-interactive)."""
+    command to run it (and the app can run it when elevation is non-interactive).
+    The release lookup is held to ``api.github.com``: a redirect off it is refused, not
+    followed, and answers 502 with a fixed sentence that names no host (``InstallerRedirectRefused``)."""
     from src.llm.installer import (
         InstallerUnavailable,
         InstallerVerificationError,

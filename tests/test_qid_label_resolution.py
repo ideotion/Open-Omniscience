@@ -24,11 +24,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import requests
 
 from src.analytics.wikidata_rings import POLITE_SLEEP_S
 from src.catalog.qid_labels import (
     DECLINED_NO_LABEL,
+    DECLINED_REDIRECT_REFUSED,
     DECLINED_REFUSED,
+    DECLINED_TRANSPORT,
     DECLINED_UNRESOLVED,
     AirplaneRefusal,
     admit_or_decline,
@@ -36,6 +39,8 @@ from src.catalog.qid_labels import (
     looks_like_bare_qid,
     resolve_labels,
 )
+from src.ingest.airplane import AirplaneModeError
+from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 
 
 def _entity(qid: str, labels: dict[str, str]) -> dict:
@@ -50,7 +55,7 @@ def _fetcher(table: dict[str, dict]):
         asked.append(url)
         qid = url.split("ids=")[1].split("&")[0]
         if qid not in table:
-            raise RuntimeError("not found")
+            raise requests.ConnectionError("not found")  # what a real getter raises: a RequestException, like RedirectRefused
         return _entity(qid, table[qid])
 
     return fetch, asked
@@ -187,6 +192,120 @@ def test_a_failed_lookup_declines_one_row_and_never_aborts_the_batch() -> None:
                          kill_switch=lambda: False)
     assert out["labels"] == {"Q1": "One", "Q3": "Three"}
     assert out["declined"] == {"Q2": DECLINED_UNRESOLVED}
+    assert out["lookups_refused"] == 0 and "refusal" not in out, "an ordinary failure is not a refusal"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [requests.ConnectionError("down"), requests.Timeout("slow"), requests.HTTPError("503"), RuntimeError("odd")],
+    ids=["connection", "timeout", "http", "other"],
+)
+def test_no_other_failure_is_called_a_refusal(failure) -> None:
+    """RedirectRefused is a RequestException, as are a dropped connection and a timeout: only the refusal is named as one."""
+    def fetch(url: str) -> dict:
+        raise failure
+
+    out = resolve_labels(["Q1"], fetch=fetch, sleep=lambda _s: None, kill_switch=lambda: False)
+    assert out["declined"] == {"Q1": DECLINED_UNRESOLVED}
+    assert out["lookups_refused"] == 0 and "refusal" not in out
+
+
+def test_the_kill_switch_engaged_during_the_sleep_is_named_as_the_kill_switch_and_nothing_is_fetched() -> None:
+    """The check runs AFTER the ten-second sleep, so airplane mode engaged during it is found before the next fetch, and the row says so."""
+    table = {f"Q{i}": {"en": f"Body {i}"} for i in range(1, 4)}
+    fetch, asked = _fetcher(table)
+    state = {"on": False}
+
+    def sleep(_s: float) -> None:
+        state["on"] = True  # the operator engages airplane mode while the run waits
+
+    out = resolve_labels(list(table), fetch=fetch, sleep=sleep, kill_switch=lambda: state["on"])
+    assert len(asked) == 1 and "ids=Q1&" in asked[0], "only the first row was fetched"
+    assert out["labels"] == {"Q1": "Body 1"}
+    assert out["declined"] == {"Q2": DECLINED_REFUSED, "Q3": DECLINED_REFUSED}
+
+
+@pytest.mark.parametrize("blocked", [NetworkBlocked("airplane"), AirplaneModeError("airplane")], ids=["fetcher", "socket"])
+def test_a_kill_switch_refusal_from_the_fetch_is_named_for_that_row_and_the_rest(blocked) -> None:
+    """The switch can engage between the check and the socket: the fetch refuses, and that is not 'could not resolve a label'."""
+    def fetch(url: str) -> dict:
+        qid = url.split("ids=")[1].split("&")[0]
+        if qid == "Q2":
+            raise blocked
+        return _entity(qid, {"en": f"Body {qid}"})
+
+    out = resolve_labels(["Q1", "Q2", "Q3"], fetch=fetch, sleep=lambda _s: None, kill_switch=lambda: False)
+    assert out["labels"] == {"Q1": "Body Q1"}
+    assert out["declined"] == {"Q2": DECLINED_REFUSED, "Q3": DECLINED_REFUSED}
+    assert out["lookups_refused"] == 0 and "refusal" not in out, "the kill switch is not a redirect refusal"
+
+
+def test_a_missing_transport_is_named_for_that_row_and_the_rest_not_called_an_unresolved_label() -> None:
+    """TransportUnavailable IS a ConnectionError, so the generic clause would call it `label_not_resolved`. It is the operator's own
+    setting (protected mode with no usable proxy), the lookup was never sent, and every later row would be refused the same way."""
+    def fetch(url: str) -> dict:
+        qid = url.split("ids=")[1].split("&")[0]
+        if qid == "Q2":
+            raise TransportUnavailable("protected mode has no usable proxy")
+        return _entity(qid, {"en": f"Body {qid}"})
+
+    sleeps: list[float] = []
+    out = resolve_labels(["Q1", "Q2", "Q3", "Q4"], fetch=fetch, sleep=sleeps.append, kill_switch=lambda: False)
+    assert out["labels"] == {"Q1": "Body Q1"}
+    assert out["declined"] == {"Q2": DECLINED_TRANSPORT, "Q3": DECLINED_TRANSPORT, "Q4": DECLINED_TRANSPORT}
+    assert DECLINED_TRANSPORT not in (DECLINED_UNRESOLVED, DECLINED_NO_LABEL, DECLINED_REFUSED, DECLINED_REDIRECT_REFUSED)
+    assert out["lookups_refused"] == 0 and "refusal" not in out, "it is not a redirect refusal"
+    assert len(sleeps) == 1, "the run stops: no ten-second wait for rows that would be refused the same way"
+
+
+def test_a_transport_decline_says_what_did_not_happen_and_only_its_row_says_it() -> None:
+    out = admit_or_decline([(1, "Q1"), (2, "Q2")], {}, {"Q1": DECLINED_TRANSPORT, "Q2": DECLINED_UNRESOLVED})
+    by_qid = {d["qid"]: d for d in out["declined"]}
+    assert by_qid["Q1"]["reason"] == DECLINED_TRANSPORT
+    assert "no usable proxy" in by_qid["Q1"]["detail"] and "not discarded" in by_qid["Q1"]["detail"]
+    assert "proxy" not in by_qid["Q2"]["detail"] and "redirect" not in by_qid["Q1"]["detail"]
+
+
+def test_the_endpoint_reports_a_missing_transport_as_its_own_reason(monkeypatch) -> None:
+    def _no_transport(url: str):  # noqa: ANN202
+        raise TransportUnavailable("protected mode has no usable proxy")
+
+    out = _endpoint_with_getter(monkeypatch, _no_transport)
+    assert out["declined"] == {"Q133293483": DECLINED_TRANSPORT}
+    assert [d["reason"] for d in out["declined_rows"]] == [DECLINED_TRANSPORT]
+    assert out["lookups_refused"] == 0 and "refusal" not in out
+
+
+def test_a_repeated_qid_is_one_row_and_a_resolved_one_is_never_also_declined() -> None:
+    """Two sources named Q1 and the kill switch mid-run: the rows to decline are counted on the de-duplicated order."""
+    table = {"Q1": {"en": "One"}, "Q2": {"en": "Two"}, "Q3": {"en": "Three"}}
+    fetch, asked = _fetcher(table)
+    calls = {"n": 0}
+
+    def kill_switch() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 2  # the start check and Q1's check pass; the next row's finds it engaged
+
+    out = resolve_labels(["Q1", "Q1", "Q2", "Q3"], fetch=fetch, sleep=lambda _s: None, kill_switch=kill_switch)
+    assert len(asked) == 1 and out["labels"] == {"Q1": "One"}
+    assert out["declined"] == {"Q2": DECLINED_REFUSED, "Q3": DECLINED_REFUSED}, "Q1 is resolved, so it is not declined"
+
+
+def test_a_lookup_wikidata_redirected_off_its_host_is_declined_as_ITSELF_counted_and_named() -> None:
+    """A refused redirect used to read as 'label_not_resolved', the same as a timeout: a retry would be refused the same way, and
+    only a person can look at where the answer pointed. It is its own reason, counted, with the class name and no address."""
+    def fetch(url: str) -> dict:
+        qid = url.split("ids=")[1].split("&")[0]
+        if qid == "Q2":
+            raise RedirectRefused("request refused: the host is not one this client talks to")
+        return _entity(qid, {"en": f"Body {qid}"})
+
+    out = resolve_labels(["Q1", "Q2", "Q3"], fetch=fetch, sleep=lambda _s: None, kill_switch=lambda: False)
+    assert out["labels"] == {"Q1": "Body Q1", "Q3": "Body Q3"}, "the batch carries on past a refused lookup"
+    assert out["declined"] == {"Q2": DECLINED_REDIRECT_REFUSED}
+    assert DECLINED_REDIRECT_REFUSED not in (DECLINED_UNRESOLVED, DECLINED_NO_LABEL, DECLINED_REFUSED)
+    assert out["lookups_refused"] == 1 and out["refusal"] == "RedirectRefused"
+    assert "talks" not in str(out["refusal"]) and out["requests"] == 2, "no message or address in the result; `requests` counts the lookups that returned a body"
 
 
 def test_an_unresolved_row_is_declined_never_admitted_under_its_identifier() -> None:
@@ -203,6 +322,62 @@ def test_an_unresolved_row_is_declined_never_admitted_under_its_identifier() -> 
     )
     assert [d["qid"] for d in out["declined"]] == ["Q2"]
     assert "not discarded" in out["declined"][0]["detail"]
+
+
+def test_a_declined_row_carries_the_reason_its_lookup_ended_with() -> None:
+    rows = [(1, "Q1"), (2, "Q2"), (3, "Q3")]
+    out = admit_or_decline(rows, {}, {"Q1": DECLINED_REDIRECT_REFUSED, "Q2": DECLINED_NO_LABEL})
+    by_qid = {d["qid"]: d for d in out["declined"]}
+    assert by_qid["Q1"]["reason"] == DECLINED_REDIRECT_REFUSED
+    assert "redirect" in by_qid["Q1"]["detail"] and "not discarded" in by_qid["Q1"]["detail"]
+    assert by_qid["Q2"]["reason"] == DECLINED_NO_LABEL
+    assert by_qid["Q3"]["reason"] == DECLINED_UNRESOLVED, "a row with no recorded reason reads as before"
+    assert "redirect" not in by_qid["Q2"]["detail"] and "redirect" not in by_qid["Q3"]["detail"], "only the refusal's row talks about a redirect"
+    assert admit_or_decline(rows, {})["declined"][0]["reason"] == DECLINED_UNRESOLVED, "the reasons argument is optional"
+
+
+def _endpoint_with_getter(monkeypatch, getter):
+    """The real route function over a real in-memory database holding one source named by a bare Q-id, with Wikidata's getter replaced."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    import src.api.source_management as sm
+    from src.database.models import Base, Source
+
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    db.add(Source(name="Q133293483", domain="q133293483.example", source_type="news"))
+    db.commit()
+    monkeypatch.setattr("src.catalog.wikidata_apply._default_getter", getter)
+    out = sm.resolve_qid_names(limit=30, db=db)
+    assert out["proposed_names"] == [] and out["applied"] is False
+    assert db.query(Source).one().name == "Q133293483", "nothing is renamed"
+    return out
+
+
+def test_the_endpoint_reports_a_refused_redirect_as_its_own_reason_with_a_count(monkeypatch) -> None:
+    """Through the real route function and a real in-memory database: the refusal reaches the response as a reason on the declined row,
+    a count and the class name, and nothing is renamed."""
+    def _refuse(url: str):  # noqa: ANN202
+        raise RedirectRefused("request refused: the host is not one this client talks to")
+
+    out = _endpoint_with_getter(monkeypatch, _refuse)
+    assert out["lookups_refused"] == 1 and out["refusal"] == "RedirectRefused"
+    assert out["declined"] == {"Q133293483": DECLINED_REDIRECT_REFUSED}
+    assert [d["reason"] for d in out["declined_rows"]] == [DECLINED_REDIRECT_REFUSED]
+
+
+@pytest.mark.parametrize("failure", [requests.ConnectionError("down"), requests.Timeout("slow")], ids=["connection", "timeout"])
+def test_the_endpoint_reports_a_dropped_connection_as_a_failed_lookup_not_a_refusal(monkeypatch, failure) -> None:
+    """The getters raise RequestExceptions, as RedirectRefused is: a network failure must not be counted or named as the refusal."""
+    def _down(url: str):  # noqa: ANN202
+        raise failure
+
+    out = _endpoint_with_getter(monkeypatch, _down)
+    assert out["declined"] == {"Q133293483": DECLINED_UNRESOLVED}
+    assert out["lookups_refused"] == 0 and "refusal" not in out
+    assert [d["reason"] for d in out["declined_rows"]] == [DECLINED_UNRESOLVED]
 
 
 def test_the_endpoint_refuses_under_the_kill_switch_with_a_named_409(monkeypatch) -> None:
