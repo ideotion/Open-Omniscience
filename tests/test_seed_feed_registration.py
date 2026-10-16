@@ -154,3 +154,12 @@ def test_the_same_feed_named_by_a_second_catalogue_is_one_row_and_its_tags_merge
     result = seed_sources(s, entries)
     assert result["created"] == 1 and result["merged"] == 1 and result["shadowed"] == 0
     assert "lean-center-left" in s.query(Source).one().tags.split(",")
+
+
+def test_a_store_still_keyed_on_the_domain_holds_a_second_feed_back_instead_of_failing_the_seed(s, monkeypatch):
+    """Opus read, finding 6: the seeder asks whether the store can hold several feeds of a domain. A store whose rebuild
+    was refused keeps one feed per domain, and registering a sibling would have broken UNIQUE (domain) for the batch."""
+    monkeypatch.setattr("src.ingest.seed_sources.composite_key_active", lambda _conn: False)
+    result = seed_sources(s, [_e("Outlet", "en"), _e("Outlet es", "es"), _e("Other", "o", domain="other.example")])
+    assert s.query(Source).count() == 2  # the first feed of each domain only
+    assert result["created"] == 2 and result["held_back_legacy_key"] == 1

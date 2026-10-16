@@ -28,6 +28,7 @@ from src.catalog.cctld import infer_country, infer_language
 from src.catalog.countries import normalize_country
 from src.catalog.normalize import country_from_title
 from src.database.models import Source
+from src.database.source_identity import composite_key_active
 from src.ingest.seed_plan import (
     EXCLUSIVE_TAG_PREFIXES,
     entry_key,
@@ -568,6 +569,20 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
             extra_merges.append((e, feed_rows[0]))   # the outlet already has a feed row: this describes it
         else:
             to_create.append(e)
+    # A store whose boot rebuild was refused still keys a source on the domain alone: a second feed of a held domain
+    # would break UNIQUE (domain) and fail the whole seed, so it is held back, counted and named, never attempted.
+    held_back: list[dict] = []
+    if to_create and not composite_key_active(session.connection()):
+        have = {d for d, held in rows_by_domain.items() if held}
+        kept: list[dict] = []
+        for e in to_create:
+            domain, _fk = entry_key(e)
+            if domain in have:
+                held_back.append(e)
+                continue
+            have.add(domain)
+            kept.append(e)
+        to_create = kept
     new_rows = [Source(**_to_source_kwargs(e)) for e in to_create]
     if new_rows:
         session.add_all(new_rows)
@@ -601,7 +616,8 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         "corrections": corrections,
         "tag_merge": tag_merge,
         "sibling_verdicts": inherited,
-        "skipped": len(pairs) + len(unregistered) + len(plan.merges) + skipped_malformed,
+        "skipped": len(pairs) + len(unregistered) + len(plan.merges) + skipped_malformed + len(held_back),
+        "held_back_legacy_key": len(held_back),
         "total": len(sources),
         "skipped_existing": len(pairs),
         "skipped_malformed": skipped_malformed,
