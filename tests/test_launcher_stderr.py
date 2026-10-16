@@ -359,6 +359,13 @@ def test_only_the_newest_earlier_ends_are_looked_up_for_a_launcher_record(dd):
     assert ["launcher_stderr" in r for r in out] == [True] * ee.STDERR_ROWS_SHOWN + [False] * (len(out) - ee.STDERR_ROWS_SHOWN)
 
 
+def _age(*files: Path, seconds: int = 120) -> None:
+    """Make pid files look older than the sweep's one-minute grace."""
+    then = time.time() - seconds
+    for f in files:
+        os.utime(f, (then, then))
+
+
 @posix_only
 def test_a_pid_file_of_a_dead_launcher_is_swept_at_the_next_launch_and_a_live_one_is_not(tmp_path):
     root, env = _launcher_tree(tmp_path, "sleep 0.2\nexit 0\n")
@@ -372,6 +379,7 @@ def test_a_pid_file_of_a_dead_launcher_is_swept_at_the_next_launch_and_a_live_on
         dead_file.write_text(f"{gone.pid}\n", encoding="utf-8")  # its server is gone too
         live_file.write_text(f"{gone.pid}\n", encoding="utf-8")
         odd_file.write_text("1\n", encoding="utf-8")
+        _age(dead_file, live_file, odd_file)
         _run_launcher(root, env)
         assert not dead_file.exists(), "the launcher that wrote this one is gone: its file is swept now, not after a day"
         assert live_file.exists(), "a launcher that is still running keeps its file"
@@ -396,9 +404,27 @@ def test_a_pid_file_whose_recorded_server_still_runs_is_not_swept(tmp_path):
         in_use, abandoned = diag / f".launcher_stderr.{gone.pid}.pid", diag / f".launcher_stderr.{gone2.pid}.pid"
         in_use.write_text(f"{server.pid}\n", encoding="utf-8")
         abandoned.write_text(f"{gone2.pid}\n", encoding="utf-8")
+        _age(in_use, abandoned)
         _run_launcher(root, env)
         assert in_use.exists(), "the launcher is gone but the server it recorded runs: the filter still needs this file"
         assert not abandoned.exists(), "neither the launcher nor its server runs: swept"
     finally:
         server.kill()
         server.wait()
+
+
+@posix_only
+def test_a_pid_file_touched_in_the_last_minute_is_never_swept(tmp_path):
+    # The previous launch's filter reads its pid file until its END has written the summary row; that can follow the launcher's exit.
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\nexit 0\n")
+    diag = root / "data" / "diagnostics"
+    diag.mkdir(parents=True)
+    gone = subprocess.Popen(["true"])
+    gone.wait()
+    fresh, old = diag / f".launcher_stderr.{gone.pid}.pid", diag / ".launcher_stderr.999999.pid"
+    for f in (fresh, old):
+        f.write_text(f"{gone.pid}\n", encoding="utf-8")
+    _age(old)
+    _run_launcher(root, env)
+    assert fresh.exists(), "touched a moment ago: the filter that owns it may still be writing its summary"
+    assert not old.exists(), "the same file two minutes old, dead launcher and dead server: swept"

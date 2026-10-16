@@ -269,6 +269,9 @@ if [ "${OO_EPHEMERAL:-}" != "1" ] && command -v awk >/dev/null 2>&1 && command -
         _p="${_f##*/.launcher_stderr.}"; _p="${_p%.pid}"
         case "$_p" in ''|*[!0-9]*) continue ;; esac
         [ "$_p" = "$$" ] && continue
+        # WHAT THE MINUTE PROTECTS: the previous launch's filter reads this file until its END has written the summary row, and that can
+        # follow the launcher's own exit by a moment; a file touched in the last minute is never swept, whatever its pid says.
+        [ -z "$(find "$_f" -maxdepth 0 -mmin -1 2>/dev/null)" ] || continue
         # a launcher killed outright can leave its server and filter running, and the filter reads this file for the server's pid:
         # a file whose recorded server still runs is in use and stays
         _sp="$(head -n 1 "$_f" 2>/dev/null || true)"
