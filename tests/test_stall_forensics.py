@@ -317,3 +317,33 @@ def test_the_verdict_is_phrased_as_correlation_not_causation():
     # The field is named for what it can support, not for a cause it cannot prove.
     assert "consistent_with" in str(sf.note_stall.__doc__ or "") or True
     assert "never a proof" in rep["method"]
+
+
+def _row(end, ms, sql="SELECT 1"):
+    return {"at": end.isoformat(timespec="seconds"), "duration_ms": ms, "sql": sql}
+
+
+def test_a_slow_statement_is_named_only_when_it_ran_inside_the_request(monkeypatch):
+    """The field case: a 55.6 s request, a writer's 56.9 s SAVEPOINT that ended in the same minute (longer than the request, so it
+    cannot be part of it) and an older 55 s COUNT that ended four minutes before a later 174 s request began."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.monitoring import slowquery
+
+    end = datetime(2026, 10, 16, 16, 19, 59, tzinfo=UTC)
+    rows = [
+        _row(end - timedelta(minutes=5), 41_100.0, "SAVEPOINT sa_savepoint_1"),
+        _row(end - timedelta(seconds=2), 56_853.6, "SAVEPOINT sa_savepoint_1"),  # longer than the request: not its own
+        _row(end, 55_310.8, "SELECT count(*) AS count_1 FROM keyword_mentions_all"),
+    ]
+    monkeypatch.setattr(slowquery, "recent", lambda limit=20: rows)
+    got = sf._statement_evidence(55_554.8, now=end)
+    assert got["found"] and got["sql"].startswith("SELECT count(*)") and got["duration_ms"] == 55_310.8
+    assert got["share_of_request"] < 1.0
+    # a later request that began after the COUNT ended is not attributed to it
+    later = end + timedelta(seconds=240)
+    none = sf._statement_evidence(174_128.3, now=later)
+    assert none["found"] is False and "ended inside this request's window" in none["note"]
+    # a row whose time cannot be read is skipped, not trusted
+    monkeypatch.setattr(slowquery, "recent", lambda limit=20: [{"at": "x", "duration_ms": 10.0, "sql": "S"}])
+    assert sf._statement_evidence(100.0, now=end)["found"] is False

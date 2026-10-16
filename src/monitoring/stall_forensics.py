@@ -126,16 +126,36 @@ def _loop_evidence(route: str) -> dict[str, Any]:
         return {"available": False, "reason": type(exc).__name__}
 
 
-def _statement_evidence(duration_ms: float) -> dict[str, Any]:
-    """The slowest statement the slow-query log recorded, and what share of this
-    request's duration it accounts for."""
+def _statement_evidence(duration_ms: float, now: datetime | None = None) -> dict[str, Any]:
+    """The slowest statement the slow-query log recorded INSIDE this request, and what share of its duration it accounts for.
+
+    A recorded statement can belong to this request only if it ended while the request ran and was not longer than the request:
+    the log is a ring of the last statements of the whole process, so "the worst of the last twenty" named a statement that had
+    finished minutes before the request began (a 174 s request was attributed a 55 s COUNT that ended four minutes earlier) or a
+    writer's 56.9 s SAVEPOINT for a 55.6 s request (``share_of_request`` 1.023, which cannot be). ``at`` is the statement's END
+    time at whole-second resolution, so the window opens one second early rather than miss a statement that ended at its start.
+    """
     try:
         from src.monitoring import slowquery
 
         rows = slowquery.recent(limit=20)
         if not rows:
             return {"available": True, "found": False}
-        worst = max(rows, key=lambda r: float(r.get("duration_ms") or 0.0))
+        end = now if now is not None else datetime.now(UTC)
+        opened = end.timestamp() - duration_ms / 1000.0 - 1.0
+        inside = []
+        for r in rows:
+            try:
+                ended = datetime.fromisoformat(str(r.get("at"))).timestamp()
+                dur = float(r.get("duration_ms") or 0.0)
+            except (TypeError, ValueError):
+                continue  # a row whose time cannot be read cannot be placed inside the request
+            if ended >= opened and dur <= duration_ms:
+                inside.append(r)
+        if not inside:
+            return {"available": True, "found": False, "recorded": len(rows),
+                    "note": "none of the recorded slow statements ended inside this request's window"}
+        worst = max(inside, key=lambda r: float(r.get("duration_ms") or 0.0))
         worst_ms = float(worst.get("duration_ms") or 0.0)
         share = (worst_ms / duration_ms) if duration_ms > 0 else 0.0
         return {
