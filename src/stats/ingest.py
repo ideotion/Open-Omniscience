@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session as SASession
 
 from src.catalog.normalize import registrable_domain
 from src.database.models import Source
+from src.database.source_lookup import source_for_domain
 from src.stats.agencies import list_agencies
 
 
@@ -75,7 +76,7 @@ def ingest_agencies_as_sources(session: SASession) -> dict:
             skipped_no_domain += 1
             continue
 
-        exists = session.query(Source).filter(Source.domain == domain).first()
+        exists = source_for_domain(session, domain)
         if exists is not None:
             # NEVER clobber an existing source — additive only.
             skipped_existing += 1

@@ -36,6 +36,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
+from src.database.source_lookup import source_for_domain
 from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ _MIN_TEXT = 200  # a PDF that extracts less than this is treated as no usable te
 
 def ensure_pdf_import_source(session: Session) -> Source:
     """ONE catalog source for imported PDFs — a filterable provenance class."""
-    src = session.query(Source).filter_by(domain=PDF_IMPORT_SOURCE_DOMAIN).first()
+    src = source_for_domain(session, PDF_IMPORT_SOURCE_DOMAIN)
     if src is None:
         src = Source(
             name=PDF_IMPORT_SOURCE_NAME,
@@ -249,7 +250,7 @@ def ingest_pdf_directory(
 
 def count_imported_pdfs(session: Session) -> int:
     """How many imported-PDF articles the corpus holds (drives the UI count)."""
-    src = session.query(Source).filter_by(domain=PDF_IMPORT_SOURCE_DOMAIN).first()
+    src = source_for_domain(session, PDF_IMPORT_SOURCE_DOMAIN)
     if src is None:
         return 0
     return session.query(Article).filter_by(source_id=src.id).count()

@@ -1949,6 +1949,10 @@ def merge_corpus(
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
         attach(con, staged_corpus, "inc")  # staged members are plaintext by design
+        # The ONE feed normaliser, as a SQL function: the source joins below key on (domain, feed_key).
+        from src.database.feed_key import feed_key as _feed_key
+
+        con.create_function("oo_feed_key", 1, _feed_key, deterministic=True)
         con.execute("BEGIN IMMEDIATE")
         results: dict[str, DomainResult] = {}
 
@@ -2767,25 +2771,46 @@ def _qualification_tally(
     }
 
 
+def _same_source(i: str = "i", m: str = "m") -> str:
+    """SQL: incoming source ``i`` (from ``inc.sources``) is the local source ``m`` (row J, S05-10).
+
+    A source is identified by ``(domain, feed_key)``, and ``feed_key`` is computed here by the registered
+    ``oo_feed_key`` function -- the ONE normaliser -- from the incoming ``rss_url``, never read from the
+    incoming row: an older backup carries no key of its own and a newer one must not be able to name a key
+    that disagrees with its feed. FALLBACK, deliberately narrow: when the backup holds exactly ONE source of
+    the domain and this store holds exactly ONE, they are the same source even if the feed differs (the
+    catalogue corrected a feed URL since the backup, or the operator edited it) -- before the key moved this
+    was simply ``m.domain = i.domain``, and restoring an old backup must not resurrect a stale feed as a
+    second source of the outlet. Anywhere either side holds several, only the exact key matches, so an old
+    backup carrying two feeds of one domain yields two sources and a domain-keyed backup never duplicates an
+    existing feed-keyed one."""
+    return (
+        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_feed_key({i}.rss_url)"
+        f" OR ((SELECT COUNT(*) FROM inc.sources x WHERE x.domain = {i}.domain) = 1"
+        f" AND (SELECT COUNT(*) FROM main.sources y WHERE y.domain = {i}.domain) = 1)))"
+    )
+
+
 def _merge_sources(con, batch_id, results) -> None:
     r = DomainResult()
+    _SAME = _same_source()
     r.duplicate = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i WHERE EXISTS"
-        " (SELECT 1 FROM sources m WHERE m.domain = i.domain)",
+        f" (SELECT 1 FROM sources m WHERE {_SAME})",
     )
     # Local wins entirely: differing incoming fields are REPORTED, never applied.
     for row in _q(
         con,
         "SELECT i.domain, i.name, m.name FROM inc.sources i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        " JOIN sources m ON m.domain = i.domain"
+        f" JOIN sources m ON {_SAME}"
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')"
         f" LIMIT {_SAMPLE_LIMIT}",
     ):
         r.conflicts.append({"domain": row[0], "incoming_name": row[1], "local_name": row[2]})
     r.conflict = _count(
         con,
-        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')",
     )
     # The QUALIFICATION STAMP (status / qualified_at / qualification_criteria_version)
@@ -2873,7 +2898,7 @@ def _merge_sources(con, batch_id, results) -> None:
         " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
         " 'introduced' FROM inc.sources i"
         " WHERE i.status <> 'unqualified'"
-        "   AND NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)"
+        f"   AND NOT EXISTS (SELECT 1 FROM sources m WHERE {_SAME})"
     )
     # The domains about to ADOPT a verdict (they exist here and were never judged, or carry
     # only the catalogue's curated stamp), and the ones where local-wins will apply because a
@@ -2886,24 +2911,24 @@ def _merge_sources(con, batch_id, results) -> None:
         " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
         " CASE WHEN m.status = 'qualified' AND i.status = 'qualified'"
         "      THEN 'confirmed' ELSE 'adopted' END"
-        " FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        f" FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE {_adopts}"  # nosec B608 - constant-only predicate built above, no input
     )
     _kept = _count(
         con,
-        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
         f"   AND (NOT {_local_curated} OR {_local_newer_judging})",  # nosec B608 - constant-only predicate built above, no input
     )
     _catalogue_kept = _count(
         con,
-        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE i.status <> 'unqualified' AND NOT {_adopts}"
         f"   AND {_local_curated} AND NOT {_local_newer_judging}",  # nosec B608 - constant-only predicate built above, no input
     )
     _disagreed = _count(
         con,
-        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
         f"   AND (NOT {_local_curated} OR {_local_newer_judging}) AND i.status <> m.status",  # nosec B608 - constant-only predicate built above, no input
     )
@@ -2912,13 +2937,13 @@ def _merge_sources(con, batch_id, results) -> None:
         "INSERT INTO main.sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
         " reliability_score, language, region, country, source_type, update_frequency,"
         " cacheability, status, qualified_at, qualification_criteria_version,"
-        " catalog_baseline)"
+        " catalog_baseline, feed_key)"
         " SELECT i.name, i.domain, i.rss_url, i.rate_limit_ms, i.enabled, i.priority, i.tags,"
         " i.reliability_score, i.language, i.region, i.country, i.source_type,"
         " i.update_frequency, i.cacheability, i.status, i.qualified_at,"
-        " i.qualification_criteria_version, i.catalog_baseline"
+        " i.qualification_criteria_version, i.catalog_baseline, oo_feed_key(i.rss_url)"
         " FROM inc.sources i"
-        " WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)",
+        f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {_SAME})",
     )
     r.samples = _new_row_samples(con, batch_id, "sources", "m.domain")
 
@@ -2952,16 +2977,17 @@ def _merge_sources(con, batch_id, results) -> None:
     # meeting a measured one) is what keeps local-wins intact wherever this instance actually
     # judged the source itself -- in particular a local 'disqualified' can never be laundered
     # to 'qualified' by an incoming corpus.
+    _inc_of_local = _same_source("i", "sources")
     con.execute(
         "UPDATE main.sources SET"
-        "  status = (SELECT i.status FROM inc.sources i WHERE i.domain = sources.domain),"
+        f"  status = (SELECT i.status FROM inc.sources i WHERE {_inc_of_local}),"
         "  qualified_at = (SELECT i.qualified_at FROM inc.sources i"
-        "                  WHERE i.domain = sources.domain),"
+        f"                  WHERE {_inc_of_local}),"
         "  qualification_criteria_version = (SELECT i.qualification_criteria_version"
         "                                    FROM inc.sources i"
-        "                                    WHERE i.domain = sources.domain)"
+        f"                                    WHERE {_inc_of_local})"
         " WHERE EXISTS (SELECT 1 FROM inc.sources i JOIN sources m ON m.id = sources.id"
-        f"               WHERE i.domain = sources.domain AND {_adopts})"  # nosec B608 - constant-only predicate built above, no input
+        f"               WHERE {_same_source('i', 'm')} AND {_adopts})"  # nosec B608 - constant-only predicate built above, no input
     )
     results["_source_qualification"] = _qualification_tally(
         con, kept=_kept, disagreed=_disagreed, catalogue_kept=_catalogue_kept
@@ -2969,7 +2995,7 @@ def _merge_sources(con, batch_id, results) -> None:
 
     _build_map(
         con, "map_sources",
-        "SELECT i.id, m.id FROM inc.sources i JOIN sources m ON m.domain = i.domain",
+        f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",
     )
 
     g = DomainResult()

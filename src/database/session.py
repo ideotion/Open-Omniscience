@@ -593,6 +593,15 @@ def init_db() -> None:
     _init_step("ensure_source_last_crawled_column")
     ensure_source_last_crawled_column(engine)
 
+    # A source is keyed on (domain, feed) -- row J, S05-10. AFTER every sources column self-heal above (the
+    # rebuild carries the columns that exist and needs the rest present) and BEFORE the seeder, which asks
+    # whether the store can hold several feeds of one domain. Additive column + backfill, then one
+    # cascade-proof table rebuild; a refusal is logged by class and the store keeps one feed per domain.
+    _init_step("ensure_source_composite_key")
+    from src.database.source_identity import ensure_source_composite_key
+
+    ensure_source_composite_key(engine)
+
     # R71 (b): the natural key of a restored text-keyed row (places, Wikidata items).
     _init_step("ensure_merged_rows_row_key_column")
     ensure_merged_rows_row_key_column(engine)

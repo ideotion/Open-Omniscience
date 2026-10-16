@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 from src.database.corpus_lease import corpus_lease
+from src.database.source_lookup import source_for_domain
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
 from src.monitoring.secret_scrub import log_failure, record_text, record_traceback
 
@@ -67,7 +68,7 @@ def _import_source(session):
     """The dedicated, DISABLED, filterable .eml import source (created on demand)."""
     from src.database.models import Source
 
-    src = session.query(Source).filter_by(domain=_IMPORT_SOURCE_DOMAIN).first()
+    src = source_for_domain(session, _IMPORT_SOURCE_DOMAIN)
     if src is None:
         src = Source(name=_IMPORT_SOURCE_NAME, domain=_IMPORT_SOURCE_DOMAIN, enabled=False)
         session.add(src)

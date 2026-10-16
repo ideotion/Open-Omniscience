@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import src.ingest.seed_sources as ss  # noqa: E402
-from src.ingest.feed_key import feed_key  # noqa: E402
+from src.database.feed_key import feed_key  # noqa: E402
 
 
 def capture() -> list[dict]:

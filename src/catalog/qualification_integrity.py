@@ -65,6 +65,7 @@ from src.catalog.qualification import (
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
 )
+from src.database.source_lookup import source_for_domain
 from src.database.stand_in import not_a_stand_in_source
 from src.monitoring.secret_scrub import log_failure
 
@@ -1081,7 +1082,7 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
                 seen.add(domain)
                 if r.get("reverted_at"):
                     continue
-                source = session.query(Source).filter(Source.domain == domain).first()
+                source = source_for_domain(session, domain)
                 newest = _newest_judging(session, int(source.id)) if source is not None else None
                 if (
                     source is not None and domain in held
@@ -1118,7 +1119,7 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     stamp = _iso(datetime.now(UTC))
     with session_scope() as session:
         for _run_at, r in plan:
-            source = session.query(Source).filter(Source.domain == r["domain"]).first()
+            source = source_for_domain(session, r["domain"])
             if source is None or source.status != r.get("restored_to"):
                 continue
             source.status = r.get("was") or STATUS_UNQUALIFIED

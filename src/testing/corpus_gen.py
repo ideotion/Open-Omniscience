@@ -297,15 +297,20 @@ def _fill(engine: Engine, path: Path, spec: CorpusSpec) -> dict[str, Any]:
 
     # Sources (bounded, inserted once).
     langs = _weighted_langs(spec.sources, rng)
+    from src.database.feed_key import feed_key
+
     source_rows: list[dict[str, Any]] = []
     for sid in range(1, spec.sources + 1):
         lang, country = langs[sid - 1]
+        feed = f"https://src{sid:05d}.synthetic.example/feed.xml"
         source_rows.append(
             {
                 "id": sid,
                 "name": f"Synthetic Source {sid}",
                 "domain": f"src{sid:05d}.synthetic.example",
-                "rss_url": f"https://src{sid:05d}.synthetic.example/feed.xml",
+                "rss_url": feed,
+                # a Core insert bypasses the ORM event that derives the key from the feed
+                "feed_key": feed_key(feed),
                 "enabled": True,
                 "priority": 2,
                 "tags": _source_tags(sid),

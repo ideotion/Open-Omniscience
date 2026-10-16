@@ -42,6 +42,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, HazardEventDetail, Source
+from src.database.source_lookup import source_for_domain
 from src.database.write import is_integrity_error
 from src.monitoring.secret_scrub import log_failure
 
@@ -74,7 +75,7 @@ def ensure_hazard_source(session: Session, provider: str) -> Source:
     """
     p = (provider or "unknown").strip().lower() or "unknown"
     domain = _hazard_domain(p)
-    src = session.query(Source).filter_by(domain=domain).first()
+    src = source_for_domain(session, domain)
     if src is None:
         src = Source(
             name=f"Hazard ({p.upper()})",

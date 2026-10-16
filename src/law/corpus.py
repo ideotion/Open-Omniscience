@@ -44,6 +44,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, LawDocument, Source
+from src.database.source_lookup import source_for_domain
 from src.database.write import is_integrity_error
 from src.monitoring.secret_scrub import log_failure
 
@@ -72,7 +73,7 @@ def ensure_law_source(session: Session, jurisdiction: str) -> Source:
     """
     j = (jurisdiction or "xx").strip().lower() or "xx"
     domain = _law_domain(j)
-    src = session.query(Source).filter_by(domain=domain).first()
+    src = source_for_domain(session, domain)
     if src is None:
         src = Source(
             name=f"Law ({j.upper()})",

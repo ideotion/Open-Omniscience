@@ -411,8 +411,14 @@ class Source(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    domain: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # NOT unique on its own since row J (S05-10): a source is identified by (domain, feed_key).
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
     rss_url: Mapped[str | None] = mapped_column(String(500))
+    # The normalised feed (src/database/feed_key.py), '' for a source with no feed. Derived from
+    # rss_url on every ORM write (see the mapper events below) and never set by hand; the other
+    # half of the identity. server_default '' so a raw INSERT that omits it names a feed-less source
+    # honestly rather than failing NOT NULL.
+    feed_key: Mapped[str] = mapped_column(String(500), nullable=False, default="", server_default="")
     rate_limit_ms: Mapped[int | None] = mapped_column(Integer, default=2000)
     enabled: Mapped[bool | None] = mapped_column(Boolean, default=True)
     priority: Mapped[int | None] = mapped_column(Integer, default=2)
@@ -505,7 +511,8 @@ class Source(Base):
 
     # Indexes for performance
     __table_args__ = (
-        Index("idx_source_domain", "domain", unique=True),
+        UniqueConstraint("domain", "feed_key", name="uq_source_domain_feed"),
+        Index("idx_source_domain", "domain"),
         Index("idx_source_enabled", "enabled"),
         Index("idx_source_priority", "priority"),
         Index("idx_source_reliability", "reliability_score"),
@@ -519,6 +526,21 @@ class Source(Base):
 
     def __repr__(self):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"
+
+
+@event.listens_for(Source, "before_insert")
+@event.listens_for(Source, "before_update")
+def _derive_source_feed_key(mapper, connection, target: "Source") -> None:
+    """``feed_key`` follows ``rss_url`` on EVERY ORM write path (row J, S05-10).
+
+    A model-level hook, not a per-call-site one, for the same reason ``_stamp_article_identity`` is: the
+    importers, the seeder, the catalogue corrections, the operator's edit and the collectors all assign
+    ``rss_url`` and none of them may be able to forget the other half of the identity. A raw
+    ``INSERT``/``UPDATE`` that bypasses the ORM must call ``src.database.feed_key.feed_key`` itself
+    (the restore-merge does, as a SQLite function)."""
+    from src.database.feed_key import feed_key
+
+    target.feed_key = feed_key(target.rss_url)
 
 
 class FeedFetchState(Base):

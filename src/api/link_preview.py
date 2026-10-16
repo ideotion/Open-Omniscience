@@ -82,6 +82,7 @@ def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
     src_row = (
         db.query(Source.id, Source.name, Source.domain, Source.country)
         .filter(or_(Source.domain == host, Source.domain == bare_host))
+        .order_by(Source.id)
         .first()
     )
 
