@@ -170,7 +170,7 @@ class WriterGate:
         self._queue: list[threading.Condition] = []
 
     def _take(self, me: int) -> None:
-        """Grant the window to ``me``. Caller holds ``self._cond``."""
+        """Grant the window to ``me``. Caller holds ``self._lock``."""
         self._owner = me
         self._depth = 1
         self._grants += 1
@@ -191,7 +191,7 @@ class WriterGate:
         # Outside the lock: never spawn a thread while holding the write window.
         _maybe_start_watchdog()
         me = threading.get_ident()
-        with self._cond:
+        with self._lock:
             if self._owner == me:  # reentrant: same thread, nested write
                 self._depth += 1
                 return True
@@ -259,7 +259,7 @@ class WriterGate:
         me = threading.get_ident()
         # (holder name, seconds, start) of the hold that ended on THIS call, for the line written after the lock is dropped.
         released: tuple[str | None, float, float | None] | None = None
-        with self._cond:
+        with self._lock:
             if self._owner != me:
                 # Defensive: only the owner releases. A non-owner call is a
                 # no-op (e.g. a rollback event on a session that never wrote).
@@ -329,7 +329,7 @@ class WriterGate:
             self._queue[0].notify()
 
     def held_by_current_thread(self) -> bool:
-        with self._cond:
+        with self._lock:
             return self._owner == threading.get_ident()
 
     def waiters(self) -> int:
@@ -339,7 +339,7 @@ class WriterGate:
         ("is anyone waiting behind this batch?"). A holder that commits on a non-zero answer never starves anyone, because the
         gate is first-in-first-out and the waiter is handed the window the instant the batch's transaction ends.
         """
-        with self._cond:
+        with self._lock:
             return self._waiters
 
     def _reset_for_tests(self) -> None:
@@ -347,7 +347,7 @@ class WriterGate:
         cannot hang the next one. NEVER call in production — it would abandon a
         real in-flight write window. The per-test guard fixture uses this to
         recover and then fail the offending test loudly."""
-        with self._cond:
+        with self._lock:
             self._owner = None
             self._depth = 0
             self._holder = None
@@ -365,7 +365,7 @@ class WriterGate:
 
     def watch(self, ident: int) -> None:
         """Start (or restart, from zero) keeping the holds of the thread with this ident."""
-        with self._cond:
+        with self._lock:
             self._watched[ident] = {"grants": 0, "held_s": 0.0, "longest_s": 0.0}
 
     def take_watched(self, ident: int) -> dict[str, float] | None:
@@ -374,7 +374,7 @@ class WriterGate:
 
         A hold still in flight is not in it (it is added at release), exactly as ``stats``'s
         ``total_held_s`` says of itself."""
-        with self._cond:
+        with self._lock:
             return self._watched.pop(ident, None)
 
     def stats(self) -> dict:
@@ -383,7 +383,7 @@ class WriterGate:
         The thread names in it (``holder``, ``max_hold_holder``, ``by_holder[].holder``) are copied raw under the gate's lock and
         scrubbed of the passphrases the process holds AFTER it is released: ``served_cache.change_probe`` reads these stats two or
         three times per cached read, and the scrub (a few microseconds a name) is not work to do while a writer waits on the lock."""
-        with self._cond:
+        with self._lock:
             held_for = (
                 None if self._held_since is None else round(time.monotonic() - self._held_since, 4)
             )
@@ -438,7 +438,7 @@ class WriterGate:
         ``monotonic()`` reading, which drifts by the delta between the two --
         so every sample would look like a new hold and warn again.
         """
-        with self._cond:
+        with self._lock:
             if self._owner is None or self._held_since is None:
                 return (None, None, None)
             return (self._holder, self._held_since, self._owner)
