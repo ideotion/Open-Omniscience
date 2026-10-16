@@ -251,6 +251,29 @@ def guarded_read(
         ) from exc
 
 
+def statement_budget(db: Session, requested: object) -> tuple[float | None, str]:
+    """The statement budget for one heavy read, in seconds, and where it came from.
+
+    Three sources, in this order: the caller's ``budget_s``; what is LEFT of an enclosing
+    statement deadline (the all-diagnostics bundle wraps each member in its own, 300 s by
+    default); and ``None`` for the process default (``OO_STATEMENT_TIMEOUT_S``, 60 s).
+
+    The middle one is the point. ``guarded_read`` opens its OWN deadline, which replaces the outer
+    one rather than nesting under it, so a bundle member that had 300 s was cut at 60 s: both
+    bundles of 2026-10-16 recorded ``rising_now`` running 60.1 s and every later producer
+    ``skipped-budget``. ``requested`` is checked for type because the bundle calls this endpoint
+    function directly, and a parameter it does not pass arrives as FastAPI's ``Query`` object.
+    """
+    from src.database.maintenance import deadline_remaining
+
+    if isinstance(requested, (int, float)) and not isinstance(requested, bool) and requested > 0:
+        return float(requested), "requested"
+    left = deadline_remaining(db)
+    if left is not None and left > 0:
+        return left, "enclosing-deadline"
+    return None, "default"
+
+
 def status() -> dict:
     """Honest state of the heavy-read guard (for diagnostics/tests). No score."""
     with _LOCK:

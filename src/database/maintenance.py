@@ -1846,11 +1846,21 @@ def deadline_expired(session) -> bool:
     Exception`` so one bad item cannot break the whole -- correct isolation that
     also eats the deadline, once per item, silently.
     """
+    left = deadline_remaining(session)
+    return left is not None and left <= 0
+
+
+def deadline_remaining(session) -> float | None:
+    """Seconds left of an enclosing :func:`statement_deadline`, or ``None`` when there is none.
+
+    Negative once it has elapsed. ``None`` is the honest answer for a session with no deadline, a stub with no
+    ``.info``, or a deadline that was disabled -- never ``0``, which would read as "expired".
+    """
     try:
         at = session.info.get(_DEADLINE_KEY)
     except Exception:  # noqa: BLE001 - a stub session with no .info
-        return False
-    return at is not None and time.monotonic() >= at
+        return None
+    return None if at is None else float(at) - time.monotonic()
 
 
 @contextmanager

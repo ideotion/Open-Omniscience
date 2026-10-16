@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.heavy import guarded_read
+from src.api.heavy import guarded_read, statement_budget
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 
@@ -381,36 +381,6 @@ def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) 
 # --------------------------------------------------------------------------- #
 
 
-def _card_audit_budget(db: Session, requested: object) -> tuple[float | None, str]:
-    """The statement budget for one card-audit read, in seconds, and where it came from.
-
-    Three sources, in this order: the caller's ``budget_s``; what is LEFT of an enclosing
-    statement deadline (the all-diagnostics bundle wraps each member in its own, 300 s by
-    default); and ``None`` for the process default (``OO_STATEMENT_TIMEOUT_S``, 60 s).
-
-    The middle one is the point. ``guarded_read`` opens its OWN deadline, which replaces the outer
-    one rather than nesting under it, so a bundle member that had 300 s was cut at 60 s: both
-    bundles of 2026-10-16 recorded ``rising_now`` running 60.1 s and every later producer
-    ``skipped-budget``. ``requested`` is checked for type because the bundle calls this endpoint
-    function directly, and a parameter it does not pass arrives as FastAPI's ``Query`` object.
-    """
-    import time
-
-    from src.database.maintenance import _DEADLINE_KEY
-
-    if isinstance(requested, (int, float)) and not isinstance(requested, bool) and requested > 0:
-        return float(requested), "requested"
-    try:
-        at = db.info.get(_DEADLINE_KEY)
-    except Exception:  # noqa: BLE001 - a stub session with no .info
-        at = None
-    if at is not None:
-        left = float(at) - time.monotonic()
-        if left > 0:
-            return left, "enclosing-deadline"
-    return None, "default"
-
-
 @router.get("/card-audit")
 def card_audit(
     depth: str = Query("summary", pattern="^(summary|standard|full)$"),
@@ -461,7 +431,7 @@ def card_audit(
             **bounds,
         )
 
-    seconds, source = _card_audit_budget(db, budget_s)
+    seconds, source = statement_budget(db, budget_s)
     report = guarded_read(db, "card-audit", _compute, deadline_s=seconds)
     if isinstance(report, dict):
         # Said in the report, so a reader of a 60 s skip can tell the default from a short grant.

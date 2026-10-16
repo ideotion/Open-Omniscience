@@ -54,34 +54,34 @@ def test_guarded_read_without_a_deadline_keeps_the_process_default(monkeypatch):
 def test_a_requested_budget_wins_over_an_enclosing_deadline():
     db = _session()
     db.info[maintenance._DEADLINE_KEY] = time.monotonic() + 200
-    assert corpus._card_audit_budget(db, 90) == (90.0, "requested")
+    assert heavy.statement_budget(db, 90) == (90.0, "requested")
 
 
 def test_the_enclosing_deadline_is_what_is_left_of_it():
     db = _session()
     db.info[maintenance._DEADLINE_KEY] = time.monotonic() + 240
-    seconds, source = corpus._card_audit_budget(db, None)
+    seconds, source = heavy.statement_budget(db, None)
     assert source == "enclosing-deadline"
     assert 235 < seconds <= 240
 
 
 def test_no_budget_and_no_enclosing_deadline_is_the_process_default():
-    assert corpus._card_audit_budget(_session(), None) == (None, "default")
+    assert heavy.statement_budget(_session(), None) == (None, "default")
 
 
 def test_an_expired_enclosing_deadline_does_not_become_a_negative_budget():
     db = _session()
     db.info[maintenance._DEADLINE_KEY] = time.monotonic() - 5
-    assert corpus._card_audit_budget(db, None) == (None, "default")
+    assert heavy.statement_budget(db, None) == (None, "default")
 
 
 def test_a_query_object_from_a_direct_call_is_not_taken_for_a_number():
     """The bundle calls ``card_audit(...)`` as a function and omits ``budget_s``; the default is a ``Query`` object."""
     from fastapi import Query
 
-    assert corpus._card_audit_budget(_session(), Query(None))[1] == "default"
-    assert corpus._card_audit_budget(_session(), True)[1] == "default"
-    assert corpus._card_audit_budget(_session(), 0)[1] == "default"
+    assert heavy.statement_budget(_session(), Query(None))[1] == "default"
+    assert heavy.statement_budget(_session(), True)[1] == "default"
+    assert heavy.statement_budget(_session(), 0)[1] == "default"
 
 
 @pytest.fixture
