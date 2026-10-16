@@ -3403,6 +3403,7 @@
   "Other small states": "其他小国",
   "Outbound links shared by >1 member (false-triangulation flag)": "被 >1 个成员共享的外链（虚假三角印证标记）",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "被 >= {v1} 个不同来源（且 >= {v2} 篇文章）引用的外链出处；排除社交/商店/基础设施类出处（CDN、Cookie/隐私政策页面、分享组件、许可证页脚）；每个可注册出处域名最多一张卡片。独立性 = 不同媒体数（同一网站的多个订阅源只算一次），而非文章数。",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "这里的来源是订阅源（你的来源列表中的行），不是媒体：一个媒体可以有多个订阅源。",
   "Outlet": "媒体",
   "Outlets carrying near-identical text": "刊登近乎相同文字的媒体数",
   "Outlets compared on this topic": "就此话题比较的媒体数",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "这里的来源是订阅源（你的来源列表中的行），不是媒体：一个媒体可以有多个订阅源。"
+  "🛒 Draft (": "🛒 草稿 ("
 }

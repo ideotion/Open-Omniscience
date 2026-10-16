@@ -3403,6 +3403,7 @@
   "Other small states": "その他の小国",
   "Outbound links shared by >1 member (false-triangulation flag)": "複数メンバーが共有する外部リンク（見せかけの三角検証の印）",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "異なる情報源 >= {v1} 件（かつ記事 >= {v2} 本）が引用する外部の出所。ソーシャル・ストア・インフラ系の出所は除外（CDN、Cookie・プライバシーポリシーのページ、共有ウィジェット、ライセンスのフッター）。登録可能な出所ドメインごとにカードは最大一枚。独立性 = 記事数ではなく異なる媒体の数（同じサイトの複数のフィードは1つと数えます）。",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "ここでの情報源はフィード（情報源リストの行）であり、媒体ではありません。1つの媒体が複数のフィードを持つことがあります。",
   "Outlet": "媒体",
   "Outlets carrying near-identical text": "ほぼ同一の文章を載せた媒体",
   "Outlets compared on this topic": "この話題で比較した媒体",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "ここでの情報源はフィード（情報源リストの行）であり、媒体ではありません。1つの媒体が複数のフィードを持つことがあります。"
+  "🛒 Draft (": "🛒 草稿 ("
 }

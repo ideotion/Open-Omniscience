@@ -3403,6 +3403,7 @@
   "Other small states": "অন্যান্য ক্ষুদ্র রাষ্ট্র",
   "Outbound links shared by >1 member (false-triangulation flag)": ">১ সদস্যের ভাগ করা বাইরের লিংক (ভুয়া ত্রিভুজায়নের সংকেত)",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": ">= {v1}টি স্বতন্ত্র উৎস (এবং >= {v2}টি নিবন্ধ) দ্বারা উদ্ধৃত বহির্গামী মূল; সামাজিক/বিপণি/অবকাঠামো মূল বাদ (CDN, কুকি/গোপনীয়তা-নীতির পাতা, শেয়ার উইজেট, লাইসেন্স ফুটার); প্রতিটি নিবন্ধনযোগ্য মূল ডোমেইনে সর্বোচ্চ একটি কার্ড। স্বাধীনতা = স্বতন্ত্র আউটলেট (একই সাইটের একাধিক ফিড একবার গণনা হয়), নিবন্ধের সংখ্যা নয়।",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "এখানে উৎস মানে ফিড (আপনার উৎস তালিকার সারি), আউটলেট নয়: একটি আউটলেটে একাধিক ফিড থাকতে পারে।",
   "Outlet": "সংবাদমাধ্যম",
   "Outlets carrying near-identical text": "প্রায় অভিন্ন লেখা প্রকাশকারী মাধ্যম",
   "Outlets compared on this topic": "এই বিষয়ে তুলনা করা মাধ্যম",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "এখানে উৎস মানে ফিড (আপনার উৎস তালিকার সারি), আউটলেট নয়: একটি আউটলেটে একাধিক ফিড থাকতে পারে।"
+  "🛒 Draft (": "🛒 খসড়া ("
 }

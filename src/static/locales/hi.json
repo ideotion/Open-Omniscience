@@ -3403,6 +3403,7 @@
   "Other small states": "अन्य छोटे राज्य",
   "Outbound links shared by >1 member (false-triangulation flag)": "एक से अधिक सदस्यों द्वारा साझा बाहरी लिंक (झूठे त्रिकोणीकरण का संकेत)",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "बाहरी मूल जिनका हवाला >= {v1} अलग-अलग स्रोत (और >= {v2} लेख) देते हैं; सोशल/स्टोर/इन्फ्रास्ट्रक्चर मूल बाहर (CDN, कुकी/गोपनीयता-नीति पृष्ठ, शेयर विजेट, लाइसेंस फ़ुटर); हर पंजीकरण योग्य मूल डोमेन पर अधिकतम एक कार्ड। स्वतंत्रता = अलग-अलग आउटलेट (एक ही साइट के कई फ़ीड एक बार गिने जाते हैं), लेखों की गिनती नहीं।",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "यहाँ स्रोत का मतलब फ़ीड है (आपकी स्रोत सूची की पंक्तियाँ), आउटलेट नहीं: एक आउटलेट के कई फ़ीड हो सकते हैं।",
   "Outlet": "मीडिया",
   "Outlets carrying near-identical text": "लगभग एक जैसा पाठ छापने वाले माध्यम",
   "Outlets compared on this topic": "इस विषय पर तुलना किए गए माध्यम",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "यहाँ स्रोत का मतलब फ़ीड है (आपकी स्रोत सूची की पंक्तियाँ), आउटलेट नहीं: एक आउटलेट के कई फ़ीड हो सकते हैं।"
+  "🛒 Draft (": "🛒 ड्राफ़्ट ("
 }

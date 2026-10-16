@@ -3403,6 +3403,7 @@
   "Other small states": "Andere kleine Staaten",
   "Outbound links shared by >1 member (false-triangulation flag)": "Von >1 Mitglied geteilte ausgehende Links (Hinweis auf Schein-Triangulation)",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "Ausgehende Ursprünge, die von >= {v1} verschiedenen Quellen (und >= {v2} Artikeln) zitiert werden; Social-/Shop-/Infrastruktur-Ursprünge ausgeschlossen (CDNs, Cookie-/Datenschutzseiten, Teilen-Widgets, Lizenz-Fußzeilen); höchstens eine Karte pro registrierbarer Ursprungsdomain. Unabhängigkeit = verschiedene Medien (mehrere Feeds einer Website zählen einmal), nicht Artikelzahl.",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Quellen sind hier Feeds (die Zeilen Ihrer Quellenliste), keine Medien: ein Medium kann mehrere enthalten.",
   "Outlet": "Medium",
   "Outlets carrying near-identical text": "Medien mit nahezu identischem Text",
   "Outlets compared on this topic": "Auf dieses Thema hin verglichene Medien",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ Zoom",
   "－ zoom": "－ Zoom",
   "📍 places": "📍 Orte",
-  "🛒 Draft (": "🛒 Entwurf (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Quellen sind hier Feeds (die Zeilen Ihrer Quellenliste), keine Medien: ein Medium kann mehrere enthalten."
+  "🛒 Draft (": "🛒 Entwurf ("
 }

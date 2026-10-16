@@ -3403,6 +3403,7 @@
   "Other small states": "Negara kecil lainnya",
   "Outbound links shared by >1 member (false-triangulation flag)": "Tautan keluar yang dibagi >1 anggota (penanda triangulasi palsu)",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "Asal keluar yang dikutip oleh >= {v1} sumber berbeda (dan >= {v2} artikel); asal sosial/toko/infrastruktur dikecualikan (CDN, halaman cookie/kebijakan privasi, widget berbagi, footer lisensi); paling banyak satu kartu per domain asal yang dapat didaftarkan. Independensi = outlet berbeda (beberapa feed dari satu situs dihitung sekali), bukan jumlah artikel.",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Sumber di sini adalah feed (baris daftar sumber Anda), bukan outlet: satu outlet bisa memiliki beberapa feed.",
   "Outlet": "Media",
   "Outlets carrying near-identical text": "Media yang memuat teks hampir identik",
   "Outlets compared on this topic": "Media yang dibandingkan pada topik ini",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Sumber di sini adalah feed (baris daftar sumber Anda), bukan outlet: satu outlet bisa memiliki beberapa feed."
+  "🛒 Draft (": "🛒 Draf ("
 }

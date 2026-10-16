@@ -3403,6 +3403,7 @@
   "Other small states": "Other small states",
   "Outbound links shared by >1 member (false-triangulation flag)": "Outbound links shared by >1 member (false-triangulation flag)",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.",
   "Outlet": "Outlet",
   "Outlets carrying near-identical text": "Outlets carrying near-identical text",
   "Outlets compared on this topic": "Outlets compared on this topic",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several."
+  "🛒 Draft (": "🛒 Draft ("
 }

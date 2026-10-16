@@ -3403,6 +3403,7 @@
   "Other small states": "Прочие малые государства",
   "Outbound links shared by >1 member (false-triangulation flag)": "Исходящие ссылки, общие для >1 участника (признак ложной триангуляции)",
   "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, share widgets, license footers); at most one card per registrable origin domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.": "Исходящие источники происхождения, на которые ссылаются >= {v1} разных источников (и >= {v2} статей); социальные сети/магазины/инфраструктура исключены (CDN, страницы cookie/конфиденциальности, виджеты «поделиться», лицензионные подвалы); не более одной карточки на регистрируемый домен происхождения. Независимость = разные издания (несколько лент одного сайта считаются один раз), а не число статей.",
+  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Источники здесь — это ленты (строки вашего списка источников), а не издания: у одного издания может быть несколько лент.",
   "Outlet": "Издание",
   "Outlets carrying near-identical text": "Издания с почти одинаковым текстом",
   "Outlets compared on this topic": "Издания, сравнённые по этой теме",
@@ -7066,6 +7067,5 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик (",
-  "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.": "Источники здесь — это ленты (строки вашего списка источников), а не издания: у одного издания может быть несколько лент."
+  "🛒 Draft (": "🛒 Черновик ("
 }
