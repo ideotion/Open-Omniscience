@@ -121,7 +121,8 @@ class InstallerRedirectRefused(InstallerVerificationError):
 
 class InstallerFetchFailed(InstallerVerificationError):
     """One of the install's two fetches failed for a reason of its own after the host list let it through: an HTTP error answer, a dropped
-    connection, a timeout, a redirect loop, an address ``requests`` could not read, or an answer that was not JSON (R142).
+    connection, a timeout, a redirect loop, a ``Location`` on a followed hop that ``requests`` could not read, or an answer that was not a
+    JSON object (R142). The address the release names is not among them: it is checked first and an unreadable one is a refusal.
 
     A subclass, so the route that maps a verification failure to 502 maps this one too and a person is told that nothing was run. Its text
     is a fixed sentence plus ``why``, which is only ``HTTP <status>`` or an exception CLASS NAME (``src.safety.fetcher.failure_words``):
@@ -455,7 +456,7 @@ def _get_within(url: str, hosts: tuple[str, ...], *, timeout: int, download: boo
 
     The one place the two fetchers refuse or fail, and each says so in its own words: a refusal by the host list is
     :class:`InstallerRedirectRefused`, any other failure of the fetch (an HTTP error answer, a dropped connection, a timeout, a redirect
-    loop, an address ``requests`` cannot read) is :class:`InstallerFetchFailed` with ``HTTP <status>`` or the exception's class name and
+    loop, a ``Location`` on a followed hop that ``requests`` cannot read) is :class:`InstallerFetchFailed` with ``HTTP <status>`` or the exception's class name and
     nothing else. Only those words are logged, and both exceptions are raised OUTSIDE the ``except`` block, so they have neither a cause
     nor a context: the address a failure quotes (the download's is a signed storage URL, signature in the query) cannot ride a traceback
     into a log or a response. A missing transport (``TransportUnavailable``) and the kill switch (``NetworkBlocked``) are neither: each
@@ -511,10 +512,16 @@ def _default_get_json(url: str) -> dict:
 
     resp = _get_within(url, GITHUB_API_HOSTS, timeout=30, download=False)
     failure: str | None = None
+    body: dict = {}
     try:
-        body: dict = resp.json()
-    except ValueError as exc:  # an answer that is not JSON; the class name is all that is kept
+        parsed = resp.json()
+    except (ValueError, RecursionError) as exc:  # not JSON, or nested past the parser's limit; the class name is all that is kept
         failure = failure_words(exc)
+    else:
+        if isinstance(parsed, dict):
+            body = parsed
+        else:  # JSON, but not the object the lookup reads (a list, a string, a number): its type is the class named, as for any failure
+            failure = TypeError.__name__
     if failure is not None:
         raise _fetch_failed(False, failure)
     return body

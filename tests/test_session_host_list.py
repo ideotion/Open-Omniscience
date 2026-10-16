@@ -418,7 +418,8 @@ def test_an_edition_code_cannot_choose_the_host_the_wiki_client_calls(transparen
 def test_the_wiki_clients_list_is_exactly_its_three_hosts_and_no_other_wikimedia_host(transparent):
     """R143: the Action API's ``*.wikipedia.org``, the pageviews ``wikimedia.org`` and ``stream.wikimedia.org``, as the consent popup's
     Wikipedia lane names them for this session. Every other host under ``wikimedia.org`` is refused, including as the target of a
-    redirect, so a list restored to the family (``.wikimedia.org``) fails here and nowhere else."""
+    redirect. A list restored to the family (``.wikimedia.org``) fails here and in the popup pin; a list that gains a host the popup DOES name
+    (``dumps.wikimedia.org``) fails only here, which is why this test exists beside the pin."""
     from src.wiki.client import WIKI_SESSION_HOSTS
 
     assert set(WIKI_SESSION_HOSTS) == {".wikipedia.org", "wikimedia.org", "stream.wikimedia.org"}
@@ -441,7 +442,8 @@ def test_the_wiki_clients_list_is_exactly_its_three_hosts_and_no_other_wikimedia
 
 def test_the_ores_list_is_exactly_the_host_of_its_endpoint(transparent):
     """R143: ``ores.wikimedia.org`` and nothing else. A replacement endpoint (say LiftWing on ``api.wikimedia.org``) is refused until the
-    popup lane and this list both name it; a list restored to the family fails here and nowhere else."""
+    popup lane and this list both name it. A list restored to the family fails here and in the popup pin; a list that gains another
+    ``wikimedia.org`` host the popup names for a different client (say the bare domain) fails only here."""
     from urllib.parse import urlsplit
 
     from src.wiki.ores import ORES_ENDPOINT, ORES_HOSTS
@@ -467,9 +469,39 @@ def test_the_ores_clients_session_carries_its_list(transparent):
     refuse_unlisted_host(f"{ORES_ENDPOINT}/enwiki/", ORES_HOSTS)
 
 
+def test_an_ores_redirect_off_its_host_is_named_as_our_refusal_and_not_as_a_network_fault(transparent):
+    """R143 makes a redirect to another Wikimedia host (Lift Wing, say) a refusal by the list. The scoring client names it ``refused_redirect``,
+    with the refusal's fixed sentence as the detail, instead of the ``transport_error`` a dropped packet gets: Q717's probe reads that token."""
+    from src.wiki.ores import ORES_ENDPOINT, ORES_HOSTS, OUTCOMES, OresClient
+
+    asked = f"{ORES_ENDPOINT}/enwiki/?models=damaging%7Cgoodfaith&revids=123"
+    s, wire = _session({asked: (302, "https://api.wikimedia.org/service/lw/inference/v1/models/x:predict")}, hosts=ORES_HOSTS)
+    client = OresClient(session=s)
+    assert client.score("en", [123]) == {}
+    assert client.last_outcome == "refused_redirect" and client.last_outcome in OUTCOMES
+    assert client.last_detail == "the host is not one this client talks to", "the refusal's own fixed sentence: not the exception's text, not its class name, no host"
+    assert wire.sent == [asked], "the hop was refused before it was sent"
+
+
+def test_a_dropped_ores_connection_is_still_a_transport_error(transparent):
+    from src.wiki.ores import ORES_HOSTS, OresClient
+
+    s, wire = _session(hosts=ORES_HOSTS)
+    real = wire.send
+
+    def _send(request, **kwargs):
+        raise requests.ConnectionError("dropped")
+
+    wire.send = _send
+    client = OresClient(session=s)
+    assert client.score("en", [123]) == {}
+    assert client.last_outcome == "transport_error" and client.last_detail == "ConnectionError"
+    wire.send = real
+
+
 def test_the_duckduckgo_list_is_exactly_its_endpoint_host(transparent):
     """R143: ``html.duckduckgo.com`` and nothing else, as the consent popup's topic-discovery lane says. The bare domain and every other host
-    under it are refused, including as the target of a redirect, so a list restored to the family fails here and nowhere else."""
+    under it are refused, including as the target of a redirect. A list restored to the family fails here and in the popup pin."""
     from urllib.parse import urlsplit
 
     from src.services.duckduckgo import DuckDuckGoSearch
@@ -913,13 +945,17 @@ def _fail_at(wire, failing_url, make):
         ("timeout", "Timeout"),
         ("truncated", "ChunkedEncodingError"),
         ("bad location", "ValueError"),
+        ("loop", "TooManyRedirects"),
     ],
 )
 def test_a_failed_installer_fetch_after_a_followed_redirect_says_only_the_status_or_the_class(installer_scripted, caplog, stage, kind, why):
     """R142: the signed address a failure quotes reaches neither the 502 detail, nor the log, nor a traceback chain, at either stage.
 
-    The planted signature rides the SECOND address (the redirect target), because that is where a storage URL lives; every failure text
-    below quotes it, so a stage that put ``str(exc)`` anywhere would show it."""
+    The planted signature rides the SECOND address (the redirect target), because that is where a storage URL lives. The HTTP statuses, the
+    connection error, the timeout and the truncated body quote it (the last two are planted: the real library's texts for them name only a
+    host or nothing), so a stage that put ``str(exc)`` anywhere would show it. The bad ``Location`` and the loop pin the class named and the
+    absence of any chain; their real texts do not quote the address, and a mutant that read ``.response.status_code`` off every exception that
+    carries a response would name a loop ``HTTP 301``."""
     import logging
     import traceback
 
@@ -938,9 +974,12 @@ def test_a_failed_installer_fetch_after_a_followed_redirect_says_only_the_status
         _fail_at(installer_scripted, hop, lambda url: requests.Timeout(f"Read timed out fetching {url}"))
     elif kind == "truncated":
         _fail_at(installer_scripted, hop, lambda url: requests.exceptions.ChunkedEncodingError(f"Connection broken fetching {url}"))
-    else:  # a Location that requests cannot read: its failure quotes the address it could not parse
+    elif kind == "bad location":  # a Location that requests cannot read; its real error ("Invalid IPv6 URL") does not quote it
         first = RELEASE_DOWNLOAD_URL if download else installer.GITHUB_LATEST_RELEASE
         installer_scripted.routes[first] = (302, f"https://[::1/x?sig={SIG}")
+    else:  # a redirect to itself, on a listed host: requests gives up after its limit
+        first = RELEASE_DOWNLOAD_URL if download else installer.GITHUB_LATEST_RELEASE
+        installer_scripted.routes[first] = (301, first)
     caplog.set_level(logging.DEBUG)
     with pytest.raises(HTTPException) as caught:
         llm_install_prepare()
@@ -958,6 +997,31 @@ def test_a_failed_installer_fetch_after_a_followed_redirect_says_only_the_status
     assert [r.levelno for r in ours] == [logging.WARNING] and ours[0].getMessage().endswith(f"({why})"), "the status or class is logged, once"
     assert ("download" in ours[0].getMessage()) is download, "the line names the stage that failed"
     assert ours[0].exc_info is None
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        (b"[]", "TypeError"),
+        (b'"a string"', "TypeError"),
+        (b"3", "TypeError"),
+        (b"null", "TypeError"),
+        (b"[" * 200000 + b"]" * 200000, "RecursionError"),
+    ],
+    ids=["list", "string", "number", "null", "nested"],
+)
+def test_a_lookup_answer_that_is_json_but_not_an_object_is_a_fetch_failure_and_not_an_unhandled_error(installer_scripted, caplog, body, why):
+    """The lookup reads an object; any other JSON used to reach ``.get`` and end as an unhandled 500 quoting the Python error."""
+    import logging
+
+    from src.llm import installer
+
+    installer_scripted.bodies[installer.GITHUB_LATEST_RELEASE] = body
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(installer.InstallerFetchFailed) as caught:
+        installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
+    assert caught.value.why == why
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
 
 
 def test_a_lookup_answer_that_is_not_json_is_a_fetch_failure_by_class_name(installer_scripted, caplog):
@@ -1081,20 +1145,29 @@ def test_the_download_list_is_exactly_the_github_hosts_the_consent_popup_disclos
 
 
 #: Each fixed-endpoint host list and the consent popup lane(s) that disclose its reach: ``(module, constant, lane ids)``. A list may be
-#: narrower than its lane (the lane also covers other code), never wider: the popup is what the person consented to.
+#: narrower than its lane (the lane also covers other code), never wider: the popup is what the person consented to. Complete by
+#: construction: ``test_every_host_list_a_session_is_built_with_is_pinned_to_a_popup_lane`` walks every session built under ``src/`` and fails
+#: on a list that is not a row here, so a new list joins this table or the suite fails.
 POPUP_LANE_LISTS = [
     ("src.wiki.client", "WIKI_SESSION_HOSTS", ("wikipedia",)),
     ("src.wiki.ores", "ORES_HOSTS", ("wikipedia",)),
     ("src.catalog.wikidata", "WDQS_HOSTS", ("discovery",)),
-    ("src.catalog.wikidata_apply", "API_HOSTS", ("discovery", "entity-items")),
-    ("src.catalog.wikidata_enrich", "API_HOSTS", ("discovery", "entity-items")),
+    ("src.catalog.wikidata_apply", "API_HOSTS", ("discovery",)),
+    ("src.catalog.wikidata_enrich", "API_HOSTS", ("discovery",)),
     ("src.analytics.wikidata_rings", "API_HOSTS", ("keyword-rings",)),
     ("src.analytics.ring_loader", "API_HOSTS", ("keyword-rings",)),
     ("src.entities.items", "API_HOSTS", ("entity-items",)),
     ("src.entities.gazetteer_build", "API_HOSTS", ("entity-items",)),
     ("src.monitoring.release_run", "HF_API_HOSTS", ("ai",)),
     ("src.services.duckduckgo", "DuckDuckGoSearch.ALLOWED_HOSTS", ("topic-discovery",)),
+    ("src.llm.installer", "GITHUB_API_HOSTS", ("ai",)),
+    ("src.llm.installer", "GITHUB_ASSET_HOSTS", ("ai",)),
 ]
+
+#: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned.
+PASSED_ON_HOST_LISTS = {
+    ("src/llm/installer.py", "hosts"): "_get_within takes its list from its two callers, which pass GITHUB_API_HOSTS and GITHUB_ASSET_HOSTS (the rows above)",
+}
 
 
 def _popup_lane_hosts(lane_ids) -> set[str]:
@@ -1117,9 +1190,85 @@ def test_no_host_list_reaches_further_than_the_consent_popup_tells_the_person(mo
     hosts = owner
     for part in name.split("."):
         hosts = getattr(hosts, part)
+    assert hosts, "an empty list pins nothing (and a session cannot be built with one)"
     popup = _popup_lane_hosts(lane_ids)
     wider = sorted(entry for entry in hosts if (f"*{entry}" if entry.startswith(".") else entry) not in popup)
     assert not wider, f"{module}.{name} may reach {wider}, which the popup lane(s) {list(lane_ids)} do not name"
+
+
+def _host_list_sites(source: str, filename: str) -> list[tuple[str, tuple[str, str] | None]]:
+    """Every session-factory call in ``source`` that passes ``allowed_hosts=`` something other than a literal ``None``, as ``(identifier,
+    where it was imported from)``: the identifier is the name or attribute the list is written as (``''`` for anything else: an inline
+    tuple, a call, a subscript), and the second item is ``(module, name)`` when that name was imported with ``from module import name``."""
+    tree = ast.parse(source, filename=filename)
+    aliases: dict[str, str] = {}
+    imported: dict[str, tuple[str, str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                imported[alias.asname or alias.name] = (node.module, alias.name)
+                if alias.name in _SESSION_FACTORIES and alias.asname:
+                    aliases[alias.asname] = alias.name
+
+    def name_of(node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return aliases.get(node.id, node.id)
+        return node.attr if isinstance(node, ast.Attribute) else ""
+
+    sites: list[tuple[str, tuple[str, str] | None]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and name_of(node.func) in _SESSION_FACTORIES:
+            for k in node.keywords:
+                if k.arg == "allowed_hosts" and not (isinstance(k.value, ast.Constant) and k.value.value is None):
+                    ident = k.value.id if isinstance(k.value, ast.Name) else k.value.attr if isinstance(k.value, ast.Attribute) else ""
+                    sites.append((ident, imported.get(ident)))
+    return sites
+
+
+def _unpinned_host_lists() -> list[tuple[str, str]]:
+    pinned = {(module, name.rsplit(".", 1)[-1]) for module, name, _lanes in POPUP_LANE_LISTS}
+    found: list[tuple[str, str]] = []
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == "src/safety/fetcher.py":
+            continue
+        module = rel[: -len(".py")].replace("/", ".")
+        for ident, source in _host_list_sites(path.read_text(encoding="utf-8"), rel):
+            if ident and ((module, ident) in pinned or source in pinned):
+                continue
+            if (rel, ident) in PASSED_ON_HOST_LISTS:
+                continue
+            found.append((rel, ident or "<not a name>"))
+    return found
+
+
+def test_every_host_list_a_session_is_built_with_is_pinned_to_a_popup_lane():
+    """The pin above is a table, and a table that nothing checks for completeness is passed by the next list: walk every session built
+    under ``src/`` and require its list to be one of the rows, written as a name (an inline tuple is unpinned by construction)."""
+    assert _unpinned_host_lists() == []
+    installer_src = (ROOT / "src/llm/installer.py").read_text(encoding="utf-8")
+    passed = [
+        call.args[1].id if len(call.args) > 1 and isinstance(call.args[1], ast.Name) else "<not a name>"
+        for call in ast.walk(ast.parse(installer_src))
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_get_within"
+    ]
+    assert sorted(passed) == ["GITHUB_API_HOSTS", "GITHUB_ASSET_HOSTS"], "the installer's two fetches pass the two pinned lists and nothing else"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=('a.org',))", [("", None)]),
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=HOSTS)", [("HOSTS", None)]),
+        ("from x import HOSTS\nfrom src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=HOSTS)", [("HOSTS", ("x", "HOSTS"))]),
+        ("from src.safety.fetcher import following_session\nfollowing_session('o', 'ua', allowed_hosts=cls.HOSTS)", [("HOSTS", None)]),
+        ("from src.safety.fetcher import guarded_session as gs\ngs(allowed_hosts=NEW_HOSTS)", [("NEW_HOSTS", None)]),
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=None)", []),
+        ("from src.safety.fetcher import guarded_session\nguarded_session()", []),
+    ],
+)
+def test_the_completeness_walk_reads_the_list_every_session_is_built_with(source, expected):
+    assert _host_list_sites(source, "x.py") == expected
 
 
 def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
