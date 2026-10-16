@@ -22,8 +22,10 @@ import logging
 import os
 import threading
 import time
+import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
@@ -1834,7 +1836,38 @@ def _deadline_seconds() -> float:
 
 _DEADLINE_KEY = "_oo_statement_deadline_at"
 #: The enclosing block's progress handler, kept beside its expiry so that a nested block can put it back when it exits.
-_CHECK_KEY = "_oo_statement_deadline_check"
+#: The progress handler each ``statement_deadline`` block armed on a session, so a nested block's exit can re-arm its enclosing one. Kept
+#: here and not in ``session.info`` (which the records guard reads as a log name): a weak map, so a session that goes takes its entry.
+_CHECKS: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
+
+
+def _checks_get(session):
+    try:
+        return _CHECKS.get(session)
+    except TypeError:  # a stand-in session that cannot be weakly referenced has no enclosing block to restore
+        return None
+
+
+def _checks_set(session, check) -> None:
+    try:
+        if check is None:
+            _CHECKS.pop(session, None)
+        else:
+            _CHECKS[session] = check
+    except TypeError:
+        pass
+
+
+def deadline_left_s(session) -> float | None:
+    """Seconds left on an enclosing :func:`statement_deadline` (negative once it has elapsed), or ``None`` when there is none.
+
+    ``None`` is the honest answer for "no deadline", which is not "expired": a loop that reads it as expired would stop on every
+    unbounded path."""
+    try:
+        at = session.info.get(_DEADLINE_KEY)
+    except Exception:  # noqa: BLE001 - a stub session with no .info
+        return None
+    return None if at is None else at - time.monotonic()
 
 
 def deadline_expired(session) -> bool:
@@ -1848,11 +1881,8 @@ def deadline_expired(session) -> bool:
     Exception`` so one bad item cannot break the whole -- correct isolation that
     also eats the deadline, once per item, silently.
     """
-    try:
-        at = session.info.get(_DEADLINE_KEY)
-    except Exception:  # noqa: BLE001 - a stub session with no .info
-        return False
-    return at is not None and time.monotonic() >= at
+    left = deadline_left_s(session)
+    return left is not None and left <= 0
 
 
 @contextmanager
@@ -1907,7 +1937,7 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     # report 2026-08-09). A queryable expiry is CONTROL FLOW the isolation cannot
     # intercept, which is the same reason that loop's own budget is a ``break``.
     prev_deadline = session.info.get(_DEADLINE_KEY)
-    prev_check = session.info.get(_CHECK_KEY)
+    prev_check = _checks_get(session)
     session.info[_DEADLINE_KEY] = deadline_at
     # S2.1 belt: the handler is per-CONNECTION, and a connection can outlive this
     # block (it is pooled). Even if one escapes still armed, it may only ever
@@ -1957,7 +1987,7 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             return
         new_raw.set_progress_handler(_check, 20_000)
 
-    session.info[_CHECK_KEY] = _check
+    _checks_set(session, _check)
     raw.set_progress_handler(_check, 20_000)
     event.listen(session, "after_begin", _rearm)
     try:
@@ -1990,9 +2020,9 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
         else:
             session.info[_DEADLINE_KEY] = prev_deadline
         if prev_check is None:
-            session.info.pop(_CHECK_KEY, None)
+            _checks_set(session, None)
         else:
-            session.info[_CHECK_KEY] = prev_check
+            _checks_set(session, prev_check)
         try:
             event.remove(session, "after_begin", _rearm)
         except Exception as exc:  # noqa: BLE001 - teardown must never replace the block's outcome

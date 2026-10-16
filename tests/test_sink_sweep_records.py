@@ -223,7 +223,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('statement_deadline', ') from exc'): 2,
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = deadline_at'): 1,
         ('statement_deadline', 'prev_deadline = session.info.get(_DEADLINE_KEY)'): 1,
-        ('deadline_expired', 'at = session.info.get(_DEADLINE_KEY)'): 1,
+        ('deadline_left_s', 'at = session.info.get(_DEADLINE_KEY)'): 1,
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = prev_deadline'): 1,
         ('statement_deadline', 'session.info.pop(_DEADLINE_KEY, None)'): 1,
     },

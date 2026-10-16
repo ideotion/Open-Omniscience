@@ -18,7 +18,6 @@ do. Integers and the cgroup's own path only; no file content is copied as text.
 
 from __future__ import annotations
 
-import errno
 from pathlib import Path
 from typing import Any
 
@@ -33,15 +32,15 @@ _V1_VALUES = ("memory.limit_in_bytes", "memory.usage_in_bytes", "memory.max_usag
 _V1_OOM_CONTROL = ("under_oom", "oom_kill_disable", "oom_kill")
 
 
-def _why(exc: BaseException) -> str:
-    """The reason a file could not be read, as a fixed word per cause: never the exception's text."""
-    if isinstance(exc, FileNotFoundError):
+def _why(kind: type[BaseException]) -> str:
+    """The reason a file could not be read, as a fixed word per cause, from the exception's CLASS (and errno): never its text."""
+    if issubclass(kind, FileNotFoundError):
         return "absent (the file does not exist)"
-    if isinstance(exc, PermissionError):
+    if issubclass(kind, PermissionError):
         return "permission denied"
-    if isinstance(exc, OSError):
-        return f"unreadable ({errno.errorcode.get(exc.errno or 0, 'OSError')})"
-    return f"unparseable ({type(exc).__name__})"
+    if issubclass(kind, OSError):
+        return "unreadable (OSError)"
+    return f"unparseable ({kind.__name__})"
 
 
 def _read_text(path: Path) -> str:
@@ -53,7 +52,7 @@ def _int_or_max(path: Path) -> int | str | dict[str, str]:
         raw = _read_text(path).strip()
         return raw if raw == "max" else int(raw)
     except (OSError, ValueError) as exc:
-        return {"unreadable": _why(exc)}
+        return {"unreadable": _why(type(exc))}
 
 
 def _key_values(path: Path, wanted: tuple[str, ...]) -> dict[str, Any]:
@@ -61,7 +60,7 @@ def _key_values(path: Path, wanted: tuple[str, ...]) -> dict[str, Any]:
     try:
         text = _read_text(path)
     except OSError as exc:
-        return {"unreadable": _why(exc)}
+        return {"unreadable": _why(type(exc))}
     found: dict[str, int] = {}
     for line in text.splitlines():
         parts = line.split()
@@ -77,7 +76,7 @@ def _vmstat(proc: Path) -> dict[str, Any]:
     try:
         text = _read_text(proc / "vmstat")
     except OSError as exc:
-        return {"oom_kill": {"unreadable": _why(exc)}}
+        return {"oom_kill": {"unreadable": _why(type(exc))}}
     for line in text.splitlines():
         parts = line.split()
         if len(parts) == 2 and parts[0] == "oom_kill":
@@ -93,7 +92,7 @@ def _own_paths(proc: Path) -> tuple[str | None, str | None, str | None]:
     try:
         text = _read_text(proc / "self" / "cgroup")
     except OSError as exc:
-        return None, None, _why(exc)
+        return None, None, _why(type(exc))
     v2 = v1 = None
     for line in text.splitlines():
         head, _, rest = line.partition(":")

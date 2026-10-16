@@ -152,13 +152,10 @@ def _run_rank(case: _Case) -> int:
 
 def _deadline_left_ms(session: Session) -> float | None:
     """Milliseconds left on the enclosing statement deadline (negative once it has passed), or ``None`` when there is none."""
-    from src.database.maintenance import _DEADLINE_KEY
+    from src.database.maintenance import deadline_left_s
 
-    try:
-        at = session.info.get(_DEADLINE_KEY)
-    except Exception:  # noqa: BLE001 - a stub session with no .info
-        return None
-    return None if at is None else round((at - time.monotonic()) * 1000.0, 1)
+    left = deadline_left_s(session)
+    return None if left is None else round(left * 1000.0, 1)
 
 
 def _not_run_row(case: _Case, left_ms: float | None) -> dict:
@@ -189,7 +186,7 @@ def _time_case(case: _Case, repeats: int, session: Session | None = None) -> dic
         except Exception as exc:  # noqa: BLE001 - report failures honestly, per case
             left = _deadline_left_ms(session) if session is not None else None
             # Only an interrupt that arrives after the deadline is the deadline's doing; any other exception keeps its own text.
-            said = str(exc).lower()
+            said = record_text(exc, typed=False).lower()
             by_deadline = left is not None and left <= 0 and ("interrupted" in said or "deadline" in said)
             if runs and by_deadline:
                 stopped = True  # at least one run finished: report what was measured

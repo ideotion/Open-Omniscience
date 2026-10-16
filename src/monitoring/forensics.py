@@ -753,18 +753,6 @@ def wal_state_before_open() -> dict[str, Any]:
 
 
 def previous_session_report() -> dict[str, Any]:
-    """The forensic verdict on the PREVIOUS session (see ``_previous_session_report``), with the evidence state of the open questions."""
-    out = _previous_session_report()
-    try:
-        from src.monitoring.can_answer import assess
-
-        out["can_answer"] = assess(out)
-    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
-        out["can_answer"] = {"unavailable": _why(exc)}
-    return out
-
-
-def _previous_session_report() -> dict[str, Any]:
     """The forensic verdict on the PREVIOUS session, computed from the sentinel
     captured at THIS boot + the collector's last flight-recorder sample."""
     prev = _PREV_AT_BOOT if _PREV_LOADED else _read_state()
@@ -810,7 +798,7 @@ def _previous_session_report() -> dict[str, Any]:
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
-        return out
+        return _with_answers(out)
     state = str(prev.get("state"))
     out["previous_session"] = {
         "running": "unclean-end",  # died without reaching the shutdown hook
@@ -849,6 +837,17 @@ def _previous_session_report() -> dict[str, Any]:
                 "previous one's. Use previous_session_peaks for the crashed run."
             )
         out["last_collector_sample"] = sample
+    return _with_answers(out)
+
+
+def _with_answers(out: dict[str, Any]) -> dict[str, Any]:
+    """``out`` with the evidence state of the open questions (``can_answer.py``). Never raises."""
+    try:
+        from src.monitoring.can_answer import assess
+
+        out["can_answer"] = assess(out)
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        out["can_answer"] = {"unavailable": f"unreadable ({type(exc).__name__})"}
     return out
 
 
@@ -871,7 +870,7 @@ def _oom_counters_between(prev: dict[str, Any] | None) -> dict[str, Any]:
             ),
         }
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
-        return {"unavailable": _why(exc)}
+        return {"unavailable": f"unreadable ({type(exc).__name__})"}
 
 
 def previous_memory_stop() -> dict[str, Any] | None:
