@@ -305,7 +305,7 @@ def debug_bundle(
             try:
                 return thunk()
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
-                out = {"error": _err_str(exc)}
+                out: dict[str, Any] = {"error": _err_str(exc)}
                 # A member the deadline stopped says so, and names the deadline: "interrupted" alone reads as a fault of the
                 # member, when it is the bundle's own time limit that ended it (the engine's text names no limit).
                 if isinstance(exc, StatementTimeout) or ("interrupt" in str(exc).lower() and deadline_expired(db)):
