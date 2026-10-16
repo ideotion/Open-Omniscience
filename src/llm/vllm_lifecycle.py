@@ -42,6 +42,7 @@ import shutil
 import signal
 import subprocess  # noqa: S404 - fixed argv, no shell; every call site documents why
 import sys
+import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
@@ -1083,7 +1084,7 @@ def start_outcome() -> dict:
     pid = getattr(_proc, "pid", None)
     if pid is not None and pid not in _exits_noted:
         _exits_noted.add(pid)
-        _exit_preserved[pid] = (None, "the log of this exit is still being copied with the passphrase taken out")
+        _exit_preserved[pid] = (None, _COPY_PENDING_REASON if code != 0 else None)
         excerpt = {}
         try:
             # 1200, not the 400 this used to pass: the excerpt is the ONE record that
@@ -1092,7 +1093,7 @@ def start_outcome() -> dict:
             excerpt = failure_excerpt(limit=_JOURNAL_EXCERPT_CHARS)
         except Exception:  # noqa: BLE001 - a log read must never break a status probe
             excerpt = {}
-        preserved, preserve_reason = _preserve_failed_log_result(pid, code) if code != 0 else (None, None)
+        copying = code != 0
         _record_start_attempt({
             "at": time.time(),
             "event": "exited",
@@ -1101,10 +1102,13 @@ def start_outcome() -> dict:
             "signature": excerpt.get("signature"),
             "advice": excerpt.get("advice"),
             "excerpt": excerpt.get("excerpt"),
-            "full_log": preserved,
-            "full_log_reason": preserve_reason,
+            "full_log": None,
+            "full_log_reason": _COPY_PENDING_REASON if copying else None,
         })
-        _exit_preserved[pid] = (preserved, preserve_reason)
+        if copying:
+            _start_exit_copy(pid, code)
+        else:
+            _exit_preserved[pid] = (None, None)
     if pid is not None and pid in _exit_preserved:
         kept_path, kept_reason = _exit_preserved[pid]
         if kept_path:
@@ -1856,6 +1860,45 @@ def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str |
     return str(dest), None
 
 
+_COPY_PENDING_REASON = "the log of this exit is still being copied with the passphrase taken out"
+#: pid -> the thread copying that exit's log. A start waits for these before it truncates server.log.
+_exit_copies: dict[int, "threading.Thread"] = {}
+
+
+def _start_exit_copy(pid: int, code: int) -> None:
+    """Copy the failed log off the status probe: a 64 MB log takes about four seconds to check line by line, and a poll must not wait that long.
+
+    The exit is journalled first, with the copy still pending, and the copy's outcome is journalled as a second line when it ends.
+    :func:`_wait_for_exit_copies` makes the next start wait for it, because that start truncates the log being read."""
+
+    def _run() -> None:
+        try:
+            preserved, reason = _preserve_failed_log_result(pid, code)
+        except Exception as exc:  # noqa: BLE001 - never leave the exit saying "still copying"
+            log_failure(_LOG, "could not preserve the failed vLLM server log", exc, level=logging.INFO)
+            preserved, reason = None, _PRESERVE_FAILED_REASON
+        _exit_preserved[pid] = (preserved, reason)
+        _record_start_attempt({
+            "at": time.time(),
+            "event": "exit_log_preserved",
+            "pid": pid,
+            "returncode": code,
+            "full_log": preserved,
+            "full_log_reason": reason,
+        })
+
+    t = threading.Thread(target=_run, name="vllm-exit-log-copy", daemon=True)
+    _exit_copies[pid] = t
+    t.start()
+
+
+def _wait_for_exit_copies() -> None:
+    """Block until every pending failed-log copy has ended (the caller is about to truncate the log they read)."""
+    for pid, t in list(_exit_copies.items()):
+        t.join()
+        _exit_copies.pop(pid, None)
+
+
 _PRESERVE_FAILED_REASON = "the server log was not kept: copying it with the passphrase taken out failed, and a raw copy is never made instead"
 
 
@@ -2374,6 +2417,7 @@ def start(
     # as "not running" with no explanation anywhere in the app. Opened in "wb" so each
     # start describes the CURRENT attempt and the file cannot grow without bound.
     log_fh = None
+    _wait_for_exit_copies()
     try:
         server_log_path().parent.mkdir(parents=True, exist_ok=True)
         log_fh = server_log_path().open("wb")

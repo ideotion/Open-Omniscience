@@ -319,6 +319,7 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
     monkeypatch.setattr(V, "_proc", _Proc(code=1))
     monkeypatch.setattr(V, "_exits_noted", set())  # the exit of this pid is journalled once per process
     monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
     monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")  # its journal line must not reach other tests' start history
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     V.server_log_path().write_text("some log\n", encoding="utf-8")
@@ -334,8 +335,10 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
         return real_replace(src, dst, *a, **k)
 
     monkeypatch.setattr(V.os, "replace", only_the_copy)
+    V.start_outcome()
+    V._wait_for_exit_copies()
     out = V.start_outcome()
-    record = [h for h in V.start_history() if h.get("event") == "exited"][-1]
+    record = [h for h in V.start_history() if h.get("event") == "exit_log_preserved"][-1]
     assert record["full_log"] is None and "raw copy is never made" in record["full_log_reason"]
     # the live payload says why too, and keeps saying it on every later poll of the same exit
     assert "preserved_log_path" not in out and "raw copy is never made" in out["preserved_log_reason"]
@@ -360,17 +363,78 @@ def test_status_bounds_the_live_log_scan_for_the_poll_only(gpu8, monkeypatch):
 
 
 def test_a_poll_during_the_copy_of_an_exits_log_says_it_is_being_copied(gpu8, monkeypatch, tmp_path):
-    """The exit is noted before the (slow) scrubbed copy runs, so a concurrent poll gets a stated reason rather than neither key."""
+    """The exit is noted before the (slow) scrubbed copy runs, and the copy runs OFF the probe: the poll returns while it is still going."""
+    import threading
+
     monkeypatch.setattr(V, "_proc", _Proc(code=1))
     monkeypatch.setattr(V, "_exits_noted", set())
     monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
     monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
-    seen = {}
+    started, release = threading.Event(), threading.Event()
 
     def slow_copy(pid, code):
-        seen["during"] = dict(V.start_outcome())
-        return None, None
+        started.set()
+        assert release.wait(10)
+        return "/kept/copy.log", None
 
     monkeypatch.setattr(V, "_preserve_failed_log_result", slow_copy)
+    first = V.start_outcome()
+    assert started.wait(10)
+    assert "being copied" in first["preserved_log_reason"]
+    assert "being copied" in V.start_outcome()["preserved_log_reason"]
+    release.set()
+    V._wait_for_exit_copies()
+    assert V.start_outcome()["preserved_log_path"] == "/kept/copy.log"
+
+
+def test_the_exit_line_is_journalled_before_the_copy_and_the_copy_gets_its_own_line(gpu8, monkeypatch, tmp_path):
+    """Late journal-line ordering: `exited` (full_log pending) first, `exit_log_preserved` carrying the path after."""
+    monkeypatch.setattr(V, "_proc", _Proc(code=1))
+    monkeypatch.setattr(V, "_exits_noted", set())
+    monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(V, "_preserve_failed_log_result", lambda pid, code: ("/kept/copy.log", None))
     V.start_outcome()
-    assert "being copied" in seen["during"]["preserved_log_reason"]
+    V._wait_for_exit_copies()
+    rows = [r for r in V.start_history() if r.get("event") in ("exited", "exit_log_preserved")]
+    assert [r["event"] for r in rows] == ["exited", "exit_log_preserved"]
+    assert rows[0]["full_log"] is None and "being copied" in rows[0]["full_log_reason"]
+    assert rows[1]["full_log"] == "/kept/copy.log" and rows[1]["full_log_reason"] is None
+
+
+def test_a_copy_that_raises_still_ends_the_pending_state(gpu8, monkeypatch, tmp_path):
+    monkeypatch.setattr(V, "_proc", _Proc(code=1))
+    monkeypatch.setattr(V, "_exits_noted", set())
+    monkeypatch.setattr(V, "_exit_preserved", {})
+    monkeypatch.setattr(V, "_exit_copies", {})
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
+
+    def boom(pid, code):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(V, "_preserve_failed_log_result", boom)
+    V.start_outcome()
+    V._wait_for_exit_copies()
+    assert "not kept" in V.start_outcome()["preserved_log_reason"]
+
+
+def test_a_start_waits_for_a_pending_copy_before_truncating_the_log(monkeypatch):
+    """The copy reads server.log, which the next start opens "wb": the start must join the copy first."""
+    import threading
+
+    order = []
+    release = threading.Event()
+
+    def copy():
+        release.wait(10)
+        order.append("copied")
+
+    t = threading.Thread(target=copy)
+    t.start()
+    monkeypatch.setattr(V, "_exit_copies", {5: t})
+    threading.Timer(0.2, release.set).start()
+    V._wait_for_exit_copies()
+    order.append("truncate")
+    assert order == ["copied", "truncate"]
