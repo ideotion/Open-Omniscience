@@ -553,7 +553,7 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('set_startup', '_state["error"] = error'): 1,
     },
     'src/api/wiki_lane.py': {
-        ('lane_status', 'return _unreadable("status", exc)'): 1,
+        ('_read_status', 'return _unreadable("status", exc)'): 1,
         ('lane_analytics', 'return _unreadable("analytics", exc)'): 1,
         ('lane_divergence', 'return _unreadable("divergence", exc)'): 1,
         ('lane_attention', 'return _unreadable("attention", exc)'): 1,

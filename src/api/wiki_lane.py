@@ -19,6 +19,8 @@ read what it stored.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
@@ -62,31 +64,54 @@ def _unreadable(route: str, exc: BaseException) -> dict:
     return dict(_UNREADABLE)
 
 
+#: How long a measured status answer is served again without reading the lane. WHAT IT PROTECTS: the answer is three full scans of the lane
+#: (pages, changes today, changes in total; 1.56 M change rows on the 2026-10-16 install, each call measured at p50 2.0 s and p95 6.2 s
+#: against 0.03-0.07 s for the other local polls, 528 calls in 9 h, i.e. one about every minute). The figures move only when a drain
+#: commits, so a reading this old is within what the strip is read at; the age is on the answer, never hidden. A day change always reads again.
+_STATUS_TTL_S = 30.0
+_STATUS_LOCK = threading.Lock()  # held across the read: a second poll waits for the first scan and then shares it, never starts a second
+_STATUS_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _reset_status_cache() -> None:
+    with _STATUS_LOCK:
+        _STATUS_CACHE.clear()
+
+
 @router.get("/status")
 def lane_status() -> dict:
-    """Q714's own figure: pages followed and changes recorded today.
+    """Q714's own figure: pages followed and changes recorded today, read at most once per ``_STATUS_TTL_S``.
 
-    "Today" is the LOCAL machine's day, not UTC, and that is deliberate for this one
-    number: it sits on the Home strip beside other figures the operator reads as
-    "today", and a UTC day would make the strip disagree with itself for anyone not on
-    UTC. Every other count in this lane is UTC, and each says which it uses.
+    The answer says how old it is (``age_s``, ``cached``). A failure, an absent lane and an unreadable lane are never kept.
+
+    "Today" is the LOCAL machine's day, not UTC, and that is deliberate for this one number: it sits on the Home strip beside other
+    figures the operator reads as "today". The boundary is AWARE, because the lane's timestamp type refuses a naive one by name;
+    across a DST change within the day the window is off by the shift (an hour twice a year), named rather than pretended away.
     """
     from datetime import datetime
 
+    if not lane_path("wiki").is_file():
+        return _absent()
+    midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    key = str(lane_path("wiki"))
+    with _STATUS_LOCK:
+        hit = _STATUS_CACHE.get(key)
+        age = time.monotonic() - hit[0] if hit else None
+        if hit is not None and age is not None and age < _STATUS_TTL_S and hit[1]["counted_since"] == midnight.isoformat():
+            return {**hit[1], "cached": True, "age_s": round(age, 1)}
+        out = _read_status(midnight)
+        if out.get("measured") is True:
+            _STATUS_CACHE[key] = (time.monotonic(), out)
+            return {**out, "cached": False, "age_s": 0.0}
+        return out
+
+
+def _read_status(midnight) -> dict:
+    """The three counts, read from the lane now."""
     from sqlalchemy import func, select
 
     from src.versioned.models import VersionedChange, VersionedEntity
 
-    if not lane_path("wiki").is_file():
-        return _absent()
-    # AWARE, because the lane's own timestamp type refuses a naive one by name — and
-    # it is right to: a naive boundary compared against stored UTC would silently
-    # shift the count by the operator's offset. ``astimezone()`` attaches the machine's
-    # CURRENT offset, so the boundary is local midnight expressed in a form the lane
-    # can compare. Across a DST change within the same day the offset that applied at
-    # midnight may differ from the one now; the window is then off by the shift, which
-    # is an hour twice a year and is named rather than pretended away.
-    midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
     try:
         with lane_session("wiki") as lane:
             pages = lane.execute(select(func.count(VersionedEntity.id))).scalar_one()

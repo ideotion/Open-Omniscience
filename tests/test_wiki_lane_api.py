@@ -23,6 +23,13 @@ from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki.pagefacts import encode
 
 
+@pytest.fixture(autouse=True)
+def _fresh_status_cache():
+    wiki_lane._reset_status_cache()
+    yield
+    wiki_lane._reset_status_cache()
+
+
 @pytest.fixture
 def no_lane(tmp_path, monkeypatch):
     """A machine where the lane has never run: no file at all."""
@@ -345,3 +352,71 @@ def test_an_ABSENT_lane_says_so_without_naming_the_database_file(tmp_path, monke
     assert out["reason"] == "lane_absent"
     assert "wiki.db" not in " ".join(str(v) for v in out.values())
     assert "has not been started" in out["detail"], "and still says what happened"
+
+
+# ---- the status poll is read once per window, not once per poll (10-16 zips: 528 calls, p50 2.0 s over three full scans) ----
+
+
+def _count_lane_reads(monkeypatch):
+    calls = []
+    real = wiki_lane._read_status
+
+    def spy(midnight):
+        calls.append(1)
+        return real(midnight)
+
+    monkeypatch.setattr(wiki_lane, "_read_status", spy)
+    return calls
+
+
+def test_a_second_poll_inside_the_window_does_not_read_the_lane_and_says_how_old_it_is(lane, monkeypatch):
+    calls = _count_lane_reads(monkeypatch)
+    first = wiki_lane.lane_status()
+    second = wiki_lane.lane_status()
+    assert len(calls) == 1
+    assert first["cached"] is False and first["age_s"] == 0.0
+    assert second["cached"] is True and second["age_s"] >= 0.0
+    assert second["pages"] == first["pages"] and second["measured"] is True
+
+
+def test_the_answer_is_read_again_once_the_window_has_passed(lane, monkeypatch):
+    calls = _count_lane_reads(monkeypatch)
+    clock = [1000.0]
+    monkeypatch.setattr(wiki_lane.time, "monotonic", lambda: clock[0])
+    wiki_lane.lane_status()
+    clock[0] += wiki_lane._STATUS_TTL_S - 1
+    wiki_lane.lane_status()
+    assert len(calls) == 1
+    clock[0] += 2
+    out = wiki_lane.lane_status()
+    assert len(calls) == 2 and out["cached"] is False
+
+
+def test_a_new_local_day_is_read_again_even_inside_the_window(lane, monkeypatch):
+    calls = _count_lane_reads(monkeypatch)
+    wiki_lane.lane_status()
+    with wiki_lane._STATUS_LOCK:
+        key, (at, ans) = next(iter(wiki_lane._STATUS_CACHE.items()))
+        wiki_lane._STATUS_CACHE[key] = (at, {**ans, "counted_since": "2000-01-01T00:00:00+00:00"})
+    wiki_lane.lane_status()
+    assert len(calls) == 2
+
+
+def test_an_unreadable_lane_is_never_kept_so_the_next_poll_reads_again(empty_lane_file, monkeypatch):
+    calls = _count_lane_reads(monkeypatch)
+    assert wiki_lane.lane_status()["reason"] == "lane-unreadable"
+    assert wiki_lane.lane_status()["reason"] == "lane-unreadable"
+    assert len(calls) == 2
+
+
+def test_concurrent_polls_share_one_read(lane, monkeypatch):
+    import threading
+
+    calls = _count_lane_reads(monkeypatch)
+    out: list = []
+    threads = [threading.Thread(target=lambda: out.append(wiki_lane.lane_status())) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(calls) == 1 and len(out) == 6 and all(o["measured"] for o in out)
