@@ -238,7 +238,7 @@ def test_the_release_runs_session_forensics_block_is_scrubbed_where_it_enters(tm
     monkeypatch.setattr(dbs, "session_scope", lambda: _cl.nullcontext(None))
     monkeypatch.setattr(wl, "lane_counters_route", lambda window_days: {"measured": False})
     monkeypatch.setattr(ex, "digest", lambda: {})
-    monkeypatch.setattr(fo, "session_forensics", lambda: {"kernel": [f"oom (cmd {_KEY})"]})
+    monkeypatch.setattr(fo, "session_forensics", lambda: {"kernel": [f"oom (cmd {_KEY})", "killed with run-pass-planted-77 in argv"]})
     monkeypatch.setattr(rr, "_network_state", lambda: {})
 
     class _Ctx:
@@ -247,6 +247,7 @@ def test_the_release_runs_session_forensics_block_is_scrubbed_where_it_enters(tm
         def set_progress(self, **kw):
             pass
 
-    run = rr._Run(rr.RunParams(str(tmp_path / "d"), "x-run-pass-123", online_probes=False))
+    run = rr._Run(rr.RunParams(str(tmp_path / "d"), "run-pass-planted-77", online_probes=False))
     out = rr._collect(_Ctx(), run)
-    assert _KEY not in json.dumps(out["session_forensics"]) and "oom (cmd" in json.dumps(out["session_forensics"])
+    shown = json.dumps(out["session_forensics"])
+    assert _KEY not in shown and "run-pass-planted-77" not in shown and "oom (cmd" in shown, "the held passphrase AND the run's own are taken out"

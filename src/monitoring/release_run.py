@@ -1542,6 +1542,13 @@ def _weights_digest_proposal() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+def _scrubbed_forensics(run: _Run, facts: Any) -> Any:
+    """The session-forensics facts with every passphrase the process holds AND the run's own taken out of every string. That block carries
+    kernel-log and journal text and no verdict word, so the run's passphrase can be taken out of it (it cannot be, report-wide: see
+    :func:`_write_report`)."""
+    return scrubbed_value(facts, run.params.passphrase)
+
+
 def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
     """The end-of-window readings, EACH ON ITS OWN (RR-2). They used to share one database
     session, so one pool timeout on the second read discarded the first and the phase
@@ -1594,7 +1601,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
     ctx.set_progress(detail="collect: session forensics")
     with contextlib.suppress(Exception):
         # scrubbed where it enters the report: kernel-log and journal text are in it, and this block is carried verbatim
-        out["session_forensics"] = scrubbed_value(session_forensics())
+        out["session_forensics"] = _scrubbed_forensics(run, session_forensics())
     if run.params.online_probes and not ctx.stopping:
         ctx.set_progress(detail="collect: scoring endpoint probe")
         try:
