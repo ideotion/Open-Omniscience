@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import threading
+import traceback
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -1239,6 +1240,152 @@ def test_a_failed_repair_and_a_failed_step_after_the_switch_record_the_type_of_t
         assert "the stored source counts were not cleared (RuntimeError)" in caplog.text, caplog.text
     finally:
         connect.set_passphrase(previous)
+
+
+# --------------------------------------------------------------------------- #
+#  the words of a refusal: scrubbed where they enter a record or a log (R138)
+# --------------------------------------------------------------------------- #
+REFUSAL_SECRET = "kQ7!vLm-it's-the-held-key"
+
+
+@pytest.fixture()
+def held_secret():
+    from src.database import connect
+
+    previous = connect.get_passphrase()
+    connect.set_passphrase(REFUSAL_SECRET)
+    yield REFUSAL_SECRET
+    connect.set_passphrase(previous)
+
+
+#: The cuts a reader makes (the record keeps 200, the job row 300) and what stands in front of the words: the job row cuts "Declined: " + words.
+_CUTS = (200, 300)
+_FRAMES = (0, len("Declined: "))
+
+
+def _quoting(secret: str) -> str:
+    """Refusal words that quote a driver's statement, with the passphrase at the places where a cut of 200 or of 300 characters, made
+    before the scrub, would split it: the plain copy across 200 and the quoted one (its apostrophes doubled, as a statement shows
+    them) across 300, in the words as they are and in the job row's frame, where ten characters of "Declined: " stand in front."""
+    quoted = secret.replace(chr(39), chr(39) * 2)
+    statement = f"PRAGMA key = '{quoted}' failed"
+    plain_at, statement_at = 182, 266
+    words = "a" * plain_at + secret + "b" * (statement_at - plain_at - len(secret)) + statement + " and then nothing more is said"
+    assert words.index(secret) == plain_at and words.index(statement) == statement_at
+    quoted_at = words.index(quoted)
+    for frame in _FRAMES:
+        for cut in _CUTS:
+            assert any(at + frame < cut < at + frame + len(copy) for at, copy in ((plain_at, secret), (quoted_at, quoted))), (frame, cut)
+    return words
+
+
+def _a_drivers_error(words: str) -> Exception:
+    """What a driver says when the statement that carried the key is the one it could not run: its text quotes the statement."""
+    return RuntimeError(f'near "key": syntax error: {words}')
+
+
+def _plant_a_refusal(monkeypatch, kind: str, words: str) -> None:
+    """A refusal made inside the ``except`` block of a driver's error. The salvage's own is raised ``from None``, which hides that error
+    from a traceback print and leaves it as the refusal's ``__context__``; a ``Declined`` here is chained to it with ``from``, so it is
+    the refusal's ``__cause__``."""
+    if kind == "declined":
+
+        def refuse(work, target, report, ctx):
+            try:
+                raise _a_drivers_error(words)
+            except RuntimeError as driver:
+                raise repair.Declined("no-room", words, free_mb=1, needed_mb=2) from driver
+
+        monkeypatch.setattr(repair, "_prepare", refuse)
+    else:
+
+        def refuse_run(self):
+            try:
+                raise _a_drivers_error(words)
+            except RuntimeError:
+                raise salvage.SalvageRefused("cannot-open", words) from None
+
+        monkeypatch.setattr(salvage.Salvage, "run", refuse_run)
+
+
+def _links(exc: BaseException) -> list[BaseException]:
+    """Every exception reachable from ``exc`` by ``__cause__`` or ``__context__``, whether or not ``__suppress_context__`` hides it."""
+    seen: list[BaseException] = []
+    todo: list[BaseException | None] = [exc]
+    while todo:
+        link = todo.pop()
+        if link is not None and not any(link is other for other in seen):
+            seen.append(link)
+            todo += [link.__cause__, link.__context__]
+    return seen
+
+
+def _nothing_of(secret: str, where: str, text: str) -> None:
+    """The passphrase in neither of its forms, nor the piece of either that a cut leaves (the head and the tail)."""
+    for form in (secret, secret.replace("'", "''"), secret[:6], secret[-6:]):
+        assert form not in text, f"{where} carries {form!r}"
+
+
+@pytest.mark.parametrize("kind", ["declined", "salvage-refused"])
+def test_a_refusal_whose_words_hold_the_passphrase_reaches_no_log_record_status_bundle_or_job_row_with_it(
+    tmp_path, monkeypatch, reg, held_secret, caplog, kind
+):
+    """R138. Every refusal's words are a fixed sentence today (tests/test_refusal_detail_source.py reads that), and these words are
+    what the next producer that quotes a driver would say. They go into the log line, ``reason_text`` (the boot-sequence status and
+    the diagnostics bundle's copy of it), the job row and the raised exception, and the passphrase the process holds is in none of
+    them. The words are also positioned so that a CUT of 200 or of 300 characters made before the scrub would split a copy of it, in
+    the words and in the job row's frame."""
+    from src.api import boot_sequence
+    from src.api.diagnostics import bundle
+    from src.monitoring import secret_scrub
+
+    live = _live(tmp_path, monkeypatch, reg)
+    before = H.sha(live)
+    words = _quoting(held_secret)
+    expected = secret_scrub.scrubbed(words)
+    assert secret_scrub.REDACTED in expected and held_secret not in expected, "the words the test plants are not made clean by the scrub"
+    _plant_a_refusal(monkeypatch, kind, words)
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises((repair.Declined, salvage.SalvageRefused)) as caught:
+            repair.run(repair.plan())
+        assert repair.run_now_and_wait() == "declined"
+    assert H.sha(live) == before and repair.snapshot()["outcome"] == "declined"
+
+    # the log line says that the repair was not done, and why, in the words the scrub left
+    (line,) = [r.getMessage() for r in caplog.records if r.name == repair.__name__ and "not done" in r.getMessage()][-1:]
+    assert line.startswith("database repair: not done (") and expected in line, line
+    _nothing_of(held_secret, "the log", caplog.text)
+
+    # the repair's own status, the boot sequence's copy of it, and the diagnostics bundle's copy of THAT
+    snapshot = repair.snapshot()
+    assert snapshot["reason_text"] == expected, "reason_text is not the scrubbed words, whole"
+    _nothing_of(held_secret, "repair.snapshot()", json.dumps(snapshot, default=str))
+    boot = boot_sequence.snapshot()
+    assert boot["repair_database"]["reason_text"] == expected
+    _nothing_of(held_secret, "boot_sequence.snapshot()", json.dumps(boot, default=str))
+    member = dict(bundle._all_diagnostics_members(None))["columnar.json"]()
+    assert member["boot_sequence"]["repair_database"]["reason_text"] == expected
+    _nothing_of(held_secret, "the diagnostics bundle's columnar.json", json.dumps(member, default=str))
+
+    # the job row (the task manager and /api/jobs), the exception the run raised, and the registry's record
+    row = repair.REPAIR_JOB.status()
+    assert row["state"] == "error" and row["error"].startswith("Declined: ") and secret_scrub.REDACTED[:5] in row["error"]
+    _nothing_of(held_secret, "the job row", json.dumps(row, default=str))
+    # the refusal the run raised, whichever way it was made, and everything reachable from it: a refusal a producer raised itself is
+    # re-raised with its words scrubbed in place, and the one this module raises in the salvage's place is made of the scrubbed words
+    # with the salvage's own refusal (scrubbed in place too) behind it; neither keeps the driver's error it was raised inside
+    raised = caught.value
+    assert isinstance(raised, repair.Declined) and raised.detail == expected and raised.args == (expected,) and str(raised) == expected
+    assert raised.__cause__ is None
+    links = _links(raised)
+    assert [type(link) for link in links] == ([repair.Declined] if kind == "declined" else [repair.Declined, salvage.SalvageRefused]), links
+    for link in links:
+        assert link.detail == expected and link.args == (expected,), type(link).__name__
+        assert link.__cause__ is None and (link is raised or link.__context__ is None), type(link).__name__
+        _nothing_of(held_secret, f"the raised {type(link).__name__}", f"{link}|{link.detail}|{link.args!r}")
+    _nothing_of(held_secret, "the traceback of the raised refusal", "".join(traceback.format_exception(raised)))
+    _nothing_of(held_secret, "the registry's records", json.dumps(reg.repairs(), default=str) + (tmp_path / "database-damage.json").read_text(encoding="utf-8"))
+    assert reg.repairs()[-1]["reason"] == ("no-room" if kind == "declined" else "cannot-open")
 
 
 # --------------------------------------------------------------------------- #

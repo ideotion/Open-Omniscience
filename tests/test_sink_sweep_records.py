@@ -31,9 +31,6 @@ MODULES = sorted(
     for p in (ROOT / entry).rglob("*.py")
 ) + sorted(
     p.relative_to(ROOT).as_posix() for entry in ("src/backup", "src/ingest", "src/database") for p in (ROOT / entry).rglob("*.py")
-    # ``repair.py`` is the WAL thread's (its exc_info allowance is the last one in tests/data/exc_info_allowlist.json) and has its own
-    # PR in flight; it joins this reading when that PR lands.
-    if p.name != "repair.py" or p.parent.name != "database"
 ) + sorted(
     p.relative_to(ROOT).as_posix() for p in (ROOT / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py"
 ) + ["src/api/unlock.py"]
@@ -163,6 +160,10 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         ("RunLog._open", 'self._disable("beats", exception_text(exc))'): 1,
         ("RunLog._write", 'self._disable("beats" if beat else "milestones", exception_text(exc))'): 1,
     },
+    # The repair's own refusals (``Declined``, ``salvage.SalvageRefused``) are sentences the code wrote, never a driver's words; they keep
+    # them in ``reason_text`` and the log line, scrubbed (``_words_of``: ``exception_text``, then put back into the refusal itself), and
+    # tests/test_refusal_detail_source.py reads what each is made of.
+    "src/database/repair.py": {("run", "text = _words_of(refusal)"): 2},
     "src/backup/stream_backup.py": {("verify_stream_backup", "reason = exception_text(exc, passphrase, typed=False)"): 1},
     "src/backup/volume_job.py": {
         ("VolumeBackupManager._verify_after_write", '"reason": f"the volume set could not be re-read: {exception_text(exc, typed=False)}",'): 1,
@@ -171,7 +172,7 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 }
 
 
-#: ``src/database`` (all but ``repair.py``): the damage lane's classifiers and walks (``damage.py``, ``verify.py``, ``salvage.py``: each reads a
+#: ``src/database``: the damage lane's classifiers and walks (``damage.py``, ``verify.py``, ``salvage.py``: each reads a
 #: caught exception to CLASSIFY it, and what it records is ``failure_label``/``failure_text``/``corruption_of``, a class and a fixed label,
 #: never the engine's words), the retry/lock walks in ``write.py``, the connect helper that hands the driver's exception back to its
 #: caller to chain as the cause of WrongPassphraseError, the statement-deadline translation in ``maintenance.py`` (its ``from exc`` keeps the driver error as the cause
@@ -227,6 +228,17 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/database/pool_watch.py': {
         ('_on_invalidate', 'orig = getattr(exception, "orig", exception)'): 2,
+    },
+    # The repair reads its OWN refusals (``Declined``, ``salvage.SalvageRefused``: fixed sentences the code wrote, a code key and numbers) and
+    # one salvage failure (``SalvageFailed``: a table or index name and the class and fixed label of the driver's error); ``refusal.detail``
+    # reaches a record and a log only through ``exception_text``, and tests/test_refusal_detail_source.py reads what each refusal may be made of.
+    'src/database/repair.py': {
+        ('run', 'code = refusal.code'): 2,
+        ('run', 'report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)'): 1,
+        ('run', 'failure = f"{exc.where}: {exc.reason}" if isinstance(exc, salvage.SalvageFailed) else damage.failure_text(exc)'): 3,
+        ('_copy_and_swap', 'report["failure"] = f"{exc.where}: {exc.reason}"'): 2,
+        ('_swap', 'raise Declined("writer-busy", str(busy)) from busy'): 2,
+        ('_swap', 'if refusal.code == "saved-during-the-copy":'): 1,
     },
     'src/database/salvage.py': {
         ('Salvage._is_corrupt', 'return damage.corruption_of(exc) is not None'): 1,
