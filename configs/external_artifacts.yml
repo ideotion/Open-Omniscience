@@ -600,6 +600,29 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-06-06"
 
+  - id: github-release-asset-hosts
+    title: GitHub release-asset hosts of the Ollama installer's download
+    kind: dated-data
+    description: >-
+      The exact hosts the Ollama installer's asset download may reach: github.com (the host of the
+      browser_download_url the release response names) and the storage it redirects to,
+      release-assets.githubusercontent.com (recorded 2026-09-27 in docs/SECURITY.md) and, before GitHub
+      moved it, objects.githubusercontent.com. They are the GitHub hosts the consent popup already lists
+      for the Local AI lane (src/static/net-hosts.js; a test keeps the two equal). GitHub, not this project,
+      chooses the storage host; a request or redirect hop off the list is REFUSED (never followed), so a
+      move shows up as an install that says to use ollama.com/download, and this entry is what to re-read
+      then. The list was set from the repository's own record, not from a fresh observation of the live
+      redirect (the build sandbox cannot reach GitHub's storage), so last_verified and the pinned date are
+      the day docs/SECURITY.md recorded the storage host, when the record was written, not a day anyone
+      watched the chain; an operator on a networked machine can confirm it with the refresh step.
+    upstream: "github.com release downloads (the redirect target of github.com/ollama/ollama/releases/download/...)"
+    check_upstream: "follow the download redirect of the latest ollama/ollama install.sh asset and compare the host of each hop with the list"
+    license: per-provider
+    pin: {file: src/llm/installer.py, const: GITHUB_ASSET_HOSTS_AS_OF}
+    refresh: "observe the real redirect chain from a networked machine; update GITHUB_ASSET_HOSTS (and the net-hosts.js Local AI lane + docs/SECURITY.md row, which a test keeps equal) and bump GITHUB_ASSET_HOSTS_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-09-27"
+
   - id: tracker-denylist
     title: Newsletter tracker-param denylist
     kind: dated-data
