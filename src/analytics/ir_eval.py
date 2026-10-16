@@ -40,6 +40,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+
 from src.monitoring.secret_scrub import record_text
 
 _METRICS = ("ndcg", "mrr", "recall", "precision", "ap")

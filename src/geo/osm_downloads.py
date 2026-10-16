@@ -44,7 +44,7 @@ from src.ingest.segmented_download import (
     segmented_fetch,
 )
 from src.monitoring import secret_scrub
-from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, UNREADABLE_TEXT
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, log_failure, record_text, scrubbed
 
 _LOG = logging.getLogger(__name__)
 

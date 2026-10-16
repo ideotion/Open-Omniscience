@@ -357,7 +357,10 @@ def run_progressive_triage_job(
     from src.database.session import session_scope
     from src.llm.activation import recover_backend
     from src.llm.backend import outage_detail, outage_reason
-    from src.llm.ollama import LLMError, is_context_overflow  # LLMUnavailable IS-A LLMError; catching the base catches both
+    from src.llm.ollama import (  # LLMUnavailable IS-A LLMError; catching the base catches both
+        LLMError,
+        is_context_overflow,
+    )
 
     if session_factory is None:
         session_factory = session_scope

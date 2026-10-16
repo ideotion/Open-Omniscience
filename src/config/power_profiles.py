@@ -38,6 +38,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Any
+
 from src.monitoring.secret_scrub import record_text
 
 SCHEMA = "oo-power-profile-1"

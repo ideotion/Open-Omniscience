@@ -36,6 +36,7 @@ import os
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+
 from src.monitoring.secret_scrub import record_text
 
 FROZEN_BATCH_SCHEMA = "oo-bench-frozen-batch-1"

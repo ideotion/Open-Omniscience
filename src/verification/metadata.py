@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from PIL import Image, UnidentifiedImageError
 from PIL.ExifTags import GPSTAGS, TAGS
+
 from src.monitoring.secret_scrub import record_text
 
 

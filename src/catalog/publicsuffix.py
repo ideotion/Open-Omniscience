@@ -50,6 +50,7 @@ import hashlib
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+
 from src.monitoring.secret_scrub import record_text
 
 # The vintage of the vendored snapshot (the external-artifact registry pins this

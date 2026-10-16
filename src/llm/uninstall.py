@@ -33,6 +33,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any
+
 from src.monitoring.secret_scrub import record_text
 
 #: The documented Linux removal for an Ollama installed by its own script. NOT run by

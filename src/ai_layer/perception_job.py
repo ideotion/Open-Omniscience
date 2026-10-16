@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+
 from src.monitoring.secret_scrub import record_text
 
 PERCEPTION_LIVE_SCHEMA = "oo-perception-eval-live-1"

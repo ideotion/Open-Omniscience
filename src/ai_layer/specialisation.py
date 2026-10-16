@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import time
+
 from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger("ai_layer.specialisation")

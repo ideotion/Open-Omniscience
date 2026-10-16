@@ -35,6 +35,7 @@ import base64
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+
 from src.monitoring.secret_scrub import record_text
 
 # Public OpenTimestamps calendar servers (operated by the OTS project & community).

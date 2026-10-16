@@ -47,6 +47,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
 from src.monitoring.secret_scrub import record_text
 
 SCHEMA = "oo-ai-activity-1"

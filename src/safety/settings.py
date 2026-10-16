@@ -27,6 +27,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
+
 from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)

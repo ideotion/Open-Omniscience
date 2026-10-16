@@ -977,7 +977,7 @@ _S5_NOT_RECORDS: dict[str, dict[str, int]] = {
         'getattr reaches m.enabled_key, a way round the scan of the log calls': 1,
     },
     'src/ai_layer/langdetect_llm.py': {
-        'res.error is kept as a name, a log call the scan cannot read': 3,
+        'res.error is kept as a name, a log call the scan cannot read': 4,
     },
     'src/ai_layer/perception_extract.py': {
         'res.error is kept as a name, a log call the scan cannot read': 2,

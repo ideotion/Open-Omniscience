@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+
 from src.monitoring.secret_scrub import record_text
 
 _VALID_MODEL = re.compile(r"^[a-zA-Z0-9._:/-]{1,128}$")

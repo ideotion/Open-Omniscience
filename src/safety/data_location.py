@@ -42,6 +42,7 @@ import stat
 import tempfile
 from pathlib import Path
 from typing import Any
+
 from src.monitoring.secret_scrub import record_text
 
 #: The subfolder created inside a folder the operator picks, so pointing the app at a

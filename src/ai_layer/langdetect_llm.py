@@ -278,6 +278,7 @@ def detect_for_articles(
                            "vetoed": vetoed, "aborted": True, "reason": record_text(res.error, limit=200)}
                     return
                 failed += 1
+                assert res.error is not None  # a not-ok result always carries its error
                 yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
                        "status": "failed", "error": record_text(res.error, limit=200)}
                 continue

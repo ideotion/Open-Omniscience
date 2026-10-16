@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
+
 from src.monitoring.secret_scrub import record_text
 
 # Matches a numeric token possibly containing grouping/decimal separators or

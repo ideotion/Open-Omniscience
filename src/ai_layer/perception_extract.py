@@ -62,6 +62,7 @@ brief section that lists the illustrative kinds), so that one "e.g." is not hono
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
 from src.monitoring.secret_scrub import record_text
 
 if TYPE_CHECKING:
