@@ -78,6 +78,17 @@ _LANGUAGE_LOSSES = 75
 #: mostly absent from the database it was written for.
 _LEAN_TAGS_LOST_BUDGET = 192
 
+#: Row J (S05-10 J3): a source is (domain, feed), so what a catalogue can NOT register is the same feed claimed twice, a
+#: feed-less duplicate of a feed-less domain, or a second legal entry for a host. The per-file figure is
+#: ``configs/sources.yml`` alone; the boot figure is what ``seed_default_sources`` hands the seeder. Measured
+#: 2026-10-16: 475 shadowed became 24 (216 more rows, 235 feed-less entries merged as tags, 186 of the 192 lean tags
+#: recovered). Lower it when an entry is fixed; never raise it to admit one.
+_UNREGISTERED_BUDGET = 16
+_BOOT_UNREGISTERED_BUDGET = 24
+_BOOT_ROWS = 6411
+_BOOT_MERGED = 235
+_BOOT_LEAN_RECOVERED = 186
+
 
 @pytest.fixture(scope="module")
 def catalog() -> list[dict]:
@@ -231,7 +242,8 @@ def test_a_shadowed_entry_is_reported_apart_from_an_idempotent_skip(session):
     # The second feed lost to its own sibling, not to a pre-existing database row.
     assert first["shadowed"] == 1
     assert first["skipped_existing"] == 0
-    assert first["shadowed_examples"] == [{"name": "Outlet AR", "domain": "outlet.example"}]
+    assert first["shadowed_examples"] == [
+        {"name": "Outlet AR", "domain": "outlet.example", "reason": "feedless_duplicate"}]
     # `skipped` keeps its old meaning (the sum), so existing callers read unchanged.
     assert first["skipped"] == 1
     assert first["created"] + first["skipped"] == first["total"]
@@ -266,15 +278,17 @@ def test_the_seeder_and_the_report_agree_on_the_real_catalog(catalog, session):
     """One rule, two implementations: the loop that decides what lands and the
     function that reports what cannot must never drift. Asserted on the real
     catalogue rather than a fixture, because that is where a drift would matter."""
+    from src.ingest.seed_plan import plan_registration
+
     result = seed_sources(session, catalog)
-    expected = sum(len(v) for v in catalog_domain_collisions(catalog).values())
-    assert result["shadowed"] == expected == _SHADOWED_ENTRIES_BUDGET
+    plan = plan_registration(catalog)
+    # A source is its domain AND its feed (row J): what stays out is what the PLAN names, and the
+    # catalogue's multiplicity per domain (``catalog_domain_collisions``) is no longer the loss.
+    assert result["shadowed"] == len(plan.unregistered) == _UNREGISTERED_BUDGET
     assert result["skipped_existing"] == 0
-    # And every non-shadowed entry did land. Counted in the DATABASE, not from the
-    # function's own counters: `created + skipped_existing + shadowed == total` is an
-    # identity of the loop that produces them, so asserting it proves nothing about
-    # what was actually written.
-    assert session.query(Source).count() == len(catalog) - expected
+    # And every row the plan names did land. Counted in the DATABASE, not from the function's own
+    # counters: an identity of the loop that produces them proves nothing about what was written.
+    assert session.query(Source).count() == len(plan.rows) == len(catalog) - len(plan.unregistered) - len(plan.merges)
     assert result["created"] == session.query(Source).count()
 
 
@@ -301,3 +315,41 @@ def test_the_two_implementations_agree_on_a_malformed_entry(entry, session):
     assert result["skipped_malformed"] == 2
     assert result["created"] + result["skipped"] == result["total"]
     assert session.query(Source).count() == 0
+
+
+# --------------------------------------------------------------------------- #
+#  Row J: what a keyed-on-(domain, feed) seeder registers
+# --------------------------------------------------------------------------- #
+def test_the_boot_catalogue_registers_the_language_services_and_names_what_stays_out(boot_catalog):
+    from src.ingest.seed_plan import plan_registration
+
+    plan = plan_registration(boot_catalog)
+    assert plan.counts["rows"] == _BOOT_ROWS and plan.counts["merged"] == _BOOT_MERGED
+    assert len(plan.unregistered) == _BOOT_UNREGISTERED_BUDGET
+    assert all(reason for _e, reason in plan.unregistered)  # every one is named with a reason
+    assert plan.counts["rows"] + plan.counts["merged"] + plan.counts["unregistered"] == len(boot_catalog)
+    # the thirty BBC language services are rows now, not losers of the first
+    assert sum(1 for e in plan.rows if e["domain"] == "bbc.com") == 31
+
+
+def test_the_lean_tags_the_shadowing_lost_are_recovered_through_the_merge(boot_catalog):
+    from src.ingest.seed_plan import plan_registration
+
+    plan = plan_registration(boot_catalog)
+    recovered = sum(1 for e, _t in plan.merges if any(str(t).startswith("lean-") for t in (e.get("tags") or [])))
+    assert recovered == _BOOT_LEAN_RECOVERED < _LEAN_TAGS_LOST_BUDGET
+
+
+def test_two_feeds_of_one_domain_are_two_rows_and_a_feedless_description_is_not_a_third(session):
+    entries = [
+        {"name": "Outlet EN", "domain": "outlet.example", "rss_url": "https://outlet.example/en.xml", "language": "en"},
+        {"name": "Outlet AR", "domain": "outlet.example", "rss_url": "https://outlet.example/ar.xml", "language": "ar"},
+        {"name": "Outlet", "domain": "outlet.example", "tags": ["lean-right"]},  # a feed-less description
+    ]
+    result = seed_sources(session, entries)
+    assert result["created"] == 2 and result["merged"] == 1 and result["shadowed"] == 0
+    rows = session.query(Source).order_by(Source.id).all()
+    assert [r.feed_key for r in rows] == ["f:outlet.example/en.xml", "f:outlet.example/ar.xml"]
+    assert "lean-right" in (rows[0].tags or "") and "lean-right" not in (rows[1].tags or "")  # the first feed row
+    again = seed_sources(session, entries)
+    assert again["created"] == 0 and again["tag_merge"]["tags_merged"] == 0  # idempotent

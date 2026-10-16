@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import yaml
 from sqlalchemy.orm import Session
@@ -27,12 +28,20 @@ from src.catalog.cctld import infer_country, infer_language
 from src.catalog.countries import normalize_country
 from src.catalog.normalize import country_from_title
 from src.database.models import Source
+from src.ingest.seed_plan import (
+    EXCLUSIVE_TAG_PREFIXES,
+    entry_key,
+    entry_tags,
+    exclusive_family,
+    plan_registration,
+    split_tags,
+)
 
 #: What a seed run reports. Mostly counts, plus a short list of examples for the
 #: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.
 # Widened 2026-09-09 for the nested "reconciled" counts: a seed now reports what it
 # FILLED on rows it did not create, alongside what it created and skipped.
-SeedResult = dict[str, "int | dict[str, int] | list[dict[str, str | None]]"]
+SeedResult = dict[str, Any]
 
 # The full curated catalog shipped with the project.
 DEFAULT_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sources.yml"
@@ -167,6 +176,108 @@ def _to_source_kwargs(s: dict) -> dict:
     return kwargs
 
 
+def _usable(sources: list[dict]) -> list[dict]:
+    """The entries that can be a source: a name AND a domain (what both loaders already require)."""
+    return [x for x in sources if (x.get("domain") or "").strip() and (x.get("name") or "").strip()]
+
+
+def _db_rows_by_domain(session: Session) -> dict[str, list[Source]]:
+    """Every registered source, grouped by its (lower-cased) domain, oldest first."""
+    out: dict[str, list[Source]] = {}
+    for row in session.query(Source).order_by(Source.id):
+        out.setdefault((row.domain or "").strip().lower(), []).append(row)
+    return out
+
+
+def paired_rows(session: Session, sources: list[dict], *, plan=None, rows_by_domain=None):
+    """Which registered row each catalogue ROW entry is, and which entries have none yet.
+
+    Returns ``(pairs, todo, plan, rows_by_domain)``: ``pairs`` is ``[(Source, entry)]`` for the entries a row already
+    holds, ``todo`` the entries that need one. An entry belongs to the row with its ``(domain, feed_key)``; failing
+    that, and ONLY when the domain has exactly one entry and exactly one row, they are the same source -- the case a
+    corrected feed URL is (the catalogue changed the feed, the row still carries the old one), which the
+    domain-keyed seeder applied and which must not turn into a second row. The same one-to-one fallback the restore
+    merge uses (``src.backup.merge._same_source``), so two paths can never disagree about whether two rows are one.
+    """
+    plan = plan if plan is not None else plan_registration(_usable(sources))
+    rows_by_domain = rows_by_domain if rows_by_domain is not None else _db_rows_by_domain(session)
+    entries_by_domain: dict[str, list[dict]] = {}
+    for e in plan.rows:
+        entries_by_domain.setdefault(entry_key(e)[0], []).append(e)
+    pairs: list[tuple[Source, dict]] = []
+    todo: list[dict] = []
+    for domain, entries in entries_by_domain.items():
+        rows = rows_by_domain.get(domain, [])
+        if len(entries) == 1 and len(rows) == 1:
+            pairs.append((rows[0], entries[0]))
+            continue
+        by_key = {}
+        for r in rows:
+            by_key.setdefault(r.feed_key or "", r)
+        for e in entries:
+            row = by_key.get(entry_key(e)[1])
+            if row is not None:
+                pairs.append((row, e))
+            else:
+                todo.append(e)
+    return pairs, todo, plan, rows_by_domain
+
+
+def _dump_baseline(shipped: dict, base: dict | None) -> str:
+    """The baseline JSON for ``shipped`` fields, carrying over the tags the catalogue has already merged onto the row."""
+    out = dict(shipped)
+    merged = (base or {}).get("merged_tags")
+    if merged:
+        out["merged_tags"] = merged
+    return json.dumps(out, sort_keys=True)
+
+
+def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> dict:
+    """Put the tags of a feed-less catalogue entry on the outlet's feed row (R145, J3).
+
+    A merged tag NEVER overwrites a different existing value: ``lean-*`` is exclusive on a row, so a second, different
+    lean is a CONFLICT -- kept, listed with both sides, counted. A tag is merged ONCE per row (recorded in the row's
+    baseline), so a tag the operator removed afterwards is not put back by the next boot; a row with no readable
+    baseline is skipped and counted, never guessed at. ``via:`` provenance is not merged (it states a row's origin)."""
+    merged_n = rows_touched = skipped_no_baseline = 0
+    conflicts: list[dict] = []
+    touched: set[int] = set()
+    for entry, row in merges:
+        base = _baseline_of(row)
+        if base is None:
+            skipped_no_baseline += 1
+            continue
+        done = {str(t) for t in (base.get("merged_tags") or [])}
+        have = split_tags(row.tags)
+        added: list[str] = []
+        for tag in entry_tags(entry):
+            if tag in have or tag in done:
+                continue
+            fam = exclusive_family(tag)
+            clash = next((t for t in have if fam and t.startswith(fam) and t != tag), None)
+            if clash is not None:
+                conflicts.append({
+                    "domain": row.domain, "kept": clash, "catalogue": tag,
+                    "entry": entry.get("name"), "provenance": entry.get("_provenance"),
+                })
+                continue
+            have.append(tag)
+            added.append(tag)
+        if not added:
+            continue
+        row.tags = ",".join(have)
+        base["merged_tags"] = sorted(done | set(added))
+        row.catalog_baseline = json.dumps(base, sort_keys=True)
+        merged_n += len(added)
+        if id(row) not in touched:
+            touched.add(id(row))
+            rows_touched += 1
+    return {
+        "tags_merged": merged_n, "rows_touched": rows_touched, "conflict_count": len(conflicts),
+        "conflicts": conflicts[:_CONFLICT_EXAMPLES], "skipped_no_baseline": skipped_no_baseline,
+    }
+
+
 #: How many shadowed entries a seed result carries as examples. A handful, so the
 #: report names the loss without dumping it; the COUNT beside them is exact.
 _SHADOW_EXAMPLES = 8
@@ -179,7 +290,15 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
-    """Catalog entries a domain-keyed seeder can never register: ``{domain: [shadowed]}``.
+    """Catalog entries that share a domain with an earlier entry: ``{domain: [later entries]}``.
+
+    **AFTER ROW J (S05-10) THIS IS THE CATALOGUE'S MULTIPLICITY PER DOMAIN, NOT THE LOSS.** A source is keyed on
+    ``(domain, feed)``, so a later entry of a domain is a second feed (a row), a feed-less description (its tags merge
+    onto the outlet's row) or, in 24 cases on a real boot, truly unregistered -- :func:`~src.ingest.seed_plan.plan_registration`
+    names which, and the seeder's ``shadowed`` counts only the last. The text below is the measurement as it stood
+    when a domain held one feed; it is the argument that deleting those entries was never the repair.
+
+    Entries a domain-keyed seeder could never register (the pre-row-J meaning):
 
     ``Source.domain`` is UNIQUE, so one domain holds one feed -- and the catalogue
     describes several distinct feeds per registrable domain. Measured 2026-09-07 on
@@ -278,7 +397,7 @@ def _baseline_of(row: Source) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def sync_catalogue_corrections(session: Session, sources: list[dict]) -> dict:
+def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: list | None = None) -> dict:
     """Push CORRECTIONS from the shipped catalogue onto rows that already exist -- a THREE-WAY
     merge, so a fix reaches an untouched row and can never overwrite the operator's own edit.
 
@@ -322,26 +441,15 @@ def sync_catalogue_corrections(session: Session, sources: list[dict]) -> dict:
     an operator set is touched on the strength of a guess. The cost is stated plainly -- a
     correction the catalogue made BEFORE this shipped will not reach an existing row.
     """
-    from src.database.models import Source
-
-    by_domain: dict[str, dict] = {}
-    for s in sources:
-        domain = (s.get("domain") or "").strip().lower()
-        if not domain or not (s.get("name") or "").strip():
-            continue
-        by_domain.setdefault(domain, s)   # first-entry-wins, as seed_sources and reconcile do
+    pairs = pairs if pairs is not None else paired_rows(session, sources)[0]
     empty = {"checked": 0, "applied": 0, "kept": 0, "adopted": 0, "conflicts": []}
-    if not by_domain:
+    if not pairs:
         return empty
 
-    rows = session.query(Source).filter(Source.domain.in_(list(by_domain))).all()
     applied = adopted = 0
     conflicts: list[dict] = []
     dirty = False
-    for row in rows:
-        entry = by_domain.get((row.domain or "").strip().lower())
-        if entry is None:
-            continue
+    for row, entry in pairs:
         computed = _to_source_kwargs(entry)
         shipped = {f: _norm(computed.get(f)) for f in CATALOGUE_OWNED_FIELDS}
         base = _baseline_of(row)
@@ -367,7 +475,7 @@ def sync_catalogue_corrections(session: Session, sources: list[dict]) -> dict:
                     {"domain": row.domain, "field": field, "kept": live, "catalogue": now}
                 )
         if touched:
-            row.catalog_baseline = json.dumps(shipped, sort_keys=True)
+            row.catalog_baseline = _dump_baseline(shipped, base)
             dirty = True
     if dirty:
         session.commit()
@@ -376,12 +484,12 @@ def sync_catalogue_corrections(session: Session, sources: list[dict]) -> dict:
             "catalogue corrections: %d applied, %d kept as operator edits", applied, len(conflicts)
         )
     return {
-        "checked": len(rows), "applied": applied, "kept": len(conflicts),
+        "checked": len(pairs), "applied": applied, "kept": len(conflicts),
         "adopted": adopted, "conflicts": conflicts[:_CONFLICT_EXAMPLES],
     }
 
 
-def reconcile_source_metadata(session: Session, sources: list[dict]) -> dict:
+def reconcile_source_metadata(session: Session, sources: list[dict], *, pairs: list | None = None) -> dict:
     """Fill EMPTY catalogue metadata on sources that already exist. Never overwrite.
 
     THE GAP THIS CLOSES. ``seed_sources`` skips a domain it already holds and never
@@ -408,26 +516,12 @@ def reconcile_source_metadata(session: Session, sources: list[dict]) -> dict:
     explicit-field -> title-suffix -> ccTLD ladder can never become a second, divergent
     implementation.
     """
-    from src.database.models import Source
-
-    by_domain: dict[str, dict] = {}
-    for s in sources:
-        domain = (s.get("domain") or "").strip().lower()
-        name = (s.get("name") or "").strip()
-        if not domain or not name:
-            continue
-        # First-entry-wins, the SAME rule seed_sources uses for shadowing, so the two
-        # can never disagree about which sibling a domain's metadata comes from.
-        by_domain.setdefault(domain, s)
-    if not by_domain:
+    pairs = pairs if pairs is not None else paired_rows(session, sources)[0]
+    if not pairs:
         return {"checked": 0, "country_filled": 0, "language_filled": 0, "tags_filled": 0}
 
-    rows = session.query(Source).filter(Source.domain.in_(list(by_domain))).all()
     filled = {"country": 0, "language": 0, "tags": 0}
-    for row in rows:
-        entry = by_domain.get((row.domain or "").strip().lower())
-        if entry is None:
-            continue
+    for row, entry in pairs:
         computed = _to_source_kwargs(entry)
         for field in ("country", "language", "tags"):
             if getattr(row, field, None):
@@ -442,7 +536,7 @@ def reconcile_source_metadata(session: Session, sources: list[dict]) -> dict:
     if any(filled.values()):
         session.commit()
     return {
-        "checked": len(rows),
+        "checked": len(pairs),
         "country_filled": filled["country"],
         "language_filled": filled["language"],
         "tags_filled": filled["tags"],
@@ -450,81 +544,73 @@ def reconcile_source_metadata(session: Session, sources: list[dict]) -> dict:
 
 
 def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
-    """Create Source rows for any domain not already present. Idempotent.
+    """Create Source rows for any ``(domain, feed)`` not already present. Idempotent.
 
-    Deduplicates both against the existing DB and within the input list, then bulk
-    inserts in a single commit (efficient for the full ~3,200-entry catalog).
+    A source is its domain AND its feed (row J, S05-10): BBC's thirty language services are thirty rows of one outlet,
+    not thirty losers of the first. :func:`~src.ingest.seed_plan.plan_registration` decides every entry's fate purely --
+    a row, a merge of a feed-less entry's tags onto the outlet's feed row, or unregistered with a reason -- and this
+    function carries it out against the database in a single commit.
 
-    THE SKIP REASONS ARE REPORTED APART (2026-09-07). ``skipped`` used to be one
-    counter over two facts that mean opposite things: a domain already in the database
-    is an idempotent re-run working correctly, while a domain claimed by an EARLIER
-    entry of this same input is a catalogue entry that will never be registered on any
-    install. Conflated, the second was invisible -- 475 entries on a real boot, 227 of
-    them inside ``configs/sources.yml`` alone (see :func:`catalog_domain_collisions`
-    for what they are and why deleting them is the wrong repair). ``skipped`` keeps its
-    old value (now the sum of all three reasons) so every existing caller reads
-    unchanged.
+    THE REPORT NAMES WHAT STAYED OUT (2026-09-07, kept): ``skipped_existing`` is an idempotent re-run working,
+    ``shadowed`` is the entries NO install can register (the same feed claimed twice, a feed-less duplicate, a second
+    legal entry for a host) with ``unregistered_by_reason`` and examples carrying the reason, and ``merged`` is the
+    feed-less entries whose tags went onto the outlet's row (``tag_merge`` says what was added and what conflicted).
+    ``skipped`` keeps its old meaning (every reason an entry did not become a row).
     """
-    existing = {d for (d,) in session.query(Source.domain).all()}
-    claimed: set[str] = set()
-    to_add = []
-    skipped_existing = 0
-    skipped_malformed = 0
-    shadowed: list[dict] = []
-    for s in sources:
-        domain = s.get("domain") or ""
-        if not domain:
-            # The same rule `catalog_domain_collisions` uses, for the same reason: one
-            # rule, two implementations, and they must not answer differently. Reading
-            # `s["domain"]` raised on an absent key and, worse, an entry with an empty
-            # domain was counted as SHADOWED and then built into a `Source(domain=None)`
-            # against a NOT NULL column -- an IntegrityError at commit that would take
-            # the whole batch with it. Unreachable through either shipped loader (both
-            # filter on a truthy name and domain), which is exactly why it needed
-            # pinning rather than leaving to chance.
-            skipped_malformed += 1
-            continue
-        # Shadowing is a property of the CATALOGUE, not of this run: an entry an
-        # earlier sibling of the same input already claims can never be registered
-        # on any install, whether or not the database happens to hold that domain
-        # yet. Checked first, and by the same first-wins rule
-        # `catalog_domain_collisions` uses, so a re-seed reports the same loss a
-        # first seed did rather than quietly reclassifying it as idempotent.
-        if domain in claimed:
-            shadowed.append(s)
-            continue
-        claimed.add(domain)
-        if domain in existing:
-            skipped_existing += 1
-            continue
-        existing.add(domain)
-        to_add.append(Source(**_to_source_kwargs(s)))
-    if to_add:
-        session.add_all(to_add)
+    skipped_malformed = sum(1 for s in sources if not (s.get("domain") or ""))
+    pairs, todo, plan, rows_by_domain = paired_rows(session, sources)
+    extra_merges: list[tuple[dict, Source]] = []
+    to_create: list[dict] = []
+    for e in todo:
+        domain, fk = entry_key(e)
+        feed_rows = [r for r in rows_by_domain.get(domain, []) if r.feed_key]
+        if not fk and feed_rows:
+            extra_merges.append((e, feed_rows[0]))   # the outlet already has a feed row: this describes it
+        else:
+            to_create.append(e)
+    new_rows = [Source(**_to_source_kwargs(e)) for e in to_create]
+    if new_rows:
+        session.add_all(new_rows)
         session.commit()
-    # An already-registered domain used to end the story: skipped, never re-read. The
-    # catalogue keeps LEARNING (new explicit countries, new tags, and the title/ccTLD
-    # fallbacks that did not exist when older rows were made), and none of it reached a
-    # row that already existed. NULL-only, so a re-seed can add what is missing and can
-    # never revert what an operator set.
-    reconciled = reconcile_source_metadata(session, sources)
-    # ...and then the other half: a field that is NOT empty but that the catalogue has since
-    # CORRECTED. reconcile fills gaps and refuses to touch anything else; this pushes the fix
-    # onto rows the operator never edited, and reports the ones they did. Runs AFTER, so a
+    created_for: dict[int, Source] = {id(e): r for e, r in zip(to_create, new_rows)}
+    row_of: dict[int, Source] = {id(e): r for r, e in pairs} | created_for
+    # An already-registered source used to end the story: skipped, never re-read. The catalogue keeps LEARNING (new
+    # explicit countries, new tags, and the title/ccTLD fallbacks that did not exist when older rows were made), and
+    # none of it reached a row that already existed. NULL-only, so a re-seed can add what is missing and can never
+    # revert what an operator set.
+    all_pairs = pairs + [(r, e) for e, r in zip(to_create, new_rows)]
+    reconciled = reconcile_source_metadata(session, sources, pairs=pairs)
+    # ...and then the other half: a field that is NOT empty but that the catalogue has since CORRECTED. Runs AFTER, so a
     # field reconcile just filled reads as a gap rather than as an edit (sync skips empties).
-    corrections = sync_catalogue_corrections(session, sources)
+    corrections = sync_catalogue_corrections(session, sources, pairs=all_pairs)
+    # Feed-less entries describe an outlet that already has a feed row: their tags go there, after the baseline exists.
+    merges = [(e, row_of[id(t)]) for e, t in plan.merges if id(t) in row_of] + extra_merges
+    tag_merge = merge_feedless_tags(session, merges)
+    if tag_merge["tags_merged"]:
+        session.commit()
+    from src.catalog.sibling_verdicts import inherit_sibling_verdicts
+
+    inherited = inherit_sibling_verdicts(session, new_rows)
+    unregistered = plan.unregistered
+    by_reason: dict[str, int] = {}
+    for _e, reason in unregistered:
+        by_reason[reason] = by_reason.get(reason, 0) + 1
     return {
-        "created": len(to_add),
+        "created": len(new_rows),
         "reconciled": reconciled,
         "corrections": corrections,
-        "skipped": skipped_existing + len(shadowed) + skipped_malformed,
+        "tag_merge": tag_merge,
+        "sibling_verdicts": inherited,
+        "skipped": len(pairs) + len(unregistered) + len(plan.merges) + skipped_malformed,
         "total": len(sources),
-        "skipped_existing": skipped_existing,
+        "skipped_existing": len(pairs),
         "skipped_malformed": skipped_malformed,
-        "shadowed": len(shadowed),
+        "merged": len(plan.merges),
+        "shadowed": len(unregistered),
+        "unregistered_by_reason": dict(sorted(by_reason.items())),
         "shadowed_examples": [
-            {"name": s.get("name"), "domain": s.get("domain")}
-            for s in shadowed[:_SHADOW_EXAMPLES]
+            {"name": e.get("name"), "domain": e.get("domain"), "reason": reason}
+            for e, reason in unregistered[:_SHADOW_EXAMPLES]
         ],
     }
 
