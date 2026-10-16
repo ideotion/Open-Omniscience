@@ -34,6 +34,7 @@ from sqlalchemy import distinct, func
 
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Keyword, Source
+from src.database.outlet import OutletMap, outlet_expr
 from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ STORY_PROPAGATION_CAVEAT = (
     "descriptive shape, never a cause and never an origin claim (the earliest source in "
     "time is not 'the source'). A shared newswire, an event every outlet independently "
     "covers, or plain coincidence all produce a cascade like this. A keyword is a TOPIC, "
-    "not a specific claim. Independence is measured by distinct sources. Read it and judge."
+    "not a specific claim. Independence is measured by distinct outlets (a site's several feeds count once). Read it and judge."
 )
 
 STORY_PROPAGATION_METHOD = (
@@ -98,16 +99,17 @@ def find_story_propagation(
         not_a_stand_in_article_id(KeywordMentionRead.article_id),
     ]
 
-    # Candidate terms: mentioned across >= min_sources distinct sources in the window.
+    # Candidate terms: mentioned across >= min_sources distinct OUTLETS in the window (two feeds of one site are one
+    # voice: row J, R146).
+    outlets = OutletMap(session)
+    n_outlets = func.count(distinct(outlet_expr(KeywordMentionRead.source_id, Source.domain)))
     cand_rows = (
-        session.query(
-            KeywordMentionRead.keyword_id,
-            func.count(distinct(KeywordMentionRead.source_id)).label("n_src"),
-        )
+        session.query(KeywordMentionRead.keyword_id, n_outlets.label("n_src"))
+        .outerjoin(Source, Source.id == KeywordMentionRead.source_id)
         .filter(*win)
         .group_by(KeywordMentionRead.keyword_id)
-        .having(func.count(distinct(KeywordMentionRead.source_id)) >= min_sources)
-        .order_by(func.count(distinct(KeywordMentionRead.source_id)).desc())
+        .having(n_outlets >= min_sources)
+        .order_by(n_outlets.desc())
         .limit(max_terms)
         .all()
     )
@@ -121,7 +123,7 @@ def find_story_propagation(
     from src.analytics.generic_terms import is_generic_by_df_ubiquity
     from src.analytics.managed import normalize_lang
 
-    active_sids = [r[0] for r in session.query(distinct(KeywordMentionRead.source_id)).filter(*win)]
+    active_sids = sorted({outlets.primary_id(r[0]) for r in session.query(distinct(KeywordMentionRead.source_id)).filter(*win)})
     active_by_lang: dict[str, int] = {}
     for chunk in _chunks(active_sids):
         for _sid, lang in session.query(Source.id, Source.language).filter(
@@ -146,7 +148,9 @@ def find_story_propagation(
             .all()
         ):
             if first is not None:
-                first_seen[int(kid)][int(sid)] = first
+                oid = outlets.primary_id(int(sid))
+                prior = first_seen[int(kid)].get(oid)
+                first_seen[int(kid)][oid] = first if prior is None else min(prior, first)
 
     # Keyword terms (drop stoplisted + generic/furniture terms) + source names.
     is_hidden = _hidden_predicate()
@@ -171,12 +175,7 @@ def find_story_propagation(
         return _empty(lookback_days, min_sources, min_span_days, terms_scanned=len(cand_ids))
 
     src_ids = {sid for k in live_ids for sid in first_seen.get(k, {})}
-    src_name: dict[int, str] = {}
-    for chunk in _chunks(sorted(src_ids)):
-        for sid, name in (
-            session.query(Source.id, Source.name).filter(Source.id.in_(chunk)).all()
-        ):
-            src_name[int(sid)] = name or f"source-{sid}"
+    src_name: dict[int, str] = {sid: outlets.label(sid) for sid in src_ids}
 
     items: list[dict] = []
     for kid in live_ids:

@@ -163,3 +163,47 @@ def test_convergence_independence_gate_counts_outlets(s):
     out = find_convergences(s, window_days=7, min_articles=2, min_sources=2)
     assert out["clusters_total"] == 1 and out["clusters"][0]["distinct_sources"] == 2
     assert out["clusters"][0]["source_names"] == ["BBC News", "DW"]
+
+
+def _kw_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    from src.database.derived_views import ensure_derived_views
+
+    ensure_derived_views(engine)
+    return sessionmaker(bind=engine, future=True)()
+
+
+def _mention_spread(session, term, source_days):
+    from src.database.models import Keyword, KeywordMention
+
+    kw = Keyword(term=term, normalized_term=term, language="en")
+    session.add(kw)
+    session.flush()
+    today = datetime.now(UTC).date()
+    for sid, ago in source_days:
+        art = session.query(Article).filter_by(source_id=sid).first()
+        session.add(KeywordMention(keyword_id=kw.id, article_id=art.id, count=2,
+                                   observed_on=today - timedelta(days=ago), source_id=sid))
+    session.commit()
+
+
+def test_story_propagation_needs_outlets_not_feeds(tmp_path, monkeypatch):
+    """Three feeds of ONE site are not a story that travelled across three sources."""
+    from src.analytics.story_propagation import find_story_propagation
+
+    session = _kw_session(tmp_path, monkeypatch)
+    ids = [_feed(session, n, "bbc.com", f"https://bbc.com/{n}") for n in ("a", "b", "c")]
+    session.commit()
+    _mention_spread(session, "reformterm", [(ids[0], 8), (ids[1], 4), (ids[2], 1)])
+    assert find_story_propagation(session)["items"] == []  # one outlet, three feeds
+    other = [_feed(session, "DW", "dw.com", "https://dw.com/rss"), _feed(session, "ZDF", "zdf.de", "https://zdf.de/rss")]
+    session.commit()
+    _mention_spread(session, "reformterm2", [(ids[0], 8), (other[0], 4), (other[1], 1)])  # the positive control
+    items = find_story_propagation(session)["items"]
+    assert [(i["term"], i["distinct_sources"], i["first_source"]) for i in items] == [("reformterm2", 3, _name(session, ids[0]))]
+
+
+def _name(session, sid):
+    return session.get(Source, sid).name
