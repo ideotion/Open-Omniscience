@@ -1051,6 +1051,9 @@ class SourceManager:
         added = 0
         updated = 0
         skipped = 0
+        records_of: dict[str, int] = {}
+        for source_data in sources_data:
+            records_of[source_data.get("domain", "")] = records_of.get(source_data.get("domain", ""), 0) + 1
 
         for source_data in sources_data:
             domain = source_data.get("domain", "")
@@ -1058,7 +1061,7 @@ class SourceManager:
                 skipped += 1
                 continue
 
-            existing = source_for_import(self.session, domain, source_data.get("rss_url"))
+            existing = source_for_import(self.session, domain, source_data.get("rss_url"), records_of[domain])
             if existing:
                 # Update existing source
                 existing.name = source_data.get("name", existing.name)
