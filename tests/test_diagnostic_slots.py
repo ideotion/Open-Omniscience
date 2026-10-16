@@ -752,7 +752,7 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     # the arithmetic beside the number: the plan's 919 KB with its +125 KB session-forensics estimate swapped for the crash
     # trace export's worst case, (400 + 9 x 120) lines of 202 bytes
     assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + (400 + 9 * 120) * 202
-    assert free == 1_623_784, "the comment on the table states the free room; move them together"
+    assert free == 1_613_784, "the comment on the table states the free room; move them together"
 
 
 def test_a_budget_raised_past_the_headroom_fails_the_pin(monkeypatch):

@@ -387,17 +387,20 @@ def _fill_runs() -> None:
     renamed (the sink drops what it does not know) shrinks this measurement visibly and not silently."""
     assert len(_WIDEST_CLASS) == se._CLASS_NAME_MAX
     longest = max(se.RUN_REFUSALS, key=lambda k: len(se.RUN_REFUSALS[k]))
-    every_key = set(se._RUN_NUMBERS) | set(se._RUN_FLAGS) | set(se._RUN_CLASSES) | {"verify", "error", "reason", "outcome", "seconds"}
+    every_key = set(se._RUN_NUMBERS) | set(se._RUN_FLAGS) | set(se._RUN_CLASSES) | {"verify", "error", "reason", "outcome", "seconds", "via"}
+    widest_via = max(se.RUN_VIA, key=len)
     for what, kind in se.RUN_KINDS.items():
         for _ in range(se.KEEP[kind] + 4):
-            note = se.run_started(what)
+            note = se.run_started(what, via=widest_via)
             assert note is not None
             note.started = time.monotonic() - 99_999.999  # more than a day, the widest the seconds can be written
             se.run_free_space(note, "dest_free_bytes" if what == "export" else "data_free_bytes", "/")
             se.run_facts(note, dest_free_bytes=123_456_789_012_345, data_free_bytes=123_456_789_012_345, summary_error=_WIDEST_CLASS)
             se.run_ended(note, "ended-without-a-recorded-outcome", failure=_WIDEST_CLASS, reason=longest, volumes=1234, bytes=123_456_789_012_345,
                          gate_held_s=1234.567, snapshot_s=1234.567, snapshot_bytes=123_456_789_012_345, engine_wall_s=12345.678,
-                         articles_merged=12_345_678, reindexed=12_345_678, verify="unavailable", set_ok=False)
+                         articles_merged=12_345_678, reindexed=12_345_678, verify="unavailable", set_ok=False,
+                         files=12_345_678, files_done=12_345_678, resumed_from=12_345_678, copied=12_345_678, skipped=12_345_678,
+                         restored=12_345_678, checked=12_345_678, mismatches=12_345_678)
         last = se._STATE[kind]["events"][-1]
         assert every_key <= set(last), f"{kind}: the widest run lost {sorted(every_key - set(last))}"
         assert last["error"] == _WIDEST_CLASS and last["seconds"] >= 99_999.0
@@ -452,8 +455,8 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 65,056 bytes with ordinary names and 109,766 with every name at the cut (a byte or two either way: every event carries the process id),
-    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 115,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
+    every kind, with the events the hooks write. Measured 71,730 bytes with ordinary names and 116,440 with every name at the cut (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
+    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]

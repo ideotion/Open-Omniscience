@@ -521,6 +521,7 @@ def test_a_start_while_a_job_runs_is_a_refusal_of_the_kind_that_asked(journal, t
     refused = {k: [e for e in _events(k) if e["outcome"] == "refused"] for k in se.RUN_KINDS.values()}
     for kind, events in refused.items():
         assert len(events) == 1 and events[0]["reason"] == se.RUN_REFUSALS["already-running"], kind
+        assert events[0]["via"] == "volume-set", f"{kind}: a refusal says which way in it was"
     assert [e["outcome"] for e in _events("run_export")].count("ok") == 1, "the run that held the job still ended ok"
 
 
@@ -716,18 +717,32 @@ def _is_type_name_of_a_name(node: ast.expr) -> bool:
     )
 
 
+def _constants_of(node: ast.expr) -> set[str] | None:
+    """The string constants an outcome argument can be: one constant, or a conditional of constants; ``None`` for anything else."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    if isinstance(node, ast.IfExp):
+        a, b = _constants_of(node.body), _constants_of(node.orelse)
+        return None if a is None or b is None else a | b
+    return None
+
+
 def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
     allowed_facts = set(se._RUN_NUMBERS) | set(se._RUN_FLAGS) | set(se._RUN_CLASSES) | {"verify"}
-    seen = 0
-    for path in ("src/backup/volume_job.py", "src/backup/export_summary.py"):
+    seen: dict[str, int] = {}
+    for path in (
+        "src/backup/volume_job.py", "src/backup/export_summary.py", "src/api/backup_v2.py", "src/ingest/import_job.py",
+        "src/backup/folder_backup.py",
+    ):
         for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space"}):
-            seen += 1
+            seen[path] = seen.get(path, 0) + 1
             where = f"{path}:{call.lineno}"
             name = call.func.attr  # type: ignore[attr-defined]
             if name in ("run_ended", "run_refused"):
                 outcome_arg = call.args[1] if name == "run_ended" else None
                 if outcome_arg is not None:
-                    assert isinstance(outcome_arg, ast.Constant) and outcome_arg.value in se.RUN_OUTCOMES, where
+                    outcomes = _constants_of(outcome_arg)
+                    assert outcomes is not None and outcomes <= se.RUN_OUTCOMES, where
                 if name == "run_refused":
                     first = call.args[0]  # a kind, or ``what`` in the one helper every start passes through
                     assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
@@ -738,9 +753,18 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
                     assert _is_type_name_of_a_name(kw.value), f"{where}: {kw.arg} must be type(exc).__name__, never a message"
                 elif kw.arg == "reason":
                     assert isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_REFUSALS, where
+                elif kw.arg == "via":
+                    # a key of the fixed table, or the one local that holds such a key (``via = "volume-set" if ... else None``)
+                    assert (isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_VIA) or (
+                        isinstance(kw.value, ast.Name) and kw.value.id == "via"
+                    ), f"{where}: via must be a key of the table"
                 else:
                     assert kw.arg in allowed_facts, f"{where}: {kw.arg} is not a fact a run may carry"
-    assert seen >= 25, "the scan found the hooks"
+    # Per file, so a file whose hooks were deleted cannot hide behind the others' count (27, 1, 11, 7 and 18 at the time of writing).
+    floors = {"src/backup/volume_job.py": 25, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 9, "src/ingest/import_job.py": 6,
+              "src/backup/folder_backup.py": 17}
+    for path, floor in floors.items():
+        assert seen.get(path, 0) >= floor, f"the scan found {seen.get(path, 0)} hooks in {path}, expected at least {floor}"
 
 
 def test_each_worker_closes_its_run_in_a_finally_net_and_every_start_names_its_refusal():

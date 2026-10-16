@@ -782,18 +782,31 @@ RUN_OUTCOMES = frozenset(
 #: the hook chose and writes the sentence itself. A key that is not here records no sentence.
 RUN_REFUSALS: dict[str, str] = {
     "no-passphrase": "the volume backup is always encrypted and no passphrase was given",
-    "destination-unusable": "the destination folder could not be created",
+    "destination-unusable": "the destination folder could not be used (empty, not a folder, not writable or not creatable)",
     "not-a-folder": "the path given is not a folder",
     "already-running": "another volume backup, restore or verification was already running",
     "barrier": "another job still held the corpus when the restore reached the swap",
+    "not-a-file": "the path given is not a file",
+    "memory": "this machine could not hold the merge of an encrypted corpus, asked before anything was staged",
+    "import-running": "another folder import was already running",
+    "folder-running": "another folder backup, restore or verification was already running",
+    "no-space": "the destination did not have the free space the backup needs",
 }
+
+#: What a run came through, as a FIXED key, on every run: the volume backup, restore and verification (``volume-set``), the single-file
+#: restore of a legacy backup (``single-file``), the folder import of newsletter files (``newsletter-eml``) and the large-data folder
+#: backup, restore and verification (``folder``). Several ways in record as the same kind (the run journal calls all of them ``import``),
+#: so a reader tells them apart by this key and by nothing else. A value outside the table is not recorded (it is never a path or a
+#: folder name).
+RUN_VIA: frozenset[str] = frozenset({"volume-set", "single-file", "newsletter-eml", "folder"})
 
 #: The measurements a run may carry, by name; a value is kept only if it is a number. The free bytes are the volume the run WRITES to,
 #: read when it began: the destination for a backup, the data folder (where the restore stages) for a restore. An unreadable figure is
 #: absent, never ``0``.
 _RUN_NUMBERS = frozenset(
     {"dest_free_bytes", "data_free_bytes", "volumes", "bytes", "gate_held_s", "snapshot_s", "snapshot_bytes", "engine_wall_s",
-     "articles_merged", "reindexed"}
+     "articles_merged", "reindexed", "files", "files_done", "resumed_from", "copied", "skipped", "restored", "checked",
+     "mismatches"}
 )
 #: What the backup's read-back of the written set found (``VolumeBackupManager._verify_after_write``), the five outcomes it keeps apart.
 _RUN_VERIFY_STATES = frozenset({"verified", "failed", "off", "stopped", "unavailable"})
@@ -830,8 +843,10 @@ def _run_fields(facts: dict[str, Any]) -> dict[str, Any]:
         elif key in _RUN_CLASSES:
             if value is not None:
                 out[key] = _class_name(value)
-        elif key == "verify" and isinstance(value, str) and value in _RUN_VERIFY_STATES:
-            out[key] = value
+        elif isinstance(value, str) and (
+            (key == "verify" and value in _RUN_VERIFY_STATES) or (key == "via" and value in RUN_VIA)
+        ):
+            out[key] = value  # one of five read-back states, or the way in: a key of a fixed table, never the text
     return out
 
 
@@ -922,9 +937,10 @@ def run_ended(note: RunNote | None, outcome: str, *, failure: str | None = None,
         _internal_failure("run_ended", exc)
 
 
-def run_refused(what: str, reason: str, *, failure: str | None = None) -> None:
+def run_refused(what: str, reason: str, *, failure: str | None = None, via: str | None = None) -> None:
     """Record a start that was refused before any run existed (the run journal opens nothing for it), closed in one write: the outcome,
-    ``ran`` False, the fixed sentence of ``reason`` (a key of :data:`RUN_REFUSALS`) and, if given, the class name. Never raises."""
+    ``ran`` False, the fixed sentence of ``reason`` (a key of :data:`RUN_REFUSALS`), the way in (``via``, a key of :data:`RUN_VIA`) and,
+    if given, the class name. Never raises."""
     try:
         kind = RUN_KINDS.get(what)
         if kind is None:
@@ -936,6 +952,7 @@ def run_refused(what: str, reason: str, *, failure: str | None = None) -> None:
         cls = _class_name(failure)
         if cls is not None:
             fields["error"] = cls
+        fields.update(_run_fields({"via": via}))
         record(kind, fields)
     except Exception as exc:  # noqa: BLE001
         _internal_failure("run_refused", exc)
@@ -952,11 +969,14 @@ _METHOD = (
     "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
     "shown. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
     "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
-    "'run_export' (the volume backup, the run journal's 'export'), 'run_import' (the volume restore, its 'import') and 'run_verify' "
-    "keep the last ten runs of each: how each ended, the class of its failure, a fixed sentence for a refusal, its seconds, the free "
-    "bytes of the volume it wrote to when it began ('dest_free_bytes' for a backup, 'data_free_bytes' for a restore, where it stages; "
-    "absent when unreadable) and the figures the engine measured. A run 'open' with no end was going when this member was built, or "
-    "its process was killed (an earlier process's says so in 'ended'); a refusal with 'ran' false is a start that never became a run. "
+    "'run_export' (the volume backup and the folder backup of the large data, the run journal's 'export'), 'run_import' (the run "
+    "journal's 'import': the volume restore, the single-file restore of a legacy backup, the folder restore of the large data and "
+    "the folder import of newsletter files) and 'run_verify' keep the last ten runs of each, every run saying which way it came in "
+    "('via': 'volume-set', 'single-file', 'newsletter-eml' or 'folder'): how each ended, the class of its failure, a fixed sentence "
+    "for a refusal, its seconds, the free bytes of the volume it wrote to when it began ('dest_free_bytes' for a backup, "
+    "'data_free_bytes' for a restore, where it stages; absent when unreadable, and for a folder restore, which writes to several "
+    "volumes) and the figures the engine measured. A run 'open' with no end was going when this member was built, or its process "
+    "was killed (an earlier process's says so in 'ended'); a refusal with 'ran' false is a start that never became a run. "
     "A backup the newsletter filter refused is 'error' in the run journal and 'refused' here. Refused starts share the ten kept with "
     "the runs ('total' counts them all); a run still open is the last to be pushed out."
 )

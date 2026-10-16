@@ -244,7 +244,7 @@ class VolumeBackupManager:
         lingering thread so exactly one worker ever runs. Sequential imports now hand
         off cleanly (parallel volume restores stay disallowed by design — one writer)."""
         if self._state == "running" and self._alive():
-            storage_events.run_refused(what, "already-running")
+            storage_events.run_refused(what, "already-running", via="volume-set")
             raise RuntimeError("A volume backup/restore is already running.")
         if self._thread is not None:
             self._thread.join(timeout=5)  # instant once the work is done; a safety cap
@@ -274,18 +274,18 @@ class VolumeBackupManager:
         with self._lock:
             self._reap_or_reject("export")
             if not passphrase:
-                storage_events.run_refused("export", "no-passphrase")
+                storage_events.run_refused("export", "no-passphrase", via="volume-set")
                 raise ValueError("the volume backup is always encrypted: a passphrase is required")
             destp = Path(dest)
             try:
                 destp.mkdir(parents=True, exist_ok=True)
             except OSError as exc:
-                storage_events.run_refused("export", "destination-unusable", failure=type(exc).__name__)
+                storage_events.run_refused("export", "destination-unusable", failure=type(exc).__name__, via="volume-set")
                 # the passphrase is in scope: scrubbed where the text is made, and the cause is not carried on
                 reason = exception_text(exc, passphrase, typed=False)
                 raise ValueError(f"Cannot use destination {destp}: {reason}") from None
             if not destp.is_dir():
-                storage_events.run_refused("export", "not-a-folder")
+                storage_events.run_refused("export", "not-a-folder", via="volume-set")
                 raise ValueError(f"{destp} is not a folder.")
             self._stop.clear()
             self._pause_requested = False
@@ -401,7 +401,7 @@ class VolumeBackupManager:
         )
         # The storage-events journal keeps the last ten of these runs and writes this one OPEN, so a kill in the middle leaves "started,
         # never ended". The free bytes come after the open record: a stat that hangs on a dead mount leaves the run open, which is the fact.
-        note = storage_events.run_started("export")
+        note = storage_events.run_started("export", via="volume-set")
         storage_events.run_free_space(note, "dest_free_bytes", destp)
         try:
             fn = backup_fn
@@ -555,7 +555,7 @@ class VolumeBackupManager:
             self._reap_or_reject("import")
             srcp = Path(src)
             if not srcp.is_dir():
-                storage_events.run_refused("import", "not-a-folder")
+                storage_events.run_refused("import", "not-a-folder", via="volume-set")
                 raise ValueError(f"{srcp} is not a folder to restore from.")
             # Re-merge an artifact this corpus has already merged. Additive and
             # off by default: the skip exists because the redundant work is
@@ -612,7 +612,7 @@ class VolumeBackupManager:
         # ring and lose the early hours of every item but the last.
         runlog.begin("import", label=srcp.name, dest=str(srcp), force=self._force)
         # Written OPEN to the storage-events journal (a kill in the middle leaves "started, never ended"); see _run_backup.
-        note = storage_events.run_started("import")
+        note = storage_events.run_started("import", via="volume-set")
         try:
             if restore_fn is not None:
                 summary = restore_fn(srcp, passphrase)
@@ -1074,7 +1074,7 @@ class VolumeBackupManager:
             self._reap_or_reject("verify")
             srcp = Path(src)
             if not srcp.is_dir():
-                storage_events.run_refused("verify", "not-a-folder")
+                storage_events.run_refused("verify", "not-a-folder", via="volume-set")
                 raise ValueError(f"{srcp} is not a folder to verify.")
             self._stop.clear()
             self._pause_requested = False
@@ -1092,7 +1092,7 @@ class VolumeBackupManager:
             return self.status()
 
     def _run_verify(self, srcp, passphrase, verify_fn):
-        note = storage_events.run_started("verify")  # written open; see _run_backup
+        note = storage_events.run_started("verify", via="volume-set")  # written open; see _run_backup
         try:
             fn = verify_fn
             if fn is None:
