@@ -97,6 +97,11 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/wiki/history.py": {
         ('retry_after_of', 'response = getattr(exc, "response", None)'): 1,
     },
+    # ``RedirectRefused.reason`` is one of the fixed sentences ``refuse_unlisted_host`` writes (never the URL or the host), so ORES's detail
+    # for a refused redirect is that sentence and no part of the exception's own text (tests/test_session_host_list.py pins the sentence).
+    "src/wiki/ores.py": {
+        ('OresClient.score', 'self._note("refused_redirect", exc.reason)'): 1,
+    },
     "src/wiki/walk.py": {
         ('_http_status', 'status = getattr(getattr(exc, "response", None), "status_code", None)'): 1,
         ('_is_json_error', 'return isinstance(exc, json.JSONDecodeError) or (hasattr(exc, "doc") and hasattr(exc, "pos"))'): 2,
@@ -885,6 +890,11 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_concurrent', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
     },
+    'src/llm/installer.py': {
+        # failure_words returns "HTTP <status>" or the exception's class name and nothing of its text (tests/test_session_host_list.py pins it)
+        ('_get_within', 'failure = failure_words(exc)'): 1,
+        ('_default_get_json', 'failure = failure_words(exc)'): 1,
+    },
     'src/llm/ollama.py': {
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
         ('OllamaClient.generate', 'f"Ollama error for model {model!r}: {_http_error_text(exc)}"'): 1,
@@ -954,6 +964,8 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/safety/fetcher.py': {
         # a fixed sentence of that function, never the URL
         ('refuse_unlisted_host', 'raise RedirectRefused(str(exc)) from None  # a fixed sentence of that function, never the URL'): 1,
+        # reads an HTTP error answer's status code to word the failure as "HTTP <status>"; the exception's text is never read
+        ('failure_words', 'response = getattr(exc, "response", None) if isinstance(exc, requests.exceptions.HTTPError) else None'): 1,
     },
     'src/safety/settings.py': {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
