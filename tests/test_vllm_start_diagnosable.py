@@ -317,6 +317,7 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
     """When the scrubbed copy fails nothing is preserved, and the start record keeps the reason in place of a path."""
     monkeypatch.setattr(V, "_proc", _Proc(code=1))
     monkeypatch.setattr(V, "_exits_noted", set())  # the exit of this pid is journalled once per process
+    monkeypatch.setattr(V, "_exit_preserved", {})
     monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")  # its journal line must not reach other tests' start history
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     V.server_log_path().write_text("some log\n", encoding="utf-8")
@@ -325,6 +326,26 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
         raise OSError("disk full")
 
     monkeypatch.setattr(V.os, "replace", broken)
-    V.start_outcome()
+    out = V.start_outcome()
     record = [h for h in V.start_history() if h.get("event") == "exited"][-1]
     assert record["full_log"] is None and "raw copy is never made" in record["full_log_reason"]
+    # the live payload says why too, and keeps saying it on every later poll of the same exit
+    assert "preserved_log_path" not in out and "raw copy is never made" in out["preserved_log_reason"]
+    assert "raw copy is never made" in V.start_outcome()["preserved_log_reason"]
+
+
+def test_status_bounds_the_live_log_scan_for_the_poll_only(gpu8, monkeypatch):
+    """The poll-cost bound is passed by status() alone; the default read (the bundle's) has none."""
+    import inspect
+
+    default = inspect.signature(V.server_log_tail).parameters["scan_bound"].default
+    seen = {}
+
+    def spy(**kw):
+        seen.update(kw)
+        return {"available": False, "reason": "spy"}
+
+    monkeypatch.setattr(V, "server_log_tail", spy)
+    V.status()
+    assert seen.get("scan_bound") == V._STATUS_LOG_SCAN_BYTES
+    assert default is None

@@ -2160,13 +2160,126 @@ def test_the_live_server_log_is_scrubbed_before_its_head_and_tail_are_cut(monkey
     assert _KEY[:10] not in shown and _KEY[-10:] not in shown
 
 
-def test_a_log_too_large_to_be_checked_whole_is_not_shown(monkeypatch):
-    """The reason is stated, and none of the text is shown."""
-    monkeypatch.setattr(V, "_LOG_SCRUB_MAX_BYTES", 100)
+def test_a_tail_window_that_starts_inside_a_key_leaves_no_prefix_of_it(monkeypatch):
+    """The key spans exactly ``size - limit`` (where the tail starts), across lines of ordinary length: only the tail half can fail this."""
+    _hold_key(monkeypatch)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("x" * 500, encoding="utf-8")
+    limit = 100
+    before = ("a" * 60 + "\n") * 3 + "b" * 20
+    key_at = len(before)
+    after_key = _KEY + "c" * 20 + "\n"
+    # size - limit lands 5 bytes into the key: the tail window starts inside it
+    rest = limit - (len(_KEY) - 5) - 20 - 1
+    body = before + after_key + "q" * (rest - 1) + "\n"
+    assert len(body) - limit == key_at + 5, "the tail window must start inside the key"
+    V.server_log_path().write_text(body, encoding="utf-8")
+    out = V.server_log_tail(limit=limit, head_limit=20)
+    shown = (out.get("head") or "") + (out.get("tail") or "")
+    assert out["truncated"] is True
+    assert _KEY[:10] not in shown and _KEY[-10:] not in shown
+
+
+def test_a_big_log_is_never_withheld_and_every_byte_is_counted(monkeypatch):
+    """No fixed cap: a log far above any bound still gives its head and tail, its size on disk, and the scrubbed length beside it."""
+    _hold_key(monkeypatch)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i} " + "x" * 80 + "\n" for i in range(3000)]
+    lines[1500] = f"leak {_KEY} here\n"
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    size = V.server_log_path().stat().st_size
     out = V.server_log_tail()
-    assert out["available"] is False and "cannot be checked" in out["reason"] and "tail" not in out
+    assert out["available"] is True and out["truncated"] is True
+    assert out["bytes"] == size and out["scanned_whole"] is True
+    assert out["scrubbed_bytes"] <= size and out["elided_bytes"] > 0
+    assert out["head"].startswith("line 0 ") and out["tail"].rstrip().endswith("x" * 80)
+    assert _KEY not in json.dumps(out)
+
+
+def test_a_status_poll_bounds_its_read_but_says_so_and_still_scrubs_both_ends(monkeypatch):
+    """The poll cost bound belongs to status() alone: the middle is counted as not scanned, and a key at the tail's line boundary is still taken out."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 300)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"line {i} " + "x" * 80 + "\n" for i in range(400)]
+    lines[-3] = f"end {_KEY} end\n"
+    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    size = V.server_log_path().stat().st_size
+    out = V.server_log_tail(limit=300, head_limit=100, scan_bound=1000)
+    assert out["available"] is True and out["scanned_whole"] is False and out["scrubbed_bytes"] is None
+    assert out["bytes"] == size and out["elided_bytes"] > 0
+    assert _KEY not in json.dumps(out) and _KEY[:10] not in out["tail"]
+    assert out["head"].startswith("line 0 ")
+
+
+def test_failure_excerpt_does_not_cut_a_key_at_its_read_bound(monkeypatch):
+    """A read that ends mid-line drops the partial line, so the scrub never sees (or leaves) a key's first characters."""
+    _hold_key(monkeypatch)
+    monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 120)
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    text = "RuntimeError: first\n" + "m" * 80 + "\n" + "t" * 5 + _KEY + "\n"  # the 120-byte bound falls inside the key
+    V.server_log_path().write_text(text, encoding="utf-8")
+    out = V.failure_excerpt(limit=2000)
+    assert out["available"] is True
+    assert _KEY[:5] not in (out.get("excerpt") or "")
+
+
+def test_the_newest_failed_log_is_streamed_with_its_file_size_and_scrubbed_size_apart(monkeypatch):
+    _hold_key(monkeypatch)
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    p = V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log"
+    body = "".join(f"row {i} " + "y" * 60 + "\n" for i in range(500)) + f"tail {_KEY}\n"
+    p.write_text(body, encoding="utf-8")
+    out = V.newest_failed_start_log(limit=400)
+    assert out["bytes"] == p.stat().st_size and out["scrubbed_bytes"] != out["bytes"]
+    assert out["truncated"] is True and out["elided_bytes"] > 0
+    assert _KEY[:10] not in json.dumps(out)
+
+
+def test_a_failure_to_remove_an_older_copy_does_not_turn_the_new_copy_into_not_kept(monkeypatch):
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    for i in range(7):
+        (V.failed_start_log_dir() / f"2025010{i}T000000-pid1-rc1.log").write_text("old\n", encoding="utf-8")
+    real_unlink = Path.unlink
+
+    def refuse(self, *a, **k):
+        if self.name.startswith("2025"):
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    path, reason = V._preserve_failed_log_result(9, 1)
+    assert path is not None and reason is None and Path(path).read_text(encoding="utf-8") == "hello\n"
+
+
+def test_a_half_written_copy_left_by_a_killed_process_is_swept_at_the_next_copy():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
+    orphan = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
+    orphan.write_text("half", encoding="utf-8")
+    assert V._preserve_failed_log_result(9, 1)[0] is not None
+    assert not orphan.exists()
+
+
+def test_the_installers_last_words_are_scrubbed_before_each_line_is_stripped(monkeypatch):
+    """A held passphrase with edge whitespace, alone on a line, would lose that whitespace to ``strip()`` and then no longer match."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setattr(connect, "_passphrase", "  edge-space-key-7731  ")
+    ss.forget_held()
+
+    def runner(argv, env=None, should_stop=None):
+        yield "  edge-space-key-7731  "
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as raised:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=runner)
+    assert "edge-space-key-7731" not in str(raised.value)
 
 
 def test_the_failure_excerpt_window_is_scrubbed_where_the_log_is_read(monkeypatch):

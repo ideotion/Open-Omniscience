@@ -173,12 +173,76 @@ def server_log_path() -> Path:
 # bundle showed precisely that -- 29,855 bytes of log, the last 8,000 kept, and the
 # reason the server died sitting in the 21,855 that were thrown away.
 _LOG_HEAD_BYTES = 8000
-#: The most of the live server log that is read to be checked for the passphrase WHOLE before it is cut.
-_LOG_SCRUB_MAX_BYTES = 16_000_000
+#: Status polling only: a live log larger than this is not scanned whole on every poll. This protects the COST OF A POLL (a long-running
+#: server's access log can reach hundreds of MB, and /api/llm/vllm/status is polled), not the passphrase: the head and the tail are still
+#: scrubbed from a line boundary, the middle is counted and stated as not scanned, and the Diagnostics bundle's own read has no such bound.
+_STATUS_LOG_SCAN_BYTES = 16_000_000
+#: Extra bytes read before the tail window when a big log is not scanned whole, so the window starts on a line boundary.
+_TAIL_ALIGN_MARGIN = 1_000_000
 _LOG_TAIL_BYTES = 8000
 
 
-def server_log_tail(*, limit: int = _LOG_TAIL_BYTES, head_limit: int = _LOG_HEAD_BYTES) -> dict:
+def _scrubbed_log_ends(
+    path: Path, *, head_cap: int, keep: int, scan_bound: int | None = None
+) -> dict:
+    """Stream a log line by line through the scrub, keeping its first ``head_cap`` bytes and its last ``keep`` bytes.
+
+    Every byte is counted and none is withheld: ``file_size`` is the file's size on disk, ``scrubbed_bytes`` the scrubbed text's length
+    (``None`` when the middle was not scanned, see ``scan_bound``). The scrub sees one WHOLE line before any cut, so a key that straddles
+    a head or tail cut keeps no prefix; a passphrase that itself holds a line break cannot match across two lines, which is a stated
+    limit. May raise OSError."""
+    file_size = path.stat().st_size
+    head = bytearray()
+    window: deque[bytes] = deque()
+    window_bytes = 0
+    total = 0
+
+    def _take(raw_line: bytes) -> bytes:
+        line = raw_line.decode("utf-8", errors="replace")
+        body = line.rstrip("\r\n")
+        return (scrubbed(body) + line[len(body):]).encode("utf-8")
+
+    whole = scan_bound is None or file_size <= scan_bound
+    with path.open("rb") as fh:
+        for raw_line in fh:
+            out = _take(raw_line)
+            total += len(out)
+            if len(head) < head_cap:
+                head += out[: head_cap - len(head)]
+            if not whole and len(head) >= head_cap:
+                break
+            window.append(out)
+            window_bytes += len(out)
+            while window and window_bytes - len(window[0]) >= keep:
+                window_bytes -= len(window.popleft())
+        if not whole:
+            window.clear()
+            window_bytes = 0
+            start = max(0, file_size - keep - _TAIL_ALIGN_MARGIN)
+            fh.seek(start)
+            if start > 0:
+                fh.readline()  # the partial line the seek landed in; the window starts on a line boundary
+            for raw_line in fh:
+                out = _take(raw_line)
+                window.append(out)
+                window_bytes += len(out)
+                while window and window_bytes - len(window[0]) >= keep:
+                    window_bytes -= len(window.popleft())
+    return {
+        "file_size": file_size,
+        "scrubbed_bytes": total if whole else None,
+        "head": bytes(head),
+        "tail": b"".join(window)[-keep:],
+        "whole": whole,
+    }
+
+
+def server_log_tail(
+    *,
+    limit: int = _LOG_TAIL_BYTES,
+    head_limit: int = _LOG_HEAD_BYTES,
+    scan_bound: int | None = None,
+) -> dict:
     """Both ends of the last server start's output, for the UI and the diagnostics
     bundle. Degrades to a stated absence -- never an empty string that would read as
     "the server said nothing wrong".
@@ -186,36 +250,42 @@ def server_log_tail(*, limit: int = _LOG_TAIL_BYTES, head_limit: int = _LOG_HEAD
     ``tail`` keeps its meaning (the last bytes) so existing readers are unaffected;
     ``head`` and ``elided_bytes`` are additive. When the whole file fits, ``head`` is
     absent rather than a duplicate of ``tail`` -- a reader must never be shown the same
-    text twice and left to wonder whether the server said it twice."""
+    text twice and left to wonder whether the server said it twice.
+
+    ``bytes`` is the file's size on disk; ``scrubbed_bytes`` is the scrubbed text's length, which differs when a key was replaced.
+    ``scan_bound`` is for status polling only (see ``_STATUS_LOG_SCAN_BYTES``): a log above it has its middle counted, not scanned,
+    and says so with ``scanned_whole: False``."""
     p = server_log_path()
     try:
         if not p.is_file():
             return {"available": False, "reason": "no server log yet (never started here)"}
-        with p.open("rb") as fh:
-            raw = fh.read(_LOG_SCRUB_MAX_BYTES + 1)
-        if len(raw) > _LOG_SCRUB_MAX_BYTES:
-            # Stated, never silently cut: the text is checked whole BEFORE it is cut (a key that straddles the cut keeps its start
-            # otherwise), and a log this large is not read whole.
-            return {"available": False, "reason": f"the server log is larger than {_LOG_SCRUB_MAX_BYTES // 1_000_000} MB, so it is not shown: it cannot be checked for the passphrase whole"}
-        # scrubbed on READ, before the head/tail cut: the live log is the server's own output and can echo a path, a URL or a config line
-        raw = scrubbed(raw.decode("utf-8", errors="replace")).encode("utf-8")
-        size = len(raw)
-        if size <= limit:
+        # scrubbed on READ, line by line, BEFORE the head/tail cut: the live log is the server's own output and can echo a path, a URL or a config line
+        ends = _scrubbed_log_ends(p, head_cap=head_limit, keep=limit, scan_bound=scan_bound)
+        size = ends["file_size"]
+        tail = ends["tail"]
+        if ends["whole"] and ends["scrubbed_bytes"] <= limit:
             return {
                 "available": True,
                 "path": str(p),
                 "bytes": size,
+                "scrubbed_bytes": ends["scrubbed_bytes"],
+                "scanned_whole": True,
                 "truncated": False,
                 "elided_bytes": 0,
-                "tail": raw.decode("utf-8", errors="replace"),
+                "tail": tail.decode("utf-8", errors="replace"),
             }
-        head = raw[: min(head_limit, max(0, size - limit))]
-        tail = raw[size - limit :]
-        elided = size - len(head) - limit
+        if ends["whole"]:
+            head = ends["head"][: min(head_limit, max(0, ends["scrubbed_bytes"] - limit))]
+            elided = ends["scrubbed_bytes"] - len(head) - limit
+        else:
+            head = ends["head"]
+            elided = max(0, size - len(head) - len(tail))
         return {
             "available": True,
             "path": str(p),
             "bytes": size,
+            "scrubbed_bytes": ends["scrubbed_bytes"],
+            "scanned_whole": ends["whole"],
             "truncated": True,
             # Stated, never implied: a reader must be able to tell that the two halves
             # are not contiguous, and by how much.
@@ -330,6 +400,10 @@ def _window_around(lines: list[str], idx: int, limit: int) -> str:
     return "\n".join([*kept, tail]).strip()
 
 
+#: The most of the log ``failure_excerpt`` searches for a signature: it protects the cost of a status poll, and a cause past it is not found.
+_EXCERPT_READ_BYTES = 4_000_000
+
+
 def failure_excerpt(*, limit: int = 900) -> dict:
     """The part of the server log that EXPLAINS a failed start.
 
@@ -368,7 +442,10 @@ def failure_excerpt(*, limit: int = 900) -> dict:
         # The log is rewritten "wb" per start, so this is ONE attempt's output. Bounded
         # anyway: a runaway progress bar must not pull megabytes into a UI poll.
         with p.open("rb") as fh:
-            raw = fh.read(4_000_000)
+            raw = fh.read(_EXCERPT_READ_BYTES)
+        if len(raw) == _EXCERPT_READ_BYTES and b"\n" in raw:
+            # a full read ends mid-line: drop that partial line so no key is cut before the scrub sees it
+            raw = raw[: raw.rindex(b"\n") + 1]
     except OSError as exc:
         return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
 
@@ -933,8 +1010,13 @@ def start_outcome() -> dict:
             "full_log": preserved,
             "full_log_reason": preserve_reason,
         })
-        if preserved:
-            out["preserved_log_path"] = preserved
+        _exit_preserved[pid] = (preserved, preserve_reason)
+    if pid is not None and pid in _exit_preserved:
+        kept_path, kept_reason = _exit_preserved[pid]
+        if kept_path:
+            out["preserved_log_path"] = kept_path
+        elif kept_reason:
+            out["preserved_log_reason"] = kept_reason
     return out
 
 
@@ -1562,6 +1644,8 @@ def vram_fit(model: str, vram_mb: int | None) -> dict:
 #: Exits already journalled, keyed by pid, so a probe called many times records a
 #: transition ONCE. Process-local: a restart re-reads the file, never re-writes it.
 _exits_noted: set[int] = set()
+#: pid -> (preserved path, reason it was not kept), so every later poll of the same exit still says where the log is or why it is not.
+_exit_preserved: dict[int, tuple[str | None, str | None]] = {}
 
 #: Characters of failure excerpt kept in the journal. Larger than the interactive
 #: default because this is the copy that OUTLIVES the log it was read from.
@@ -1638,6 +1722,8 @@ def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str |
         dest_dir = failed_start_log_dir()
         dest_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+        for orphan in dest_dir.glob("*.log.tmp"):
+            orphan.unlink(missing_ok=True)  # a copy interrupted by a kill leaves a scrubbed half file nothing else sweeps
         dest = dest_dir / f"{stamp}-pid{pid or 0}-rc{returncode}.log"
         tmp = dest_dir / (dest.name + ".tmp")
         try:
@@ -1649,13 +1735,16 @@ def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str |
             os.replace(tmp, dest)
         finally:
             tmp.unlink(missing_ok=True)
-        kept = sorted(dest_dir.glob("*.log"))
-        for stale in kept[:-_FAILED_LOG_KEEP]:
-            stale.unlink(missing_ok=True)
-        return str(dest), None
     except Exception as exc:  # noqa: BLE001 - preserving evidence must never break a probe
         log_failure(_LOG, "could not preserve the failed vLLM server log", exc, level=logging.INFO)
         return None, _PRESERVE_FAILED_REASON
+    # the scrubbed copy IS kept from here on: a failed cleanup of older copies must not report it as not kept
+    try:
+        for stale in sorted(dest_dir.glob("*.log"))[:-_FAILED_LOG_KEEP]:
+            stale.unlink(missing_ok=True)
+    except OSError as exc:
+        log_failure(_LOG, "could not remove an older preserved vLLM server log", exc, level=logging.INFO)
+    return str(dest), None
 
 
 _PRESERVE_FAILED_REASON = "the server log was not kept: copying it with the passphrase taken out failed, and a raw copy is never made instead"
@@ -1701,23 +1790,28 @@ def newest_failed_start_log(*, limit: int = _BUNDLED_FAILED_LOG_BYTES) -> dict:
             "reason": "no failed start has been recorded since this was added",
         }
     newest = Path(logs[-1]["path"])
+    half = limit // 2
     try:
-        raw = newest.read_bytes()
+        # Scrubbed on READ as well as on copy: a log kept by an older build is raw on the disk, and the passphrase may have changed since
+        # a newer one was copied. Streamed line by line BEFORE any cut, so a key that straddles the cut leaves no prefix and a big log is
+        # never held whole in memory.
+        ends = _scrubbed_log_ends(newest, head_cap=half, keep=limit)
     except OSError as exc:
         return {"available": False, "reason": f"could not read {newest}: {record_text(exc)}"}
-    # Scrubbed on READ as well as on copy: a log kept by an older build is raw on the disk, and the passphrase may have changed since
-    # a newer one was copied. The whole text goes through BEFORE it is cut, so a key that straddles the cut leaves no prefix.
-    raw = scrubbed(raw.decode("utf-8", errors="replace")).encode("utf-8")
-    out: dict = {"available": True, "path": str(newest), "bytes": len(raw)}
-    if len(raw) <= limit:
-        out["text"] = raw.decode("utf-8", errors="replace")
+    out: dict = {
+        "available": True,
+        "path": str(newest),
+        "bytes": ends["file_size"],
+        "scrubbed_bytes": ends["scrubbed_bytes"],
+    }
+    if ends["scrubbed_bytes"] <= limit:
+        out["text"] = ends["tail"].decode("utf-8", errors="replace")
         out["truncated"] = False
         return out
-    half = limit // 2
     out["truncated"] = True
-    out["elided_bytes"] = len(raw) - 2 * half
-    out["head"] = raw[:half].decode("utf-8", errors="replace")
-    out["tail"] = raw[-half:].decode("utf-8", errors="replace")
+    out["elided_bytes"] = ends["scrubbed_bytes"] - 2 * half
+    out["head"] = ends["head"][:half].decode("utf-8", errors="replace")
+    out["tail"] = ends["tail"][-half:].decode("utf-8", errors="replace")
     return out
 
 
@@ -2423,7 +2517,7 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # that died on a gated repo, a bad model id or a CUDA OOM was reported only as
         # "not running", with the reason discarded to DEVNULL and unrecoverable.
         # `installed and not running` is precisely when an operator needs it.
-        "server_log": server_log_tail(),
+        "server_log": server_log_tail(scan_bound=_STATUS_LOG_SCAN_BYTES),
         # THE START JOURNAL, beside the install one. start_outcome() forgets on every
         # boot and server.log is overwritten by the next attempt, so this is the only
         # durable record of a start that keeps dying.
@@ -3808,7 +3902,7 @@ def run_install_job(
                 # bare exit code. "Failed (exit code 1)" is what an operator reported as
                 # "aborted for unknown reasons" while the reason sat in the captured
                 # output -- a cause that reaches no surface is not a captured cause.
-                said = [ln.strip() for ln in tail if ln.strip()][-_ERROR_TAIL_LINES:]
+                said = [t for t in (scrubbed(ln).strip() for ln in tail) if t][-_ERROR_TAIL_LINES:]
                 # scrubbed BEFORE the cut: this text becomes the job's error and the journal's, and a cut inside a key keeps its start
                 detail = scrubbed("\n".join(said))[:_ERROR_TAIL_CHARS]
                 msg = f"{resolver} install vllm=={version} failed (exit code {exit_code})."
