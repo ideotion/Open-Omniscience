@@ -209,7 +209,7 @@ def list_sources(
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "source_type": s.source_type,
-                "country": s.country,
+                "country": country_payload(s.country),
                 "country_name": _display_name(s.country),
                 "language": s.language,
                 "article_count": _count(s),

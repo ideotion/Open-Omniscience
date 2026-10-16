@@ -397,8 +397,12 @@ def test_every_insights_handler_hands_the_analytics_ONE_spelling_whatever_was_ty
 
     from src.analytics import queries as q
     from src.analytics import readmodel as rm
+    from src.api import insights as insights_api
     from src.api.main import app
 
+    # A hit on the endpoints' own read cache (filled by an earlier test for the same key) never reaches the analytics, and
+    # this test is about what is handed to them.
+    insights_api._read_cache.clear()
     seen: list = []
     module = {"rm": rm, "q": q}[target[0]]
 
