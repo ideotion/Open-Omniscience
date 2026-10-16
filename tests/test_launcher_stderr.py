@@ -8,7 +8,11 @@ the count and the pid/boot ride with the record; the reader shows it beside the 
 from __future__ import annotations
 
 import json
+import os
+import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -193,3 +197,152 @@ def test_the_launchers_list_of_messages_and_the_readers_are_the_same_list():
     assert block, "launch.sh must define STDERR_MESSAGES"
     assert set(block.group(1).split("\n")) == set(ee.ABORT_MESSAGES)
     assert all(m.strip() == m and m and "|" not in m for m in ee.ABORT_MESSAGES), "the launcher joins them with | and compares whole lines"
+
+
+# ---- the independent read's findings (10-17): the window must not go silent, the launcher must not die of the filter, one pid file per launch ----
+
+
+@posix_only
+def test_a_line_reaches_the_window_while_the_server_is_still_running(tmp_path):
+    """An awk that reads its whole input before it prints (mawk) must not sit between the server and the window."""
+    root, env = _launcher_tree(tmp_path, "echo 'INFO listening' >&2\nsleep 8\n")
+    proc = subprocess.Popen(
+        ["bash", str(root / "scripts" / "launch.sh")], env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        import selectors
+
+        sel = selectors.DefaultSelector()
+        sel.register(proc.stderr, selectors.EVENT_READ)
+        got = ""
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline and "INFO listening" not in got:
+            if sel.select(timeout=0.2):
+                got += proc.stderr.readline()
+        assert "INFO listening" in got, "the server is still running, so the window must already have the line"
+        assert proc.poll() is None
+    finally:
+        proc.kill()
+        proc.communicate(timeout=30)
+
+
+@posix_only
+def test_a_stop_from_the_window_still_leaves_the_summary(tmp_path):
+    root, env = _launcher_tree(tmp_path, "echo 'free(): invalid pointer' >&2\nexec sleep 30\n")
+    proc = subprocess.Popen(
+        ["bash", str(root / "scripts" / "launch.sh")], env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    try:
+        count = tmp_path / "curl.count"
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if count.exists() and int(count.read_text(encoding="utf-8").strip() or 0) >= 2:
+                break
+            time.sleep(0.05)
+        time.sleep(0.3)
+        os.killpg(proc.pid, signal.SIGHUP)  # closing the window HUPs the whole process group, the filter included
+        proc.communicate(timeout=30)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not any(r.get("summary") for r in _records(root)):
+        time.sleep(0.1)
+    recs = _records(root)
+    assert any(r.get("summary") for r in recs), "a stop the user asked for must still say that the filter ran"
+    assert [r["line"] for r in recs if not r.get("summary")] == ["free(): invalid pointer"]
+
+
+@posix_only
+def test_a_record_that_cannot_be_written_starts_the_server_as_before(tmp_path):
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\necho 'free(): invalid pointer' >&2\nexit 3\n")
+    (root / "data" / "diagnostics" / ee.LAUNCHER_STDERR).mkdir(parents=True)  # a directory where the file should be
+    proc = _run_launcher(root, env)
+    assert proc.returncode == 3 and "free(): invalid pointer" in proc.stderr
+    assert "No such file" not in proc.stderr and "Is a directory" not in proc.stderr, "the launcher says nothing about it"
+
+
+@posix_only
+def test_a_backslash_in_the_data_folder_does_not_end_the_filter(tmp_path):
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\necho 'free(): invalid pointer' >&2\necho 'later line' >&2\nexit 3\n")
+    odd = tmp_path / "my\\new data"
+    env["OO_DATA_DIR"] = str(odd)
+    proc = _run_launcher(root, env)
+    assert "later line" in proc.stderr, "every line still reaches the window"
+    lines = [json.loads(x) for x in (odd / "diagnostics" / ee.LAUNCHER_STDERR).read_text(encoding="utf-8").splitlines()]
+    assert [r["line"] for r in lines if not r.get("summary")] == ["free(): invalid pointer"]
+
+
+@posix_only
+def test_two_launches_at_once_each_record_under_their_own_server_pid(tmp_path):
+    body = "sleep 1\necho 'free(): invalid pointer' >&2\nexit 3\n"
+    root_a, env_a = _launcher_tree(tmp_path / "a", body)
+    root_b, env_b = _launcher_tree(tmp_path / "b", body)
+    shared = tmp_path / "shared"
+    for e in (env_a, env_b):
+        e["OO_DATA_DIR"] = str(shared)
+    procs = [
+        subprocess.Popen(["bash", str(r / "scripts" / "launch.sh")], env=e, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for r, e in ((root_a, env_a), (root_b, env_b))
+    ]
+    for p in procs:
+        p.communicate(timeout=60)
+    pids = {int((t / "server.pid").read_text(encoding="utf-8").strip()) for t in (tmp_path / "a", tmp_path / "b")}
+    recs = [json.loads(x) for x in (shared / "diagnostics" / ee.LAUNCHER_STDERR).read_text(encoding="utf-8").splitlines()]
+    lines = [r for r in recs if not r.get("summary")]
+    assert {r["pid"] for r in lines} == pids and len(lines) == 2
+    assert not list((shared / "diagnostics").glob(".launcher_stderr.*.pid")), "each filter removes its own pid file"
+
+
+@posix_only
+def test_an_ephemeral_run_leaves_no_record_in_the_persistent_folder(tmp_path):
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\necho 'free(): invalid pointer' >&2\nexit 3\n")
+    env["OO_EPHEMERAL"] = "1"
+    _run_launcher(root, env)
+    assert not (root / "data" / "diagnostics" / ee.LAUNCHER_STDERR).exists()
+
+
+def test_the_pid_write_after_the_server_starts_can_never_end_the_launcher():
+    src = (Path(__file__).resolve().parent.parent / "scripts" / "launch.sh").read_text(encoding="utf-8")
+    line = next(ln for ln in src.splitlines() if "> \"$STDERR_PIDFILE\"; }" in ln and "SERVER" in ln)
+    assert line.rstrip().endswith("|| true"), "this line runs before the launcher's traps exist, under set -e"
+
+
+def test_the_counts_from_the_file_are_real_counts_not_booleans_or_negatives(dd):
+    _write(dd, [
+        {"pid": 5, "boot_id": "b1", "line": "free(): invalid pointer"},
+        {"pid": 5, "boot_id": "b1", "summary": True, "kept_lines": True, "dropped_lines": -3, "over_cap_lines": True},
+    ])
+    out = ee.launcher_stderr(5, "b1")
+    assert out["dropped_lines"] is None and "over_cap_lines" not in out and out["lines_recorded"] == 1
+
+
+def test_a_boolean_pid_in_the_file_is_not_pid_one(dd):
+    _write(dd, [{"pid": True, "boot_id": "b1", "line": "free(): invalid pointer"}])
+    assert ee.launcher_stderr(1, "b1") is None
+
+
+def test_the_summarys_kept_count_is_reported_and_a_gap_is_named(dd):
+    _write(dd, [
+        {"pid": 5, "boot_id": "b1", "line": "free(): invalid pointer"},
+        {"pid": 5, "boot_id": "b1", "summary": True, "kept_lines": 4, "dropped_lines": 9, "over_cap_lines": 0},
+    ])
+    out = ee.launcher_stderr(5, "b1")
+    assert out["lines_recorded"] == 4 and out["lines_not_found"] == 3
+
+
+def test_a_match_on_the_pid_alone_says_so(dd):
+    _write(dd, [{"pid": 5, "boot_id": None, "line": "free(): invalid pointer"}])
+    assert ee.launcher_stderr(5, None)["pid_only_match"] is True
+    _write(dd, [{"pid": 5, "boot_id": "b1", "line": "free(): invalid pointer"}])
+    assert "pid_only_match" not in ee.launcher_stderr(5, "b1")
+
+
+def test_a_huge_file_is_read_from_its_end(dd):
+    (dd / "diagnostics").mkdir()
+    filler = json.dumps({"pid": 9, "boot_id": "b1", "line": "free(): invalid pointer"}) + "\n"
+    newest = json.dumps({"pid": 5, "boot_id": "b1", "line": "malloc(): corrupted top size"}) + "\n"
+    (dd / "diagnostics" / ee.LAUNCHER_STDERR).write_text(filler * (ee._STDERR_READ_BYTES // len(filler) + 50) + newest, encoding="utf-8")
+    assert ee.launcher_stderr(5, "b1")["lines"] == ["malloc(): corrupted top size"]

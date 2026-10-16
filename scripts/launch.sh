@@ -188,18 +188,31 @@ Fatal Python error: Segmentation fault
 Fatal Python error: Bus error
 Fatal Python error: Illegal instruction
 Fatal Python error: Floating point exception'
+# The window's copy of stderr is made by `tee`, NOT by awk: some awks (mawk, the default on Debian and Ubuntu) read their whole
+# input before they print, so a pass-through done by awk showed the window nothing until the server exited. awk reads only a COPY, so
+# at worst it logs late: each recorded line's "at" is when the filter handled it (the end of the run on such an awk), not when the
+# message was printed. The filter ignores INT, HUP, TERM and PIPE (the window's Ctrl-C or close reaches the whole process group; the
+# server is stopped by this launcher's trap, the pipe then closes, and the filter writes its summary), takes its paths and list through
+# the ENVIRONMENT (awk -v would treat a backslash in a folder name as an escape), and removes its own pid file at the end.
 stderr_filter() {
-    awk -v out="$STDERR_RECORD" -v pidfile="$STDERR_PIDFILE" -v boot="$1" -v keep="$STDERR_KEEP" -v msgs="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" '
+    # (INT, HUP, TERM and PIPE are already ignored here: the caller sets them, and an ignored signal stays ignored in children)
+    OO_SF_OUT="$STDERR_RECORD" OO_SF_PIDFILE="$STDERR_PIDFILE" OO_SF_BOOT="$1" OO_SF_KEEP="$STDERR_KEEP" \
+    OO_SF_MSGS="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" awk '
     BEGIN {
-        n = split(msgs, list, "|")
+        out = ENVIRON["OO_SF_OUT"]; pidfile = ENVIRON["OO_SF_PIDFILE"]; boot = ENVIRON["OO_SF_BOOT"]; keep = ENVIRON["OO_SF_KEEP"] + 0
+        n = split(ENVIRON["OO_SF_MSGS"], list, "|")
         for (i = 1; i <= n; i++) ok[list[i]] = 1
-        kept = 0; dropped = 0; over = 0
+        kept = 0; dropped = 0; over = 0; thepid = ""
     }
     function stamp(   t) { t = ""; "date -u +%Y-%m-%dT%H:%M:%SZ" | getline t; close("date -u +%Y-%m-%dT%H:%M:%SZ"); return t }
-    function pid(   p) { p = ""; if ((getline p < pidfile) > 0) {} ; close(pidfile); return (p ~ /^[0-9]+$/) ? p : "null" }
+    function pid(   p) {
+        if (thepid != "") return thepid
+        p = ""; if ((getline p < pidfile) > 0) {} ; close(pidfile)
+        if (p ~ /^[0-9]+$/) thepid = p
+        return (thepid != "") ? thepid : "null"
+    }
     function bootj() { return (boot ~ /^[0-9a-f-]+$/) ? "\"" boot "\"" : "null" }
     {
-        print $0 > "/dev/stderr"
         if ($0 in ok) {
             if (kept < keep) {
                 printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"line\":\"%s\"}\n", stamp(), pid(), bootj(), $0 >> out
@@ -209,6 +222,8 @@ stderr_filter() {
     }
     END {
         printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"summary\":true,\"kept_lines\":%d,\"dropped_lines\":%d,\"over_cap_lines\":%d}\n", stamp(), pid(), bootj(), kept, dropped, over >> out
+        q = pidfile; gsub(/\047/, "\047\\\047\047", q)
+        system("rm -f -- \047" q "\047")
     }'
 }
 
@@ -237,30 +252,39 @@ stderr_filter() {
 unset OO_ARENA_MAX_DEFAULTED
 STDERR_BOOT="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
 _dd="$(oo_data_dir)"
-if command -v awk >/dev/null 2>&1 && mkdir -p "$_dd/diagnostics" 2>/dev/null; then
+# Not for an ephemeral run (its data folder is a temporary one; a record here would name the wrong place), and only where awk, tee and
+# a writable record exist: anything else starts the server exactly as before.
+if [ "${OO_EPHEMERAL:-}" != "1" ] && command -v awk >/dev/null 2>&1 && command -v tee >/dev/null 2>&1 \
+        && mkdir -p "$_dd/diagnostics" 2>/dev/null; then
     STDERR_RECORD="$_dd/diagnostics/launcher_stderr.jsonl"
-    STDERR_PIDFILE="$_dd/diagnostics/.launcher_stderr.pid"
-    : > "$STDERR_PIDFILE" 2>/dev/null || STDERR_RECORD=""
-    # Bounded: the newest 100 lines are many launches of a crash loop.
-    if [ -n "$STDERR_RECORD" ] && [ "$(wc -l < "$STDERR_RECORD" 2>/dev/null || echo 0)" -gt 100 ]; then
-        tail -n 100 "$STDERR_RECORD" > "$STDERR_RECORD.tmp" 2>/dev/null && mv -f "$STDERR_RECORD.tmp" "$STDERR_RECORD" 2>/dev/null || rm -f "$STDERR_RECORD.tmp"
+    # one pid file PER LAUNCH: two launchers started together must not read each other's server pid
+    STDERR_PIDFILE="$_dd/diagnostics/.launcher_stderr.$$.pid"
+    { : >> "$STDERR_RECORD"; } 2>/dev/null || STDERR_RECORD=""
+    { : > "$STDERR_PIDFILE"; } 2>/dev/null || STDERR_RECORD=""
+    # pid files left by a launcher that was killed outright
+    find "$_dd/diagnostics" -maxdepth 1 -name '.launcher_stderr.*.pid' -mtime +1 -exec rm -f {} + 2>/dev/null || true
+    # Bounded: the newest 100 lines are five full launches of a crash loop.
+    if [ -n "$STDERR_RECORD" ] && [ "$({ wc -l < "$STDERR_RECORD"; } 2>/dev/null || echo 0)" -gt 100 ]; then
+        { tail -n 100 "$STDERR_RECORD" > "$STDERR_RECORD.tmp" && mv -f "$STDERR_RECORD.tmp" "$STDERR_RECORD"; } 2>/dev/null || rm -f "$STDERR_RECORD.tmp"
     fi
+    [ -n "$STDERR_RECORD" ] || STDERR_PIDFILE=""
 fi
 if [ -n "${MALLOC_ARENA_MAX:-}" ]; then
     if [ -n "$STDERR_RECORD" ]; then
-        env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience 2> >(stderr_filter "$STDERR_BOOT") &
+        env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience 2> >(trap '' INT HUP TERM PIPE; exec tee >(stderr_filter "$STDERR_BOOT") >&2) &
     else
         env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience &
     fi
 else
     if [ -n "$STDERR_RECORD" ]; then
-        env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience 2> >(stderr_filter "$STDERR_BOOT") &
+        env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience 2> >(trap '' INT HUP TERM PIPE; exec tee >(stderr_filter "$STDERR_BOOT") >&2) &
     else
         env MALLOC_ARENA_MAX=2 OO_ARENA_MAX_DEFAULTED=1 open-omniscience &
     fi
 fi
 SERVER=$!
-[ -n "$STDERR_PIDFILE" ] && printf '%s\n' "$SERVER" > "$STDERR_PIDFILE" 2>/dev/null
+# A failed write here (disk full, a pid file that is not ours) must never end the launcher: this line runs before its traps exist.
+[ -z "$STDERR_PIDFILE" ] || { printf '%s\n' "$SERVER" > "$STDERR_PIDFILE"; } 2>/dev/null || true
 SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Stop the server when this launcher exits (window closed / Ctrl-C).
 # HUP is in the list because it is the signal the ADVERTISED stop actually sends:

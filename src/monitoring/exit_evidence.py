@@ -245,31 +245,58 @@ ABORT_MESSAGES = frozenset({
 })
 
 
+#: The most of the launcher's stderr record the reader looks at: 256 KiB, the file's own tail. WHAT IT PROTECTS: the boot (the launcher
+#: trims the file to 100 lines of at most about 200 bytes, so the real file is a tenth of this; a file grown past it by something else is
+#: read from its end, where the newest launches are).
+_STDERR_READ_BYTES = 256 * 1024
+
+
+def _count(value: Any) -> int | None:
+    """A count from the untrusted file: a real, non-negative integer (not a boolean), else None."""
+    return value if type(value) is int and value >= 0 else None
+
+
+def _tail_text(path: Path, limit: int) -> str:
+    with path.open("rb") as fh:
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(max(0, size - limit))
+        data = fh.read(limit)
+    text = data.decode("utf-8", errors="replace")
+    return text.split("\n", 1)[1] if size > limit and "\n" in text else text  # drop the line the cut fell inside
+
+
 def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
     """The abort messages the launcher's stderr filter recorded for process ``pid``, or None when it holds no record for it.
 
     None means the launcher left nothing for this pid and boot: the app was started some other way, the launcher predates the filter, awk
-    was missing, or the launcher itself was killed first. It is NOT "the process printed nothing": that is a record with a summary and
-    ``lines_recorded`` 0. ``dropped_lines`` is how many other lines the filter saw and did not keep (it counts, it never stores); it is
-    None when the launcher ended before it could write its summary."""
-    if not isinstance(pid, int):
+    or tee was missing, the run was ephemeral, or the launcher was killed before it wrote anything. It is NOT "the process printed
+    nothing": that is a record with a summary and ``lines_recorded`` 0. ``dropped_lines`` is how many other lines the filter saw and did
+    not keep (it counts, it never stores); it is None when the filter ended before it could write its summary (``no_summary``).
+    ``lines_recorded`` is what the launcher says it kept (the summary), or the lines found when there is no summary; a gap between the two
+    is ``lines_not_found`` (a line written before the launcher knew the pid, or cut by the file's trim). ``pid_only_match`` says the
+    boot id was unknown on one side, so the pid is all that ties the record to the session."""
+    if not isinstance(pid, int) or isinstance(pid, bool):
         return None
     try:
-        raw = (_diag_dir() / LAUNCHER_STDERR).read_text(encoding="utf-8", errors="replace")
+        raw = _tail_text(_diag_dir() / LAUNCHER_STDERR, _STDERR_READ_BYTES)
     except OSError:
         return None
     from src.monitoring.secret_scrub import scrubbed
 
     shown: list[str] = []
     summary: dict[str, Any] | None = None
-    recorded = rejected = 0
+    found = rejected = 0
+    pid_only = False
     for line in raw.splitlines():
         try:
             rec = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(rec, dict) or rec.get("pid") != pid or not _same_boot(rec.get("boot_id"), boot_id):
+        if not isinstance(rec, dict) or type(rec.get("pid")) is not int or rec["pid"] != pid or not _same_boot(rec.get("boot_id"), boot_id):
             continue
+        if not isinstance(rec.get("boot_id"), str) or not isinstance(boot_id, str):
+            pid_only = True
         if rec.get("summary") is True:
             summary = rec
             continue
@@ -277,19 +304,25 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
         if not isinstance(text, str) or text not in ABORT_MESSAGES:
             rejected += 1
             continue
-        recorded += 1
+        found += 1
         shown.append(scrubbed(text))
     if summary is None and not shown and not rejected:
         return None
+    kept = _count(summary.get("kept_lines")) if summary else None
+    recorded = max(found, kept) if kept is not None else found
     out: dict[str, Any] = {"lines": shown[-STDERR_LINES_SHOWN:], "lines_recorded": recorded}
-    dropped = summary.get("dropped_lines") if summary else None
-    out["dropped_lines"] = dropped if isinstance(dropped, int) and not isinstance(dropped, bool) else None
-    if summary and isinstance(summary.get("over_cap_lines"), int) and summary["over_cap_lines"]:
-        out["over_cap_lines"] = summary["over_cap_lines"]
+    if recorded > found:
+        out["lines_not_found"] = recorded - found
+    out["dropped_lines"] = _count(summary.get("dropped_lines")) if summary else None
+    over = _count(summary.get("over_cap_lines")) if summary else None
+    if over:
+        out["over_cap_lines"] = over
     if rejected:
         out["rejected_lines"] = rejected
     if summary is None:
         out["no_summary"] = True
+    if pid_only:
+        out["pid_only_match"] = True
     return out
 
 
