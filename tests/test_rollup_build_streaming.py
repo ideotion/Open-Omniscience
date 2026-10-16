@@ -1161,7 +1161,7 @@ def test_a_long_aggregate_statement_is_not_called_stuck_and_a_step_without_a_cha
         threading.Event().wait(0.3)
         other.cancel()
     msgs = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
-    assert any("single aggregate statement" in m and "999 s" in m for m in msgs)
+    assert any("aggregate statement" in m and "999 s" in m for m in msgs)
     assert not any("made no progress" in m for m in msgs), "a statement that cannot report is not a stuck build"
     assert sum("boot step warm-cache" in m for m in msgs) == 1, "no channel, no re-arm: one warning"
 

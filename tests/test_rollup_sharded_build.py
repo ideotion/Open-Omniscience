@@ -268,3 +268,104 @@ def test_an_error_that_is_not_the_engines_limit_is_never_retried_by_halving(sess
     with pytest.raises(ValueError):
         columnar.build_keyword_daily(con, session)
     assert len(con.aggregates) == 1
+
+
+# --------------------------------------------------------------------------- #
+# folded from the independent read of the sharded build (2026-10-16)
+# --------------------------------------------------------------------------- #
+
+def _insert_mention(session, mid, kid, aid, day="2026-03-02", count=2, at="2026-03-10 00:00:01"):  # noqa: F811
+    session.execute(text(
+        "INSERT INTO keyword_mentions (id, keyword_id, article_id, count, observed_on, created_at) "
+        "VALUES (:i, :k, :a, :c, :d, :t)"), {"i": mid, "k": kid, "a": aid, "c": count, "d": day, "t": at})
+    session.commit()
+
+
+def test_a_negative_keyword_id_survives_its_shard_being_halved(session, monkeypatch):  # noqa: F811
+    """DuckDB's // truncates toward zero and its % keeps the sign: the halving filter used to match no residue."""
+    _seed(session, keywords=10, mentions_per=3)
+    _insert_mention(session, 5000, -5, 70, count=7)
+    _insert_mention(session, 5001, -5, 71, count=1)
+    _force_shards(monkeypatch, 3)
+    failed: set[str] = set()
+
+    def fail_each_whole_shard_once(sql, n):
+        if "WHERE" in sql or sql in failed:
+            return None
+        failed.add(sql)
+        return OutOfMemoryException("limit")
+
+    con = _FailingCon(_con(), fail_each_whole_shard_once)
+    tally = columnar.build_keyword_daily(con, session, batch_size=50)
+    assert tally["shard_splits"] >= 1
+    assert (-5, "2026-03-02", 8, 2) in _daily(con)
+    assert _daily(con) == _reference_daily(session)
+
+
+def test_an_id_below_the_32_bit_range_gets_wide_columns(session, monkeypatch):  # noqa: F811
+    _seed(session, keywords=6, mentions_per=2)
+    _insert_mention(session, 5000, -3_000_000_000, 70)
+    seen = set()
+    real = columnar._bulk_insert
+    monkeypatch.setattr(columnar, "_bulk_insert",
+                        lambda con, table, types, rows: (seen.add(types) if "stage" in table else None, real(con, table, types, rows))[1])
+    con = _con()
+    columnar.build_keyword_daily(con, session)
+    assert seen == {("BIGINT", "DATE", "BIGINT", "BIGINT")}
+    assert _daily(con) == _reference_daily(session)
+
+
+def test_an_id_that_outgrows_its_column_after_the_sizing_fails_the_build_instead_of_becoming_null(session):  # noqa: F811
+    """keyword_fold rewrites keyword_id in place mid-build; the lenient JSON path would turn 3e9 into a NULL id."""
+    _seed(session, keywords=20, mentions_per=20)
+    real = _con()
+    _sentinel(real)
+    done = {"hit": False}
+
+    def rewrite(stage, n):
+        if stage == "mentions" and not done["hit"]:
+            done["hit"] = True
+            session.execute(text("UPDATE keyword_mentions SET keyword_id = 3000000000 WHERE id > 300"))
+
+    with pytest.raises(Exception):  # noqa: B017 - the engine's conversion error, whichever class it carries
+        columnar.build_keyword_daily(real, session, batch_size=50, on_batch=rewrite)
+    assert real.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0] == 1, "the rollup that was there is kept"
+    assert not [n for n in _tables(real) if "stage" in n or "building" in n]
+
+
+def test_a_malformed_observed_on_fails_the_build_as_it_always_did(session):  # noqa: F811
+    _seed(session, keywords=6, mentions_per=2)
+    _insert_mention(session, 5000, 1, 70, day="2026-02-30")
+    con = _con()
+    with pytest.raises(Exception):  # noqa: B017 - ConversionException
+        columnar.build_keyword_daily(con, session)
+    assert "keyword_daily" not in _tables(con)
+
+
+def test_a_commit_that_fails_keeps_its_own_error_and_the_old_rollup(session):  # noqa: F811
+    _seed(session, keywords=20, mentions_per=3)
+    real = _con()
+    _sentinel(real)
+
+    class CommitFails(_FailingCon):
+        def execute(self, sql, *args, **kw):
+            if sql.strip() == "COMMIT":
+                self._con.execute("ROLLBACK")  # the engine has already rolled a failed commit back
+                raise OutOfMemoryException("at commit")
+            return super().execute(sql, *args, **kw)
+
+    with pytest.raises(OutOfMemoryException):
+        columnar.build_keyword_daily(CommitFails(real, lambda sql, n: None), session)
+    assert real.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0] == 1
+    assert not [n for n in _tables(real) if "stage" in n or "building" in n]
+
+
+def test_stage_tables_left_by_a_killed_build_are_dropped_by_the_next_one(session, monkeypatch):  # noqa: F811
+    _seed(session, keywords=20, mentions_per=3)
+    _force_shards(monkeypatch, 2)
+    con = _con()
+    con.execute("CREATE TABLE keyword_daily_stage_9 (keyword_id INTEGER)")
+    con.execute("CREATE TABLE keyword_daily_stage_5 (keyword_id INTEGER)")
+    columnar.build_keyword_daily(con, session)
+    assert not [n for n in _tables(con) if "stage" in n or "building" in n]
+    assert _daily(con) == _reference_daily(session)

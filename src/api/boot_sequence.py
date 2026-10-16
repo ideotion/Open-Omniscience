@@ -210,10 +210,10 @@ class _SlowWatch:
             p = _progress_of(self.name)
             if p is not None and p["idle_s"] >= SLOW_STEP_S:
                 if p["stage"] == "aggregate":
-                    # one statement over the whole staging table: it reports nothing until it ends, so
+                    # one statement over one shard's staging table: it reports nothing until it ends, so
                     # the honest wording is "waiting on it", not "stuck"
                     _LOG.warning(
-                        "boot step %s has been in its single aggregate statement for %.0f s, which reports no "
+                        "boot step %s has been in one shard's aggregate statement for %.0f s, which reports no "
                         "progress while it runs; %s waiting behind it (%s)",
                         self.name, p["idle_s"], self.holds, _progress_text(p),
                     )

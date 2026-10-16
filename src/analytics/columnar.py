@@ -85,6 +85,7 @@ run on the REAL bundled file (:func:`_verified_httpfs_path`) before the canonica
 from __future__ import annotations
 
 import atexit
+import contextlib
 import hashlib
 import json
 import logging
@@ -980,6 +981,9 @@ _META_TYPES = ("BIGINT", "VARCHAR", "VARCHAR", "VARCHAR", "BOOLEAN", "VARCHAR", 
 # (40 bytes a mention: the stage and the rollup rows resident together), aggregate 1,108 MiB (92 bytes a mention:
 # the hash table of the whole corpus at once, which a shard holds 1/shards of) and about 2 MiB of overhead a table.
 # One thread and four threads gave 539 and 604 MiB at 16 shards, so the model is not made for one thread count.
+# NOT covered: a stage with BIGINT ids (a corpus with an id past 2**31) holds 8 more bytes a staged row than the INTEGER
+# one measured here, which the model does not add; such a corpus is far past the ids any install has, and the
+# engine's own limit (the halving, then the decline) is the verdict there.
 _MIB = 1024 * 1024
 _BUILD_RESIDENT_BYTES_PER_ROW = 40
 _BUILD_AGGREGATE_BYTES_PER_ROW = 92
@@ -1029,7 +1033,8 @@ def _aggregate_stage(con, stage: str, shards: int, parts: int, residue: int) -> 
     """Aggregate ``stage`` (or the part of it where ``(keyword_id // shards) % parts == residue``) into
     ``keyword_daily_building``. A part that runs out of memory is halved and each half tried again, up to
     ``_BUILD_MAX_SPLIT`` parts; past that the engine's error is raised. Returns how many times it split."""
-    where = "" if parts == 1 else f" WHERE (keyword_id // {shards}) % {parts} = {residue}"
+    # DuckDB's // truncates toward zero and its % keeps the sign, so a negative id would match no residue: fold it up
+    where = "" if parts == 1 else f" WHERE (((keyword_id // {shards}) % {parts}) + {parts}) % {parts} = {residue}"
     try:
         con.execute(
             "INSERT INTO keyword_daily_building "
@@ -1190,16 +1195,19 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     # One MAX per column on purpose: SQLite answers a lone MAX from an index, three in one SELECT scan the table.
     # ``created_at`` is read FIRST: it is the boundary, and the sizing reads that follow are of rows that exist at it.
     maxima = {
-        col: session.execute(_sql(f"SELECT MAX({col}) FROM keyword_mentions")).scalar()  # nosec B608 - col is one of four constants
-        for col in ("created_at", "id", "keyword_id", "article_id")
+        (fn, col): session.execute(_sql(f"SELECT {fn}({col}) FROM keyword_mentions")).scalar()  # nosec B608 - fn and col are constants
+        for fn, col in (("MAX", "created_at"), ("MAX", "id"), ("MAX", "keyword_id"), ("MAX", "article_id"),
+                        ("MIN", "keyword_id"), ("MIN", "article_id"))
     }
-    scan_bound = maxima["created_at"]
+    scan_bound = maxima[("MAX", "created_at")]
 
     # -- size the stage (see "how the full build fits a memory limit" above). Read AFTER the boundary: a row that
     # exists at the boundary is counted by every one of these, one that arrives later is not streamed at all. ----- #
-    rows_hint = int(maxima["id"] or 0)
-    max_ref = max(int(maxima["keyword_id"] or 0), int(maxima["article_id"] or 0))
-    id_type = "INTEGER" if max_ref <= _INT32_MAX else "BIGINT"  # half the bytes a row while the ids allow it
+    rows_hint = int(maxima[("MAX", "id")] or 0)
+    max_ref = max(int(maxima[("MAX", "keyword_id")] or 0), int(maxima[("MAX", "article_id")] or 0))
+    min_ref = min(int(maxima[("MIN", "keyword_id")] or 0), int(maxima[("MIN", "article_id")] or 0))
+    # half the bytes a row while the ids allow it, at BOTH ends: a negative id below -2**31 needs BIGINT too
+    id_type = "INTEGER" if max_ref <= _INT32_MAX and min_ref >= -_INT32_MAX else "BIGINT"
     stage_types = (id_type, "DATE", "BIGINT", id_type)
     from src.config.memory_budget import budget
 
@@ -1209,17 +1217,27 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     stage_names = [f"keyword_daily_stage_{j}" for j in range(shards)]
 
     def _drop_build_tables() -> None:
-        for name in (*stage_names, "keyword_daily_building"):
+        # Every stage table by pattern, not only this build's: a build killed in a persisted store leaves its
+        # stages behind, and the next one may plan fewer shards and never name them.
+        try:
+            leftover = [r[0] for r in con.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'keyword_daily_stage\\_%' ESCAPE '\\'"
+            ).fetchall()]
+        except Exception:  # noqa: BLE001 - cleanup must not hide the error that got us here
+            leftover = []
+        for name in (*dict.fromkeys([*stage_names, *leftover]), "keyword_daily_building"):
             try:
                 con.execute(f"DROP TABLE IF EXISTS {name}")  # nosec B608 - names are built in this function
             except Exception:  # noqa: BLE001 - cleanup must not hide the error that got us here
                 pass
 
     try:
+        _drop_build_tables()  # orphans of a build that was killed mid-way (nothing else owns these names)
         # -- stream mentions -> DuckDB staging (dates parsed to DATE on the way in) ---- #
         for name in stage_names:
             con.execute(f"CREATE OR REPLACE TABLE {name} "  # nosec B608 - constants and ints from this function
-                        f"(keyword_id {id_type}, day DATE, cnt BIGINT, article_id {id_type})")
+                        f"(keyword_id {id_type} NOT NULL, day DATE NOT NULL, cnt BIGINT NOT NULL, "
+                        f"article_id {id_type} NOT NULL)")
         streamed = 0
         max_streamed_id = 0
 
@@ -1334,7 +1352,10 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             con.execute("ALTER TABLE keyword_daily_building RENAME TO keyword_daily")
             con.execute("COMMIT")
         except BaseException:
-            con.execute("ROLLBACK")
+            # a COMMIT that failed has already been rolled back by the engine: a second ROLLBACK would raise
+            # "no transaction is active" and replace the error the caller classifies
+            with contextlib.suppress(Exception):
+                con.execute("ROLLBACK")
             raise
     except BaseException:
         _drop_build_tables()
