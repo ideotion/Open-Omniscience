@@ -255,10 +255,14 @@ def law_track(
 @router.post("/seed")
 def law_seed(db: Session = Depends(get_db)) -> dict:
     """(Re)seed the worldwide legal catalog + register trackable documents (idempotent)."""
-    from src.law.catalog import register_documents, seed_legal_sources
+    from src.law.catalog import LawCatalogUnreadable, register_documents, seed_legal_sources
 
-    sources = seed_legal_sources(db)
-    documents = register_documents(db)
+    try:
+        sources = seed_legal_sources(db)
+        documents = register_documents(db)
+    except LawCatalogUnreadable as exc:
+        # Named, not a bare 500 and not an empty seed: the file is there and could not be read.
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from None
     return {"sources": sources, "documents": documents}
 
 

@@ -25,6 +25,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from src.catalog.countries import config_country  # noqa: E402
 from src.catalog.stage_b_splice import (  # noqa: E402
     ADMITTED,
     BLOCKED,
@@ -86,7 +87,7 @@ def _shipped_country_counts() -> dict[str, int]:
             continue
         doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for row in doc.get("sources") or []:
-            counts[str(row.get("country") or "??").lower()] += 1
+            counts[str(config_country(row.get("country")) or "??").lower()] += 1
     return dict(counts)
 
 

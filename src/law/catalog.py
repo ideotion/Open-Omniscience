@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import config_country
 from src.database.models import LawDocument
 from src.ingest.seed_sources import SeedResult
 
@@ -32,22 +33,73 @@ GENERATED_CATALOG_PATH = (
 )
 
 
+#: The one jurisdiction whose STORED code is not its ISO alpha-2. The catalogue spells the United Kingdom ``uk``
+#: and so do the rows an install already holds (the store migration leaves a code with no ISO meaning as it is),
+#: so a document read from the catalogue has to land on that spelling or it would be a second row beside the first.
+_LAW_JURISDICTION_STORED = {"gb": "uk"}
+
+
+def law_jurisdiction(value):
+    """A catalogue's ``jurisdiction`` in the form the ``law_documents`` rows hold it (S05-02 S3).
+
+    The shipped catalogue speaks the wire's alpha-3 (``GBR``, ``EUU``, ``INT``); the rows hold lowercase alpha-2
+    (``fr``) and the three non-ISO codes ``uk``, ``eu`` and ``int``. A catalogue written in either form reads
+    the same, and a value this cannot place comes back as written."""
+    code = config_country(value)
+    return _LAW_JURISDICTION_STORED.get(code, code) if isinstance(code, str) else code
+
+
+class LawCatalogUnreadable(RuntimeError):
+    """A catalogue file that is there and cannot be used: it could not be read, is not valid YAML, or is not shaped like
+    a catalogue. Unreadable is not absent: only a missing file reads as an empty catalogue, and every other failure
+    ends the load with this, named by the file and the error's CLASS only (never a path, a line or the file's text)."""
+
+
+def _unreadable(path: Path, why: str) -> LawCatalogUnreadable:
+    return LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({why})")
+
+
 def _read_catalog_yaml(path: Path) -> dict:
-    if not path.exists():
+    # The error is RAISED outside the ``except`` blocks, so it carries no ``__context__``: the scrubs that walk a
+    # chain would otherwise reduce a UnicodeError's chain to its class and lose the file's name.
+    failed = ""
+    raw = ""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {"sources": [], "documents": []}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return {
-        "sources": [
-            s
-            for s in data.get("sources", [])
-            if isinstance(s, dict) and s.get("name") and s.get("domain")
-        ],
-        "documents": [
-            d
-            for d in data.get("documents", [])
-            if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
-        ],
-    }
+    except (OSError, UnicodeError) as exc:
+        failed = type(exc).__name__
+    if failed:
+        raise _unreadable(path, failed)
+    data: object = None
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        failed = type(exc).__name__
+    if failed:
+        raise _unreadable(path, failed)
+    if data is None:  # an empty file is an empty catalogue, as it always was
+        data = {}
+    if not isinstance(data, dict) or any(not isinstance(data.get(key, []), list) for key in ("sources", "documents")):
+        raise _unreadable(path, "it is not shaped like a catalogue")
+    sources = [
+        s
+        for s in data.get("sources", [])
+        if isinstance(s, dict) and s.get("name") and s.get("domain")
+    ]
+    documents = [
+        d
+        for d in data.get("documents", [])
+        if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
+    ]
+    # The catalogue's country values are in the wire's form; every consumer below reads the app's own.
+    for entry in (*sources, *documents):
+        if "country" in entry:
+            entry["country"] = config_country(entry["country"])
+    for d in documents:
+        d["jurisdiction"] = law_jurisdiction(d["jurisdiction"])
+    return {"sources": sources, "documents": documents}
 
 
 def load_legal_catalog(path: Path | None = None, generated_path: Path | None = None) -> dict:
@@ -357,7 +409,9 @@ def register_documents(
     to the pre-S4b behaviour); tests pass an isolated/nonexistent path so a crafted
     fixture catalog is never silently merged with the real ~225-source harvest."""
     docs = registrable_documents(load_legal_catalog(path, generated_path))
-    existing_rows = {(row.jurisdiction, row.url): row for row in session.query(LawDocument).all()}
+    # Keyed through the same spelling the catalogue is read in: a row an older user catalogue registered as
+    # ``gb`` or ``GB`` is the document the catalogue now calls ``uk``, not a second one.
+    existing_rows = {(law_jurisdiction(row.jurisdiction), row.url): row for row in session.query(LawDocument).all()}
     created = 0
     healed = 0
     for d in docs:

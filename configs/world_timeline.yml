@@ -32,7 +32,7 @@ anchors:
     lat: 40.7497
     lon: 14.4869
     place: Pompeii, Italy
-    country: it
+    country: ITA
     url: https://en.wikipedia.org/wiki/Eruption_of_Mount_Vesuvius_in_79_AD
     note: Year is secure; the exact day is debated (an August vs October date).
 
@@ -45,7 +45,7 @@ anchors:
     lat: 38.7223
     lon: -9.1393
     place: Lisbon, Portugal
-    country: pt
+    country: PRT
     url: https://en.wikipedia.org/wiki/1755_Lisbon_earthquake
 
   - id: krakatoa-1883
@@ -57,7 +57,7 @@ anchors:
     lat: -6.1020
     lon: 105.4230
     place: Sunda Strait, Indonesia
-    country: id
+    country: IDN
     url: https://en.wikipedia.org/wiki/1883_eruption_of_Krakatoa
 
   - id: wright-flight-1903
@@ -69,7 +69,7 @@ anchors:
     lat: 36.0140
     lon: -75.6675
     place: Kitty Hawk, North Carolina, USA
-    country: us
+    country: USA
     url: https://en.wikipedia.org/wiki/Wright_Flyer
 
   - id: titanic-1912
@@ -92,7 +92,7 @@ anchors:
     lat: 34.3853
     lon: 132.4553
     place: Hiroshima, Japan
-    country: jp
+    country: JPN
     url: https://en.wikipedia.org/wiki/Atomic_bombings_of_Hiroshima_and_Nagasaki
 
   - id: un-charter-1945
@@ -104,7 +104,7 @@ anchors:
     lat: 37.7749
     lon: -122.4194
     place: San Francisco, USA (signed)
-    country: us
+    country: USA
     url: https://en.wikipedia.org/wiki/United_Nations_Charter
     note: Signed in San Francisco 26 Jun 1945; entered into force 24 Oct 1945 (UN Day).
 
@@ -117,7 +117,7 @@ anchors:
     lat: 45.9200
     lon: 63.3420
     place: Baikonur Cosmodrome, Kazakhstan
-    country: kz
+    country: KAZ
     url: https://en.wikipedia.org/wiki/Sputnik_1
 
   - id: apollo11-launch-1969
@@ -129,7 +129,7 @@ anchors:
     lat: 28.5729
     lon: -80.6490
     place: Kennedy Space Center, Florida, USA
-    country: us
+    country: USA
     url: https://en.wikipedia.org/wiki/Apollo_11
     note: Launch site shown; the Moon landing itself (20 Jul 1969) is off-map.
 
@@ -142,7 +142,7 @@ anchors:
     lat: 51.3890
     lon: 30.0990
     place: Pripyat, Ukraine (then USSR)
-    country: ua
+    country: UKR
     url: https://en.wikipedia.org/wiki/Chernobyl_disaster
 
   - id: berlin-wall-1989
@@ -154,7 +154,7 @@ anchors:
     lat: 52.5163
     lon: 13.3777
     place: Berlin, Germany
-    country: de
+    country: DEU
     url: https://en.wikipedia.org/wiki/Fall_of_the_Berlin_Wall
 
   - id: sept11-2001
@@ -166,7 +166,7 @@ anchors:
     lat: 40.7115
     lon: -74.0134
     place: World Trade Center, New York, USA
-    country: us
+    country: USA
     url: https://en.wikipedia.org/wiki/September_11_attacks
 
   - id: indian-ocean-tsunami-2004
@@ -178,7 +178,7 @@ anchors:
     lat: 3.3160
     lon: 95.8540
     place: Off Sumatra, Indian Ocean
-    country: id
+    country: IDN
     url: https://en.wikipedia.org/wiki/2004_Indian_Ocean_earthquake_and_tsunami
 
   - id: arab-spring-2010
@@ -190,7 +190,7 @@ anchors:
     lat: 35.0382
     lon: 9.4850
     place: Sidi Bouzid, Tunisia
-    country: tn
+    country: TUN
     url: https://en.wikipedia.org/wiki/Arab_Spring
 
   - id: fukushima-2011
@@ -202,7 +202,7 @@ anchors:
     lat: 37.4213
     lon: 141.0328
     place: Fukushima, Japan
-    country: jp
+    country: JPN
     url: https://en.wikipedia.org/wiki/Fukushima_nuclear_accident
 
   - id: paris-agreement-2015
@@ -214,7 +214,7 @@ anchors:
     lat: 48.8566
     lon: 2.3522
     place: Paris, France
-    country: fr
+    country: FRA
     url: https://en.wikipedia.org/wiki/Paris_Agreement
 
   - id: covid-who-pandemic-2020
@@ -226,7 +226,7 @@ anchors:
     lat: 46.2270
     lon: 6.1407
     place: WHO HQ, Geneva, Switzerland
-    country: ch
+    country: CHE
     url: https://en.wikipedia.org/wiki/COVID-19_pandemic
     note: First cluster reported in Wuhan, China in Dec 2019; declaration shown here.
 
@@ -240,7 +240,7 @@ anchors:
     lat: 45.4642
     lon: 9.1900
     place: Milan, Italy
-    country: it
+    country: ITA
     url: https://en.wikipedia.org/wiki/2026_Winter_Olympics
 
   - id: eclipse-2026-08-12
@@ -252,7 +252,7 @@ anchors:
     lat: 40.4168
     lon: -3.7038
     place: Madrid region (within path), Spain
-    country: es
+    country: ESP
     url: https://en.wikipedia.org/wiki/Solar_eclipse_of_August_12,_2026
     note: Astronomical date is exact; coordinate marks one point on a wide path.
 
@@ -265,7 +265,7 @@ anchors:
     lat: 25.6872
     lon: 32.6396
     place: Luxor, Egypt (within path)
-    country: eg
+    country: EGY
     url: https://en.wikipedia.org/wiki/Solar_eclipse_of_August_2,_2027
     note: One of the longest land totalities of the century; date is astronomical.
 
@@ -278,6 +278,6 @@ anchors:
     lat: 34.0139
     lon: -118.2880
     place: Los Angeles, USA
-    country: us
+    country: USA
     url: https://en.wikipedia.org/wiki/2028_Summer_Olympics
     note: Scheduled opening date per the official programme; subject to change.

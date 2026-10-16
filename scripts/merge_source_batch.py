@@ -39,7 +39,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from src.catalog.countries import normalize_country  # noqa: E402
+from src.catalog.countries import config_country, country_payload, normalize_country  # noqa: E402
 from src.catalog.normalize import country_from_title, registrable_domain  # noqa: E402
 from src.utils.url_utils import DOMAIN_ALIASES, normalize_domain  # noqa: E402
 
@@ -95,7 +95,7 @@ def check_entry(e: dict, *, existing: set[str], seen: set[str]) -> str | None:
     if dom in seen:
         return "duplicate within the batch"
     title_country = country_from_title(str(e["name"]))
-    if title_country and title_country != str(e.get("country") or "").strip().lower():
+    if title_country and title_country != str(config_country(e.get("country")) or "").strip().lower():
         return f"name states country {title_country}, entry says {e.get('country') or 'none'}"
     for t in e.get("tags") or []:
         t = str(t)
@@ -125,9 +125,21 @@ def plan(batch: list[dict], *, existing: set[str]) -> tuple[list[dict], list[tup
     return accepted, refused
 
 
+def _in_the_file_form(entry: dict) -> dict:
+    """The entry with its ``country`` in the form the shipped configs speak (uppercase alpha-3, S05-02 S3).
+
+    A batch comes out of the pipeline in the app's own alpha-2; a catalogue that took it as is would put the old
+    spelling back, which ``tests/test_config_country_rewrite.py`` refuses. A value that is not a country code
+    (or that nothing recognises) is written as it came."""
+    country = entry.get("country")
+    if isinstance(country, str) and country.strip():
+        return {**entry, "country": country_payload(country.strip())}
+    return entry
+
+
 def render(entries: list[dict]) -> str:
     """The exact text appended: one ``- name:`` block per entry, in the file's own style."""
-    return yaml.safe_dump(entries, sort_keys=False, allow_unicode=True, default_flow_style=False)
+    return yaml.safe_dump([_in_the_file_form(e) for e in entries], sort_keys=False, allow_unicode=True, default_flow_style=False)
 
 
 def splice(target: Path, entries: list[dict]) -> int:
