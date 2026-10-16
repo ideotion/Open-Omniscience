@@ -613,6 +613,8 @@
     ruling on when to pay that rebuild.
     **DECIDED 2026-09-28 (`R39`, «D3: a»): the rebuild is paid inside row B's storage-migration
     window (`S05-02` S6), in the same app-stopped operation, not before and not as its own migration.**
+    **BUILT 2026-10-16 (row B4, PR pending):** `src/database/fts.py` (`FTS_TOKENIZER`, `rebuild_with_current_tokenizer`) and the
+    migration's index phase; see `RELEASE_0.5_GATE.md` row B.
   - **KNOWN LIMIT, BY DESIGN:** a connection without the three `oo_fts_*` functions cannot write
     `articles` (the trigger fails, loudly, and the write is refused). Every connection the app
     opens registers them (a SQLAlchemy pool hook plus `connect()`); an external tool such as the
