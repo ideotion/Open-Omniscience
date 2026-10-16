@@ -234,7 +234,9 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
                 near_dup_groups: list[list[int]]) -> dict:
     """Step ② -- join the trail's articles into PATHS, and say what joined each one.
 
-    ``articles``: ``{id, source_id, source, wire, published_at}`` per article.
+    ``articles``: ``{id, source_id, source, outlet?, outlet_label?, wire, published_at}`` per article; the SAME-SOURCE
+    join is made on ``outlet`` (a domain: one site's several feeds are one voice, row J R146), falling back to
+    ``source_id`` for a caller that gives none.
     ``shared_links``: normalised outbound URL -> the trail's article ids that cite it (only
     URLs cited by two or more). ``near_dup_groups``: groups of near-identical article ids.
 
@@ -250,8 +252,9 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
     by_source: dict[Any, list[int]] = defaultdict(list)
     by_wire: dict[str, list[int]] = defaultdict(list)
     for a in articles:
-        if a.get("source_id") is not None:
-            by_source[a["source_id"]].append(a["id"])
+        voice = a.get("outlet") or a.get("source_id")
+        if voice is not None:
+            by_source[voice].append(a["id"])
         if a.get("wire"):
             by_wire[a["wire"]].append(a["id"])
 
@@ -264,7 +267,7 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
         joins.append({"kind": kind, "detail": detail, "article_ids": members})
 
     for _sid, members in sorted(by_source.items(), key=lambda kv: str(kv[0])):
-        _join("same_source", members, by_id[members[0]].get("source"))
+        _join("same_source", members, by_id[members[0]].get("outlet_label") or by_id[members[0]].get("source"))
     for group in near_dup_groups:
         _join("near_identical", list(group), None)
     for url in sorted(shared_links):
@@ -499,6 +502,9 @@ def build_workspace(session, claim: str, *, query: str | None = None,
     )
     by_id = {a.id: (a, s) for a, s in rows}
     words = terms or claim_terms(claim)
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)
 
     trail: list[dict] = []
     texts: dict[str, str] = {}
@@ -516,6 +522,8 @@ def build_workspace(session, claim: str, *, query: str | None = None,
             "url": a.url,
             "source_id": a.source_id,
             "source": (s.name or s.domain) if s else None,
+            "outlet": s.domain if s else None,
+            "outlet_label": outlets.label(a.source_id, s.name if s else None, s.domain if s else None) if s else None,
             "source_type": ((s.source_type or "").strip().lower() or "untyped") if s else None,
             "country": ((s.country or "").strip().lower() or None) if s else None,
             "language": a.language or a.detected_language or (s.language if s else None),

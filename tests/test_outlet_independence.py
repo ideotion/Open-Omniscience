@@ -310,3 +310,17 @@ def test_the_ripple_independence_gate_counts_outlets(tmp_path, monkeypatch):
     kid = session.query(Keyword).filter_by(normalized_term="oilterm").one().id
     today = datetime.now(UTC).date()
     assert _source_counts(session, [kid], today - timedelta(days=5), today + timedelta(days=1)) == {kid: 2}
+
+
+def test_a_claim_trail_joins_the_feeds_of_one_site_into_one_path():
+    from src.analytics.claim_workspace import group_paths
+
+    arts = [
+        {"id": 1, "source_id": 1, "source": "BBC News", "outlet": "bbc.com", "outlet_label": "BBC News"},
+        {"id": 2, "source_id": 2, "source": "BBC Arabic", "outlet": "bbc.com", "outlet_label": "BBC News"},
+        {"id": 3, "source_id": 3, "source": "DW", "outlet": "dw.com", "outlet_label": "DW"},
+    ]
+    out = group_paths(arts, {}, [])
+    assert out["n_paths"] == 2
+    top = out["paths"][0]
+    assert top["article_ids"] == [1, 2] and [(j["kind"], j["detail"]) for j in top["joins"]] == [("same_source", "BBC News")]
