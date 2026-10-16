@@ -228,7 +228,7 @@ def test_no_windowed_statement_still_carries_an_inline_group_by() -> None:
     )
     # anti-vacuity: the extractor must really be reaching the SQL, or the
     # assertion above is satisfied by a dict of empty strings.
-    assert any("INSERT INTO keywords" in s for s in calls.values()), (
+    assert any("INSERT INTO main.keywords" in s for s in calls.values()), (
         "_windowed_call_sql is not capturing the statements' SQL"
     )
 
@@ -253,7 +253,7 @@ def test_a_constraint_justification_is_backed_by_or_ignore() -> None:
     for table, just in merge_mod._WINDOWED_STEPS.items():
         if just != "constraint":
             continue
-        pat = rf"INSERT OR IGNORE INTO {{table}}|INSERT OR IGNORE INTO {re.escape(table)}"
+        pat = rf"INSERT OR IGNORE INTO (?:main\.)?(?:{{table}}|{re.escape(table)})"
         assert re.search(pat, _SRC), f"{table} claims 'constraint' but its insert is not OR IGNORE"
 
 

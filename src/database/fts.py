@@ -858,7 +858,7 @@ _REBUILD_BATCH = 500
 
 #: The statement every full rebuild starts with. FTS5's own ``'rebuild'`` is never run
 #: any more, so this is what a probe looks for to tell whether a rebuild happened.
-REBUILD_MARK = "INSERT INTO article_fts(article_fts) VALUES ('delete-all')"
+REBUILD_MARK = "INSERT INTO main.article_fts(article_fts) VALUES ('delete-all')"
 
 
 def _dbapi(con):
@@ -912,7 +912,7 @@ def rebuild_index(con) -> int:
     caps = _store_caps(con)
     _run(con, REBUILD_MARK)
     if caps:
-        _run(con, "DELETE FROM article_fts_norm")
+        _run(con, "DELETE FROM main.article_fts_norm")
     # The first page has no lower bound: a rowid may be 0 or negative, and a keyset that
     # started from "> 0" would silently leave those out of the rebuilt index.
     last: int | None = None
@@ -938,18 +938,19 @@ def rebuild_index(con) -> int:
 def _index_rows(con, rows, caps: int) -> None:
     """Index ``(id, title, content)`` rows that are NOT in the index yet, through the
     transform, recording each one it changed exactly as the insert trigger does. The one
-    place outside the triggers and the search re-index that writes this index."""
+    place outside the triggers and the search re-index that writes this index. It names ``main`` on
+    every write: the merge calls it with the incoming backup attached."""
     from src.database.fts_norm import SEGMENTERS, index_entry
 
     if not rows:
         return
     if not caps:  # a store whose triggers index raw: so does this
-        _run(con, "INSERT INTO article_fts(rowid, title, content) VALUES (?, ?, ?)", [tuple(r) for r in rows])
+        _run(con, "INSERT INTO main.article_fts(rowid, title, content) VALUES (?, ?, ?)", [tuple(r) for r in rows])
         return
     entries = [(r[0], *index_entry(r[1], r[2], caps)) for r in rows]
     _run(
         con,
-        "INSERT INTO article_fts(rowid, title, content) VALUES (?, ?, ?)",
+        "INSERT INTO main.article_fts(rowid, title, content) VALUES (?, ?, ?)",
         [(aid, t, c) for aid, _m, t, c in entries],
     )
     records = [
@@ -958,7 +959,7 @@ def _index_rows(con, rows, caps: int) -> None:
     if records:
         _run(
             con,
-            "INSERT OR REPLACE INTO article_fts_norm(article_id, mask, title, content) VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO main.article_fts_norm(article_id, mask, title, content) VALUES (?, ?, ?, ?)",
             records,
         )
 
