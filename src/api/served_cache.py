@@ -55,10 +55,13 @@ THE SHAPE (mirrors :mod:`src.analytics.poll_cache`, which does this for alerts):
     older than its TTL *and* the probe says something was written -- so an idle
     app rebuilds nothing at all and a collecting one rebuilds at most once per
     TTL, never on the request thread.
-  * SINGLE-FLIGHT COLD START. The first caller computes inline (these are plain
-    ``def`` handlers, so that blocks a threadpool worker, not the event loop);
+  * SINGLE-FLIGHT COLD START. By default the first caller computes inline (these are
+    plain ``def`` handlers, so that blocks a threadpool worker, not the event loop);
     concurrent cold callers wait on the same per-key lock and then find the entry
-    warm. N simultaneous polls can never start N scans.
+    warm. N simultaneous polls can never start N scans. A key whose compute is a
+    whole-table scan passes ``cold_payload`` instead: the first caller is answered at
+    once with the cheap part marked ``pending`` and the scan runs once, in the
+    background (``/api/database/figures``: 55 s inline on the field corpus, 2026-10-16).
 
 The numbers are the SAME real counts the endpoints always returned -- memoised,
 never estimated, never a score.
@@ -195,6 +198,9 @@ def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> N
     if bind is None:
         return
     now = time.time()
+    # A payload may carry ``__ttl_s__``: how long THIS entry stands before a recompute is considered. It is how a recorded
+    # failure holds its stated window instead of being retried at the endpoint's normal interval (the retry is a scan).
+    own_ttl = payload.pop("__ttl_s__", None) if isinstance(payload, dict) else None
     with _LOCK:
         _CACHE[key] = {
             "payload": payload,
@@ -202,6 +208,7 @@ def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> N
             "checked_at": now,
             "probe": probe,
             "bind": bind,
+            "ttl_s": own_ttl,
         }
         if len(_CACHE) > _MAX_KEYS:
             oldest = min(_CACHE, key=lambda k: _CACHE[k]["built_at"])
@@ -261,13 +268,18 @@ def _kick_background_refresh(key: str, compute) -> None:
         raise
 
 
-def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
+def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None) -> dict:
     """Serve ``key``, computing at most once and never on a poll.
 
     ``compute`` takes a Session and returns the payload dict, so the SAME callable
     can be re-run by the background refresher over its own session -- a closure
     over the request's session would be used after that session is closed, from
     another thread.
+
+    ``cold_payload`` (a callable taking the request's Session and returning the CHEAP part of the payload) makes the cold start
+    non-blocking: the first caller starts ONE background compute (single-flight, the same path as a stale refresh) and is
+    answered at once with that cheap part, marked ``pending`` with the time the compute started. Without it the first caller
+    computes inline, as before. A cold-start scan on the request thread measured 55 s on the field corpus.
     """
     now = time.time()
     probe = change_probe()
@@ -279,7 +291,7 @@ def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
     if snapshot is not None:
         age = now - snapshot["checked_at"]
         verified = probe is not None and probe == snapshot["probe"]
-        if age >= ttl_s:
+        if age >= (snapshot.get("ttl_s") or ttl_s):
             if verified:
                 # Nothing was written since this value was computed, so it is not
                 # merely fresh enough -- it is still exactly right. Re-stamp the
@@ -293,6 +305,19 @@ def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
                 _kick_background_refresh(key, compute)
         return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=now, verified=verified,
                          recount_started=_recount_started(key))
+
+    if cold_payload is not None:
+        # Non-blocking cold start: one background compute (a second caller finds the lock taken and starts nothing), the cheap
+        # part answered now. The cheap part is read BEFORE the kick returns control to the poll, never after the scan.
+        _kick_background_refresh(key, compute)
+        started = _recount_started(key)
+        out = _decorate(
+            {"payload": cold_payload(session), "built_at": time.time()},
+            ttl_s=ttl_s, cached=False, now=time.time(), verified=False, recount_started=started,
+        )
+        out["pending"] = True
+        out["pending_since"] = None if started is None else _iso(started)
+        return out
 
     # Cold (or a bind we may not answer for): compute ONCE, under the per-key
     # build lock, and let concurrent cold callers reuse that one result.
