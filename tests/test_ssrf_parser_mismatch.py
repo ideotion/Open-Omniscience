@@ -72,7 +72,7 @@ def _agree(monkeypatch, theirs: str | None, ours: str | None) -> None:
     monkeypatch.setattr(ingest, "urlparse", lambda url: SimpleNamespace(hostname=ours))
 
 
-@pytest.mark.parametrize("url", ["http://a.org\x00.evil/", "http://a.org\t/", "http://a .org/", "https://x\\@a.org/"])
+@pytest.mark.parametrize("url", ["http://a.org\x00.evil/", "http://a.org\t/", "http://a .org/", "https://x\\@a.org/", "http://a.org\x7f/"])
 def test_clause_authority_characters_alone(monkeypatch, url):
     _agree(monkeypatch, "a.org", "a.org")
     with pytest.raises(BlockedTarget, match="authority contains"):
@@ -90,6 +90,13 @@ def test_clause_percent_encoded_host_for_real():
     for u in ("http://%31%32%37.0.0.1/", "http://%65vil.test/"):
         with pytest.raises(BlockedTarget, match="percent-encoded|read differently"):
             EthicalFetcher._refuse_parser_mismatch(u)
+
+
+@pytest.mark.parametrize("theirs, ours", [("a%2eorg", "a.org"), ("a.org", "a%2eorg")])
+def test_clause_percent_encoded_host_on_one_side_only(monkeypatch, theirs, ours):
+    _agree(monkeypatch, theirs, ours)
+    with pytest.raises(BlockedTarget, match="percent-encoded"):
+        EthicalFetcher._refuse_parser_mismatch("http://x/")
 
 
 def test_clause_client_cannot_parse_alone(monkeypatch):

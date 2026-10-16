@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.monitoring.secret_scrub import scrubbed_value
+
 #: A class name, a step name, a serve's name: what a code identifier looks like. Anything else is not copied as a name.
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,79}$")
 #: The most characters of a step's ``skipped`` (words of the code's own, that a step writes: ``this process has pages in swap``).
@@ -20,6 +22,21 @@ _SKIPPED_MAX = 120
 #: names more is not one this code wrote, and what is kept of it is cut, never trusted.
 _STEPS_MAX = 12
 _NAMES_MAX = 8
+
+
+#: Stamped on a snapshot by a build that scrubbed its thread names as they were recorded. A snapshot without it comes from an older
+#: build, whose names were kept as they were, and nothing can prove them free of a passphrase the previous session held and this one
+#: does not: they are replaced by this marker (fail closed).
+NAMES_STAMP = "names_scrubbed"
+NAME_WITHHELD = "<thread name withheld: written by a build that did not scrub it>"
+
+
+def vouched_names(snap: Any) -> Any:
+    """The snapshot with every thread name replaced by :data:`NAME_WITHHELD` unless the snapshot carries :data:`NAMES_STAMP`."""
+    if not isinstance(snap, dict) or snap.get(NAMES_STAMP) is True or not isinstance(snap.get("threads"), list):
+        return snap
+    threads = [{**t, "name": NAME_WITHHELD} if isinstance(t, dict) and "name" in t else t for t in snap["threads"]]
+    return {**snap, "threads": threads}
 
 
 def _class_only(value: Any) -> str:
@@ -91,6 +108,7 @@ def scrub_marks(marks: Any) -> tuple[dict[str, Any] | None, str | None]:
                 continue
             clean = []
             for snap in snaps:
+                snap = vouched_names(snap)
                 if isinstance(snap, dict) and isinstance(snap.get("guard"), dict) and "last_release" in snap["guard"]:
                     guard = {k: v for k, v in snap["guard"].items() if k != "last_release"}
                     rebuilt = allow_listed(snap["guard"].get("last_release"))
@@ -99,6 +117,10 @@ def scrub_marks(marks: Any) -> tuple[dict[str, Any] | None, str | None]:
                     snap = {**snap, "guard": guard}
                 clean.append(snap)
             out[key] = clean
-        return out, None
+        # Thread names in the snapshots are request-chosen text, and an older build's sidecar kept them as they were.
+        cleaned = scrubbed_value(out)
+        if not isinstance(cleaned, dict):
+            raise ValueError("the marks could not be checked")
+        return cleaned, None
     except Exception as exc:  # noqa: BLE001 - a diagnostic never fails its caller
         return None, type(exc).__name__

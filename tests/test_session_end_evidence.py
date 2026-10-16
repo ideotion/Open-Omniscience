@@ -46,7 +46,7 @@ def _hwm(rss: float, sid: str | None, *, pid: int = PID, threads: int = 3, frame
         "phase": "collect",
         "at_peak": {"anon_mb": rss - 5, "file_mb": 5.0, "note": "n", "nested": {"skipped": 1}},
         "pressure": [{
-            "why": "avail-low", "at": "2023-11-14T22:14:03Z", "avail_mb": 150, "rss_mb": rss,
+            "why": "avail-low", "names_scrubbed": True, "at": "2023-11-14T22:14:03Z", "avail_mb": 150, "rss_mb": rss,
             "memory": {"py_alloc_blocks": 123456}, "guard": guard,
             "threads": [{"name": f"t{i}", "stack": [frame], "cpu_s": 1.5 * i} for i in range(threads)],
         }],

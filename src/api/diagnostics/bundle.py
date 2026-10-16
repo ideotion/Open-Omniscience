@@ -1900,7 +1900,8 @@ def _session_forensics_member() -> dict:
             "why": "these blocks are members of this archive in their own right and are named here "
                    "instead of written twice; the route downloaded on its own is whole",
         }
-    return out
+    # The net under the source: a previous session's snapshots were written by a build that kept thread names as they were.
+    return _scrubbed_member_value(out)
 
 
 def _storage_member(db) -> dict:
