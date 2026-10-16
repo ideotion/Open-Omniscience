@@ -36,7 +36,10 @@ OFF = {"engaged": False, "since": None, "reason": None, "engagements": 1}
 
 @pytest.fixture
 def no_heavy(monkeypatch):
-    """The heavy triggers' line moved out of reach, so a test sees the light one alone."""
+    """The heavy triggers' line moved out of reach, so a test sees the light one alone. The light trigger that reads the SAME line
+    (available memory below 15% of the RAM read now, ``_light_near``) is moved out of reach with it, which is why the tests that use this
+    fixture and read 380 MB of 5,000 see only the guard's reasons: in production both fire, and ``test_available_memory_below_the_pressure_line``
+    pins the line one."""
     monkeypatch.setattr(session_hwm, "_PRESSURE_AVAIL_SHARE", 0.0)
     monkeypatch.setattr(session_hwm, "_BURST_BLOCKS", 10**15)
 
@@ -717,3 +720,21 @@ def test_available_memory_below_the_pressure_line_of_the_ram_read_now_is_near(mo
     assert session_hwm._light_near({"avail_mb": line + 1.0, "total_mb": 8000.0, "rss_mb": 100.0}, None) is None
     # the same available memory is fine on a bigger machine: the line is a share of the total read now
     assert session_hwm._light_near({"avail_mb": line, "total_mb": 2000.0, "rss_mb": 100.0}, None) is None
+
+
+def test_parked_swap_does_not_rewrite_the_light_file_every_fifteen_seconds(rig, no_heavy):
+    """Swap is a level: one spike and it sits at the same figure all day. MUTATION TARGET: the episode gate in `_light_due`."""
+    parked = dict(HEALTHY, avail_mb=0.6 * TOTAL, rss_mb=0.1 * TOTAL, swap_used_mb=0.3 * TOTAL)
+    taken = [len(rig(15.0, readings=parked)) for _ in range(20)]  # 300 s of ticks 15 s apart
+    assert taken[0] == 1 and taken[-1] <= 2, taken  # the crossing, then at most the plateau one
+    grown = dict(parked, swap_used_mb=parked["swap_used_mb"] + session_hwm._LIGHT_SWAP_STEP_MB)
+    assert len(rig(15.0, readings=grown)) == taken[-1] + 1, "growth by a step earns another"
+    back = dict(parked, swap_used_mb=1.0)
+    rig(15.0, readings=back)
+    assert len(rig(15.0, readings=parked)) == taken[-1] + 2, "back under the floor and over it again is a new episode"
+
+
+def test_a_machine_short_of_memory_with_swap_is_named_for_the_memory():
+    both = {"avail_mb": 300.0, "total_mb": 8000.0, "rss_mb": 100.0, "swap_used_mb": 4000.0}
+    got = session_hwm._light_near(both, None)
+    assert got is not None and "available memory" in got, "memory is named before swap"

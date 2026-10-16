@@ -189,7 +189,8 @@ def _time_case(case: _Case, repeats: int, session: Session | None = None) -> dic
         except Exception as exc:  # noqa: BLE001 - report failures honestly, per case
             left = _deadline_left_ms(session) if session is not None else None
             # Only an interrupt that arrives after the deadline is the deadline's doing; any other exception keeps its own text.
-            by_deadline = left is not None and left <= 0 and "interrupted" in str(exc).lower()
+            said = str(exc).lower()
+            by_deadline = left is not None and left <= 0 and ("interrupted" in said or "deadline" in said)
             if runs and by_deadline:
                 stopped = True  # at least one run finished: report what was measured
                 break

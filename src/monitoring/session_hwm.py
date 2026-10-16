@@ -151,6 +151,10 @@ _LIGHT_NEAR_FACTOR = 1.5
 # for days. So the trigger is swap holding at least this much, or this share of the RAM read NOW, whichever is larger.
 _LIGHT_SWAP_MIN_MB = 256.0
 _LIGHT_SWAP_SHARE = 0.05
+# Swap is a LEVEL, not a rate: after one spike it can sit parked for the rest of the session, and a snapshot every 15 s of that is a
+# rewrite of the file for nothing. So swap earns a light snapshot when it first crosses the floor, again each time it has grown by this
+# much since the last one it earned, and at the heavy plateau cadence while it stays above the floor (``_PLATEAU_INTERVAL_S``).
+_LIGHT_SWAP_STEP_MB = 64.0
 _LIGHT_KEEP = 8
 _LIGHT_THREADS = 3
 # CPU is read for at most this many working threads: every read waits for the GIL under a burst
@@ -163,7 +167,8 @@ _LIGHT_METHOD = (
     "taken at most every 15 s (a tick that a heavy snapshot takes is skipped, so the gap can be "
     "longer) while available memory is within 1.5 times the memory guard's floor, the process "
     "holds at least 1/1.5 of the share of RAM at which the guard trips, the guard is engaged, swap holds "
-    "at least 256 MB or 5% of the RAM read at that moment (the larger), or available memory is below 15% "
+    "at least 256 MB or 5% of the RAM read at that moment (the larger; once when it first does, again for each "
+    "64 MB it grows, and every five minutes while it stays), or available memory is below 15% "
     "of the RAM read at that moment (at most 1,024 MB): "
     "the kernel's memory counters, the Python block count and the blocks gained since the previous "
     "light snapshot (over_s says over how long, for the threads' CPU too), and the threads that "
@@ -208,6 +213,7 @@ _LIGHT: list[dict[str, Any]] = []
 _LIGHT_TAKEN = 0
 _LIGHT_FAILED = 0  # light snapshots that raised, this session (their count is in the marks)
 _LAST_LIGHT = _NEVER
+_SWAP_SEEN: tuple[float, float] | None = None  # (swap MB, time) at the last snapshot swap in use earned
 _LIGHT_BASELINE: dict[str, Any] | None = None  # {"at", "blocks", "cpu": {tid: s}} of the last light one
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
@@ -1065,19 +1071,41 @@ def _light_near(readings: dict[str, float], guard: dict[str, Any] | None) -> str
     if rss is not None and total and pct is not None and 100.0 * rss / total >= pct / _LIGHT_NEAR_FACTOR:
         return "process memory near the guard's share"
     # Both of these use the readings of THIS tick (the RAM total included), never the boot-time budget the guard's line comes from.
-    swap = readings.get("swap_used_mb")
-    if swap is not None and swap >= max(_LIGHT_SWAP_MIN_MB, (total or 0.0) * _LIGHT_SWAP_SHARE):
-        return "swap in use"
     if avail is not None and total and avail <= _pressure_line_mb(total):
         return "available memory below the pressure line of the RAM read now"
+    if _swap_high(readings):
+        return "swap in use"
     return None
+
+
+def _swap_high(readings: dict[str, float]) -> bool:
+    """Swap holds at least ``max(_LIGHT_SWAP_MIN_MB, _LIGHT_SWAP_SHARE`` of the RAM read in these readings``)``; a missing reading is no."""
+    swap = readings.get("swap_used_mb")
+    return swap is not None and swap >= max(_LIGHT_SWAP_MIN_MB, (readings.get("total_mb") or 0.0) * _LIGHT_SWAP_SHARE)
+
+
+def _swap_earns_a_snapshot(swap_mb: float, now: float) -> bool:
+    """Whether swap in use earns a light snapshot now (crossing, growth by a step, or the plateau interval); CLAIMED under the lock."""
+    global _SWAP_SEEN
+    with _LOCK:
+        seen = _SWAP_SEEN
+        if seen is None or swap_mb >= seen[0] + _LIGHT_SWAP_STEP_MB or (now - seen[1]) >= _PLATEAU_INTERVAL_S:
+            _SWAP_SEEN = (swap_mb, now)
+            return True
+    return False
 
 
 def _light_due(readings: dict[str, float], guard: dict[str, Any] | None, now: float) -> str | None:
     """Why this reading earns a LIGHT snapshot, or None; CLAIMED under the lock."""
     global _LAST_LIGHT
+    global _SWAP_SEEN
     why = _light_near(readings, guard)
+    if not _swap_high(readings):
+        with _LOCK:
+            _SWAP_SEEN = None  # swap is back under the floor: the next crossing is a new episode
     if why is None:
+        return None
+    if why == "swap in use" and not _swap_earns_a_snapshot(readings.get("swap_used_mb") or 0.0, now):
         return None
     with _LOCK:
         if (now - _LAST_LIGHT) < _LIGHT_INTERVAL_S:
@@ -1172,7 +1200,8 @@ def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] 
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
-    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE, _LIGHT_FAILED
+    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE, _LIGHT_FAILED, _SWAP_SEEN
+    _SWAP_SEEN = None
     _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
     _LAST_BLOCKS, _LAST_BURST, _GUARD_WAS_ENGAGED = None, _NEVER, False
     _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE = [], 0, _NEVER, None
