@@ -766,6 +766,20 @@ def _repair_once() -> str:
     return outcome
 
 
+def _words_of(refusal: Declined | salvage.SalvageRefused) -> str:
+    """The words of a refusal as a reader may have them: scrubbed, and set back into the refusal itself.
+
+    The words enter the record and the log through ``exception_text`` (every producer says a fixed sentence today; this is what keeps
+    the next one that quotes a driver from carrying a passphrase to the boot-sequence status and the diagnostics bundle). The refusal
+    is then raised on, and ``raise ... from None`` still leaves the original as the new one's ``__context__``: so the scrubbed words
+    are put back into ``detail`` and ``args`` of the original, and no object that is raised, chained or logged afterwards holds the
+    words as they were. The scrub comes before any cut a reader makes."""
+    text = exception_text(refusal, typed=False)
+    refusal.detail = text
+    refusal.args = (text,)
+    return text
+
+
 def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
     """Do the repair (or finish an interrupted swap). Raises ``Declined`` for a refusal (the job row shows it as a failed
     row carrying the keyed sentence) and any other exception for a failure; both leave every file as it was, except the
@@ -815,11 +829,8 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
                 else:
                     report["outcome"] = _repair(work, target, report, ctx)
     except Declined as refusal:
-        # The words of a refusal enter the record and the log through ``exception_text``, in the one place they are written: every
-        # producer says a fixed sentence today, and nothing but this line keeps the next one that quotes a driver from carrying a
-        # passphrase to the boot-sequence status and the diagnostics bundle. The scrub comes before any cut a reader makes.
         code = refusal.code
-        text = exception_text(refusal, typed=False)
+        text = _words_of(refusal)
         report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)
         _LOG.warning("database repair: not done (%s): %s", code, text)
         raise
@@ -828,10 +839,10 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         _LOG.info("database repair: stopped (the app is shutting down); the copy is removed at the next start")
     except salvage.SalvageRefused as refusal:
         code = refusal.code
-        text = exception_text(refusal, typed=False)
+        text = _words_of(refusal)
         report.update(outcome="declined", reason=code, reason_text=text)
         _LOG.warning("database repair: not done (%s): %s", code, text)
-        raise Declined(code, text) from refusal
+        raise Declined(code, text) from None
     except Exception as exc:
         # A salvage failure already says where and why in words of ours (a table or index name, and the class and fixed label of the driver's
         # error, ``damage.failure_text``); any other exception is its class, and for a driver's error its fixed label.

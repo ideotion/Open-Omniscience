@@ -154,8 +154,9 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
         ("RunLog._write", 'self._disable("beats" if beat else "milestones", exception_text(exc))'): 1,
     },
     # The repair's own refusals (``Declined``, ``salvage.SalvageRefused``) are sentences the code wrote, never a driver's words; they keep
-    # them in ``reason_text`` and the log line, scrubbed, and tests/test_refusal_detail_source.py reads what each is made of.
-    "src/database/repair.py": {("run", "text = exception_text(refusal, typed=False)"): 2},
+    # them in ``reason_text`` and the log line, scrubbed (``_words_of``: ``exception_text``, then put back into the refusal itself), and
+    # tests/test_refusal_detail_source.py reads what each is made of.
+    "src/database/repair.py": {("run", "text = _words_of(refusal)"): 2},
     "src/backup/stream_backup.py": {("verify_stream_backup", "reason = exception_text(exc, passphrase, typed=False)"): 1},
     "src/backup/volume_job.py": {
         ("VolumeBackupManager._verify_after_write", '"reason": f"the volume set could not be re-read: {exception_text(exc, typed=False)}",'): 1,
@@ -227,7 +228,6 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/database/repair.py': {
         ('run', 'code = refusal.code'): 2,
         ('run', 'report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)'): 1,
-        ('run', 'raise Declined(code, text) from refusal'): 1,
         ('run', 'failure = f"{exc.where}: {exc.reason}" if isinstance(exc, salvage.SalvageFailed) else damage.failure_text(exc)'): 3,
         ('_copy_and_swap', 'report["failure"] = f"{exc.where}: {exc.reason}"'): 2,
         ('_swap', 'raise Declined("writer-busy", str(busy)) from busy'): 2,

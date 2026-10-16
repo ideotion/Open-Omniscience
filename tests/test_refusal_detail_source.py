@@ -11,13 +11,24 @@ the names assigned in the same function:
 
   * a caught exception may appear only as ``type(x).__name__``, as the argument of ``failure_text`` / ``failure_label`` (the class and
     a fixed label of a driver's error), or, when the ``except`` clause names ONLY the code's own refusals (``LibraryBusy``,
-    ``Declined``, ``SalvageRefused``: fixed sentences), as ``str(x)`` / ``exception_text(x)`` / ``x.detail`` / ``x.code``;
+    ``Declined``, ``SalvageRefused``: fixed sentences), as ``str(x)`` / ``exception_text(x)`` / ``_words_of(x)`` / ``x.detail`` / ``x.code``;
   * anything else (an f-string, ``str``, ``repr``, ``.args``, ``%``, ``.format``, a field of the exception) is a violation, scrubbed
     or not: engine text into a record is class-only.
 
 What this adds to ``tests/test_sink_sweep_records.py`` (which reads repair.py line by line and counts each use of a caught exception):
 that table is keyed by the text of a line, so widening ``except LibraryBusy as busy`` to ``except (LibraryBusy, OSError) as busy`` leaves
 ``str(busy)`` an allowed line. Here the same line is read against the clause above it.
+
+The names are followed through the OUTERMOST enclosing function (so a nested function sees what the one around it assigned) by ``=``,
+``+=``, an annotated assignment, a walrus, a tuple unpacking (position by position when it can be told, the whole right-hand side when it
+cannot), a store into an item or an attribute of the name (``d["n"] = x``, ``self.t = x``), a mutating call on it (``parts.append(x)``),
+and a ``for`` / ``with`` / comprehension target. A function defined in the module and called in the words is followed to what it
+returns. The readers that reach the exception being handled without naming it (``format_exc``, ``sys.exc_info``, ``sys.exception``,
+``locals()`` ...) are a violation wherever they appear in a refusal's words.
+
+STATED LIMITS (each has a control in :data:`LIMITS` that passes today; extending the reading means moving the entry to
+:data:`VIOLATIONS`): a parameter is not followed to the callers that pass it, and a call into another module is not read (only
+``failure_text`` / ``failure_label``, by name, are allowed to take the exception). None occurs in ``repair.py`` or ``salvage.py`` today.
 """
 
 from __future__ import annotations
@@ -34,7 +45,16 @@ RAISED = frozenset({"Declined", "SalvageRefused"})
 #: The classes whose text is a sentence the code wrote (nothing a driver said): an ``except`` naming only these may read the words.
 OWN = frozenset({"LibraryBusy", "Declined", "SalvageRefused"})
 CLASS_ONLY = frozenset({"failure_text", "failure_label"})
+#: The calls that hand over an own refusal's words scrubbed: ``exception_text``, and ``repair._words_of`` (its body is pinned below).
+OWN_TEXT_CALLS = frozenset({"exception_text", "_words_of"})
 OWN_FIELDS = frozenset({"detail", "code"})
+#: Readers of the exception being handled (or of every name) that need no name to reach it; none may appear in a refusal's words.
+UNNAMED_READERS = frozenset(
+    {"format_exc", "format_exception", "format_exception_only", "print_exc", "print_exception", "exc_info", "exception", "extract_tb",
+     "format_tb", "format_stack", "format_list", "locals", "globals", "vars"}
+)
+#: Calls that put their arguments INTO the object they are called on.
+MUTATORS = frozenset({"append", "extend", "add", "update", "insert", "setdefault", "appendleft", "extendleft", "write"})
 
 
 def _name_of(func: ast.expr) -> str | None:
@@ -77,15 +97,16 @@ class Reading:
         return bound
 
     def _function_of(self, node: ast.AST) -> ast.AST:
+        """The OUTERMOST function around ``node``: a nested function reads the names the one around it assigned."""
+        outer: ast.AST = self.tree
         while node in self.parent:
             node = self.parent[node]
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                return node
-        return self.tree
+                outer = node
+        return outer
 
     def _assigned(self, name: str, scope: ast.AST) -> list[ast.expr]:
-        """Every expression the function assigns to ``name``: ``=``, ``+=``, a tuple unpacking (position by position when it can be
-        told, the whole right-hand side when it cannot), an annotated assignment and a walrus."""
+        """Every expression the function puts into ``name`` (see the module docstring for the ways)."""
         found: list[ast.expr] = []
         for node in ast.walk(scope):
             if isinstance(node, ast.Assign):
@@ -93,11 +114,40 @@ class Reading:
                     found += self._from_target(name, target, node.value)
             elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr)) and node.value is not None:
                 found += self._from_target(name, node.target, node.value)
+            elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+                found += self._from_target(name, node.target, node.iter)
+            elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+                found += self._from_target(name, node.optional_vars, node.context_expr)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in MUTATORS
+                and self._base_name(node.func.value) == name
+            ):
+                found += [*node.args, *(k.value for k in node.keywords)]
         return found
+
+    def _returned(self, name: str) -> list[ast.expr]:
+        """What every function called ``name`` in the module returns (a helper or a closure called in a refusal's words)."""
+        return [
+            r.value
+            for fn in ast.walk(self.tree)
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name == name
+            for r in ast.walk(fn)
+            if isinstance(r, ast.Return) and r.value is not None
+        ]
+
+    @staticmethod
+    def _base_name(node: ast.expr) -> str | None:
+        while isinstance(node, (ast.Subscript, ast.Attribute)):
+            node = node.value
+        return node.id if isinstance(node, ast.Name) else None
 
     def _from_target(self, name: str, target: ast.expr, value: ast.expr) -> list[ast.expr]:
         if isinstance(target, ast.Name):
             return [value] if target.id == name else []
+        if isinstance(target, (ast.Subscript, ast.Attribute)):
+            return [value] if self._base_name(target) == name else []
         if isinstance(target, (ast.Tuple, ast.List)):
             if isinstance(value, (ast.Tuple, ast.List)) and len(value.elts) == len(target.elts) and not any(
                 isinstance(e, ast.Starred) for e in [*target.elts, *value.elts]
@@ -109,6 +159,8 @@ class Reading:
     def _read(self, expression: ast.expr, at: ast.AST, seen: set[int]) -> None:
         bound = self._bound(at)
         for use in ast.walk(expression):
+            if isinstance(use, ast.Call) and _name_of(use.func) in UNNAMED_READERS:
+                self.violations.append(f"{use.lineno}: {ast.unparse(use)} reads the exception being handled and is part of a refusal's words")
             if not (isinstance(use, ast.Name) and isinstance(use.ctx, ast.Load)):
                 continue
             if use.id in bound:
@@ -119,7 +171,7 @@ class Reading:
                 else:
                     self.forms[form] += 1
                 continue
-            for value in self._assigned(use.id, self._function_of(at)):
+            for value in [*self._assigned(use.id, self._function_of(at)), *self._returned(use.id)]:
                 if id(value) not in seen:
                     seen.add(id(value))
                     self.forms["assigned-name"] += 1
@@ -136,7 +188,7 @@ class Reading:
                 return "class-only-call"
             if own and name == "str" and len(up.args) == 1 and not up.keywords:
                 return "own-str"
-            if own and name == "exception_text" and up.args[0] is use:
+            if own and name in OWN_TEXT_CALLS and up.args[0] is use:
                 return "own-text"
         if own and isinstance(up, ast.Attribute) and up.value is use and up.attr in OWN_FIELDS:
             return "own-field"
@@ -165,6 +217,23 @@ def test_the_reading_met_every_form_it_allows_in_the_real_code():
         forms += read((ROOT / rel).read_text(encoding="utf-8")).forms
     for form in ("type-name", "class-only-call", "own-str", "assigned-name"):
         assert forms[form] >= 1, (form, dict(forms))
+
+
+def test_the_helper_that_hands_over_a_refusals_words_is_pinned_to_its_one_shape():
+    """``_words_of(x)`` is allowed by NAME, so the name is only as good as the body behind it: this pins the body, whole, and
+    fails on any other (a cut, a different call, a store that is missing, a second return), so the allowance cannot outlive it."""
+    tree = ast.parse((ROOT / "src/database/repair.py").read_text(encoding="utf-8"))
+    (helper,) = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_words_of"]
+    expected = ast.parse(
+        "def _words_of(refusal):\n"
+        "    text = exception_text(refusal, typed=False)\n"
+        "    refusal.detail = text\n"
+        "    refusal.args = (text,)\n"
+        "    return text\n"
+    ).body[0]
+    assert [a.arg for a in helper.args.args] == ["refusal"]
+    body = [n for n in helper.body if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))]  # the docstring
+    assert [ast.dump(n) for n in body] == [ast.dump(n) for n in expected.body], ast.unparse(helper)
 
 
 # --------------------------------------------------------------------------- #
@@ -203,6 +272,24 @@ VIOLATIONS = {
     "exception_text": 'raise Declined("c", exception_text(exc))',
     "type() with more than the name": 'raise Declined("c", type(exc).__doc__)',
     "a bare str of a driver class": 'raise Declined("c", str(type(exc)))',
+    "a name from an annotated assignment": 'text: str = str(exc)\nraise Declined("c", text)',
+    "a name from a starred unpacking": 'code, *rest = "c", str(exc)\nraise Declined(code, *rest)',
+    "a name from a store into an item": 'held = {}\nheld["note"] = str(exc)\nraise Declined("c", **held)',
+    "an item read back": 'held = {}\nheld["note"] = str(exc)\nraise Declined("c", held["note"])',
+    "a name from a store into an attribute": 'self.note = str(exc)\nraise Declined("c", self.note)',
+    "a name filled by append and joined": 'parts = []\nparts.append(str(exc))\nraise Declined("c", ", ".join(parts))',
+    "a name from a for target": 'for text in [str(exc)]:\n    raise Declined("c", text)',
+    "a name from a with target": 'with opened(str(exc)) as text:\n    raise Declined("c", text)',
+    "a name from a comprehension": 'raise Declined("c", ", ".join(text for text in [str(exc)]))',
+    "a lambda that reads it": 'raise Declined("c", (lambda: str(exc))())',
+    "a closure that reads it": 'def words():\n    return str(exc)\nraise Declined("c", words())',
+    "a closure that reads it, through a name": 'def words():\n    text = str(exc)\n    return text\nraise Declined("c", words())',
+    "a helper handed the exception": 'raise Declined("c", describe(exc))',
+    "format_exc": 'raise Declined("c", traceback.format_exc())',
+    "sys.exc_info": 'raise Declined("c", str(sys.exc_info()[1]))',
+    "sys.exception": 'raise Declined("c", str(sys.exception()))',
+    "locals": 'raise Declined("c", str(locals()))',
+    "the exception as the second argument of exception_text": 'raise Declined("c", exception_text("fixed", exc))',
 }
 
 
@@ -220,6 +307,78 @@ def test_control_a_violation_is_found_through_a_clause_that_names_other_classes(
         assert read(_snippet(line, clause)).violations, clause
     assert read(_snippet(line, "(LibraryBusy, Declined)")).violations == []
     assert read(_snippet(line, "library_generation.LibraryBusy")).violations == []
+    for helper_line in ('raise Declined("c", exception_text(exc))', 'raise Declined("c", _words_of(exc))'):
+        assert read(_snippet(helper_line, "LibraryBusy")).violations == [], helper_line
+        for clause in ("OSError", "Exception", "(LibraryBusy, OSError)"):
+            assert read(_snippet(helper_line, clause)).violations, (helper_line, clause)
+
+
+_OWN_ONLY = {
+    "str() with an encoding": 'raise Declined("c", str(exc, "utf-8"))',
+    "str() of the keyword": 'raise Declined("c", str(object=exc))',
+    "exception_text with the exception second": 'raise Declined("c", exception_text("fixed", exc))',
+    "the words helper with the exception second": 'raise Declined("c", _words_of("fixed", exc))',
+    "the words helper with the exception as a keyword": 'raise Declined("c", _words_of(refusal=exc))',
+    "exception_text with the exception as a keyword": 'raise Declined("c", exception_text(exc=exc))',
+    "args": 'raise Declined("c", exc.args[0])',
+    "the cause": 'raise Declined("c", exc.__cause__)',
+    "a fact of the refusal": 'raise Declined("c", exc.facts)',
+    "the context": 'raise Declined("c", exc.__context__)',
+    "an unknown field": 'raise Declined("c", exc.strerror)',
+}
+
+
+@pytest.mark.parametrize("form", sorted(_OWN_ONLY))
+def test_control_an_own_refusal_is_read_only_in_the_exact_shapes_the_reading_allows(form):
+    """A clause naming only our own refusals widens ``str(x)`` / ``exception_text(x)`` / ``x.detail`` / ``x.code``, nothing else."""
+    assert read(_snippet(_OWN_ONLY[form], "(LibraryBusy, Declined)")).violations, form
+
+
+@pytest.mark.parametrize("field", sorted(OWN_FIELDS))
+def test_control_an_own_field_needs_a_clause_that_names_only_our_own_refusals(field):
+    line = f'raise Declined("c", exc.{field})'
+    for clause in ("OSError", "Exception", "(LibraryBusy, OSError)", "(Declined, sqlite3.OperationalError)", "(library_generation.LibraryBusy, OSError)"):
+        assert read(_snippet(line, clause)).violations, (field, clause)
+    for clause in ("LibraryBusy", "Declined", "salvage.SalvageRefused", "(LibraryBusy, Declined)", "library_generation.LibraryBusy"):
+        assert read(_snippet(line, clause)).violations == [], (field, clause)
+
+
+def test_control_a_bare_except_is_not_a_clause_that_names_our_own_refusals():
+    source = "def f():\n    try:\n        pass\n    except:\n        raise Declined('c', 'fixed')\n"
+    assert read(source).violations == []
+    for line in ('str(exc)', 'exc.detail'):
+        bare = f"def f():\n    try:\n        pass\n    except Exception as exc:\n        raise Declined('c', {line})\n"
+        assert read(bare).violations, line
+
+
+def test_control_the_innermost_clause_that_binds_a_name_decides_what_it_is():
+    own_inside = (
+        "def f():\n    try:\n        pass\n    except OSError as exc:\n"
+        "        try:\n            pass\n        except LibraryBusy as exc:\n"
+        "            raise Declined('c', str(exc))\n"
+    )
+    other_inside = (
+        "def f():\n    try:\n        pass\n    except LibraryBusy as exc:\n"
+        "        try:\n            pass\n        except OSError as exc:\n"
+        "            raise Declined('c', str(exc))\n"
+    )
+    assert read(own_inside).violations == []
+    assert read(other_inside).violations
+
+
+def test_control_a_name_assigned_in_the_enclosing_function_is_read_in_the_nested_one():
+    """``_swap`` raises ``Declined`` from a nested function; what the function around it assigned is part of the words."""
+    source = (
+        "def swap():\n    try:\n        pass\n    except OSError as exc:\n"
+        "        text = str(exc)\n"
+        "        def inner():\n            raise Declined('c', text)\n"
+    )
+    assert len(read(source).violations) == 1
+    clean = (
+        "def swap():\n    text = 'fixed'\n"
+        "    def inner():\n        raise Declined('c', text)\n"
+    )
+    assert read(clean).violations == []
 
 
 def test_control_an_outer_handlers_exception_is_not_made_clean_by_an_inner_own_clause():
@@ -270,6 +429,7 @@ def test_control_the_forms_that_say_nothing_an_engine_said_stay_allowed(form):
         ('raise Declined("c", str(exc))', "own-str"),
         ('raise Declined(exc.code, exc.detail)', "own-field"),
         ('raise Declined("c", exception_text(exc, typed=False))', "own-text"),
+        ('text = _words_of(exc)\nraise Declined("c", text)', "own-text"),
         ('raise Declined("c", f"{type(exc).__name__}")', "type-name"),
         ('raise Declined("c", damage.failure_text(exc))', "class-only-call"),
         ('text = "fixed"\nraise Declined("c", text)', "assigned-name"),
@@ -279,6 +439,27 @@ def test_control_each_allowed_form_is_counted_so_the_real_run_can_be_checked_for
     clause = "(LibraryBusy, Declined)" if form.startswith("own") else "OSError"
     reading = read(_snippet(body, clause))
     assert reading.violations == [] and reading.forms[form] >= 1, (form, dict(reading.forms))
+
+
+#: What the reading does NOT see. Each passes today and says why; a reading that learns one moves the entry to VIOLATIONS.
+LIMITS = {
+    "a parameter is not followed to the callers that pass it": "def f(text):\n    raise Declined('c', text)\n",
+    "a call into another module is not read, whatever it does with the exception on its own": _snippet('raise Declined("c", other.describe())'),
+}
+
+
+@pytest.mark.parametrize("limit", sorted(LIMITS))
+def test_control_the_stated_limits_of_the_reading_are_the_limits(limit):
+    reading = read(LIMITS[limit])
+    assert reading.sites == 1 and reading.violations == [], (limit, reading.violations)
+
+
+def test_the_module_docstring_states_every_limit_the_controls_pin():
+    doc = __doc__ or ""
+    assert "STATED LIMITS" in doc and "LIMITS" in doc
+    assert len(LIMITS) == 2, "a new limit is stated in the docstring above (it names each) and given its entry in LIMITS"
+    for words in ("parameter", "another module"):
+        assert words in doc, words
 
 
 def test_control_a_producer_called_through_a_module_is_found_and_a_class_definition_is_not_one():

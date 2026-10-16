@@ -633,7 +633,7 @@ def _is_not_the_text_of_the_failure(use: ast.Name, parent: dict[ast.AST, ast.AST
 
 
 #: The calls that hand a failure's WORDS (the held passphrase out) to the person who just asked; only :data:`_SWEEP_WORDS_KEPT` sites may.
-_WORDS_KEPT_CALLS = frozenset({"exception_text", "_scope_mismatch_detail"})
+_WORDS_KEPT_CALLS = frozenset({"exception_text", "_scope_mismatch_detail", "_words_of"})
 
 
 def _enclosing_function(node: ast.AST, parent: dict) -> str:

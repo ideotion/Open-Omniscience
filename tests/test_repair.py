@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import threading
+import traceback
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -1257,11 +1258,24 @@ def held_secret():
     connect.set_passphrase(previous)
 
 
+#: The cuts a reader makes (the record keeps 200, the job row 300) and what stands in front of the words: the job row cuts "Declined: " + words.
+_CUTS = (200, 300)
+_FRAMES = (0, len("Declined: "))
+
+
 def _quoting(secret: str) -> str:
-    """Refusal words that quote a driver's statement, with the passphrase at the two places a cut of 200 or 300 characters would split it."""
-    statement = f"PRAGMA key = '{secret.replace(chr(39), chr(39) * 2)}' failed"
-    words = "a" * 190 + secret + "b" * (290 - 190 - len(secret)) + statement + " and then nothing more is said"
-    assert words.index(secret) == 190 and words.index(statement) == 290
+    """Refusal words that quote a driver's statement, with the passphrase at the places where a cut of 200 or of 300 characters, made
+    before the scrub, would split it: the plain copy across 200 and the quoted one (its apostrophes doubled, as a statement shows
+    them) across 300, in the words as they are and in the job row's frame, where ten characters of "Declined: " stand in front."""
+    quoted = secret.replace(chr(39), chr(39) * 2)
+    statement = f"PRAGMA key = '{quoted}' failed"
+    plain_at, statement_at = 182, 266
+    words = "a" * plain_at + secret + "b" * (statement_at - plain_at - len(secret)) + statement + " and then nothing more is said"
+    assert words.index(secret) == plain_at and words.index(statement) == statement_at
+    quoted_at = words.index(quoted)
+    for frame in _FRAMES:
+        for cut in _CUTS:
+            assert any(at + frame < cut < at + frame + len(copy) for at, copy in ((plain_at, secret), (quoted_at, quoted))), (frame, cut)
     return words
 
 
@@ -1281,7 +1295,8 @@ def _plant_a_refusal(monkeypatch, kind: str, words: str) -> None:
 
 
 def _nothing_of(secret: str, where: str, text: str) -> None:
-    for form in (secret, secret.replace("'", "''"), secret[:6]):
+    """The passphrase in neither of its forms, nor the piece of either that a cut leaves (the head and the tail)."""
+    for form in (secret, secret.replace("'", "''"), secret[:6], secret[-6:]):
         assert form not in text, f"{where} carries {form!r}"
 
 
@@ -1292,7 +1307,8 @@ def test_a_refusal_whose_words_hold_the_passphrase_reaches_no_log_record_status_
     """R138. Every refusal's words are a fixed sentence today (tests/test_refusal_detail_source.py reads that), and these words are
     what the next producer that quotes a driver would say. They go into the log line, ``reason_text`` (the boot-sequence status and
     the diagnostics bundle's copy of it), the job row and the raised exception, and the passphrase the process holds is in none of
-    them. The words are also positioned so that a CUT of 200 or 300 characters made before the scrub would leave a piece of it."""
+    them. The words are also positioned so that a CUT of 200 or of 300 characters made before the scrub would split a copy of it, in
+    the words and in the job row's frame."""
     from src.api import boot_sequence
     from src.api.diagnostics import bundle
     from src.monitoring import secret_scrub
@@ -1329,11 +1345,20 @@ def test_a_refusal_whose_words_hold_the_passphrase_reaches_no_log_record_status_
     row = repair.REPAIR_JOB.status()
     assert row["state"] == "error" and row["error"].startswith("Declined: ") and secret_scrub.REDACTED[:5] in row["error"]
     _nothing_of(held_secret, "the job row", json.dumps(row, default=str))
-    if kind == "salvage-refused":
-        # the refusal this module raises in the salvage's place is made here, and made of the scrubbed words; a refusal a producer raised
-        # itself is re-raised as it was made, and every reader of it (the job row above) scrubs
-        assert isinstance(caught.value, repair.Declined) and caught.value.detail == expected
-        _nothing_of(held_secret, "the raised refusal", f"{caught.value}|{caught.value.detail}")
+    # the refusal the run raised, whichever way it was made, and everything chained to it: a refusal a producer raised itself is
+    # re-raised with its words scrubbed in place, and the one this module raises in the salvage's place is made of the scrubbed words
+    # with the salvage's own refusal (scrubbed in place too) behind it
+    raised = caught.value
+    assert isinstance(raised, repair.Declined) and raised.detail == expected and raised.args == (expected,) and str(raised) == expected
+    assert raised.__cause__ is None
+    chain = [raised]
+    while (nxt := chain[-1].__cause__ or chain[-1].__context__) is not None and nxt not in chain:
+        chain.append(nxt)
+    assert len(chain) == (1 if kind == "declined" else 2), [type(link).__name__ for link in chain]
+    for link in chain:
+        assert getattr(link, "detail", expected) == expected and link.args == (expected,), type(link).__name__
+        _nothing_of(held_secret, f"the raised {type(link).__name__}", f"{link}|{getattr(link, 'detail', '')}|{link.args!r}")
+    _nothing_of(held_secret, "the traceback of the raised refusal", "".join(traceback.format_exception(raised)))
     _nothing_of(held_secret, "the registry's records", json.dumps(reg.repairs(), default=str) + (tmp_path / "database-damage.json").read_text(encoding="utf-8"))
     assert reg.repairs()[-1]["reason"] == ("no-room" if kind == "declined" else "cannot-open")
 
