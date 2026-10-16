@@ -675,3 +675,40 @@ def test_a_trace_of_escape_heavy_text_stays_within_the_written_byte_budget(dd, h
         for ln in row["trace"]["lines"] + [row["trace"]["summary"]]:
             assert len(json.dumps(ln, ensure_ascii=False).encode("utf-8")) - 2 <= ee._TRACE_LINE_BYTES
         assert row["trace"]["lines_total"] > len(row["trace"]["lines"]), "what is counted stays whole"
+
+
+# ---- crashing_thread_kind: python / non-python / not-in-dump / no-trace, read off the first faulthandler block (10-17 reading of the 10 SIGABRTs) ----
+
+
+def test_a_dump_with_a_current_thread_is_kind_python():
+    t = ee._trace_report(_dump("lxml_here", 10), ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "python"
+
+
+def test_a_dump_of_thread_blocks_with_none_current_is_kind_non_python():
+    t = ee._trace_report(_dump("x", 10, labelled=False), ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "non-python" and t["crashing_thread"] is None
+
+
+def test_a_trace_with_no_thread_block_at_all_is_kind_not_in_dump():
+    t = ee._trace_report(["Uncaught exception ended the server", "ValueError", "  File \"a.py\", line 1 in f"], ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "not-in-dump"
+
+
+def test_a_message_line_that_only_looks_like_a_thread_block_does_not_make_the_kind_python_or_non_python():
+    t = ee._trace_report(["Fatal Python error: Aborted", "Current thread is gone", "Thread count was 3"], ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "not-in-dump"
+
+
+def test_a_session_with_no_trace_is_kind_no_trace_with_its_reason(dd):
+    recs = _session(1, pid=701, signal="SIGABRT")
+    _trace_log(dd, "")
+    row = ee.earlier_unclean_ends(None, records=recs)["sessions"][0]
+    assert row["trace"] is None and row["crashing_thread_kind"] == "no-trace" and row["why_no_trace"]
+
+
+def test_an_earlier_end_with_a_dump_carries_the_kind_on_its_trace(dd):
+    recs = _session(1, pid=702, signal="SIGABRT")
+    _trace_log(dd, "\n" + _header(702, 1) + "\n" + "\n".join(_dump("c", 10, labelled=False)) + "\n")
+    t = ee.earlier_unclean_ends(None, records=recs)["sessions"][0]["trace"]
+    assert t["crashing_thread_kind"] == "non-python"

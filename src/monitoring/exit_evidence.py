@@ -555,12 +555,23 @@ def _read_log(path: Path) -> tuple[list[str], bool]:
 _NOT_UTF8 = "<text withheld, the trace log is not valid UTF-8 and could not be checked for the passphrase>"
 
 
+#: ``crashing_thread_kind``: what the dump says about the thread that aborted. DERIVED from the first faulthandler block, nothing more.
+#: ``python``: a block labelled "Current thread" exists (a thread with a Python thread state, such as a collect worker inside lxml).
+#: ``non-python``: thread blocks exist and none is labelled "Current thread": faulthandler labels only a thread it holds a Python thread
+#: state for, so the abort ran on a thread Python did not create (a native pool thread) -- an INFERENCE from how faulthandler labels,
+#: not read from the dump. ``not-in-dump``: no thread block at all (an uncaught exception, or a header with nothing under it).
+#: ``withheld`` / ``no-trace`` are the two cases with no readable dump (``why_no_trace`` says why on a row).
+KIND_PYTHON, KIND_NON_PYTHON, KIND_NOT_IN_DUMP = "python", "non-python", "not-in-dump"
+KIND_WITHHELD, KIND_NO_TRACE = "withheld", "no-trace"
+
+
 def _withheld(body: list[str], source: Path, why: str | None = None) -> dict[str, Any]:
     from src.monitoring.diagnostics_runs import WITHHELD
 
     return {
         "summary": why or WITHHELD, "lines": [], "lines_total": len(body), "source": Path(source).name,
         "withheld": True,
+        "crashing_thread_kind": KIND_WITHHELD,
     }
 
 
@@ -684,6 +695,8 @@ def _trace_report(
     }
     # Which thread aborted is what faulthandler labels "Current thread"; without that label nothing says, and the busiest thread is
     # never offered in its place (an earlier reading took it for the one that aborted).
+    has_blocks = any(_THREAD_HEAD.match(ln) for ln in body)
+    out["crashing_thread_kind"] = KIND_PYTHON if current is not None else (KIND_NON_PYTHON if has_blocks else KIND_NOT_IN_DUMP)
     if current is not None:
         out["crashing_thread"] = _trace_line(current.strip())
     else:
@@ -874,6 +887,7 @@ def earlier_unclean_ends(
         if not isinstance(pid, int):
             row["trace"] = None
             row["why_no_trace"] = "the ledger no longer holds this session's boot record, so its pid is unknown"
+            row["crashing_thread_kind"] = KIND_NO_TRACE
             out["sessions"].append(row)
             continue
         found_any = False
@@ -891,6 +905,7 @@ def earlier_unclean_ends(
         row["trace"] = trace
         if trace is None:
             row["why_no_trace"] = _why_no_trace(exit_seen, found_any)
+            row["crashing_thread_kind"] = KIND_NO_TRACE
         out["sessions"].append(row)
     out["shown"] = len(out["sessions"])
     out["older_not_shown"] = max(0, len(ends) - out["shown"])
