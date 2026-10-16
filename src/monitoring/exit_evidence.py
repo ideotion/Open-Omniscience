@@ -515,7 +515,26 @@ def _trace_line(line: str) -> str:
         line = line[: _TRACE_LINE_CHARS - 1] + "\u2026"
     if len(line.encode("utf-8")) > _TRACE_LINE_BYTES:
         line = line.encode("utf-8")[: _TRACE_LINE_BYTES - 3].decode("utf-8", "ignore") + "\u2026"
-    return line
+    return _within_json_bytes(line)
+
+
+def _within_json_bytes(line: str) -> str:
+    """``line`` cut so that it takes at most ``_TRACE_LINE_BYTES`` bytes AS WRITTEN IN THE MEMBER (JSON, UTF-8, not ASCII-escaped).
+    Escaping multiplies a quote or a backslash by two and a control character by six, so a hostile line that fits the raw cap could
+    take 1,199 bytes; counting the written bytes makes the member's worst case the line count times one figure, whatever the text."""
+    import json
+
+    if len(json.dumps(line, ensure_ascii=False).encode("utf-8")) - 2 <= _TRACE_LINE_BYTES:
+        return line
+    ellipsis = "\u2026"
+    used, out = len(ellipsis.encode("utf-8")), []
+    for ch in line:
+        w = len(json.dumps(ch, ensure_ascii=False).encode("utf-8")) - 2
+        if used + w > _TRACE_LINE_BYTES:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + ellipsis
 
 
 def _read_log(path: Path) -> tuple[list[str], bool]:
@@ -703,17 +722,15 @@ def previous_trace(
 # --------------------------------------------------------------------------- #
 
 #: How many earlier unclean ends the report carries, newest first. The newest end keeps ``NEWEST_EARLIER_TRACE_LINES`` and the others
-#: ``EARLIER_TRACE_LINES`` of at most ``_TRACE_LINE_BYTES`` bytes of UTF-8 each: (400 + 9 x 120) x 202 = about 300 KB for printable text
-#: (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that). JSON ESCAPING multiplies a line of quotes,
-#: backslashes or control characters (up to six bytes for one), so the member can exceed that; it is written whole, never cut for it. Where a part ends is the
-#: volume writer's business. A machine that crashed 9 times in 5 hours is the case that prompted it, and an
+#: ``EARLIER_TRACE_LINES`` of at most ``_TRACE_LINE_BYTES`` bytes of UTF-8 each: (400 + 9 x 120) x 206 = about 305 KB whatever the text holds (every line is cut to 202 bytes AS WRITTEN, escapes counted; 4 more for its quotes and separator)
+#: (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that). Where a part ends is the volume writer's business. A machine that crashed 9 times in 5 hours is the case that prompted it, and an
 #: older end is still in the ledger and the chronology.
 EARLIER_ENDS_LIMIT = 10
 #: Lines of trace kept per earlier end: the fatal-error header, the crashing thread's block (about 103 lines at faulthandler's 100-frame
 #: cap) and the top of the other threads; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (400).
 EARLIER_TRACE_LINES = 120
 #: Lines kept of the NEWEST earlier end: the one a reader opens first, and a real crash (50 collect workers, 1,336 lines) did not fit in 60.
-#: Worst case of the member: (400 + 9 x 120) x 202 bytes = about 300 KB, against the +125 KB the plan's estimate holds for it.
+#: Worst case of the member: (400 + 9 x 120) x 206 bytes as written = about 305 KB, whatever the text holds, against the +125 KB the plan's estimate holds for it.
 NEWEST_EARLIER_TRACE_LINES = 400
 #: Signals a process can leave a faulthandler trace for. SIGKILL is not among them: nothing runs after it.
 _NATIVE_FAULT_SIGNALS = ("SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE")

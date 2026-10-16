@@ -650,3 +650,28 @@ def test_the_leftover_of_short_threads_goes_to_the_threads_that_were_cut():
     body += ["Current thread 0x3 (most recent call first):", '  File "c.py", line 1 in c']
     t = ee._trace_report(body, ee.Path("c.log"), 50)
     assert len(t["lines"]) == 50, "nothing of the room is left unused while a thread is cut"
+
+
+@pytest.mark.parametrize("hostile", ['"', "\\", "\x01", "\t", "é", "\U0001d518"], ids=["quote", "backslash", "control", "tab", "accent", "astral"])
+def test_a_trace_of_escape_heavy_text_stays_within_the_written_byte_budget(dd, hostile):
+    """Every line is cut to 202 bytes AS WRITTEN (JSON escapes counted), so the member's worst case is the line count times one figure
+    whatever the text holds: a raw 202-byte line of control characters used to serialise to about 1.2 KB."""
+    import json
+
+    recs, text = [], ""
+    for n in range(1, 13):
+        recs += _session(n, pid=700 + n, signal="SIGABRT")
+        body = ["Fatal Python error: Aborted", ""]
+        for i in range(30):
+            body += [f"Thread 0x{i:016x} (most recent call first):"] + ["  " + hostile * 150 for _ in range(30)] + [""]
+        body += ["Current thread 0x7f (most recent call first):"] + ["  " + hostile * 150 for _ in range(100)]
+        text += "\n" + _header(700 + n, n) + "\n" + "\n".join(body) + "\n"
+    _trace_log(dd, text)
+    out = ee.earlier_unclean_ends(None, records=recs)
+    written = json.dumps(out, ensure_ascii=False).encode("utf-8")
+    budget = (ee.NEWEST_EARLIER_TRACE_LINES + 9 * ee.EARLIER_TRACE_LINES) * (ee._TRACE_LINE_BYTES + 4)
+    assert out["shown"] == 10 and len(written) < budget + 40_000, (len(written), budget)
+    for row in out["sessions"]:
+        for ln in row["trace"]["lines"] + [row["trace"]["summary"]]:
+            assert len(json.dumps(ln, ensure_ascii=False).encode("utf-8")) - 2 <= ee._TRACE_LINE_BYTES
+        assert row["trace"]["lines_total"] > len(row["trace"]["lines"]), "what is counted stays whole"
