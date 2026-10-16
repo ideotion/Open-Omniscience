@@ -31,11 +31,11 @@ def _tree(tmp_path, *, v2=None, v1=None, proc=None):
             d = root / sub / rel
             d.mkdir(parents=True, exist_ok=True)
             for name, content in files.items():
-                (d / name).write_text(content)
+                (d / name).write_text(content, encoding="utf-8")
     root.mkdir(parents=True, exist_ok=True)
     pc = tmp_path / "proc_cgroup"
     if proc is not None:
-        pc.write_text(proc)
+        pc.write_text(proc, encoding="utf-8")
     return reader.cgroup_reading(str(root), str(pc))
 
 
@@ -58,7 +58,7 @@ def test_no_limit_set_is_named_as_such_and_only_max_or_the_sentinel_means_it(tmp
 def test_an_unreadable_limit_file_is_named_unreadable_and_not_read_as_no_limit(tmp_path):
     (tmp_path / "cg" / "memory.max").mkdir(parents=True)  # reading a directory raises OSError
     pc = tmp_path / "pc"
-    pc.write_text("0::/\n")
+    pc.write_text("0::/\n", encoding="utf-8")
     r = reader.cgroup_reading(str(tmp_path / "cg"), str(pc))
     assert r["headroom_bytes"] is None and r["unreadable"]
     assert any("is unreadable (IsADirectoryError)" in n for n in r["notes"]), r["notes"]
