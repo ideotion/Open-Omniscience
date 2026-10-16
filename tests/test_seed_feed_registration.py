@@ -146,3 +146,11 @@ def test_the_baseline_carries_the_merged_tags_through_a_correction(s):
     seed_sources(s, [_e("Outlet", "en", tags=["a"], country="fr"), _e("Outlet", tags=["lean-left"])])
     base = json.loads(s.query(Source).one().catalog_baseline)
     assert base["merged_tags"] == ["lean-left"]  # a sync rewrite does not forget what was merged
+
+
+def test_the_same_feed_named_by_a_second_catalogue_is_one_row_and_its_tags_merge(s):
+    """The spectrum catalogue's CNN beside the curated one: one source described twice, never two rows, never a lost lean."""
+    entries = [_e("CNN", "rss", tags=["news"]), _e("CNN", "rss", tags=["lean-center-left"], _provenance="spectrum")]
+    result = seed_sources(s, entries)
+    assert result["created"] == 1 and result["merged"] == 1 and result["shadowed"] == 0
+    assert "lean-center-left" in s.query(Source).one().tags.split(",")

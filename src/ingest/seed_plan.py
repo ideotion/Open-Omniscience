@@ -24,7 +24,6 @@ from src.database.feed_key import feed_key
 #: A tag from this family is EXCLUSIVE on one row: a row carries one lean, and a second, different one is a conflict.
 EXCLUSIVE_TAG_PREFIXES = ("lean-",)
 
-REASON_SAME_FEED = "same_feed"
 REASON_FEEDLESS_DUPLICATE = "feedless_duplicate"
 REASON_LEGAL_COLLAPSE = "legal_collapse"
 
@@ -73,16 +72,21 @@ def plan_registration(entries: list[dict]) -> Plan:
         if fk and domain not in first_feed_row:
             first_feed_row[domain] = e
 
-    claimed: set[tuple[str, str]] = set()
+    claimed: dict[tuple[str, str], dict] = {}
     for e in live:
         domain, fk = entry_key(e)
         if not fk and domain in first_feed_row:
             plan.merges.append((e, first_feed_row[domain]))
             continue
         if (domain, fk) in claimed:
-            plan.unregistered.append((e, REASON_SAME_FEED if fk else REASON_FEEDLESS_DUPLICATE))
+            if fk:
+                # The SAME feed named by a second catalogue: the same source described twice (the spectrum catalogue's
+                # CNN beside the curated one), so its tags go on the row that claimed it.
+                plan.merges.append((e, claimed[(domain, fk)]))
+            else:
+                plan.unregistered.append((e, REASON_FEEDLESS_DUPLICATE))
             continue
-        claimed.add((domain, fk))
+        claimed[(domain, fk)] = e
         plan.rows.append(e)
     return plan
 

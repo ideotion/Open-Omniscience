@@ -478,7 +478,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       return `<tr>
         <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
-        <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
+        <td>${esc(s.domain)}${s.rss_url?` <span class="pill ok" title="${esc(s.rss_url)}">rss</span>`:''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
         <td class="muted">${s.country ? ooCountryCell(s.country) : "—"}</td>
         <td class="muted">${s.language ? ooLangCell(s.language) : "—"}</td>

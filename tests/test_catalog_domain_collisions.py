@@ -78,16 +78,16 @@ _LANGUAGE_LOSSES = 75
 #: mostly absent from the database it was written for.
 _LEAN_TAGS_LOST_BUDGET = 192
 
-#: Row J (S05-10 J3): a source is (domain, feed), so what a catalogue can NOT register is the same feed claimed twice, a
-#: feed-less duplicate of a feed-less domain, or a second legal entry for a host. The per-file figure is
+#: Row J (S05-10 J3): a source is (domain, feed), so what a catalogue can NOT register is a feed-less duplicate of a
+#: feed-less domain or a second legal entry for a host (the same feed named by a second catalogue merges its tags). The per-file figure is
 #: ``configs/sources.yml`` alone; the boot figure is what ``seed_default_sources`` hands the seeder. Measured
-#: 2026-10-16: 475 shadowed became 24 (216 more rows, 235 feed-less entries merged as tags, 186 of the 192 lean tags
+#: 2026-10-16: 475 shadowed became 19 (216 more rows, 240 entries merged as tags, 189 of the 192 lean tags
 #: recovered). Lower it when an entry is fixed; never raise it to admit one.
 _UNREGISTERED_BUDGET = 16
-_BOOT_UNREGISTERED_BUDGET = 24
+_BOOT_UNREGISTERED_BUDGET = 19
 _BOOT_ROWS = 6411
-_BOOT_MERGED = 235
-_BOOT_LEAN_RECOVERED = 186
+_BOOT_MERGED = 240
+_BOOT_LEAN_RECOVERED = 189
 
 
 @pytest.fixture(scope="module")

@@ -86,3 +86,27 @@ def test_a_yaml_round_trip_of_a_multi_feed_outlet_overwrites_nothing(s, tmp_path
     result = m.import_sources_from_yaml(str(path))
     assert result == {"added": 0, "updated": 2, "skipped": 0}
     assert [r.name for r in s.query(Source).order_by(Source.id)] == ["Outlet en", "Outlet ar"]
+
+
+def test_the_article_source_filter_names_every_source_of_that_name_and_a_typo_still_404s(s):
+    from fastapi import HTTPException
+
+    from src.api.main import _query_articles
+    from src.database.models import Article
+
+    a = Source(name="Outlet", domain="outlet.example", rss_url="https://outlet.example/en.xml")
+    b = Source(name="Outlet", domain="outlet.example", rss_url="https://outlet.example/ar.xml")
+    other = Source(name="Other", domain="other.example")
+    s.add_all([a, b, other])
+    s.flush()
+    for i, src in enumerate((a, b, other)):
+        s.add(Article(url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}", source_id=src.id, title=f"t{i}",
+                      content="c", hash=f"h{i}".ljust(64, "0"), language="en"))
+    s.commit()
+    rows, total = _query_articles(s, query=None, source="Outlet", start_date=None, end_date=None, language=None,
+                                  tags=None, limit=100, offset=0)
+    assert sorted(r.title for r in rows) == ["t0", "t1"] and total == 2  # both feeds, not an arbitrary one
+    with pytest.raises(HTTPException) as err:
+        _query_articles(s, query=None, source="Outlt", start_date=None, end_date=None, language=None, tags=None,
+                        limit=100, offset=0)
+    assert err.value.status_code == 404

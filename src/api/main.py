@@ -1316,10 +1316,12 @@ def _structured_filters(
         filters.append(Article.source_id.in_(st_ids) if st_ids else false())
 
     if source:
-        source_obj = session.query(Source).filter_by(name=source).first()
-        if not source_obj:
+        # EVERY source of that name: names are not unique once a source is (domain, feed), and ``.first()`` answered with
+        # an arbitrary one of them and silently dropped the others' articles. A typo still 404s.
+        named_ids = [sid for (sid,) in session.query(Source.id).filter(Source.name == source)]
+        if not named_ids:
             raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
-        filters.append(Article.source_id == source_obj.id)
+        filters.append(Article.source_id.in_(named_ids))
 
     if start_date:
         filters.append(Article.published_at >= datetime.fromisoformat(start_date))

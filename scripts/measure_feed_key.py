@@ -76,6 +76,15 @@ def main() -> int:
     print(f"under UNIQUE(domain, feed_key): rows {rows}  feed-less merged as tags {merged}"
           f"  unregistered {residue}")
     print(f"of the {len(shadowed)} shadowed: " + "  ".join(f"{k} {v}" for k, v in sorted(fate.items())))
+
+    # J3: the seeder's own plan (the production function), the entries it leaves out named with a reason each.
+    from src.ingest.seed_plan import plan_registration
+
+    plan = plan_registration(cap)
+    print(f"plan: {plan.counts}")
+    if "--list" in sys.argv:
+        for entry, reason in plan.unregistered:
+            print(f"  {reason:20} {entry.get('_provenance', '?'):10} {entry.get('domain')}  {entry.get('name')}")
     return 0
 
 
