@@ -6744,6 +6744,7 @@
   "{n} countries with data": "{n} negara dengan data",
   "{n} country boundaries": "{n} batas negara",
   "{n} country boundary": "{n} batas negara",
+  "{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.": "{n} nilai negara dalam lembar bukan kode maupun nama negara: disimpan seperti yang diketik, dan negara yang sudah tersimpan tidak pernah ditimpa.",
   "{n} country with data": "{n} negara dengan data",
   "{n} d": "{n} hari",
   "{n} d ago": "{n} hari lalu",

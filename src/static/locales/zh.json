@@ -6744,6 +6744,7 @@
   "{n} countries with data": "{n} 个有数据的国家",
   "{n} country boundaries": "{n} 条国界",
   "{n} country boundary": "{n} 条国界",
+  "{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.": "表格中有 {n} 个国家值既不是国家代码也不是国家名称：按输入原样保留，已保存的国家绝不会被覆盖。",
   "{n} country with data": "{n} 个有数据的国家",
   "{n} d": "{n} 天",
   "{n} d ago": "{n} 天前",

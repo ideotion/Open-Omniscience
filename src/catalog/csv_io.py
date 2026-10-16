@@ -257,7 +257,7 @@ def unreadable_country_rows(rows: list[dict]) -> dict:
 def upsert_sources(session, rows: list[dict]) -> dict:
     """Create new sources and update existing ones (matched by domain).
 
-    Returns ``{created, updated, skipped, errors}``. A row whose domain already
+    Returns ``{created, updated, skipped, errors, country_kept_stored}``. A row whose domain already
     exists updates only the fields present in that row.
 
     Each row runs inside its own SAVEPOINT (``begin_nested``), so a mid-batch
@@ -270,6 +270,7 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     from src.database.models import Source
 
     created = updated = 0
+    kept_stored: list[str] = []
     errors: list[str] = []
     existing = {d: sid for sid, d in session.query(Source.id, Source.domain).all()}
 
@@ -283,8 +284,14 @@ def upsert_sources(session, rows: list[dict]) -> dict:
                 if is_update:
                     src = session.query(Source).filter_by(domain=domain).first()
                     for k, v in row.items():
-                        if k != "domain":
-                            setattr(src, k, v)
+                        if k == "domain":
+                            continue
+                        if k == "country" and src.country and normalize_country(v) is None:
+                            # A kept-as-typed value that is not a country ("n/a", "-", "unknown") never replaces a
+                            # country the source already has (R100: local data never gives way on import).
+                            kept_stored.append(domain)
+                            continue
+                        setattr(src, k, v)
                 else:
                     # Language gating (maintainer 2026-06-18): a NEW source in a
                     # language the keyword engine cannot manage seeds DISABLED by
@@ -307,4 +314,14 @@ def upsert_sources(session, rows: list[dict]) -> dict:
             errors.append(f"{domain}: {exc}")
             continue
     session.commit()
-    return {"created": created, "updated": updated, "skipped": len(errors), "errors": errors}
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": len(errors),
+        "errors": errors,
+        "country_kept_stored": {
+            "count": len(kept_stored),
+            "examples": kept_stored[:10],
+            "reason": "the sheet's country is not a country code or name, so the country already stored was kept",
+        },
+    }

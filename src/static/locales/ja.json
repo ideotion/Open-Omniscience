@@ -6744,6 +6744,7 @@
   "{n} countries with data": "データのある国 {n} か国",
   "{n} country boundaries": "国境 {n} 本",
   "{n} country boundary": "国境 {n} 本",
+  "{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.": "シート内の国の値 {n} 件は国コードでも国名でもありません。入力どおりに保持し、すでに保存されている国は上書きしません。",
   "{n} country with data": "データのある国 {n} か国",
   "{n} d": "{n} 日",
   "{n} d ago": "{n} 日前",

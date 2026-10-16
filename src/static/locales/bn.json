@@ -6744,6 +6744,7 @@
   "{n} countries with data": "ডেটাসহ {n}টি দেশ",
   "{n} country boundaries": "{n}টি দেশের সীমানা",
   "{n} country boundary": "{n}টি দেশের সীমানা",
+  "{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.": "শিটে {n}টি দেশের মান কোনো দেশ কোড বা দেশের নাম নয়: যেমন লেখা হয়েছে তেমনই রাখা হয়েছে, এবং আগে থেকে সংরক্ষিত দেশ কখনও মুছে ফেলা হয় না।",
   "{n} country with data": "ডেটাসহ {n}টি দেশ",
   "{n} d": "{n} দিন",
   "{n} d ago": "{n} দিন আগে",

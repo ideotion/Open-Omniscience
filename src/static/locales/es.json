@@ -6744,6 +6744,7 @@
   "{n} countries with data": "{n} países con datos",
   "{n} country boundaries": "{n} fronteras de países",
   "{n} country boundary": "{n} frontera de país",
+  "{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.": "{n} valor(es) de país de la hoja no son un código ni un nombre de país: se conservan tal como se escribieron, y un país ya guardado nunca se sobrescribe.",
   "{n} country with data": "{n} país con datos",
   "{n} d": "{n} d",
   "{n} d ago": "hace {n} d",

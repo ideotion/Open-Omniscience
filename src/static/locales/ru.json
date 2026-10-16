@@ -6744,6 +6744,7 @@
   "{n} countries with data": "стран с данными: {n}",
   "{n} country boundaries": "границ стран: {n}",
   "{n} country boundary": "{n} граница страны",
+  "{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.": "Значения страны в таблице ({n}) не являются ни кодом, ни названием страны: они сохранены как введены, а уже сохранённая страна никогда не перезаписывается.",
   "{n} country with data": "{n} страна с данными",
   "{n} d": "{n} дн",
   "{n} d ago": "{n} дн назад",

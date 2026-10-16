@@ -690,7 +690,10 @@
         $("imp-result").innerHTML =
           `<span class="pill ok">imported</span> created ${d.created}, updated ${d.updated}, ` +
           `skipped ${d.skipped}.` +
-          (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "");
+          (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "") +
+          // Countries that are not a code or a name are kept as typed and never overwrite a stored country: say so.
+          ((d.unreadable_country && d.unreadable_country.count > 0)
+            ? ` <span class="muted">${esc(tf("{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.", {n: d.unreadable_country.count}))}</span>` : "");
         toast(`Import: +${d.created} new, ${d.updated} updated.`);
         loadManagedSources(); loadSources(); loadDbStats(); loadCoverage();
       } catch (e) { $("imp-result").textContent = ""; toast(_failMsg("Import failed: {error}", e), "err"); }

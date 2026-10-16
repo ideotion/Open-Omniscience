@@ -355,3 +355,51 @@ def test_a_previous_release_alpha3_for_a_non_iso_code_is_still_read(alpha3, stor
     rows, errors = parse_sources_csv(f"name,domain,country,country_iso3\nX,x.example,floop,{alpha3}\n")
 
     assert errors == [] and rows[0]["country"] == stored
+
+
+def _db_with(sources):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add_all(sources)
+    s.commit()
+    return s
+
+
+def test_an_unreadable_sheet_country_never_overwrites_a_stored_country_on_update():
+    """R100 (the coordinator's check): the kept-as-typed value is for a source that has NO country. On an UPDATE row, `n/a`,
+    `-` or `unknown` must not replace the `fr` already stored; the row is still counted, with the reason."""
+    from src.catalog.csv_io import upsert_sources
+    from src.database.models import Source
+
+    s = _db_with([Source(name="Has", domain="has.test", country="fr"), Source(name="Empty", domain="empty.test")])
+    rows, errors = parse_sources_csv(
+        "name,domain,country\nHas,has.test,n/a\nEmpty,empty.test,unknown\nNew,new.test,-\nGood,has.test,de\n"
+    )
+    assert errors == []
+    # last row is a readable country for the same domain; handle the unreadable ones separately first
+    result = upsert_sources(s, rows[:3])
+    got = {x.domain: x.country for x in s.query(Source).all()}
+
+    assert got["has.test"] == "fr", "a stored country was overwritten by a value that is not a country"
+    assert got["empty.test"] == "unknown", "a source with NO country keeps what the sheet said"
+    assert got["new.test"] == "-", "a created source keeps what the sheet said"
+    kept = result["country_kept_stored"]
+    assert kept["count"] == 1 and kept["examples"] == ["has.test"] and "already stored was kept" in kept["reason"]
+
+
+def test_a_readable_sheet_country_still_replaces_the_stored_one():
+    """The negative-space twin: the protection is for UNREADABLE values only, so an operator can still correct a country."""
+    from src.catalog.csv_io import upsert_sources
+    from src.database.models import Source
+
+    s = _db_with([Source(name="Has", domain="has.test", country="fr")])
+    rows, _ = parse_sources_csv("name,domain,country\nHas,has.test,DEU\n")
+    result = upsert_sources(s, rows)
+
+    assert s.query(Source).one().country == "de" and result["country_kept_stored"]["count"] == 0

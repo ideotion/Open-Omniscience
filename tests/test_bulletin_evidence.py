@@ -251,7 +251,8 @@ def test_every_country_the_archive_writes_speaks_the_same_form_as_the_api(tmp_pa
     for art in s.query(Article).all():
         art.country = "fr"
     s.commit()
-    rep = _build(tmp_path, s)
+    edition_in = {"layer": "A", "sections": [], "masthead": {"source_countries": [{"country": "fr", "articles": 2}]}}
+    rep = _build(tmp_path, s, edition_in)
     with zipfile.ZipFile(rep["path"]) as z:
         sources = json.loads(z.read("sources.json").decode("utf-8"))
         article_names = [n for n in z.namelist() if n.startswith("articles/")]
@@ -259,4 +260,6 @@ def test_every_country_the_archive_writes_speaks_the_same_form_as_the_api(tmp_pa
         edition_text = z.read("edition.json").decode("utf-8")
     assert [x["country"] for x in sources] == ["FRA"], sources
     assert articles and all(a["country"] == "FRA" for a in articles), articles
-    assert '"country": "fr"' not in edition_text, "the edition record kept a stored alpha-2 country"
+    edition = json.loads(edition_text)
+    # The edition handed in CARRIES a country, so this is not vacuous: the masthead's per-country split.
+    assert edition["masthead"]["source_countries"] == [{"country": "FRA", "articles": 2}], edition
