@@ -242,3 +242,21 @@ def test_progress_is_reported_against_the_real_total(tmp_path):
 def test_the_filename_names_the_period_it_covers(tmp_path):
     rep = _build(tmp_path, _corpus(1))
     assert rep["filename"] == "20260731-OOS-weekly-evidence.zip"
+
+
+def test_every_country_the_archive_writes_speaks_the_same_form_as_the_api(tmp_path):
+    """S05-02 S2. A JSON FILE does not pass the app's response boundary, so the archive converts explicitly: the source, the
+    article and the edition record all say alpha-3, never `fr` in one member and `FRA` in another."""
+    s = _corpus(2)
+    for art in s.query(Article).all():
+        art.country = "fr"
+    s.commit()
+    rep = _build(tmp_path, s)
+    with zipfile.ZipFile(rep["path"]) as z:
+        sources = json.loads(z.read("sources.json").decode("utf-8"))
+        article_names = [n for n in z.namelist() if n.startswith("articles/")]
+        articles = [json.loads(z.read(n).decode("utf-8")) for n in article_names]
+        edition_text = z.read("edition.json").decode("utf-8")
+    assert [x["country"] for x in sources] == ["FRA"], sources
+    assert articles and all(a["country"] == "FRA" for a in articles), articles
+    assert '"country": "fr"' not in edition_text, "the edition record kept a stored alpha-2 country"

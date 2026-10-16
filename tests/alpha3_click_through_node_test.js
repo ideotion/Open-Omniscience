@@ -66,7 +66,7 @@ const HELPERS = [
     "if(!a||!b)return;OO_LANG1_TO_3[a]=b;OO_LANG3_TO_1[b]=a;});",
   APP.slice(APP.indexOf("const OO_SPECIAL_ALPHA3 = "),
             APP.indexOf("\n", APP.indexOf("const OO_CLDR_WRONG_ABOUT = "))),
-  ...["ooCountryAlpha2", "ooCountryCode", "ooCountryKind", "ooCountryName", "ooCountryTitle",
+  ...["ooCountryAlpha2", "ooCountryKey", "ooCountryCode", "ooCountryKind", "ooCountryName", "ooCountryTitle",
       "ooCountryCell", "ooCountryCompare", "ooLangBase", "ooLangCode", "ooLangStorage",
       "ooLangDisplayName", "ooLangCell"].map(span),
 ].join("\n") + "\n";
@@ -240,6 +240,36 @@ async function check(id, what, fn) {
     assert.strictEqual(F.cardTitleTip({signal: {jurisdiction: "XKX"}}), ' title="Kosovo — not an ISO code"');
     assert.strictEqual(F.cardTitleTip({signal: {jurisdiction: "—"}}), "");
     assert.strictEqual(F.cardTitleTip({signal: {}}), "");
+  });
+
+  await check("B2-H1", "the key a map hands over and the code the payload sends are one country", () => {
+    const F = build([], "", "ooCountryCode, ooCountryKey");
+    const want = {de: "DEU", fr: "FRA", uk: "GBR", eu: "EUU", xk: "XKX", int: "INT", us: "USA"};
+    for (const [a2, a3] of Object.entries(want)) {
+      assert.strictEqual(F.ooCountryCode(a2), a3, "the picker's option value for " + a2);
+      assert.strictEqual(F.ooCountryKey(a3), a2 === "uk" ? "gb" : a2, "the map key for " + a3);
+      assert.strictEqual(F.ooCountryKey(a2), F.ooCountryKey(a3), a2 + " and " + a3 + " must key alike");
+    }
+    // An unreadable value keys as itself (lowercased), never as another country.
+    assert.strictEqual(F.ooCountryKey("Floop"), "floop");
+  });
+
+  await check("B2-H2", "the sources country picker ticks the box whichever form the list speaks", () => {
+    const box = (value) => ({value, checked: false});
+    const mk = (values) => {
+      const boxes = values.map(box);
+      return {boxes, det: {querySelectorAll: () => boxes}};
+    };
+    const run = (id, values, want) => {
+      const m = mk(values);
+      const F = build(["srcMselCheck"], "function updateMselSummary(){}", "srcMselCheck", {$: () => m.det});
+      return [F.srcMselCheck(id, want), m.boxes.map((b) => b.checked)];
+    };
+    assert.deepStrictEqual(run("src-msel-country", ["fr", "de"], "FRA"), [true, [true, false]], "facet alpha-2, rollup alpha-3");
+    assert.deepStrictEqual(run("src-msel-country", ["FRA", "DEU"], "fr"), [true, [true, false]], "facet alpha-3, caller alpha-2");
+    assert.deepStrictEqual(run("src-msel-country", ["FRA"], "DEU"), [false, [false]], "a country that is not listed ticks nothing");
+    // Every OTHER picker still compares the value exactly (a tag "fra" is not a country).
+    assert.deepStrictEqual(run("src-msel-tag", ["FRA"], "fra"), [false, [false]]);
   });
 
   if (failures.length) {

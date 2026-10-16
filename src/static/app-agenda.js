@@ -167,8 +167,8 @@
     // ordinary cell shows the code alone (Q302). An <option> carries no
     // reliable hover, so the layered form Q302 relies on is not available here
     // and the more specific ruling is the one that can actually be honoured.
-    // The VALUE stays the stored alpha-2: a picker that silently changed what
-    // it submits would break every filter reading it.
+    // The VALUE is the code the facet payload carried (alpha-3 on the wire since S05-02 S2);
+    // the events filter accepts either form, so submitting it unchanged filters correctly.
     // The names AND their order are the reader's language, so a switch rebuilds the
     // options from the facet list drawn last -- never a fetch -- keeping the pick
     // (2026-09-27 re-walk, L-3: they stayed English, in English order, until a reload).

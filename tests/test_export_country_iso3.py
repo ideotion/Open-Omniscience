@@ -226,21 +226,56 @@ def test_an_UNREADABLE_country_falls_back_to_the_alpha3_column():
     )
 
 
-def test_an_unreadable_country_with_an_unreadable_alpha3_yields_no_country():
-    """The negative-space twin: the fall-back must not invent a country either."""
+def test_an_unreadable_country_with_an_unreadable_alpha3_is_kept_as_typed_and_counted():
+    """N6 (R100). The fall-back must not invent a country, and the import must not erase one the operator typed: the value
+    stays as it was written, and the import counts it with the reason."""
+    from src.catalog.csv_io import unreadable_country_rows
+
     rows, errors = parse_sources_csv(
         "name,domain,country,country_iso3\nX,x.example,Freedonia,ZZZ\n"
     )
 
     assert errors == []
-    assert "country" not in rows[0]
+    assert rows[0]["country"] == "freedonia"
+    report = unreadable_country_rows(rows)
+    assert report["count"] == 1 and report["examples"] == [{"domain": "x.example", "country": "freedonia"}]
+    assert "kept as typed" in report["reason"]
 
 
-def test_an_aggregate_in_the_alpha3_column_yields_no_country():
+def test_an_aggregate_in_the_alpha3_column_is_kept_as_typed_and_counted_not_promoted_or_dropped():
+    from src.catalog.csv_io import unreadable_country_rows
+
     rows, errors = parse_sources_csv("name,domain,country_iso3\nX,x.example,WLD\n")
 
     assert errors == []
-    assert "country" not in rows[0]
+    assert rows[0]["country"] == "wld", "an aggregate was either dropped or given a nation"
+    assert unreadable_country_rows(rows)["count"] == 1
+
+
+def test_a_sheet_with_only_readable_countries_reports_zero_unreadable():
+    from src.catalog.csv_io import unreadable_country_rows
+
+    rows, _ = parse_sources_csv("name,domain,country\nX,x.example,fr\nY,y.example,\n")
+
+    assert unreadable_country_rows(rows)["count"] == 0
+    assert "country" not in rows[1], "an EMPTY country cell must stay absent, not become a value"
+
+
+def test_the_import_endpoint_says_how_many_countries_it_kept_unreadable(tmp_path):
+    app, client = _listing_client(tmp_path)
+    try:
+        with client:
+            r = client.post(
+                "/api/catalog/import",
+                files={"file": ("s.csv", "name,domain,country\nF,floop.test,Freedonia\nG,ok.test,germany\n", "text/csv")},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["unreadable_country"]["count"] == 1
+    assert body["unreadable_country"]["examples"][0]["domain"] == "floop.test"
 
 
 # --------------------------------------------------------------------------- #

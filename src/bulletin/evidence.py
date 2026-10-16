@@ -48,6 +48,7 @@ from src.backup.attribution import (
     signals_from_sources,
 )
 from src.bulletin.period import Period
+from src.catalog.countries import country_payload
 from src.database.models import Article, Source
 from src.monitoring.secret_scrub import exception_text, log_failure
 
@@ -382,7 +383,7 @@ def build_evidence_archive(
                                 "created_at": str(art.created_at) if art.created_at else None,
                                 "language": art.language,
                                 "detected_language": art.detected_language,
-                                "country": art.country,
+                                "country": country_payload(art.country),
                                 "author": art.author,
                                 "word_count": art.word_count,
                                 "hash": art.hash,

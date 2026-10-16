@@ -24,6 +24,7 @@ from src.catalog.csv_io import (
     EXPORT_COLUMNS,
     parse_sources_csv,
     template_csv,
+    unreadable_country_rows,
     upsert_sources,
     write_csv,
 )
@@ -276,4 +277,6 @@ async def import_csv(file: UploadFile, db: Session = Depends(get_db)) -> dict:
     result["parse_errors"] = parse_errors[:50]
     result["skipped"] += len(parse_errors)
     result["received_rows"] = len(rows)
+    # A country that is not a code or a name is kept as typed; say so, with the count, rather than let it pass unseen.
+    result["unreadable_country"] = unreadable_country_rows(rows)
     return result

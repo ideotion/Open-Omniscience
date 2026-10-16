@@ -540,3 +540,9 @@ def test_the_sources_country_picker_is_matched_through_the_key():
 
     body = function_body(read_static("app-sources.js"), "srcMselCheck")
     assert "ooCountryKey(c.value) === ooCountryKey(value)" in body and '"src-msel-country"' in body
+
+
+def test_the_card_audit_report_file_passes_the_wire_boundary():
+    """A report written to a file is served by ``FileResponse`` and never touches the response class; the writer converts."""
+    src = (_ROOT / "src" / "briefing" / "card_audit.py").read_text(encoding="utf-8")
+    assert "json.dumps(to_wire(report)" in src, "the card-audit report file stopped passing the wire boundary"

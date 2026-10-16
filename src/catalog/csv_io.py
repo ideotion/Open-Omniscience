@@ -162,15 +162,19 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
         if "language" in out:
             out["language"] = language_storage_code(out["language"]) or out["language"]
         # Country: canonical lowercase ISO-2 via the one conversion layer —
-        # accepts codes, full names and slugs; unrecognisable values are dropped
-        # (never stored as junk).
+        # accepts codes, full names and slugs. A value it cannot read is KEPT AS TYPED
+        # (lowercased, like every country value) and COUNTED by the import
+        # (``unreadable_country_rows``): dropping it would erase a statement the operator
+        # made, and the screens already show an unreadable code as itself with the reason
+        # on hover (R100: local data never gives way, an unreadable value is a fact).
         iso3_raw = (rec.get("country_iso3") or "").strip()
+        unreadable_country = None
         if "country" in out:
             cc = normalize_country(out["country"])
             if cc:
                 out["country"] = cc
             else:
-                out.pop("country")
+                unreadable_country = out.pop("country")
         # NOT an `elif`: the branch above can DROP an unrecognisable `country`, and an
         # `elif` would then throw away a perfectly readable `country_iso3` in the same
         # row -- leaving the source with no country at all although the operator stated
@@ -184,6 +188,11 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
             cc = normalize_country(iso3_raw)
             if cc:
                 out["country"] = cc
+                unreadable_country = None
+        if "country" not in out and (unreadable_country or iso3_raw):
+            # Neither column could be read: keep what the operator typed (the alpha-3 column's
+            # value only when `country` was empty), so the row says what the sheet said.
+            out["country"] = (unreadable_country or iso3_raw).lower()
         if iso3_raw and "country" in out and normalize_country(out["country"]) != normalize_country(iso3_raw):
             # TWO STATEMENTS OF ONE FACT THAT DISAGREE. Refused by name: picking
             # `country` would discard an edit the operator made in the other column,
@@ -229,6 +238,20 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
 
         rows.append(out)
     return rows, errors
+
+
+def unreadable_country_rows(rows: list[dict]) -> dict:
+    """The rows of a parsed sheet whose ``country`` is kept as typed because it is not a country code or name.
+
+    ``{"count": n, "examples": [...], "reason": ...}``: the count is exact, only the listed examples are
+    bounded. An empty result is ``{"count": 0, ...}``, never absent, so a caller can always say "none".
+    """
+    odd = [(r["domain"], r["country"]) for r in rows if r.get("country") and normalize_country(r["country"]) is None]
+    return {
+        "count": len(odd),
+        "examples": [{"domain": d, "country": c} for d, c in odd[:10]],
+        "reason": "kept as typed: not a recognised country code or name",
+    }
 
 
 def upsert_sources(session, rows: list[dict]) -> dict:

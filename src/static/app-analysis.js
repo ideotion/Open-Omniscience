@@ -3827,12 +3827,16 @@
       // A value the list does not hold yet (a language the corpus has since lost, a
       // source id from a shared link) is ADDED as an option rather than dropped, so a
       // filter is never silently widened because its value is not in today's facets.
+      // The country list is matched through the key: a saved filter written when the facet
+      // spoke alpha-2 must tick today's alpha-3 row, not add a bare duplicate beside it.
+      const same = id === "adv-countries" ? (a, b) => ooCountryKey(a) === ooCountryKey(b) : (a, b) => a === b;
+      const has = (v, o) => same(v, o.value);
       for (const v of want) {
-        if (!Array.from(el.options).some((o) => o.value === v)) {
+        if (!Array.from(el.options).some((o) => has(v, o))) {
           const o = document.createElement("option"); o.value = v; o.textContent = v; el.appendChild(o);
         }
       }
-      Array.from(el.options).forEach((o) => { o.selected = want.has(o.value); });
+      Array.from(el.options).forEach((o) => { o.selected = Array.from(want).some((v) => has(v, o)); });
     }
     function _advTsRead(ts, fromKey, toKey, scaleKey, out) {
       if (!ts || !ts.get) return;
