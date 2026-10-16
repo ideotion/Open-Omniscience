@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from src.monitoring.secret_scrub import record_text
 from src.safety.fetcher import following_fetcher
 
 router = APIRouter(prefix="/api/hazards", tags=["hazards"])
@@ -67,7 +68,7 @@ def fetch_hazards(
                 rows = [r for r in rows if (r.get("magnitude") or 0) >= min_magnitude]
             items.extend(rows)
         except Exception as exc:  # noqa: BLE001 - one bad feed must not 500 the relay
-            failures.append(f"{key}: {type(exc).__name__}: {exc}")
+            failures.append(f"{key}: {record_text(exc, typed=True)}")
     items.sort(key=lambda h: h.get("time") or "", reverse=True)
     return items, failures
 

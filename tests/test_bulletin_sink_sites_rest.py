@@ -549,6 +549,22 @@ def test_an_edition_that_cannot_be_written_is_returned_with_the_class_and_the_sc
     assert body.json()["persisted"] is False and persist_error.startswith("OSError: ") and WORDS in persist_error, persist_error
 
 
+def test_a_write_failure_chained_to_a_driver_names_its_class_once_and_none_of_its_words(api, monkeypatch):
+    import sqlite3
+
+    def _driver_raise(*_a, **_k):
+        try:
+            raise sqlite3.OperationalError(f"{WORDS}: {STATEMENT}, passphrase {SECRET}")
+        except sqlite3.Error as driver:
+            raise OSError("could not write the edition") from driver
+
+    monkeypatch.setattr("src.bulletin.edition.build_edition", lambda *_a, **_k: {"masthead": {}})
+    monkeypatch.setattr("src.bulletin.store.persist_edition", _driver_raise)
+    persist_error = api.post("/api/bulletin/generate?cadence=weekly").json()["persist_error"]
+    assert persist_error.startswith("OSError") and persist_error.count("OSError") == 1, persist_error
+    assert "could not write" not in persist_error and WORDS not in persist_error and SECRET not in persist_error
+
+
 def test_an_edition_on_disk_that_cannot_be_read_says_so_and_chains_no_cause(api, monkeypatch):
     monkeypatch.setattr("src.bulletin.store.read_edition", _value_raise)
     assert "edition unreadable" in _told(api.get("/api/bulletin/editions/x.json"), 500)

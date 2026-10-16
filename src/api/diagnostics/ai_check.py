@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
@@ -109,7 +110,7 @@ def ai_check_run(body: AiCheckRunBody) -> JSONResponse:
     except RuntimeError as exc:
         st = _AI_CHECK_JOB.status()
         st["already_running"] = True
-        st["detail"] = str(exc)
+        st["detail"] = http_detail(exc)
     return JSONResponse(st)
 
 

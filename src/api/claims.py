@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.claim_workspace import DEFAULT_TRAIL, MAX_CLAIM_CHARS, MAX_TRAIL, build_workspace
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/claims", tags=["claims"])
 
@@ -49,7 +50,7 @@ def claim_workspace(
     try:
         return build_workspace(db, claim, query=query, limit=limit, expand=expand, ui_lang=ui_lang)
     except ValueError as exc:  # an empty claim, or a query the grammar rejects
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 class TrailBundleRequest(BaseModel):
@@ -81,7 +82,7 @@ def claim_trail_bundle(req: TrailBundleRequest, db: Session = Depends(get_db)) -
                              expand=req.expand, ui_lang=req.ui_lang)
         data, report = build_trail_bundle(db, ws, full_text=req.full_text)
     except ValueError as exc:  # an empty claim or trail, or a query the grammar rejects
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     return {**report, "zip_base64": base64.b64encode(data).decode("ascii")}
 
 

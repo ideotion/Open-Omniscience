@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, scrub_and_reraise
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, http_detail, scrub_and_reraise
 from src.safety import settings as safety_settings
 
 _LOG = logging.getLogger("api.safety")
@@ -104,7 +104,7 @@ def update_settings(body: SettingsUpdate) -> dict:
     try:
         s = safety_settings.save_settings(body.model_dump(exclude_unset=True))
     except safety_settings.SafetySettingsError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
     return {**_settings_payload(s), "reset": list(getattr(s, "reset_fields", []) or [])}
 
@@ -127,7 +127,7 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
             # BackupError includes the encrypted-store refusal (an encrypted corpus
             # must use the streaming encrypted backup, not this decrypt-to-plaintext
             # path) — surface it as a clean 400, never an ungraceful 500.
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False, withheld=UNREADABLE_TEXT)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
     return StreamingResponse(
         io.BytesIO(blob),
         media_type="application/octet-stream",
@@ -176,7 +176,7 @@ def secure_erase(body: SecureEraseBody) -> dict:
     try:
         return full_secure_erase(body.passes)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.get("/uninstall/plan")

@@ -33,7 +33,7 @@ from src.ingest.email import (
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import UNREADABLE_TEXT, exception_text, scrub_and_reraise
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, http_detail, scrub_and_reraise
 from src.safety.fetcher import following_fetcher
 
 _LOG = logging.getLogger("api.ingestion")
@@ -144,7 +144,7 @@ def ingest_batch_endpoint(
         except Exception as exc:  # noqa: BLE001 - one bad feed must not abort the batch
             db.rollback()
             results.append(
-                {"source_id": sid, "source": source.name, "status": "error", "detail": str(exc)}
+                {"source_id": sid, "source": source.name, "status": "error", "detail": http_detail(exc)}
             )
     return {"requested": len(ids), "ingested": ingested, "aggregate": aggregate, "results": results}
 
@@ -176,7 +176,7 @@ def ingest_email_endpoint(
                 use_ssl=req.use_ssl,
             )
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
-            raise HTTPException(status_code=409, detail=exception_text(exc, req.password, typed=False, withheld=UNREADABLE_TEXT)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
 
@@ -417,7 +417,7 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
             status_code=400,
             detail=(
                 f"Too many files in one upload (cap {_MAX_UPLOAD_FILES}). For a very large "
-                f"set, import from a folder instead. ({exc})"
+                f"set, import from a folder instead. ({http_detail(exc)})"
             ),
         ) from exc
     from starlette.datastructures import UploadFile
@@ -459,7 +459,7 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
         await run_in_threadpool(db.rollback)
         raise HTTPException(
             status_code=500,
-            detail=f"Newsletter import failed while storing: {exc}",
+            detail=http_detail(exc, "Newsletter import failed while storing: "),
         ) from exc
     tally["skipped_non_eml"] = skipped_non_eml
     return {
@@ -530,7 +530,7 @@ async def upload_pdfs(request: Request, db: Session = Depends(get_db)) -> dict:
             status_code=400,
             detail=(
                 f"Too many files in one upload (cap {_MAX_PDF_UPLOAD_FILES}). For a very "
-                f"large set, import from a folder instead. ({exc})"
+                f"large set, import from a folder instead. ({http_detail(exc)})"
             ),
         ) from exc
     blobs: list[tuple[str, bytes]] = []
@@ -614,9 +614,9 @@ def start_folder_import(body: FolderImportBody) -> dict:
     try:
         return get_import_manager().start(body.folder)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.get("/newsletters/import-folder/status")
@@ -639,7 +639,7 @@ def folder_import_action(action: str) -> dict:
         try:
             return mgr.resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     elif action == "cancel":
         mgr.cancel()
     else:
@@ -711,7 +711,7 @@ def _mailbox_pull_worker(
         # it is captured, in every shape the password is written in, rather than trusted not to contain it.
         raise RuntimeError(
             "mailbox fetch failed: "
-            + exception_text(exc, password, typed=False, withheld=f"{type(exc).__name__}")
+            + http_detail(exc, "", password)
         ) from None
     ctx.set_progress(done=0, total=len(raws), detail=f"anonymising {len(raws)} message(s)")
     with session_scope() as db:

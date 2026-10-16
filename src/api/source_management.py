@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 # Import database models and SourceManager
 from src.database.session import get_db
 from src.database.source_manager import SourceManager
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 
 # Import logging config
 from src.utils.logging_config import setup_logging
@@ -476,7 +476,7 @@ def resolve_qid_names(
     try:
         out = resolve_labels([q for _rid, q in targets], fetch=_fetch)
     except AirplaneRefusal as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
     applied = admit_or_decline(targets, out["labels"], out["declined"])
     return {
@@ -2201,4 +2201,4 @@ def admission_undo(event_id: int, db: Session = Depends(get_db)) -> dict:
         # 409, not 404: the event id is a real address and the refusal is about STATE
         # (already undone, or a source that has since been deleted). A 404 would send an
         # operator looking for a row that is sitting right there in the audit list.
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc

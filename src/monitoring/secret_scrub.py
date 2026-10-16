@@ -727,7 +727,9 @@ def _driver_line(exc: BaseException) -> str:
     return f"{type(exc).__qualname__}: its text is withheld (a database driver's words)"
 
 
-def record_text(exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = False) -> str:
+def record_text(
+    exc: BaseException, *secrets: str | None, limit: int | None = None, typed: bool = False, withheld: str | None = None
+) -> str:
     """What a RECORD (a run journal, a queue's state, a report the Diagnostics zip carries) keeps for a caught exception.
 
     A database driver's exception is its class name only (:func:`is_driver_error`: scrubbing with the held passphrase removes only
@@ -744,7 +746,41 @@ def record_text(exc: BaseException, *secrets: str | None, limit: int | None = No
             return out if limit is None else out[:limit]
     except Exception:  # noqa: BLE001
         return _class_only(exc)
-    return exception_text(exc, *secrets, limit=limit, typed=typed)
+    return exception_text(exc, *secrets, limit=limit, typed=typed, withheld=withheld)
+
+
+def is_driver_text(exc: BaseException) -> bool:
+    """Is ``exc``'s text a database driver's words (the exception is a driver's, or a wrapper whose readable text quotes one)? The
+    test :func:`record_text` applies, for a caller that keeps its own words and fixed sentences for every other exception. A text that
+    cannot be read is NOT a driver's here (it quotes nothing; :func:`exception_text` withholds it by class). Never raises."""
+    try:
+        if is_driver_error(exc):
+            return True
+        _text_and_notes(exc)
+        return quotes_a_driver(exc)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def http_detail(
+    exc: BaseException, prefix: str = "", *secrets: str | None, limit: int | None = None, withheld: str | None = None
+) -> str:
+    """The ``detail`` of an HTTP error that carries a caught exception's text (R140): ``prefix`` (a literal the caller wrote) and then
+    what :func:`record_text` keeps of ``exc`` (``withheld``: the caller's own words for a text the scrub cannot make clean). A database driver's error, a wrapper that quotes one, anywhere in the chain, or a
+    ``UnicodeError`` is its CLASS only; any other exception keeps its words (the prose a refusal means the user to read), with every
+    secret handed in and every passphrase the process holds taken out BEFORE any cut. When the scrub cannot run, the class is all
+    that is written. EVERY ``detail`` in ``src/api`` that carries an exception goes through this one call: the screen it is shown on
+    is photographed and shared, so a text that is not stored is still a place a passphrase must not be. Never raises."""
+    try:
+        if any(is_driver_error(link) for link in _reachable(exc)):
+            # R140: a driver's error ANYWHERE in the chain makes this the class only, whatever the wrapper's own words say
+            said = f"{type(exc).__qualname__} (a database driver's text is withheld)"
+            said = said if limit is None else said[:limit]
+        else:
+            said = record_text(exc, *secrets, limit=limit, typed=False, withheld=withheld)
+    except Exception:  # noqa: BLE001 - nothing of the exception's words survives a failure here
+        said = _class_only(exc)
+    return f"{prefix}{said}"
 
 
 #: A text longer than this is not read for a quoted run: it is taken to quote the driver (fail closed), so no cut can hide a piece.

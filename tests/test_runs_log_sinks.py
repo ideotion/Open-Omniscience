@@ -562,12 +562,12 @@ _BUNDLE_ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         "the same closing line, in the download route of one volume",
     ),
-    ("all_diagnostics_volumes", "raise HTTPException(status_code=507, detail=str(exc)) from exc"): (
-        2,
+    ("all_diagnostics_volumes", "raise HTTPException(status_code=507, detail=http_detail(exc)) from exc"): (
+        1,
         "a VolumeRoomError, whose text diagnostics_volumes composes from sizes and the drive; the answer goes to the local page",
     ),
-    ("all_diagnostics_volumes", "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc"): (
-        4,
+    ("all_diagnostics_volumes", "raise HTTPException(status_code=500, detail=http_detail(exc) or type(exc).__name__) from exc"): (
+        2,
         "the error of splitting a FINISHED zip on disk, answered to the local page, which puts its own translated sentence before it: "
         "no engine and no passphrase in the path (_ensure_volume_set reads a zip and writes volumes). If an engine ever enters it, "
         "this allowance is wrong",
@@ -605,7 +605,7 @@ _TRACEBACK_CALLS = {
 }
 #: The calls a handler's bound exception may be handed to: each writes it through the one scrub, or asks for its class.
 #: ``forensics._why`` is ``tidy_error`` with the report's own cut.
-_SCRUBBING_CALLS = {"tidy_error", "exc_line", "exception_text", "record_text", "record_traceback", "traceback_text", "log_failure", "type", "isinstance", "_why"}
+_SCRUBBING_CALLS = {"tidy_error", "exc_line", "exception_text", "record_text", "http_detail", "record_traceback", "traceback_text", "log_failure", "type", "isinstance", "_why"}
 
 
 def _call_name(call: ast.Call) -> str | None:
@@ -633,7 +633,7 @@ def _is_not_the_text_of_the_failure(use: ast.Name, parent: dict[ast.AST, ast.AST
 
 
 #: The calls that hand a failure's WORDS (the held passphrase out) to the person who just asked; only :data:`_SWEEP_WORDS_KEPT` sites may.
-_WORDS_KEPT_CALLS = frozenset({"exception_text", "_scope_mismatch_detail"})
+_WORDS_KEPT_CALLS = frozenset({"exception_text", "_scope_mismatch_detail", "_words_of"})
 
 
 def _enclosing_function(node: ast.AST, parent: dict) -> str:
@@ -787,27 +787,15 @@ def test_the_sweep_reads_the_whole_bulletin_directory():
 
 #: STRICT: a record of these modules keeps the exception's CLASS (``type``) and a log line goes through ``log_failure``; nothing else
 #: may be handed a caught exception, except where the person who just asked is told the words (the scrub keeps the sentence and takes
-#: the held passphrase out of it): a route's refusal and the evidence plan's folder check. Each such site is a line of
+#: the held passphrase out of it): the evidence plan's folder check (a route's refusal goes through ``http_detail``, R140, which is a
+#: scrubbing call here: a driver's error is its class, any other keeps its scrubbed words). Each such site is a line of
 #: :data:`_SWEEP_WORDS_KEPT`, keyed like :data:`_BUNDLE_ALLOWED`: a record written from one of those functions (``edition["x"] =
 #: exception_text(exc)``) is a line the table does not hold.
-_SWEEP_CALLS = {"type", "isinstance", "log_failure"}
-_HTTP_400 = "raise HTTPException(status_code=400, detail=exception_text(exc, typed=False)) from None"
+_SWEEP_CALLS = {"type", "isinstance", "log_failure", "http_detail"}
 _SWEEP_WORDS_KEPT: dict[str, dict[tuple[str, str], int]] = {
-    # An HTTP refusal answers the request that was just made and writes nothing: each is the response's ``detail``.
+    # The scope-mismatch refusal is composed by the module's own helper (its fixed words and the two scopes), answered and not saved.
     "src/api/bulletin.py": {
-        ("generate", _HTTP_400): 1,
-        ("render_edition", _HTTP_400): 1,
-        ("export_privacy_route", _HTTP_400): 2,
-        ("evidence_plan_route", _HTTP_400): 1,
-        ("evidence_build_route", _HTTP_400): 2,
-        ("evidence_build_route", 'status_code=500, detail=f"could not write the archive: {exception_text(exc, typed=False)}"'): 1,
-        ("edition", 'status_code=500, detail=f"edition unreadable: {exception_text(exc, typed=False)}"'): 1,
-        ("publish", 'status_code=500, detail=f"could not stamp the edition: {exception_text(exc, typed=False)}"'): 1,
-        ("narrate_edition", 'detail={"reason": exception_text(exc, typed=False), "status": _NARRATION_JOB.status()},'): 1,
         ("narrate_edition", "raise HTTPException(status_code=409, detail=_scope_mismatch_detail(exc)) from None"): 1,
-        # "Built, but not saved": the generated edition is returned with this beside it and nothing is persisted (it is the case where
-        # the write failed), so it is an answer, never a record.
-        ("generate", 'edition["persist_error"] = exception_text(exc, limit=300)'): 1,
     },
     # The folder the operator just chose cannot be written: the plan is answered to them and not saved.
     "src/bulletin/evidence.py": {("evidence_plan", 'out["destination_error"] = exception_text(exc, limit=300)'): 1},
@@ -1260,7 +1248,7 @@ def test_an_allowed_line_copied_into_another_handler_is_still_reported():
     handler survived a guard keyed by text alone)."""
     source = (ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
     for line in (
-        "raise HTTPException(status_code=500, detail=str(exc) or type(exc).__name__) from exc",
+        "raise HTTPException(status_code=500, detail=http_detail(exc) or type(exc).__name__) from exc",
         'box["error"] = exc',
         "cause = exc.__cause__ if isinstance(exc, HTTPException) else None",
     ):

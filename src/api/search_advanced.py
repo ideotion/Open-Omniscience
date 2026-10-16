@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -172,7 +173,7 @@ def spell_index_build() -> dict:
     try:
         return _spell_job().start()
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 # --------------------------------------------------------------------------- #

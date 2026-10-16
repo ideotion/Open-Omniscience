@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from src.catalog.countries import country_payload_iso3
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 from src.timemap.collect import (
     KNOWN_KINDS,
     article_mentions_to_signals,
@@ -222,12 +223,12 @@ def list_signals(
         try:
             extra += _article_signals(db, days, limit)
         except Exception as exc:  # pragma: no cover - DB guard
-            failures.append(f"corpus articles unavailable: {exc}")
+            failures.append(http_detail(exc, "corpus articles unavailable: "))
     if mentions:
         try:
             extra += _mention_signals(db, days, limit)
         except Exception as exc:  # pragma: no cover - DB guard
-            failures.append(f"mentioned dates unavailable: {exc}")
+            failures.append(http_detail(exc, "mentioned dates unavailable: "))
     sig = collect(kinds=_kinds_param(kinds), start=start, end=end, extra=extra)
     if len(sig) > limit:
         # Cap the payload without discarding the curated backbone or the *recent* end:

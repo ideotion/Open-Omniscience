@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.catalog.countries import country_query_forms
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -148,7 +149,7 @@ def fetch_figures(body: FigureFetchBody) -> dict:
                     body.slug, value_col=body.value_col, unit=body.unit
                 )
             except ValueError as exc:  # ambiguous value column → ask the caller to name it
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                raise HTTPException(status_code=422, detail=http_detail(exc)) from exc
         elif src in ("jsonstat", "json-stat", "pxweb"):
             if not (body.url and body.url.strip()):
                 raise HTTPException(
@@ -162,7 +163,7 @@ def fetch_figures(body: FigureFetchBody) -> dict:
                     series_id=body.series_id,
                 )
             except ValueError as exc:  # not an http(s) url → a clean 422
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                raise HTTPException(status_code=422, detail=http_detail(exc)) from exc
         else:
             raise HTTPException(status_code=422, detail=f"unknown stats source: {body.source!r}")
     except HTTPException:
@@ -170,11 +171,11 @@ def fetch_figures(body: FigureFetchBody) -> dict:
     except RuntimeError as exc:  # the kill-switch up-front refusal
         # Airplane mode engaged: an honest refusal, not a crash (the frontend gates the
         # button behind the ONE consent popup, but the backend refuses regardless).
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     except Exception as exc:  # transport / decode failure -> degrade loudly
         raise HTTPException(
             status_code=502,
-            detail=f"official-statistics fetch failed (transport or endpoint): {exc}",
+            detail=http_detail(exc, "official-statistics fetch failed (transport or endpoint): "),
         ) from exc
 
     with session_scope() as db:

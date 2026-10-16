@@ -20,6 +20,7 @@ from src.config.app_settings import (
     load_settings,
     save_settings,
 )
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -101,7 +102,7 @@ def update_settings(update: SettingsUpdate) -> dict:
     try:
         saved = save_settings(update.model_dump(exclude_unset=True), replace_damaged=True)
     except AppSettingsError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     payload = _payload()
     # Any value that had to be pulled back into a producer's safe range is
     # REPORTED, never applied in silence (ruling 3, 2026-07-31). An empty list

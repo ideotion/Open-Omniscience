@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException, Query
 
+from src.monitoring.secret_scrub import http_detail
+
 router = APIRouter(prefix="/api/events", tags=["events"])
 
 
@@ -118,7 +120,7 @@ def feed_import(feed_id: str) -> dict:
     try:
         return import_feed(make_fetcher(), feed_id)
     except Exception as exc:  # noqa: BLE001 - surface the refusal honestly
-        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc, limit=300)) from exc
 
 
 @router.post("/feeds/import-ics")
@@ -135,7 +137,7 @@ def feed_import_ics(payload: dict = Body(...)) -> dict:
     try:
         return import_ics_text(name, ics)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)[:300]) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc, limit=300)) from exc
 
 
 @router.post("/feeds/import-url")
@@ -153,9 +155,9 @@ def feed_import_url(payload: dict = Body(...)) -> dict:
     try:
         return import_ics_url(make_fetcher(), url, name)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)[:300]) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc, limit=300)) from exc
     except Exception as exc:  # noqa: BLE001 - surface the fetch refusal honestly
-        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc, limit=300)) from exc
 
 
 @router.get("/feeds/user")
@@ -174,7 +176,7 @@ def feed_remove_user(key: str) -> dict:
     try:
         return remove_user_feed(key)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=http_detail(exc)) from exc
 
 
 @router.get("/imported")
@@ -303,7 +305,7 @@ def lunar_series(start: str, end: str) -> dict:
     try:
         d0, d1 = _date.fromisoformat(start), _date.fromisoformat(end)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"bad date: {exc}") from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc, "bad date: ")) from exc
     if abs((d1 - d0).days) > 36525:
         raise HTTPException(status_code=400, detail="window exceeds 100 years")
     return lunar_phase_series(start, end)

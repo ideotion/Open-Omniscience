@@ -59,6 +59,8 @@ from typing import Any
 
 import yaml
 
+from src.monitoring.secret_scrub import record_text
+
 SHIPPABLE = ("qualified", "disqualified")
 
 # The all-diagnostics bundle writes every member flat at the archive root under this
@@ -234,7 +236,7 @@ def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise MergeInputError(REFUSE_NOT_TEXT, file=origin, error=str(exc)) from exc
+        raise MergeInputError(REFUSE_NOT_TEXT, file=origin, error=record_text(exc)) from exc
     try:
         raw = json.loads(text)
     except json.JSONDecodeError as json_exc:

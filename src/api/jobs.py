@@ -23,6 +23,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.monitoring.secret_scrub import http_detail
+
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
@@ -1111,7 +1113,7 @@ def resume_job(job_id: str) -> dict:
         try:
             get_folder_manager().resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return {"resumed": job_id, "detail": "folder backup resumed"}
     if job_id == "newsletter-import":
         from src.ingest.import_job import get_import_manager
@@ -1119,7 +1121,7 @@ def resume_job(job_id: str) -> dict:
         try:
             get_import_manager().resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return {"resumed": job_id, "detail": "newsletter import resumed"}
     if job_id == "reindex":
         # Local DB work — no network/airplane gate; resume continues from the cursor.
@@ -1128,7 +1130,7 @@ def resume_job(job_id: str) -> dict:
         try:
             get_reindex_manager().resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return {"resumed": job_id, "detail": "re-index resumed"}
     if job_id == "quarantine":
         # Local DB work — no network/airplane gate; resume continues from the cursor,
@@ -1138,7 +1140,7 @@ def resume_job(job_id: str) -> dict:
         try:
             get_quarantine_manager().resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return {"resumed": job_id, "detail": "quarantine job resumed"}
     if job_id == "keyword-fold":
         # Local DB work — no network/airplane gate; resume continues from the cursor.

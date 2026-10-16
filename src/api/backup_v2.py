@@ -37,7 +37,7 @@ from pydantic import BaseModel
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, check_memory_before_staging, run_restore
 from src.jobs.background import BackgroundJob, Framed, register_job
-from src.monitoring.secret_scrub import exception_text, log_failure, scrub_and_reraise
+from src.monitoring.secret_scrub import http_detail, log_failure, scrub_and_reraise
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -128,7 +128,7 @@ def import_scan_endpoint(path: str) -> dict:
     try:
         return scan_import_folder(path)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
     from src.safety.crypto import EncryptionError
@@ -138,9 +138,9 @@ def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
     try:
         return read_artifact(data, passphrase=passphrase)
     except EncryptionError as exc:
-        raise HTTPException(status_code=400, detail=f"decryption failed: {exception_text(exc, passphrase, typed=False)}") from None
+        raise HTTPException(status_code=400, detail=http_detail(exc, "decryption failed: ", passphrase)) from None
     except ArtifactError as exc:
-        raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from None
+        raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
 
 
 def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: bool) -> None:
@@ -217,11 +217,11 @@ def restore_legacy_path(
         try:
             check_memory_before_staging()
         except MergeError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         try:
             data = p.read_bytes()
         except OSError as exc:
-            raise HTTPException(status_code=400, detail=f"could not read {p}: {exception_text(exc, passphrase, typed=False)}") from None
+            raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
         staged = _stage_upload(data, passphrase or None)
         _apply_restore_selection(staged, include_newsletters=include_newsletters)
         from src.backup import runlog
@@ -258,7 +258,7 @@ def restore_legacy_path(
                 return report
         except (MergeError, RestoreRefused) as exc:
             # See restore_commit above: a refusal keeps its own message.
-            raise HTTPException(status_code=400, detail=exception_text(exc, passphrase, typed=False)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         except HTTPException:
             raise
         except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
@@ -317,7 +317,7 @@ def _alt_call(fn, *args, **kwargs) -> dict:
     try:
         return fn(s, *args, **kwargs)
     except AlternateError as exc:
-        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status, detail=http_detail(exc)) from exc
     finally:
         s.close()
 
@@ -409,7 +409,7 @@ def folder_backup_plan(body: FolderBackupBody) -> dict:
     try:
         destp = validate_dest(body.dest)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     items = collect_items(
         include_wiki="wiki_dumps" in cats,
         include_osm="osm_regions" in cats,
@@ -445,9 +445,9 @@ def folder_backup_start(body: FolderBackupBody) -> dict:
     try:
         return get_folder_manager().start(body.dest, _folder_categories(body.categories))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.post("/folder/restore")
@@ -468,9 +468,9 @@ def folder_backup_restore(body: FolderRestoreBody) -> dict:
             body.src, _folder_categories(body.categories), mode="restore"
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.post("/folder/verify")
@@ -497,9 +497,9 @@ def folder_backup_verify(body: FolderRestoreBody) -> dict:
             body.src, _folder_categories(body.categories), mode="verify"
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.post("/folder/{action}")
@@ -514,7 +514,7 @@ def folder_backup_action(action: str) -> dict:
         try:
             return mgr.resume()
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     elif action == "cancel":
         mgr.cancel()
     else:
@@ -585,9 +585,9 @@ def volume_backup_start(body: VolumeBackupBody) -> dict:
                 verify_after_write=body.verify_after_write,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
 
 
 @router.post("/v2/volumes/restore")
@@ -607,11 +607,11 @@ def volume_backup_restore(body: VolumeRestoreBody) -> dict:
             )
         except ValueError as exc:
             raise HTTPException(
-                status_code=400, detail=exception_text(exc, body.passphrase, body.corpus_passphrase, typed=False)
+                status_code=400, detail=http_detail(exc, "", body.passphrase, body.corpus_passphrase)
             ) from None
         except RuntimeError as exc:
             raise HTTPException(
-                status_code=409, detail=exception_text(exc, body.passphrase, body.corpus_passphrase, typed=False)
+                status_code=409, detail=http_detail(exc, "", body.passphrase, body.corpus_passphrase)
             ) from None
 
 
@@ -628,9 +628,9 @@ def volume_backup_verify(body: VolumeVerifyBody) -> dict:
         try:
             return get_volume_manager().start_verify(body.src, body.passphrase or None)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
 
 
 @router.post("/v2/volumes/cancel")
@@ -707,7 +707,7 @@ def export_folder_allocate(body: ExportFolderBody) -> dict:
     try:
         d = allocate_export_folder(body.parent)
     except ExportFolderError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     recorded = None
     if body.corpus is not None or body.categories is not None:
         recorded = write_export_request(
@@ -808,7 +808,7 @@ def export_summary_write(body: ExportSummaryBody) -> dict:
     try:
         path = write_backup_summary(body.dir, facts)
     except OSError as exc:
-        raise HTTPException(status_code=400, detail=f"Cannot write {SUMMARY_NAME}: {exc}") from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc, f"Cannot write {SUMMARY_NAME}: ")) from exc
     return {"summary_path": str(path), "facts": facts}
 
 
@@ -849,9 +849,9 @@ def import_queue_start(body: ImportQueueBody) -> dict:
                 [i.model_dump() for i in body.items], passphrase=body.passphrase
             )
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=exception_text(exc, body.passphrase, typed=False)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=exception_text(exc, body.passphrase, typed=False)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
 
 
 @router.get("/import-queue/status")
@@ -885,7 +885,7 @@ def import_queue_clear() -> dict:
     try:
         return get_import_queue().clear()
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.get("/reindex-backlog")

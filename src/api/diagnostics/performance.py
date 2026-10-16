@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, Keyword, Source
 from src.database.session import get_db
+from src.monitoring.secret_scrub import http_detail
 from src.utils.export_envelope import envelope
 
 from ._base import _MAX_KEYWORDS_PER_LANG, router
@@ -537,7 +538,7 @@ def bulletin_preview(
         try:
             period = resolve_period(cadence)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
         payload = layer_a(db, period)
         payload["available"] = True
         payload["gate"] = gate

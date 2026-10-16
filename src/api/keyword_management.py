@@ -45,7 +45,7 @@ router = APIRouter(prefix="/api/keywords", tags=["Keywords"])
 
 # Rate limiter
 from src.api.ratelimit import limiter
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 
 
 @router.get("/extract", response_model=dict)
@@ -70,7 +70,7 @@ def extract_keywords(
         return {"success": True, "result": result}
     except Exception as e:
         log_failure(logger, "Error extracting keywords", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.post("/extract/article", response_model=dict)
@@ -90,7 +90,7 @@ def extract_article_keywords(
         return {"success": True, "result": result}
     except Exception as e:
         log_failure(logger, "Error extracting article keywords", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/categories", response_model=dict)
@@ -102,7 +102,7 @@ def get_keyword_categories(request: Request):
         return {"success": True, "categories": categories}
     except Exception as e:
         log_failure(logger, "Error getting categories", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/categorize", response_model=dict)
@@ -116,7 +116,7 @@ def categorize_keywords(
         return {"success": True, "categories": categories}
     except Exception as e:
         log_failure(logger, "Error categorizing keywords", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/top", response_model=dict)
@@ -136,7 +136,7 @@ def get_top_keywords(
         return {"success": True, "top_keywords": top_keywords}
     except Exception as e:
         log_failure(logger, "Error getting top keywords", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/phrases", response_model=dict)
@@ -161,7 +161,7 @@ def extract_key_phrases(
         return {"success": True, "phrases": phrases}
     except Exception as e:
         log_failure(logger, "Error extracting key phrases", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/statistics", response_model=dict)
@@ -177,7 +177,7 @@ def get_keyword_statistics(
         return {"success": True, "statistics": stats}
     except Exception as e:
         log_failure(logger, "Error getting keyword statistics", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/process", response_model=dict)
@@ -193,7 +193,7 @@ def process_text(
         return {"success": True, "result": result}
     except Exception as e:
         log_failure(logger, "Error processing text", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e
 
 
 @router.get("/frequencies", response_model=dict)
@@ -209,4 +209,4 @@ def get_word_frequencies(
         return {"success": True, "frequencies": frequencies}
     except Exception as e:
         log_failure(logger, "Error getting word frequencies", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=http_detail(e)) from e

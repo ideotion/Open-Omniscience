@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from src.api.heavy import guarded_read
 from src.database.session import get_db
+from src.monitoring.secret_scrub import record_text
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
@@ -208,7 +209,7 @@ def signals_hazards_snapshot(
             fetched, failures = fetch_hazards(source="all")
             records = fetched or records
         except Exception as exc:  # noqa: BLE001 - a bad relay must not 500 the local write
-            failures.append(f"refresh: {type(exc).__name__}: {exc}")
+            failures.append(f"refresh: {record_text(exc, typed=True)}")
     if not records:
         return {"saved": False, "count": 0, "failures": failures,
                 "note": "no records to save (offline or empty) — the previous snapshot is kept"}
@@ -219,7 +220,7 @@ def signals_hazards_snapshot(
 
         ingested = ingest_hazard_records(db, saved["records"])
     except Exception as exc:  # noqa: BLE001 - the snapshot save must never fail on an ingest hiccup
-        failures.append(f"corpus ingest: {type(exc).__name__}: {exc}")
+        failures.append(f"corpus ingest: {record_text(exc, typed=True)}")
     return {"saved": True, "count": len(saved["records"]), "saved_at": saved["saved_at"],
             "failures": failures, "ingested": ingested}
 
