@@ -92,7 +92,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed_name
 
 _LOG = logging.getLogger("database.writer")
 
@@ -599,12 +599,8 @@ def _log_long_release(holder: str | None, held: float) -> None:
 def _scrubbed_name(name: str | None) -> str | None:
     """A thread name as the diagnostics may show it: the passphrases the process holds taken out. A name is a code constant or a
     catalogue/request key, so none is expected to carry one; this keeps it true if one ever does. Never raises."""
-    if name is None:
-        return None
     try:
-        from src.monitoring.secret_scrub import scrubbed
-
-        return scrubbed(name)
+        return scrubbed_name(name)  # the one helper (secret_scrub); None stays None
     except Exception:  # noqa: BLE001 - a name that cannot be checked is not shown
         return "(name withheld)"
 

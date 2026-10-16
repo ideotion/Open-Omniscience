@@ -1,0 +1,1430 @@
+{
+ "label": "stand-in (seeded world 20261015); NOT Wikipedia's rows",
+ "day": "2026-10-14",
+ "followed": [
+  "en",
+  "de",
+  "fr",
+  "es",
+  "ar"
+ ],
+ "walked": [
+  "en",
+  "de",
+  "fr",
+  "ar",
+  "it"
+ ],
+ "extra": "it",
+ "redirect_shares": {
+  "en": {
+   "non_redirect_share": 0.36,
+   "source": "measured 2026-10-06"
+  },
+  "de": {
+   "non_redirect_share": 0.91,
+   "source": "measured 2026-10-06"
+  },
+  "fr": {
+   "non_redirect_share": 0.58,
+   "source": "measured 2026-10-06"
+  },
+  "es": {
+   "non_redirect_share": 0.91,
+   "source": "measured 2026-10-06"
+  },
+  "ar": {
+   "non_redirect_share": 0.5,
+   "source": "ASSUMED"
+  },
+  "it": {
+   "non_redirect_share": 0.6,
+   "source": "ASSUMED"
+  }
+ },
+ "walk": {
+  "en": {
+   "pages_seen": 762,
+   "edition_articles": 1080,
+   "complete": false
+  },
+  "de": {
+   "pages_seen": 1365,
+   "edition_articles": 1365,
+   "complete": true
+  },
+  "fr": {
+   "pages_seen": 1160,
+   "edition_articles": 1160,
+   "complete": true
+  },
+  "ar": {
+   "pages_seen": 400,
+   "edition_articles": 400,
+   "complete": true
+  },
+  "it": {
+   "pages_seen": 360,
+   "edition_articles": 360,
+   "complete": true
+  }
+ },
+ "requests": {
+  "walk": 139,
+  "statistics": 5,
+  "pageviews": 5
+ },
+ "suggestions": [
+  {
+   "qid": "Q42",
+   "changes": 9,
+   "found_in": 2
+  },
+  {
+   "qid": "Q34",
+   "changes": 3,
+   "found_in": 4
+  },
+  {
+   "qid": "Q7001",
+   "changes": 2,
+   "found_in": 2
+  },
+  {
+   "qid": "Q7002",
+   "changes": 1,
+   "found_in": 1
+  }
+ ],
+ "divergence": {
+  "Q34": {
+   "qid": "Q34",
+   "rows": [
+    {
+     "edition": "eng",
+     "found": true,
+     "size": 9000,
+     "size_text": "8.8",
+     "changes": 3,
+     "bar": "75%"
+    },
+    {
+     "edition": "deu",
+     "found": true,
+     "size": 12000,
+     "size_text": "11.7",
+     "changes": 0,
+     "bar": "100%"
+    },
+    {
+     "edition": "fra",
+     "found": true,
+     "size": 300,
+     "size_text": "300",
+     "changes": null,
+     "bar": "3%"
+    },
+    {
+     "edition": "spa",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "ara",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "ita",
+     "found": true,
+     "size": 500,
+     "size_text": "500",
+     "changes": null,
+     "bar": "4%"
+    }
+   ]
+  },
+  "Q42": {
+   "qid": "Q42",
+   "rows": [
+    {
+     "edition": "eng",
+     "found": true,
+     "size": 64000,
+     "size_text": "62.5",
+     "changes": 7,
+     "bar": "100%"
+    },
+    {
+     "edition": "deu",
+     "found": true,
+     "size": 41000,
+     "size_text": "40.0",
+     "changes": 2,
+     "bar": "64%"
+    },
+    {
+     "edition": "fra",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "spa",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "ara",
+     "found": false,
+     "bar": null
+    }
+   ]
+  },
+  "Q7001": {
+   "qid": "Q7001",
+   "rows": [
+    {
+     "edition": "eng",
+     "found": true,
+     "size": 15000,
+     "size_text": "14.6",
+     "changes": 2,
+     "bar": "68%"
+    },
+    {
+     "edition": "deu",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "fra",
+     "found": true,
+     "size": 22000,
+     "size_text": "21.5",
+     "changes": null,
+     "bar": "100%"
+    },
+    {
+     "edition": "spa",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "ara",
+     "found": false,
+     "bar": null
+    }
+   ]
+  },
+  "Q7002": {
+   "qid": "Q7002",
+   "rows": [
+    {
+     "edition": "eng",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "deu",
+     "found": true,
+     "size": 6100,
+     "size_text": "6.0",
+     "changes": 1,
+     "bar": "100%"
+    },
+    {
+     "edition": "fra",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "spa",
+     "found": false,
+     "bar": null
+    },
+    {
+     "edition": "ara",
+     "found": false,
+     "bar": null
+    }
+   ]
+  }
+ },
+ "attention": {
+  "en": [
+   {
+    "rank": 1,
+    "views": 900000,
+    "title": "Chiveldan Velpor",
+    "day": 4,
+    "week": 5
+   },
+   {
+    "rank": 2,
+    "views": 762975,
+    "title": "Exsu Kaan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 3,
+    "views": 602363,
+    "title": "Anvelka Lisu",
+    "day": 3,
+    "week": 6
+   },
+   {
+    "rank": 4,
+    "views": 525744,
+    "title": "Anulzor Renexpor",
+    "day": 2,
+    "week": 3
+   },
+   {
+    "rank": 5,
+    "views": 442761,
+    "title": "Lipor Chiex",
+    "day": 0,
+    "week": 1
+   },
+   {
+    "rank": 6,
+    "views": 393408,
+    "title": "Mikaren Mibaren",
+    "day": 1,
+    "week": 1
+   },
+   {
+    "rank": 7,
+    "views": 342208,
+    "title": "Poran Danan",
+    "day": 4,
+    "week": 5
+   },
+   {
+    "rank": 8,
+    "views": 287088,
+    "title": "Basu Kali",
+    "day": 3,
+    "week": 4
+   },
+   {
+    "rank": 9,
+    "views": 252957,
+    "title": "Dandanka Wentoli",
+    "day": 4,
+    "week": 5
+   },
+   {
+    "rank": 10,
+    "views": 226387,
+    "title": "Anto Wensuul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 11,
+    "views": 190684,
+    "title": "Renchiex Tokato",
+    "day": 3,
+    "week": 4
+   },
+   {
+    "rank": 12,
+    "views": 149418,
+    "title": "-",
+    "day": null,
+    "week": null
+   },
+   {
+    "rank": 13,
+    "views": 129404,
+    "title": "Dantosu Ulto",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 14,
+    "views": 108646,
+    "title": "Porpor Toli",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 15,
+    "views": 93574,
+    "title": "Chirenren Bachi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 16,
+    "views": 75231,
+    "title": "Miwen Danpor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 17,
+    "views": 65296,
+    "title": "Mili Suchi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 18,
+    "views": 51102,
+    "title": "Anren Danex",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 19,
+    "views": 43071,
+    "title": "Danmi Velex",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 20,
+    "views": 35175,
+    "title": "Bavel Liwenan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 21,
+    "views": 31219,
+    "title": "Renmi Wenzorsu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 22,
+    "views": 24492,
+    "title": "Bapor Chito",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 23,
+    "views": 19126,
+    "title": "Anzorpor Porvel",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 24,
+    "views": 15776,
+    "title": "Porul Porsu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 25,
+    "views": 13150,
+    "title": "Dandansu Ulto",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 26,
+    "views": 11474,
+    "title": "Renan Chito",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 27,
+    "views": 10002,
+    "title": "Chizor Renba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 28,
+    "views": 7892,
+    "title": "Poran Toren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 29,
+    "views": 7013,
+    "title": "Mikaan Danexul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 30,
+    "views": 6173,
+    "title": "Anul Zorzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 31,
+    "views": 4954,
+    "title": "Bakami Danzoran",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 32,
+    "views": 4227,
+    "title": "Renzor Zorzorzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 33,
+    "views": 3562,
+    "title": "Suba Renan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 34,
+    "views": 3071,
+    "title": "Lizor Supor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 35,
+    "views": 2605,
+    "title": "Anan Exba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 36,
+    "views": 2099,
+    "title": "Baan Exchi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 37,
+    "views": 1765,
+    "title": "Porchi Zorwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 38,
+    "views": 1414,
+    "title": "Bali Suporchi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 39,
+    "views": 1266,
+    "title": "Suchi Exzorsu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 40,
+    "views": 1056,
+    "title": "Chilivel Liwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 41,
+    "views": 1000,
+    "title": "Badan Ulmi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 42,
+    "views": 1000,
+    "title": "Renex Zoranwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 43,
+    "views": 1000,
+    "title": "Porto Danan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 44,
+    "views": 1000,
+    "title": "Anmi Wenrenchi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 45,
+    "views": 1000,
+    "title": "Porli Kaulsu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 46,
+    "views": 1000,
+    "title": "Ankawen Renwenmi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 47,
+    "views": 1000,
+    "title": "Extoba Wendan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 48,
+    "views": 1000,
+    "title": "Sukawen Zorto",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 49,
+    "views": 1000,
+    "title": "Baren Libaex",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 50,
+    "views": 1000,
+    "title": "Exdan Anlimi",
+    "day": 0,
+    "week": 0
+   }
+  ],
+  "de": [
+   {
+    "rank": 1,
+    "views": 900000,
+    "title": "Danan Kaka",
+    "day": 1,
+    "week": 3
+   },
+   {
+    "rank": 2,
+    "views": 719848,
+    "title": "Lidan Renka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 3,
+    "views": 614737,
+    "title": "Velren Toba",
+    "day": 3,
+    "week": 4
+   },
+   {
+    "rank": 4,
+    "views": 524497,
+    "title": "Porzor Toren",
+    "day": 0,
+    "week": 3
+   },
+   {
+    "rank": 5,
+    "views": 448059,
+    "title": "Baba Chianto",
+    "day": 2,
+    "week": 3
+   },
+   {
+    "rank": 6,
+    "views": 364519,
+    "title": "Ulex Chiba",
+    "day": 1,
+    "week": 4
+   },
+   {
+    "rank": 7,
+    "views": 299261,
+    "title": "Ulzor Velwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 8,
+    "views": 253398,
+    "title": "Renex Tozorzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 9,
+    "views": 215200,
+    "title": "Ulwenchi Miba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 10,
+    "views": 187210,
+    "title": "Rento Toanwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 11,
+    "views": 147289,
+    "title": "Porvel Exren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 12,
+    "views": 117999,
+    "title": "Ulka Sumiren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 13,
+    "views": 101704,
+    "title": "Kadanvel Velka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 14,
+    "views": 83192,
+    "title": "Porbali Mili",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 15,
+    "views": 72680,
+    "title": "Chili Exkachi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 16,
+    "views": 57032,
+    "title": "Veldan Ultoka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 17,
+    "views": 51308,
+    "title": "Suvel Danka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 18,
+    "views": 41997,
+    "title": "Kaanvel Wenan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 19,
+    "views": 36686,
+    "title": "Danren Velmi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 20,
+    "views": 32968,
+    "title": "Danchi Exex",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 21,
+    "views": 28440,
+    "title": "Chiex Renba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 22,
+    "views": 25014,
+    "title": "Suex Anba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 23,
+    "views": 20139,
+    "title": "Exren Exdan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 24,
+    "views": 16013,
+    "title": "Danka Danzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 25,
+    "views": 13865,
+    "title": "Danwendan Liwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 26,
+    "views": 11898,
+    "title": "Wenulex Chidanren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 27,
+    "views": 10119,
+    "title": "Anto Zorwenzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 28,
+    "views": 8325,
+    "title": "Wenka Exporan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 29,
+    "views": 6888,
+    "title": "Bachi Chiul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 30,
+    "views": 5496,
+    "title": "Wenmi Zorwen",
+    "day": 0,
+    "week": 0
+   }
+  ],
+  "fr": [
+   {
+    "rank": 1,
+    "views": 900000,
+    "title": "Renanren Suba",
+    "day": 0,
+    "week": 1
+   },
+   {
+    "rank": 2,
+    "views": 804072,
+    "title": "Porul Exzorul",
+    "day": 4,
+    "week": 4
+   },
+   {
+    "rank": 3,
+    "views": 637822,
+    "title": "Wensu Kato",
+    "day": 4,
+    "week": 6
+   },
+   {
+    "rank": 4,
+    "views": 571290,
+    "title": "Ulsu Velzor",
+    "day": 0,
+    "week": 1
+   },
+   {
+    "rank": 5,
+    "views": 510568,
+    "title": "Baulul Lidan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 6,
+    "views": 444001,
+    "title": "Mimidan Baex",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 7,
+    "views": 392769,
+    "title": "Zorsu Danbaul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 8,
+    "views": 330295,
+    "title": "Zorka Suliren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 9,
+    "views": 295630,
+    "title": "Antoan Danzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 10,
+    "views": 253795,
+    "title": "Lipor Velto",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 11,
+    "views": 211116,
+    "title": "Exmi Toul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 12,
+    "views": 165076,
+    "title": "Wenren Mito",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 13,
+    "views": 146261,
+    "title": "Bapor Wenbavel",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 14,
+    "views": 126711,
+    "title": "Anvelto Kami",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 15,
+    "views": 108903,
+    "title": "Chito Kakaren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 16,
+    "views": 87474,
+    "title": "Ananvel Renrenmi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 17,
+    "views": 76182,
+    "title": "Wenwen Sumidan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 18,
+    "views": 68537,
+    "title": "Miwen Exzor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 19,
+    "views": 54277,
+    "title": "Mimi Lito",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 20,
+    "views": 43263,
+    "title": "Danvel Baex",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 21,
+    "views": 35422,
+    "title": "Chizorli Suan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 22,
+    "views": 31259,
+    "title": "Sutodan Porbaan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 23,
+    "views": 27525,
+    "title": "Todan Liwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 24,
+    "views": 22000,
+    "title": "Tokachi Ulmi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 25,
+    "views": 17175,
+    "title": "Kaex Lidan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 26,
+    "views": 15007,
+    "title": "Exsu Porsu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 27,
+    "views": 13226,
+    "title": "Likaren Tochi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 28,
+    "views": 11294,
+    "title": "Zorbaka Wendan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 29,
+    "views": 9762,
+    "title": "Toanpor Mivelul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 30,
+    "views": 8701,
+    "title": "Kamisu Chizor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 31,
+    "views": 6957,
+    "title": "Zorsu Danlili",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 32,
+    "views": 5553,
+    "title": "Danwen Bapor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 33,
+    "views": 4797,
+    "title": "Danwen Zormichi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 34,
+    "views": 4244,
+    "title": "Anpordan Ulvel",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 35,
+    "views": 3358,
+    "title": "Ulporli Lirenren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 36,
+    "views": 3005,
+    "title": "Danchiwen Towen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 37,
+    "views": 2428,
+    "title": "Velto Toren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 38,
+    "views": 2010,
+    "title": "Baba Mizor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 39,
+    "views": 1572,
+    "title": "Danren Dansu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 40,
+    "views": 1411,
+    "title": "Suex Renexvel",
+    "day": 0,
+    "week": 0
+   }
+  ],
+  "es": [
+   {
+    "rank": 1,
+    "views": 900000,
+    "title": "Lito Tochimi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 2,
+    "views": 805809,
+    "title": "Anexwen Dananren",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 3,
+    "views": 654537,
+    "title": "Anzor Bawenan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 4,
+    "views": 558950,
+    "title": "Renchipor Suba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 5,
+    "views": 436151,
+    "title": "Velchivel Wendanchi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 6,
+    "views": 382905,
+    "title": "Anwen Exka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 7,
+    "views": 341283,
+    "title": "Velex Liulvel",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 8,
+    "views": 305756,
+    "title": "Anexto Exdanpor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 9,
+    "views": 267535,
+    "title": "Exli Limi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 10,
+    "views": 234801,
+    "title": "Veltoan Ulwen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 11,
+    "views": 210388,
+    "title": "Sukato Toulul",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 12,
+    "views": 167733,
+    "title": "Exvel Bamipor",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 13,
+    "views": 139060,
+    "title": "Ulan Towen",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 14,
+    "views": 121387,
+    "title": "Anka Zorba",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 15,
+    "views": 102438,
+    "title": "Exvel Suan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 16,
+    "views": 82643,
+    "title": "Porwen Zorli",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 17,
+    "views": 73878,
+    "title": "Baex Suli",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 18,
+    "views": 62685,
+    "title": "Velsu Anli",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 19,
+    "views": 50023,
+    "title": "Porpor Toka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 20,
+    "views": 41645,
+    "title": "Tokazor Rensu",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 21,
+    "views": 32839,
+    "title": "Bavel Renan",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 22,
+    "views": 29388,
+    "title": "Toexex Toka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 23,
+    "views": 25584,
+    "title": "Renka Zorka",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 24,
+    "views": 21677,
+    "title": "Chivelba Danrenchi",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 25,
+    "views": 18495,
+    "title": "Ulbami Danliba",
+    "day": 0,
+    "week": 0
+   }
+  ],
+  "ar": [
+   {
+    "rank": 1,
+    "views": 900000,
+    "title": "رنهمدان همدان",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 2,
+    "views": 740744,
+    "title": "دانبورهم رنرن",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 3,
+    "views": 663906,
+    "title": "فللي ليتومي",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 4,
+    "views": 518030,
+    "title": "كاكا سونا",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 5,
+    "views": 458025,
+    "title": "دانكا سوبور",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 6,
+    "views": 369053,
+    "title": "رندان كارن",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 7,
+    "views": 298702,
+    "title": "فلليمي توتورن",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 8,
+    "views": 233421,
+    "title": "زارنامي توبوركا",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 9,
+    "views": 203293,
+    "title": "سوفلرن تودان",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 10,
+    "views": 178823,
+    "title": "زاررنكا تولينا",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 11,
+    "views": 158095,
+    "title": "رندانتو تونا",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 12,
+    "views": 138712,
+    "title": "بورسوكا رنزار",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 13,
+    "views": 114420,
+    "title": "بوررن بورتو",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 14,
+    "views": 97872,
+    "title": "فلرن سوهم",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 15,
+    "views": 78513,
+    "title": "سونا نارن",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 16,
+    "views": 68622,
+    "title": "همناهم فلكامي",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 17,
+    "views": 57930,
+    "title": "توميزار دانبور",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 18,
+    "views": 46716,
+    "title": "سوهمفل رنتو",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 19,
+    "views": 36583,
+    "title": "كابورسو سولي",
+    "day": 0,
+    "week": 0
+   },
+   {
+    "rank": 20,
+    "views": 31859,
+    "title": "رنكا نافل",
+    "day": 0,
+    "week": 0
+   }
+  ]
+ },
+ "attention_editions_with_list": [
+  "ar",
+  "de",
+  "en",
+  "es",
+  "fr"
+ ],
+ "press_articles_written": 63,
+ "stream_events_sent": 104,
+ "stream_edits_recorded": 89
+}

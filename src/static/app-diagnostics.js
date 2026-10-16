@@ -565,7 +565,9 @@
           btn.textContent = t("Still running in the background — see the task manager.");
         } else {
           const res = st.result || {};
-          btn.textContent = t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0);
+          btn.textContent = t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0)
+            // A source whose lookup Wikidata redirected off its own host is counted, not followed: say so beside the tally.
+            + (res.sources_refused ? " · " + res.sources_refused + " " + t("refused") : "");
         }
       } catch (e) {
         btn.textContent = t("Enrich failed — see console");

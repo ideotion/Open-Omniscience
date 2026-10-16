@@ -31,7 +31,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from src.analytics.ring_loader import RateGate
-from src.analytics.wikidata_rings import POLITE_SLEEP_S
+from src.analytics.wikidata_rings import API_HOSTS, POLITE_SLEEP_S
 from src.entities.wikidata_items import (
     BATCH_MAX,
     CLAIMS,
@@ -189,7 +189,7 @@ def _default_getter(url: str) -> dict:
     """A guarded GET returning parsed JSON (the one fetch path; see the module docstring)."""
     from src.safety.fetcher import guarded_session
 
-    resp = guarded_session(user_agent=USER_AGENT, isolation_token=url).get(url, timeout=_TIMEOUT_S)
+    resp = guarded_session(user_agent=USER_AGENT, isolation_token=url, allowed_hosts=API_HOSTS).get(url, timeout=_TIMEOUT_S)
     resp.raise_for_status()
     return json.loads(resp.text)
 
