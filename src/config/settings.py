@@ -11,6 +11,7 @@ License: GNU GPLv3
 
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,24 @@ from typing import Any
 import yaml
 
 from src.monitoring.secret_scrub import log_failure
+
+#: The shipped default for ``Config.custody_on_ingest`` (maintainer ruling 2026-06-15, Item-N: on by default).
+_CUSTODY_ON_INGEST_DEFAULT = True
+
+
+def legacy_custody_on_ingest() -> bool:
+    """``Config.custody_on_ingest`` WITHOUT building the Config.
+
+    The only reader of that field is the custody settings' pre-settings default, and the only thing that sets it is
+    ``OO_CUSTODY_ON_INGEST`` (no YAML key maps to it). Building the Config to read one boolean parsed the whole source
+    catalogue (configs/sources.yml, 1.4 MB) with the pure-Python YAML parser: 5 s on an idle 2-core machine and 59 s per
+    thread with 8 threads asking at once (measured), on the first custody read of a process. Both this and
+    ``Config._load_env`` read the variable through this one function, so the two cannot disagree.
+    """
+    raw = os.getenv("OO_CUSTODY_ON_INGEST")
+    if raw:
+        return raw.lower() in ("1", "true", "yes")
+    return _CUSTODY_ON_INGEST_DEFAULT
 
 
 def _package_version() -> str:
@@ -123,7 +142,7 @@ class Config:
     # LOCAL-ONLY write (default anchoring_mode="local", no network) with a small
     # per-article Ed25519 signing cost; opt out with OO_CUSTODY_ON_INGEST=0 or the
     # Settings toggle.
-    custody_on_ingest: bool = True
+    custody_on_ingest: bool = _CUSTODY_ON_INGEST_DEFAULT
 
     # Path to the repository root
     repo_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent.resolve())
@@ -181,8 +200,8 @@ class Config:
             self.log_level = log_level
         if log_file := os.getenv("LOG_FILE"):
             self.log_file = log_file
-        if custody_on_ingest := os.getenv("OO_CUSTODY_ON_INGEST"):
-            self.custody_on_ingest = custody_on_ingest.lower() in ("1", "true", "yes")
+        if os.getenv("OO_CUSTODY_ON_INGEST"):
+            self.custody_on_ingest = legacy_custody_on_ingest()
 
         # LLM
         if ollama_host := os.getenv("OLLAMA_HOST"):
@@ -330,6 +349,9 @@ class Config:
 
 # Global configuration instance
 _config: Config | None = None
+#: ONE build at a time. Building parses the source catalogue (seconds of pure-Python YAML under the GIL); without this, N threads
+#: that all find ``_config`` unset each build their own: measured 8 threads, 8 builds, 59 s each against 5 s for one.
+_config_lock = threading.Lock()
 
 
 def get_config() -> Config:
@@ -340,9 +362,13 @@ def get_config() -> Config:
         Config: The global configuration instance.
     """
     global _config
-    if _config is None:
-        _config = Config()
-    return _config
+    cfg = _config
+    if cfg is None:
+        with _config_lock:
+            cfg = _config
+            if cfg is None:
+                cfg = _config = Config()
+    return cfg
 
 
 def reset_config():

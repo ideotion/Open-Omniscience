@@ -158,9 +158,10 @@ def _coerce_bool(value, fallback: bool) -> bool:
 def _legacy_auto_log_default() -> bool:
     """The pre-settings default for auto-log-on-ingest, from env/YAML config."""
     try:
-        from src.config import get_config
+        # Not ``get_config()``: that builds the whole Config, source catalogue included (seconds of YAML on the first custody read).
+        from src.config.settings import legacy_custody_on_ingest
 
-        return bool(get_config().custody_on_ingest)
+        return legacy_custody_on_ingest()
     except Exception:  # noqa: BLE001 - config is optional context; never block custody
         return True  # matches the on-by-default dataclass default (Item-N ruling)
 
