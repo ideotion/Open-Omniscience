@@ -89,12 +89,55 @@ _WRAP = """id => { const w = document.querySelector(id + ' .wiki-table-wrap'); i
 EXPECT_ORDER = ["eng", "deu", "fra", "spa", "ara", "ita"]
 
 
+# What the page must show, per state. SEED: the figures ``analytics45_seed.py`` writes on purpose. GENERATED: derived from the
+# truth ``analytics45_generate.py`` prints (the PLAN of its seeded stand-in world, never read back from the lane).
+A3 = {"en": "eng", "de": "deu", "fr": "fra", "es": "spa", "ar": "ara", "it": "ita"}
+
+
+def seed_expectations() -> dict:
+    return {
+        "mode": "seed",
+        "cands": [("Q42", [9, 2]), ("Q34", [3, 4])],
+        "first": {"qid": "Q42", "found": ["eng", "deu"], "n_rows": 5},
+        "item": {"qid": "Q34", "order": EXPECT_ORDER, "rows": [
+            {"edition": "eng", "found": True, "size_text": "8.8", "changes": 3, "bar": "75%"},
+            {"edition": "deu", "found": True, "size_text": "11.7", "changes": 0, "bar": "100%"},
+            {"edition": "fra", "found": True, "size_text": "300", "changes": None, "bar": "3%"},
+            {"edition": "spa", "found": False}, {"edition": "ara", "found": False},
+            {"edition": "ita", "found": True, "size_text": "500", "changes": None, "bar": "4%"}]},
+        "n_followed": 5,
+        "att_first_views": "905113",
+        "att": {"en": [("4", "6"), ("0", "0"), ("2", "3"), None, ("1", "1")], "de": [None] * 3},
+        "att_other": "de", "att_main": "en",
+    }
+
+
+def generated_expectations(truth: dict, item: str = "Q34") -> dict:
+    """Expectations from ``analytics45_generate.py``'s truth. The first suggestion is whichever item the plan ranks first."""
+    sugg = truth["suggestions"]
+    first = truth["divergence"][sugg[0]["qid"]]
+    rows = truth["divergence"][item]["rows"]
+    att = {c: [None if r["day"] is None else (str(r["day"]), str(r["week"])) for r in rs] for c, rs in truth["attention"].items()}
+    editions = [e for e in ("en", "de", "fr", "es", "ar") if e in att]
+    return {
+        "mode": "generated",
+        "cands": [(g["qid"], [g["changes"], g["found_in"]]) for g in sugg[:2]],
+        "first": {"qid": sugg[0]["qid"], "found": [r["edition"] for r in first["rows"] if r["found"]], "n_rows": len(first["rows"])},
+        "item": {"qid": item, "order": [r["edition"] for r in rows], "rows": rows},
+        "n_followed": len(truth["followed"]),
+        "att_first_views": str(truth["attention"]["en"][0]["views"]),
+        "att": att, "att_other": "de", "att_main": "en", "att_editions": editions,
+        "label": truth.get("label"),
+    }
+
+
 def _digits(s: str) -> str:
     """Latin digits of a cell (the app writes Latin digits and a decimal point in every locale)."""
     return re.sub(r"[^0-9.]", "", s.split(" ")[0] if s else "")
 
 
-def run_one(browser, url: str, wname: str, theme: str, lang: str, out: Path, serve: dict[str, str] | None = None) -> dict:
+def run_one(browser, url: str, wname: str, theme: str, lang: str, out: Path, serve: dict[str, str] | None = None, X: dict | None = None) -> dict:
+    X = X or seed_expectations()
     w, h = WIDTHS[wname]
     ctx = browser.new_context(viewport={"width": w, "height": h})
     for fname, path in (serve or {}).items():
@@ -141,40 +184,44 @@ def run_one(browser, url: str, wname: str, theme: str, lang: str, out: Path, ser
     cands = page.evaluate("() => [...document.querySelectorAll('#wiki-div-cands [data-div-qid]')]"
                           ".map(b => ({qid: b.dataset.divQid, text: b.innerText}))")
     nums = [(c["qid"], [int(x) for x in re.findall(r"[0-9]+", c["text"].replace(c["qid"], ""))]) for c in cands[:2]]
-    check("suggestions are offered with their numbers (Q42: 9 changes, found in 2 editions; Q34: 3, 4)",
-          nums == [("Q42", [9, 2]), ("Q34", [3, 4])], [c["text"] for c in cands])
-    page.locator('#wiki-div-cands [data-div-qid="Q42"]').click()
+    check(f"suggestions are offered with their numbers {X['cands']} (an item's changes, the editions it was found in)",
+          nums == X["cands"], [c["text"] for c in cands])
+    fq = X["first"]["qid"]
+    page.locator(f'#wiki-div-cands [data-div-qid="{fq}"]').click()
     page.wait_for_timeout(700)
     back = page.input_value("#wiki-div-q")
     heading = page.inner_text("#wiki-div-result h4") if page.locator("#wiki-div-result h4").count() else None
     rows42 = page.evaluate(_DIV_ROWS)
-    check("a suggestion fills the box and reads that item", back == "Q42" and heading == "Q42", {"box": back, "heading": heading})
+    check("a suggestion fills the box and reads that item", back == fq and heading == fq, {"box": back, "heading": heading})
     found42 = [r["cells"][0] for r in rows42 if not r["colspan"]]
-    check("Q42 shows en and de found (named), the other followed editions named as absences",
-          found42 == ["eng", "deu"] and sum(1 for r in rows42 if r["colspan"]) == len(rows42) - 2, found42)
+    check(f"{fq} shows {X['first']['found']} found (named), every other row named as an absence",
+          found42 == X["first"]["found"] and len(rows42) == X["first"]["n_rows"]
+          and sum(1 for r in rows42 if r["colspan"]) == len(rows42) - len(found42), found42)
 
     # ---- divergence: a typed item (lower case) ------------------------------------------- #
-    page.fill("#wiki-div-q", "q34")
+    item = X["item"]
+    plan = item["rows"]
+    page.fill("#wiki-div-q", item["qid"].lower())
     page.click("#wiki-div-form button[type=submit]")
-    page.wait_for_function("() => (document.querySelector('#wiki-div-result h4')||{}).textContent === 'Q34'", timeout=5000)
+    page.wait_for_function("q => (document.querySelector('#wiki-div-result h4')||{}).textContent === q", arg=item["qid"], timeout=5000)
     rows = page.evaluate(_DIV_ROWS)
-    check("six rows", len(rows) == 6, len(rows))
+    check(f"{len(plan)} rows", len(rows) == len(plan), len(rows))
     order = page.evaluate("() => [...document.querySelectorAll('#wiki-div-result tbody tr td:first-child')].map(td => td.innerText.trim())")
-    check("editions in the order followed (en de fr es ar), then the extra one found (it)",
-          order == EXPECT_ORDER, order)
+    check("editions in the order followed, then any extra one the walk found the item in",
+          order == item["order"], order)
     found = [r for r in rows if not r["colspan"]]
-    check("four found rows, two absences", len(found) == 4 and sum(r["colspan"] for r in rows) == 2, [len(found)])
+    pf = [r for r in plan if r["found"]]
+    check(f"{len(pf)} found rows, {len(plan) - len(pf)} absences", len(found) == len(pf) and sum(r["colspan"] for r in rows) == len(plan) - len(pf), [len(found)])
     sizes = [_digits(r["cells"][2]) for r in found]
-    check("sizes en 8.8 KB, de 11.7 KB, fr 300 B, it 500 B (Latin digits)", sizes == ["8.8", "11.7", "300", "500"], sizes)
+    check(f"sizes {[r['size_text'] for r in pf]} (Latin digits)", sizes == [r["size_text"] for r in pf], sizes)
     changes = [r["cells"][4] for r in found]
-    check("changes 3, 0, then unknown twice (never 0 for an edition nothing was recorded for)",
-          changes[0] == "3" and changes[1] == "0" and not re.fullmatch(r"[0-9]+", changes[2]) and not re.fullmatch(r"[0-9]+", changes[3]),
+    check(f"changes {[r['changes'] for r in pf]} (None = unknown, never 0 for an edition nothing was recorded for)",
+          all((c == str(r["changes"])) if r["changes"] is not None else not re.fullmatch(r"[0-9]+", c) for c, r in zip(changes, pf, strict=True)),
           changes)
     bars = [r["bar"] for r in found]
-    check("size bars from a zero baseline over the largest (de 100%, en 75%, fr 3%, it 4%)",
-          bars == ["75%", "100%", "3%", "4%"], bars)
+    check(f"size bars from a zero baseline over the largest {[r['bar'] for r in pf]}", bars == [r["bar"] for r in pf], bars)
     absent = [r["cells"][1] for r in rows if r["colspan"]]
-    check("both absences carry words (the walk never ran there · finished and found none)", len(absent) == 2 and all(len(a) > 12 for a in absent), absent)
+    check("every absence carries words (the walk never ran there · finished and found none)", len(absent) == len(plan) - len(pf) and all(len(a) > 12 for a in absent), absent)
     span = page.inner_text("#wiki-div-result .hint") if page.locator("#wiki-div-result .hint").count() else ""
     check("the spread names the smallest and the largest edition and no ratio", len(span) > 10 and "%" not in span and "×" not in span, span)
     check("method and caveat are visible, not behind a toggle", page.locator("#wiki-div-result .card-caveat").is_visible(), None)
@@ -197,32 +244,52 @@ def run_one(browser, url: str, wname: str, theme: str, lang: str, out: Path, ser
     page.wait_for_function("() => /Q999/.test(document.getElementById('wiki-div-result').innerText)", timeout=5000)
     rows999 = page.evaluate(_DIV_ROWS)
     check("an item no walk found draws only absences, each with its reason, and no size bar",
-          "Q999" in page.inner_text("#wiki-div-result") and len(rows999) == 5
+          "Q999" in page.inner_text("#wiki-div-result") and len(rows999) == X["n_followed"]
           and all(r["colspan"] and len(r["cells"][1]) > 12 for r in rows999)
           and page.locator("#wiki-div-result .wiki-size-bar").count() == 0, [r["cells"] for r in rows999][:2])
 
     # ---- attention ------------------------------------------------------------------------ #
     rows_en = page.evaluate(_ATT_ROWS)
-    check("attention en: five rows, ranks 1-5, views as given", [r[0] for r in rows_en] == ["1", "2", "3", "4", "5"]
-          and [_digits(r[2].replace(" ", "").replace(" ", "")) for r in rows_en][:1] == ["905113"], rows_en[:2])
+    main_ed, other_ed = X["att_main"], X["att_other"]
+    n_main, n_other = len(X["att"][main_ed]), len(X["att"][other_ed])
+    check(f"attention {main_ed}: {n_main} rows, ranks 1-{n_main}, views as given", [r[0] for r in rows_en] == [str(i) for i in range(1, n_main + 1)]
+          and [_digits(r[2].replace(" ", "").replace(" ", "")) for r in rows_en][:1] == [X["att_first_views"]], rows_en[:2])
     counts = [(r[3], r[4]) for r in rows_en]
-    check("press counts day/week 4/6, 0/0, 2/3, not counted, 1/1 (the Wikipedia-sourced article is not coverage)",
-          counts[0] == ("4", "6") and counts[1] == ("0", "0") and counts[2] == ("2", "3")
-          and not re.fullmatch(r"[0-9]+", counts[3][0]) and counts[4] == ("1", "1"), counts)
+    want = X["att"][main_ed]
+    check("press counts day/week per row (the Wikipedia-sourced article is not coverage; None = not counted)",
+          len(counts) == len(want) and all((c == w) if w is not None else not re.fullmatch(r"[0-9]+", c[0]) for c, w in zip(counts, want, strict=True)), counts[:14])
     n0 = api_calls("/api/wiki/lane/attention")
     page.evaluate("() => { window.__a45 = document.getElementById('wiki-att-edition'); }")  # the control the pick is made on
-    page.select_option("#wiki-att-edition", "de")
-    page.wait_for_function("() => document.querySelectorAll('#wiki-att-result tbody tr').length === 3", timeout=5000)
+    page.select_option("#wiki-att-edition", other_ed)
+    page.wait_for_function("n => document.querySelectorAll('#wiki-att-result tbody tr').length === n", arg=n_other, timeout=5000)
     held = page.input_value("#wiki-att-edition")
     rebuilt = page.evaluate("() => document.getElementById('wiki-att-edition') !== window.__a45")
     page.wait_for_timeout(700)
-    check("edition drop-down: de picked; the control on screen (a NEW one when the page redrew it: rebuilt is recorded) "
-          "reads de now and 700 ms later; the table changed to 3 rows; one request",
-          held == "de" and page.input_value("#wiki-att-edition") == "de" and api_calls("/api/wiki/lane/attention") == n0 + 1,
+    check(f"edition drop-down: {other_ed} picked; the control on screen (a NEW one when the page redrew it: rebuilt is recorded) "
+          f"reads {other_ed} now and 700 ms later; the table changed to {n_other} rows; one request",
+          held == other_ed and page.input_value("#wiki-att-edition") == other_ed and api_calls("/api/wiki/lane/attention") == n0 + 1,
           {"held": held, "rebuilt": rebuilt, "requests": api_calls("/api/wiki/lane/attention") - n0})
-    page.select_option("#wiki-att-edition", "en")
-    page.wait_for_function("() => document.querySelectorAll('#wiki-att-result tbody tr').length === 5", timeout=5000)
-    check("edition drop-down: en picked back, read back from the control on screen, 5 rows", page.input_value("#wiki-att-edition") == "en", None)
+    page.select_option("#wiki-att-edition", main_ed)
+    page.wait_for_function("n => document.querySelectorAll('#wiki-att-result tbody tr').length === n", arg=n_main, timeout=5000)
+    check(f"edition drop-down: {main_ed} picked back, read back from the control on screen, {n_main} rows", page.input_value("#wiki-att-edition") == main_ed, None)
+    if X["mode"] == "generated":
+        # every option of the edition drop-down, not one: each is picked, read back from the control now on screen, and the
+        # table it draws is judged against the plan's list for that edition (row count, ranks, press counts)
+        offered = page.evaluate("() => [...document.querySelectorAll('#wiki-att-edition option')].map(o => o.value)")
+        bad: list = []
+        for ed in X["att_editions"]:
+            want_rows = X["att"][ed]
+            page.select_option("#wiki-att-edition", ed)
+            page.wait_for_function("n => document.querySelectorAll('#wiki-att-result tbody tr').length === n", arg=len(want_rows), timeout=5000)
+            got = page.evaluate(_ATT_ROWS)
+            cells = [(r[3], r[4]) for r in got]
+            if (page.input_value("#wiki-att-edition") != ed or [r[0] for r in got] != [str(i) for i in range(1, len(want_rows) + 1)]
+                    or not all((c == w) if w is not None else not re.fullmatch(r"[0-9]+", c[0]) for c, w in zip(cells, want_rows, strict=True))):
+                bad.append({"edition": ed, "held": page.input_value("#wiki-att-edition"), "rows": len(got), "want": len(want_rows)})
+        check(f"edition drop-down: all {len(X['att_editions'])} options picked ({', '.join(X['att_editions'])}); each read back from the control "
+              "on screen and its table judged against the plan", sorted(offered) == sorted(X["att_editions"]) and not bad, {"offered": offered, "bad": bad})
+        page.select_option("#wiki-att-edition", main_ed)
+        page.wait_for_function("n => document.querySelectorAll('#wiki-att-result tbody tr').length === n", arg=n_main, timeout=5000)
     wrap = page.evaluate(_WRAP, "#wiki-att-result")
     check("the attention table fits its frame: the last column (articles in 7 days) is not cut off (headroom in px)",
           bool(wrap) and wrap["scroll"] <= wrap["client"] and wrap["headroom"] >= 0, wrap)
@@ -233,7 +300,7 @@ def run_one(browser, url: str, wname: str, theme: str, lang: str, out: Path, ser
     page.click("#wiki-att-tools [data-att-refresh]")
     page.wait_for_timeout(700)
     check("Refresh asks the server once and keeps the chosen edition",
-          api_calls("/api/wiki/lane/attention") == n1 + 1 and page.input_value("#wiki-att-edition") == "en", None)
+          api_calls("/api/wiki/lane/attention") == n1 + 1 and page.input_value("#wiki-att-edition") == main_ed, None)
 
     # ---- every drop-down in the Wikipedia panel ------------------------------------------- #
     results: list = []
@@ -270,11 +337,13 @@ def main() -> int:
     ap.add_argument("--theme", action="append", help="default: every theme in the picker")
     ap.add_argument("--serve", action="append", default=[], help="FILE=PATH: serve PATH in place of /static/FILE (mutation checks)")
     ap.add_argument("--lang", action="append", help="default: en, and ar at the first theme")
+    ap.add_argument("--truth", help="the JSON ``analytics45_generate.py`` printed: judge the page against that plan (default: the figures the seed writes)")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     themes = a.theme or themes_from_source()
     serve = dict(v.split("=", 1) for v in a.serve)
+    X = generated_expectations(json.loads(Path(a.truth).read_text(encoding="utf-8"))) if a.truth else seed_expectations()
     runs = []
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
@@ -282,7 +351,7 @@ def main() -> int:
             for i, theme in enumerate(themes):
                 for lang in a.lang or (("en", "ar") if i == 0 else ("en",)):
                     try:
-                        r = run_one(browser, a.url, wname, theme, lang, out, serve)
+                        r = run_one(browser, a.url, wname, theme, lang, out, serve, X)
                     except Exception as exc:  # noqa: BLE001
                         r = {"width": wname, "theme": theme, "lang": lang, "checks": [
                             {"check": "the run completed", "status": "FAIL", "reading": f"{type(exc).__name__}: {str(exc)[:300]}"}]}
@@ -292,7 +361,7 @@ def main() -> int:
                     for c in bad:
                         print(f"    FAIL {c['check']}: {json.dumps(c['reading'], ensure_ascii=False)[:300]}", flush=True)
         browser.close()
-    (out / "look-results.json").write_text(json.dumps({"themes": themes, "runs": runs}, indent=1, ensure_ascii=False), encoding="utf-8")
+    (out / "look-results.json").write_text(json.dumps({"state": X["mode"], "label": X.get("label"), "themes": themes, "runs": runs}, indent=1, ensure_ascii=False), encoding="utf-8")
     return 1 if any(c["status"] != "ok" for r in runs for c in r["checks"]) else 0
 
 
