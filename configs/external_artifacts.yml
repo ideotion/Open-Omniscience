@@ -155,6 +155,7 @@ artifacts:
     couplings:
       - "install.ps1 MinPython -- Get-NuGetPythonVersion filters to its MAJOR.MINOR"
       - "registration5-semver1, NOT the -gz- endpoint: PS 5.1 cannot decompress gzip"
+      - "R144: the settings locks rely on CPython 3.13's BEFORE_WITH (tests/test_condition_with_form.py); re-measure before the floor moves"
     last_verified: "2026-08-23"
 
   - id: llm-model-catalog

@@ -6,7 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 ``Condition.__enter__`` and ``__exit__`` are Python frames, and CPython delivers a signal at the start of a Python frame and after a call
 returns. A KeyboardInterrupt landing after the inner lock is taken but before ``__enter__`` returns, or at the start of ``__exit__`` before it
 releases, leaves the lock taken for ever; every other thread then blocks on it until the process restarts. Measured with real SIGALRM
-interrupts on CPython 3.13 (``/mnt/project-files/fix-source-qualification/probes/sigprobe4.py``): ``with condition:`` left the lock held in 15,174
+interrupts on CPython 3.13 (``scripts/signal_leak_probe.py``): ``with condition:`` left the lock held in 15,174
 of 43,142 interrupts in a tight loop; ``with raw_rlock:`` (a C lock's ``__enter__``/``__exit__`` run inside one bytecode) left 0 of 40,151, and
 the same with ``notify_all`` in the body 0 of 46,483 (ruling R144). The pattern is ``self._lock = threading.RLock()`` and
 ``self._cond = threading.Condition(self._lock)``, then ``with self._lock:`` with ``wait`` / ``notify`` on the Condition.
@@ -118,7 +118,7 @@ def test_no_module_enters_a_condition_with_with_except_the_two_pinned_ones():
 def test_the_with_statement_still_compiles_to_before_with():
     """The whole fix rests on this (see the module docstring): measured on CPython 3.13, where the protected range of a ``with`` starts
     right after ``BEFORE_WITH``. On a Python that compiles it otherwise (3.14: ``LOAD_SPECIAL`` then ``CALL``), re-run
-    ``/mnt/project-files/fix-source-qualification/probes/sigprobe4.py`` (``raw`` must leave 0 held) before accepting the bump."""
+    ``scripts/signal_leak_probe.py`` (``raw`` must leave 0 held) before accepting the bump."""
     import dis
 
     def f(lock):
