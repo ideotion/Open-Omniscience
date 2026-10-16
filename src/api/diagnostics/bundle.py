@@ -1279,7 +1279,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # one. Bounded via audit_report_env_defaults(); the content-carrying
         # standard/full depths are the separate background job, never this member.
         ("card-audit.json",
-         lambda: card_audit(depth="summary", determinism=True, download=False, db=db)),
+         lambda: card_audit(depth="summary", determinism=True, download=False, budget_s=None, db=db)),
         # Bulletin Layer A (2026-08-01), weekly: the deterministic period record. It
         # rides the bundle because its masthead IS corpus-health evidence — sources
         # that actually contributed, days with any ingest, language and country

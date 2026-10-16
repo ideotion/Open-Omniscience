@@ -214,6 +214,7 @@ def guarded_read(
     *,
     on_timeout: Callable[[BaseException], Any] | None = None,
     on_busy: Callable[[BaseException], Any] | None = None,
+    deadline_s: float | None = None,
 ):
     """Compose the heavy-read cap + single-flight + a statement DEADLINE around ``compute``,
     for the heavy read endpoints that have NO TTL cache of their own (signals/flood, bury,
@@ -223,13 +224,17 @@ def guarded_read(
     at capacity → ``on_busy(exc)`` if given (an honest degraded/stale payload), else a fast
     HTTP 429 "busy, retry". Both fall-back paths return a value WITHOUT caching it (there is
     no cache here) — a partial is never mistaken for the real answer.
+
+    ``deadline_s`` replaces the process default (``OO_STATEMENT_TIMEOUT_S``, 60 s) for this one read; ``None``
+    keeps the default. A caller running INSIDE a longer deadline (the diagnostics bundle gives each member 300 s)
+    passes what is left of it, because this block REPLACES the outer deadline rather than nesting under it.
     """
     from fastapi import HTTPException
 
     from src.database.maintenance import StatementTimeout, statement_deadline
 
     def _run() -> Any:
-        with statement_deadline(session):
+        with statement_deadline(session, deadline_s):
             return compute()
 
     try:
