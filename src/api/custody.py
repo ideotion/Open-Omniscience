@@ -24,6 +24,7 @@ from src.custody.settings import (
     save_settings,
 )
 from src.custody.signing import HybridSigner
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
 
@@ -152,7 +153,7 @@ def put_settings(req: SettingsUpdate) -> dict:
     try:
         saved = save_settings(req.model_dump(exclude_unset=True), replace_damaged=True)
     except CustodySettingsError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
     return {**_settings_status(), "reset": list(getattr(saved, "reset_fields", []) or [])}
 
@@ -249,7 +250,7 @@ def anchor(req: AnchorRequest) -> dict:
     try:
         provider = get_provider(req.provider)
     except AnchorError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     if req.provider == "opentimestamps" and not req.consent:
         raise HTTPException(
             status_code=400,
@@ -264,9 +265,9 @@ def anchor(req: AnchorRequest) -> dict:
         receipt = provider.anchor(req.merkle_root, req.metadata)
         return receipt.to_dict()
     except AnchorUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except AnchorError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     finally:
         close = getattr(provider, "close", None)
         if close:

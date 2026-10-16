@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
@@ -110,7 +111,7 @@ def keyword_triage_run(body: KeywordTriageRunBody) -> JSONResponse:
         _, active_client = get_client_with_name()
         installed = active_client.list_installed()
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     roster = verify_roster([model], installed)
     if not roster["ok"]:
         raise HTTPException(

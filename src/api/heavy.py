@@ -49,6 +49,8 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from src.monitoring.secret_scrub import http_detail
+
 
 class HeavyBusy(RuntimeError):
     """The server is at heavy-read capacity (cap reached / a duplicate leader was slow).
@@ -235,12 +237,12 @@ def guarded_read(
     except StatementTimeout as exc:
         if on_timeout is not None:
             return on_timeout(exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except HeavyBusy as exc:
         if on_busy is not None:
             return on_busy(exc)
         raise HTTPException(
-            status_code=429, detail=str(exc), headers={"Retry-After": "2"}
+            status_code=429, detail=http_detail(exc), headers={"Retry-After": "2"}
         ) from exc
 
 

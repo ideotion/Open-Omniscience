@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.config.agenda_prefs import AgendaPrefsError, load_prefs, save_prefs
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/agenda", tags=["agenda"])
 
@@ -43,5 +44,5 @@ def update_agenda_prefs(update: AgendaPrefsUpdate) -> dict:
     try:
         saved = save_prefs(update.model_dump(exclude_unset=True))
     except AgendaPrefsError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     return saved.to_dict()

@@ -27,7 +27,7 @@ from src.catalog.countries import classify_ref_area, to_iso2, to_iso3
 from src.database.models import StatFigure as StatFigureRow
 from src.database.session import get_db, session_scope
 from src.jobs.background import BackgroundJob, register_job
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 from src.stats import aggregate
 from src.stats import indicators as ind
 from src.stats.store import list_figures
@@ -398,7 +398,7 @@ def _fetch_and_store_indicator(db: Session, code: str) -> dict:
         raise  # the kill-switch up-front refusal — let the caller stop the whole batch
     except Exception as exc:  # noqa: BLE001 - transport/decode: degrade loudly, continue
         log_failure(logger, f"indicator fetch failed for {code}", exc, level=logging.WARNING)
-        return {"indicator": code, "status": "error", "detail": str(exc)[:200]}
+        return {"indicator": code, "status": "error", "detail": http_detail(exc, limit=200)}
     tally = store_figures(db, figures)
     try:
         from src.stats.subscriptions import record_subscription
@@ -430,7 +430,7 @@ def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
             try:
                 rec = _fetch_and_store_indicator(db, code)
             except RuntimeError as exc:  # the kill-switch up-front refusal
-                per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
+                per_indicator.append({"indicator": code, "status": "refused", "detail": http_detail(exc)})
                 complete = False
                 break  # airplane mode: stop — every subsequent fetch would refuse too
             per_indicator.append(rec)
@@ -630,7 +630,7 @@ def advance_country_data(session: Session, *, per_pass: int = 2) -> dict:
         try:
             rec = _fetch_and_store_indicator(session, code)
         except RuntimeError as exc:  # airplane mode toggled mid-loop — a concurrent race
-            per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
+            per_indicator.append({"indicator": code, "status": "refused", "detail": http_detail(exc)})
             break  # every subsequent fetch would refuse too
         per_indicator.append(rec)
         if rec["status"] == "ok":

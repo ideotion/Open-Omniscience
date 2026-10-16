@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
+from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
@@ -134,7 +135,7 @@ def model_bench_batch() -> JSONResponse:
     try:
         payload = load_frozen_batch()
     except BenchArtifactError as exc:
-        return JSONResponse({"available": False, "reason": str(exc)})
+        return JSONResponse({"available": False, "reason": http_detail(exc)})
     out = {k: v for k, v in payload.items() if k not in ("keywords", "sources")}
     out["available"] = True
     return JSONResponse(out)
@@ -156,7 +157,7 @@ def model_bench_anchors(sample: int = Query(0, ge=0, le=500)) -> JSONResponse:
         try:
             batch = load_frozen_batch()
         except BenchArtifactError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return JSONResponse({"candidates": anchor_candidates(batch, sample)})
     existing = load_anchors()
     if not existing:
@@ -182,7 +183,7 @@ def model_bench_save_anchors(body: ModelBenchAnchorsBody) -> JSONResponse:
     try:
         payload = build_anchors(body.anchors)
     except BenchArtifactError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     payload["path"] = str(save_anchors(payload))
     return JSONResponse(payload)
 
@@ -200,7 +201,7 @@ def model_bench_run(body: ModelBenchRunBody) -> JSONResponse:
     try:
         load_frozen_batch()
     except BenchArtifactError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     try:
         st = _MODEL_BENCH_JOB.start(
             repeats=body.repeats,

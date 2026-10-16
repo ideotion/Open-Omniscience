@@ -46,6 +46,7 @@ from src.llm.ollama import (
     OllamaClient,
 )
 from src.llm.prompts_i18n import PROMPTS as _PROMPTS
+from src.monitoring.secret_scrub import http_detail
 
 _LOG = logging.getLogger(__name__)
 
@@ -542,7 +543,7 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
             "backend_reason": backend_reason,
             "base_url": client.base_url,
             "installed_models": [],
-            "detail": str(exc),
+            "detail": http_detail(exc),
             **hw_fields,
         }
 
@@ -793,9 +794,9 @@ def llm_generate(req: GenerateRequest, client: LlmBackend = Depends(get_llm_clie
     try:
         result = client.generate(req.prompt, model=model, system=req.system)
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from exc
     return {"model": result.model, "text": result.text}
 
 
@@ -826,7 +827,7 @@ def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_ollama_client
             for prog in client.pull(req.model):
                 yield _json.dumps(prog, separators=(",", ":")) + "\n"
         except (LLMUnavailable, LLMError) as exc:
-            yield _json.dumps({"error": str(exc)[:300]}, separators=(",", ":")) + "\n"
+            yield _json.dumps({"error": http_detail(exc, limit=300)}, separators=(",", ":")) + "\n"
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
@@ -843,7 +844,7 @@ def llm_pull_queue(req: ModelRequest) -> dict:
     try:
         return get_pull_manager().enqueue(req.model)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.get("/pull/status")
@@ -896,9 +897,9 @@ def llm_install_prepare() -> dict:
     try:
         prepared = prepare_installer()
     except InstallerUnavailable as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     except InstallerVerificationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from exc
     return prepared.to_dict()
 
 
@@ -930,7 +931,7 @@ def llm_install_run(req: InstallRunRequest):
                 else:
                     yield _json.dumps({"event": "line", "text": line[:500]}, separators=(",", ":")) + "\n"
         except InstallerError as exc:
-            yield _json.dumps({"event": "error", "error": str(exc)[:500]}, separators=(",", ":")) + "\n"
+            yield _json.dumps({"event": "error", "error": http_detail(exc, limit=500)}, separators=(",", ":")) + "\n"
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
@@ -943,9 +944,9 @@ def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_ollama_clie
     try:
         client.remove(req.model)
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=404, detail=str(exc)[:200]) from exc
+        raise HTTPException(status_code=404, detail=http_detail(exc, limit=200)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)[:200]) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc, limit=200)) from exc
     return {"removed": req.model, "ok": True}
 
 
@@ -1245,9 +1246,9 @@ def vllm_start(req: VllmStartRequest) -> dict:
             allow_oversized=req.allow_oversized,
         )
     except VllmUnsupportedError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     except VllmLifecycleError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     # A model just started under vLLM becomes the stored active choice for it,
     # so active_model()/the pill/the next generate() call agree with what is
     # actually being served (never a stale/mismatched setting).
@@ -1466,7 +1467,7 @@ def default_model_install() -> dict:
     try:
         queued = get_pull_manager().enqueue(plan["artifact"])
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     try:
         from src.config.app_settings import save_settings
 
@@ -1546,7 +1547,7 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
             queued.append(m["identifier"])
         except ValueError as exc:
             # A malformed tag is one model's problem, not the batch's.
-            refused.append({"key": m["key"], "label": m["label"], "reason": str(exc)})
+            refused.append({"key": m["key"], "label": m["label"], "reason": http_detail(exc)})
     return {
         "backend": backend,
         "action": "queued",
@@ -1635,7 +1636,7 @@ def ollama_start() -> dict:
     try:
         return start()
     except OllamaLifecycleError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.post("/ollama/stop")
@@ -2069,9 +2070,9 @@ def summarize_article(
                 model=model, system=system, keep_alive=_effective_keep_alive(),
             )
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from exc
 
     # The METHOD is provenance: a hierarchical summary over 4 parts is a different
     # artifact from a single-call one, and the stored row has to be able to say which.
@@ -2135,9 +2136,9 @@ def translate_article(
                 model=model, system=system, keep_alive=_effective_keep_alive(),
             )
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from exc
 
     stored_version = _version_with_method(prompt_version, method)
     analysis = ArticleAnalysis(
@@ -2288,7 +2289,7 @@ def synthesize_articles(
             # sits in the corpus looking like analysis of an article.
             ids = search_ids(db, req.query, exclude_quarantined=True) or []
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
         # How the members are chosen (maintainer asked): the query path takes the
         # search-relevance order from FTS, then the TOP N (the model bound). The
         # frontend lets the user pick the exact members (sent as article_ids) so this
@@ -2348,9 +2349,9 @@ def synthesize_articles(
             prompt, model=model, system=system, keep_alive=_effective_keep_alive()
         )
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from exc
 
     member_ids = [a.id for a in ordered]
     for a in ordered:
@@ -2671,12 +2672,13 @@ def bulk_llm(
                             # Ollama down / model missing / airplane mode — won't recover.
                             yield emit({"event": "done", "total": total, "stored": stored,
                                         "skipped": skipped, "failed": failed,
-                                        "aborted": True, "reason": str(res.error)[:200]})
+                                        "aborted": True, "reason": http_detail(res.error, limit=200)})
                             return
                         failed += 1
+                        assert res.error is not None  # a not-ok result always carries its error
                         yield emit({"event": "item", "i": pos, "total": total,
                                     "article_id": aid, "title": title, "status": "failed",
-                                    "error": str(res.error)[:200]})
+                                    "error": http_detail(res.error, limit=200)})
                         continue
                     text, method = res.value
                     s.add(ArticleAnalysis(

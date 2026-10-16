@@ -23,6 +23,7 @@ from src.database.models import CommodityPrice, MarketExtractionRule, Source
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
+from src.monitoring.secret_scrub import record_text
 from src.safety.fetcher import following_fetcher
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
@@ -310,7 +311,7 @@ def import_all_feeds(
                     "key": feed.key,
                     "symbol": feed.symbol,
                     "status": "error",
-                    "detail": f"{type(exc).__name__}: {exc}",
+                    "detail": record_text(exc, typed=True),
                 }
             )
     # The retry affordance's input: failures another attempt can honestly help

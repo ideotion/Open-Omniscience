@@ -21,7 +21,7 @@ from src.config.machine_floor import machine_floor
 from src.database import damage
 from src.database.models import Source
 from src.database.session import get_db
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
 from src.monitoring.server_load import server_load
 from src.scheduler import storage_guard
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
@@ -582,7 +582,7 @@ def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
     try:
         saved = save_settings(fields, replace_damaged=True)
     except SchedulerSettingsError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     if "wiki_lane_state" in fields and fields["wiki_lane_state"] is not None:
         # A SETTING THAT NOTHING ACTS ON IS A LIE ON A CONTROL. Writing "stopped" and
         # leaving a stream open would show a stopped toggle over a live connection --

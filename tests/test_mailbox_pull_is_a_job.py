@@ -71,7 +71,7 @@ def test_the_password_is_scrubbed_where_the_error_is_captured():
     import src.api.ingestion as ing
 
     worker = inspect.getsource(ing._mailbox_pull_worker)
-    assert "exception_text(" in worker, (
+    assert "http_detail(" in worker, (
         "a mail library's exception is the server's own chatter; /api/jobs is "
         "unauthenticated, so scrub at capture rather than trust the message"
     )

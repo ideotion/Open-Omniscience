@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.annotations import store
+from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/annotations", tags=["annotations"])
 
@@ -52,7 +53,7 @@ def add_mine(body: NewAnnotation) -> dict:
     try:
         return store.add_annotation(body.target, body.kind, body.value, body.note)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.delete("/mine/{index}")
@@ -79,7 +80,7 @@ def import_bundle(body: ImportBody) -> dict:
     try:
         return store.import_bundle(body.bundle, trusted=body.trusted)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
 @router.get("/authors")
