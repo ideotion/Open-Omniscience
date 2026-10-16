@@ -79,11 +79,13 @@ anywhere; use the figures for time, memory and disk per object.
 | 16 x, **after** the paged build and 8-byte kept-id arrays | 45.7 MB | 2.88 M | 758 s | **823 MB** | 1.42 GB | 3.8 k |
 
 **Two memories, and both were defects of this build, not of the country.** (1) **The kept-id sets.** `osmium.index.IdSet` (what `_IdSet`
-used for the kept node and way ids) is a bitmap in 512 KB chunks, so its memory follows the SPAN of the ids and not their count:
-6,000 ids scattered over the node range (1.2e10) cost **1,433 MB** and 6,000,000 cost the same; 2,000,000 way ids over 1.35e9
-cost **160 MB**. A file lists ids ascending, so the cost also arrives steadily as the scan walks the id space: sorted way ids
+used for the kept node and way ids) allocates 4 MiB for every 2**25-id window an id falls in (measured, pyosmium 4.3.1), so its memory
+follows the SPAN of the ids and not their count: ids spread over the node range (1.2e10 is 358 windows) cost up to **1,433 MB**
+(6,000 scattered ids already cost that; a hundred cost about 400 MB), way ids over 1.35e9 up to **160 MB**. A file lists ids
+ascending, so the cost also arrives steadily as the scan walks the id space: sorted way ids
 added one per step grew the process by 164 MB linearly over the pass, node ids by 1,432 MB (`idset_probe.py` here; the
-numbers are the probe's). That is the 1.16 GB peak of a 177 k-object city, and the slope of the cut through the 16 x run, which
+numbers are the probe's). The composite's tagged ids touch 226 node windows and 41 way windows, about 1 GB, which fits the drop from
+1,443 to 823 MB; the 1.16 GB peak of the 177 k-object city is a different mixture and was not isolated to this. It is the slope of the cut through the 16 x run, which
 this record first read as "about 0.13 KB of growth per kept object" and extrapolated to a ceiling of 15 to 19 million objects.
 **That extrapolation was wrong**: the forced on-disk location index (below) left the slope in place, which refuted the
 location-array explanation, and the probe reproduced it with no cut at all. `_IdSet` is now a sorted `array('q')` with a binary
