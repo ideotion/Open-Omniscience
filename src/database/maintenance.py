@@ -1833,6 +1833,8 @@ def _deadline_seconds() -> float:
 
 
 _DEADLINE_KEY = "_oo_statement_deadline_at"
+#: The enclosing block's progress handler, kept beside its expiry so that a nested block can put it back when it exits.
+_CHECK_KEY = "_oo_statement_deadline_check"
 
 
 def deadline_expired(session) -> bool:
@@ -1905,6 +1907,7 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     # report 2026-08-09). A queryable expiry is CONTROL FLOW the isolation cannot
     # intercept, which is the same reason that loop's own budget is a ``break``.
     prev_deadline = session.info.get(_DEADLINE_KEY)
+    prev_check = session.info.get(_CHECK_KEY)
     session.info[_DEADLINE_KEY] = deadline_at
     # S2.1 belt: the handler is per-CONNECTION, and a connection can outlive this
     # block (it is pooled). Even if one escapes still armed, it may only ever
@@ -1954,6 +1957,7 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             return
         new_raw.set_progress_handler(_check, 20_000)
 
+    session.info[_CHECK_KEY] = _check
     raw.set_progress_handler(_check, 20_000)
     event.listen(session, "after_begin", _rearm)
     try:
@@ -1985,6 +1989,10 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             session.info.pop(_DEADLINE_KEY, None)
         else:
             session.info[_DEADLINE_KEY] = prev_deadline
+        if prev_check is None:
+            session.info.pop(_CHECK_KEY, None)
+        else:
+            session.info[_CHECK_KEY] = prev_check
         try:
             event.remove(session, "after_begin", _rearm)
         except Exception as exc:  # noqa: BLE001 - teardown must never replace the block's outcome
@@ -2007,7 +2015,13 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             held = None
         if held is not None:
             try:
-                held.set_progress_handler(None, 0)
+                # An ENCLOSING block's handler goes back on the connection this block was using; the old code disarmed it, and the
+                # enclosing deadline then could not stop a statement run after the nested block (it re-armed only on the next
+                # transaction): the member deadline was gone for every case after a case that opened its own.
+                if prev_check is not None:
+                    held.set_progress_handler(prev_check, 20_000)
+                else:
+                    held.set_progress_handler(None, 0)
             except Exception as exc:  # noqa: BLE001 - a closed/replaced connection needs no disarm
                 log_failure(_LOG, "statement_deadline: disarm skipped", exc, level=logging.DEBUG)
 
