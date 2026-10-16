@@ -108,7 +108,7 @@ def test_the_rebuild_keeps_every_row_and_every_child(legacy):
         assert source_identity_state(c) == "composite"
         assert [r[0] for r in c.exec_driver_sql("SELECT id FROM sources ORDER BY id")] == [1, 2, 3]
         assert [tuple(r) for r in c.exec_driver_sql("SELECT id, feed_key FROM sources ORDER BY id")] == [
-            (1, "a.com/rss"), (2, ""), (3, "a.com/rss"),
+            (1, "f:a.com/rss"), (2, ""), (3, "f:a.com/rss"),
         ]
         assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1  # restored for the app
         assert c.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
@@ -219,10 +219,10 @@ def test_a_fresh_store_is_born_composite():
     session.add(Source(name="x", domain="x.com", rss_url="https://x.com/rss"))
     session.commit()
     row = session.query(Source).one()
-    assert row.feed_key == "x.com/rss"
+    assert row.feed_key == "f:x.com/rss"
     row.rss_url = "https://x.com/atom/"
     session.commit()
-    assert row.feed_key == "x.com/atom"  # the key follows the feed on every ORM write
+    assert row.feed_key == "f:x.com/atom"  # the key follows the feed on every ORM write
     session.add(FeedFetchState(source_id=row.id, last_status=200))
     session.commit()
 
@@ -244,7 +244,7 @@ def test_the_alembic_revision_takes_the_same_path_on_a_staged_copy(tmp_path):
         assert _counts(engine) == before
         with engine.connect() as c:
             assert source_identity_state(c) == "composite"
-            assert [tuple(r) for r in c.exec_driver_sql("SELECT id, feed_key FROM sources ORDER BY id")][0] == (1, "a.com/rss")
+            assert [tuple(r) for r in c.exec_driver_sql("SELECT id, feed_key FROM sources ORDER BY id")][0] == (1, "f:a.com/rss")
     finally:
         engine.dispose()
 
@@ -271,3 +271,41 @@ def test_the_alembic_revision_keeps_the_children_when_enforcement_is_on(tmp_path
     with engine.connect() as c:
         assert source_identity_state(c) == "composite"
         assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+
+def test_an_older_build_refuses_a_feed_keyed_backup_by_a_named_error(tmp_path, monkeypatch):
+    """R145 point 3: no backup-format bump is needed ONLY because a build that does not know this revision refuses
+    a store stamped with it, by name, rather than dropping the feed key. A feed-keyed store is stamped at (or past)
+    the revision that introduced the key, so the older build's own check stops it before any merge."""
+    from src.backup.artifact import StagedArtifact
+    from src.backup.merge import MergeError, prepare_staged_corpus
+    from src.database import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}", future=True)
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+        conn.exec_driver_sql("INSERT INTO alembic_version VALUES ('d5a1c7e9b3f2')")
+    engine.dispose()
+    staged = StagedArtifact(
+        kind="oo-backup-3", staging_dir=tmp_path, corpus_path=tmp_path / "corpus.db", custody_path=None,
+        manifest={}, signature_state="verified", origin_fingerprint="test",
+    )
+    older_build = [r for r in migrate.known_revisions() if r != "d5a1c7e9b3f2"]
+    monkeypatch.setattr(migrate, "known_revisions", lambda: older_build)
+    with pytest.raises(MergeError, match="unknown to this build"):
+        prepare_staged_corpus(staged)
+
+
+def test_the_alembic_path_commits_an_earlier_revisions_open_transaction_and_still_keeps_the_children(legacy):
+    """A restore of an old backup runs several revisions on one connection; an earlier one's DML leaves a driver
+    transaction open. The first cut refused there and broke the cross-version restore (found by the full run, not by
+    these tests): the revision commits it, and the children still survive."""
+    before = _counts(legacy)
+    with legacy.connect() as conn:
+        conn.exec_driver_sql("UPDATE sources SET name = name")  # opens the driver's implicit transaction
+        assert conn.connection.dbapi_connection.in_transaction
+        with pytest.raises(SourceIdentityRefused, match="transaction is already open"):
+            upgrade_sources_to_composite_key(conn)  # the boot path never commits for a caller
+        assert upgrade_sources_to_composite_key(conn, commit_open_transaction=True)["state"] == "rebuilt"
+    assert _counts(legacy) == before

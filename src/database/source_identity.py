@@ -90,9 +90,12 @@ def backfill_feed_keys(conn: Connection) -> int:
     return len(changed)
 
 
-def upgrade_sources_to_composite_key(conn: Connection) -> dict[str, Any]:
-    """Rebuild ``sources`` with ``UNIQUE (domain, feed_key)``. ``conn`` must have no transaction open (refused,
-    never committed, if one is). Returns ``{"state", "rows_before", "rows_after"}``; raises :class:`SourceIdentityRefused`
+def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transaction: bool = False) -> dict[str, Any]:
+    """Rebuild ``sources`` with ``UNIQUE (domain, feed_key)``. ``conn`` must have no transaction open: it is refused,
+    never committed on the caller's behalf, unless ``commit_open_transaction`` -- which only the Alembic revision
+    passes: an earlier revision in the same chain may have run DML (Python's sqlite3 opens a transaction for it and
+    SQLite's DDL is not transactional there), and committing that work first is what lets a restore of an old backup
+    reach this step at all. Returns ``{"state", "rows_before", "rows_after"}``; raises :class:`SourceIdentityRefused`
     (nothing changed) rather than risk the children of ``sources``."""
     state = source_identity_state(conn)
     if state == "absent":
@@ -104,6 +107,8 @@ def upgrade_sources_to_composite_key(conn: Connection) -> dict[str, Any]:
         raise SourceIdentityRefused("the unique key of sources is neither the old nor the new shape; not touching it")
 
     dbapi = conn.connection.dbapi_connection
+    if getattr(dbapi, "in_transaction", False) and commit_open_transaction:
+        dbapi.commit()
     if getattr(dbapi, "in_transaction", False):
         # Not ours to commit, and inside it the pragma below is a silent no-op.
         raise SourceIdentityRefused("a transaction is already open on this connection; not rebuilding sources")

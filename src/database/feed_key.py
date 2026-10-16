@@ -1,7 +1,8 @@
 """The feed half of a source's identity (row J, S05-10).
 
-A source is identified by its domain AND its feed: ``UNIQUE (domain, feed_key)``. ``feed_key`` is the
-feed URL reduced to what makes two spellings the same feed, or ``''`` for a source with no feed. It is
+A source is identified by its domain AND its feed: ``UNIQUE (domain, feed_key)``. ``feed_key`` is
+``FEED_PREFIX`` plus the feed URL reduced to what makes two spellings the same feed, or ``''`` for a source
+with no feed (R145: such a source is keyed by its domain alone). It is
 computed here and nowhere else -- the migration, the seeder, the restore-merge (registered as a SQLite
 function on the merge connection) and the importers all call this one function, because a second
 implementation is how two surfaces come to disagree about one identity.
@@ -20,6 +21,10 @@ from urllib.parse import urlsplit
 #: ``Source.feed_key`` column width, the same as ``Source.rss_url``.
 FEED_KEY_MAX = 500
 
+#: Every feed key starts with this and a feed-less source's key is ``''``, so the two namespaces cannot meet: a
+#: domain-only identity can never equal a feed identity, whatever a feed URL looks like (R145 point 1).
+FEED_PREFIX = "f:"
+
 
 def feed_key(rss_url: str | None) -> str:
     """The normalised feed identity of ``rss_url``; ``''`` when the source has no feed."""
@@ -34,5 +39,5 @@ def feed_key(rss_url: str | None) -> str:
         path = parts.path.rstrip("/")
         key = host + path + ("?" + parts.query if parts.query else "")
     except ValueError:
-        return text.lower()[:FEED_KEY_MAX]
-    return (key or text.lower())[:FEED_KEY_MAX]
+        key = ""
+    return (FEED_PREFIX + (key or text.lower()))[:FEED_KEY_MAX]

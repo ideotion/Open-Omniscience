@@ -46,10 +46,12 @@ def upgrade() -> None:
         return
     if source_identity_state(bind) in {"absent", "composite"}:
         return
-    # The rebuild needs enforcement OFF *outside* a transaction; alembic's connection has none open for SQLite
-    # (no transactional DDL there) and the step reads the pragma back and refuses if it did not take.
+    # The rebuild needs enforcement OFF *outside* a transaction. An earlier revision of the same chain (a restore of an
+    # old backup runs several) may have left a driver transaction open after its DML, and SQLite's DDL is not
+    # transactional here anyway, so it is committed first; the step then reads the pragma back and refuses if it did
+    # not take.
     try:
-        upgrade_sources_to_composite_key(bind)
+        upgrade_sources_to_composite_key(bind, commit_open_transaction=True)
     except SourceIdentityRefused:
         raise
 

@@ -66,9 +66,9 @@ def test_two_feeds_of_one_domain_arrive_as_two_sources_and_keep_their_articles(t
 
     working = _run(tmp_path, lambda s: None, incoming)
     assert [r[:2] for r in _rows(working)] == [
-        ("bbc.com", "feeds.bbci.co.uk/arabic/rss.xml"), ("bbc.com", "feeds.bbci.co.uk/news/rss.xml")]
-    assert _article_feed(working, "en1") == "feeds.bbci.co.uk/news/rss.xml"
-    assert _article_feed(working, "ar1") == "feeds.bbci.co.uk/arabic/rss.xml"
+        ("bbc.com", "f:feeds.bbci.co.uk/arabic/rss.xml"), ("bbc.com", "f:feeds.bbci.co.uk/news/rss.xml")]
+    assert _article_feed(working, "en1") == "f:feeds.bbci.co.uk/news/rss.xml"
+    assert _article_feed(working, "ar1") == "f:feeds.bbci.co.uk/arabic/rss.xml"
 
 
 def test_a_known_feed_is_not_duplicated_and_the_new_sibling_lands(tmp_path):
@@ -80,9 +80,9 @@ def test_a_known_feed_is_not_duplicated_and_the_new_sibling_lands(tmp_path):
         _src(s, "dw.com", "https://dw.com/es/rss", article="es1")
 
     working = _run(tmp_path, local, incoming)
-    assert [r[:2] for r in _rows(working)] == [("dw.com", "dw.com/en/rss"), ("dw.com", "dw.com/es/rss")]
-    assert _article_feed(working, "same-feed-other-spelling") == "dw.com/en/rss"
-    assert _article_feed(working, "es1") == "dw.com/es/rss"
+    assert [r[:2] for r in _rows(working)] == [("dw.com", "f:dw.com/en/rss"), ("dw.com", "f:dw.com/es/rss")]
+    assert _article_feed(working, "same-feed-other-spelling") == "f:dw.com/en/rss"
+    assert _article_feed(working, "es1") == "f:dw.com/es/rss"
 
 
 def test_an_old_domain_keyed_backup_does_not_duplicate_a_feed_keyed_source(tmp_path):
@@ -107,7 +107,7 @@ def test_a_feed_the_catalogue_has_since_corrected_is_not_resurrected_as_a_second
         _src(s, "stuff.co.nz", "https://www.stuff.co.nz/old-rss.xml")
 
     working = _run(tmp_path, local, incoming)
-    assert [r[:2] for r in _rows(working)] == [("stuff.co.nz", "www.stuff.co.nz/rss")]
+    assert [r[:2] for r in _rows(working)] == [("stuff.co.nz", "f:www.stuff.co.nz/rss")]
 
 
 def test_when_a_side_holds_several_only_the_exact_feed_matches(tmp_path):
@@ -119,7 +119,7 @@ def test_when_a_side_holds_several_only_the_exact_feed_matches(tmp_path):
         _src(s, "x.com", "https://x.com/c")  # not either of the two local feeds
 
     working = _run(tmp_path, local, incoming)
-    assert [r[1] for r in _rows(working)] == ["x.com/a", "x.com/b", "x.com/c"]
+    assert [r[1] for r in _rows(working)] == ["f:x.com/a", "f:x.com/b", "f:x.com/c"]
 
 
 def test_a_verdict_is_adopted_by_the_sibling_it_belongs_to_and_only_that_one(tmp_path):
@@ -132,4 +132,4 @@ def test_a_verdict_is_adopted_by_the_sibling_it_belongs_to_and_only_that_one(tmp
         _src(s, "y.com", "https://y.com/b", status="disqualified")
 
     working = _run(tmp_path, local, incoming)
-    assert _rows(working) == [("y.com", "y.com/a", "unqualified"), ("y.com", "y.com/b", "disqualified")]
+    assert _rows(working) == [("y.com", "f:y.com/a", "unqualified"), ("y.com", "f:y.com/b", "disqualified")]

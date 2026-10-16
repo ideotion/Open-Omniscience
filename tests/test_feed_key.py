@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.database.feed_key import FEED_KEY_MAX, feed_key
+from src.database.feed_key import FEED_KEY_MAX, FEED_PREFIX, feed_key
 
 
 @pytest.mark.parametrize("empty", [None, "", "   ", "\n"])
@@ -42,4 +42,21 @@ def test_different_feeds_never_share_a_key(a, b):
 def test_it_never_raises_and_is_bounded():
     assert isinstance(feed_key("http://[bad"), str)  # a ValueError must not escape
     assert len(feed_key("https://example.com/" + "a" * 2000)) == FEED_KEY_MAX
-    assert feed_key("https://example.com/rss") == feed_key(feed_key("https://example.com/rss"))
+
+
+@pytest.mark.parametrize("value", [
+    "a.com", "https://a.com", "//", "///", "?", "#", ":", "f:", "f:a.com/rss", "https://a.com/f:", "   x   ", "http://[bad",
+    "a" * 700,
+])
+def test_a_feed_key_and_a_domain_only_key_can_never_collide(value):
+    """R145 point 1: a feed-less source is keyed by ``''`` and every feed by ``f:...``, whatever the URL looks like,
+    so a domain-only identity cannot equal a feed identity. Includes the strings a naive normaliser reduces to
+    nothing (``//``, ``?``) and one that already looks like a key."""
+    key = feed_key(value)
+    assert key.startswith(FEED_PREFIX), key
+    assert key != ""
+    assert len(key) <= FEED_KEY_MAX
+
+
+def test_only_a_blank_feed_is_the_domain_only_key():
+    assert {feed_key(v) for v in (None, "", " ", "\t\n")} == {""}
