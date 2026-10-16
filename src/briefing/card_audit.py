@@ -513,7 +513,33 @@ class ProducerOutcome:
 #: surfaced / suppressed lists describe THIS pass, not what Home shows at that moment. With the budget not reached
 #: the two orders surface the same set (pinned in ``tests/test_card_audit.py``). The skipped producer is named, so the
 #: difference is readable, not hidden.
-_RUN_LAST: frozenset[str] = frozenset({"rising_now"})
+#: The producers that call ``q.trending`` directly: the whole-corpus windowed scan, answered from the keyword rollup
+#: when one is serving and otherwise run live (17 to 177 s on the 12 M-mention corpus of the 2026-10-16 bundles). Six
+#: callers, each with its own arguments and sharing nothing, so with the rollup unserved the first of them spends the
+#: pass's whole statement budget and the rest read ``skipped-budget`` (``rising_now`` first, ``framing_split`` the
+#: moment it was moved: the starvation test's fourth case). ``tests/test_card_audit_starvation.py`` reads
+#: ``src/briefing/producers.py`` and fails when a registered producer calls ``q.trending`` and is not named here.
+_TRENDING_SCAN_PRODUCERS: frozenset[str] = frozenset({
+    "rising_now", "framing_split", "lonely_signal", "emotion_profile", "ip_litigation_pulse", "on_the_horizon",
+})
+_RUN_LAST: frozenset[str] = frozenset({"rising_now"}) | _TRENDING_SCAN_PRODUCERS
+
+
+def _rollup_gap() -> str | None:
+    """Why the trending-scan producers cannot be run this pass, or None when they can: the serve is ON for this
+    install and no rollup is held (not built yet, or the build was declined). Read ONCE at the start of a pass.
+    With the serve off by design (a small machine, ``OO_COLUMNAR_SERVE=0``) production runs the live scan, so the
+    audit does too, last and under the pass budget. Codes only; the decline's own record is in ``rollup_serve``."""
+    try:
+        from src.analytics import rollup_serve
+
+        state = rollup_serve.serving_state()
+        if not state["enabled"] or state["serving"]:
+            return None
+        reason = rollup_serve.decline_detail().get("reason")
+    except Exception:  # noqa: BLE001 - an unreadable state is "unknown", and unknown must not hide a producer
+        return None
+    return str(reason) if isinstance(reason, str) and reason else "not built yet"
 
 
 def observe_producers(session) -> list[ProducerOutcome]:
@@ -548,8 +574,17 @@ def observe_producers(session) -> list[ProducerOutcome]:
         i for i, (n, _p) in enumerate(entries) if n in _RUN_LAST
     ]
     done: dict[int, ProducerOutcome] = {}
+    gap = _rollup_gap()  # read ONCE, before the first producer: the pass describes one state of the rollup
     for idx in order:
         name, producer = entries[idx]
+        if gap is not None and name in _TRENDING_SCAN_PRODUCERS:
+            # Not run, and LISTED: the live scan would spend the pass's whole budget and blind the producers
+            # behind it. This says nothing about the producer (it needs the keyword rollup).
+            done[idx] = ProducerOutcome(
+                name=name, outcome="skipped-no-rollup",
+                error_message=f"needs the keyword rollup, which is not serving ({gap}); says nothing about the producer",
+            )
+            continue
         # The guard ``run_all_bounded`` already has (its ``break`` on an expired
         # deadline), ported: once the budget is spent every later statement is
         # interrupted, so running the rest would only manufacture "errors". Each one
@@ -1365,6 +1400,8 @@ def _producer_inventory(outcomes: list[ProducerOutcome]) -> dict:
         "silent": [o.name for o in outcomes if o.outcome == "no-signal"],
         "skipped_budget": [o.name for o in outcomes if o.outcome == "skipped-budget"],
         "skipped_budget_n": sum(1 for o in outcomes if o.outcome == "skipped-budget"),
+        "skipped_no_rollup": [o.name for o in outcomes if o.outcome == "skipped-no-rollup"],
+        "skipped_no_rollup_n": sum(1 for o in outcomes if o.outcome == "skipped-no-rollup"),
         "slowest": [
             {"producer": o.name, "elapsed_s": round(o.elapsed_s, 1)}
             for o in sorted((o for o in outcomes if o.elapsed_s > 0), key=lambda o: -o.elapsed_s)[:3]
@@ -1376,7 +1413,8 @@ def _producer_inventory(outcomes: list[ProducerOutcome]) -> dict:
             "quiet one in every other card diagnostic. Here 'error' carries the exception "
             "type (its words are in the scrubbed log, not in this report); 'no-signal' means it ran cleanly and had nothing to say; "
             "'skipped-budget' means the statement budget was spent before it ran, so it "
-            "says nothing about the producer."
+            "says nothing about the producer. 'skipped-no-rollup' means the producer needs the keyword rollup, "
+            "which was not serving when the pass began, so it was not run: it also says nothing about the producer."
         ),
     }
 
@@ -1745,7 +1783,8 @@ def _determinism_check(session, first: list[ProducerOutcome]) -> dict:
     # there is the budget's, not the producer's: it is named, never counted as drift.
     not_compared = sorted(
         n for n in set(first_by) | set(second_by)
-        if "skipped-budget" in (getattr(first_by.get(n), "outcome", None), getattr(second_by.get(n), "outcome", None))
+        if {"skipped-budget", "skipped-no-rollup"} & {
+            getattr(first_by.get(n), "outcome", None), getattr(second_by.get(n), "outcome", None)}
     )
     outcome_changes = [
         {
@@ -1946,6 +1985,7 @@ def card_audit_worker(ctx, **kwargs) -> dict:
         "producers": report["producer_inventory"]["total"],
         "outcome_tallies": report["producer_inventory"]["outcome_tallies"],
         "skipped_budget_n": report["producer_inventory"].get("skipped_budget_n", 0),
+        "skipped_no_rollup_n": report["producer_inventory"].get("skipped_no_rollup_n", 0),
         "bytes": path.stat().st_size,
     }
 
@@ -1991,7 +2031,8 @@ def last_card_audit_report() -> dict:
         return {"available": False, "reason": f"unreadable report {newest.name} ({type(exc).__name__})"}
     inventory = {
         k: v for k, v in (payload.get("producer_inventory") or {}).items()
-        if k in ("total", "outcome_tallies", "errored", "silent", "skipped_budget", "skipped_budget_n", "slowest", "note")
+        if k in ("total", "outcome_tallies", "errored", "silent", "skipped_budget", "skipped_budget_n",
+                 "skipped_no_rollup", "skipped_no_rollup_n", "slowest", "note")
     }
     if isinstance(inventory.get("errored"), list):
         # A report saved by an older build carries the failure's own words in ``error_message`` (they can quote the

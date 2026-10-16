@@ -134,6 +134,16 @@ def serve_mode() -> str:
     return "auto"
 
 
+def serving_state() -> dict:
+    """Whether the keyword rollup is answering reads RIGHT NOW: ``enabled`` (the serve is on for this install),
+    ``built`` (a rollup is held) and ``serving`` (both). Read once per card-audit pass to decide whether the
+    producers that need it can be run; a read of two fields, no scan, no network."""
+    enabled = bool(serve_enabled())
+    with _LOCK:
+        built = _STATE["con"] is not None
+    return {"enabled": enabled, "built": built, "serving": enabled and built}
+
+
 def serve_enabled() -> bool:
     """AUTOMATIC by default (field ask 2026-07-02: it should not be a manual env var).
 

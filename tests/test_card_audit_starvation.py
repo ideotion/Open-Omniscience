@@ -107,3 +107,86 @@ def test_the_saved_summary_keeps_the_skipped_budget_fields(tmp_path, monkeypatch
     monkeypatch.setattr(card_audit, "_report_dir", lambda: tmp_path)
     inv = card_audit.last_card_audit_report()["producer_inventory"]
     assert inv["skipped_budget_n"] == 1 and inv["skipped_budget"] == ["x"] and "ignored_key" not in inv
+
+
+# --------------------------------------------------------------------------- #
+# the six producers that read the unserved trending scan are named, and not run while no rollup serves
+# --------------------------------------------------------------------------- #
+
+def _no_rollup(monkeypatch, *, enabled=True, built=False, reason="duckdb-limit"):
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr(rollup_serve, "serving_state",
+                        lambda: {"enabled": enabled, "built": built, "serving": enabled and built})
+    monkeypatch.setattr(rollup_serve, "decline_detail", lambda: {"reason": reason} if reason else {})
+
+
+def test_every_producer_that_calls_the_trending_scan_is_named():
+    """Read from the source, so a seventh caller added tomorrow fails here instead of blinding a bundle."""
+    import ast
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "src" / "briefing" / "producers.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+    callers = set()
+    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)):
+        for call in (c for c in ast.walk(fn) if isinstance(c, ast.Call)):
+            f = call.func
+            if isinstance(f, ast.Attribute) and f.attr == "trending" and isinstance(f.value, ast.Name) and f.value.id == "q":
+                callers.add(fn.name)
+    from src.briefing import producers
+
+    registered = {fn.__name__: name for name, fn in producers._DEFAULT_PRODUCERS}
+    assert callers, "the scan found no caller: the check is broken, not the code"
+    missing = sorted(registered.get(c, c) for c in callers if registered.get(c, c) not in card_audit._TRENDING_SCAN_PRODUCERS)
+    assert not missing, f"call q.trending but are not in _TRENDING_SCAN_PRODUCERS: {missing}"
+    assert card_audit._TRENDING_SCAN_PRODUCERS <= {n for n, _f in producers._DEFAULT_PRODUCERS}, "a named producer is not registered"
+
+
+def test_while_no_rollup_serves_the_trending_producers_are_listed_as_skipped_and_never_run(spent, monkeypatch):
+    _no_rollup(monkeypatch)
+    ran = []
+    for name in ("rising_now", "framing_split"):
+        registry.register(name, lambda _s, n=name: (ran.append(n), [])[1])
+    for i in range(3):
+        registry.register(f"p{i}", lambda _s, i=i: [_card(key=f"c{i}")])
+    out = card_audit.observe_producers(object())
+    by = {o.name: o for o in out}
+    assert ran == [], "the unserved scan was not started"
+    assert by["rising_now"].outcome == by["framing_split"].outcome == "skipped-no-rollup"
+    assert "duckdb-limit" in by["rising_now"].error_message and "says nothing about the producer" in by["rising_now"].error_message
+    assert [by[f"p{i}"].outcome for i in range(3)] == ["ok"] * 3
+    assert [o.name for o in out] == ["rising_now", "framing_split", "p0", "p1", "p2"], "never an absent row; registration order"
+
+
+def test_a_serving_rollup_runs_them_and_so_does_a_serve_that_is_off_by_design(spent, monkeypatch):
+    for kwargs in ({"enabled": True, "built": True}, {"enabled": False, "built": False}):
+        _no_rollup(monkeypatch, **kwargs)
+        ran = []
+        registry.register("rising_now", lambda _s: (ran.append(1), [])[1])
+        card_audit.observe_producers(object())
+        assert ran == [1], kwargs
+
+
+def test_the_rollup_state_is_read_once_per_pass(spent, monkeypatch):
+    from src.analytics import rollup_serve
+
+    calls = []
+    monkeypatch.setattr(rollup_serve, "serving_state", lambda: calls.append(1) or {"enabled": True, "built": False, "serving": False})
+    for name in ("rising_now", "framing_split", "lonely_signal"):
+        registry.register(name, lambda _s: [])
+    card_audit.observe_producers(object())
+    assert len(calls) == 1
+
+
+def test_the_summary_counts_the_skipped_no_rollup_and_the_determinism_pass_does_not_compare_them(spent, monkeypatch):
+    _no_rollup(monkeypatch)
+    registry.register("rising_now", lambda _s: [])
+    registry.register("p0", lambda _s: [_card()])
+    first = card_audit.observe_producers(object())
+    assert [o.outcome for o in first] == ["skipped-no-rollup", "ok"]
+    inv = card_audit._producer_inventory(first)
+    assert inv["skipped_no_rollup"] == ["rising_now"] and inv["skipped_no_rollup_n"] == 1
+    assert "skipped-no-rollup" in inv["note"]
+    det = card_audit._determinism_check(object(), first)
+    assert "rising_now" in det["not_compared_budget"]
