@@ -58,6 +58,13 @@ def test_enrich_source_types_polls_to_completion() -> None:
     assert "d.sources_typed" not in body and "d.scanned" not in body
 
 
+def test_enrich_source_types_shows_the_refused_count_beside_the_tally() -> None:
+    """A source whose Wikidata lookup was redirected off its host is counted by the pass (``sources_refused``); the button says so rather
+    than reading as "Wikidata had no match"."""
+    body = _fn_body(_app(), "enrichSourceTypes")
+    assert "res.sources_refused" in body and 't("refused")' in body
+
+
 def test_kx_backfill_polls_to_completion() -> None:
     body = _fn_body(_app(), "kxBackfill")
     assert "/api/insights/keyword-tags/backfill/status" in body, "does not poll the job status"

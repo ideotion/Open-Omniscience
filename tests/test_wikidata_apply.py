@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from src.catalog.wikidata_apply import apply_source_types
 from src.database.models import Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
+from src.safety.fetcher import RedirectRefused
 
 
 @pytest.fixture()
@@ -99,3 +100,39 @@ def test_refuses_up_front_under_airplane_mode(db):
     finally:
         clear_kill_switch()
     assert called["n"] == 0  # no socket attempted offline
+
+
+def test_a_source_whose_lookup_wikidata_redirected_off_its_host_is_counted_and_named(db):
+    """A refused redirect used to vanish into ``except Exception: continue``: the pass said "0 typed" exactly as it does when Wikidata
+    has no match. It is counted now, with the class name (never a URL) beside the tally, and the batch carries on past it."""
+    db.add(Source(name="Reuters", domain="reuters.com", source_type="news"))
+    db.add(Source(name="Redirected", domain="redirected.example", source_type="news"))
+    db.commit()
+    good = _getter_for("Q192283x", ["Q192283"], ["https://reuters.com/"])
+
+    def getter(url: str):
+        if "Redirected" in url:
+            raise RedirectRefused("request refused: the host is not one this client talks to")
+        return good(url)
+
+    res = apply_source_types(db, get=getter)
+    assert res == {"scanned": 2, "sources_typed": 1, "sources_refused": 1, "refusal": "RedirectRefused"}
+    assert "http" not in str(res) and "talks" not in str(res), "the result names the class and carries no address or message"
+
+
+def test_a_pass_with_no_refusal_carries_a_zero_and_no_refusal_name(db):
+    db.add(Source(name="Reuters", domain="reuters.com", source_type="news"))
+    db.commit()
+    res = apply_source_types(db, get=_getter_for("Q192283x", ["Q192283"], ["https://reuters.com/"]))
+    assert res["sources_refused"] == 0 and "refusal" not in res
+
+
+def test_any_other_failure_of_a_source_is_still_skipped_and_is_not_called_a_refusal(db):
+    db.add(Source(name="Reuters", domain="reuters.com", source_type="news"))
+    db.commit()
+
+    def getter(url: str):
+        raise RuntimeError("Wikidata answered with nonsense")
+
+    res = apply_source_types(db, get=getter)
+    assert res == {"scanned": 1, "sources_typed": 0, "sources_refused": 0}
