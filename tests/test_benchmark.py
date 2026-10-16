@@ -137,3 +137,78 @@ def test_benchmark_summary_counts(db):
     assert s["cases_run"] == len(out["results"])
     assert s["cases_ok"] + s["cases_failed"] == s["cases_run"]
     assert s["total_wall_ms"] >= 0
+
+
+def _cases(order, ran, on_first=None):
+    from src.monitoring import benchmark as bm
+
+    def make(key):
+        def fn():
+            ran.append(key)
+            if on_first and len(ran) == 1:
+                on_first()
+            return {"rows": [1]}
+        return bm._Case(key, key, fn)
+
+    return [make(k) for k in order]
+
+
+def test_the_slow_trending_cases_run_last(db, monkeypatch):
+    from src.monitoring import benchmark as bm
+
+    ran: list[str] = []
+    monkeypatch.setattr(bm, "_build_cases", lambda s: _cases(["trending", "map_data", "trending_windows", "who_aggregate"], ran))
+    out = run_benchmark(db, repeats=1)
+    assert ran == ["map_data", "who_aggregate", "trending", "trending_windows"]
+    assert [r["case"] for r in out["results"]] == ran
+
+
+def test_cases_after_the_deadline_are_reported_not_run_with_the_time_left(db, monkeypatch):
+    import time as _t
+
+    from src.database.maintenance import _DEADLINE_KEY
+    from src.monitoring import benchmark as bm
+
+    ran: list[str] = []
+    db.info[_DEADLINE_KEY] = _t.monotonic() + 3600  # a deadline an hour away
+
+    def pass_the_deadline():
+        db.info[_DEADLINE_KEY] = _t.monotonic() - 1
+
+    monkeypatch.setattr(bm, "_build_cases", lambda s: _cases(["a", "b", "c"], ran, on_first=pass_the_deadline))
+    out = run_benchmark(db, repeats=1)
+    assert ran == ["a"], "nothing is started after the deadline"
+    rows = {r["case"]: r for r in out["results"]}
+    assert rows["a"]["ok"] is True
+    for key in ("b", "c"):
+        assert rows[key]["not_run"] is True and rows[key]["error"].startswith("not run:") and "interrupted" not in rows[key]["error"]
+        assert rows[key]["deadline_left_ms"] <= 0
+    s = out["summary"]
+    assert s["cases_run"] == 1 and s["cases_not_run"] == 2 and s["cases_failed"] == 0
+    assert s["deadline"]["active"] and s["deadline"]["not_run"] == ["b", "c"] and s["deadline"]["reached_after_ms"] is not None
+    assert s["deadline"]["left_ms_at_start"] > 0
+
+
+def test_a_statement_stopped_by_the_deadline_says_so_not_interrupted(db, monkeypatch):
+    import time as _t
+
+    from src.database.maintenance import _DEADLINE_KEY
+    from src.monitoring import benchmark as bm
+
+    db.info[_DEADLINE_KEY] = _t.monotonic() + 3600
+
+    def fn():
+        db.info[_DEADLINE_KEY] = _t.monotonic() - 1
+        raise RuntimeError("interrupted")
+
+    monkeypatch.setattr(bm, "_build_cases", lambda s: [bm._Case("slow", "slow", fn)])
+    row = run_benchmark(db, repeats=1)["results"][0]
+    assert row["stopped_by_deadline"] is True and "deadline" in row["error"]
+
+
+def test_without_a_deadline_nothing_is_reported_not_run(db, monkeypatch):
+    from src.monitoring import benchmark as bm
+
+    monkeypatch.setattr(bm, "_build_cases", lambda s: _cases(["a", "b"], []))
+    out = run_benchmark(db, repeats=1)
+    assert out["summary"]["cases_not_run"] == 0 and out["summary"]["deadline"]["active"] is False
