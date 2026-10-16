@@ -30,6 +30,8 @@ Two halves, because the rewrite is only safe if both hold:
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import re
 import subprocess
 import sys
@@ -58,7 +60,7 @@ def _script():
 def _pairs(node, path=()):
     if isinstance(node, dict):
         for k, v in node.items():
-            if k in KEYS and not isinstance(v, (dict, list)):
+            if k in KEYS and not isinstance(v, dict):
                 yield path + (k,), v
             else:
                 yield from _pairs(v, path + (k,))
@@ -383,27 +385,130 @@ def test_a_trailing_comment_is_never_edited():
     assert q == "sources:\n  - {name: 'A # B', country: FRA}\n"
 
 
-def test_a_value_the_text_pass_cannot_see_is_named_not_skipped():
+def test_an_apostrophe_in_a_plain_scalar_does_not_swallow_the_comment_after_it():
     mod = _script()
-    left = mod.leftovers('sources:\n  - {name: A, "country": fr}\n  - {name: B, country: ZZZ}\n  - {name: C, country: FRA}\n')
-    assert left == ["sources/0/country: 'fr'", "sources/1/country: 'ZZZ'"]
+    old = "sources:\n  - {name: Don't Panic, country: fr}  # note, country: fr\n  - name: O'Neil  # c, country: de\n"
+    new, _ = mod.rewrite_text(old)
+    assert new == "sources:\n  - {name: Don't Panic, country: FRA}  # note, country: fr\n  - name: O'Neil  # c, country: de\n"
+    # a real quote still hides a hash, and an escaped quote inside a double-quoted scalar does not close it
+    q, _ = mod.rewrite_text('sources:\n  - {name: "A \\" # B", country: fr}\n')
+    assert q == 'sources:\n  - {name: "A \\" # B", country: FRA}\n'
 
 
-def test_the_script_writes_nothing_when_a_later_file_is_refused(tmp_path, monkeypatch):
+def test_a_value_the_text_pass_cannot_see_is_named_with_its_reason_not_skipped():
     mod = _script()
-    (tmp_path / "configs").mkdir()
-    good = tmp_path / "configs" / "a.yml"
-    bad = tmp_path / "configs" / "b.yml"
-    good.write_text("sources:\n  - {name: A, country: fr}\n", encoding="utf-8")
-    bad.write_text("sources:\n  - {name: B, country: ZZZ}\n", encoding="utf-8")
+    left = mod.leftovers(
+        'sources:\n  - {name: A, "country": fr}\n  - {name: B, country: ZZZ}\n  - {name: C, country: FRA}\n'
+        "  - {name: D, country: [fr, de]}\n"
+    )
+    assert [x.split(" (")[0] for x in left] == ["sources/0/country: 'fr'", "sources/1/country: 'ZZZ'", "sources/3/country: ['fr', 'de']"]
+    assert "not in the wire form" in left[0] and "not a recognised country code" in left[1] and "a list" in left[2]
+
+
+def _sandbox(tmp_path, monkeypatch, files: dict[str, str], *argv: str):
+    mod = _script()
+    (tmp_path / "configs").mkdir(exist_ok=True)
+    for name, body in files.items():
+        (tmp_path / "configs" / name).write_text(body, encoding="utf-8")
     monkeypatch.setattr(mod, "ROOT", tmp_path)
-    monkeypatch.setattr(mod, "TARGETS", ("configs/a.yml", "configs/b.yml"))
-    monkeypatch.setattr(sys, "argv", ["rewrite_config_countries.py", "--write"])
-    assert mod.main() == 2
-    assert good.read_text(encoding="utf-8") == "sources:\n  - {name: A, country: fr}\n", "the first file was rewritten anyway"
-    # and report mode says there is something left to do rather than pass
+    monkeypatch.setattr(mod, "TARGETS", tuple(f"configs/{n}" for n in files))
+    monkeypatch.setattr(sys, "argv", ["rewrite_config_countries.py", *argv])
+    return mod
+
+
+def _bytes(tmp_path):
+    return {p.name: p.read_bytes() for p in sorted((tmp_path / "configs").iterdir())}
+
+
+A_OLD = "sources:\n  - {name: A, country: fr}\n"
+B_OLD = "sources:\n  - {name: B, country: de}\n"
+
+
+def test_a_value_the_pass_cannot_place_is_listed_and_does_not_block_the_other_rewrites(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(
+        tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": "sources:\n  - {name: B, country: ZZZ}\n"}, "--write", "--report", str(report)
+    )
+    assert mod.main() == 1, "the exit code says something is left, without blocking the write"
+    assert (tmp_path / "configs" / "a.yml").read_text(encoding="utf-8") == "sources:\n  - {name: A, country: FRA}\n"
+    assert (tmp_path / "configs" / "b.yml").read_text(encoding="utf-8") == "sources:\n  - {name: B, country: ZZZ}\n"
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["unplaced"] == [{"file": "configs/b.yml", "key": "country", "value": "ZZZ"}]
+    assert "not a recognised country code" in data["left"][0]["value"]
+    # report mode says there is something left to do rather than pass
     monkeypatch.setattr(sys, "argv", ["rewrite_config_countries.py"])
     assert mod.main() == 1
+
+
+def test_the_script_writes_nothing_when_a_later_file_fails_the_equivalence_proof(tmp_path, monkeypatch):
+    report = tmp_path / "r.json"
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write", "--report", str(report))
+    before = _bytes(tmp_path)
+    real = mod.rewrite_text
+
+    def broken(text):
+        new, changes = real(text)
+        return (new.replace("name: B", "name: Z"), changes) if "name: B" in text else (new, changes)
+
+    monkeypatch.setattr(mod, "rewrite_text", broken)
+    assert mod.main() == 2
+    assert _bytes(tmp_path) == before, "the first file was rewritten anyway"
+    assert json.loads(report.read_text(encoding="utf-8"))["refused"]["file"] == "configs/b.yml"
+
+
+def test_a_write_that_fails_part_way_leaves_every_original_byte_identical(tmp_path, monkeypatch):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD, "c.yml": "sources:\n  - {name: C, country: it}\n"}, "--write")
+    before = _bytes(tmp_path)
+    real = os.replace
+    calls = {"n": 0}
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the second rename dies after the first has already replaced its file
+            raise OSError("disk went away")
+        return real(src, dst)
+
+    monkeypatch.setattr(mod.os, "replace", flaky)
+    assert mod.main() == 2
+    assert _bytes(tmp_path) == before, "an original was left rewritten or truncated"
+    assert not list((tmp_path / "configs").glob(".*.tmp")), "a temporary file was left behind"
+
+
+def test_a_failure_while_staging_touches_no_original_and_leaves_no_temporary(tmp_path, monkeypatch):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write")
+    before = _bytes(tmp_path)
+    real = os.fsync
+    calls = {"n": 0}
+
+    def flaky(fd):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(28, "no space left on device")
+        return real(fd)
+
+    monkeypatch.setattr(mod.os, "fsync", flaky)
+    assert mod.main() == 2
+    assert _bytes(tmp_path) == before
+    assert not list((tmp_path / "configs").glob(".*.tmp"))
+
+
+def test_a_clean_write_replaces_every_file_and_keeps_its_mode(tmp_path, monkeypatch):
+    mod = _sandbox(tmp_path, monkeypatch, {"a.yml": A_OLD, "b.yml": B_OLD}, "--write")
+    (tmp_path / "configs" / "a.yml").chmod(0o640)
+    assert mod.main() == 0
+    assert _bytes(tmp_path) == {"a.yml": b"sources:\n  - {name: A, country: FRA}\n", "b.yml": b"sources:\n  - {name: B, country: DEU}\n"}
+    assert (tmp_path / "configs" / "a.yml").stat().st_mode & 0o777 == 0o640
+    assert not list((tmp_path / "configs").glob(".*.tmp"))
+
+
+def test_the_law_catalogue_reads_absent_as_empty_and_unreadable_as_an_error(tmp_path):
+    from src.law import catalog as law_catalog
+
+    assert law_catalog._read_catalog_yaml(tmp_path / "nope.yml") == {"sources": [], "documents": []}
+    unreadable = tmp_path / "dir.yml"
+    unreadable.mkdir()  # exists, cannot be read as a file: not the same fact as absent
+    with pytest.raises(law_catalog.LawCatalogUnreadable, match="IsADirectoryError"):
+        law_catalog._read_catalog_yaml(unreadable)
 
 
 def test_the_legal_validator_finds_a_duplicate_across_the_two_spellings():
@@ -441,3 +546,23 @@ def test_a_row_an_older_catalogue_registered_under_another_spelling_is_not_regis
         s.commit()
         out = register_documents(s, cat, tmp_path / "none.yml")
         assert out["created"] == 0 and s.query(LawDocument).count() == 1
+
+
+def test_the_legal_validator_finds_a_duplicate_domain_kind_country_across_the_two_spellings():
+    vlc = _tool("validate_legal_catalog")
+    ver = {"status": "lead"}
+    row = {"domain": "example.org", "kind": "legal", "verification": ver}
+    generated = {
+        "schema": vlc.SCHEMA, "as_of": "2026-10",
+        "sources": [
+            {**row, "name": "A", "country": "GB"},
+            {**row, "name": "B", "country": "GBR"},
+        ],
+        "documents": [],
+    }
+    errors = vlc.validate(generated, {"sources": [], "documents": []})["errors"]
+    assert any("duplicate (domain, kind, country)" in e for e in errors)
+    # two different countries on one host and role stay legal (PacLII)
+    generated["sources"][1]["country"] = "FRA"
+    errors = vlc.validate(generated, {"sources": [], "documents": []})["errors"]
+    assert not any("duplicate (domain, kind, country)" in e for e in errors)

@@ -49,10 +49,19 @@ def law_jurisdiction(value):
     return _LAW_JURISDICTION_STORED.get(code, code) if isinstance(code, str) else code
 
 
+class LawCatalogUnreadable(RuntimeError):
+    """A catalogue file that is there but could not be read. Unreadable is not absent: only a missing file reads as
+    an empty catalogue, any other read error ends the load with this, named by the file and the error's class."""
+
+
 def _read_catalog_yaml(path: Path) -> dict:
-    if not path.exists():
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {"sources": [], "documents": []}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, UnicodeError) as exc:
+        raise LawCatalogUnreadable(f"the law catalogue {path.name} could not be read ({type(exc).__name__})") from None
+    data = yaml.safe_load(raw) or {}
     sources = [
         s
         for s in data.get("sources", [])

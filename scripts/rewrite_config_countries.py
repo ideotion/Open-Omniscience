@@ -34,7 +34,10 @@ How it stays safe, in the order it matters:
   that happens to contain the word ``jurisdiction:`` (the law notes do) is left alone.
 * The rewrite of a value is :func:`src.catalog.countries.country_payload` -- the SAME function the JSON
   boundary uses -- so a catalogue and a payload can never disagree about a country's alpha-3. A value it
-  cannot place (an unrecognised code, a prose token) is left exactly as written and LISTED, never guessed.
+  cannot place (an unrecognised code, a prose token) is left exactly as written and LISTED with its reason, never
+  guessed, and it never blocks the other rewrites (the exit code says there is something left, 1).
+* The write is atomic as a SET: every new file is staged beside its target and fsynced first, then renamed over the
+  originals; a failure leaves every original as it was (a refusal to prove one file writes none).
 * After writing it PARSES the old and the new text and proves they differ ONLY in country/jurisdiction
   values, and that each differing value satisfies ``normalize_country(new) == normalize_country(old)``:
   the loaders read countries through that function, so the data they produce is unchanged.
@@ -48,8 +51,11 @@ Usage::
 
 import argparse
 import json
+import os
 import re
+import shutil
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -82,14 +88,25 @@ def _is_flow_or_block_line(line: str) -> bool:
 
 
 def _split_comment(body: str) -> tuple[str, str]:
-    """``(code, comment)``: the comment starts at the first ``#`` outside quotes that opens the line or follows a space."""
+    """``(code, comment)``: the comment starts at the first ``#`` outside quotes that opens the line or follows a space.
+
+    A quote OPENS a quoted scalar only where a scalar starts (line start, or after ``:`` ``,`` ``[`` ``{`` ``-``): an
+    apostrophe inside a plain scalar (``don't``) is just a character, and treating it as a quote would swallow the
+    real comment after it."""
     quote = ""
+    escaped = False
     for i, ch in enumerate(body):
-        if quote:
-            if ch == quote:
+        if escaped:
+            escaped = False
+        elif quote:
+            if ch == "\\" and quote == '"':
+                escaped = True
+            elif ch == quote:
                 quote = ""
         elif ch in "\"'":
-            quote = ch
+            before = body[:i].rstrip()
+            if not before or before[-1] in ":,[{-":
+                quote = ch
         elif ch == "#" and (i == 0 or body[i - 1] in " \t"):
             return body[:i], body[i:]
     return body, ""
@@ -122,10 +139,11 @@ def rewrite_text(text: str) -> tuple[str, list[dict]]:
 
 
 def _walk_pairs(node, path=()):
-    """Yield (path, value) for every country/jurisdiction scalar in a parsed document."""
+    """Yield (path, value) for every country/jurisdiction value in a parsed document, a list-valued one included
+    (the text pass never rewrites it, so ``leftovers`` has to be able to name it)."""
     if isinstance(node, dict):
         for k, v in node.items():
-            if k in KEYS and not isinstance(v, (dict, list)):
+            if k in KEYS and not isinstance(v, dict):
                 yield path + (k,), v
             else:
                 yield from _walk_pairs(v, path + (k,))
@@ -135,9 +153,9 @@ def _walk_pairs(node, path=()):
 
 
 def _strip_country_values(node):
-    """The parsed document with every country/jurisdiction scalar blanked, to compare everything ELSE."""
+    """The parsed document with every country/jurisdiction value blanked, to compare everything ELSE."""
     if isinstance(node, dict):
-        return {k: (None if k in KEYS and not isinstance(v, (dict, list)) else _strip_country_values(v)) for k, v in node.items()}
+        return {k: (None if k in KEYS and not isinstance(v, dict) else _strip_country_values(v)) for k, v in node.items()}
     if isinstance(node, list):
         return [_strip_country_values(v) for v in node]
     return node
@@ -167,16 +185,106 @@ def prove_equivalent(old_text: str, new_text: str) -> list[str]:
 
 
 def leftovers(text: str) -> list[str]:
-    """Every country/jurisdiction value still not in the wire form, whatever the text form it was written in.
+    """Every country/jurisdiction value still not in the wire form, whatever the text form it was written in, each
+    with the reason it is listed.
 
-    The regex pass reads ``key: value`` text; a quoted key, an anchor, a tag or a value on the next line is
-    invisible to it. This reads the PARSED document, so such a value is named instead of skipped, and a
-    value no country code answers to (``ZZZ``, ``WLD``) is named too."""
+    The regex pass reads ``key: value`` text; a quoted key, an anchor, a tag, a list or a value on the next line is
+    invisible to it. This reads the PARSED document, so such a value is named instead of skipped, and a value no
+    country code answers to (``ZZZ``, ``WLD``) is named too."""
     bad = []
     for path, value in _walk_pairs(yaml.safe_load(text)):
-        if not (isinstance(value, str) and value.isupper() and country_payload_iso3(value) == value):
-            bad.append(f"{'/'.join(map(str, path))}: {value!r}")
+        if isinstance(value, str) and value.isupper() and country_payload_iso3(value) == value:
+            continue
+        if isinstance(value, list):
+            why = "a list, which the pass does not rewrite"
+        elif not isinstance(value, str):
+            why = "not a string (YAML read it as another type)"
+        elif country_payload_iso3(value) is None:
+            why = "not a recognised country code, left as written"
+        else:
+            why = "a country, but not in the wire form (the text pass could not reach it)"
+        bad.append(f"{'/'.join(map(str, path))}: {value!r} ({why})")
     return bad
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Make a rename durable. A platform that cannot open a directory has nothing to sync."""
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def write_all_atomically(items: list[tuple[Path, bytes, bytes]]) -> None:
+    """Replace each ``(path, old_bytes, new_bytes)`` so that a failure leaves EVERY original as it was.
+
+    Every new file is first written beside its target (same directory, so the rename stays on one filesystem),
+    flushed and fsynced; only when all of them are on disk are they renamed over the originals, then the
+    directories are synced. A failure while staging removes the temporary files and touches no original. A failure
+    during the renames puts back the ones already replaced; a file that cannot be put back is named in the error,
+    never hidden."""
+    staged: list[tuple[Path, Path, bytes]] = []
+    try:
+        for path, old, new in items:
+            fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+            tmp = Path(tmp_name)
+            staged.append((path, tmp, old))
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(new)
+                handle.flush()
+                os.fsync(handle.fileno())
+            shutil.copymode(path, tmp)
+    except BaseException:
+        for _path, tmp, _old in staged:
+            tmp.unlink(missing_ok=True)
+        raise
+    replaced: list[tuple[Path, bytes]] = []
+    try:
+        for path, tmp, old in staged:
+            os.replace(tmp, path)
+            replaced.append((path, old))
+        for directory in {path.parent for path, _tmp, _old in staged}:
+            _fsync_dir(directory)
+    except BaseException:
+        stuck = []
+        for path, old in replaced:
+            try:
+                _write_one(path, old)
+            except OSError:
+                stuck.append(str(path))
+        for _path, tmp, _old in staged:
+            tmp.unlink(missing_ok=True)
+        if stuck:
+            raise RuntimeError("rewritten and could not be put back (git checkout restores them): " + ", ".join(stuck)) from None
+        raise
+
+
+def _write_one(path: Path, data: bytes) -> None:
+    """One file, the same way: a temporary beside it, fsynced, renamed over it."""
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    _fsync_dir(path.parent)
+
+
+def _write_report(path: str | None, report: dict) -> None:
+    if path:
+        Path(path).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -185,7 +293,7 @@ def main() -> int:
     ap.add_argument("--report", help="write a JSON report of every value looked at")
     args = ap.parse_args()
 
-    report: dict = {"files": {}, "unplaced": []}
+    report: dict = {"files": {}, "unplaced": [], "left": [], "refused": None}
     would_change = 0
     # PROVE EVERY FILE FIRST, write after: a refusal on the last file must not leave the first ones rewritten.
     planned: list[tuple[str, str, str, list[dict]]] = []
@@ -195,35 +303,42 @@ def main() -> int:
         problems = prove_equivalent(old_text, new_text)
         if problems:
             print(f"REFUSED {rel}: {problems[:5]}", file=sys.stderr)
+            report["refused"] = {"file": rel, "problems": problems[:5]}
+            _write_report(args.report, report)
             return 2
         planned.append((rel, old_text, new_text, changes))
+    # A value the pass cannot place stays exactly as written and is LISTED with its reason; it never blocks the
+    # other rewrites (the repo test is what insists none is left in a committed file).
     left = [(rel, v) for rel, _, new_text, _ in planned for v in leftovers(new_text)]
-    if left and args.write:
-        print("REFUSED: values the pass could not put in the wire form (nothing was written):", file=sys.stderr)
-        for rel, v in left:
-            print(f"  {rel}: {v}", file=sys.stderr)
-        return 2
+    report["left"] = [{"file": rel, "value": v} for rel, v in left]
+    to_write = []
     for rel, old_text, new_text, changes in planned:
-        path = ROOT / rel
         tally = Counter("rewritten" if c["changed"] else "kept" for c in changes)
         unplaced = sorted({(c["key"], c["old"]) for c in changes if not c["changed"] and country_payload_iso3(c["old"]) is None})
         report["files"][rel] = {"values": len(changes), **tally}
         report["unplaced"] += [{"file": rel, "key": k, "value": v} for k, v in unplaced]
         would_change += tally.get("rewritten", 0)
         if args.write and new_text != old_text:
-            path.write_bytes(new_text.encode("utf-8"))
+            to_write.append((ROOT / rel, old_text.encode("utf-8"), new_text.encode("utf-8")))
         print(f"{rel}: {len(changes)} values, {tally.get('rewritten', 0)} rewritten, {len(unplaced)} distinct unplaced")
+    if to_write:
+        try:
+            write_all_atomically(to_write)
+        except (OSError, RuntimeError) as exc:
+            print(f"WRITE FAILED ({type(exc).__name__}): every original was left as it was unless said otherwise: {exc}", file=sys.stderr)
+            report["refused"] = {"write_failed": type(exc).__name__}
+            _write_report(args.report, report)
+            return 2
     print(f"total rewritten: {would_change}")
     if left:
-        print("not in the wire form after the pass:")
+        print("not in the wire form after the pass (left as written):")
         for rel, v in left:
             print(f"  {rel}: {v}")
     if report["unplaced"]:
         print("left as written (not a recognised country code):")
         for u in report["unplaced"]:
             print(f"  {u['file']}: {u['key']}: {u['value']}")
-    if args.report:
-        Path(args.report).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_report(args.report, report)
     return 0 if (not left and (args.write or would_change == 0)) else 1
 
 
