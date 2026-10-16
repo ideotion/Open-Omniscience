@@ -26,25 +26,29 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
          "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption"}
-MODULES = sorted(
-    p.relative_to(ROOT).as_posix()
-    for entry in ("src/scheduler", "src/wiki")
-    for p in (ROOT / entry).rglob("*.py")
-) + sorted(
-    p.relative_to(ROOT).as_posix() for entry in ("src/backup", "src/ingest", "src/database") for p in (ROOT / entry).rglob("*.py")
-) + sorted(
-    p.relative_to(ROOT).as_posix() for p in (ROOT / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py"
-) + sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src/api").rglob("*.py"))
-#: Slice 5: every OTHER package of ``src/`` and the top-level modules (the sweep reads the whole program). ``static`` holds no Python; a module
-#: added to any package is read from its first commit.
+#: Packages the earlier slices named one by one; every OTHER package of ``src/`` and the top-level modules are read by slice 5's glob (the
+#: sweep reads the whole program). ``static`` holds no Python; a module added to any package is read from its first commit.
 _SWEEP_DONE = {"scheduler", "wiki", "backup", "ingest", "database", "monitoring", "api", "static", "__pycache__"}
-_S5_MODULES: set[str] = set()
-MODULES += sorted(
-    p.relative_to(ROOT).as_posix()
-    for p in (ROOT / "src").rglob("*.py")
-    if p.relative_to(ROOT / "src").parts[0] not in _SWEEP_DONE
-)
-_S5_MODULES.update(m for m in MODULES if m.split('/')[1] not in _SWEEP_DONE)
+
+
+def _collect_modules(root: Path) -> list[str]:
+    """Every module of ``src/`` under ``root`` the records guard reads: the packages the first slices named, then every other one by glob.
+    ``secret_scrub.py`` is the one file left out (it IS the scrub, and its own words are pinned by the helper-body tests)."""
+    named: list[str] = []
+    for entries in (("src/scheduler", "src/wiki"), ("src/backup", "src/ingest", "src/database")):
+        named += sorted(p.relative_to(root).as_posix() for entry in entries for p in (root / entry).rglob("*.py"))
+    named += sorted(p.relative_to(root).as_posix() for p in (root / "src/monitoring").rglob("*.py") if p.name != "secret_scrub.py")
+    named += sorted(p.relative_to(root).as_posix() for p in (root / "src/api").rglob("*.py"))
+    rest = sorted(
+        p.relative_to(root).as_posix()
+        for p in (root / "src").rglob("*.py")
+        if p.relative_to(root / "src").parts[0] not in _SWEEP_DONE
+    )
+    return named + rest
+
+
+MODULES = _collect_modules(ROOT)
+_S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DONE}
 
 #: Pre-existing constructs the reading reports that are not records: a non-constant ``getattr`` name on a settings object, and the
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
@@ -660,6 +664,30 @@ def test_the_sweep_reads_the_whole_scheduler_and_wiki_trees():
     on_disk = {p.relative_to(ROOT).as_posix() for entry in ("src/scheduler", "src/wiki") for p in (ROOT / entry).rglob("*.py")}
     assert on_disk <= set(MODULES)
     assert len(on_disk) >= 20, "the directory glob found no module: the test would pass over nothing"
+
+
+def test_every_module_under_src_is_read_by_the_records_guard():
+    """No file of ``src/`` sits outside the guard's tables: a new module in ANY package, or a whole new package, is read from its first
+    commit. ``secret_scrub.py`` is the only file left out, by name."""
+    on_disk = {p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*.py")}
+    assert on_disk - set(MODULES) == {"src/monitoring/secret_scrub.py"}, sorted(on_disk - set(MODULES))
+    assert len(on_disk) >= 300, "the glob found almost nothing: the test would pass over nothing"
+
+
+def test_a_planted_package_and_a_planted_module_are_read(tmp_path):
+    """The proof the guard above can fail: a package that exists nowhere in the tables, and a module added to a package the first slices
+    named, both come out of the collector; a file the collector must leave out does not."""
+    for rel in ("src/zzplanted/__init__.py", "src/zzplanted/deep/inner.py", "src/api/zz_new_route.py", "src/scheduler/zz_new.py",
+                "src/monitoring/zz_new.py", "src/topmodule.py"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("", encoding="utf-8")
+    (tmp_path / "src/monitoring/secret_scrub.py").write_text("", encoding="utf-8")
+    (tmp_path / "src/static").mkdir()
+    (tmp_path / "src/static/readme.txt").write_text("", encoding="utf-8")
+    found = set(_collect_modules(tmp_path))
+    assert {"src/zzplanted/__init__.py", "src/zzplanted/deep/inner.py", "src/api/zz_new_route.py", "src/scheduler/zz_new.py",
+            "src/monitoring/zz_new.py", "src/topmodule.py"} <= found
+    assert "src/monitoring/secret_scrub.py" not in found
 
 
 _HANDLER = "def f():\n    try:\n        pass\n    except Exception as exc:\n        {body}\n"
