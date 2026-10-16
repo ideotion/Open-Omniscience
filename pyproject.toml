@@ -65,7 +65,7 @@ dependencies = [
     # its own log lines): the table of log calls there was read from 2.7.0 and 2.8.0, and tests/test_urllib3_log_withholds_the_path.py compares
     # it with the installed release's source. The ceiling is the first release NOT read; lift it only by that qualification
     # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.
-    "urllib3>=2.7.0,<2.9",
+    "urllib3>=2.7.0,<2.8.1",
     "requests>=2.31",
     "httpx>=0.27",
     "beautifulsoup4>=4.12",

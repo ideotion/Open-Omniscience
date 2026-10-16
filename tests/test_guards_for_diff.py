@@ -7,6 +7,7 @@ so a change to the rule that loses a group (or picks the whole suite) fails here
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -64,6 +65,9 @@ def repo(tmp_path: Path) -> Path:
     write(r, "tests/test_walks_os.py", "import os\nLIST = list(os.walk('src'))\n")
     write(r, "tests/scale/test_walks_deep.py", "import os\nLIST = list(os.walk('src'))\n")
     write(r, "tests/test_mentions_globs_only_data.py", "import pathlib\nLIST = list(pathlib.Path('data').glob('*.json'))\n")
+    # a star-led walk on a repository-rooted receiver judges the tree (a suffix filter follows); on a scratch directory it does not
+    write(r, "tests/test_walks_root_star.py", "ALL = [p for p in (_ROOT / 'src').rglob(\"*\") if p.suffix == '.py']\n")
+    write(r, "tests/test_walks_a_scratch_dir.py", "ALL = list(tmp_path.rglob(\"*\"))\n")
     write(r, "tests/test_removed_by_main.py")
     write(r, "tests/test_shared.py")
     commit(r, "base")
@@ -89,8 +93,8 @@ def feature_with_merged_main(r: Path) -> None:
     git(r, "merge", "-q", "--no-ff", "-m", "merge main", "main")
 
 
-def plan(r: Path, base: str = "main") -> g.Plan:
-    return g.build_plan(r, base)
+def plan(r: Path, base: str = "main", since: str | None = None) -> g.Plan:
+    return g.build_plan(r, base, since)
 
 
 def test_the_tests_main_added_are_picked_apart_from_the_branch_s_own(repo: Path) -> None:
@@ -136,7 +140,12 @@ def test_uncommitted_and_untracked_tests_count_as_the_branch_s_own(repo: Path) -
 
 def test_the_tree_walking_tests_are_picked_by_what_they_do(repo: Path) -> None:
     p = plan(repo)
-    assert p.tree_wide == ["tests/scale/test_walks_deep.py", "tests/test_walks_os.py", "tests/test_walks_src.py"]
+    assert p.tree_wide == [
+        "tests/scale/test_walks_deep.py",
+        "tests/test_walks_os.py",
+        "tests/test_walks_root_star.py",  # rglob("*") on the repository root, a suffix filter after it
+        "tests/test_walks_src.py",
+    ]  # tests/test_walks_a_scratch_dir.py walks a scratch directory and is not a guard of the tree
     assert p.main_added == [] and p.own == []  # an untouched branch has only the guards
 
 
@@ -156,6 +165,7 @@ def test_every_picked_file_is_listed_once_in_the_order_the_groups_are_shown(repo
         "tests/test_walks_src.py",  # edited on the branch, so it is listed with the branch's own
         "tests/scale/test_walks_deep.py",
         "tests/test_walks_os.py",
+        "tests/test_walks_root_star.py",
     ]
 
 
@@ -190,6 +200,166 @@ def test_a_changed_conftest_says_to_run_the_whole_suite(repo: Path) -> None:
 def plan_without_conftest_change(r: Path) -> g.Plan:
     git(r, "checkout", "-q", "tests/conftest.py")
     return plan(r)
+
+
+def test_paths_with_a_space_or_a_non_ascii_letter_are_picked_and_printed_quoted(repo: Path) -> None:
+    """Without ``-z`` git prints ``"tests/test_caf\\303\\251.py"`` and the quoted text matches no file: the test was dropped silently."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/test_café.py")
+    write(repo, "tests/test_with space.py")
+    commit(repo, "main adds awkward names")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+    write(repo, "tests/test_ünïcode_own.py")  # untracked
+    write(repo, "tests/test_own space.py")
+    p = plan(repo)
+    assert p.main_added == ["tests/test_café.py", "tests/test_with space.py"]
+    assert p.own == ["tests/test_own space.py", "tests/test_ünïcode_own.py"]
+    printed = g.render(p).splitlines()[-1]
+    assert "'tests/test_with space.py'" in printed and "tests/test_café.py" in printed
+    assert shlex.split(printed)[-len(p.files()) :] == p.files()  # the line pastes back into a shell as the same argv
+
+
+def test_a_changed_helper_a_node_test_and_a_data_file_pick_the_tests_that_name_them(repo: Path) -> None:
+    write(repo, "tests/_util.py", "def helper(): ...\n")
+    write(repo, "tests/sub/data.json", "{}\n")
+    write(repo, "tests/probe_node_test.js", "// node test\n")
+    write(repo, "tests/test_uses_util.py", "from tests._util import helper\n")
+    write(repo, "tests/test_uses_utility_only.py", "from tests._utility import other\n")  # a longer name is not the same name
+    write(repo, "tests/test_runs_node.py", "NODE = 'probe_node_test.js'\n")
+    write(repo, "tests/test_reads_data.py", "DATA = 'sub/data.json'\n")
+    commit(repo, "support files and their users")
+    git(repo, "checkout", "-q", "-b", "feature")
+    write(repo, "tests/_util.py", "def helper(): return 1\n")
+    write(repo, "tests/sub/data.json", '{"a": 1}\n')
+    write(repo, "tests/probe_node_test.js", "// edited\n")
+    write(repo, "tests/unused_helper.py", "x = 1\n")  # untracked, named by no test
+    p = plan(repo)
+    assert p.own == [] and p.main_added == []  # none of them is a test module
+    assert p.support == {
+        "tests/_util.py": ["tests/test_uses_util.py"],
+        "tests/probe_node_test.js": ["tests/test_runs_node.py"],
+        "tests/sub/data.json": ["tests/test_reads_data.py"],
+        "tests/unused_helper.py": [],
+    }
+    assert {"tests/test_uses_util.py", "tests/test_runs_node.py", "tests/test_reads_data.py"} <= set(p.files())
+    assert "tests/test_uses_utility_only.py" not in p.files()
+    assert "NONE named it" in g.render(p)  # an empty pick is said, not printed as if it were fine
+
+
+def test_a_deleted_helper_still_picks_the_tests_that_import_it(repo: Path) -> None:
+    write(repo, "tests/_util.py")
+    write(repo, "tests/test_uses_util.py", "from tests._util import helper\n")
+    commit(repo, "helper")
+    git(repo, "checkout", "-q", "-b", "feature")
+    git(repo, "rm", "-q", "tests/_util.py")
+    assert plan(repo).support == {"tests/_util.py": ["tests/test_uses_util.py"]}
+
+
+def test_a_helper_main_deleted_still_picks_the_tests_that_import_it(repo: Path) -> None:
+    write(repo, "tests/_util.py")
+    write(repo, "tests/test_uses_util.py", "from tests._util import helper\n")
+    commit(repo, "helper")
+    git(repo, "checkout", "-q", "-b", "feature")
+    write(repo, "tests/test_own.py")
+    commit(repo, "own")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "rm", "-q", "tests/_util.py")
+    commit(repo, "main deletes the helper")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+    assert plan(repo).support == {"tests/_util.py": ["tests/test_uses_util.py"]}  # it fails on import here, whoever deleted the helper
+
+
+def test_a_changed_nested_conftest_picks_the_tests_below_it_and_a_root_one_says_the_whole_suite(repo: Path) -> None:
+    write(repo, "tests/sub/test_a.py")
+    write(repo, "tests/sub/deeper/test_b.py")
+    write(repo, "tests/subtle/test_c.py")  # a sibling whose name starts the same is not below tests/sub
+    commit(repo, "tree")
+    git(repo, "checkout", "-q", "-b", "feature")
+    write(repo, "tests/sub/conftest.py", "# changed\n")
+    p = plan(repo)
+    assert p.scoped == {"tests/sub/conftest.py": ["tests/sub/deeper/test_b.py", "tests/sub/test_a.py"]}
+    assert not p.conftest_changed
+    assert "tests/subtle/test_c.py" not in p.files() and "tests/sub/test_a.py" in p.files()
+    write(repo, "conftest.py", "# repository root\n")
+    p = plan(repo)
+    assert p.conftest_changed and "whole suite" in g.render(p)
+
+
+def test_an_init_file_scopes_its_directory_like_a_conftest(repo: Path) -> None:
+    write(repo, "tests/sub/test_a.py")
+    commit(repo, "tree")
+    git(repo, "checkout", "-q", "-b", "feature")
+    write(repo, "tests/sub/__init__.py", "")
+    assert plan(repo).scoped == {"tests/sub/__init__.py": ["tests/sub/test_a.py"]}
+    write(repo, "tests/__init__.py", "")
+    assert plan(repo).conftest_changed  # a package root changes every import path
+
+
+def test_a_conftest_main_changed_reaches_the_note_through_the_merge(repo: Path) -> None:
+    git(repo, "checkout", "-q", "-b", "feature")
+    write(repo, "tests/test_own.py")
+    commit(repo, "own")
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/conftest.py", "# main changed the fixtures\n")
+    commit(repo, "main edits conftest")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+    assert plan(repo).conftest_changed  # every test sees a fixture main changed, whoever edited it
+
+
+def test_a_merge_with_main_as_the_first_parent_still_finds_main_s_tests(repo: Path) -> None:
+    """``git checkout --detach main && git merge --no-ff feat`` puts main's tip first: reading the second parent as main's line
+    picked the branch's own test as main's and never picked main's."""
+    git(repo, "checkout", "-q", "-b", "feat")
+    write(repo, "tests/test_own.py")
+    commit(repo, "own")
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/test_from_main.py")
+    commit(repo, "main moves")
+    git(repo, "checkout", "-q", "--detach", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feat into main's tip", "feat")
+    git(repo, "branch", "-f", "feat", "HEAD")
+    git(repo, "checkout", "-q", "feat")
+    git(repo, "update-ref", "refs/heads/base", "main")  # the base is main as it was before the merge: the merge is not in it
+    p = plan(repo, "base")
+    assert p.main_added == ["tests/test_from_main.py"]
+    assert p.own == ["tests/test_own.py"]
+
+
+def test_a_rebased_branch_finds_main_s_tests_only_through_since(repo: Path) -> None:
+    git(repo, "checkout", "-q", "-b", "feat")
+    write(repo, "tests/test_own.py")
+    commit(repo, "own")
+    before_rebase = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/test_from_main.py")
+    commit(repo, "main moves")
+    git(repo, "checkout", "-q", "feat")
+    git(repo, "rebase", "-q", "main")
+    assert plan(repo).main_added == []  # no merge, so the base alone cannot tell which of its tests are new to this branch
+    p = plan(repo, since=before_rebase)
+    assert p.main_added == ["tests/test_from_main.py"] and p.own == ["tests/test_own.py"] and p.since == before_rebase
+    assert "since " + before_rebase in g.render(p)
+
+
+def test_since_with_a_ref_that_does_not_exist_is_named(repo: Path) -> None:
+    with pytest.raises(g.PlanError, match="no such ref `nowhere` for --since"):
+        plan(repo, since="nowhere")
+
+
+def test_merges_already_inside_the_base_are_not_news_to_a_branch_cut_after_them(repo: Path) -> None:
+    git(repo, "checkout", "-q", "-b", "side")
+    write(repo, "tests/test_side.py")
+    commit(repo, "side")
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/test_main_line.py")
+    commit(repo, "main line")
+    git(repo, "merge", "-q", "--no-ff", "-m", "main merges side", "side")
+    git(repo, "checkout", "-q", "-b", "feat")
+    assert plan(repo).main_added == []  # both parents of that merge are in the base; the branch has merged nothing
 
 
 def test_the_ratchet_ceiling_is_read_from_the_workflow_not_copied(repo: Path) -> None:

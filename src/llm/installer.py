@@ -254,14 +254,27 @@ def _attested_installer(release: dict) -> tuple[str, str, str]:
     ATTESTED sha256. Returns ``(download_url, sha256_hex, version)``.
 
     Raises ``InstallerVerificationError`` if the asset is missing or GitHub does
-    not attest a SHA-256 for it — we never run a script we cannot verify.
+    not attest a SHA-256 for it — we never run a script we cannot verify. An
+    answer whose members are not the types the lookup reads (``assets`` that is
+    not a list, an asset that is not an object, a ``tag_name`` or ``digest``
+    that is not text) is :class:`InstallerFetchFailed` with the class ``TypeError``,
+    like any other answer that is JSON but not what was asked for.
     """
-    version = (release.get("tag_name") or "").strip()
-    for asset in release.get("assets") or []:
+    tag = release.get("tag_name") or ""
+    assets = release.get("assets") or []
+    if not isinstance(tag, str) or not isinstance(assets, list):
+        raise _fetch_failed(False, TypeError.__name__)  # JSON, an object, but not the shape the lookup reads: named like any other such answer
+    version = tag.strip()
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise _fetch_failed(False, TypeError.__name__)
         if asset.get("name") != INSTALLER_ASSET_NAME:
             continue
         url = asset.get("browser_download_url")
-        digest = (asset.get("digest") or "").strip().lower()
+        raw_digest = asset.get("digest") or ""
+        if not isinstance(raw_digest, str):
+            raise _fetch_failed(False, TypeError.__name__)
+        digest = raw_digest.strip().lower()
         if not url or not isinstance(url, str):
             raise InstallerVerificationError("The release lists no download URL for install.sh.")
         if not digest.startswith("sha256:") or len(digest) != len("sha256:") + 64:

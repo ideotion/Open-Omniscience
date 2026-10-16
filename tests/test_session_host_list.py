@@ -18,6 +18,7 @@ import ast
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NamedTuple
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -810,6 +811,37 @@ def test_a_release_whose_download_address_is_not_text_is_a_missing_address(named
     assert not isinstance(caught.value, installer.InstallerRedirectRefused) and "github.com" not in str(caught.value)
 
 
+_GOOD_ASSET = {"name": "install.sh", "browser_download_url": "https://github.com/x", "digest": "sha256:" + "0" * 64}
+
+
+@pytest.mark.parametrize(
+    "release",
+    [
+        {"assets": [1]},
+        {"assets": ["install.sh"]},
+        {"assets": [None]},
+        {"assets": {"name": "install.sh"}},
+        {"assets": "install.sh"},
+        {"tag_name": 5, "assets": []},
+        {"tag_name": ["v1"], "assets": [_GOOD_ASSET]},
+        {"tag_name": "v1", "assets": [{**_GOOD_ASSET, "digest": 5}]},
+        {"tag_name": "v1", "assets": [{**_GOOD_ASSET, "digest": ["sha256:" + "0" * 64]}]},
+        {"tag_name": "v1", "assets": [{"name": "other"}, 7]},
+    ],
+    ids=["number", "string", "null", "mapping", "text", "tag number", "tag list", "digest number", "digest list", "a later asset"],
+)
+def test_a_release_whose_members_are_not_the_types_the_lookup_reads_is_a_named_fetch_failure(release):
+    """JSON, an object, but ``assets`` that is not a list, an asset that is not an object, a ``tag_name`` or ``digest`` that is not text: the
+    reader used to end in an unhandled ``AttributeError`` (a 500 naming a type). It is ``InstallerFetchFailed`` with the class ``TypeError``,
+    like a body that is not an object, and has neither cause nor context."""
+    from src.llm import installer
+
+    with pytest.raises(installer.InstallerFetchFailed) as caught:
+        installer.resolve_and_verify(lambda url: release, lambda url: b"")
+    assert caught.value.why == "TypeError" and caught.value.__cause__ is None and caught.value.__context__ is None
+    assert str(caught.value) == installer.InstallerFetchFailed.LOOKUP.format(why="TypeError")
+
+
 def test_the_whole_install_check_runs_through_the_real_redirect_machinery(installer_scripted):
     """Lookup, redirect from the release host to the storage host, and the digest check, with nothing replaced but the wire."""
     from src.llm import installer
@@ -1164,9 +1196,11 @@ POPUP_LANE_LISTS = [
     ("src.llm.installer", "GITHUB_ASSET_HOSTS", ("ai",)),
 ]
 
-#: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned.
+#: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned. Keyed by
+#: ``(path, enclosing function, name)``, not by the name alone: a name-based allowance would accept any session built with a variable of that
+#: name anywhere in the file, so the function is part of the key and the test below checks the function really takes that parameter.
 PASSED_ON_HOST_LISTS = {
-    ("src/llm/installer.py", "hosts"): "_get_within takes its list from its two callers, which pass GITHUB_API_HOSTS and GITHUB_ASSET_HOSTS (the rows above)",
+    ("src/llm/installer.py", "_get_within", "hosts"): "_get_within takes its list from its two callers, which pass GITHUB_API_HOSTS and GITHUB_ASSET_HOSTS (the rows above)",
 }
 
 
@@ -1196,14 +1230,50 @@ def test_no_host_list_reaches_further_than_the_consent_popup_tells_the_person(mo
     assert not wider, f"{module}.{name} may reach {wider}, which the popup lane(s) {list(lane_ids)} do not name"
 
 
-def _host_list_sites(source: str, filename: str) -> list[tuple[str, tuple[str, str] | None]]:
-    """Every session-factory call in ``source`` that passes ``allowed_hosts=`` something other than a literal ``None``, as ``(identifier,
-    where it was imported from)``: the identifier is the name or attribute the list is written as (``''`` for anything else: an inline
-    tuple, a call, a subscript), and the second item is ``(module, name)`` when that name was imported with ``from module import name``."""
+class _Site(NamedTuple):
+    """One session-factory call that passes ``allowed_hosts=`` something other than a literal ``None``."""
+
+    #: The name the list is written as, resolvable to a row of ``POPUP_LANE_LISTS``: a plain name, or ``Class.NAME`` for ``cls.NAME`` or
+    #: ``self.NAME`` inside that class. ``''`` for everything else (an inline tuple, a call, a subscript, ``module.NAME``, ``other.NAME``).
+    ident: str
+    #: ``(module, name)`` when that name was imported with ``from module import name``.
+    imported: tuple[str, str] | None
+    #: The function the call is in (``''`` at module level), and whether the name is bound INSIDE an enclosing function (a parameter, an
+    #: assignment): then it is not the module's constant of that name, whatever the name says.
+    function: str
+    local: bool
+    #: The source of the value, for the failure message.
+    text: str
+
+
+def _bound_names(func: ast.AST) -> set[str]:
+    """Names a function binds for itself: its parameters, every assignment target, loop and ``with`` target, walrus, ``except ... as`` and
+    nested definition inside it (counted for the nested bodies too, which only errs towards calling a name local)."""
+    names: set[str] = set()
+    args = getattr(func, "args", None)
+    if isinstance(args, ast.arguments):
+        for a in [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]:
+            if a is not None:
+                names.add(a.arg)
+    for node in ast.walk(func):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        elif isinstance(node, ast.ExceptHandler):
+            names.update([node.name] if node.name else [])
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node is not func:
+            names.add(node.name)
+    return names
+
+
+def _host_list_sites(source: str, filename: str) -> list[_Site]:
+    """Every session-factory call in ``source`` that passes ``allowed_hosts=`` something other than a literal ``None``."""
     tree = ast.parse(source, filename=filename)
     aliases: dict[str, str] = {}
     imported: dict[str, tuple[str, str]] = {}
+    parents: dict[ast.AST, ast.AST] = {}
     for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
         if isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 imported[alias.asname or alias.name] = (node.module, alias.name)
@@ -1215,30 +1285,52 @@ def _host_list_sites(source: str, filename: str) -> list[tuple[str, tuple[str, s
             return aliases.get(node.id, node.id)
         return node.attr if isinstance(node, ast.Attribute) else ""
 
-    sites: list[tuple[str, tuple[str, str] | None]] = []
+    def ancestors(node: ast.AST):
+        while node in parents:
+            node = parents[node]
+            yield node
+
+    sites: list[_Site] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and name_of(node.func) in _SESSION_FACTORIES:
-            for k in node.keywords:
-                if k.arg == "allowed_hosts" and not (isinstance(k.value, ast.Constant) and k.value.value is None):
-                    ident = k.value.id if isinstance(k.value, ast.Name) else k.value.attr if isinstance(k.value, ast.Attribute) else ""
-                    sites.append((ident, imported.get(ident)))
+        if not (isinstance(node, ast.Call) and name_of(node.func) in _SESSION_FACTORIES):
+            continue
+        scopes = [a for a in ancestors(node) if isinstance(a, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))]
+        owner = next((a for a in ancestors(node) if isinstance(a, ast.ClassDef)), None)
+        function = scopes[0].name if scopes and not isinstance(scopes[0], ast.Lambda) else ""
+        for k in node.keywords:
+            if k.arg != "allowed_hosts" or (isinstance(k.value, ast.Constant) and k.value.value is None):
+                continue
+            value = k.value
+            ident, local = "", False
+            if isinstance(value, ast.Name):
+                ident, local = value.id, any(value.id in _bound_names(s) for s in scopes)
+            elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name) and value.value.id in ("cls", "self") and owner is not None:
+                ident = f"{owner.name}.{value.attr}"
+            sites.append(_Site(ident, imported.get(value.id) if isinstance(value, ast.Name) else None, function, local, ast.unparse(value)))
     return sites
 
 
+def _unpinned_in(source: str, rel: str, module: str) -> list[tuple[str, str]]:
+    """The sessions of ``source`` whose list is not one of the rows of ``POPUP_LANE_LISTS``, as ``(path, what the list is written as)``."""
+    pinned = {(m, n) for m, n, _lanes in POPUP_LANE_LISTS}
+    found: list[tuple[str, str]] = []
+    for site in _host_list_sites(source, rel):
+        if (rel, site.function, site.ident) in PASSED_ON_HOST_LISTS:
+            continue
+        if site.ident and not site.local and ((module, site.ident) in pinned or site.imported in pinned):
+            continue
+        found.append((rel, site.text))
+    return found
+
+
 def _unpinned_host_lists() -> list[tuple[str, str]]:
-    pinned = {(module, name.rsplit(".", 1)[-1]) for module, name, _lanes in POPUP_LANE_LISTS}
     found: list[tuple[str, str]] = []
     for path in sorted((ROOT / "src").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         if rel == "src/safety/fetcher.py":
             continue
         module = rel[: -len(".py")].replace("/", ".")
-        for ident, source in _host_list_sites(path.read_text(encoding="utf-8"), rel):
-            if ident and ((module, ident) in pinned or source in pinned):
-                continue
-            if (rel, ident) in PASSED_ON_HOST_LISTS:
-                continue
-            found.append((rel, ident or "<not a name>"))
+        found += _unpinned_in(path.read_text(encoding="utf-8"), rel, module)
     return found
 
 
@@ -1253,6 +1345,10 @@ def test_every_host_list_a_session_is_built_with_is_pinned_to_a_popup_lane():
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_get_within"
     ]
     assert sorted(passed) == ["GITHUB_API_HOSTS", "GITHUB_ASSET_HOSTS"], "the installer's two fetches pass the two pinned lists and nothing else"
+    # ... and the allowance is for a PARAMETER of that function, not for whatever else is called ``hosts``
+    (get_within,) = [n for n in ast.walk(ast.parse(installer_src)) if isinstance(n, ast.FunctionDef) and n.name == "_get_within"]
+    assert "hosts" in [a.arg for a in get_within.args.args]
+    assert all(key[1] == "_get_within" for key in PASSED_ON_HOST_LISTS)
 
 
 @pytest.mark.parametrize(
@@ -1261,14 +1357,53 @@ def test_every_host_list_a_session_is_built_with_is_pinned_to_a_popup_lane():
         ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=('a.org',))", [("", None)]),
         ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=HOSTS)", [("HOSTS", None)]),
         ("from x import HOSTS\nfrom src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=HOSTS)", [("HOSTS", ("x", "HOSTS"))]),
-        ("from src.safety.fetcher import following_session\nfollowing_session('o', 'ua', allowed_hosts=cls.HOSTS)", [("HOSTS", None)]),
+        ("from src.safety.fetcher import following_session\nclass C:\n    def f(self):\n        following_session('o', 'ua', allowed_hosts=self.HOSTS)", [("C.HOSTS", None)]),
         ("from src.safety.fetcher import guarded_session as gs\ngs(allowed_hosts=NEW_HOSTS)", [("NEW_HOSTS", None)]),
         ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=None)", []),
         ("from src.safety.fetcher import guarded_session\nguarded_session()", []),
+        # an attribute of anything but the class's own cls/self is not a name the pin reads
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=wide.API_HOSTS)", [("", None)]),
+        ("from src.safety.fetcher import guarded_session\ndef f(cls):\n    guarded_session(allowed_hosts=cls.HOSTS)", [("", None)]),
     ],
 )
 def test_the_completeness_walk_reads_the_list_every_session_is_built_with(source, expected):
-    assert _host_list_sites(source, "x.py") == expected
+    assert [(s.ident, s.imported) for s in _host_list_sites(source, "x.py")] == expected
+
+
+_WIDE_ATTRIBUTE = "from src.safety.fetcher import guarded_session\nimport wide\nguarded_session(allowed_hosts=wide.API_HOSTS)"
+_LOCAL_REBIND = "from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\ndef f():\n    API_HOSTS = ('evil.example',)\n    guarded_session(allowed_hosts=API_HOSTS)"
+_PARAMETER = "from src.safety.fetcher import guarded_session\ndef f(API_HOSTS):\n    guarded_session(allowed_hosts=API_HOSTS)"
+_LOOP_TARGET = "from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\ndef f(xs):\n    for API_HOSTS in xs:\n        guarded_session(allowed_hosts=API_HOSTS)"
+_NESTED_REBIND = "from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\ndef outer():\n    API_HOSTS = ('evil.example',)\n    def inner():\n        guarded_session(allowed_hosts=API_HOSTS)"
+
+
+@pytest.mark.parametrize(
+    ("source", "rel", "module", "unpinned"),
+    [
+        # what the pin reads is the module's own constant, so these are accepted ...
+        ("from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\nguarded_session(allowed_hosts=API_HOSTS)", "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", False),
+        ("from src.catalog.wikidata import WDQS_HOSTS\nfrom src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=WDQS_HOSTS)", "src/catalog/discover.py", "src.catalog.discover", False),
+        ("from src.safety.fetcher import guarded_session\nclass DuckDuckGoSearch:\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)", "src/services/duckduckgo.py", "src.services.duckduckgo", False),
+        ("from src.safety.fetcher import guarded_session\ndef _get_within(url, hosts):\n    guarded_session(allowed_hosts=hosts)", "src/llm/installer.py", "src.llm.installer", False),
+        # ... and these are not: a name the pin does not read the value of
+        (_WIDE_ATTRIBUTE, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_LOCAL_REBIND, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_PARAMETER, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_LOOP_TARGET, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_NESTED_REBIND, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        ("from src.safety.fetcher import guarded_session\nclass Other:\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)", "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        ("from src.safety.fetcher import guarded_session\nclass DuckDuckGoSearch:\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)", "src/services/other.py", "src.services.other", True),
+        # the installer's parameter allowance is for that function only, in that file only
+        ("from src.safety.fetcher import guarded_session\ndef other(url, hosts):\n    guarded_session(allowed_hosts=hosts)", "src/llm/installer.py", "src.llm.installer", True),
+        ("from src.safety.fetcher import guarded_session\ndef _get_within(url, hosts):\n    guarded_session(allowed_hosts=hosts)", "src/llm/other.py", "src.llm.other", True),
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=('a.org',))", "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+    ],
+)
+def test_the_completeness_walk_accepts_only_a_list_the_pin_reads(source, rel, module, unpinned):
+    """The walk used to keep the last word of whatever the list was written as, so ``wide.API_HOSTS`` in a module whose own ``API_HOSTS``
+    is pinned was accepted while the pin read the OTHER list; and a name bound inside the function (a rebind, a parameter, a loop variable)
+    is not the module's constant either."""
+    assert bool(_unpinned_in(source, rel, module)) is unpinned
 
 
 def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():

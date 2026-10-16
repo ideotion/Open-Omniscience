@@ -7,18 +7,22 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 ("Failed to parse headers (url=...)", on a fetch that SUCCEEDS as well as on one that fails) and when a session retries; at DEBUG, the request
 line and each redirect hop. The installer's download is a signed storage address, so its signature rode those lines into the error journal
 that a debug bundle carries. ``src/ingest/urllib3_log.py`` rewrites the target arguments of the lines it knows before any handler sees them,
-and withholds every other line on the library's loggers whole (default-deny).
+reduces every other argument and drops the exception and the stack, and withholds every other line on the library's loggers whole
+(default-deny, failing closed).
 
-Four groups of checks:
+Five groups of checks:
 
 * the rewrite and the default, on records built by hand (each shape in the table, and the ways a record can fail to match it);
+* EVERY CARRIER of a record (the message, an argument of any type, the exception, the stack): the first build cut the arguments that were text
+  and left an exception argument and ``exc_info``, and the header-parsing warning put what the SERVER sent (a ``Location`` with its signature)
+  in the journal through both;
 * the REAL library against a loopback socket: a scripted adapter stands in for urllib3 entirely and could never show a line the library
   writes itself. Each real-stack case also asserts that the library DID log the line (so the case cannot pass because it stayed quiet),
   that the host is still there (so the filter did not blank the record) and that no line fell to the default (so the table matches what the
   library really logs);
 * the QUALIFICATION of the installed release: the table is compared with the library's own source, so a release that logs something new, or
   passes something else in an argument, fails here by name and is read before it is allowed (``pyproject.toml`` carries the ceiling);
-* the objects the table leaves unchanged (a ``Retry``, an error) are measured not to quote the target.
+* the scope: the parent logger and any child, by the log-record factory.
 """
 
 from __future__ import annotations
@@ -30,11 +34,14 @@ import socket
 import subprocess
 import sys
 import threading
+from email.errors import MissingHeaderBodySeparatorDefect
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.exceptions import HeaderParsingError, ProtocolError
 from urllib3.util import Retry
 
 import src.ingest  # noqa: F401  (importing the package is what installs the filter, which these tests rely on)
@@ -49,6 +56,27 @@ SIG = "PLANTEDSIG"
 _OK = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
 #: A header line with no colon: urllib3 parses the response, finds a defect, logs it, and the request still succeeds.
 _MALFORMED_HEADER = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nbadheaderwithoutcolon\r\nConnection: close\r\n\r\nok"
+#: A redirect whose ``Location`` comes AFTER a malformed line: urllib3 cannot parse it, logs the unparsed header text (a signed address in it)
+#: in the exception it passes as an argument and in ``exc_info``, and ``requests`` sees no ``Location``, so the fetch "succeeds" as a 302.
+_SIGNED_LOCATION_AFTER_A_BAD_LINE = (
+    b"HTTP/1.1 302 Found\r\nbadline\r\nLocation: https://objects.example/a?X-Amz-Signature=" + SIG.encode() + b"\r\n"
+    b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_proxy_from_the_environment(monkeypatch):
+    """The cases talk to a loopback socket: a developer shell with ``HTTP_PROXY`` set would send them to the proxy and fail for another reason."""
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+
+
+def _session() -> requests.Session:
+    session = requests.Session()
+    session.trust_env = False
+    return session
 
 
 def _serve(*replies: bytes | None) -> int:
@@ -98,10 +126,17 @@ def _run(record: logging.LogRecord) -> logging.LogRecord:
         (f"http://user:{SIG}@host.example", "http://host.example"),
         (f"https://host.example/?sig={SIG}", f"https://host.example/{urllib3_log.WITHHELD}"),
         (f"https://host.example?sig={SIG}", f"https://host.example/{urllib3_log.WITHHELD}"),
+        (f"https://host.example/#{SIG}", f"https://host.example/{urllib3_log.WITHHELD}"),  # a fragment is something withheld, and it says so
+        (f"HTTPS://Host.Example/p?sig={SIG}", f"https://host.example/{urllib3_log.WITHHELD}"),  # a scheme is read in any case
         (f"https://[::1]:8443/x?y={SIG}", f"https://[::1]:8443/{urllib3_log.WITHHELD}"),
         (f"https://host.example:notaport/x?{SIG}", urllib3_log.WITHHELD),
         ("https://host.example", "https://host.example"),
         ("https://host.example/", "https://host.example/"),
+        # a "host" with a separator in it is a value: urllib3 would never log one, a hostile redirect could
+        (f"https://h.example;X-Amz-Signature={SIG}", urllib3_log.WITHHELD),
+        (f"https://h.example,{SIG}/x", urllib3_log.WITHHELD),
+        (f"https://h.example=a{SIG}", urllib3_log.WITHHELD),
+        ("https://xn--bcher-kva.example:8443", "https://xn--bcher-kva.example:8443"),
         ("host.example:443", "host.example:443"),
         ("HTTP/1.1", "HTTP/1.1"),
         ("GET", "GET"),
@@ -113,21 +148,46 @@ def test_withhold_keeps_the_scheme_host_and_port_and_loses_the_rest(arg, expecte
     assert urllib3_log.withhold(arg) == expected
 
 
+def test_a_target_position_reads_the_scheme_in_any_case():
+    assert SIG not in str(urllib3_log._target(f"HTTP://h.example/p?sig={SIG}"))
+    assert urllib3_log._target(f"HTTP://h.example/p?sig={SIG}") == f"http://h.example/{urllib3_log.WITHHELD}"
+    assert urllib3_log._target(f"/p?sig={SIG}") == urllib3_log.WITHHELD and urllib3_log._target(None) == urllib3_log.WITHHELD
+
+
+def test_a_number_none_or_bool_in_a_position_that_is_not_a_target_stays_what_it_was():
+    for value in (0, 3, 1.5, True, None):
+        carried = urllib3_log._carried(value)
+        assert carried is value or carried == value
+    record = _record("urllib3.connectionpool", '%s://%s:%s "%s %s %s" %s %s', ("https", "h.example", 443, "GET", "/p", "HTTP/1.1", 200, None))
+    assert urllib3_log.scrub(record) is None
+    assert record.args[-1] is None and record.args[-2] == 200 and record.args[2] == 443
+
+
 def test_withhold_leaves_an_object_that_is_not_text_alone():
     exc = ConnectionError("Max retries exceeded")
     assert urllib3_log.withhold(exc) is exc
 
 
-#: The shapes urllib3 logs a target in, as the library calls them (logger, level, template, arguments), so a shape that stops being covered
-#: fails here by name; the real-stack cases below show that urllib3 still logs them this way, and the qualification cases that the table
-#: is the library's own.
+def _header_error() -> HeaderParsingError:
+    """The real exception urllib3 passes: its text quotes the unparsed header lines the SERVER sent."""
+    return HeaderParsingError([MissingHeaderBodySeparatorDefect()], f"badline\r\nLocation: https://objects.example/a?X-Amz-Signature={SIG}\r\n")
+
+
+#: The shapes urllib3 logs a target in, as the library calls them (logger, level, template, arguments, with the REAL objects it passes), so a
+#: shape that stops being covered fails here by name; the real-stack cases below show that urllib3 still logs them this way, and the
+#: qualification cases that the table is the library's own.
 _SHAPES = [
-    ("urllib3.connection", logging.WARNING, "Failed to parse headers (url=%s): %s", (f"http://h.example:80/p?sig={SIG}", "MissingHeaderBodySeparatorDefect")),
-    ("urllib3.connectionpool", logging.WARNING, "Retrying (%r) after connection broken by '%r': %s", ("Retry(total=0)", "ProtocolError", f"/p?sig={SIG}")),
+    ("urllib3.connection", logging.WARNING, "Failed to parse headers (url=%s): %s", (f"http://h.example:80/p?sig={SIG}", _header_error())),
+    (
+        "urllib3.connectionpool",
+        logging.WARNING,
+        "Retrying (%r) after connection broken by '%r': %s",
+        (Retry(total=0), ProtocolError("Connection aborted.", ConnectionResetError(f"reset /p?sig={SIG}")), f"/p?sig={SIG}"),
+    ),
     ("urllib3.connectionpool", logging.DEBUG, '%s://%s:%s "%s %s %s" %s %s', ("https", "h.example", 443, "GET", f"/p?sig={SIG}", "HTTP/1.1", 200, 2)),
     ("urllib3.connectionpool", logging.DEBUG, "Redirecting %s -> %s", (f"/a?sig={SIG}", f"https://h.example/b?sig={SIG}")),
     ("urllib3.connectionpool", logging.DEBUG, "Retry: %s", (f"/p?sig={SIG}",)),
-    ("urllib3.util.retry", logging.DEBUG, "Incremented Retry for (url='%s'): %r", (f"/p?sig={SIG}", "Retry(total=0)")),
+    ("urllib3.util.retry", logging.DEBUG, "Incremented Retry for (url='%s'): %r", (f"/p?sig={SIG}", Retry(total=0))),
     ("urllib3.poolmanager", logging.INFO, "Redirecting %s -> %s", (f"/a?sig={SIG}", f"https://h.example/b?sig={SIG}")),
 ]
 
@@ -140,6 +200,9 @@ def test_each_shape_urllib3_logs_a_target_in_loses_it(caplog, logger, level, fmt
     assert SIG not in caplog.text
     assert urllib3_log.WITHHELD in caplog.text
     assert urllib3_log.UNRECOGNISED not in caplog.text, "a shape of the table is rewritten, not withheld whole"
+    for arg in args:  # an object that is not text stands as its class name, whatever it quotes
+        if arg is not None and not isinstance(arg, (str, int, float)):
+            assert f"<{type(arg).__name__}>" in caplog.text
 
 
 def test_a_record_with_no_target_is_left_as_it_was(caplog):
@@ -163,6 +226,20 @@ def test_every_entry_of_the_table_rewrites_exactly_its_target_positions(key, sha
                 assert got in (urllib3_log.WITHHELD, f"https://h.example:8443/{urllib3_log.WITHHELD}"), (key, i, got)
             else:
                 assert got == f"KEPT{i}", "a position that is not a target is passed as it came"
+
+
+@pytest.mark.parametrize(("key", "shape"), sorted(urllib3_log.SHAPES.items()), ids=[f"{k[0]}:{k[1][:30]}" for k in sorted(urllib3_log.SHAPES)])
+def test_every_entry_of_the_table_reduces_an_object_in_any_other_position_to_its_class_name(key, shape):
+    """The first build left an object in a position that is not a target as it was; ``HeaderParsingError`` quotes the header lines the server
+    sent. A number or ``None`` is the only thing that passes as it is."""
+    logger, template = key
+    args = tuple(f"/p?sig={SIG}" if i in shape.target else ConnectionError(f"/p?sig={SIG}") for i in range(len(shape.args)))
+    record = _run(_record(logger, template, args))
+    for i, got in enumerate(record.args):
+        assert got == (urllib3_log.WITHHELD if i in shape.target else "<ConnectionError>"), (key, i, got)
+    assert SIG not in repr(record.args)  # not formatted: a "%d" position holding text is only possible in this hand-made record
+    numbers = _run(_record(logger, template, tuple(7 if i not in shape.target else "/p" for i in range(len(shape.args))))).args
+    assert all(a == 7 for i, a in enumerate(numbers) if i not in shape.target)
 
 
 # --------------------------------------------------------------------------- default-deny: a line this build does not know
@@ -213,6 +290,29 @@ def test_a_message_that_is_not_text_is_withheld_whole_even_when_it_cannot_be_has
     """A list or a dict as the message cannot be a key of the table: the filter must refuse it and not raise inside the caller's log call."""
     record = _run(_record("urllib3.connectionpool", msg))
     assert SIG not in record.getMessage() and record.getMessage() == urllib3_log.UNRECOGNISED
+
+
+@pytest.mark.parametrize("msg", [[f"/p?sig={SIG}"], {"url": f"/p?sig={SIG}"}])
+def test_an_unhashable_message_with_an_exception_still_keeps_the_class_name_and_nothing_else(msg):
+    try:
+        raise ValueError(f"/p?sig={SIG}")
+    except ValueError:
+        exc_info = sys.exc_info()
+    record = _run(_record("urllib3.connectionpool", msg, exc_info=exc_info))
+    assert record.getMessage() == f"{urllib3_log.UNRECOGNISED} (ValueError)" and record.exc_info is None
+
+
+def test_an_exception_class_whose_name_is_not_text_gives_no_name():
+    class Meta(type):
+        @property
+        def __name__(cls):  # type: ignore[override]
+            return [f"/p?sig={SIG}"]
+
+    class Odd(Exception, metaclass=Meta):
+        pass
+
+    record = _run(_record("urllib3.connection", "Unknown %s", ("x",), exc_info=(Odd, Odd(), None)))
+    assert record.getMessage() == urllib3_log.UNRECOGNISED and SIG not in logging.Formatter("%(message)s").format(record)
 
 
 def test_a_stack_the_record_carries_is_dropped_with_the_rest_of_a_withheld_line():
@@ -273,11 +373,228 @@ def test_importing_the_fetcher_alone_installs_the_filter():
         f"names = {names!r}\n"
         "missing = [n for n in names if not any(type(f).__name__ == '_WithholdRequestPath' for f in logging.getLogger(n).filters)]\n"
         "print('MISSING', missing)\n"
+        "print('FACTORY', type(logging.getLogRecordFactory()).__name__)\n"
     )
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr[-500:]
     assert "MISSING []" in out.stdout
+    assert "FACTORY _Factory" in out.stdout
     assert set(urllib3_log.LOGGERS) == set(names)
+
+
+# --------------------------------------------------------------------------- every carrier of a record
+
+
+def _mapping_as_the_only_argument(log: logging.Logger) -> None:
+    log.warning("%(u)s", {"u": f"/p?sig={SIG}"})
+
+
+def _target_in_the_message(log: logging.Logger) -> None:
+    log.warning(f"GET /p?sig={SIG}")
+
+
+def _container_argument(log: logging.Logger) -> None:
+    log.warning("%s", [f"/p?sig={SIG}"])
+
+
+def _exception_argument(log: logging.Logger) -> None:
+    log.warning("%s", ConnectionError(f"/p?sig={SIG}"))
+
+
+def _exception_text_in_exc_info(log: logging.Logger) -> None:
+    try:
+        raise ValueError(f"bad /p?sig={SIG}")
+    except ValueError:
+        log.warning("A line with a traceback", exc_info=True)
+
+
+def _stack_info(log: logging.Logger) -> None:
+    log.warning("A line with a stack", stack_info=True, extra={})  # the stack is the caller's frames, with this module's names in it
+
+
+_CARRIERS = [
+    _mapping_as_the_only_argument,
+    _target_in_the_message,
+    _container_argument,
+    _exception_argument,
+    _exception_text_in_exc_info,
+    _stack_info,
+]
+
+
+def _assert_no_carrier_leaks(caplog) -> None:
+    """The planted value is in no form the record can take: the text, each formatted record (what a handler writes), the message, the cached
+    exception text, and the exception itself."""
+    assert caplog.records, "a record is rewritten or withheld, never dropped"
+    assert SIG not in caplog.text
+    for r in caplog.records:
+        assert SIG not in logging.Formatter("%(message)s").format(r)
+        assert SIG not in r.getMessage()
+        assert SIG not in str(r.exc_text) and r.exc_info is None and r.stack_info is None
+        assert SIG not in repr(r.args) and SIG not in str(r.msg)
+
+
+@pytest.mark.parametrize("name", urllib3_log.LOGGERS)
+@pytest.mark.parametrize("carrier", _CARRIERS, ids=[c.__name__.strip("_") for c in _CARRIERS])
+def test_no_part_of_a_record_on_any_logger_of_the_library_carries_the_target(caplog, name, carrier):
+    """The shapes the first build skipped (it rewrote the text arguments of a tuple and nothing else): each on every logger, and it fails when
+    the tuple branch is all there is."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    carrier(logging.getLogger(name))
+    _assert_no_carrier_leaks(caplog)
+    assert urllib3_log.UNRECOGNISED in caplog.text
+
+
+def test_the_exception_and_the_exception_argument_of_a_known_record_are_not_written(caplog):
+    """The record urllib3 really writes for a malformed header: the exception is an argument AND ``exc_info``, and its text is the header
+    lines the server sent after its first malformed one."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    err = _header_error()
+    try:
+        raise err
+    except HeaderParsingError:
+        logging.getLogger("urllib3.connection").warning("Failed to parse headers (url=%s): %s", f"http://h.example:80/p?sig={SIG}", err, exc_info=True)
+    _assert_no_carrier_leaks(caplog)
+    (rec,) = caplog.records
+    assert rec.getMessage() == f"Failed to parse headers (url=http://h.example:80/{urllib3_log.WITHHELD}): <HeaderParsingError>"
+
+
+def test_a_filter_that_raises_withholds_the_message_and_does_not_raise_into_the_library(caplog, monkeypatch):
+    def boom(arg):
+        raise RuntimeError(f"/p?sig={SIG}")
+
+    monkeypatch.setattr(urllib3_log, "withhold", boom)
+    logging.getLogger("urllib3.connectionpool").warning("Resetting dropped connection: %s", "h.example")
+    (rec,) = caplog.records
+    assert rec.getMessage() == urllib3_log.UNRECOGNISED and rec.args == ()
+    assert SIG not in caplog.text
+    monkeypatch.setattr(urllib3_log, "_target", boom)
+    logging.getLogger("urllib3.connectionpool").debug("Retry: %s", f"/p?sig={SIG}")
+    assert SIG not in caplog.text
+
+
+def test_scrub_alone_leaves_a_record_with_nothing_when_it_raises():
+    """``scrub`` on its own, once (the logger's filter and the factory both run it, so a record that survives a half-done first pass is
+    cleaned by the second and the cases above cannot tell): what is left after a failure is the fixed sentence and no argument or trace."""
+
+    class Hostile:
+        @property
+        def __class__(self):  # type: ignore[override]
+            raise RuntimeError(f"/p?sig={SIG}")
+
+    try:
+        raise ValueError(f"/p?sig={SIG}")
+    except ValueError:
+        exc_info = sys.exc_info()
+    record = _record(
+        "urllib3.connectionpool", "Connection pool is full, discarding connection: %s. Connection pool size: %s", (Hostile(), 3), exc_info=exc_info
+    )
+    record.exc_text = f"Traceback /p?sig={SIG}"
+    record.stack_info = f"Stack /p?sig={SIG}"
+    record.carried = f"/p?sig={SIG}"  # what extra= puts on a record
+    urllib3_log.scrub(record)
+    assert record.msg == urllib3_log.UNRECOGNISED and record.args == ()
+    assert record.exc_info is None and record.exc_text is None and record.stack_info is None
+    assert not hasattr(record, "carried") and record.name == "urllib3.connectionpool"
+
+
+def test_an_argument_whose_class_cannot_be_read_does_not_raise_into_the_library(caplog):
+    class Hostile:
+        @property
+        def __class__(self):  # type: ignore[override]
+            raise RuntimeError(f"/p?sig={SIG}")
+
+    # two arguments, because the standard library reads the class of a lone argument itself, before this module sees the record
+    logging.getLogger("urllib3.connectionpool").warning("Connection pool is full, discarding connection: %s. Connection pool size: %s", Hostile(), 3)
+    (rec,) = caplog.records
+    assert rec.getMessage() == urllib3_log.UNRECOGNISED and SIG not in caplog.text
+
+
+@pytest.mark.parametrize("name", urllib3_log.LOGGERS)
+def test_an_attribute_put_on_the_record_by_extra_is_dropped_with_the_rest(caplog, name):
+    """``extra=`` writes attributes onto the record, where a handler that serialises the record's dictionary (a JSON log) would write them."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    logging.getLogger(name).warning("An unknown line", extra={"target": f"/p?sig={SIG}", "nested": {"u": f"/p?sig={SIG}"}})
+    (rec,) = [r for r in caplog.records if r.name == name]
+    assert not hasattr(rec, "target") and not hasattr(rec, "nested")
+    assert SIG not in repr(vars(rec))
+
+
+def test_the_attributes_a_record_has_of_its_own_are_kept(caplog):
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    logging.getLogger("urllib3.connectionpool").warning("Resetting dropped connection: %s", "h.example")
+    (rec,) = caplog.records
+    assert (rec.name, rec.levelno, rec.levelname, rec.funcName, rec.lineno) == ("urllib3.connectionpool", logging.WARNING, "WARNING", rec.funcName, rec.lineno)
+    assert rec.pathname and rec.created and rec.msecs is not None and rec.threadName and rec.processName
+
+
+def test_the_retry_warning_the_library_really_logs_loses_its_extra(caplog):
+    """The library's own ``extra={'__urllib3-retry-warning': {'host': ...}}`` is in the table as a keyword, and the attribute is gone."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    port = _serve(None, _OK)
+    session = _session()
+    session.mount("http://", HTTPAdapter(max_retries=Retry(total=1, backoff_factor=0)))
+    assert session.get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10).status_code == 200
+    (rec,) = [r for r in caplog.records if r.getMessage().startswith("Retrying")]
+    assert not hasattr(rec, "__urllib3-retry-warning")
+
+
+# --------------------------------------------------------------------------- the scope: the parent, a child, a module the table does not list
+
+
+@pytest.mark.parametrize("name", ["urllib3", "urllib3.connectionpool.child", "urllib3.futuremodule", "urllib3.util.ssl_"])
+def test_a_logger_under_the_library_name_that_the_table_does_not_list_is_withheld_whole(caplog, name):
+    """A filter on a logger sees only the records that logger creates, so a child (or a module a later release adds) would have passed. The
+    log-record factory covers the whole name."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    logging.getLogger(name).warning("Something %s", f"GET /p?sig={SIG}")
+    assert SIG not in caplog.text and urllib3_log.UNRECOGNISED in caplog.text
+
+
+@pytest.mark.parametrize("name", ["urllib3x", "my.urllib3", "requests", "app.fetch", "urllib"])
+def test_a_logger_that_is_not_under_the_library_name_is_left_alone(caplog, name):
+    logging.getLogger(name).warning("Fetching %s", "https://h.example/p")
+    assert "Fetching https://h.example/p" in caplog.text and urllib3_log.UNRECOGNISED not in caplog.text
+
+
+def test_the_factory_wraps_the_previous_one_once_and_is_put_back_if_something_replaces_it():
+    current = logging.getLogRecordFactory()
+    assert isinstance(current, urllib3_log._Factory)
+    urllib3_log.install()
+    urllib3_log.install()
+    assert logging.getLogRecordFactory() is current, "installing again must not nest"
+
+    ran: list[str] = []
+
+    def tagging(*args, **kwargs):
+        ran.append(args[0])
+        return logging.LogRecord(*args, **kwargs)
+
+    try:
+        logging.setLogRecordFactory(tagging)  # another library replaces the factory
+        urllib3_log.install()
+        now = logging.getLogRecordFactory()
+        assert isinstance(now, urllib3_log._Factory) and now.inner is tagging
+        record = logging.getLogger("urllib3.connectionpool.child").makeRecord("urllib3.connectionpool.child", logging.WARNING, __file__, 1, "x %s", (f"/p?sig={SIG}",), None)
+        assert ran == ["urllib3.connectionpool.child"], "the factory it wraps still runs"
+        assert SIG not in record.getMessage()
+    finally:
+        logging.setLogRecordFactory(current)
+
+
+@pytest.fixture()
+def filter_off():
+    """The library's loggers as they would be without this module: no filter on them and the factory it wraps."""
+    saved = {n: list(logging.getLogger(n).filters) for n in urllib3_log.LOGGERS}
+    factory = logging.getLogRecordFactory()
+    for n, filters in saved.items():
+        logging.getLogger(n).filters[:] = [f for f in filters if not isinstance(f, urllib3_log._WithholdRequestPath)]
+    if isinstance(factory, urllib3_log._Factory):
+        logging.setLogRecordFactory(factory.inner)
+    yield
+    for n, filters in saved.items():
+        logging.getLogger(n).filters[:] = filters
+    logging.setLogRecordFactory(factory)
 
 
 # --------------------------------------------------------------------------- the real library, a real socket
@@ -287,7 +604,7 @@ def test_a_response_with_a_malformed_header_logs_without_the_path_and_the_fetch_
     """The reproduction of the read's finding B1, at the default level, on a SUCCESSFUL fetch."""
     caplog.set_level(logging.WARNING)
     port = _serve(_MALFORMED_HEADER)
-    resp = requests.get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10)
+    resp = _session().get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10)
     assert resp.status_code == 200 and resp.content == b"ok"
     assert "Failed to parse headers" in caplog.text, "urllib3 must have logged the line, or this case proves nothing"
     assert f"127.0.0.1:{port}" in caplog.text
@@ -296,10 +613,32 @@ def test_a_response_with_a_malformed_header_logs_without_the_path_and_the_fetch_
     assert urllib3_log.UNRECOGNISED not in caplog.text, "the library's real line is a shape of the table"
 
 
+def test_a_signed_location_after_a_malformed_line_reaches_no_part_of_a_record(caplog):
+    """The coordinator's reproduction of the leak in #1414's filter: the address is not the request's but the SERVER's, in the unparsed header
+    text the exception carries (as an argument and as ``exc_info``). The fetch "succeeds" as a 302 and the record must still be emitted."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    port = _serve(_SIGNED_LOCATION_AFTER_A_BAD_LINE)
+    resp = _session().get(f"http://127.0.0.1:{port}/install.sh", timeout=10, allow_redirects=False)
+    assert resp.status_code == 302
+    assert "Failed to parse headers" in caplog.text, "urllib3 must have logged the line, or this case proves nothing"
+    assert "<HeaderParsingError>" in caplog.text
+    _assert_no_carrier_leaks(caplog)
+    assert "objects.example" not in caplog.text and "X-Amz-Signature" not in caplog.text
+
+
+def test_the_signed_location_case_does_leak_when_the_filter_is_off(caplog, filter_off):
+    """The case above can fail: without the filter and the factory the same exchange puts the signature in the log text and in the traceback."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    port = _serve(_SIGNED_LOCATION_AFTER_A_BAD_LINE)
+    _session().get(f"http://127.0.0.1:{port}/install.sh", timeout=10, allow_redirects=False)
+    assert SIG in caplog.text
+    assert any(SIG in logging.Formatter().format(r) for r in caplog.records)
+
+
 def test_a_retry_logs_without_the_path(caplog):
     caplog.set_level(logging.DEBUG, logger="urllib3")
     port = _serve(None, _OK)
-    session = requests.Session()
+    session = _session()
     session.mount("http://", HTTPAdapter(max_retries=Retry(total=1, backoff_factor=0)))
     resp = session.get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10)
     assert resp.status_code == 200
@@ -314,7 +653,7 @@ def test_the_debug_request_line_and_the_redirect_hop_log_without_the_path(caplog
     caplog.set_level(logging.DEBUG, logger="urllib3")
     redirect = b"HTTP/1.1 302 Found\r\nLocation: /next.sh?sig=" + SIG.encode() + b"2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     port = _serve(redirect, _OK)
-    resp = requests.get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10)
+    resp = _session().get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10)
     assert resp.status_code == 200
     assert 'HTTP/1.1" 302' in caplog.text and 'HTTP/1.1" 200' in caplog.text, "urllib3 must have logged both request lines"
     assert SIG not in caplog.text
@@ -344,56 +683,194 @@ def test_the_installers_own_download_logs_nothing_of_the_signed_address_even_whe
 # --------------------------------------------------------------------------- the installed release is the one the table was read from
 
 
-def _installed_urllib3_calls() -> tuple[dict[tuple[str, str], tuple[str, ...]], set[str], list[str]]:
-    """Read the INSTALLED ``urllib3``'s source: every ``log.<level>("template", args...)`` call as ``(logger, template) -> argument sources``,
-    the modules that define a logger, and the calls this reading cannot classify (a first argument that is not a text constant)."""
-    import urllib3
+_LEVEL_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "fatal", "exception", "log"}
+_LOGGER_LIKE = re.compile(r"(^|\.)_*(log|logger|logging)$", re.IGNORECASE)
 
-    root = Path(urllib3.__file__).resolve().parent
-    calls: dict[tuple[str, str], tuple[str, ...]] = {}
+
+class _Reading(NamedTuple):
+    #: ``(module, template) -> [(argument sources, keyword sources), ...]``, EVERY call that has that template (two calls with one template
+    #: and different arguments are two entries, not one overwriting the other).
+    calls: dict[tuple[str, str], list[tuple[tuple[str, ...], tuple[str, ...]]]]
+    #: Every module that creates a logger, however it is bound.
+    loggers: set[str]
+    #: Everything the reading could not attribute: a call whose message is not a text constant, a call on something that looks like a logger
+    #: but was not bound from ``getLogger``, a logger created and never bound.
+    unclassified: list[str]
+
+
+def _is_get_logger(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and (
+        (isinstance(node.func, ast.Name) and node.func.id == "getLogger") or (isinstance(node.func, ast.Attribute) and node.func.attr == "getLogger")
+    )
+
+
+def _read_library(root: Path) -> _Reading:
+    """Read a ``urllib3`` source tree: every ``<logger>.<level>("template", args..., keywords...)`` call. A logger is bound by any assignment of
+    a ``getLogger`` call (a plain name, an annotated name, ``self.log``), however ``getLogger`` was imported, or is the ``getLogger`` call
+    itself. The first reading matched only ``name = x.getLogger(...)`` and a new module written another way was invisible to it."""
+    calls: dict[tuple[str, str], list[tuple[tuple[str, ...], tuple[str, ...]]]] = {}
     loggers: set[str] = set()
     unclassified: list[str] = []
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root.parent).with_suffix("")
         module = ".".join(rel.parts[:-1] if rel.name == "__init__" else rel.parts)
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        names = {
-            t.id
-            for n in ast.walk(tree)
-            if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and getattr(n.value.func, "attr", "") == "getLogger"
-            for t in n.targets
-            if isinstance(t, ast.Name)
-        }
-        if names:
-            loggers.add(module)
+        creators = [n for n in ast.walk(tree) if _is_get_logger(n)]
+        bound: set[str] = set()
         for n in ast.walk(tree):
-            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id in names):
+            if isinstance(n, ast.Assign) and _is_get_logger(n.value):
+                bound.update(ast.unparse(target) for target in n.targets)
+            elif isinstance(n, ast.AnnAssign) and n.value is not None and _is_get_logger(n.value):
+                bound.add(ast.unparse(n.target))
+        if creators:
+            loggers.add(module)
+        chained = 0
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _LEVEL_METHODS):
                 continue
-            if n.func.attr not in {"debug", "info", "warning", "error", "critical", "exception", "log"}:
+            base = ast.unparse(n.func.value)
+            direct = _is_get_logger(n.func.value)
+            if not (base in bound or direct):
+                if _LOGGER_LIKE.search(base):
+                    unclassified.append(f"{module}:{n.lineno} logs on {base!r}, which is not bound from getLogger")
                 continue
+            chained += direct
             first = n.args[0] if n.args else None
             if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                calls[(module, first.value)] = tuple(ast.unparse(a) for a in n.args[1:])
+                args = tuple(ast.unparse(a) for a in n.args[1:])
+                keywords = tuple(sorted(ast.unparse(k) for k in n.keywords))
+                calls.setdefault((module, first.value), []).append((args, keywords))
             else:
-                unclassified.append(f"{module}:{n.lineno}")
-    return calls, loggers, unclassified
+                unclassified.append(f"{module}:{n.lineno} logs a message that is not a text constant")
+        if creators and not bound and not chained:
+            unclassified.append(f"{module} creates a logger and never binds it")
+    return _Reading(calls, loggers, unclassified)
+
+
+def _installed_urllib3_calls() -> _Reading:
+    import urllib3
+
+    return _read_library(Path(urllib3.__file__).resolve().parent)
+
+
+def _against_the_table(reading: _Reading) -> tuple[list, list, list]:
+    """``(new, gone, changed)``: calls the table does not know, entries the library no longer has, and calls whose arguments or keywords differ
+    from the entry's, whichever of several calls with one template it is."""
+    table = urllib3_log.SHAPES
+    new = sorted(set(reading.calls) - set(table))
+    gone = sorted(set(table) - set(reading.calls))
+    # the arguments must be the entry's; the keywords must be among the entry's (a release may drop one: 2.7.0 has no ``extra=`` on the retry warning)
+    changed = sorted(
+        k for k in set(reading.calls) & set(table) if any(args != table[k].args or not set(kws) <= set(table[k].kwargs) for args, kws in reading.calls[k])
+    )
+    return new, gone, changed
 
 
 def test_every_log_call_of_the_installed_urllib3_is_a_shape_the_table_knows():
     """THE QUALIFICATION. A release that logs a new line, changes what a known line passes, or drops a line fails here, by name; read the
     release's change, extend the table, and only then lift the ``pyproject.toml`` ceiling (docs/maintenance/EXTERNAL_DEPENDENCIES.md)."""
-    calls, _loggers, unclassified = _installed_urllib3_calls()
-    assert unclassified == [], f"a log call whose message is not a text constant cannot be classified: {unclassified}"
-    table = {k: v.args for k, v in urllib3_log.SHAPES.items()}
-    new = sorted(set(calls) - set(table))
-    gone = sorted(set(table) - set(calls))
-    changed = sorted(k for k in set(calls) & set(table) if calls[k] != table[k])
-    assert (new, gone, changed) == ([], [], []), f"new in the library: {new}; in the table only: {gone}; arguments changed: {changed}"
+    reading = _installed_urllib3_calls()
+    assert reading.unclassified == [], f"a log call or a logger this reading cannot attribute: {reading.unclassified}"
+    assert sum(len(v) for v in reading.calls.values()) >= 16, "the reading found the library's calls (a reading that finds none proves nothing)"
+    new, gone, changed = _against_the_table(reading)
+    assert (new, gone, changed) == ([], [], []), f"new in the library: {new}; in the table only: {gone}; arguments or keywords changed: {changed}"
 
 
 def test_every_logger_the_installed_urllib3_defines_is_covered():
-    _calls, loggers, _unclassified = _installed_urllib3_calls()
-    assert loggers == set(urllib3_log.LOGGERS), f"missing {sorted(loggers - set(urllib3_log.LOGGERS))}, extra {sorted(set(urllib3_log.LOGGERS) - loggers)}"
+    reading = _installed_urllib3_calls()
+    assert len(reading.loggers) >= 9, "the reading found the library's loggers"
+    assert reading.loggers == set(urllib3_log.LOGGERS), f"missing {sorted(reading.loggers - set(urllib3_log.LOGGERS))}, extra {sorted(set(urllib3_log.LOGGERS) - reading.loggers)}"
+
+
+def _fake_library(tmp_path: Path, **modules: str) -> Path:
+    root = tmp_path / "urllib3"
+    for name, source in modules.items():
+        path = root / f"{name}.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from logging import getLogger\nlog = getLogger(__name__)\nlog.warning('Fetched %s', url)\n",
+        "import logging\nlog: logging.Logger = logging.getLogger(__name__)\nlog.warning('Fetched %s', url)\n",
+        "import logging\nclass C:\n    def __init__(self):\n        self.log = logging.getLogger(__name__)\n    def f(self, url):\n        self.log.warning('Fetched %s', url)\n",
+        "import logging\nlogging.getLogger(__name__).warning('Fetched %s', url)\n",
+        "import logging as lg\nlogger = lg.getLogger('x')\nlogger.warning('Fetched %s', url)\n",
+    ],
+    ids=["from-import", "annotated", "self attribute", "chained", "aliased module"],
+)
+def test_the_reading_finds_a_logger_however_it_is_bound(tmp_path, source):
+    """The first reading matched ``name = x.getLogger(...)`` and nothing else, so a new module that bound its logger another way was invisible
+    to both qualification tests and unfiltered at run time."""
+    reading = _read_library(_fake_library(tmp_path, **{"util/newmod": source}))
+    assert reading.loggers == {"urllib3.util.newmod"}
+    assert list(reading.calls) == [("urllib3.util.newmod", "Fetched %s")]
+    assert reading.unclassified == []
+
+
+@pytest.mark.parametrize(
+    ("source", "what"),
+    [
+        ("import logging\nlogging.warning('Fetched %s', url)\n", "not bound from getLogger"),
+        ("import logging\nlog = logging.getLogger(__name__)\nlog.warning(message, url)\n", "not a text constant"),
+        ("import logging\nlog = logging.getLogger(__name__)\nlog.warning(f'Fetched {url}')\n", "not a text constant"),
+        ("import logging\nconfigure(logging.getLogger(__name__))\n", "never binds it"),
+        ("import logging\nlog = logging.getLogger(__name__)\nother = make()\nother.logger.warning('x %s', url)\n", "not bound from getLogger"),
+    ],
+    ids=["root logger", "variable message", "f-string message", "unbound logger", "unbound attribute logger"],
+)
+def test_the_reading_names_what_it_cannot_attribute(tmp_path, source, what):
+    reading = _read_library(_fake_library(tmp_path, **{"util/newmod": source}))
+    assert any(what in line for line in reading.unclassified), reading.unclassified
+
+
+def test_two_calls_with_one_template_are_both_compared(tmp_path):
+    """The reading keyed calls by (module, template) in a dict, so a second call with the same template overwrote the first and an earlier call
+    with another argument was invisible."""
+    source = "import logging\nlog = logging.getLogger(__name__)\nlog.debug('Retry: %s', other)\nlog.debug('Retry: %s', url)\n"
+    reading = _read_library(_fake_library(tmp_path, **{"connectionpool": source}))
+    assert reading.calls[("urllib3.connectionpool", "Retry: %s")] == [(("other",), ()), (("url",), ())]
+    new, gone, changed = _against_the_table(reading)
+    assert ("urllib3.connectionpool", "Retry: %s") in changed
+
+
+def test_a_keyword_the_library_adds_to_a_known_call_is_a_change(tmp_path):
+    """``extra=`` puts attributes on the record, ``exc_info=`` an exception: neither is an argument, and neither was compared."""
+    source = "import logging\nlog = logging.getLogger(__name__)\nlog.debug('Retry: %s', url, extra={'target': url})\n"
+    reading = _read_library(_fake_library(tmp_path, **{"connectionpool": source}))
+    assert reading.calls[("urllib3.connectionpool", "Retry: %s")] == [(("url",), ("extra={'target': url}",))]
+    assert ("urllib3.connectionpool", "Retry: %s") in _against_the_table(reading)[2]
+
+
+def test_each_entry_of_the_table_names_the_keywords_the_library_passes():
+    """Today's keywords are the ``exc_info=True`` of the header-parsing warning (the exception is dropped) and the retry warning's ``extra``
+    (an attribute with the host, which is dropped too); the qualification compares them like the arguments."""
+    with_keywords = {k: v.kwargs for k, v in urllib3_log.SHAPES.items() if v.kwargs}
+    assert with_keywords == {
+        ("urllib3.connection", "Failed to parse headers (url=%s): %s"): ("exc_info=True",),
+        ("urllib3.connectionpool", "Retrying (%r) after connection broken by '%r': %s"): ("extra={'__urllib3-retry-warning': {'host': self.host}}",),
+    }
+
+
+#: Which positions of which call carry a request target, written out a second time on purpose: the qualification above proves the table
+#: names the library's own arguments, but WHICH of them are addresses is a judgement the source cannot make, and a test that read its
+#: expectation from the table would pass when a position was dropped from it.
+_EXPECTED_TARGETS = {
+    ("urllib3.connection", "Failed to parse headers (url=%s): %s"): (0,),
+    ("urllib3.connectionpool", '%s://%s:%s "%s %s %s" %s %s'): (4,),
+    ("urllib3.connectionpool", "Retrying (%r) after connection broken by '%r': %s"): (2,),
+    ("urllib3.connectionpool", "Redirecting %s -> %s"): (0, 1),
+    ("urllib3.connectionpool", "Retry: %s"): (0,),
+    ("urllib3.poolmanager", "Redirecting %s -> %s"): (0, 1),
+    ("urllib3.util.retry", "Incremented Retry for (url='%s'): %r"): (0,),
+}
+
+
+def test_the_positions_that_carry_a_target_are_the_ones_written_out_here():
+    assert {k: v.target for k, v in urllib3_log.SHAPES.items() if v.target} == _EXPECTED_TARGETS
 
 
 def test_each_entry_of_the_table_has_as_many_arguments_as_its_template_has_conversions_and_its_targets_are_among_them():
@@ -412,15 +889,3 @@ def test_the_installed_urllib3_is_inside_the_range_pyproject_qualifies():
     assert R._ver_ge(urllib3.__version__, m.group(1)) and not R._ver_ge(urllib3.__version__, m.group(2)), (
         f"urllib3 {urllib3.__version__} is outside {m.group(1)} to below {m.group(2)}, the releases this table was read from"
     )
-
-
-def test_the_objects_the_table_passes_unchanged_do_not_quote_the_target():
-    """The positions that are not targets include a ``Retry`` (after an increment that was given the target) and an error. Measured here,
-    not assumed: neither repr nor text of the objects urllib3 builds from a failed request quotes the address."""
-    from urllib3.exceptions import ProtocolError, ReadTimeoutError
-
-    target = f"/p?sig={SIG}"
-    retry = Retry(total=3).increment(method="GET", url=target, error=ProtocolError("Connection aborted."))
-    assert SIG not in repr(retry) and SIG not in str(retry)
-    assert SIG not in repr(ReadTimeoutError(None, target, "Read timed out.")) and SIG not in str(ReadTimeoutError(None, target, "Read timed out."))
-    assert SIG not in repr(ProtocolError("Connection aborted.")) and "sig" not in repr(Retry(total=3))
