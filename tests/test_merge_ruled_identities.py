@@ -56,6 +56,7 @@ from src.database.models import (  # noqa: E402
     WatchMatch,
 )
 
+
 @pytest.fixture(autouse=True)
 def _side_files_are_alpha2():
     """The corpora here are side files made with ``create_all``: no marker, so alpha-2. The ORM binds in the form the PROCESS's

@@ -232,7 +232,6 @@ def law_coverage_report(
     against the 225-source harvest, while one guard deliberately drives the real file.
     """
     from src.api.law import _verdict_of  # the ONE classification, reused (never a 2nd guess)
-
     from src.database.country_form import order_key
 
     docs = sorted(session.query(LawDocument).all(), key=lambda d: order_key(d.jurisdiction, d.id))  # see order_key

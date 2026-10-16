@@ -20,6 +20,7 @@ from src.database.session import get_db
 
 from ._base import router
 
+
 @router.get("/country-form")
 def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -> dict:
     """The form of this store (``alpha2`` or ``alpha3``) and the last migration's journal, if any.
@@ -37,7 +38,13 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
 
     command = "open-omniscience migrate-countries"  # the command that moves a store, as it is typed
 
-    from src.database.country_form import JOURNAL_KEY, KEY, MigrationUnfinished, StoreFormUnreadable, store_form
+    from src.database.country_form import (
+        JOURNAL_KEY,
+        KEY,
+        MigrationUnfinished,
+        StoreFormUnreadable,
+        store_form,
+    )
 
     def _kv(key: str) -> dict | None:
         row = db.execute(text('SELECT value FROM "app_state" WHERE key = :k'), {"k": key}).first()

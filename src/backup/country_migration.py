@@ -47,6 +47,7 @@ it caps nothing that is counted.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -164,9 +165,9 @@ def read_plan(con) -> Plan:
             missing.append(f"{table}.{column}")
             continue
         if table not in tables:
-            tables[table] = con.execute(f"SELECT COUNT(*) FROM {_q(table)}").fetchone()[0]
+            tables[table] = con.execute(f"SELECT COUNT(*) FROM {_q(table)}").fetchone()[0]  # noqa: S608  # nosec B608 - `_q` quotes a name from the module's own column registry, never input
         plan = ColumnPlan(table, column)
-        for value, n in con.execute(f"SELECT {_q(column)}, COUNT(*) FROM {_q(table)} GROUP BY {_q(column)}").fetchall():
+        for value, n in con.execute(f"SELECT {_q(column)}, COUNT(*) FROM {_q(table)} GROUP BY {_q(column)}").fetchall():  # noqa: S608  # nosec B608 - as above
             if value is None:
                 plan.nulls = n
                 continue
@@ -305,10 +306,8 @@ def _free_bytes(directory: Path) -> int:
 def store_bytes(db_path: Path) -> int:
     total = 0
     for suffix in ("", "-wal"):
-        try:
+        with contextlib.suppress(OSError):
             total += Path(str(db_path) + suffix).stat().st_size
-        except OSError:
-            pass
     return total
 
 
@@ -719,12 +718,10 @@ def migrate(
             if con.in_transaction:
                 con.execute("ROLLBACK")
             raise
-        try:
+        with contextlib.suppress(Exception):  # the next process reads the file
             from src.config.kv_store import kv_invalidate
 
             kv_invalidate()
-        except Exception:  # noqa: BLE001 - the next process reads the file
-            pass
         try:
             con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except Exception as exc:  # noqa: BLE001 - a checkpoint that cannot run is not a failed migration
@@ -736,10 +733,8 @@ def migrate(
         return report
     finally:
         report.seconds = time.perf_counter() - t_start
-        try:
+        with contextlib.suppress(Exception):  # closing a connection that already failed
             con.close()
-        except Exception:  # noqa: BLE001, S110 - closing a connection that already failed
-            pass
 
 
 # --------------------------------------------------------------------------- #

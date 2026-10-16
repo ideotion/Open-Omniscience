@@ -32,7 +32,13 @@ from src.backup.country_codes import (  # noqa: E402
 )
 from src.backup.merge import merge_corpus  # noqa: E402
 from src.database import country_form as cf  # noqa: E402
-from src.database.models import Base, LawDocument, LawRevision, LawRevisionSummary, Place  # noqa: E402
+from src.database.models import (  # noqa: E402
+    Base,
+    LawDocument,
+    LawRevision,
+    LawRevisionSummary,
+    Place,
+)
 
 _META = {"artifact_kind": "oo-backup-3", "origin_fingerprint": "machine-B", "app_version": "0.5.0", "alembic_rev": "head", "manifest": None}
 _T0 = datetime(2026, 9, 1, tzinfo=UTC).replace(tzinfo=None)

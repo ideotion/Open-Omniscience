@@ -38,6 +38,7 @@ from src.database.models import (  # noqa: E402
     StatSubscription,
 )
 
+
 @pytest.fixture(autouse=True)
 def _spellings_as_given():
     """These corpora are filled with the exact spellings the test names (`fr` beside `FRA`): written in the alpha-2 form,
