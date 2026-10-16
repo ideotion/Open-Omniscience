@@ -197,6 +197,49 @@ def test_an_interrupt_as_the_release_takes_the_lock_does_not_leave_the_write_cou
         assert kv_store._hold_by == threading.get_ident()
 
 
+class _AfterFirstExit:
+    """``kv_store._hold`` that runs ``hook`` once, on the thread that left it, right after the lock is released at the end of the FIRST
+    ``with`` block: the instant between a write's hold check and whatever the write does next."""
+
+    def __init__(self, real, hook):
+        self._real, self._hook, self._fired = real, hook, False
+
+    def __enter__(self):
+        return self._real.__enter__()
+
+    def __exit__(self, *exc):
+        out = self._real.__exit__(*exc)
+        if not self._fired:
+            self._fired = True
+            self._hook()
+        return out
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def test_a_hold_that_starts_right_after_a_write_passed_the_check_waits_for_that_write(store, monkeypatch):
+    """The count is taken in the SAME locked section as the hold check. A write that checked the hold and left the lock before counting
+    itself leaves a gap in which a restore sets its hold, finds nothing in flight and starts switching the file, while the write goes
+    on into the old one. The hold is started in that gap: it must find the write counted (zero budget, so it refuses at once).
+    MUTATION TARGET: the ``_inflight.add(token)`` moved out of ``with _hold`` (after it, or into the ``with _lock`` block)."""
+    seen: list[str] = []
+
+    def hold_in_the_gap() -> None:
+        try:
+            with kv_store.hold_writes(0):
+                seen.append("held")
+        except kv_store.KvWriteBusy:
+            seen.append("busy")
+
+    with monkeypatch.context() as patched:  # not monkeypatch.undo(): that would also revert the store fixture's DATABASE_URL
+        patched.setattr(kv_store, "_hold", _AfterFirstExit(kv_store._hold, hold_in_the_gap))
+        with kv_store._write_slot():
+            pass
+    assert seen == ["busy"], "a hold started after the write passed its check did not see the write"
+    assert not kv_store._inflight and kv_store._hold_by is None
+
+
 def test_a_delete_is_held_too(store):
     kv_store.kv_set_json("settings.keep", {"v": 1})
     with kv_store.hold_writes(1):

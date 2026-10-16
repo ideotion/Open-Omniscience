@@ -10,6 +10,26 @@ the SQL the module can send (statement strings, the arguments of ``execute`` / `
 hand a parameter to them, built by f-string, concatenation, ``%`` or ``.format``) and FAILS on a write that names neither ``main.`` nor
 ``temp.``, and on a statement it cannot read; the planted cases show each shape is caught, and the behavioural case shows the failure the
 scan prevents. Docstrings and comments are not statements and are not read.
+
+WHAT IT READS BEYOND ``execute``: PRAGMAs (a bare ``wal_checkpoint`` / ``optimize`` and a bare ``journal_mode`` being set reach every
+attached database; a schema other than ``main`` / ``temp`` passes only as a read-only pragma), ``VACUUM <schema>``, a raw ``ATTACH`` (it
+creates a file when the path is missing; ``connect.attach`` is the one place that does it), and the constructs that reach an execute
+method or a database without a statement it can read: reflection (``getattr`` with a name that is not a literal, ``eval``, ``exec``,
+``vars``, ``globals``, ``methodcaller``, ``__getattribute__`` ...), an execute method called on its class, ``backup`` / ``deserialize`` /
+``blobopen``, and an ORM session import. Each is a problem for the allowlist to excuse with a reason; each has a planted case that fails
+when its clause is removed. The functions in OTHER modules that receive the merge connection are pinned by name with a reason each.
+
+THE SCAN'S STATED BOUNDARY (measured by planting each shape; a shape here is NOT caught, and is kept so it is counted, not forgotten):
+ 1. An ORM session handed in as a parameter, written through ``session.add`` / ``add_all`` / ``delete`` / ``merge`` / ``bulk_*`` /
+    ``query(...).update()``: these method names are too common to flag. Only importing a session (above) is caught, and merge.py has none.
+ 2. A statement run by an object that is not a ``sqlite3`` / SQLAlchemy connection under another method name (``db.run_sql(...)``): the
+    scan recognises the execute family by name only.
+ 3. A SQL function with a side effect (``writefile``, ``load_extension``): Python's sqlite3 ships neither writefile nor loadable
+    extensions, so a ``SELECT`` is read as a read.
+ 4. A cross-module callee that receives the connection under a name other than ``con`` / an assignment from ``db_connect`` / ``connect``,
+    or through an attribute (``self.con``): the pin below does not see it. The writes INSIDE the pinned callees are read by a person, once.
+ 5. The lexical shape of a statement, not its meaning: ``WITH ... INSERT`` is flagged even when qualified, and a quoted ``"main"."t"``
+    is flagged although it is main (both are over-reports, never a miss).
 """
 
 from __future__ import annotations
@@ -43,6 +63,23 @@ _READ_HEADS = {"SELECT", "PRAGMA", "ATTACH", "DETACH", "BEGIN", "COMMIT", "END",
 _ANY_WRITE = re.compile(r"\b(INSERT|REPLACE|UPDATE|DELETE|DROP|ALTER|CREATE)\b", re.I)
 _TEXT_WRAPPERS = {"text", "_text"}
 _EXEC_METHODS = {"execute", "executemany", "executescript", "exec_driver_sql"}
+#: Pragmas that reach EVERY attached schema when none is named (``wal_checkpoint`` checkpoints the backup's log, ``optimize`` analyses it),
+#: and the ones whose setting form rewrites a file's header or journal; a foreign-schema pragma passes only as one of the READ-ONLY pragmas.
+_BARE_REACHES_ALL = {"optimize", "wal_checkpoint"}
+_SET_REACHES_ALL = {"journal_mode"}  # `PRAGMA journal_mode = X` with no schema applies to every attached database
+_READ_ONLY_PRAGMAS = {
+    "table_info", "table_xinfo", "table_list", "index_list", "index_info", "index_xinfo", "foreign_key_list", "foreign_key_check",
+    "quick_check", "integrity_check", "database_list", "page_count", "freelist_count",
+}
+_READ_UNLESS_SET = {"user_version", "application_id", "schema_version", "page_size", "auto_vacuum", "journal_mode"}
+_PRAGMA = re.compile(r"\s*PRAGMA\s+(?:(\w+|\{\})\s*\.\s*)?(\w+|\{\})\s*([=(])?", re.I)
+#: Names that can reach an execute method (or any callable) without the scan being able to read which: a construct using one is a problem.
+_REFLECTION_NAMES = {"eval", "exec", "vars", "globals", "locals", "__import__", "methodcaller", "attrgetter"}
+_REFLECTION_ATTRS = {"__getattribute__", "__dict__", "methodcaller", "attrgetter"}
+#: ``sqlite3.Connection`` methods that write a named database without a statement the scan reads.
+_FILE_METHODS = {"backup", "deserialize", "blobopen"}
+#: An ORM session writes through table names that name no schema (``session.add``): merge.py has none, so importing one is the tripwire.
+_ORM_NAMES = {"Session", "sessionmaker", "scoped_session", "AsyncSession"}
 
 #: Statements the scan cannot read to a text, or that name no schema on purpose, each with the reason. Keyed ``function: expression``.
 _ALLOWED: dict[str, str] = {
@@ -74,6 +111,28 @@ def _looks_like_write(sql: str) -> bool:
     return bool(_WRITE.match(sql)) or (sql[:4].upper() == "WITH" and bool(_ANY_WRITE.search(sql)))
 
 
+def _pragma_problems(stmt: str) -> list[str]:
+    """What is wrong with one PRAGMA: it reaches the attached backup (bare ``wal_checkpoint`` / ``optimize``, a bare ``journal_mode`` being
+    SET, ``writable_schema`` being set) or it names a schema that is not ``main`` / ``temp`` and is not one of the read-only pragmas."""
+    m = _PRAGMA.match(stmt)
+    if m is None:
+        return [f"cannot classify: {stmt[:60]!r}"]
+    schema, name, sets = (m.group(1) or "").lower(), m.group(2).lower(), m.group(3) is not None
+    if name == "{}":
+        return ["PRAGMA with a name the scan cannot read"]
+    if not schema and name in _BARE_REACHES_ALL:
+        return [f"PRAGMA {name} names no schema"]
+    if not schema and sets and name in _SET_REACHES_ALL:
+        return [f"PRAGMA {name} is set with no schema (it applies to every attached database)"]
+    if name == "writable_schema" and sets:
+        return ["PRAGMA writable_schema lets a statement edit any schema's catalogue"]
+    if schema and schema not in ("main", "temp"):
+        if name in _READ_ONLY_PRAGMAS or (name in _READ_UNLESS_SET and not sets):
+            return []
+        return [f"PRAGMA {schema}.{name} writes to a schema that is not main"]
+    return []
+
+
 def _classify(sql: str) -> list[str]:
     """What is wrong with one statement text (``{}`` stands for a piece the source builds at run time): empty when it is a read, a
     temp-table statement, or a write that names ``main``. The schema prefix is compared case-insensitively and must be the BARE word:
@@ -97,9 +156,16 @@ def _classify(sql: str) -> list[str]:
             if not re.match(r"\s*ANALYZE\s+(?:main|temp)\.", stmt, re.I):
                 problems.append("ANALYZE names no schema")
             continue
-        if word == "PRAGMA":  # `PRAGMA optimize` (like ANALYZE) reaches every attached schema unless it names one
-            if re.match(r"\s*PRAGMA\s+optimize\b", stmt, re.I):
-                problems.append("PRAGMA optimize names no schema")
+        if word == "PRAGMA":
+            problems.extend(_pragma_problems(stmt))
+            continue
+        if word == "VACUUM":  # a bare VACUUM and `VACUUM INTO` rewrite main (or write a NEW file); `VACUUM inc` rewrites the backup
+            vm = re.match(r"\s*VACUUM\s+(?!INTO\b)(\w+|\{\})", stmt, re.I)
+            if vm and vm.group(1).lower() not in ("main", "temp"):
+                problems.append(f"VACUUM {vm.group(1)} rewrites a schema that is not main")
+            continue
+        if word == "ATTACH":  # an ATTACH of a path that does not exist CREATES a database file: it goes through connect.attach
+            problems.append("ATTACH (use connect.attach, which the callers pin)")
             continue
         if word in _READ_HEADS:
             continue
@@ -295,7 +361,36 @@ class _Scan:
             if isinstance(node, ast.Name) and node.id not in self.passthrough and node.id not in self.aliases:
                 continue
             self._report(node, f"{ 'an execute method' if kind == '<exec>' else kind} used as a value")
+        # 5. the ways to reach a write that name neither a statement nor an execute method the scan reads (each is a problem, and the
+        #    allowlist can say why one is fine): reflection, a dynamic attribute name, an execute method called on its class, the sqlite3
+        #    methods that write a named database, and an ORM session
+        self._tripwires()
         return sorted(set(self.problems))
+
+    def _tripwires(self) -> None:
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.Name) and node.id in _REFLECTION_NAMES and isinstance(node.ctx, ast.Load):
+                self._report(node, f"{node.id} can reach an execute method the scan cannot see")
+            elif isinstance(node, ast.Attribute) and node.attr in _REFLECTION_ATTRS:
+                self._report(node, f"{node.attr} can reach an execute method the scan cannot see")
+            elif isinstance(node, ast.Call):
+                f = node.func
+                if isinstance(f, ast.Name) and f.id == "getattr":
+                    named = node.args[1] if len(node.args) >= 2 else None
+                    if not (isinstance(named, ast.Constant) and isinstance(named.value, str)):
+                        self._report(node, "getattr with a name the scan cannot read")
+                elif isinstance(f, ast.Attribute):
+                    if f.attr in _FILE_METHODS:
+                        self._report(node, f"{f.attr} writes a database file without a statement the scan reads")
+                    if f.attr in _EXEC_METHODS:  # `sqlite3.Connection.execute(con, sql)`: the statement is not the first argument
+                        owner = f.value.id if isinstance(f.value, ast.Name) else f.value.attr if isinstance(f.value, ast.Attribute) else ""
+                        if owner[:1].isupper():
+                            self._report(node, f"{f.attr} called on the class {owner}")
+            elif isinstance(node, (ast.ImportFrom, ast.Import)):
+                modules = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names]
+                names = {a.name for a in node.names} if isinstance(node, ast.ImportFrom) else set()
+                if any(m == "sqlalchemy.orm" or m.startswith("sqlalchemy.orm.") for m in modules) or names & _ORM_NAMES or ("orm" in names and modules == ["sqlalchemy"]):
+                    self._report(node, "an ORM session writes through table names that name no schema")
 
     def _callable_kind(self, node: ast.expr) -> str | None:
         """``"<exec>"`` for an execute method taken as a value (``con.execute``, ``getattr(con, "execute")``), the helper's name for a
@@ -501,6 +596,61 @@ def test_the_scan_sees_the_real_module_s_writes():
         'def f(con):\n    con.execute("PRAGMA optimize")',
         # a method fetched by name is still the execute method
         'def f(con):\n    getattr(con, "execute")("DELETE FROM t")',
+        # PRAGMAs that reach the attached backup: bare, naming the backup, or being SET with no schema
+        'def f(con):\n    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")',
+        'def f(con):\n    con.execute("PRAGMA inc.wal_checkpoint(TRUNCATE)")',
+        'def f(con):\n    con.execute("PRAGMA inc.optimize")',
+        'def f(con):\n    con.execute("PRAGMA inc.user_version = 3")',
+        'def f(con):\n    con.execute("PRAGMA inc.user_version(3)")',
+        'def f(con):\n    con.execute("PRAGMA inc.incremental_vacuum")',
+        'def f(con):\n    con.execute("PRAGMA inc.journal_mode = DELETE")',
+        'def f(con):\n    con.execute("PRAGMA journal_mode = WAL")',
+        'def f(con):\n    con.execute("PRAGMA journal_mode=WAL")',
+        'def f(con):\n    con.execute("PRAGMA writable_schema = 1")',
+        'def f(con, v):\n    con.execute(f"PRAGMA {v}")',
+        'def f(con, v):\n    con.execute(f"PRAGMA inc.{v}")',
+        # VACUUM of the backup (with or without INTO), built or literal; an ATTACH, which creates a file when the path is missing
+        'def f(con):\n    con.execute("VACUUM inc")',
+        'def f(con):\n    con.execute("VACUUM inc INTO \'x.db\'")',
+        'def f(con, v):\n    con.execute(f"VACUUM {v}")',
+        'def f(con):\n    con.execute("ATTACH DATABASE \'x.db\' AS bk")',
+        'def f(con, v):\n    con.execute(f"ATTACH DATABASE ? AS {v}", ("x.db",))',
+        # reflection and dynamic attribute names reach an execute method with a BUILT statement the literal check cannot see
+        'def f(con, n, v):\n    getattr(con, n)(f"{v} FROM t")',
+        'def f(con, v):\n    getattr(con, "exe" + "cute")(f"{v} FROM t")',
+        'def f(con, n, v):\n    ex = getattr(con, n)\n    ex(f"{v} FROM t")',
+        'def f(con, v):\n    getattr(con)(f"{v} FROM t")',
+        'import operator\ndef f(con, v):\n    operator.methodcaller("execute", f"{v} FROM t")(con)',
+        'from operator import methodcaller\ndef f(con, v):\n    methodcaller("execute", f"{v} FROM t")(con)',
+        'from operator import attrgetter\ndef f(con, v):\n    attrgetter("execute")(con)(f"{v} FROM t")',
+        'import operator\ndef f(con, v):\n    operator.attrgetter("execute")(con)(f"{v} FROM t")',
+        'def f(con, v):\n    con.__getattribute__("execute")(f"{v} FROM t")',
+        'def f(con, v):\n    vars(type(con))["execute"](con, f"{v} FROM t")',
+        'def f(con, v):\n    eval("con.execute")(f"{v} FROM t")',
+        'def f(con, v):\n    exec("con.execute(v)")',
+        'def f(con, v):\n    globals()["run"](con, f"{v} FROM t")',
+        'def f(con, v):\n    locals()["ex"](f"{v} FROM t")',
+        'def f(con, v):\n    __import__("sqlite3")',
+        'def f(con):\n    con.__dict__["execute"]("SELECT 1")',
+        # an execute method called on its class takes the connection first, so the statement is the SECOND argument
+        'import sqlite3\ndef f(con, v):\n    sqlite3.Connection.execute(con, f"{v} FROM t")',
+        'def f(con, v):\n    Connection.executemany(con, f"{v} FROM t", [])',
+        # the sqlite3 methods that write a named database without a statement
+        'def f(con, d):\n    con.backup(d, name="inc")',
+        'def f(con, b):\n    con.deserialize(b, name="inc")',
+        'def f(con):\n    con.blobopen("t", "c", 1, name="inc")',
+        # an ORM session names no schema in what it writes
+        'from sqlalchemy.orm import Session',
+        'from sqlalchemy.orm import sessionmaker',
+        'from sqlalchemy.orm.session import Session as S',
+        'import sqlalchemy.orm',
+        'from sqlalchemy import orm',
+        'from sqlalchemy import Session',
+        'from sqlalchemy import sessionmaker',
+        'from sqlalchemy import scoped_session',
+        'from sqlalchemy.ext.asyncio import AsyncSession',
+        # a PRAGMA the pragma reader cannot parse (a quoted schema) is a problem, not a skip
+        'def f(con):\n    con.execute(\'PRAGMA "inc".user_version = 3\')',
     ],
 )
 def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
@@ -549,10 +699,110 @@ def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
         'def f(con):\n    sql = "SELECT 1"\n    def g():\n        con.execute(sql)\n    g()',
         'SQL = "SELECT 1"\ndef f(con):\n    con.execute(SQL)',
         'def run(con, sql, flag):\n    if flag:\n        sql = "SELECT 1"\n    con.execute(sql)\ndef f(con):\n    run(con, "SELECT 2", False)',
+        # the PRAGMAs the merge reads from the backup, the connection-level ones, and the ones that name main or temp
+        'def f(con, t):\n    con.execute(f\'PRAGMA inc.table_info("{t}")\')',
+        'def f(con):\n    con.execute("PRAGMA inc.index_list(t)")',
+        'def f(con):\n    con.execute("PRAGMA inc.index_info(i)")',
+        'def f(con):\n    con.execute("PRAGMA inc.user_version")',
+        'def f(con):\n    con.execute("PRAGMA quick_check")',
+        'def f(con):\n    con.execute("PRAGMA foreign_key_check")',
+        'def f(con):\n    con.execute("PRAGMA foreign_keys=OFF")',
+        'def f(con):\n    con.execute("PRAGMA temp_store=2")',
+        'def f(con):\n    con.execute("PRAGMA cache_size=-1024")',
+        'def f(con):\n    con.execute("PRAGMA main.journal_mode = WAL")',
+        'def f(con):\n    con.execute("PRAGMA main.wal_checkpoint(PASSIVE)")',
+        'def f(con):\n    con.execute("PRAGMA temp.table_info(t)")',
+        'def f(con):\n    con.execute("PRAGMA journal_mode")',
+        # VACUUM of main, bare or INTO a new file
+        'def f(con):\n    con.execute("VACUUM")',
+        'def f(con):\n    con.execute("VACUUM main")',
+        'def f(con):\n    con.execute("VACUUM INTO \'x.db\'")',
+        # a getattr with a literal name, and the names the tripwires leave alone
+        'def f(exc):\n    return getattr(exc, "winerror", None)',
+        'def f(con):\n    return con.iterdump()',
+        'from sqlalchemy import select, text',
+        'import sqlite3\ndef f(path):\n    return sqlite3.connect(path)',
+        'def f(sql):\n    sql.locals = 1\n    return sql',
     ],
 )
 def test_the_scan_passes_the_qualified_and_the_read_shapes(snippet):
     assert _scan(snippet) == [], snippet
+
+
+#: The functions OUTSIDE ``merge.py`` that receive the merge connection, each with why it is not a way to write unqualified. The scan reads
+#: ``merge.py`` only, so a callee in another module is read by a person once, here, and a NEW one fails the test below until it is.
+_CROSS_MODULE_CALLEES: dict[str, str] = {
+    "src.backup.country_codes.normalise_staged_country_codes": "writes only `{schema}.\"table\"` UPDATEs (schema='inc', the disposable staged copy, on purpose; its docstring says never main) and a SAVEPOINT",
+    "src.backup.country_codes.store_form_of": "a read of the country-form marker of one named schema (`read_form_in`: a SELECT on `{schema}.app_state`)",
+    "src.database.connect._is_sqlcipher_conn": "reads the connection's type",
+    "src.database.connect.attach": "the one ATTACH, with a bound path and a fixed alias",
+    "src.database.fts.index_articles": "writes through `_index_rows`, which names `main.` (test_the_fts_bulk_indexer_the_merge_calls_names_main)",
+    "src.database.fts.rebuild_index": "names `main.` too (the same test)",
+}
+
+
+def _callees_with_the_connection(source: str) -> set[str]:
+    """Dotted names of the imported functions the module calls with one of its connections as an argument: ``con``, and every name
+    assigned from ``db_connect(...)`` / ``connect(...)``. A connection under another name, or reached through an attribute, is not seen
+    (the boundary in the module docstring)."""
+    tree = ast.parse(source)
+    imported: dict[str, str] = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom) and n.module:
+            for a in n.names:
+                imported[a.asname or a.name] = f"{n.module}.{a.name}"
+        elif isinstance(n, ast.Import):
+            for a in n.names:
+                imported[a.asname or a.name.split(".")[0]] = a.name if a.asname else a.name.split(".")[0]
+    conns = {"con"}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call):
+            f = n.value.func
+            if (f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)) in {"db_connect", "connect"}:
+                conns |= {t.id for t in n.targets if isinstance(t, ast.Name)}
+    out: set[str] = set()
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        f = call.func
+        parts: list[str] = []
+        root: ast.expr = f
+        while isinstance(root, ast.Attribute):  # `a.b.g` is read from its root name outward
+            parts.insert(0, root.attr)
+            root = root.value
+        if not (isinstance(root, ast.Name) and root.id in imported):
+            continue
+        dotted = ".".join([imported[root.id], *parts])
+        if any(isinstance(a, ast.Name) and a.id in conns for a in [*call.args, *(k.value for k in call.keywords)]):
+            out.add(dotted)
+    return out
+
+
+def test_the_functions_in_other_modules_that_get_the_merge_connection_are_the_reviewed_ones():
+    seen = _callees_with_the_connection(_MERGE.read_text(encoding="utf-8"))
+    assert seen == set(_CROSS_MODULE_CALLEES), (
+        "a function in another module now receives the merge connection while a backup is attached: read what it writes (every write must "
+        "name `main.`, `temp.` or the staged alias on purpose) and add it to _CROSS_MODULE_CALLEES with the reason; or it no longer does, "
+        f"so drop it. New: {sorted(seen - set(_CROSS_MODULE_CALLEES))}; gone: {sorted(set(_CROSS_MODULE_CALLEES) - seen)}"
+    )
+    assert all(why.strip() for why in _CROSS_MODULE_CALLEES.values())
+
+
+@pytest.mark.parametrize(
+    ("snippet", "expected"),
+    [
+        ("from a.b import g\ndef f(con):\n    g(con)", {"a.b.g"}),
+        ("from a.b import g\ndef f(con):\n    g(1, conn=con)", {"a.b.g"}),
+        ("import a.b\ndef f(con):\n    a.b.g(con)", {"a.b.g"}),
+        ("import a.b as ab\ndef f(con):\n    ab.g(con)", {"a.b.g"}),
+        ("import a\ndef f(con):\n    a.g(con)", {"a.g"}),
+        ("from a import g\nfrom x import db_connect\ndef f(p):\n    c = db_connect(p)\n    g(c)", {"a.g"}),
+        ("from a import g as h\ndef f(con):\n    h(con)", {"a.g"}),
+        ("import sqlite3\nfrom a import g\ndef f(p):\n    c = sqlite3.connect(p)\n    g(c)", {"a.g"}),
+        ("from a import g\ndef f(con):\n    g(1)", set()),
+        ("def f(con):\n    local(con)", set()),
+    ],
+)
+def test_the_cross_module_reader_sees_a_connection_handed_to_an_imported_function(snippet, expected):
+    assert _callees_with_the_connection(snippet) == expected
 
 
 def test_the_fts_bulk_indexer_the_merge_calls_names_main():
