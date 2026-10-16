@@ -40,6 +40,7 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from starlette.requests import HTTPConnection
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
@@ -734,8 +735,9 @@ async def lifespan(app: FastAPI):
     logger.info("Open Omniscience API shut down cleanly")
 
 
-async def _note_dispatch(request: Request) -> None:
+async def _note_dispatch(request: HTTPConnection) -> None:
     """Application-level dependency: stamp the moment routing handed this request to its endpoint (``latency.before_dispatch_ms``).
+    ``HTTPConnection`` and not ``Request``, so a WebSocket route added later gets the same dependency without a TypeError.
     ``async`` on purpose: a sync dependency would take a thread of the pool the endpoint is about to wait for, and change what it
     measures."""
     try:

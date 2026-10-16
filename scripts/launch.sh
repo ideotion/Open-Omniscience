@@ -269,10 +269,16 @@ if [ "${OO_EPHEMERAL:-}" != "1" ] && command -v awk >/dev/null 2>&1 && command -
         _p="${_f##*/.launcher_stderr.}"; _p="${_p%.pid}"
         case "$_p" in ''|*[!0-9]*) continue ;; esac
         [ "$_p" = "$$" ] && continue
+        # a launcher killed outright can leave its server and filter running, and the filter reads this file for the server's pid:
+        # a file whose recorded server still runs is in use and stays
+        _sp="$(head -n 1 "$_f" 2>/dev/null || true)"
+        case "$_sp" in ''|*[!0-9]*) _sp="" ;; esac
         if [ -d /proc/self ]; then
-            [ -d "/proc/$_p" ] || rm -f "$_f" 2>/dev/null || true
+            if [ -d "/proc/$_p" ] || { [ -n "$_sp" ] && [ -d "/proc/$_sp" ]; }; then continue; fi
+            rm -f "$_f" 2>/dev/null || true
         else
-            kill -0 "$_p" 2>/dev/null || rm -f "$_f" 2>/dev/null || true
+            if kill -0 "$_p" 2>/dev/null || { [ -n "$_sp" ] && kill -0 "$_sp" 2>/dev/null; }; then continue; fi
+            rm -f "$_f" 2>/dev/null || true
         fi
     done
     find "$_dd/diagnostics" -maxdepth 1 -name '.launcher_stderr.*.pid' -mtime +1 -exec rm -f {} + 2>/dev/null || true

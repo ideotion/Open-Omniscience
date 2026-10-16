@@ -16,6 +16,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import pytest
+from fastapi import (
+    WebSocket,  # module level: with deferred annotations FastAPI resolves the handler's annotation from here
+)
 
 from src.monitoring import latency
 
@@ -87,3 +90,29 @@ def test_a_real_request_through_the_app_is_stamped_by_both_layers():
     assert isinstance(got, float) and got >= 0.0, (
         "the middleware's scope and the endpoint's must be the same dict, or the dependency's stamp never reaches the record"
     )
+
+
+def test_a_split_longer_than_the_request_is_unknown_not_a_guess():
+    # ``ms`` is wall time and the stamps are monotonic: after a clock step they can disagree.
+    scope = {latency._RECEIVED_KEY: 1.0, latency._DISPATCHED_KEY: 9.0}
+    latency.note_start(5, "GET /api/w", scope=scope, method="GET")
+    latency.record(5, "GET /api/w", 200, 100.0)
+    assert _row("GET /api/w")["slowest"]["before_dispatch_ms"] is None
+
+
+def test_the_dependency_does_not_break_a_websocket_route():
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.api.main import _note_dispatch
+
+    toy = FastAPI(dependencies=[Depends(_note_dispatch)])
+
+    @toy.websocket("/ws")
+    async def ws(socket: WebSocket):
+        await socket.accept()
+        await socket.send_text("ok")
+        await socket.close()
+
+    with TestClient(toy).websocket_connect("/ws") as conn:
+        assert conn.receive_text() == "ok"

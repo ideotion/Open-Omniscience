@@ -174,8 +174,9 @@ def note_dispatched(scope: Any) -> None:
 
 
 def before_dispatch_ms(scope: Any) -> float | None:
-    """Milliseconds from the middleware seeing the request to routing handing it to its endpoint: the part of its time spent on the
-    event loop BEFORE any handler code (routing, middleware hand-off, loop delay). ``None`` when either stamp is absent (a request
+    """Milliseconds from the middleware seeing the request to routing handing it to its endpoint: the part of its time before any handler
+    code (routing, middleware hand-off, loop delay, AND the framework reading the request body, which it does before it resolves
+    dependencies: a slow upload counts here). ``None`` when either stamp is absent (a request
     that never reached an endpoint, or one the dependency did not run for); never ``0`` for "unknown"."""
     try:
         got, sent = scope[_RECEIVED_KEY], scope[_DISPATCHED_KEY]
@@ -235,6 +236,8 @@ def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
         with _LOCK:
             entry = _INFLIGHT.pop(req_id, None)
             split = before_dispatch_ms(entry.get("scope")) if entry else None
+            if split is not None and split > duration_ms + 1.0:
+                split = None  # two clocks (the duration is wall time, the stamps are monotonic): a step makes them disagree; unknown, not a guess
             r = _ROUTES.get(route)
             if r is None:
                 if len(_ROUTES) >= _ROUTES_CAP:  # bound the keyspace (route templates are few)

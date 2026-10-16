@@ -369,8 +369,9 @@ def test_a_pid_file_of_a_dead_launcher_is_swept_at_the_next_launch_and_a_live_on
     alive = subprocess.Popen(["sleep", "30"])
     try:
         dead_file, live_file, odd_file = diag / f".launcher_stderr.{gone.pid}.pid", diag / f".launcher_stderr.{alive.pid}.pid", diag / ".launcher_stderr.notapid.pid"
-        for f in (dead_file, live_file, odd_file):
-            f.write_text("1\n", encoding="utf-8")
+        dead_file.write_text(f"{gone.pid}\n", encoding="utf-8")  # its server is gone too
+        live_file.write_text(f"{gone.pid}\n", encoding="utf-8")
+        odd_file.write_text("1\n", encoding="utf-8")
         _run_launcher(root, env)
         assert not dead_file.exists(), "the launcher that wrote this one is gone: its file is swept now, not after a day"
         assert live_file.exists(), "a launcher that is still running keeps its file"
@@ -378,3 +379,26 @@ def test_a_pid_file_of_a_dead_launcher_is_swept_at_the_next_launch_and_a_live_on
     finally:
         alive.kill()
         alive.wait()
+
+
+@posix_only
+def test_a_pid_file_whose_recorded_server_still_runs_is_not_swept(tmp_path):
+    # A launcher killed outright can leave its server and stderr filter running; the filter reads the pid file for the server's pid.
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\nexit 0\n")
+    diag = root / "data" / "diagnostics"
+    diag.mkdir(parents=True)
+    gone = subprocess.Popen(["true"])
+    gone.wait()
+    gone2 = subprocess.Popen(["true"])
+    gone2.wait()
+    server = subprocess.Popen(["sleep", "30"])
+    try:
+        in_use, abandoned = diag / f".launcher_stderr.{gone.pid}.pid", diag / f".launcher_stderr.{gone2.pid}.pid"
+        in_use.write_text(f"{server.pid}\n", encoding="utf-8")
+        abandoned.write_text(f"{gone2.pid}\n", encoding="utf-8")
+        _run_launcher(root, env)
+        assert in_use.exists(), "the launcher is gone but the server it recorded runs: the filter still needs this file"
+        assert not abandoned.exists(), "neither the launcher nor its server runs: swept"
+    finally:
+        server.kill()
+        server.wait()
