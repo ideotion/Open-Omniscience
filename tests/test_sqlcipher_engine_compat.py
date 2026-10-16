@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.database.connect import connect
 
@@ -59,11 +60,15 @@ def test_the_installed_engine_writes_into_a_store_the_other_engine_made_and_read
         con.close()
 
 
-
 def test_the_ci_floor_leg_tells_the_tests_it_is_the_floor():
     """The floor-leg guards in ``test_poisoned_connection.py`` and ``test_database_verify_pages.py`` skip unless the job exports
     ``OO_EXPECT_SQLCIPHER_ENGINE``; this fails if the workflow stops exporting it, or the floor entry stops being named ``floor``."""
     ci = (Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     job = ci.split("  sqlcipher-engines:", 1)[1].split("\n  # ", 1)[0]
     assert re.search(r"-\s*\{engine: floor, spec: \"sqlcipher3==", job), "the floor matrix entry is not named `floor`"
-    assert "OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}" in job, "the job no longer exports the engine it runs"
+    steps = [st for st in yaml.safe_load(ci)["jobs"]["sqlcipher-engines"]["steps"] if "python -m pytest" in str(st.get("run", ""))]
+    assert steps, "the job has no step that runs pytest"
+    for step in steps:  # the `env:` MAPPING of every pytest step: a job-level export, a comment or the `run:` text would not count
+        assert (step.get("env") or {}).get("OO_EXPECT_SQLCIPHER_ENGINE") == "${{ matrix.engine }}", (
+            f"a step that runs pytest no longer exports the engine it runs in its env: {step.get('name')!r}"
+        )

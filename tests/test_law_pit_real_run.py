@@ -323,7 +323,8 @@ def test_a_hop_to_the_publisher_is_followed_and_the_base_guard_still_runs(monkey
         "https://evil.test\\@www.legislation.gov.uk/x",            # urlparse reads www.legislation.gov.uk, urllib3 evil.test
         "http://www.legislation.gov.uk/x",                        # a downgrade on the right host
         "https://www.legislation.gov.uk:8443/x",                  # a port on the right host
-        "https://www.legislation.gov.uk@evil.test/x",             # userinfo
+        "https://www.legislation.gov.uk@evil.test/x",             # userinfo: the publisher's name as the user
+        "https://evil.test@www.legislation.gov.uk/x",             # userinfo on the right host (a lenient parser reads evil.test)
     ],
 )
 def test_a_redirect_that_leaves_the_publisher_is_refused_before_it_is_requested(monkeypatch, location):
@@ -334,6 +335,20 @@ def test_a_redirect_that_leaves_the_publisher_is_refused_before_it_is_requested(
     with pytest.raises(ingest.BlockedTarget):
         fetcher._guarded_redirect_get(first)
     assert asked == [first]  # the hop's own request was never made
+
+
+def test_the_session_is_never_allowed_to_follow_a_redirect_itself(monkeypatch):
+    import requests
+
+    import src.ingest as ingest
+
+    seen: list[dict] = []
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: seen.append(kw) or _Resp(200, url))
+    monkeypatch.setattr(ingest.EthicalFetcher, "_guard_target", lambda self, host: None)
+    fetcher = R.make_fetcher()
+    fetcher.session.get("https://www.legislation.gov.uk/a", allow_redirects=True)
+    fetcher.session.get("https://www.legislation.gov.uk/b")
+    assert [kw["allow_redirects"] for kw in seen] == [False, False]
 
 
 def test_the_page_and_robots_requests_are_judged_too(monkeypatch):

@@ -31,6 +31,10 @@ import urllib.parse
 from src.catalog.normalize import registrable_domain
 
 _API = "https://www.wikidata.org/w/api.php"
+#: The hosts a session that fetches ``_API`` may talk to (``guarded_session(allowed_hosts=...)``): a redirect hop anywhere else is refused
+#: before it is sent. Exactly the endpoint's host; a test pins that the two are equal. The QID label resolver fetches
+#: ``wikidata_rings``'s URLs through the getter built on this list, so a test also pins that the two modules name the same host.
+API_HOSTS: tuple[str, ...] = ("www.wikidata.org",)
 
 # P31 (instance of) QID -> our controlled source_type. Subclasses are NOT expanded
 # here (the API gives the direct P31 values); the common direct types are listed.

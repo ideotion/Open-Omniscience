@@ -51,7 +51,7 @@ from pathlib import Path
 
 import yaml
 
-from src.analytics.wikidata_rings import LANGS
+from src.analytics.wikidata_rings import API_HOSTS, LANGS
 from src.entities.wikidata_items import BATCH_MAX, batches, entities_url, is_qid, parse_entities
 
 #: The descriptive User-Agent Wikimedia's policy asks for: what it is, where it lives, who to tell.
@@ -358,7 +358,7 @@ def guarded_getter(url: str) -> GetResult:
     """One GET on the app's one fetch path (kill switch, the operator's transport, the honest UA)."""
     from src.safety.fetcher import guarded_session
 
-    resp = guarded_session(user_agent=USER_AGENT, isolation_token=url).get(url, timeout=30)
+    resp = guarded_session(user_agent=USER_AGENT, isolation_token=url, allowed_hosts=API_HOSTS).get(url, timeout=30)
     body = None
     if resp.status_code == 200:
         try:
