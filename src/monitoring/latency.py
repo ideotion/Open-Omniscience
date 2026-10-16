@@ -20,6 +20,7 @@ capped events ring). The watchdog and the recorder never raise.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import threading
 import time
@@ -152,6 +153,45 @@ def note_start(req_id: int, route: str, *, scope: Any = None, method: str | None
             _INFLIGHT[req_id] = {"route": route, "started": time.monotonic(), "scope": scope, "method": method}
 
 
+#: Scope keys the request's two clocks ride on. The middleware stamps ``_RECEIVED_KEY`` when it first sees the request and an
+#: application-level dependency stamps ``_DISPATCHED_KEY`` once routing has chosen the endpoint and before it is handed to its
+#: thread: the scope is the one dict both layers (and the in-flight table) already share, so no new table is needed.
+_RECEIVED_KEY = "oo_received_monotonic"
+_DISPATCHED_KEY = "oo_dispatched_monotonic"
+_SPLIT = threading.local()  # the split of the request ``record`` is finishing, read by the stall note on the same thread
+
+
+def note_received(scope: Any) -> None:
+    """Stamp the moment the middleware first saw this request. Best-effort."""
+    with contextlib.suppress(Exception):  # instrumentation must never affect the request
+        scope[_RECEIVED_KEY] = time.monotonic()
+
+
+def note_dispatched(scope: Any) -> None:
+    """Stamp the moment routing handed this request to its endpoint. Best-effort."""
+    with contextlib.suppress(Exception):  # instrumentation must never affect the request
+        scope[_DISPATCHED_KEY] = time.monotonic()
+
+
+def before_dispatch_ms(scope: Any) -> float | None:
+    """Milliseconds from the middleware seeing the request to routing handing it to its endpoint: the part of its time spent on the
+    event loop BEFORE any handler code (routing, middleware hand-off, loop delay). ``None`` when either stamp is absent (a request
+    that never reached an endpoint, or one the dependency did not run for); never ``0`` for "unknown"."""
+    try:
+        got, sent = scope[_RECEIVED_KEY], scope[_DISPATCHED_KEY]
+        if not isinstance(got, float) or not isinstance(sent, float) or sent < got:
+            return None
+        return round((sent - got) * 1000.0, 1)
+    except Exception:  # noqa: BLE001 - an unreadable scope is an unknown, not an error
+        return None
+
+
+def current_split() -> float | None:
+    """``before_dispatch_ms`` of the request whose :func:`record` is running on this thread, else ``None``. For the stall note, which
+    is called from inside ``record`` and has no scope of its own."""
+    return getattr(_SPLIT, "before_dispatch_ms", None)
+
+
 def _inflight_route(v: dict[str, Any]) -> str:
     template = route_template(v.get("scope"))
     return f"{v['method']} {template}" if template and v.get("method") else str(v["route"])
@@ -164,7 +204,7 @@ def _kind_of(status: int) -> str:
     return "e" if status >= 500 else "c"
 
 
-def _call_facts(status: int, duration_ms: float) -> dict[str, Any]:
+def _call_facts(status: int, duration_ms: float, before_dispatch: float | None = None) -> dict[str, Any]:
     """What is worth keeping about ONE call: how long, how it ended, when, and how far from the
     latest unlock to have finished by then it began. Taken only for a route's first call and its
     slowest so far -- rare events -- so the wall-clock read costs nothing on the common path."""
@@ -174,12 +214,15 @@ def _call_facts(status: int, duration_ms: float) -> dict[str, Any]:
         return {
             "ms": ms,
             "status": code,
+            # Milliseconds spent before routing handed the request to its endpoint; None (not 0) where it was not stamped.
+            # What is left of ``ms`` after it is the endpoint's thread wait, its run and the response, not split further.
+            "before_dispatch_ms": before_dispatch,
             "ended_at": datetime.fromtimestamp(ended, tz=UTC).isoformat(timespec="seconds"),
             # SIGNED, and None (never 0) when this process has finished no unlock; see unlock_marker.
             "started_after_unlock_s": _unlock.started_after_unlock_s(ended - ms / 1000.0),
         }
     except Exception:  # noqa: BLE001 - a clock that fails costs the stamp, never the sample
-        return {"ms": ms, "status": code, "ended_at": None, "started_after_unlock_s": None}
+        return {"ms": ms, "status": code, "before_dispatch_ms": before_dispatch, "ended_at": None, "started_after_unlock_s": None}
 
 
 def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
@@ -190,7 +233,8 @@ def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
         # two deques, and a failure between their two appends would leave them uneven for good.
         kind = _kind_of(status)
         with _LOCK:
-            _INFLIGHT.pop(req_id, None)
+            entry = _INFLIGHT.pop(req_id, None)
+            split = before_dispatch_ms(entry.get("scope")) if entry else None
             r = _ROUTES.get(route)
             if r is None:
                 if len(_ROUTES) >= _ROUTES_CAP:  # bound the keyspace (route templates are few)
@@ -207,7 +251,7 @@ def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
                 }
                 _ROUTES[route] = r
             if r["count"] == 0 or duration_ms > r["max_ms"]:
-                call = _call_facts(status, duration_ms)
+                call = _call_facts(status, duration_ms, split)
                 if r["count"] == 0:
                     r["first"] = call
                 # strictly slower only, so a tie keeps the EARLIER call as the slowest
@@ -228,9 +272,12 @@ def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
     # is resolved once at import (see below), not per request: this runs on EVERY
     # response, and it returns immediately for all but the rare slow one.
     try:
+        _SPLIT.before_dispatch_ms = split
         _note_stall(route, status, duration_ms)
     except Exception:  # noqa: BLE001 - instrumentation must never break the response
         return
+    finally:
+        _SPLIT.before_dispatch_ms = None
 
 
 def recent_block_events(limit: int = 5) -> list[dict[str, Any]]:
