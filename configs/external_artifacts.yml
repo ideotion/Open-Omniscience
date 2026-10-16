@@ -537,7 +537,7 @@ artifacts:
       target (path and query: the signature of a signed storage download) and, in a malformed-header record, what the SERVER sent,
       in its log lines: at WARNING on a malformed header line and on a retry, at DEBUG on the request line and each redirect hop.
       The filter is built on a TABLE of the library's log calls (logger, message template, the source text of each argument and
-      keyword, which positions carry a target) read from 2.7.0 and 2.8.0, which are identical in all four. A line the table does not
+      keyword, which positions carry a target) read from 2.7.0 and 2.8.0, which agree on every template, argument and target position (2.8.0 adds one keyword the table lists for it: an `extra=` on the retry warning). A line the table does not
       know is withheld whole at run time, and in a line it knows every argument that is not a number or text is reduced to its class
       name and the exception, the stack and the extra attributes are dropped, so a release that logs something new cannot leak
       through it; but the table is what lets a KNOWN line keep its host and status, so a release that changes what it logs is read

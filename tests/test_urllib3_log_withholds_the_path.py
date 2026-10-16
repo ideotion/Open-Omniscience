@@ -28,6 +28,7 @@ Five groups of checks:
 from __future__ import annotations
 
 import ast
+import contextlib
 import logging
 import re
 import socket
@@ -302,7 +303,7 @@ def test_an_unhashable_message_with_an_exception_still_keeps_the_class_name_and_
     assert record.getMessage() == f"{urllib3_log.UNRECOGNISED} (ValueError)" and record.exc_info is None
 
 
-def test_an_exception_class_whose_name_is_not_text_gives_no_name():
+def test_an_exception_class_whose_metaclass_answers_its_name_with_other_text_is_named_by_the_type():
     class Meta(type):
         @property
         def __name__(cls):  # type: ignore[override]
@@ -312,7 +313,9 @@ def test_an_exception_class_whose_name_is_not_text_gives_no_name():
         pass
 
     record = _run(_record("urllib3.connection", "Unknown %s", ("x",), exc_info=(Odd, Odd(), None)))
-    assert record.getMessage() == urllib3_log.UNRECOGNISED and SIG not in logging.Formatter("%(message)s").format(record)
+    # the name is the one the type holds; what the metaclass answers is never read
+    assert record.getMessage() == f"{urllib3_log.UNRECOGNISED} (Odd)" and SIG not in logging.Formatter("%(message)s").format(record)
+    assert urllib3_log._carried(Odd()) == "<Odd>"
 
 
 def test_a_stack_the_record_carries_is_dropped_with_the_rest_of_a_withheld_line():
@@ -473,14 +476,16 @@ def test_a_filter_that_raises_withholds_the_message_and_does_not_raise_into_the_
     assert SIG not in caplog.text
 
 
-def test_scrub_alone_leaves_a_record_with_nothing_when_it_raises():
+def test_scrub_alone_leaves_a_record_with_nothing_when_it_raises(monkeypatch):
     """``scrub`` on its own, once (the logger's filter and the factory both run it, so a record that survives a half-done first pass is
-    cleaned by the second and the cases above cannot tell): what is left after a failure is the fixed sentence and no argument or trace."""
+    cleaned by the second and the cases above cannot tell): what is left after a failure is the fixed sentence and no argument or trace,
+    and an attribute another library added keeps a harmless value so a format string that names it still works."""
 
-    class Hostile:
-        @property
-        def __class__(self):  # type: ignore[override]
-            raise RuntimeError(f"/p?sig={SIG}")
+    def boom(arg):
+        raise RuntimeError(f"/p?sig={SIG}")
+
+    monkeypatch.setattr(urllib3_log, "_carried", boom)
+    Hostile = object
 
     try:
         raise ValueError(f"/p?sig={SIG}")
@@ -495,10 +500,10 @@ def test_scrub_alone_leaves_a_record_with_nothing_when_it_raises():
     urllib3_log.scrub(record)
     assert record.msg == urllib3_log.UNRECOGNISED and record.args == ()
     assert record.exc_info is None and record.exc_text is None and record.stack_info is None
-    assert not hasattr(record, "carried") and record.name == "urllib3.connectionpool"
+    assert record.carried == urllib3_log.WITHHELD and record.name == "urllib3.connectionpool"
 
 
-def test_an_argument_whose_class_cannot_be_read_does_not_raise_into_the_library(caplog):
+def test_an_argument_whose_class_property_raises_is_named_by_its_type_and_does_not_raise_into_the_library(caplog):
     class Hostile:
         @property
         def __class__(self):  # type: ignore[override]
@@ -507,17 +512,19 @@ def test_an_argument_whose_class_cannot_be_read_does_not_raise_into_the_library(
     # two arguments, because the standard library reads the class of a lone argument itself, before this module sees the record
     logging.getLogger("urllib3.connectionpool").warning("Connection pool is full, discarding connection: %s. Connection pool size: %s", Hostile(), 3)
     (rec,) = caplog.records
-    assert rec.getMessage() == urllib3_log.UNRECOGNISED and SIG not in caplog.text
+    assert rec.getMessage() == "Connection pool is full, discarding connection: <Hostile>. Connection pool size: 3" and SIG not in caplog.text
 
 
 @pytest.mark.parametrize("name", urllib3_log.LOGGERS)
-def test_an_attribute_put_on_the_record_by_extra_is_dropped_with_the_rest(caplog, name):
-    """``extra=`` writes attributes onto the record, where a handler that serialises the record's dictionary (a JSON log) would write them."""
+def test_an_attribute_put_on_the_record_by_extra_loses_its_value_with_the_rest(caplog, name):
+    """``extra=`` writes attributes onto the record, where a handler that serialises the record's dictionary (a JSON log) would write them. The
+    attribute stays with a harmless value, so a format string that names it does not make the handler drop the record."""
     caplog.set_level(logging.DEBUG, logger="urllib3")
     logging.getLogger(name).warning("An unknown line", extra={"target": f"/p?sig={SIG}", "nested": {"u": f"/p?sig={SIG}"}})
     (rec,) = [r for r in caplog.records if r.name == name]
-    assert not hasattr(rec, "target") and not hasattr(rec, "nested")
+    assert rec.target == urllib3_log.WITHHELD and rec.nested == urllib3_log.WITHHELD
     assert SIG not in repr(vars(rec))
+    assert logging.Formatter("%(target)s %(message)s").format(rec).startswith(urllib3_log.WITHHELD)
 
 
 def test_the_attributes_a_record_has_of_its_own_are_kept(caplog):
@@ -528,15 +535,191 @@ def test_the_attributes_a_record_has_of_its_own_are_kept(caplog):
     assert rec.pathname and rec.created and rec.msecs is not None and rec.threadName and rec.processName
 
 
-def test_the_retry_warning_the_library_really_logs_loses_its_extra(caplog):
-    """The library's own ``extra={'__urllib3-retry-warning': {'host': ...}}`` is in the table as a keyword, and the attribute is gone."""
+def test_the_retry_warning_the_library_really_logs_loses_the_value_of_its_extra(caplog):
+    """The library's own ``extra={'__urllib3-retry-warning': {'host': ...}}`` is in the table as a keyword, and the attribute holds no host."""
     caplog.set_level(logging.DEBUG, logger="urllib3")
     port = _serve(None, _OK)
     session = _session()
     session.mount("http://", HTTPAdapter(max_retries=Retry(total=1, backoff_factor=0)))
     assert session.get(f"http://127.0.0.1:{port}/install.sh?sig={SIG}", timeout=10).status_code == 200
     (rec,) = [r for r in caplog.records if r.getMessage().startswith("Retrying")]
-    assert not hasattr(rec, "__urllib3-retry-warning")
+    # 2.8.0 passes the extra and 2.7.0 does not (the table names the keyword for the release that does): either way no host is left on the record
+    assert vars(rec).get("__urllib3-retry-warning", urllib3_log.WITHHELD) == urllib3_log.WITHHELD
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["localhost;x-amz-signature=deadbeefcafe0123", "h.example,sig", "h.example=a" + SIG, "h.example?sig=" + SIG, "h.example sig", "h.example/p"],
+)
+def test_a_host_in_a_position_that_is_not_a_target_is_kept_only_as_a_plain_name(host):
+    """urllib3 fills ``self.host`` from a server's ``Location`` and accepts a ``;`` or ``=`` in it, so the debug line that names the host
+    could carry a signature the way a path does."""
+    record = _run(_record("urllib3.connectionpool", "Starting new HTTP connection (%d): %s:%s", (1, host, "80"), level=logging.DEBUG))
+    assert record.getMessage() == f"Starting new HTTP connection (1): {urllib3_log.WITHHELD}:80"
+
+
+@pytest.mark.parametrize("host", ["h.example", "127.0.0.1", "::1", "[::1]", "xn--bcher-kva.example", "localhost"])
+def test_a_plain_host_in_a_position_that_is_not_a_target_is_kept(host):
+    record = _run(_record("urllib3.connectionpool", "Starting new HTTP connection (%d): %s:%s", (1, host, "80"), level=logging.DEBUG))
+    assert record.getMessage() == f"Starting new HTTP connection (1): {host}:80"
+
+
+def test_a_host_with_a_signature_in_it_reaches_no_part_of_a_record_over_a_real_socket(caplog):
+    """The server's ``Location`` names a host with a ``;`` and a signature; the debug line of the connection the client then starts to make
+    named it whole (found by the independent read, on 2.7.0 and 2.8.0)."""
+    caplog.set_level(logging.DEBUG)
+    loc = f"http://localhost;x-amz-signature={SIG}/obj".encode()
+    port = _serve(b"HTTP/1.1 302 Found\r\nLocation: " + loc + b"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    with contextlib.suppress(requests.RequestException):  # the host does not resolve; the record of the attempt is what is looked at
+        _session().get(f"http://127.0.0.1:{port}/a", timeout=5)
+    named = [r for r in caplog.records if r.name.startswith("urllib3") and "Starting new HTTP connection" in r.getMessage()]
+    assert len(named) >= 2, "the redirect's connection was not attempted: the case proves nothing"
+    assert SIG not in caplog.text and all(SIG not in repr(vars(r)) for r in caplog.records)
+
+
+class _Lying(str):
+    """A ``str`` that says something else when it is asked for its text."""
+
+    def __str__(self) -> str:
+        return f"Retry: /p?sig={SIG}"
+
+    __repr__ = __str__
+
+
+class _LyingInt(int):
+    def __str__(self) -> str:
+        return f"/p?sig={SIG}"
+
+    __repr__ = __str__
+
+
+def test_a_subclass_of_str_or_int_is_not_read_as_text_or_a_number():
+    msg = _run(_record("urllib3.connectionpool", _Lying("Retry: %s"), ("/x",)))
+    assert msg.getMessage() == urllib3_log.UNRECOGNISED
+    arg = _run(_record("urllib3.connectionpool", "Starting new HTTP connection (%d): %s:%s", (_LyingInt(1), _Lying("h.example"), "80")))
+    assert SIG not in arg.getMessage() and arg.getMessage() == "Starting new HTTP connection (1): <_Lying>:80"  # the number keeps %d working
+    assert SIG not in str(urllib3_log._target(_Lying(f"https://h.example/p?sig={SIG}")))
+
+
+class _LyingFloat(float):
+    def __str__(self) -> str:
+        return f"/p?sig={SIG}"
+
+    __repr__ = __str__
+
+
+class _LooksWithheld(str):
+    """A ``str`` that answers every question the check for a withheld message asks the way a withheld message would, and says something else
+    when it is turned into text."""
+
+    def startswith(self, *a, **k) -> bool:  # type: ignore[override]
+        return True
+
+    def endswith(self, *a, **k) -> bool:  # type: ignore[override]
+        return True
+
+    def __getitem__(self, item):  # type: ignore[override]
+        return "Retry"
+
+    def __len__(self) -> int:
+        return 1
+
+    def __str__(self) -> str:
+        return f"Retry: /p?sig={SIG}"
+
+    __repr__ = __str__
+
+
+def test_the_numbers_a_record_carries_reach_the_handler_as_plain_numbers_of_their_own_type():
+    """A number is kept as it was (a ``bool`` stays a ``bool``: ``True`` is not ``1``), and an instance of a subclass of ``int`` or ``float``
+    becomes the plain number it holds, so ``%s`` and ``%r`` cannot call the subclass's own text."""
+    assert urllib3_log._carried(True) is True and urllib3_log._carried(False) is False
+    assert urllib3_log._carried(None) is None
+    assert type(urllib3_log._carried(7)) is int and type(urllib3_log._carried(1.5)) is float
+    cut = urllib3_log._carried(_LyingInt(3))
+    assert type(cut) is int and cut == 3 and str(cut) == "3"
+    cut = urllib3_log._carried(_LyingFloat(2.5))
+    assert type(cut) is float and cut == 2.5 and str(cut) == "2.5"
+    record = _run(_record("urllib3.connectionpool", "Starting new HTTP connection (%d): %s:%s", (_LyingInt(1), "h.example", "80")))
+    assert type(record.args[0]) is int
+    assert SIG not in logging.Formatter("%(message)s").format(_run(_record("urllib3.connectionpool", "Retry: %s", (_LyingFloat(1.5),))))
+
+
+def test_a_text_that_answers_like_a_withheld_message_is_replaced_not_kept():
+    """The second pass over a record keeps a message the first pass wrote; a ``str`` subclass must not be able to look like one."""
+    record = _run(_record("urllib3.connectionpool", _LooksWithheld("Retry: %s"), ("/x",)))
+    assert record.msg == urllib3_log.UNRECOGNISED and type(record.msg) is str
+    assert SIG not in logging.Formatter("%(message)s").format(record)
+
+
+def test_withhold_does_not_read_a_subclass_of_str_as_text():
+    lying = _Lying(f"https://h.example/p?sig={SIG}")
+    assert urllib3_log.withhold(lying) is lying, "returned as it was, never taken apart with its own methods"
+
+
+def test_a_class_whose_name_is_not_a_plain_identifier_is_named_object():
+    """``cls.__name__`` can be set to any text, and an exception of such a class is what an error message names."""
+    Evil = type("Retry", (ValueError,), {})
+    Evil.__name__ = f"Retry /p?sig={SIG}"
+    assert urllib3_log._class_name(Evil) == "object"
+    record = _run(_record("urllib3.connectionpool", "unknown %s", ("x",), exc_info=(Evil, Evil("e"), None)))
+    assert SIG not in repr(vars(record)) and record.msg == f"{urllib3_log.UNRECOGNISED} (object)"
+
+    class Name(str):
+        def __str__(self) -> str:
+            return f"/p?sig={SIG}"
+
+        __repr__ = __str__
+
+    Odd = type("Odd", (ValueError,), {})
+    Odd.__name__ = Name("Odd")
+    assert urllib3_log._class_name(Odd) == "object", "a str subclass is not read, even when it is an identifier"
+
+
+def test_the_exception_a_record_carries_is_read_once():
+    """``record.exc_info`` is read into a local once; three reads would let a value that changes between them (a property, another thread)
+    decide the check and the use differently."""
+
+    class Flipping(logging.LogRecord):
+        @property
+        def exc_info(self):  # type: ignore[override]
+            self.__dict__["_reads"] = self.__dict__.get("_reads", 0) + 1
+            return (ValueError, ValueError("e"), None) if self.__dict__["_reads"] == 1 else None
+
+        @exc_info.setter
+        def exc_info(self, value) -> None:
+            self.__dict__["_set"] = value
+
+    record = Flipping("urllib3.connectionpool", logging.WARNING, __file__, 1, "unknown %s", ("x",), None)
+    urllib3_log.scrub(record)
+    assert record.msg == f"{urllib3_log.UNRECOGNISED} (ValueError)"
+
+
+def test_a_message_a_formatter_cached_before_the_scrub_holds_no_text_of_the_record():
+    record = _record("urllib3.connectionpool", "Retry: %s", (f"/p?sig={SIG}",))
+    record.message = record.getMessage()
+    record.asctime = f"cached {SIG}"
+    urllib3_log.scrub(record)
+    assert SIG not in repr(vars(record))
+    assert logging.Formatter("%(message)s").format(record) == f"Retry: {urllib3_log.WITHHELD}"
+
+
+def test_a_format_string_that_names_an_attribute_another_library_added_still_writes_the_record():
+    old = logging.getLogRecordFactory()
+
+    def factory(*a, **k):
+        r = old(*a, **k)
+        r.trace_id = "abc123"
+        return r
+
+    logging.setLogRecordFactory(factory)
+    try:
+        record = logging.makeLogRecord({"name": "urllib3.connectionpool", "msg": "Retry: %s", "args": (f"/p?sig={SIG}",), "levelno": logging.WARNING})
+        record.trace_id = "abc123"
+        urllib3_log.scrub(record)
+        assert logging.Formatter("%(trace_id)s %(message)s").format(record) == f"{urllib3_log.WITHHELD} Retry: {urllib3_log.WITHHELD}"
+    finally:
+        logging.setLogRecordFactory(old)
 
 
 # --------------------------------------------------------------------------- the scope: the parent, a child, a module the table does not list
@@ -549,6 +732,23 @@ def test_a_logger_under_the_library_name_that_the_table_does_not_list_is_withhel
     caplog.set_level(logging.DEBUG, logger="urllib3")
     logging.getLogger(name).warning("Something %s", f"GET /p?sig={SIG}")
     assert SIG not in caplog.text and urllib3_log.UNRECOGNISED in caplog.text
+
+
+def test_the_factory_cuts_an_unlisted_logger_s_text_and_traces_but_not_its_extra_and_the_docs_say_so(caplog):
+    """THE LIMIT, pinned so the sentence in the module docstring, docs/SECURITY.md and the queue stays true: ``Logger.makeRecord`` runs the
+    factory BEFORE it copies ``extra=`` onto the record, and a record that propagates from a child never meets the parent's filter, so an
+    ``extra`` attribute on a logger outside ``LOGGERS`` is not cut. No release does this (the nine loggers are listed and the only ``extra``
+    goes to a filtered one); a release that adds a logger fails the qualification test by name. If this test fails because the extra IS cut
+    now, delete the sentence about the limit in the three places and make this test assert the cut."""
+    caplog.set_level(logging.DEBUG, logger="urllib3")
+    name = "urllib3.futuremodule.child"
+    assert name not in urllib3_log.LOGGERS
+    logging.getLogger(name).warning("Something %s", f"GET /p?sig={SIG}", extra={"target": f"/p?sig={SIG}"}, exc_info=ValueError(SIG))
+    (record,) = [r for r in caplog.records if r.name == name]
+    assert SIG not in record.getMessage() and urllib3_log.UNRECOGNISED in record.getMessage()
+    assert record.exc_info is None and record.exc_text is None
+    assert vars(record)["target"] == f"/p?sig={SIG}", "the extra survives on an unlisted logger (the stated limit)"
+    assert "THE FACTORY'S LIMIT" in (urllib3_log.__doc__ or ""), "the module docstring states the limit"
 
 
 @pytest.mark.parametrize("name", ["urllib3x", "my.urllib3", "requests", "app.fetch", "urllib"])
@@ -717,13 +917,26 @@ def _read_library(root: Path) -> _Reading:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         creators = [n for n in ast.walk(tree) if _is_get_logger(n)]
         bound: set[str] = set()
+        followed: set[int] = set()  # the getLogger calls the reading knows how to follow: assigned to a name, or logged on directly
         for n in ast.walk(tree):
             if isinstance(n, ast.Assign) and _is_get_logger(n.value):
                 bound.update(ast.unparse(target) for target in n.targets)
+                followed.add(id(n.value))
             elif isinstance(n, ast.AnnAssign) and n.value is not None and _is_get_logger(n.value):
                 bound.add(ast.unparse(n.target))
+                followed.add(id(n.value))
+            elif isinstance(n, ast.Attribute) and _is_get_logger(n.value):  # chained: ``getLogger(__name__).warning(...)`` or ``.addHandler(...)``
+                followed.add(id(n.value))
         if creators:
             loggers.add(module)
+        for c in creators:
+            # the filters cover the NAMES in LOGGERS, and the calls are filed under the module: a logger named anything else (the root, a name
+            # outside urllib3) would be neither covered nor reported
+            named = c.args[0] if len(c.args) == 1 and not c.keywords else None
+            if not (named is not None and (ast.unparse(named) == "__name__" or (isinstance(named, ast.Constant) and named.value == module))):
+                unclassified.append(f"{module}:{c.lineno} getLogger does not name the module's own logger: {ast.unparse(c)}")
+            if id(c) not in followed:
+                unclassified.append(f"{module}:{c.lineno} a getLogger call the reading cannot follow (not assigned to a name and not logged on directly)")
         chained = 0
         for n in ast.walk(tree):
             if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _LEVEL_METHODS):
@@ -798,7 +1011,7 @@ def _fake_library(tmp_path: Path, **modules: str) -> Path:
         "import logging\nlog: logging.Logger = logging.getLogger(__name__)\nlog.warning('Fetched %s', url)\n",
         "import logging\nclass C:\n    def __init__(self):\n        self.log = logging.getLogger(__name__)\n    def f(self, url):\n        self.log.warning('Fetched %s', url)\n",
         "import logging\nlogging.getLogger(__name__).warning('Fetched %s', url)\n",
-        "import logging as lg\nlogger = lg.getLogger('x')\nlogger.warning('Fetched %s', url)\n",
+        "import logging as lg\nlogger = lg.getLogger('urllib3.util.newmod')\nlogger.warning('Fetched %s', url)\n",
     ],
     ids=["from-import", "annotated", "self attribute", "chained", "aliased module"],
 )
@@ -819,8 +1032,24 @@ def test_the_reading_finds_a_logger_however_it_is_bound(tmp_path, source):
         ("import logging\nlog = logging.getLogger(__name__)\nlog.warning(f'Fetched {url}')\n", "not a text constant"),
         ("import logging\nconfigure(logging.getLogger(__name__))\n", "never binds it"),
         ("import logging\nlog = logging.getLogger(__name__)\nother = make()\nother.logger.warning('x %s', url)\n", "not bound from getLogger"),
+        ("import logging\nlog = logging.getLogger()\nlog.debug('Retry: %s', url)\n", "does not name the module's own logger"),
+        ("import logging\nlog = logging.getLogger('requests.packages.urllib3')\nlog.debug('Retry: %s', url)\n", "does not name the module's own logger"),
+        ("import logging\nlog = logging.getLogger(NAME)\nlog.debug('Retry: %s', url)\n", "does not name the module's own logger"),
+        ("import logging\nlog = logging.getLogger(__name__)\nfoo, chan = 1, logging.getLogger(__name__)\nchan.warning('Leak %s', url)\n", "cannot follow"),
+        ("import logging\nlog = logging.getLogger(__name__)\n(chan := logging.getLogger(__name__)).warning('Leak %s', url)\n", "cannot follow"),
     ],
-    ids=["root logger", "variable message", "f-string message", "unbound logger", "unbound attribute logger"],
+    ids=[
+        "root logger",
+        "variable message",
+        "f-string message",
+        "unbound logger",
+        "unbound attribute logger",
+        "getLogger() with no name",
+        "a name outside urllib3",
+        "a name held in a variable",
+        "second logger bound by unpacking",
+        "second logger bound by walrus",
+    ],
 )
 def test_the_reading_names_what_it_cannot_attribute(tmp_path, source, what):
     reading = _read_library(_fake_library(tmp_path, **{"util/newmod": source}))

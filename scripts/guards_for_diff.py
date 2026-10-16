@@ -22,7 +22,8 @@ and one more review round. Four kinds of test fail for a change they never menti
 2. TESTS THIS BRANCH ADDS OR CHANGES, committed or not (including a new file that is not yet tracked).
 3. THE TESTS THAT USE A CHANGED SUPPORT FILE. A helper module, a ``*_node_test.js`` or a data file under ``tests/`` is not a
    test, so a change to one picks nothing by itself: the tests whose text names the file are picked, and a changed
-   ``conftest.py`` or ``__init__.py`` picks every test below its directory (the whole suite when it sits at ``tests/`` or the root).
+   ``conftest.py`` or ``__init__.py`` picks every test below its directory (the whole suite, ``tests``, when it sits at ``tests/`` or
+   the root: then ``--files`` prints that and ``--run`` runs it, not the groups).
 4. TREE-WIDE GUARDS: the test files that walk ``src/`` (or the whole tree) and judge every file in it. They fail for a file
    anyone changed and are found by what they do, because no change names them. The pattern is in :data:`TREE_WIDE`.
 
@@ -51,10 +52,18 @@ ROOT = Path(__file__).resolve().parent.parent
 #: A test file that judges the tree: it walks the files of ``src`` (or everything) and asserts something of each. Found by
 #: pattern, so a heuristic: it names a way of walking, not a proof that the walk is a guard. The third alternative is a
 #: star-led ``rglob`` on a repository-rooted receiver (``(_ROOT / "src").rglob("*")``, which a suffix filter follows): the
-#: receiver is part of the pattern because ``tmp_path.rglob("*")`` walks a scratch directory, not the tree.
+#: receiver is part of the pattern because ``tmp_path.rglob("*")`` walks a scratch directory, not the tree. The last alternative is
+#: a one-directory walk of the modules in it (``(ROOT / "src" / "bulletin").glob("*.py")``) or of the directories in it
+#: (``(ROOT / "src").glob("*/data")``): a guard that fails for a module anyone adds to that directory, and the receiver is a
+#: variable often enough (``_PKG``, ``api_dir``) that no receiver rule finds them. It picks a scratch ``tmp_path.glob("*.py")`` too,
+#: which costs one cheap test file and loses nothing.
 TREE_WIDE = re.compile(
     r"""rglob\("\*\.py"\)|os\.walk|glob.*src|(?:ROOT|REPO|_SRC|SRC_|_STATIC|\bSRC\b)[^\n]*\.rglob\(\s*["']\*"""
+    r"""|\.glob\(\s*["']\*(?:\.py["']|/)"""
 )
+
+#: What ``pytest`` is given when a ``conftest.py`` / ``__init__.py`` at ``tests/`` or the repository root changed.
+WHOLE_SUITE = "tests"
 
 #: Files that scope a whole directory: a change reaches every test below it, whatever the test says.
 _DIRECTORY_SCOPED = ("conftest.py", "__init__.py")
@@ -95,6 +104,8 @@ class Plan:
         return list(seen)
 
     def files(self) -> list[str]:
+        if self.conftest_changed:
+            return [WHOLE_SUITE]  # every test sees that file: a subset is a run of the wrong tree, so --files and --run say so
         seen: dict[str, None] = {}
         for group in (self.main_added, self.own, self.uses_changed_support(), self.tree_wide):
             for path in group:
@@ -152,6 +163,9 @@ def ceiling_from_ci(root: Path) -> int:
 
 #: What a diff is asked about: the tests and everything that can change how they run (a root ``conftest.py``).
 _WATCHED = ("tests", "conftest.py")
+#: A rename is read as a delete and an add: with detection on (git's default ``diff.renames``, and the user's own config) a renamed
+#: helper is listed under its NEW name only, so the tests that still import the OLD one, which fail on import, are not picked.
+_NO_RENAMES = "--no-renames"
 #: Every status but a delete for test modules (a deleted test has nothing to run); support files keep deletes, because a test
 #: that imports a deleted helper fails on import.
 _NOT_DELETED = "--diff-filter=ACMR"
@@ -161,19 +175,19 @@ _ANY_STATUS = "--diff-filter=ACMRD"
 def changed_by_merges(root: Path, base: str) -> list[str]:
     """Paths the line merged into this branch changed, for each merge since the branch left ``base``.
 
-    ``base..HEAD`` on the first-parent line lists the merges this branch made. The line a merge BROUGHT is the parent already
+    ``base..HEAD`` lists the merges this branch made, on every line it contains: a first-parent walk follows main's line when the LAST
+    merge was made the other way round, and never visits the earlier merges of main into the branch, so the tests they brought
+    were lost. The line a merge BROUGHT is the parent already
     contained in ``base`` (``git merge-base --is-ancestor``): usually the second, but a branch merged the other way round
     (``git checkout main && git merge feature``, then the branch moved to the result) has main's tip as the FIRST parent, and
     reading the second parent as main's line picks the branch's own tests as main's and nothing of main's. A merge whose parents
     are ALL inside ``base`` (a branch with no commit of its own that merged a newer main) or ALL outside it (another feature line)
     keeps the plain reading: the first parent is the branch, the others were brought.
     For a brought parent ``P`` and the branch's parent ``B`` the changes are ``merge-base(B, P)..P``."""
-    merges = _lines(_git(root, "rev-list", "--first-parent", "--merges", f"{base}..HEAD"))
+    merges = _lines(_git(root, "rev-list", "--merges", f"{base}..HEAD"))
     picked: list[str] = []
     for merge in merges:
         parents = _git(root, "rev-list", "--parents", "-n", "1", merge).split()[1:]
-        if len(parents) < 2:
-            continue
         inside = [p for p in parents if _succeeds(root, "merge-base", "--is-ancestor", p, base)]
         outside = [p for p in parents if p not in inside]
         if inside and outside:
@@ -182,7 +196,7 @@ def changed_by_merges(root: Path, base: str) -> list[str]:
             brought, branch = parents[1:], parents[0]
         for other in brought:
             fork = _git(root, "merge-base", branch, other).strip()
-            picked += _paths(root, "diff", "--name-only", "-z", _ANY_STATUS, fork, other, "--", *_WATCHED)
+            picked += _paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, other, "--", *_WATCHED)
     return picked
 
 
@@ -194,13 +208,13 @@ def changed_since(root: Path, base: str, since: str) -> list[str]:
     except PlanError:
         raise PlanError(f"no such ref `{since}` for --since: name the state you last tested") from None
     fork = _git(root, "merge-base", since, base).strip()
-    return _paths(root, "diff", "--name-only", "-z", _ANY_STATUS, fork, base, "--", *_WATCHED)
+    return _paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, base, "--", *_WATCHED)
 
 
 def changed_on_branch(root: Path, base: str) -> list[str]:
     """Paths that differ from the point this branch left ``base`` (the working tree included), plus new untracked ones."""
     fork = _git(root, "merge-base", base, "HEAD").strip()
-    changed = _paths(root, "diff", "--name-only", "-z", _ANY_STATUS, fork, "--", *_WATCHED)
+    changed = _paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, "--", *_WATCHED)
     changed += _paths(root, "ls-files", "-z", "--others", "--exclude-standard", "--", *_WATCHED)
     return changed
 
@@ -311,7 +325,7 @@ def render(plan: Plan) -> str:
     if plan.conftest_changed:
         out.append(
             "NOTE: a conftest.py or __init__.py at tests/ or the repository root changed (on this branch or in a merge); every test sees it, "
-            "so run the whole suite (python -m pytest -q)."
+            f"so the pick below is the whole suite ({WHOLE_SUITE}/), not the groups listed."
         )
     for title, group in (
         ("tests main added or changed since this branch left it" + (f" (and since {plan.since})" if plan.since else ""), plan.main_added),
@@ -327,7 +341,8 @@ def render(plan: Plan) -> str:
         out.append("  (none changed)")
     out.append(f"tree-wide guards (test files that walk the tree) ({len(plan.tree_wide)}):")
     out += [f"  {path}" for path in plan.tree_wide] or ["  (none matched)"]
-    out.append(f"{len(plan.files())} distinct test file(s); style ceiling {plan.ceiling} (read from .github/workflows/ci.yml).")
+    count = "the whole suite" if plan.conftest_changed else f"{len(plan.files())} distinct test file(s)"
+    out.append(f"{count}; style ceiling {plan.ceiling} (read from .github/workflows/ci.yml).")
     out.append("")
     out += [shlex.join(step) for step in commands(plan)]
     return "\n".join(out)

@@ -147,6 +147,18 @@ def test_urllib3_range_in_pyproject_matches_the_registry_and_keeps_its_ceiling()
     assert entry["upstream_check"]["current"] == str(entry["pin"]["verified"]), "the release the watch compares with is the newest one read"
 
 
+def test_the_lockfile_pins_urllib3_inside_the_range_the_filter_was_read_for():
+    """``lockfile-install`` installs ``requirements.lock`` and then the project with ``--no-deps``, so a lock whose urllib3 is outside the
+    pyproject range installs green and runs a release nobody read the log calls of (the ``urllib3-floor`` job installs 2.7.0 by name, not
+    from the lock). The lock's pin is the third place the range is written, and nothing else ties it to the other two."""
+    entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
+    lock = (R.repo_root() / "requirements.lock").read_text(encoding="utf-8")
+    pins = re.findall(r"^urllib3==([0-9][0-9.]*)\b", lock, flags=re.MULTILINE)
+    assert len(pins) == 1, f"requirements.lock must pin urllib3 exactly once, found {pins}"
+    assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins urllib3 {pins[0]}, below the floor the filter was read for"
+    assert not R._ver_ge(pins[0], str(entry["pin"]["ceiling"])), f"the lock pins urllib3 {pins[0]}, at or above the ceiling (the first release not read)"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

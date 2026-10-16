@@ -28,7 +28,11 @@ library's own log call.
 
 WHERE IT RUNS. On each logger of :data:`LOGGERS` (a filter runs before any handler: console, file, the error journal) and, for the
 records of any other logger under the ``urllib3`` name (the parent, a child someone adds under one of these names, a module a later
-release adds), in the log-record factory, so a name the table does not list is withheld whole instead of passing. Both are installed when
+release adds), in the log-record factory, so a name the table does not list is withheld whole instead of passing. THE FACTORY'S LIMIT: it
+runs inside ``Logger.makeRecord`` BEFORE that method copies ``extra=`` onto the record, and a record that propagates up from a child never
+meets the parent's filter, so for a logger outside :data:`LOGGERS` the message, the arguments and the traces are scrubbed and an ``extra``
+attribute is not. No release logs on such a logger with ``extra=`` (all nine loggers are listed, and the one ``extra`` goes to a filtered
+logger); the qualification test fails BY NAME on a logger it does not list, which is what makes the first such release visible. Both are installed when
 this module is imported, which ``src/ingest/__init__.py`` does: a process that never imports ``src.ingest`` (a script that only imports
 ``requests``) has neither, and the library puts a ``NullHandler`` on its own logger, so it prints nothing there unless the script configures
 logging itself.
@@ -44,7 +48,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
 
 #: Every logger ``urllib3`` defines: one ``logging.getLogger(__name__)`` per module that has one. The qualification test scans the installed
@@ -81,7 +85,8 @@ class Shape(NamedTuple):
 #: ``(logger, message template)`` to what the library passes. The ``args`` are the library's own source expressions, compared against the
 #: installed release by the qualification test, so an argument that starts to carry something else is found there and not here. A position
 #: is a ``target`` when it can be a path, a query or an address (rewritten); every other position is a host, a port, a count, a method, a
-#: status, a version string, a ``Retry`` or an exception, measured by the same test not to quote the target.
+#: status, a version string, a ``Retry`` or an exception, and :func:`_carried` keeps it only as a plain token or a number and reduces an
+#: object to its class name, so a position that starts to carry something else cannot quote the target.
 SHAPES: dict[tuple[str, str], Shape] = {
     ("urllib3", "Added a stderr logging handler to logger: %s"): Shape(("__name__",)),
     ("urllib3.connection", "Certificate did not match expected hostname: %s. Certificate: %s"): Shape(("asserted_hostname", "cert")),
@@ -110,7 +115,7 @@ _HOST = re.compile(r"[A-Za-z0-9._:%-]+")
 
 def withhold(arg: object) -> object:
     """``arg`` with a request target or an address's path and query replaced; anything else is returned as it was."""
-    if not isinstance(arg, str):
+    if type(arg) is not str:  # a subclass can say anything from its own methods, so it is not read as text
         return arg
     if arg.startswith("/"):
         return WITHHELD
@@ -134,52 +139,75 @@ def withhold(arg: object) -> object:
 def _target(arg: object) -> object:
     """What stands for an argument the library gives as a request target: an absolute address keeps its origin, and anything else (a path,
     a form this build has not seen, an object that is not text) is withheld whole."""
-    if isinstance(arg, str) and arg[:8].lower().startswith(("http://", "https://")):
+    if type(arg) is str and arg[:8].lower().startswith(("http://", "https://")):
         return withhold(arg)
     return WITHHELD
 
 
+#: What a text argument that is not a request target may be made of and be kept: a host name or an address, a port, a method, a version
+#: (``HTTP/1.1``), a logger name, and the ``<ClassName>`` this module writes for an object (so a second pass leaves it). The host of a connection comes from a server's ``Location`` and urllib3 accepts ``;``, ``,`` and ``=`` in it
+#: (``localhost;x-amz-signature=...``), so a text with one of those, or a space or a query mark, is a value and not a name.
+_PLAIN = re.compile(r"[A-Za-z0-9._:%\[\]-]*|HTTP/[0-9.]+|<[A-Za-z_][A-Za-z0-9_]*>")
+
+
+def _class_name(cls: type) -> str:
+    """The name of ``cls`` as the type itself holds it: a metaclass that answers ``__name__`` with other text (or with a non-text) is not read."""
+    name = type.__dict__["__name__"].__get__(cls)
+    return name if type(name) is str and name.isidentifier() else "object"
+
+
 def _carried(arg: object) -> object:
-    """What stands for an argument that is NOT a request target: a number or ``None`` as it was, a text cut the way :func:`withhold` cuts it, and
-    anything else (an exception, a ``Retry``, a mapping, a list) as ``<ClassName>``. The text of such an object is the library's or the
+    """What stands for an argument that is NOT a request target: a number or ``None`` as it was, a text cut the way :func:`withhold` cuts it and
+    kept only when it is a plain token (see :data:`_PLAIN`; an address keeps its origin), and anything else (an exception, a ``Retry``, a
+    mapping, a list, an instance of a subclass of ``str``) as ``<ClassName>``; a subclass of ``int`` or ``float`` keeps its value as a plain number. The text of such an object is the library's or the
     server's (``HeaderParsingError`` quotes the header lines the server sent after its first malformed one), so it is not read."""
-    if arg is None or isinstance(arg, (bool, int, float)):
+    if arg is None or type(arg) in (bool, int, float):
         return arg
-    if isinstance(arg, str):
-        return withhold(arg)
-    return f"<{type(arg).__name__}>"
+    if issubclass(type(arg), int):  # an ``int`` that answers ``str()`` with other text: its value, as a plain number (``%d`` still formats it)
+        return int.__int__(cast(int, arg))
+    if issubclass(type(arg), float):
+        return float.__float__(cast(float, arg))
+    if type(arg) is str:
+        cut = withhold(arg)
+        if cut != arg or arg[:8].lower().startswith(("http://", "https://")) or _PLAIN.fullmatch(arg):
+            return cut
+        return WITHHELD
+    return f"<{_class_name(type(arg))}>"
 
 
 def _is_withheld_message(msg: object) -> bool:
     """Whether ``msg`` is what :func:`_withhold_whole` writes when the record carried an exception: the fixed sentence and the exception's
     class name in brackets. (The sentence alone is what a second pass writes again, so it needs no case.)"""
-    if not isinstance(msg, str):
+    if type(msg) is not str:
         return False
     head = UNRECOGNISED + " ("
     return msg.startswith(head) and msg.endswith(")") and msg[len(head) : -1].isidentifier()
 
 
-#: The attributes a ``LogRecord`` has of its own (and the two a formatter adds). Anything else on a record of these loggers came from ``extra=``
-#: or from a log-record factory, and is a carrier too.
-_STANDARD = frozenset(vars(logging.LogRecord("n", 0, "p", 0, "m", (), None))) | {"message", "asctime"}
+#: The attributes a ``LogRecord`` has of its own. Anything else on a record of these loggers came from ``extra=`` or from a log-record
+#: factory, or is the ``message`` / ``asctime`` a formatter cached before this ran, and is a carrier too. (A formatter writes ``message`` and
+#: ``asctime`` again when it formats, so replacing them costs nothing.)
+_STANDARD = frozenset(vars(logging.LogRecord("n", 0, "p", 0, "m", (), None)))
 
 
 def _drop_traces(record: logging.LogRecord) -> None:
-    """Drop the exception, its cached text, the stack and every attribute the record does not have of its own."""
+    """Drop the exception, its cached text and the stack, and replace the value of every attribute the record does not have of its own. The
+    attribute stays, with :data:`WITHHELD` as its value, because a format string that names one (a trace id another library's factory adds)
+    would otherwise fail in the handler and the record would not be written."""
     record.exc_info = None
     record.exc_text = None
     record.stack_info = None
     for key in [k for k in vars(record) if k not in _STANDARD]:
-        delattr(record, key)
+        setattr(record, key, WITHHELD)
 
 
 def _withhold_whole(record: logging.LogRecord) -> None:
     """Replace the record's message with :data:`UNRECOGNISED`, keeping its logger and level, and the class name of the exception it carried."""
     info = record.exc_info
     caught = info[0] if isinstance(info, tuple) and info else None
-    named = getattr(caught, "__name__", None)
+    named = _class_name(caught) if isinstance(caught, type) else None
     if not _is_withheld_message(record.msg):  # a second pass over the same record keeps what the first one left
-        record.msg = f"{UNRECOGNISED} ({named})" if isinstance(named, str) else UNRECOGNISED
+        record.msg = f"{UNRECOGNISED} ({named})" if named else UNRECOGNISED
     record.args = ()
     _drop_traces(record)
 
@@ -188,7 +216,7 @@ def scrub(record: logging.LogRecord) -> None:
     """Make ``record`` safe to hand to any handler: its target arguments cut, its other arguments reduced, its exception and stack dropped; or
     its message withheld whole when the shape is not one of :data:`SHAPES`, or when anything here raised. Idempotent."""
     try:
-        shape = SHAPES.get((record.name, record.msg)) if isinstance(record.msg, str) else None
+        shape = SHAPES.get((record.name, record.msg)) if type(record.msg) is str else None
         args = record.args
         if shape is None or not isinstance(args, tuple) or len(args) != len(shape.args):
             _withhold_whole(record)
@@ -202,7 +230,7 @@ def scrub(record: logging.LogRecord) -> None:
         record.exc_text = None
         record.stack_info = None
         for key in [k for k in vars(record) if k not in _STANDARD]:
-            delattr(record, key)
+            setattr(record, key, WITHHELD)
 
 
 class _WithholdRequestPath(logging.Filter):

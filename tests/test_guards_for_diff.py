@@ -68,6 +68,11 @@ def repo(tmp_path: Path) -> Path:
     # a star-led walk on a repository-rooted receiver judges the tree (a suffix filter follows); on a scratch directory it does not
     write(r, "tests/test_walks_root_star.py", "ALL = [p for p in (_ROOT / 'src').rglob(\"*\") if p.suffix == '.py']\n")
     write(r, "tests/test_walks_a_scratch_dir.py", "ALL = list(tmp_path.rglob(\"*\"))\n")
+    # a one-directory walk of the modules (or sub-directories) in a source directory judges every module anyone adds to it
+    write(r, "tests/test_globs_with_the_module.py", "import glob\nFILES = glob.glob('src/**/*.py', recursive=True)\n")
+    write(r, "tests/test_globs_one_src_dir.py", "ON_DISK = {p.stem for p in (ROOT / 'src' / 'bulletin').glob(\"*.py\")}\n")
+    write(r, "tests/test_globs_a_dir_variable.py", "for f in sorted(_PKG.glob('*.py')):\n    pass\n")
+    write(r, "tests/test_globs_data_dirs.py", "TREES = [p for p in (_ROOT / 'src').glob(\"*/data\")]\n")
     write(r, "tests/test_removed_by_main.py")
     write(r, "tests/test_shared.py")
     commit(r, "base")
@@ -142,6 +147,10 @@ def test_the_tree_walking_tests_are_picked_by_what_they_do(repo: Path) -> None:
     p = plan(repo)
     assert p.tree_wide == [
         "tests/scale/test_walks_deep.py",
+        "tests/test_globs_a_dir_variable.py",  # glob("*.py") on a directory held in a variable
+        "tests/test_globs_data_dirs.py",  # glob("*/data"): the directories of src
+        "tests/test_globs_one_src_dir.py",  # glob("*.py") on one source directory
+        "tests/test_globs_with_the_module.py",  # glob.glob over src
         "tests/test_walks_os.py",
         "tests/test_walks_root_star.py",  # rglob("*") on the repository root, a suffix filter after it
         "tests/test_walks_src.py",
@@ -164,6 +173,10 @@ def test_every_picked_file_is_listed_once_in_the_order_the_groups_are_shown(repo
         "tests/test_shared.py",
         "tests/test_walks_src.py",  # edited on the branch, so it is listed with the branch's own
         "tests/scale/test_walks_deep.py",
+        "tests/test_globs_a_dir_variable.py",
+        "tests/test_globs_data_dirs.py",
+        "tests/test_globs_one_src_dir.py",
+        "tests/test_globs_with_the_module.py",
         "tests/test_walks_os.py",
         "tests/test_walks_root_star.py",
     ]
@@ -410,3 +423,117 @@ def test_the_picked_files_of_this_repository_exist_and_include_the_walkers() -> 
     assert len(found) >= 20
     assert "tests/test_repo_invariants.py" in found or "tests/test_network_consent.py" in found
     assert all((ROOT / path).is_file() for path in found)
+    # the guards of ONE source directory, written with a plain glob, were missed by the first pattern (a measured miss)
+    for named in (
+        "tests/test_runs_log_sinks.py",
+        "tests/test_diagnostics_package_split.py",
+        "tests/test_clickthrough_b13_leftovers.py",
+        "tests/test_packaging_data_files.py",
+        "tests/test_sink_sweep_records.py",
+    ):
+        assert named in found, named
+
+
+def test_a_merge_made_the_other_way_round_still_finds_the_tests_of_an_earlier_merge(repo: Path) -> None:
+    """The first-parent line of ``HEAD`` is main's when the LAST merge was made the other way round, so a walk of that line never visits
+    the earlier merge of main into the branch and the tests it brought were lost."""
+    git(repo, "checkout", "-q", "-b", "feat")
+    write(repo, "tests/test_own.py")
+    commit(repo, "own")
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/test_m1.py")
+    commit(repo, "main adds m1")
+    git(repo, "checkout", "-q", "feat")
+    git(repo, "merge", "-q", "--no-ff", "-m", "feat merges main", "main")
+    git(repo, "checkout", "-q", "main")
+    write(repo, "tests/test_m2.py")
+    commit(repo, "main adds m2")
+    git(repo, "checkout", "-q", "--detach", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", "main's tip merges feat", "feat")
+    git(repo, "branch", "-f", "feat", "HEAD")
+    git(repo, "checkout", "-q", "feat")
+    git(repo, "update-ref", "refs/heads/base", "main")  # main as it was before that merge
+    p = plan(repo, "base")
+    assert p.main_added == ["tests/test_m1.py", "tests/test_m2.py"]
+    assert p.own == ["tests/test_own.py"]
+
+
+def test_a_renamed_helper_picks_the_tests_that_still_import_the_old_name(repo: Path) -> None:
+    """With rename detection on (git's default, and a user's ``diff.renames``) the rename is listed under its new name only, and the tests
+    that import the old one, which fail on import, were not picked."""
+    write(repo, "tests/_util.py", "def helper():\n    return 1\n" * 3)
+    write(repo, "tests/test_uses_old_name.py", "from tests._util import helper\n")
+    commit(repo, "helper")
+    git(repo, "checkout", "-q", "-b", "feat")
+    git(repo, "mv", "tests/_util.py", "tests/_helpers.py")
+    commit(repo, "rename")
+    for renames in ("true", "false"):  # the result must not depend on the user's own setting
+        git(repo, "config", "diff.renames", renames)
+        p = plan(repo)
+        assert p.support["tests/_util.py"] == ["tests/test_uses_old_name.py"], renames
+        assert "tests/test_uses_old_name.py" in p.files(), renames
+
+
+def test_a_changed_root_or_tests_conftest_makes_the_pick_the_whole_suite_in_files_and_run(repo: Path) -> None:
+    """The whole-suite requirement was a NOTE in the printed plan only: ``--files`` listed a subset and exited 0, and ``--run`` ran the
+    subset and said every step passed."""
+    git(repo, "checkout", "-q", "-b", "solo")
+    write(repo, "conftest.py", "# repository root\n")
+    write(repo, "tests/test_own.py")
+    p = plan(repo)
+    assert p.conftest_changed and p.files() == [g.WHOLE_SUITE]
+    assert g.commands(p)[-1][1:] == ["-m", "pytest", "-q", g.WHOLE_SUITE]
+    assert f"the pick below is the whole suite ({g.WHOLE_SUITE}/)" in g.render(p)
+
+
+def test_files_prints_the_whole_suite_when_a_conftest_changed(repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    git(repo, "checkout", "-q", "-b", "solo")
+    write(repo, "tests/conftest.py", "# changed\n")
+    monkeypatch.setattr(g, "ROOT", repo)
+    assert g.main(["--base", "main", "--files"]) == 0
+    assert capsys.readouterr().out.split() == [g.WHOLE_SUITE]
+
+
+def test_a_line_that_is_not_in_the_base_at_all_is_read_with_its_first_parent_as_the_branch(repo: Path) -> None:
+    """A merge whose parents are all OUTSIDE the base (another feature line merged into this one) brought the second parent."""
+    git(repo, "checkout", "-q", "-b", "side")
+    write(repo, "tests/test_side.py")
+    commit(repo, "side")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "checkout", "-q", "-b", "feat")
+    write(repo, "tests/test_own.py")
+    commit(repo, "own")
+    git(repo, "merge", "-q", "--no-ff", "-m", "feat takes side", "side")
+    p = plan(repo)
+    assert p.main_added == ["tests/test_side.py"] and p.own == ["tests/test_own.py", "tests/test_side.py"]
+
+
+def _rename_helper_on_main_and_merge(r: Path) -> None:
+    write(r, "tests/_util.py", "def helper():\n    return 1\n" * 3)
+    write(r, "tests/test_uses_old_name.py", "from tests._util import helper\n")
+    commit(r, "helper")
+    git(r, "checkout", "-q", "-b", "feat")
+    write(r, "tests/test_own.py")
+    commit(r, "own")
+    git(r, "checkout", "-q", "main")
+    git(r, "mv", "tests/_util.py", "tests/_helpers.py")
+    commit(r, "main renames the helper")
+
+
+@pytest.mark.parametrize("renames", ["true", "false"])
+def test_a_helper_main_renamed_picks_the_tests_that_still_import_the_old_name(repo: Path, renames: str) -> None:
+    _rename_helper_on_main_and_merge(repo)
+    git(repo, "config", "diff.renames", renames)
+    git(repo, "checkout", "-q", "feat")
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+    assert plan(repo).support["tests/_util.py"] == ["tests/test_uses_old_name.py"]
+
+
+@pytest.mark.parametrize("renames", ["true", "false"])
+def test_a_helper_main_renamed_since_a_rebase_is_found_through_since(repo: Path, renames: str) -> None:
+    _rename_helper_on_main_and_merge(repo)
+    git(repo, "config", "diff.renames", renames)
+    git(repo, "checkout", "-q", "feat")
+    before = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "rebase", "-q", "main")
+    assert plan(repo, since=before).support["tests/_util.py"] == ["tests/test_uses_old_name.py"]
