@@ -378,6 +378,54 @@ def test_a_snippet_is_parts_around_the_match_never_offsets(lane):
     assert all(set(p) == {"text", "hit"} for p in snip)
 
 
+def _driver_error(code):
+    cls = type("DatabaseError", (Exception,), {"__module__": "sqlite3"})
+    exc = cls("driver text")
+    exc.sqlite_errorcode = code
+    return exc
+
+
+@pytest.mark.parametrize(
+    "fault, raises",
+    [
+        # SQLCipher 4.19 answers a damaged page with the real code-11 error, where 4.12 answered an empty MemoryError: both end the search
+        (lambda: OperationalError("SELECT 1", {}, _driver_error(11)), True),
+        (lambda: MemoryError(), True),
+        # a wrong key (26), a lock (5) and a text the decompressor cannot read are not the lane's damage: the hit stands without a snippet
+        (lambda: OperationalError("SELECT 1", {}, _driver_error(26)), False),
+        (lambda: OperationalError("SELECT 1", {}, _driver_error(5)), False),
+        (lambda: ValueError("unreadable text"), False),
+    ],
+)
+def test_a_snippet_read_that_hits_damage_ends_the_search_and_any_other_fault_only_drops_the_snippet(lane, monkeypatch, fault, raises):
+    _warm(title="Dam", latest=(971, "The dam on the Vardar river failed.", T0))
+    _index()
+
+    def boom(*a, **k):
+        raise fault()
+
+    monkeypatch.setattr(S, "_indexed_body", boom)
+    if raises:
+        with pytest.raises((OperationalError, MemoryError)):
+            _search("Vardar")
+    else:
+        out = _search("Vardar")
+        assert out["total"] == 1 and out["items"][0]["snippet"] is None
+
+
+def test_the_route_answers_a_corruption_raised_by_the_search_with_the_fixed_unreadable_reason_and_no_driver_text(lane, monkeypatch):
+    """What the caller of the lane search gets when a snippet read hits damage: the fixed reason, class-only, never a word the driver said."""
+    from src.api.wiki_lane_search import search_lane
+
+    def boom(*a, **k):
+        raise OperationalError("SELECT secret_column FROM t", {"v": "a-bound-value"}, _driver_error(11))
+
+    monkeypatch.setattr(S, "search", boom)
+    out = search_lane("anything", limit=5)
+    assert out["available"] is False and out["reason"] == "lane-unreadable"
+    assert "driver text" not in repr(out) and "secret_column" not in repr(out) and "a-bound-value" not in repr(out)
+
+
 def test_a_snippet_finds_the_word_through_case_accents_and_arabic_folding():
     parts = S.snippet("Le Café de Flore", ["cafe"])
     assert {"text": "Café", "hit": True} in parts
