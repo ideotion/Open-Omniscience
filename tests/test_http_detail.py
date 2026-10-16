@@ -106,7 +106,7 @@ def test_a_driver_in_the_context_not_only_the_cause_makes_it_the_class_only(held
         try:
             raise _driver()
         except sqlite3.Error:
-            raise _Wrapper("the restore stopped")  # implicit __context__, no ``from``
+            raise _Wrapper("the restore stopped")  # implicit __context__, no ``from``  # noqa: B904
     except _Wrapper as exc:
         assert exc.__cause__ is None and exc.__context__ is not None
         out = http_detail(exc)
@@ -153,7 +153,7 @@ def test_the_chain_rule_fails_if_the_walk_is_cut_down_to_the_cause(held, monkeyp
         try:
             raise _driver()
         except sqlite3.Error:
-            raise _Wrapper("the restore stopped")
+            raise _Wrapper("the restore stopped")  # noqa: B904
     except _Wrapper as exc:
         assert "restore stopped" in http_detail(exc), "with the walk cut down the wrapper's words come back: the tests above would fail"
 

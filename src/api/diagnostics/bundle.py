@@ -40,8 +40,8 @@ from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring import diagnostics_runs as _diag_runs
-from src.monitoring.secret_scrub import http_detail, record_text as _record_text
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import http_detail, log_failure
+from src.monitoring.secret_scrub import record_text as _record_text
 from src.monitoring.secret_scrub import scrubbed_value as _scrubbed_value
 from src.utils.export_envelope import app_version, envelope
 

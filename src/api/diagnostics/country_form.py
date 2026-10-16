@@ -17,6 +17,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.monitoring.secret_scrub import record_text
 
 from ._base import router
 
@@ -60,7 +61,7 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
         form = store_form()
     except MigrationUnfinished as exc:
         stopped = _kv(JOURNAL_KEY) or {}
-        return {"form": None, "readable": False, "unfinished": True, "command": command, "note": str(exc),
+        return {"form": None, "readable": False, "unfinished": True, "command": command, "note": record_text(exc, typed=False),
                 "journal": {"state": stopped.get("state"), "rewritten": stopped.get("rewritten")}}
     except StoreFormUnreadable:
         return {"form": None, "readable": False, "command": command,
@@ -81,7 +82,7 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
                 plan = {"rows_to_rewrite": est.get("rows_to_rewrite"), "store_bytes": est.get("store_bytes"),
                         "free_bytes": est.get("free_bytes"), "left_as_stored": rep.unmapped, "time": est.get("time")}
             except MigrationRefused as exc:
-                plan = {"refused": str(exc)}
+                plan = {"refused": record_text(exc, typed=False)}
             except Exception as exc:  # noqa: BLE001 - a locked or keyless file, a read that failed: the class is the answer
                 plan = {"refused": f"the plan could not be read ({type(exc).__name__}); nothing was changed"}
     return {
