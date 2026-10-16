@@ -353,6 +353,7 @@ def test_framing_split_runs_over_a_corpus_containing_an_unreadable_outlet(monkey
         def __init__(self, title, body, lang):
             _Art._n += 1
             self.id = _Art._n
+            self.source_id = _Art._n
             self.title, self._b, self.language = title, body, lang
             self.url, self.published_at, self.detected_language = "u", None, None
 
@@ -372,6 +373,15 @@ def test_framing_split_runs_over_a_corpus_containing_an_unreadable_outlet(monkey
     )
     monkeypatch.setattr(P, "resolve_keyword", lambda s, t: _Kw())
     monkeypatch.setattr(P, "_articles_for_term", lambda s, kid, **k: rows)
+
+    class _Outlets:  # one source per outlet here, so the label is the source's own name (the real map reads the DB)
+        def __init__(self, session):
+            pass
+
+        def label(self, source_id, name=None, domain=None):
+            return name
+
+    monkeypatch.setattr(P, "OutletMap", _Outlets)
 
     cards = P.framing_split(session=None)
     assert cards, "an unreadable third outlet must not blank the producer"
