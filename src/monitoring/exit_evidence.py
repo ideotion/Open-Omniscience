@@ -416,16 +416,16 @@ def note_fatal_exception(exc: BaseException) -> None:
     text is scrubbed of every passphrase the process holds BEFORE the cut (a text cut first can split a passphrase and
     keep half of it), and when it cannot be checked the class is written and none of the exception's words."""
     try:
-        # The traceback is written by ``secret_scrub.traceback_text``: the passphrases the process holds taken
+        # The traceback is written by ``secret_scrub.record_traceback`` (a database driver's last line is its class only): the passphrases the process holds taken
         # out of the WHOLE text (the cause chain included), the class and the frames and none of the words
         # when a ``UnicodeError`` is reachable (its message names a character and its offset). Then a key
         # literal and the person's folders are taken out, and only then is the text cut: an exception that ends
         # the server can carry the engine's statement in its message, and this file is read into the
         # diagnostics zip. Withheld, not kept, when it cannot be checked. The same function the trace read uses.
         from src.monitoring.diagnostics_runs import WITHHELD, scrubbed_text
-        from src.monitoring.secret_scrub import traceback_text
+        from src.monitoring.secret_scrub import record_traceback
 
-        clean = scrubbed_text(traceback_text(exc))
+        clean = scrubbed_text(record_traceback(exc))
         text = clean[-_FATAL_TEXT_CHARS:] if clean is not None else f"{type(exc).__name__}: {WITHHELD}"
         with open(crash_trace_path(), "a", encoding="utf-8") as fh:
             fh.write(f"Uncaught exception ended the server at {_now()}:\n{text}\n")

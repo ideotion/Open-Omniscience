@@ -83,6 +83,37 @@ def test_the_unlock_still_ends_as_it_did_when_the_dispose_fails(failing_unlock):
     assert held == [_PASS, None], "the unlock must be undone: the key set for the finish, then cleared"
 
 
+def test_an_unfinished_country_migration_is_answered_as_a_409_with_the_instruction_and_the_key_is_put_back(failing_unlock, monkeypatch):
+    """The finish of an unlock opens the store, and ``init_db()`` refuses one a migration began and did not end. That is not
+    a failure of this unlock: the lock screen shows a 409's words (what to run), where a raised error is a bare 500."""
+    from fastapi import HTTPException
+
+    from src.database.country_form import MigrationUnfinished, unfinished_message
+
+    held, path = failing_unlock
+
+    def unfinished(**kw):
+        raise MigrationUnfinished(unfinished_message("interrupted", "/safe/open_omniscience.pre-country-form-T-abcd1234.db"))
+
+    monkeypatch.setattr(unlock_mod, "_finish_unlock", unfinished)
+    with pytest.raises(HTTPException) as err:
+        unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
+    assert err.value.status_code == 409 and "migrate-countries" in err.value.detail and err.value.detail.startswith("a country-form migration of this store started")
+    assert _PASS not in err.value.detail and "/safe/" not in err.value.detail, "the answer is a fixed sentence, not the error's words"
+    assert err.value.__suppress_context__ is True
+    assert held == [_PASS, None], "the unlock must still be undone: a key left held reads as an open store"
+
+
+def test_any_other_failure_of_the_finish_is_still_not_a_409(failing_unlock):
+    from fastapi import HTTPException
+
+    held, path = failing_unlock
+    with pytest.raises(RuntimeError) as err:
+        unlock_mod._unlock_locked(PassphraseBody(passphrase=_PASS), path)
+    assert not isinstance(err.value, HTTPException)
+    assert held == [_PASS, None]
+
+
 class _CheckpointConn:
     """A verify connection whose write-back of the recovered log fails with the words it is given."""
 

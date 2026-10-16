@@ -68,6 +68,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, backref, mapped_column, rela
 # `from src.database.models import get_session` (and Session/SessionLocal) etc.
 # noqa: F401 on each -- these are intentional backward-compat re-exports, not
 # unused imports; without it `ruff --fix` strips them and breaks importers.
+from src.database.country_form import CountryCode  # noqa: E402
 from src.database.session import (  # noqa: E402
     Session,  # noqa: F401
     SessionLocal,  # noqa: F401
@@ -339,7 +340,7 @@ class SourceMetadata(Base):
 
     # Geographic and language metadata
     language: Mapped[str | None] = mapped_column(String(20))
-    country: Mapped[str | None] = mapped_column(String(2))
+    country: Mapped[str | None] = mapped_column(CountryCode(8))
     region: Mapped[str | None] = mapped_column(String(100))
     city: Mapped[str | None] = mapped_column(String(100))
     timezone: Mapped[str | None] = mapped_column(String(50))
@@ -429,7 +430,7 @@ class Source(Base):
     region: Mapped[str | None] = mapped_column(String(50), default="global")
     # No default: a country is set from the catalog, the ccTLD, or the user —
     # never assumed. (The old default="US" fabricated a US bias; 0.09 fix.)
-    country: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2, lowercase
+    country: Mapped[str | None] = mapped_column(CountryCode(8))  # ISO 3166-1 alpha-2, lowercase
     source_type: Mapped[str | None] = mapped_column(String(50), default="news")  # news, financial, scientific, etc.
     update_frequency: Mapped[int | None] = mapped_column(Integer, default=60)  # minutes
     cacheability: Mapped[bool | None] = mapped_column(Boolean, default=True)
@@ -722,7 +723,7 @@ class Article(Base):
 
     # Enhanced metadata fields
     region: Mapped[str | None] = mapped_column(String(50))  # Geographic region
-    country: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2 country code
+    country: Mapped[str | None] = mapped_column(CountryCode(8))  # ISO 3166-1 alpha-2 country code
     author: Mapped[str | None] = mapped_column(String(255))  # Article author
     word_count: Mapped[int | None] = mapped_column(Integer)  # Number of words in the article
     reading_time: Mapped[int | None] = mapped_column(Integer)  # Estimated reading time in minutes
@@ -1347,7 +1348,7 @@ class ExternalSource(Base):
     # No default: an unmeasured bias is NULL — default 0.0 asserted "centrist"
     # for every unknown (same fabrication class as credibility; audit 06).
     political_bias: Mapped[float | None] = mapped_column(Float)  # -100 (left) to 100 (right)
-    country: Mapped[str | None] = mapped_column(String(2))
+    country: Mapped[str | None] = mapped_column(CountryCode(8))
     language: Mapped[str | None] = mapped_column(String(10))  # honest NULL when unknown (audit 06)
     description: Mapped[str | None] = mapped_column(Text)
     founded_year: Mapped[int | None] = mapped_column(Integer)
@@ -2075,7 +2076,7 @@ class ArticleMentionedPlace(Base):
         Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    country: Mapped[str | None] = mapped_column(String(2))  # ISO-2, lowercase
+    country: Mapped[str | None] = mapped_column(CountryCode(8))  # ISO-2, lowercase
     kind: Mapped[str | None] = mapped_column(String(20))  # city | country
     mentions: Mapped[int] = mapped_column(Integer, default=1)
     snippet: Mapped[str | None] = mapped_column(String(400))
@@ -2210,7 +2211,7 @@ class Place(Base):
     names_json: Mapped[str | None] = mapped_column(Text)  # {lang: name}, OSM name:xx ONLY
     #: The gazetteer's own country code (ISO 3166-1 alpha-2, lowercase) -- the key the
     #: mention rows carry, so a resolution compares like with like.
-    country: Mapped[str | None] = mapped_column(String(2))
+    country: Mapped[str | None] = mapped_column(CountryCode(8))
     #: ISO 3166-1 alpha-3, from birth (Q312 = a), for display and the alpha-3 surfaces.
     country_alpha3: Mapped[str | None] = mapped_column(String(3))
     admin_path_json: Mapped[str | None] = mapped_column(Text)
@@ -2345,7 +2346,7 @@ class KeywordMention(Base):
     count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     first_offset: Mapped[int | None] = mapped_column(Integer)  # char offset in Article.content
     observed_on: Mapped[date | None] = mapped_column(Date, index=True)  # denormalised article date (for trends)
-    country: Mapped[str | None] = mapped_column(String(2))  # denormalised source country (for the map)
+    country: Mapped[str | None] = mapped_column(CountryCode(8))  # denormalised source country (for the map)
     city: Mapped[str | None] = mapped_column(String(120))  # denormalised source city, when known
     # THE ARTICLE'S LANGUAGE, DENORMALISED PER MENTION (Q414 = a, 2026-09-15, gate row M).
     # Stored NORMALISED (``managed.normalize_lang``: "en-US" -> "en") while
@@ -2671,7 +2672,7 @@ class LawDocument(Base):
     __tablename__ = "law_documents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    jurisdiction: Mapped[str] = mapped_column(String(8), nullable=False)  # ISO-ish code: uk, eu, fr, us, int…
+    jurisdiction: Mapped[str] = mapped_column(CountryCode(8), nullable=False)  # ISO-ish code: uk, eu, fr, us, int…
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     url: Mapped[str] = mapped_column(String(1000), nullable=False)  # the page we fetch (consolidated text)
     official_url: Mapped[str | None] = mapped_column(String(1000))  # canonical official link (may equal url)
@@ -2697,7 +2698,7 @@ class LawDocument(Base):
     # guessed from the jurisdiction (uk/us are English, eu is multilingual, many
     # jurisdictions are ambiguous).
     language: Mapped[str | None] = mapped_column(String(8))
-    country: Mapped[str | None] = mapped_column(String(8))
+    country: Mapped[str | None] = mapped_column(CountryCode(8))
     # L0 defect 3 (Q917): the CLML adapter reads three independent dates and, until this
     # column existed, `track.py` used only `parsed.text` and dropped all three -- so the
     # reader showed the day we captured a 2018 Act as the only date it had. `enacted_on`

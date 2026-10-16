@@ -52,7 +52,7 @@ vintage `2013-08-03`, 3,035 bytes, the same sha256 from both readers.
    below measured +473 MB of peak disk for 18.5 M nodes, about 26 bytes a node; a large file only), and
    a `warning` naming it (and `--min-free-gb` to refuse instead) whenever the disk is below it and no measured report or
    override replaced the guess; the CLI prints it. The mid-run sampler still stops a run whose disk reaches the reserve.
-3. **Memory that grew with the country** (the section below): the search-index build read every object at once; now a page at a time, test red without it (`test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_rows`). The review of the paging found that it must also be read in id order from the rowid: through the country index SQLite looks up every remaining row of the country and sorts them to keep one page (`EXPLAIN QUERY PLAN` on the real schema: the index plus a temp b-tree; the lane never runs ANALYZE), which costs about the square of the country (reads only, 2 M rows: 5.0 s as one read, 13.9 s paged). The query now takes the rowid plan and the same test reads the plan. The 16 x row below was run before that fix, and the build has no timing since: only the plan has been checked.
+3. **Memory that grew with the country** (the section below): the kept-id sets cost the SPAN of the ids and not their count (now 8 bytes an id), and the search-index build read every object at once; now a page at a time, test red without it (`test_the_index_build_reads_the_country_a_page_at_a_time_and_finds_the_same_rows`). The review of the paging found that it must also be read in id order from the rowid: through the country index SQLite looks up every remaining row of the country and sorts them to keep one page (`EXPLAIN QUERY PLAN` on the real schema: the index plus a temp b-tree; the lane never runs ANALYZE), which costs about the square of the country (reads only, 2 M rows: 5.0 s as one read, 13.9 s paged). The query now takes the rowid plan and the same test reads the plan. The 16 x row below was run before that fix, and the build has no timing since: only the plan has been checked.
 4. **Two facts about 2013 data, not defects:** the extract holds two nodes named Gamprin-Bendern at one point
    (both `place=village`, both become Places and both rows are in the gazetteer), and its country tag is
    lower-case `li`.
@@ -75,24 +75,32 @@ anywhere; use the figures for time, memory and disk per object.
 | 4 x | 23.2 MB | 720 k | 202 s | 1,368 MB | 363 MB | 3.6 k |
 | 16 x, before the paged index build | 45.7 MB | 2.88 M | 817 s | **2,213 MB** | 1.46 GB | 3.5 k |
 | 16 x, on-disk location index forced, before | 45.7 MB | 2.88 M | 838 s | 2,195 MB | 1.46 GB | 3.4 k |
-| 16 x, **after** the paged index build | 45.7 MB | 2.88 M | 835 s | **1,443 MB** | 1.46 GB | 3.4 k |
+| 16 x, after the paged index build | 45.7 MB | 2.88 M | 835 s | 1,443 MB | 1.46 GB | 3.4 k |
+| 16 x, **after** the paged build and 8-byte kept-id arrays | 45.7 MB | 2.88 M | 758 s | **823 MB** | 1.42 GB | 3.8 k |
 
-**Two memories, and one was a defect.** (1) libosmium's id sets: `osmium.index.IdSet` (used by `_IdSet` for the kept
-node and way ids) is a bitmap in 512 KB chunks. Measured: 6,000 ids scattered over the node-id range (1.2e10) cost
-**1,433 MB** and 6,000,000 cost the same 1,433 MB; 2,000,000 way ids over 1.35e9 cost **160 MB**. Once a country has a few
-thousand kept nodes its id sets cost about **1.6 GB flat**, whatever its size: that is why a city peaks at 1.16 GB. The 861 MB
-first row is the same effect with Utrecht's own ids, which span 3.8e9 rather than 1.2e10. (2) **The search-index build read
-every object with `.all()`**: the 16 x timeline climbs steadily to about 1.4 GB, then jumps to 1.7 to 2.2 GB for the last
-seconds before the cut ends and falls back to 1.1 GB. `build_search_index` was the jump: measured alone on a 720 k-object lane,
-417 MB before and 190 MB after reading a page of 50,000 rows at a time, and the full 16 x run's peak went from 2,213 MB to
-1,443 MB. Without it the jump grows with the country (about 0.45 KB an object) and on a 3.5 GB VM a country of tens of millions of
-objects would have ended in the kernel's OOM kill after the whole cut had been read. The on-disk location index changes the peak
-disk (1,708 MB against 1,235 MB for the 18.5 M node locations) and not the memory: forcing it moved the peak from 2,213 to 2,195 MB.
+**Two memories, and both were defects of this build, not of the country.** (1) **The kept-id sets.** `osmium.index.IdSet` (what `_IdSet`
+used for the kept node and way ids) allocates 4 MiB for every 2**25-id window an id falls in (measured, pyosmium 4.3.1), so its memory
+follows the SPAN of the ids and not their count: ids spread over the node range (1.2e10 is 358 windows) cost up to **1,433 MB**
+(6,000 scattered ids already cost that; a hundred cost about 400 MB), way ids over 1.35e9 up to **160 MB**. A file lists ids
+ascending, so the cost also arrives steadily as the scan walks the id space: sorted way ids
+added one per step grew the process by 164 MB linearly over the pass, node ids by 1,432 MB (`idset_probe.py` here; the
+numbers are the probe's). The composite's tagged ids touch 226 node windows and 41 way windows, about 1 GB, which fits the drop from
+1,443 to 823 MB; the 1.16 GB peak of the 177 k-object city is a different mixture and was not isolated to this. It is the slope of the cut through the 16 x run, which
+this record first read as "about 0.13 KB of growth per kept object" and extrapolated to a ceiling of 15 to 19 million objects.
+**That extrapolation was wrong**: the forced on-disk location index (below) left the slope in place, which refuted the
+location-array explanation, and the probe reproduced it with no cut at all. `_IdSet` is now a sorted `array('q')` with a binary
+search (8 bytes an id whatever the span; an id out of order goes to a side set, counted in the run record as
+`id_sets.out_of_order`). The 16 x run's peak went from 1,443 MB to **823 MB** and its slope through the ways and relations from
+about 0.3 MB/s to 0.05 MB/s (633 MB to 654 MB over the last 430 s, the array and the Python heap). (2) **The search-index build read
+every object with `.all()`**: the timeline jumped from about 1.4 GB to 1.7 to 2.2 GB for the last seconds before the cut ended. Measured
+alone on a 720 k-object lane, 417 MB before and 190 MB after reading a page of 50,000 rows at a time, and the full 16 x run's peak went from
+2,213 MB to 1,443 MB. The on-disk location index changes the peak disk (1,708 MB against 1,235 MB for the 18.5 M node locations,
+about 26 bytes a node) and not the memory: forcing it moved the peak from 2,213 to 2,195 MB.
 
-What is NOT settled: the cut itself still grows by about 0.13 KB per kept object (1,184 MB at 0.9 GB of `osm.db` to 1,425 MB at 1.4 GB, same
-run), from a source this record did not isolate. If that slope holds, 3.5 GiB is reached at about 15 to 19 million objects. At
-roughly 500 bytes an object that is a 7 to 9 GB `osm.db`, so France (tens of millions of objects) is on the wrong side of it and
-only the real run, with the runner's memory guard stopping it cleanly, will say where.
+What is NOT settled: with both removed the 16 x plateau is about 650 MB, of which the in-memory location array is about 300 MB
+(18.5 M nodes at 16 bytes; below 512 MiB of FILE it is chosen whatever the node density, a Utrecht-density file just under that
+threshold would hold up to 3 GB of locations, which was not run and is not changed here) and the rest is the Python heap, SQLite
+and the batch lists. Whether anything still grows with the object count at a hundred times this size is for the real run.
 
 ## The real-data walk (`walk.py`, `walk.json`)
 
@@ -115,7 +123,7 @@ errors are four 404s for the row E artifacts that are not built (`osm_admin0.jso
 
 ## What stays open until a real run
 
-- **Time and memory on the real 2-core VM, and the cut's remaining 0.13 KB per object** (above). This sandbox's CPU is not that machine's.
+- **Time and memory on the real 2-core VM** (above: the cut's memory no longer grows with the country in this sandbox; whether it holds at a hundred times the size is the run's to say). This sandbox's CPU is not that machine's.
 - **The true Geofabrik extract.** Sizes are the catalogue's dated estimates (the download reads the exact size
   first). By the ratios above France or Germany would settle near 25 to 35 GB of `osm.db`; that is arithmetic, not
   a measurement, and a continent file's PBF compresses differently from a 12 MB one.

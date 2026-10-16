@@ -265,6 +265,7 @@ from .bundle import (
     _check_room_for_volumes,
     _corpus_counters_safe,
     _country_code_scan,
+    _country_form_member,
     _data_volume_report,
     _fold_previous_run_journals,
     _gate_sampled_at,
@@ -427,6 +428,8 @@ from .wiki_lane_history import wiki_lane_history
 from .vitals_history import vitals_history_report
 # The all-diagnostics runs and the files served (2026-10-06, R119): the same slice position.
 from .runs import diagnostics_runs_report
+# Which form the store keeps its country codes in (2026-10-15, row B1): the same slice position.
+from .country_form import country_form_status
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -559,6 +562,7 @@ __all__ = [
     "_card_audit_worker",
     "_corpus_counters_safe",
     "_country_code_scan",
+    "_country_form_member",
     "_data_volume_report",
     "_cpu_model_safe",
     "_debug_bundle_member_budget_s",
@@ -676,6 +680,7 @@ __all__ = [
     "wiki_lane_history",
     "vitals_history_report",
     "diagnostics_runs_report",
+    "country_form_status",
     "keyword_selftest",
     "keyword_triage_cancel",
     "keyword_triage_download",

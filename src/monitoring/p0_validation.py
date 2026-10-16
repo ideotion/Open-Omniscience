@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import record_text, scrubbed, scrubbed_value
 
 _LOG = logging.getLogger("monitoring.p0_validation")
 
@@ -291,7 +291,7 @@ def _exception_text(exc: BaseException, passphrase: str) -> str:
     ``fail``) that code and the panel compare, and an exact-match scrub of a short passphrase (``a``,
     ``pass``) would rewrite them. A text that cannot be checked is the exception's class and none of its
     words."""
-    return exception_text(exc, passphrase)
+    return record_text(exc, passphrase, typed=True)
 
 
 def _check_backup(
@@ -731,7 +731,7 @@ def _check_unlock() -> dict:
     except Exception as exc:  # noqa: BLE001
         return _verdict(
             "not-measurable",
-            f"could not read the unlock instrumentation: {exception_text(exc)}. "
+            f"could not read the unlock instrumentation: {record_text(exc, typed=True)}. "
             + _COLD_BOOT_HOWTO,
             {"how_to_time_next_cold_boot": _COLD_BOOT_HOWTO},
             _acceptance_bars()["p0_4_unlock"],
@@ -877,7 +877,7 @@ def _check_collector() -> dict:
     except Exception as exc:  # noqa: BLE001
         return _verdict(
             "not-measurable",
-            f"could not read the collector instrumentation: {exception_text(exc)}. "
+            f"could not read the collector instrumentation: {record_text(exc, typed=True)}. "
             + _SOAK_HOWTO,
             {"how_to_soak": _SOAK_HOWTO},
             _acceptance_bars()["p0_3_collector"],
@@ -929,8 +929,6 @@ def build_p0_report(
 ) -> dict:
     """Run every P0 check and assemble the report dict (no file I/O). The
     passphrase is used but never stored in the report."""
-    from src.utils.export_envelope import app_version
-
     # The restore probe stages under the dest drive (which has the room a full-corpus
     # conversion + working copy needs), so it lives OUTSIDE data_dir's janitor scope.
     # Name it with the swept ``.restore-`` prefix so a crash leftover (which for an
@@ -938,6 +936,7 @@ def build_p0_report(
     # reclaimed by sweep_stale_backup_temps, and proactively sweep any OLD leftover on
     # this drive from a previously-crashed probe before we begin.
     from src.backup.stream_backup import sweep_stale_backup_temps
+    from src.utils.export_envelope import app_version
 
     with contextlib.suppress(Exception):
         sweep_stale_backup_temps(dest_dir)
@@ -1054,7 +1053,7 @@ def last_p0_validation_report() -> dict:
         report["source_file"] = files[-1].name
         return report
     except Exception as exc:  # noqa: BLE001
-        return {"schema": P0_VALIDATION_SCHEMA, "available": False, "error": exception_text(exc, typed=False, limit=300)}
+        return {"schema": P0_VALIDATION_SCHEMA, "available": False, "error": record_text(exc, typed=False, limit=300)}
 
 
 # --------------------------------------------------------------------------- #

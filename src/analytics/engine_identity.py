@@ -137,6 +137,15 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "by the merge in both modes, so a carry and a re-index cannot differ here"
     ),
     "src/analytics/engine_identity.py": "this module; it computes the stamp, not the rows",
+    "src/config/kv_store.py": (
+        "the settings store; the country column type reads the store's country FORM through it when a pass binds "
+        "a code. The form is a fact about the file, and the value a pass hands over is the same lowercase "
+        "alpha-2 in either, so extraction writes nothing different"
+    ),
+    "src/database/connect.py": (
+        "opens and snapshots database connections; it carries no extraction logic, so a change here can make "
+        "no indexed article stale"
+    ),
     "src/database/derived_views.py": (
         "the READ seam over the keyword rows (R96): a view listing the table's own columns, so a "
         "reader sees exactly the rows a pass wrote; it changes how they are read, never what "

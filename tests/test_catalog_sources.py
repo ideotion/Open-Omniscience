@@ -22,7 +22,11 @@ def _client(tmp_path):
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
-    with Sess() as s:
+    # This side file stands in for the live store, which the app boots below as a NEW store (alpha-3): seeding it in
+    # the form the booted app will read keeps the two the same store, as they are in a real install.
+    from src.database.country_form import writing_in
+
+    with writing_in("alpha3"), Sess() as s:
         s.add_all(
             [
                 Source(

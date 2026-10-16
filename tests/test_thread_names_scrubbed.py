@@ -88,9 +88,51 @@ def test_a_name_written_by_an_older_build_is_withheld_even_when_no_passphrase_is
     assert session_history._pressure_record(new)["threads"][0]["name"].startswith("oo-dump-")
 
 
-def test_both_snapshot_writers_stamp_their_names():
-    text = (ROOT / "src/monitoring/session_hwm.py").read_text(encoding="utf-8")
-    assert text.count('snap["names_scrubbed"] = True') == 2
+def test_both_snapshot_writers_stamp_and_scrub_their_names(held, monkeypatch):
+    """Behavioural: the heavy and the light snapshot each carry the stamp, and the name of a thread that holds the passphrase
+    is scrubbed in what they build (a source count would pass with the stamp set on the wrong object)."""
+    from src.monitoring import session_hwm
+
+    # The light writer skips a thread that is waiting, and this one is: without this it would never hold the name and its half of the
+    # test would pass whatever the writer did with it.
+    monkeypatch.setattr(session_hwm, "_is_waiting", lambda line: False)
+    # and the light writer keeps only the busiest few: with other threads about, ours could rank out of them
+    monkeypatch.setattr(session_hwm, "_LIGHT_THREADS", 10_000)
+    stop = threading.Event()
+    t = threading.Thread(target=stop.wait, name=f"oo-dump-{MARKER}", daemon=True)
+    t.start()
+    try:
+        readings = {"avail_mb": 100.0, "total_mb": 4000.0, "rss_mb": 1500.0}
+        heavy = session_hwm._pressure_snapshot(readings, "test")
+        light = session_hwm._light_snapshot(readings, "test", None)
+    finally:
+        stop.set()
+        t.join(2)
+    for snap in (heavy, light):
+        assert snap.get("names_scrubbed") is True
+        assert MARKER not in json.dumps(snap)
+    for snap in (heavy, light):
+        assert any(str(e.get("name", "")).startswith("oo-dump-") for e in snap["threads"]), "the thread was seen"
+
+
+@pytest.mark.parametrize(
+    "threads",
+    [{"name": "oo-dump-x"}, "oo-dump-x", 7, ["oo-dump-x"], [{"name": "oo-dump-x"}, "oo-dump-y"], [None], [["oo-dump-x"]], [{"nm": 1}]],
+)
+def test_vouched_names_withholds_every_unexpected_shape_of_an_unstamped_snapshot(threads):
+    from src.monitoring.release_view import vouched_names
+
+    out = vouched_names({"why": "x", "threads": threads})
+    assert "oo-dump-" not in json.dumps(out), out
+
+
+def test_vouched_names_leaves_a_stamped_snapshot_and_a_threadless_one_alone():
+    from src.monitoring.release_view import vouched_names
+
+    stamped = {"names_scrubbed": True, "threads": [{"name": "oo-dump-x"}]}
+    assert vouched_names(stamped) == stamped
+    assert vouched_names({"why": "x"}) == {"why": "x"}
+    assert vouched_names({"names_scrubbed": "yes", "threads": [{"name": "oo-dump-x"}]})["threads"][0]["name"].startswith("<thread name withheld")
 
 
 def test_the_standalone_forensics_route_and_its_text_carry_no_name(held, monkeypatch):
@@ -101,9 +143,9 @@ def test_the_standalone_forensics_route_and_its_text_carry_no_name(held, monkeyp
     peaks = forensics._previous_peaks()
     assert peaks and peaks.get("available") is True
     assert "oo-dump-" in json.dumps(peaks) and MARKER not in json.dumps(peaks)  # the thread section rendered
-    assert MARKER not in forensics.render_text(
-        {"previous_session": {"previous_session": "unclean-end", "previous_session_peaks": peaks}}
-    )
+    text = forensics.render_text({"previous_session": {"previous_session": "unclean-end", "previous_session_peaks": peaks}})
+    assert MARKER not in text
+    assert "oo-dump-" in text, "the thread section reached the text, so the absence of the marker means something"
 
 
 def test_the_end_record_written_to_the_ledger_carries_no_name(held):
@@ -193,13 +235,16 @@ def test_the_guard_sees_the_forms_it_claims_to(tmp_path, monkeypatch):
         "cur = threading.current_thread()\n"
         "b = cur.name\n"
         "c = threading.current_thread().getName()\n"
-        "ok = scrubbed_name(threading.current_thread().name)\n",
+        "ok = scrubbed_name(threading.current_thread().name)\n"
+        "ok2 = secret_scrub.scrubbed_name(threading.current_thread().name)\n"
+        "bad = my_scrubbed_name(threading.current_thread().name)\n"
+        "bad2 = scrubbed_name_not(cur.name)\n",
         encoding="utf-8",
     )
     monkeypatch.setitem(globals(), "ROOT", tmp_path)
     found = _raw_thread_names("src/p.py")
-    # both imports, the alias call, getattr, cur.name, getName; the wrapped one (line 11) passes
-    assert sorted(int(f.split(":")[1]) for f in found) == [3, 4, 5, 6, 8, 9], found
+    # both imports, the alias call, getattr, cur.name, getName, and two look-alike wrappers (12, 13); the wrapped ones (10, 11) pass
+    assert sorted(int(f.split(":")[1]) for f in found) == [3, 4, 5, 6, 8, 9, 12, 13], found
 
 
 def test_the_write_gate_holder_lines_are_scrubbed():

@@ -30,8 +30,9 @@ from src.database.models import Base
 def _head_revision() -> str | None:
     """The latest migration revision id the code ships (None if alembic is absent)."""
     try:
-        from src.database.migrate import _alembic_config
         from alembic.script import ScriptDirectory
+
+        from src.database.migrate import _alembic_config
 
         script = ScriptDirectory.from_config(_alembic_config())
         return script.get_current_head()

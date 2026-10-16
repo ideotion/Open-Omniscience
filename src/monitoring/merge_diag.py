@@ -44,7 +44,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 #: Bytes read per milestone journal. The field artifact was 1.6 GB and ~8.7M
 #: statement records; parsing all of it costs ~90 s of CPU, which is too much to
@@ -188,7 +188,7 @@ def engine_facts() -> dict[str, Any]:
             finally:
                 con.close()
         except Exception as exc:  # noqa: BLE001 - an absent driver is a fact, not a failure
-            out[name] = {"unavailable": exception_text(exc)}
+            out[name] = {"unavailable": record_text(exc, typed=True)}
     out["note"] = (
         "The merge sets PRAGMA temp_store explicitly: FILE on a plain working copy, where the "
         "default (MEMORY) would hold every statement journal and temp table in RAM, unbounded "
@@ -252,7 +252,7 @@ def window_facts(db_path: str | os.PathLike[str] | None = None) -> dict[str, Any
         )
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, it never raises
         out["measured"] = None
-        out["reason"] = exception_text(exc)
+        out["reason"] = record_text(exc, typed=True)
     return out
 
 
@@ -279,7 +279,7 @@ def sampled_statements(max_runs: int = _MAX_JOURNALS) -> dict[str, Any]:
         d = run_logs_dir()
         beats = sorted(d.glob("*.beat.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
     except Exception as exc:  # noqa: BLE001
-        return {"unavailable": exception_text(exc)}
+        return {"unavailable": record_text(exc, typed=True)}
     if not beats:
         return {**out, "note": "no beat files yet — nothing has run since this build"}
 
@@ -306,7 +306,7 @@ def sampled_statements(max_runs: int = _MAX_JOURNALS) -> dict[str, Any]:
                     if isinstance(s, (int, float)):
                         longest[sql] = max(longest.get(sql, 0.0), float(s))
         except Exception as exc:  # noqa: BLE001
-            out["runs"].append({"run": p.name, "unavailable": exception_text(exc)})
+            out["runs"].append({"run": p.name, "unavailable": record_text(exc, typed=True)})
             continue
         rows = [
             {
@@ -423,7 +423,7 @@ def attributed_statements(max_runs: int = _MAX_JOURNALS) -> dict[str, Any]:
         d = run_logs_dir()
         cands = [p for p in d.glob("*.jsonl") if not p.name.endswith(".beat.jsonl")]
     except Exception as exc:  # noqa: BLE001
-        return {"unavailable": exception_text(exc)}
+        return {"unavailable": record_text(exc, typed=True)}
 
     # Cheapest possible filter: only files that mention a statement record at all.
     hits: list[Path] = []
@@ -608,7 +608,7 @@ def cost_probe(avg_row_bytes: int | None = None) -> dict[str, Any]:
             "not exceed the MEMORY arm', not as 'allocated nothing'."
         )
     except Exception as exc:  # noqa: BLE001 - a probe that cannot run says so
-        out["unavailable"] = exception_text(exc)
+        out["unavailable"] = record_text(exc, typed=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     if swept:
@@ -846,7 +846,7 @@ def walk_probe() -> dict[str, Any]:
             out["encrypted"] = {
                 "skipped": (
                     "no encrypted walk on this install "
-                    f"({exception_text(exc)})"
+                    f"({record_text(exc, typed=True)})"
                 )
             }
 
@@ -896,7 +896,7 @@ def merge_diagnostics(*, probe: bool = True) -> dict[str, Any]:
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001
-            return {"block_ok": False, "error": exception_text(exc)}
+            return {"block_ok": False, "error": record_text(exc, typed=True)}
 
     win = safe("window", window_facts)
     avg = win.get("avg_article_bytes") if isinstance(win, dict) else None

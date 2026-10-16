@@ -3004,3 +3004,23 @@ def test_a_held_passphrase_a_cut_would_split_is_taken_out_before_the_child_s_std
     tail = rep["phase_results"]["fresh_install_restore"]["stderr_tail"]
     assert len(tail) == 4000 and "y" * 100 in tail
     assert HELD[-8:] not in tail and HELD[:8] not in tail, tail[:30]
+
+
+def test_row5_resumes_a_pool_timeout_by_the_jobs_field_not_by_words_it_no_longer_keeps(row5):
+    """The job's stored error for a driver's failure is its class only, so the retry reads ``pool_timeout`` (M1): deleting that read
+    leaves the words with nothing to find, and row 5 would end on a timeout it was built to ride out."""
+    row5["jobs"]["q"] = _FakeJob(
+        [{"state": "error", "running": False, "error": "TimeoutError (a database driver's text is withheld)", "pool_timeout": True}],
+        after_resume=[_Q_DONE])
+    row5["jobs"]["r"] = _FakeJob([_R_DONE])
+    out = rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert row5["jobs"]["q"].calls == ["start", "resume"] and [r["what"] for r in out["retries"]] == ["quarantine job"]
+
+
+def test_row5_does_not_resume_a_driver_failure_that_is_not_a_pool_timeout(row5):
+    row5["jobs"]["q"] = _FakeJob(
+        [{"state": "error", "running": False, "error": "OperationalError (a database driver's text is withheld)", "pool_timeout": False}])
+    row5["jobs"]["r"] = _FakeJob([_R_DONE])
+    with pytest.raises(rr._PhaseError):
+        rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert row5["jobs"]["q"].calls == ["start"]

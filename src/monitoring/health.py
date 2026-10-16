@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from enum import Enum
 
 from src.ingest import EthicalFetcher, FetchError, RobotsDisallowed, RobotsUnavailable
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 
 class HealthStatus(str, Enum):
@@ -80,7 +80,7 @@ def check_source(source, *, fetcher: EthicalFetcher) -> SourceHealth:
             HealthStatus.BLOCKED,
             None,
             now,
-            detail=exception_text(exc, typed=False),
+            detail=record_text(exc, typed=False),
         )
     except FetchError as exc:
         latency = (time.monotonic() - started) * 1000.0
@@ -91,7 +91,7 @@ def check_source(source, *, fetcher: EthicalFetcher) -> SourceHealth:
             HealthStatus.DOWN,
             round(latency, 1),
             now,
-            detail=exception_text(exc, typed=False),
+            detail=record_text(exc, typed=False),
         )
     except Exception as exc:  # noqa: BLE001 - audit finding 2026-07-17 (L3): the caller
         # (api/monitoring.py's sources_health) runs this in a plain list comprehension
@@ -110,5 +110,5 @@ def check_source(source, *, fetcher: EthicalFetcher) -> SourceHealth:
             HealthStatus.UNKNOWN,
             round(latency, 1),
             now,
-            detail=f"unexpected error: {exception_text(exc, typed=False)}",
+            detail=f"unexpected error: {record_text(exc, typed=False)}",
         )

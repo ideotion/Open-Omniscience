@@ -264,25 +264,24 @@ def test_the_export_and_the_screen_agree_about_one_row() -> None:
 #  The prohibitions                                                             #
 # --------------------------------------------------------------------------- #
 
-#: The brief forbids widening these. Storage stays alpha-2 for this slice; S05-02
-#: owns the column change, and doing it here would put a migration inside a display
-#: PR — the one place a reviewer is not looking for one.
-_NARROW_COUNTRY_COLUMNS = 7
-# The SEVENTH is ``places.country`` (0.5 row C, S05-03, 2026-09-28): a Place stores its
-# country the way every other column does today, alpha-2, so row B's migration (S05-02)
-# widens it with the six others. Recorded for row B in OPEN_QUEUE.md «ROW C'S PROPOSED
-# DEFAULTS» (8).
+#: S05-02 (0.5 row B, PR B1) WIDENED these: every country column is now `CountryCode(8)`, the typed column that
+#: speaks alpha-2 to the app and the store's own form to the file (`src/database/country_form.py`). The count is the
+#: seven `String(2)` columns plus `law_documents.jurisdiction` and `law_documents.country`, which the migration
+#: (`src/backup/country_migration.py`) rewrites; a column added later must be typed the same way or the migration
+#: skips it.
+_TYPED_COUNTRY_COLUMNS = 9
 
 
-def test_no_country_column_was_widened() -> None:
-    """Counted rather than pattern-matched on one line: the brief names SIX
-    ``String(2)`` country columns, and a widening shows up as five."""
+def test_every_country_column_is_the_typed_one_and_none_is_narrow() -> None:
+    """Counted rather than pattern-matched on one line: a column left `String(2)` would reject nothing in SQLite and
+    silently stay alpha-2 after the migration."""
     models = (_ROOT / "src" / "database" / "models.py").read_text(encoding="utf-8")
-    n = models.count("country: Mapped[str | None] = mapped_column(String(2))")
-    assert n == _NARROW_COUNTRY_COLUMNS, (
-        f"{n} narrow country columns, expected {_NARROW_COUNTRY_COLUMNS}. A widening "
-        "belongs to S05-02 (the storage half) with its migration, never to a display "
-        "slice; an ADDITION means a seventh column now needs the same treatment."
+    narrow = models.count("country: Mapped[str | None] = mapped_column(String(2))")
+    typed = models.count("mapped_column(CountryCode(8)")
+    assert narrow == 0, f"{narrow} country column(s) are still String(2): the migration would not rewrite them"
+    assert typed == _TYPED_COUNTRY_COLUMNS, (
+        f"{typed} typed country columns, expected {_TYPED_COUNTRY_COLUMNS}: a new one must be `CountryCode(8)` and join "
+        "the migration's count (`migration_columns()` reads it from the metadata)"
     )
 
 

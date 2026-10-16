@@ -38,7 +38,7 @@ from datetime import UTC, datetime
 
 from src.monitoring.llm_bench import _SHAPES_BY_ID, _one_call, _prompt_of
 from src.monitoring.llm_throughput import _run_level
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 SCHEMA = "oo-llm-context-1"
 
@@ -72,7 +72,7 @@ def _serving_limit_tokens(backend_name: str | None) -> dict:
             out = serving_window_tokens("vllm")
             return {"tokens": out.get("tokens"), "source": out.get("source")}
         except Exception as exc:  # noqa: BLE001
-            return {"tokens": None, "source": f"could not be read ({exception_text(exc, typed=False)})"}
+            return {"tokens": None, "source": f"could not be read ({record_text(exc, typed=False)})"}
     try:
         from src.config.app_settings import load_settings
 
@@ -87,7 +87,7 @@ def _serving_limit_tokens(backend_name: str | None) -> dict:
             ),
         }
     except Exception as exc:  # noqa: BLE001
-        return {"tokens": None, "source": f"could not be read ({exception_text(exc, typed=False)})"}
+        return {"tokens": None, "source": f"could not be read ({record_text(exc, typed=False)})"}
 
 
 def corpus_coverage(sizes=DEFAULT_SIZES, *, report: dict | None = None) -> dict:
@@ -153,7 +153,7 @@ def run_context_bench(
                 "schema": SCHEMA,
                 "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "available": False,
-                "reason": f"could not resolve a backend: {exception_text(exc)}",
+                "reason": f"could not resolve a backend: {record_text(exc, typed=True)}",
             }
 
     _sid, _name, _chars, system = _SHAPES_BY_ID["perception"]

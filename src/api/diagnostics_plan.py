@@ -123,6 +123,7 @@ MEMBER_AREAS: dict[str, str] = {
     "schema-drift.json": "database",
     "corpus-integrity.json": "database",
     "country-code-duplicates.json": "database",
+    "country-form.json": "database",
     "session-forensics.json": "sessions",
     "chronology.json": "sessions",
     "release-run.json": "sessions",

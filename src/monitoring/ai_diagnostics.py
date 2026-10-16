@@ -21,7 +21,7 @@ per-diagnostic-degrades convention).
 
 from __future__ import annotations
 
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 #: Bumped to -2 on 2026-08-06: ``active_model`` changed from a bare string to
 #: ``{provisioning_backend, model, routing_backend}``, and ``vllm_last_failure`` joined.
@@ -46,7 +46,7 @@ def _safe(fn):
     try:
         return fn()
     except Exception as exc:  # noqa: BLE001 - one section's failure must not break the rest
-        return {"section_ok": False, "error": exception_text(exc, limit=300, typed=False)}
+        return {"section_ok": False, "error": record_text(exc, limit=300, typed=False)}
 
 
 def _backend_facts() -> dict:

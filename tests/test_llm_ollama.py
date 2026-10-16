@@ -484,3 +484,16 @@ def test_the_mdn_link_does_not_occupy_the_budget():
     msg = str(exc.value)
     assert "developer.mozilla.org" not in msg
     assert "500" in msg and "llama-server binary not found" in msg
+
+
+def test_bounded_error_keeps_no_driver_words_and_no_held_passphrase(monkeypatch):
+    """``bounded_error`` is what llm_bench and the LLM routes record: it goes through ``record_text``. Reverting it to ``str(exc)``
+    must fail here (the sink-sweep guard excuses llm_bench because of it)."""
+    import sqlite3
+
+    from src.database import connect
+    from src.llm.ollama import bounded_error
+
+    monkeypatch.setattr(connect, "_passphrase", "kQ7!vLm-held-key")
+    assert "hunter2Zq8Lm_tbl" not in bounded_error(sqlite3.OperationalError("no such table: hunter2Zq8Lm_tbl"), 200)
+    assert "kQ7!vLm-held-key" not in bounded_error(ValueError("failed with kQ7!vLm-held-key inside"), 200)

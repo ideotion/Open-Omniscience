@@ -91,7 +91,9 @@ def _residue_in(text: str | None) -> list[str]:
 
 def law_ingest_report(session: Session) -> dict:
     """Counts + per-document facts, no score. See the module docstring for the caveats."""
-    docs = session.query(LawDocument).order_by(LawDocument.jurisdiction, LawDocument.id).all()
+    from src.database.country_form import order_key
+
+    docs = sorted(session.query(LawDocument).all(), key=lambda d: order_key(d.jurisdiction, d.id))  # see order_key
 
     # One query for the law corpus articles, keyed by canonical URL, rather than one per
     # document: the article rows carry full text, and pulling them one at a time is the

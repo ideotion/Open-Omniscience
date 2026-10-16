@@ -449,6 +449,25 @@ def test_pageerror_always_fails_the_step_and_is_never_conflated_with_console_noi
         assert summary["console_error_real"] == 0
 
 
+def test_a_page_error_that_echoes_a_held_passphrase_is_scrubbed_before_it_is_kept(monkeypatch):
+    """The encrypted click-through types the passphrase into the page; a script error that echoes an input value would otherwise land
+    in the report's console errors (L3). The held key is out of every error the driver keeps."""
+    from src.database import connect
+
+    held = "kQ7!vLm-held-pass-key"
+    monkeypatch.setattr(connect, "_passphrase", held)
+    with _new_driver() as d:
+        d.page.set_content(
+            "<!doctype html><html><body>ok"
+            f"<script>throw new Error('bad value {held} in the field');</script>"
+            "</body></html>"
+        )
+        d.page.wait_for_timeout(100)
+        errors = d.console_errors()
+        assert any("bad value" in e for e in errors), "the error was seen"
+        assert not any(held in e for e in errors)
+
+
 def test_the_documented_429_noise_is_filtered_from_console_errors_but_still_counted_separately():
     with _new_driver() as d:
         d.page.set_content(

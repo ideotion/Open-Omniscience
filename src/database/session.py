@@ -354,8 +354,28 @@ def init_db() -> None:
     _init_step("import:models")
     from src.database.models import Base  # local import breaks the cycle
 
+    # A country-form migration that began and did not end leaves rows in both forms: nothing boots on such a store
+    # (every start path goes through here), and ``store_form()`` refuses the writes of anything already running.
+    _init_step("import:country_form")
+    from src.database.country_form import refuse_if_unfinished, stamp_new_store
+
+    _init_step("refuse_if_unfinished")
+    refuse_if_unfinished()
+
+    # A file that already holds a corpus keeps the country form it has (src/database/country_form.py); one the
+    # app is creating NOW is stamped alpha-3 right after the tables exist, before any row can carry a code.
+    _init_step("import:sqlalchemy")
+    from sqlalchemy import inspect as _sa_inspect
+
+    # ``app_state`` alone is not a corpus: the settings store can create it before the first boot reaches here.
+    _init_step("any:country_form_look")
+    _had_tables = any(t != "app_state" for t in _sa_inspect(engine).get_table_names())
+
     _init_step("create_all")
     Base.metadata.create_all(engine)
+
+    _init_step("stamp_new_store")
+    stamp_new_store(engine, had_tables=_had_tables)
 
     # Ensure the full-text search index (SQLite FTS5). No-op on other backends. The index
     # is maintained incrementally by triggers, so ``ensure_fts`` rebuilds ONLY when needed
