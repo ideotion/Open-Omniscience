@@ -843,20 +843,19 @@ def previous_session_report() -> dict[str, Any]:
 
 
 def _died_into_phase(peaks: dict[str, Any] | None) -> dict[str, Any]:
-    """The last phase the previous session recorded and the seconds from its first sighting to the session's last record.
+    """Seconds from the first sighting of the previous session's last phase to its last record.
 
-    The last record is the last ``observe`` call, not the moment of death, so the figure is a lower bound on how long the
-    session lived in the phase. Where either the phase or its start was not recorded the seconds are ``None`` with a reason,
-    never ``0`` (a 0 would read as "died the instant it began")."""
-    out: dict[str, Any] = {"phase": None, "seconds_phase_start_to_last_record": None}
+    WHICH phase is not repeated here: it is ``previous_session_peaks.phase`` in the same report, and the seconds are only ever
+    given when that field is present (the byte room is the reason it is not copied). The last record is the last ``observe``
+    call, not the moment of death, so the figure is a lower bound. Where the phase or its start was not recorded the seconds are
+    ``None`` with a reason, never ``0`` (a 0 would read as "died the instant it began")."""
+    out: dict[str, Any] = {"seconds_in_peaks_phase": None}
     if not isinstance(peaks, dict) or peaks.get("available") is False:
         out["reason"] = "no high-water record"
         return out
-    phase = peaks.get("phase")
-    if not isinstance(phase, str) or not phase:
+    if not isinstance(peaks.get("phase"), str) or not peaks["phase"]:
         out["reason"] = "no phase was recorded"
         return out
-    out["phase"] = phase
     try:
         began = datetime.fromisoformat(str(peaks["phase_since"]))
         last = datetime.fromisoformat(str(peaks["last_ts"]))
@@ -867,7 +866,7 @@ def _died_into_phase(peaks: dict[str, Any] | None) -> dict[str, Any]:
     if secs < 0:
         out["reason"] = "clock moved"
         return out
-    out["seconds_phase_start_to_last_record"] = round(secs, 1)
+    out["seconds_in_peaks_phase"] = round(secs, 1)
     return out
 
 
@@ -1739,9 +1738,10 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- how it ended: {how['summary']}")
     dip = how.get("died_into_phase")
     if isinstance(dip, dict):
-        secs = dip.get("seconds_phase_start_to_last_record")
+        secs = dip.get("seconds_in_peaks_phase")
+        which = (prev.get("previous_session_peaks") or {}).get("phase") or "unknown"
         lines.append(
-            f"  - last phase: {dip.get('phase') or 'unknown'}, "
+            f"  - the last phase seen (previous_session_peaks.phase: {which}): "
             + (f"{secs} s from its start to the last record" if secs is not None else f"duration unmeasured ({dip.get('reason')})")
         )
     kern = prev.get("kernel_evidence") or {}

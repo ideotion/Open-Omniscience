@@ -719,9 +719,9 @@ def test_an_earlier_end_with_a_dump_carries_the_kind_on_its_trace(dd):
 # --------------------------------------------------------------------------- #
 def test_died_into_phase_is_the_seconds_from_phase_start_to_last_record():
     got = forensics._died_into_phase({
-        "phase": "pass-tail", "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
+        "phase": "pass tail: hygiene", "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
     })
-    assert got == {"phase": "pass-tail", "seconds_phase_start_to_last_record": 270.0}
+    assert got == {"seconds_in_peaks_phase": 270.0}
 
 
 @pytest.mark.parametrize("peaks, reason", [
@@ -734,8 +734,27 @@ def test_died_into_phase_is_the_seconds_from_phase_start_to_last_record():
 ])
 def test_died_into_phase_is_null_with_a_reason_never_zero(peaks, reason):
     got = forensics._died_into_phase(peaks)
-    assert got["seconds_phase_start_to_last_record"] is None, "an unmeasured duration must not read as 0"
+    assert got["seconds_in_peaks_phase"] is None, "an unmeasured duration must not read as 0"
     assert reason in got["reason"]
+
+
+def test_died_into_phase_never_carries_seconds_without_the_phase_it_points_at():
+    # The report does not repeat the phase name (byte room): the seconds mean "in previous_session_peaks.phase", so
+    # they must never be given where that field is absent, empty or not a string.
+    stamps = {"phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00"}
+    for phase in (None, "", 7, ["x"]):
+        peaks = {**stamps, **({} if phase is None else {"phase": phase})}
+        assert forensics._died_into_phase(peaks)["seconds_in_peaks_phase"] is None, phase
+
+
+def test_the_text_names_the_phase_the_seconds_refer_to():
+    prev = {
+        "previous_session": "unclean-end",
+        "how_it_ended": {"summary": "x", "died_into_phase": {"seconds_in_peaks_phase": 270.0}},
+        "previous_session_peaks": {"available": True, "phase": "pass tail: hygiene"},
+    }
+    text = forensics.render_text({"previous_session": prev})
+    assert "previous_session_peaks.phase: pass tail: hygiene" in text and "270.0 s" in text
 
 
 def test_phase_since_moves_only_when_the_phase_changes(monkeypatch):
@@ -754,10 +773,14 @@ def test_phase_since_moves_only_when_the_phase_changes(monkeypatch):
 
 
 def test_died_into_phase_costs_few_serialised_bytes():
-    got = forensics._died_into_phase({
-        "phase": "collector-pass-tail", "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
+    # The longest phase string today is the collector's own "collecting (pass <ISO timestamp>)", 43 characters; the phase name
+    # is not in died_into_phase, so the size must not grow with it. phase_since rides previous_session_peaks (the new mark).
+    phase = "collecting (pass 2026-10-16T10:00:00+00:00)"
+    assert len(phase) == 43
+    measured = forensics._died_into_phase({
+        "phase": phase, "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
     })
-    worst = forensics._died_into_phase({"phase": "collector-pass-tail", "phase_since": "bad", "last_ts": "2026-10-16T10:04:30+00:00"})
-    new_mark = len(json.dumps({"phase_since": "2026-10-16T10:00:00+00:00"}, separators=(",", ":"))) - 1  # the key rides in previous_session_peaks too
-    sizes = [len(json.dumps(got, separators=(",", ":"))) + new_mark, len(json.dumps(worst, separators=(",", ":")))]  # the null case has no phase_since
-    assert max(sizes) <= 130, f"died_into_phase plus phase_since is {max(sizes)} B; the report has 130 B of margin"
+    null = forensics._died_into_phase({"phase": phase, "last_ts": "2026-10-16T10:04:30+00:00"})
+    new_mark = len(json.dumps({"phase_since": "2026-10-16T10:00:00+00:00"}, separators=(",", ":"))) - 1
+    sizes = [len(json.dumps(measured, separators=(",", ":"))) + new_mark, len(json.dumps(null, separators=(",", ":")))]
+    assert max(sizes) <= 130, f"died_into_phase is {sizes} B (measured+mark, null); the report has 130 B of margin"
