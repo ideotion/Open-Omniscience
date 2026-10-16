@@ -18,6 +18,7 @@ import itertools
 import logging
 import os as _os
 import threading as _threading
+import time as _time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Annotated, Any, cast
@@ -169,6 +170,47 @@ WARM_TRENDING_INSIGHTS = (6, 6)
 _read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
 
 
+def _degraded_window_s() -> float:
+    """How long (``OO_DEGRADED_REPLAY_S``, default 30 s; 0 turns it off) a heavy read that FAILED at the hard statement
+    deadline, or came back PARTIAL, is answered again from that outcome instead of being recomputed.
+
+    What it protects is the one corpus connection and the writer behind it: a scan that has just spent its whole
+    deadline (60 s) on a corpus the rollup cannot serve is not going to finish sooner a moment later, and Home's 15 s
+    tick plus every other open view asked for it again each time (2026-10-16: 533 requests, 362 of them 503 at 60 s,
+    75% of a session's wall clock on one question). The window is two ticks of that poll. It is not a cache of
+    results: see ``_degraded_cache``."""
+    try:
+        return max(0.0, float(_os.environ.get("OO_DEGRADED_REPLAY_S", "30")))
+    except (TypeError, ValueError):
+        return 30.0
+
+
+#: The short-lived replay store of ``_deadlined(degraded_replay=True)``. ITS WINDOW (``_degraded_window_s``, 30 s) is two
+#: ticks of Home's 15 s poll, and that tick storm is all it protects: the same failed or partial scan is not started
+#: again inside it, by that poll or by any other open view. Kept apart from ``_read_cache`` on purpose: a
+#: partial answer or a failure is a statement about the last few seconds, never a value to serve as the full one for
+#: the normal TTL (a partial in ``_read_cache`` was served as the answer for 120 s, and a full hit there must always
+#: win over anything in here).
+_degraded_cache = SimpleCache(max_size=32, default_ttl=30)
+
+
+def _degraded_put(key: str, kind: str, value: Any) -> None:
+    window = _degraded_window_s()
+    if window <= 0:
+        return
+    _degraded_cache.set(key, {"kind": kind, "value": value, "stored_at": _time.monotonic(), "window_s": window},
+                        ttl=max(1, int(window + 0.999)))
+
+
+def _degraded_get(key: str) -> dict | None:
+    """The replayable outcome for ``key`` with the seconds left in its window, or None (expired, off or absent)."""
+    hit = _degraded_cache.get(key)
+    if not isinstance(hit, dict):
+        return None
+    left = hit["window_s"] - (_time.monotonic() - hit["stored_at"])
+    return {**hit, "left_s": left} if left > 0 else None
+
+
 def _ckey(name: str, **params) -> str:
     return name + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
 
@@ -241,15 +283,21 @@ def _bind_key(db, key: str) -> str:
         return key
 
 
-def _cached(key: str, compute):
+def _cached(key: str, compute, *, degraded_replay: bool = False):
     """Return the cached payload (flagged ``cached: true``) or compute, stamp the
-    freshness window, store and return it. Disabled when the TTL is 0."""
+    freshness window, store and return it. Disabled when the TTL is 0.
+
+    ``degraded_replay``: a payload that says ``partial: true`` is NOT stored here (it would be served as the answer for
+    the whole TTL); it goes to the short replay store instead (``_degraded_cache``) and is returned as computed."""
     if _CACHE_TTL_S <= 0:
         return compute()
     hit = _read_cache.get(key)
     if isinstance(hit, dict):
         return {**hit, "cached": True}
     out = compute()
+    if degraded_replay and isinstance(out, dict) and out.get("partial"):
+        _degraded_put(key, "partial", out)
+        return {**out, "cached": False}
     if isinstance(out, dict):
         out = {
             **out,
@@ -261,7 +309,7 @@ def _cached(key: str, compute):
     return out
 
 
-def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None):
+def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None, degraded_replay: bool = False):
     """Cache + a bounded-concurrency guard + a statement DEADLINE around the heaviest reads.
 
     The per-keyword analysis subtabs (associations / graph / framing) and the polled
@@ -285,6 +333,12 @@ def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None)
     uses on_timeout so a too-large graph degrades to a message, never a 60s->503 (Item 8).
     A degraded/busy payload is NOT cached (both exceptions fire OUTSIDE ``_cached``, before
     the miss stores), so a transient overrun/backpressure never poisons the cache.
+
+    ``degraded_replay=True`` (the polled trending-windows read): the one exception to "a failure recomputes next time".
+    A hard-deadline 503, or a ``partial: true`` payload, is kept for ``_degraded_window_s()`` seconds in a store of its
+    own, and a request that finds no full cached answer is given THAT outcome again (the same 503 with a
+    ``Retry-After`` of what is left, or the partial payload marked ``replayed``) instead of starting another scan of
+    the corpus. A full answer in the normal cache always wins; a partial is never stored there.
     """
     fkey = flight_key(db, key)
     bkey = _bind_key(db, key)  # D5: bind-qualify the TTL cache key (never cross-corpus)
@@ -293,18 +347,53 @@ def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None)
         with statement_deadline(db):
             return compute()
 
+    if degraded_replay and _CACHE_TTL_S > 0 and not isinstance(_read_cache.get(bkey), dict):
+        again = _degraded_get(bkey)
+        if again is not None:
+            left = int(again["left_s"]) + 1
+            if again["kind"] == "failure":
+                raise HTTPException(status_code=503, detail=again["value"], headers={"Retry-After": str(left)})
+            # still partial, with its own caveat: ``replayed`` and the age of the answer are added, nothing is removed
+            return {**again["value"], "cached": True, "replayed": True,
+                    "replayed_age_s": round(again["window_s"] - again["left_s"], 1),
+                    "replay_window_s": again["window_s"]}
+
     try:
-        return _cached(bkey, lambda: run_heavy(fkey, _run))
+        return _cached(bkey, lambda: run_heavy(fkey, _run), degraded_replay=degraded_replay)
     except StatementTimeout as exc:
         if on_timeout is not None:
             return on_timeout(exc)
-        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
+        detail = http_detail(exc)
+        if degraded_replay:
+            _degraded_put(bkey, "failure", detail)
+        raise HTTPException(status_code=503, detail=detail) from exc
     except HeavyBusy as exc:
+        _raise_if_heavy_paused(type(exc), http_detail(exc))  # a pause may be typed as a kind of busy: it is still a named pause, not a 429
         if on_busy is not None:
             return on_busy(exc)
         raise HTTPException(
             status_code=429, detail=http_detail(exc), headers={"Retry-After": "2"}
         ) from exc
+    except Exception as exc:
+        _raise_if_heavy_paused(type(exc), http_detail(exc))
+        raise
+
+
+#: What ``Retry-After`` a named scan pause carries (the pause's own wait is short; the client's back-off does the rest).
+_PAUSE_RETRY_AFTER_S = "10"
+
+
+def _raise_if_heavy_paused(kind: type, detail: str) -> None:
+    """Scans are paused on purpose (``HeavyPaused``, raised by ``run_heavy`` while the write-ahead-log latch is engaged):
+    answer 503 with a ``Retry-After`` and the pause's OWN words, so the screen can name it. Matched by class name through
+    the MRO, so this file does not depend on where the class lives. It is not stored anywhere: nothing was computed, so
+    there is no data to cache, and a replay would go on naming a pause that has already ended (raising it costs
+    nothing, the next call asks again). Anything else returns and the caller re-raises."""
+    if not any(klass.__name__ == "HeavyPaused" for klass in kind.__mro__):
+        return
+    raise HTTPException(
+        status_code=503, detail=detail, headers={"Retry-After": _PAUSE_RETRY_AFTER_S}
+    ) from None
 
 
 def _graph_budget_s() -> float:
@@ -1820,6 +1909,18 @@ def insights_trending(
     ))
 
 
+def _trending_live_budget_s() -> float | None:
+    """How long one /trending-windows request may spend on the LIVE scan (``OO_TRENDING_LIVE_BUDGET_S``, default
+    20 s; 0 turns the bound off). It only matters while no rollup serves: summing the rollup is a few rows. The
+    hard statement deadline (60 s) stays beneath it; this one exists so that deadline is not the normal outcome
+    (2026-10-16: 533 requests, 362 of them 503 at 60 s, on an install whose rollup build had been stopped)."""
+    try:
+        value = float(_os.environ.get("OO_TRENDING_LIVE_BUDGET_S", "20"))
+    except (TypeError, ValueError):
+        return 20.0
+    return value if value > 0 else None
+
+
 @router.get("/trending-windows")
 def insights_trending_windows(
     country: str | None = None,
@@ -1850,10 +1951,11 @@ def insights_trending_windows(
     # rows against the Wikidata ring index -- no DB -- so moving it out of the
     # cached compute costs nothing and lets ONE entry serve every UI language.
     key = trending_windows_key(country=country, kind=kind, limit=limit, series_top=series_top)
+    budget = _trending_live_budget_s()
     out = _deadlined(db, key, lambda: rm.trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top,
-        target_lang=None,
-    ))
+        target_lang=None, live_budget_s=budget,
+    ), degraded_replay=True)
     return _annotate_windows(out, tl, db, country)
 
 
@@ -2362,6 +2464,46 @@ def insights_subjectivity(
     return {"article_id": article_id, "provenance": "deduced", **result}
 
 
+def _map_live_budget_s() -> float | None:
+    """How long (``OO_MAP_LIVE_BUDGET_S``, default 20 s; 0 turns it off) the map's first scan may take before the second
+    is not started (see ``q.map_data``). The hard statement deadline stays beneath it."""
+    try:
+        value = float(_os.environ.get("OO_MAP_LIVE_BUDGET_S", "20"))
+    except (TypeError, ValueError):
+        return 20.0
+    return value if value > 0 else None
+
+
+def _corpus_epoch_for_key(db: Session) -> int:
+    """The corpus epoch as a cache-key part: read fresh (never ``session.get``, whose identity map would hide another
+    connection's bump), ``0`` when unreadable. An unreadable epoch can only make a key coarser, never serve across a
+    bump that was seen."""
+    try:
+        from src.analytics.corpus_epoch import CORPUS_EPOCH_KEY
+        from src.database.models import DerivedMeta
+
+        raw = db.query(DerivedMeta.value).filter(DerivedMeta.key == CORPUS_EPOCH_KEY).scalar()
+        return int(raw) if raw is not None else 0
+    except Exception:  # noqa: BLE001 - a cache key must never fail the read
+        return 0
+
+
+def _filter_fingerprint() -> str:
+    """The keyword-filter settings (exclusions, minimum length, numeric drop, built-in stoplist on/off) as a cache-key
+    part: the map hides terms with them, so a cached map must not outlive a change to them. ``"?"`` when unreadable
+    (a coarser key, never a failed read)."""
+    try:
+        import hashlib
+        import json
+
+        from src.analytics.filters import load_settings
+
+        raw = json.dumps(load_settings().to_dict(), sort_keys=True).encode("utf-8")
+        return hashlib.blake2s(raw, digest_size=6).hexdigest()
+    except Exception:  # noqa: BLE001 - a cache key must never fail the read
+        return "?"
+
+
 @router.get("/map")
 def insights_map(
     days: int | None = Query(30, ge=1, le=3650),
@@ -2381,16 +2523,26 @@ def insights_map(
     # threadpool slot for the whole time).
     from src.catalog.cities import cached_index, lookup
 
-    data = q.map_data(db, days=days, kind=_kind(kind), top_per_area=top_per_area)
-    index = cached_index()
-    placed = 0
-    for city in data.get("cities", []):
-        hit = lookup(index, city.get("name", ""), city.get("country"))
-        if hit:
-            city["lat"], city["lon"] = hit.lat, hit.lon
-            placed += 1
-    data["cities_placed"] = placed
-    return data
+    def _compute() -> dict:
+        data = q.map_data(db, days=days, kind=_kind(kind), top_per_area=top_per_area, budget_s=_map_live_budget_s())
+        index = cached_index()
+        placed = 0
+        for city in data.get("cities", []):
+            hit = lookup(index, city.get("name", ""), city.get("country"))
+            if hit:
+                city["lat"], city["lon"] = hit.lat, hit.lon
+                placed += 1
+        data["cities_placed"] = placed
+        return data
+
+    # 2026-10-16: this read had no deadline, no cache and no rollup, so every open of the map paid two scans of the
+    # window's mentions (neither area column is indexed) on a held worker. It now has the statement deadline, the
+    # cache (keyed on the corpus epoch and on the keyword-filter settings as well as the parameters, so a re-index,
+    # prune, restore or a newly excluded keyword never serves the old map; ingest alone is covered by the TTL, which
+    # the payload states) and the short failure/partial replay.
+    key = _ckey("map", days=days, kind=_kind(kind), top=top_per_area, epoch=_corpus_epoch_for_key(db),
+                filters=_filter_fingerprint())
+    return _deadlined(db, key, _compute, degraded_replay=True)
 
 
 @router.get("/map-coverage")

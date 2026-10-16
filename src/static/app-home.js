@@ -896,16 +896,46 @@
     // The UI language the stash was TRANSLATED for (its rows carry that language's
     // translations), so a re-render never paints it under another language's tags.
     let _homeTrendLang = "";
+    // The trends call is the one Home poll that can cost a whole-corpus scan, so its failures back IT off, on top of
+    // the client-wide ladder in app-core.js. That ladder counts refusals inside a 60 s window, and a statement
+    // deadline is 60 s: every 503 had left the window before the next one arrived, the factor stayed 1, and one
+    // install asked the same question 533 times in a session (362 of them 503). Here the gap doubles from the 15 s
+    // tick with each consecutive deadline refusal (or partial answer: the server stopped the scan short) and returns
+    // to the tick the moment a full answer arrives. The ceiling is how long the strip may go without even a try.
+    // Only those two count: a call that never got an answer (the server restarting, a dropped connection) or a render
+    // exception carries no HTTP status and says nothing about the scan, so it must not stretch the gap.
+    const _HOME_TRENDS_BASE_MS = 15000;   // LIVE.home.ms
+    const _HOME_TRENDS_MAX_MS = 600000;
+    let _homeTrendsFails = 0, _homeTrendsNextAt = 0;
+    function homeTrendsDue(now) { return now >= _homeTrendsNextAt; }
+    function homeTrendsNoteResult(full, now, status) {   // status: an HTTP status, or "partial" for a partial answer
+      if (full) { _homeTrendsFails = 0; _homeTrendsNextAt = 0; return; }
+      if (status !== 503 && status !== "partial") return;   // only a deadline refusal or a partial answer counts
+      _homeTrendsFails += 1;
+      _homeTrendsNextAt = now + Math.min(_HOME_TRENDS_MAX_MS, _HOME_TRENDS_BASE_MS * Math.pow(2, _homeTrendsFails));
+    }
+    function homeTrendsBackoff() {   // for the node harness and diagnostics; no score
+      return {fails: _homeTrendsFails, next_at: _homeTrendsNextAt, base_ms: _HOME_TRENDS_BASE_MS, max_ms: _HOME_TRENDS_MAX_MS};
+    }
     async function loadHomeTrends() {
       const panel = $("home-trends-panel"), box = $("home-trends");
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const lang = uiLangCode();
-        const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam());
+        const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam(), {polled: true});
+        homeTrendsNoteResult(!d.partial, Date.now(), "partial");
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
         const terms = (wk && wk.terms) || [];
-        if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
+        if (!terms.length) {
+          if (d.partial && d.caveat) {
+            // Not computed is not "nothing is trending": say so where the strip would be (the server's own words).
+            _homeTrendTerms = []; _homeTrendCaveat = d.caveat;
+            if (panel) panel.hidden = false;
+            box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`;
+          } else { if (panel) panel.hidden = true; box.innerHTML = ""; }
+          return;
+        }
         if (panel) panel.hidden = false;
         const _hw = wk && wk.series_window;   // the axis the server sliced these against
         _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
@@ -935,7 +965,15 @@
         _renderOverviewTrends();   // the compact row folded into Overview (ruling 7a)
         _syncHomeSubtabs();
       } catch (e) {
-        if (panel) panel.hidden = true; box.innerHTML = "";
+        homeTrendsNoteResult(false, Date.now(), e && e.status);
+        if (e && e.status === 503 && e.message) {
+          // A 503 is the server SAYING why it did not compute this (a scan paused on purpose, the statement deadline):
+          // show its words where the strip would be, never an empty panel that reads as "nothing is trending".
+          if (panel) panel.hidden = false;
+          box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(e.message)}</div>`;
+        } else {
+          if (panel) panel.hidden = true; box.innerHTML = "";
+        }
         _renderOverviewTrends(); _syncHomeSubtabs();
       }
     }
@@ -1120,7 +1158,7 @@
         const stamp = _briefStamp(data);
         if (stamp !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
-      try { await loadHomeTrends(); } catch (e) {}
+      if (homeTrendsDue(Date.now())) { try { await loadHomeTrends(); } catch (e) {} }
       try { await loadHomeAlerts(); } catch (e) {}
     }
 

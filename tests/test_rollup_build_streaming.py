@@ -765,25 +765,41 @@ def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pids_leftovers_
     assert os.path.isdir(rollup_serve._spill_setting()) and os.path.isdir(mine), "once made, this pid's are live"
 
 
-def test_a_limit_hold_is_released_when_the_corpus_epoch_changes_but_not_inside_the_rebuild_ttl(serve_env, monkeypatch):
+def test_a_limit_hold_is_released_when_the_corpus_shrank_but_not_inside_the_rebuild_ttl(serve_env, monkeypatch):
     """D2: the limit never grows inside a process, so without this a corpus that shrank (a prune, a
-    restore of a smaller backup, a re-index) would keep the rollup off until the next restart. Not before the
-    TTL: ``/api/insights/reindex-all`` bumps the epoch on every 300-article call."""
+    restore of a smaller backup, a re-index under a longer stoplist) would keep the rollup off until the limit
+    grew. The epoch alone is NOT the signal (``/api/insights/reindex-all`` bumps it on every 300-article call, and
+    a release per bump started the same 15-minute scan again): the mention count is compared when the epoch moved,
+    and not before the rebuild TTL."""
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
     monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
     ttl = rollup_serve.rollup_serve_ttl_s()
     old = time.time() - ttl - 60.0
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": old, "duckdb_limit_mb": 740.0, "epoch": 4}
+
+    def hold(at, epoch=4):
+        rollup_serve._keep_stopped({"reason": "duckdb-limit", "at": at, "duckdb_limit_mb": 740.0, "epoch": epoch,
+                                    "mentions_count": 1000})
+
+    hold(old)
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 4)
-    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 500)
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit", "epoch unchanged: no count, no release"
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 5)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 1200)  # the epoch moved, the corpus did not shrink
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 900)
+    rollup_serve._keep_stopped({**rollup_serve._STATE["stopped"], "checked_at": old})
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 6)
     assert rollup_serve._stopped_build_verdict() is None
     assert rollup_serve._STATE["stopped"] is None, "released for good, not just for this check"
     # a stop younger than the TTL stays held through an epoch bump (a reindex-all drain bumps one per call)
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 740.0, "epoch": 4}
+    hold(time.time())
     assert rollup_serve._stopped_build_verdict() is not None
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: None)  # unreadable: no release
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": old, "duckdb_limit_mb": 740.0, "epoch": 4}
+    hold(old)
+    assert rollup_serve._stopped_build_verdict() is not None
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 9)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: None)  # unreadable count: no release
     assert rollup_serve._stopped_build_verdict() is not None
 
 

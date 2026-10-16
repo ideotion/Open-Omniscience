@@ -1221,6 +1221,11 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         "keyword_daily_rows": int(daily_rows),
         "keyword_meta_rows": meta_rows,
         "last_mention_id": max_streamed_id,
+        # The boundary phase B stopped at (``MAX(created_at)`` read once, before the scan; None when no
+        # mention had a ``created_at``). A comparison against the live table must stop at the same one:
+        # a row committed after it is left out of this build on purpose, so counting it on the live side
+        # is a guaranteed "mismatch" that says nothing about the rollup (``keyword_daily_parity``).
+        "scan_bound": scan_bound,
     }
 
 
@@ -1305,17 +1310,51 @@ def windowed_top_terms_raw(
     ]
 
 
-def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
+#: ``keyword_daily_parity(scan_bound=...)`` default: the live side is NOT bounded (the old behaviour, right
+#: for a rollup compared with a corpus nothing is writing to). ``None`` is a real value there (see below), so
+#: "not given" needs its own marker.
+_UNBOUNDED = object()
+
+
+def live_bound_clause(scan_bound) -> tuple[str, dict]:
+    """The SQL fragment (and its parameters) that limits the LIVE mentions table to what the build
+    that returned ``scan_bound`` could have streamed: the undated rows (phase A) and those dated at or
+    before the bound (phase B). ``scan_bound is None`` means no mention was dated when the build began, so
+    only the undated rows were in reach. Constant fragment, the value is a bound parameter."""
+    if scan_bound is None:
+        return "created_at IS NULL", {}
+    return "(created_at IS NULL OR created_at <= :scan_bound)", {"scan_bound": scan_bound}
+
+
+def keyword_daily_parity(
+    con, session, *, start_day=None, end_day=None, scan_bound=_UNBOUNDED
+) -> dict:
     """Honest parity probe: compare the rollup's windowed counts to the LIVE query, so we
     can PROVE (on a real corpus) that ``mentions`` is exact and the distinct-article count is
     an upper bound whose gap is reported — never hidden. Used by tests + a future diagnostics
     surface. Read-only; counts only.
+
+    ``scan_bound`` (the value ``build_keyword_daily`` returns): compare against the live rows the build could
+    have seen, not the rows a concurrent writer committed after it started. Without it a corpus that grows
+    during the build shows mismatches that belong to the writer (the 2026-10-16 benchmark: 8,814 of them,
+    every one of them rows newer than the build). With it a remaining mismatch is a real defect.
+
+    The direction of every difference is recorded, because the two directions mean different things: a rollup
+    BELOW live is a row the build missed, a rollup ABOVE live is a double count, a row deleted after it was
+    streamed, or a row changed in place after it was streamed (its ``created_at`` is then past the bound, so the
+    bounded live side leaves it out while the rollup still holds the streamed copy): the failure the ``articles``
+    upper bound and the epoch guard exist for.
     """
     from sqlalchemy import text as _sql
 
     roll = windowed_term_counts(con, start_day=start_day, end_day=end_day)
     clauses = ["observed_on IS NOT NULL"]
     p: dict = {}
+    bounded = scan_bound is not _UNBOUNDED
+    if bounded:
+        bound_sql, bound_params = live_bound_clause(scan_bound)
+        clauses.append(bound_sql)
+        p.update(bound_params)
     if start_day is not None:
         clauses.append("observed_on >= :s")
         p["s"] = start_day
@@ -1329,25 +1368,44 @@ def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
     live = {int(r[0]): (int(r[1]), int(r[2])) for r in live_rows}
 
     mention_mismatches = 0
+    rollup_below = 0
+    rollup_above = 0
     distinct_gap_keywords = 0
     distinct_gap_total = 0
-    upper_bound_holds = True
+    distinct_below_keywords = 0
     for kid, (lm, la) in live.items():
         rm, ra = roll.get(kid, (0, 0))
         if rm != lm:
             mention_mismatches += 1
+            if rm < lm:
+                rollup_below += 1
+            else:
+                rollup_above += 1
         if ra < la:
-            upper_bound_holds = False  # a rollup distinct count must NEVER be below live
+            distinct_below_keywords += 1  # a rollup distinct count must NEVER be below live
         if ra > la:
             distinct_gap_keywords += 1
             distinct_gap_total += ra - la
+    # Keywords the rollup holds and the live window no longer does (deleted after they were streamed): the
+    # live loop above cannot see them, and they are exactly the "rollup above live" direction.
+    rollup_only = sum(1 for kid in roll if kid not in live)
+    mention_mismatches += rollup_only
+    rollup_above += rollup_only
     return {
         "keywords_compared": len(live),
         "mentions_exact": mention_mismatches == 0,
         "mention_mismatches": mention_mismatches,
-        "distinct_upper_bound_holds": upper_bound_holds,
+        # which way the mentions differ: rollup < live (a row the build did not see) or rollup > live (a double
+        # count, or a row deleted after it was streamed, including keywords only the rollup still holds)
+        "mention_mismatch_rollup_below": rollup_below,
+        "mention_mismatch_rollup_above": rollup_above,
+        "rollup_only_keywords": rollup_only,
+        "distinct_upper_bound_holds": distinct_below_keywords == 0,
+        "distinct_below_keywords": distinct_below_keywords,
         "distinct_gap_keywords": distinct_gap_keywords,
         "distinct_gap_total": distinct_gap_total,
+        "bounded_by_scan_bound": bounded,
+        "scan_bound": (None if not bounded or scan_bound is None else str(scan_bound)),
         "method": (
             "keyword_daily windowed counts vs the live keyword_mentions aggregation. "
             "mentions (SUM(count)) is exact; articles (SUM(articles_on_day)) is an upper "

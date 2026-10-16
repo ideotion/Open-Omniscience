@@ -67,7 +67,7 @@ _SEQUENCE: dict[str, object] = {"started_at": None}
 def _reset() -> None:
     with _LOCK:
         _STEPS.clear()
-        _STEPS.update({n: {"state": "pending", "started_at": None, "seconds": None} for n in STEPS})
+        _STEPS.update({n: {"state": "pending", "started_at": None, "seconds": None, "detail": None} for n in STEPS})
         _SEQUENCE["started_at"] = None
 
 
@@ -235,10 +235,18 @@ class _SlowWatch:
             timer.cancel()
 
 
+def note_detail(name: str, detail: dict) -> None:
+    """Say, in the step's row of ``snapshot()``, why it ended as it did: codes and numbers, never a message of the
+    step's own (a step that raised passes the exception's class only). Cleared when the step starts."""
+    with _LOCK:
+        if name in _STEPS:
+            _STEPS[name]["detail"] = dict(detail)
+
+
 def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
     mono = time.monotonic()
     with _LOCK:
-        _STEPS[name].update(state="running", started_at=time.time())
+        _STEPS[name].update(state="running", started_at=time.time(), detail=None)
     state = "failed"  # until the step returns: a BaseException that ends it must not read as done
     # The warning is logged WHILE a step is still running, so one that never ends is on record too.
     slow = _SlowWatch(name, holds)
@@ -253,6 +261,7 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
         state = skipped.state
     except Exception as exc:  # noqa: BLE001 - a start-up step must never take the others down
         log_failure(_LOG, f"boot step {name} failed; the next step still runs", exc, level=logging.WARNING)
+        note_detail(name, {"error": type(exc).__name__})  # the class only: a step's own text can carry a path or a term
     finally:
         slow.cancel()
         took = time.monotonic() - mono
@@ -316,6 +325,9 @@ def _rollup_first_build() -> None:
         raise _Skipped
     outcome = rollup_serve.build_now_and_wait()
     if outcome == "declined":
+        # The boot row itself says why (2026-10-16: it read "declined" after 921 s and nothing else, and the reason
+        # was in a block of another report that a later check had overwritten).
+        note_detail("rollup", rollup_serve.decline_detail())
         raise _Skipped("declined")
     if outcome == "failed":
         raise RuntimeError("the rollup's first build failed (see the rollup_serve block)")

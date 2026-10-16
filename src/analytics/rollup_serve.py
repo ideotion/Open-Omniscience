@@ -99,6 +99,11 @@ _STATE: dict = {
     # What stopped the last build PART-WAY (None once a build has finished): the reason and the numbers
     # the retry rule compares the machine against.
     "stopped": None,
+    # The last decline that SAYS SOMETHING ABOUT THIS MACHINE OR CORPUS, kept until another one replaces it (see
+    # ``_note_decline``). ``last_skip`` is overwritten by every later check, and every windowed serve that finds no
+    # rollup re-runs the verdicts, so a diagnostics run's own ``exclusive-hold`` hid the reason the boot's build
+    # stopped (the 2026-10-16 bundle: declined after 921 s, reason lost). None == no such decline yet.
+    "last_decline": None,
     # The offload folder of the connection in "con" (None when it has none): removed when that
     # connection is replaced.
     "spill": None,
@@ -182,6 +187,8 @@ def _persisted_serve_active() -> bool:
 
 def status() -> dict:
     """Honest state of the served rollup (for diagnostics). No score."""
+    with contextlib.suppress(Exception):  # a diagnostics field must never fail the status
+        _stopped_hold()  # a stop an earlier process kept is part of the state, before any build has looked at it
     with _LOCK:
         con = _STATE["con"]
         built_at = _STATE["built_at"]
@@ -189,6 +196,8 @@ def status() -> dict:
         pending = _STATE["pending"]
         persisted = _STATE["persisted"]
         last_skip = _STATE["last_skip"]
+        stopped = dict(_STATE["stopped"]) if _STATE["stopped"] else None
+        last_decline = dict(_STATE["last_decline"]) if _STATE["last_decline"] else None
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
@@ -209,7 +218,70 @@ def status() -> dict:
         # Absent (None) means it has never declined -- never conflated with "declined
         # and everything was fine".
         "last_skip": last_skip,
+        # What stopped the last build PART-WAY, while that hold is in force (the retry rule compares the machine
+        # against it); None when no build was stopped or the hold was released.
+        "stopped": stopped,
+        # The last decline that is a statement about this machine or corpus (a memory verdict, a stopped build,
+        # an unaffordable start, a killed earlier build), NOT an import's exclusive window or the boot's ordering,
+        # and not replaced by the same reason being found again (``repeats`` counts that). Separate from
+        # ``last_skip`` on purpose: that one is whatever declined most recently.
+        "last_decline": last_decline,
+        # The numbers a build is held to, so a stop can be read against them: DuckDB's limit for this tier and
+        # whether it may offload to disk (it may not for an encrypted corpus, so the limit is a wall there).
+        "build_budget": _build_budget(),
     }
+
+
+#: The fields of a decline that go into another report's row (the boot step's): codes and numbers a reader compares
+#: against the budget. Free text of the engine is never among them.
+_DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
+                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats")
+
+
+def decline_detail() -> dict:
+    """Why the last build declined, for the boot step's row. The record of the build that just declined when it
+    declined on the MOMENT (an exclusive window, the boot's ordering: those never reach ``last_decline``, so the
+    sticky one would name an older, different reason). Otherwise the sticky ``last_decline`` when there is one (a
+    machine- or corpus-level reason, with the stage and numbers a bare echo of it lacks), else whatever declined last."""
+    with _LOCK:
+        skip = _STATE["last_skip"]
+        rec = skip if skip and skip.get("source") in _TRANSIENT_VERDICTS else (_STATE["last_decline"] or skip)
+        rec = dict(rec) if rec else None
+        stopped = dict(_STATE["stopped"]) if _STATE["stopped"] else None
+    if rec is None:
+        return {"reason": "unknown", "note": "the build reported a decline but no record of one was kept"}
+    out = {k: rec[k] for k in _DETAIL_FIELDS if isinstance(rec.get(k), (str, int, float, bool))}
+    if stopped and stopped.get("restored"):
+        out["restored"] = True
+    return out
+
+
+def _build_budget() -> dict:
+    try:
+        return {"duckdb_limit_mb": _duckdb_limit_mb(), "offload_allowed": not _corpus_encrypted()}
+    except Exception:  # noqa: BLE001 - a diagnostics field must never fail the status
+        return {"duckdb_limit_mb": None, "offload_allowed": None}
+
+
+#: The verdicts whose decline is about the moment, not about the machine: an exclusive window (a restore, an
+#: import, the diagnostics bundle) and the boot's start-up ordering. They are recorded in ``last_skip`` only.
+_TRANSIENT_VERDICTS = frozenset({"exclusive", "boot-order"})
+
+
+def _note_decline(kind: str, source: str, record: dict) -> None:
+    """Keep ``record`` as ``last_decline``. A verdict that finds the reason of a build that was STOPPED part-way
+    again (every serve request re-runs the verdicts) only counts: the stop's own record, with the stage and the
+    numbers it stopped at, is what a reader needs and must not be replaced by its echo."""
+    with _LOCK:
+        cur = _STATE["last_decline"]
+        # The stop's own record is the "stopped" one in the process that ran the build; in a process that restored
+        # it from disk the first echo IS the record (kind "skipped", source "stopped"), and later echoes fold into it.
+        if (kind == "skipped" and cur is not None and cur.get("reason") == record.get("reason")
+                and (cur.get("kind") == "stopped" or (cur.get("source") == "stopped" and source == "stopped"))):
+            cur["repeats"] = int(cur.get("repeats") or 0) + 1
+            cur["last_seen_at"] = record.get("at")
+            return
+        _STATE["last_decline"] = {"kind": kind, "source": source, **record, "repeats": 0}
 
 
 def _build_inmemory_and_swap() -> dict | None:
@@ -263,6 +335,9 @@ def _build_inmemory_and_swap() -> dict | None:
                 skip.update({
                     "begin_rss_mb": r["rss_mb"], "mentions_total": total_hint,
                     "epoch": token[0] if token else None,
+                    # what the wall was measured against, so a corpus that has SHRUNK since is told from one that
+                    # has only changed (the hold's release rule compares it; None when the count is unreadable)
+                    "mentions_count": _count_in(s),
                 })
                 return skip
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
@@ -442,6 +517,132 @@ def _current_epoch() -> int | None:
         return None
 
 
+def _count_in(session: Session) -> int | None:
+    try:
+        from sqlalchemy import func
+
+        from src.database.derived_views import KeywordMentionRead
+
+        return int(session.query(func.count(KeywordMentionRead.id)).scalar() or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _current_mention_count() -> int | None:
+    """How many keyword mentions the corpus holds now, or None if unreadable (an index-only count, read in the
+    background build thread and only when the stop's hold asks for it)."""
+    try:
+        from sqlalchemy import func
+
+        from src.database.derived_views import KeywordMentionRead
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            return int(s.query(func.count(KeywordMentionRead.id)).scalar() or 0)
+    except Exception:  # noqa: BLE001 - unreadable -> no release (the hold stays as it was)
+        return None
+
+
+#: The version of the BUILD's own memory behaviour, bumped by whoever changes it (the chunked load, the batch size, the
+#: DuckDB settings it opens with). A stop kept on disk says what THAT code could not do on this machine; once the app
+#: version or this number differs the record is released, or a stop recorded before a fix would keep the rollup off
+#: after the upgrade until the limit grew. A kept record from before this field existed has neither, so it is released too.
+BUILD_CODE_VERSION = 1
+
+#: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. The wall is
+#: the limit against the corpus, and a re-index drain under a longer stoplist or one pruned article moves the count by
+#: a handful of mentions while the same ~15-minute scan would stop at the same wall: a release per mention would be the
+#: rescan loop again. What the build needs is not measured at a stop (only that it did not fit), so this is a
+#: judgement, not a measurement: 5% is more than the churn of a drain and small enough that a real prune clears it. If
+#: it is wrong the cost is a held rollup, which a larger limit, offload becoming allowed, or another version releases.
+_SHRINK_TO_RETRY = 0.05
+
+#: The shortest gap between two counts of the whole mention table for this hold (seconds). The rebuild TTL may be set
+#: to 0, and the epoch moves on every 300-article call of a re-index drain; a COUNT is a read of the whole table.
+_COUNT_MIN_INTERVAL_S = 60.0
+
+#: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
+#: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
+_HOLD_LOOKED = False
+
+
+#: Held while the kept record is read, so a second caller waits for the read rather than seeing "looked, found nothing"
+#: in the window between the first caller marking the file looked at and its read finishing.
+_HOLD_READ_LOCK = threading.Lock()
+
+
+def _stopped_hold() -> dict | None:
+    """The stop record in force: this process's own, else (once per process) the one an earlier process kept.
+
+    The earlier one is marked ``restored``. It is read only when this process has stopped no build of its own, so
+    the file can never replace a fresher in-memory record. ``_HOLD_LOOKED`` is set only AFTER the read finished,
+    and a caller that arrives meanwhile waits for it."""
+    with _LOCK:
+        st = _STATE.get("stopped")
+        looked = _HOLD_LOOKED
+    if st or looked:
+        return st
+    with _HOLD_READ_LOCK:
+        with _LOCK:
+            st = _STATE.get("stopped")
+            looked = _HOLD_LOOKED
+        if st or looked:
+            return st
+        try:
+            return _read_kept_stop()
+        finally:
+            _mark_hold_looked()
+
+
+def _mark_hold_looked() -> None:
+    global _HOLD_LOOKED
+    with _LOCK:
+        _HOLD_LOOKED = True
+
+
+def _read_kept_stop() -> dict | None:
+    from src.analytics import rollup_hold
+
+    kept = rollup_hold.read()
+    if kept is None:
+        return None
+    from src import __version__
+
+    if kept.get("app_version") != __version__ or kept.get("build_code") != BUILD_CODE_VERSION:
+        _LOG.info("rollup serve: the kept stop was recorded by another version (%s/%s); released",
+                  kept.get("app_version"), kept.get("build_code"))
+        rollup_hold.clear()
+        return None
+    with _LOCK:
+        if _STATE.get("stopped") is None:
+            _STATE["stopped"] = {**kept, "restored": True}
+        return _STATE["stopped"]
+
+
+def _keep_stopped(record: dict) -> None:
+    """Hold later builds back on ``record`` and keep it for the next process."""
+    global _HOLD_LOOKED
+    from src import __version__
+    from src.analytics import rollup_hold
+
+    record = {**record, "app_version": __version__, "build_code": BUILD_CODE_VERSION}
+    with _LOCK:
+        _STATE["stopped"] = record
+        _HOLD_LOOKED = True
+    rollup_hold.write(record)
+
+
+def _release_stopped() -> None:
+    """The hold is over (the condition changed, or a build finished): forget it here and on disk."""
+    global _HOLD_LOOKED
+    from src.analytics import rollup_hold
+
+    with _LOCK:
+        _STATE["stopped"] = None
+        _HOLD_LOOKED = True
+    rollup_hold.clear()
+
+
 def _last_build_verdict() -> dict | None:
     """Decline while the machine does not have what a KILLED earlier build held (see rollup_marker)."""
     try:
@@ -462,11 +663,46 @@ def _stopped_build_verdict() -> dict | None:
     stops, two measured rules and no timer: a corpus that outgrew DuckDB's limit with no offload allowed
     is retried when the budget's limit is LARGER than the one it stopped at; a build the memory guard
     stopped is retried when the machine has what that build had grown by, plus the guard's floor."""
-    with _LOCK:
-        st = _STATE.get("stopped")
-    if not st or _persisted_serve_active():
+    if _persisted_serve_active():
+        return None
+    st = _stopped_hold()
+    if not st:
         return None
     try:
+        if st.get("reason") == "duckdb-limit":
+            # The wall is DuckDB's limit against the size of the corpus, and the epoch moves for reasons that do not
+            # touch either (``/api/insights/reindex-all`` bumps it on every 300-article call): a release per epoch
+            # would start the same 15-minute scan again for the length of a re-index drain, and again after every
+            # restart. So this stop is released by what changes the wall: a larger limit, or a corpus with FEWER
+            # mentions than it had at the stop (a prune, a restore of a smaller backup, a re-index under a longer
+            # stoplist). The count is taken only when the epoch has moved since the stop (or the last count), and
+            # not before the rebuild TTL, so it is not a read per serve.
+            limit = _duckdb_limit_mb()
+            if limit > float(st.get("duckdb_limit_mb") or 0):
+                _release_stopped()
+                return None
+            if st.get("offload_allowed") is False and _build_budget().get("offload_allowed") is True:
+                # stopped while the corpus was encrypted (no spill, so the limit was a wall); DuckDB may spill now
+                _release_stopped()
+                return None
+            seen = float(st.get("checked_at") or st.get("at") or 0.0)
+            if time.time() - seen >= max(float(rollup_serve_ttl_s()), _COUNT_MIN_INTERVAL_S):
+                now_epoch = _current_epoch()
+                if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
+                    count = _current_mention_count()
+                    base = st.get("mentions_count")
+                    if count is not None and isinstance(base, int) and count < base * (1.0 - _SHRINK_TO_RETRY):
+                        _release_stopped()
+                        return None
+                    if count is not None:
+                        # not smaller by enough: the wall stands; look again when the epoch moves next. The count
+                        # the stop was measured at stays the base, so small drops add up to the margin.
+                        _keep_stopped({**st, "epoch": now_epoch, "checked_at": time.time(),
+                                       "mentions_count": base if isinstance(base, int) else count})
+            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
+                    "stopped_at": st.get("at"), "restored": bool(st.get("restored")),
+                    "note": "a build under this limit was already stopped by it; retried when the memory budget's "
+                            "limit grows, offload becomes allowed, or the corpus is smaller than at the stop"}
         # A corpus that has been re-indexed, pruned or restored is a different corpus (the epoch moves for
         # exactly those); what stopped the last build says nothing about it, so the hold is released.
         # Not before the rebuild TTL (``rollup_serve_ttl_s``, the churn bound every rebuild already honours):
@@ -474,15 +710,8 @@ def _stopped_build_verdict() -> dict | None:
         # bring the rescan loop back for the length of that drain.
         now_epoch = _current_epoch() if time.time() - float(st.get("at") or 0.0) >= rollup_serve_ttl_s() else None
         if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
-            with _LOCK:
-                _STATE["stopped"] = None
+            _release_stopped()
             return None
-        if st.get("reason") == "duckdb-limit":
-            limit = _duckdb_limit_mb()
-            if limit > float(st.get("duckdb_limit_mb") or 0):
-                return None
-            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
-                    "stopped_at": st.get("at"), "note": "retried when the memory budget's limit grows"}
         avail = _readings()["avail_mb"]
         if avail is None:
             return None
@@ -766,13 +995,21 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip = (
-            exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
-            or _stopped_build_verdict() or _last_build_verdict() or _affordability_verdict()
-        )
-        if skip is not None:
+        skip, source = None, None
+        for name, verdict in (
+            ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
+            ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
+            ("affordability", _affordability_verdict),
+        ):
+            skip = verdict()
+            if skip:
+                source = name
+                break
+        if skip:
             with _LOCK:
-                _STATE["last_skip"] = skip
+                _STATE["last_skip"] = {**skip, "source": source}
+            if source not in _TRANSIENT_VERDICTS:
+                _note_decline("skipped", source, skip)
             _LOG.info(
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
@@ -803,20 +1040,23 @@ def _build_and_swap() -> str:
                     grew = min(grew, max(ceiling, observed))
                 with _LOCK:
                     _STATE["last_skip"] = stopped
-                    _STATE["stopped"] = {
-                        "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
-                        "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
-                        "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
-                    }
+                _keep_stopped({
+                    "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
+                    "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
+                    "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
+                    "mentions_total": stopped.get("mentions_total"), "rows_done": stopped.get("rows_done"),
+                    "mentions_count": stopped.get("mentions_count"),
+                    "offload_allowed": _build_budget().get("offload_allowed"),
+                })
                 _LOG.warning(
                     "rollup serve: build stopped part-way (%s); nothing was swapped in and it is not "
                     "retried until that condition changes",
                     stopped.get("guard_reason") or stopped.get("reason"),
                 )
+                _note_decline("stopped", "build", {**stopped, "grew_mb": grew, "observed_grew_mb": observed})
                 outcome = "declined"
                 return outcome
-        with _LOCK:
-            _STATE["stopped"] = None
+        _release_stopped()
         outcome = "built"
         return outcome
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
