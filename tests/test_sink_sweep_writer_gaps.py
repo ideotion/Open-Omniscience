@@ -92,3 +92,53 @@ def test_no_statement_the_merge_runs_can_carry_a_key():
         and not re.fullmatch(r"\s*ATTACH.*KEY\s+''.*", n.value, re.IGNORECASE | re.DOTALL)
     ]
     assert not hits, f"a keyed statement in the merge would be traced into a journal label unscrubbed: {hits}"
+
+
+# ---- the bundle's readers of files an older build wrote raw ---------------------------------------------------------------------
+
+
+def _bundle():
+    from src.api.diagnostics import bundle
+
+    return bundle
+
+
+def test_left_over_journals_are_checked_before_they_are_cut_and_folded(tmp_path):
+    """A left-over all-diagnostics journal from an older build holds a passphrase an error quoted: the line is checked whole, BEFORE
+    the per-line cut (a cut through a key leaves its start), and the torn line's ``raw`` excerpt carries none either. MUTATION TARGETS:
+    the scrub before the cut in ``_read_previous_run_journals``, the one on the parsed record and the one on the ``raw`` excerpt."""
+    b = _bundle()
+    good = json.dumps({"event": "end", "file": "m", "outcome": "error", "error": f"near {_PW} here"})
+    torn = '{"event": "end", "file": "m", "error": "' + _PW + " torn"
+    long_pad = "x" * (b._PREVIOUS_JOURNAL_MAX_LINE_CHARS - 12)
+    cut = json.dumps({"event": "note", "pad": long_pad, "error": _PW})  # the key straddles the per-line cut
+    j = tmp_path / "oo-all-diagnostics-20260101-000000.journal.jsonl"
+    j.write_text("\n".join([good, torn, cut]) + "\n", encoding="utf-8")
+    previous = b._read_previous_run_journals(tmp_path, tmp_path / "own.journal.jsonl")
+    text, block = b._fold_previous_run_journals(previous)
+    blob = text + json.dumps(block) + json.dumps(previous)
+    for form in _forms():
+        assert form not in blob, form
+    assert block["runs"][0]["unparsed_lines"] >= 1
+    # the fold alone, handed raw lines, is also safe (it is called with whatever a reader gives it)
+    text2, block2 = b._fold_previous_run_journals({"carried": [{"journal": "j", "bytes": 1, "truncated": False, "lines": [good, torn]}], "not_carried": []})
+    for form in _forms():
+        assert form not in text2 + json.dumps(block2), form
+
+
+def test_import_results_member_checks_what_an_older_build_wrote(monkeypatch, tmp_path):
+    """The bundle's ``imports`` member reads the last 50 lines of ``import_results.jsonl`` (never rotated). An older build's line holds
+    the passphrase in an error; a torn line is counted and named, never passed on. MUTATION TARGET: the scrub of each record."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    old = {"at": "2026-01-01", "kind": "commodity", "results": [{"key": "k", "detail": f"driver said {_PW}"}]}
+    (tmp_path / "import_results.jsonl").write_text(json.dumps(old) + '\n{"at": "torn ' + _PW + "\n", encoding="utf-8")
+    monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    with TestClient(app) as c:
+        data = c.get("/api/diagnostics/debug-bundle").json()["data"]
+    imports = data["imports"]
+    for form in _forms():
+        assert form not in json.dumps(imports), form
+    assert any(isinstance(r, dict) and r.get("lines_not_read") == 1 for r in imports), imports

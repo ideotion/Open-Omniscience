@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,diagnostics,Bundle readers check older files for the passphrase and a deadline-stopped member names the deadline,shipped,PR #1420,src/api/diagnostics/bundle.py;tests/test_sink_sweep_writer_gaps.py;tests/test_debug_bundle_hardening.py,"The imports member scrubs each import_results.jsonl record and counts torn lines; left-over all-diagnostics journals are scrubbed before the per-line cut and again on the parsed record and the unparsed excerpt; a DB member the statement deadline stopped records stopped_by and deadline_s."

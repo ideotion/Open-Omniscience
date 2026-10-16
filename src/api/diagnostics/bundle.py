@@ -305,7 +305,13 @@ def debug_bundle(
             try:
                 return thunk()
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
-                return {"error": _err_str(exc)}
+                out = {"error": _err_str(exc)}
+                # A member the deadline stopped says so, and names the deadline: "interrupted" alone reads as a fault of the
+                # member, when it is the bundle's own time limit that ended it (the engine's text names no limit).
+                if isinstance(exc, StatementTimeout) or ("interrupt" in str(exc).lower() and deadline_expired(db)):
+                    out["stopped_by"] = "statement deadline"
+                    out["deadline_s"] = budget
+                return out
         box: dict = {}
 
         def _run() -> None:
@@ -404,12 +410,19 @@ def debug_bundle(
     def _import_results() -> list:
         imports_path = _data_dir() / "import_results.jsonl"
         out: list = []
+        not_read = 0
         if imports_path.exists():
             for ln in imports_path.read_text(encoding="utf-8").splitlines()[-50:]:
                 try:
-                    out.append(_json.loads(ln))
+                    rec = _json.loads(ln)
                 except ValueError:
+                    not_read += 1
                     continue
+                # The file is append-only and never rotated, so it can hold lines an older build wrote with the passphrase in an
+                # error's words: each record is checked as it is read (the parsed string is the form a passphrase has).
+                out.append(_scrubbed_value(rec))
+        if not_read:
+            out.append({"lines_not_read": not_read, "reason": "lines of import_results.jsonl that did not parse (a torn write); none is included"})
         return out
 
     # The error window drives the envelope count; guarded like every other member, and the
@@ -1430,7 +1443,7 @@ class _RssProbe:
 _ALL_DIAG_TRIM_AFTER_KB = 64 * 1024  # 64 MiB
 
 
-def _trim_after_heavy_member(probe: "_RssProbe", rss_after: int | None) -> dict | None:
+def _trim_after_heavy_member(probe: _RssProbe, rss_after: int | None) -> dict | None:
     """Return the allocator's arena memory to the OS between heavy members, and report what
     that actually freed (S6.2). Reuses ``hygiene._malloc_trim`` rather than writing a second
     one. ``None`` when nothing was attempted; ``freed_kb: None`` -- never 0 -- when the
@@ -3278,8 +3291,9 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
         if over:
             kept = kept[-_PREVIOUS_JOURNAL_MAX_LINES:]
         entry["lines_dropped"] = ((head.count(b"\n") + 1) if head.strip() else 0) + over
+        # Each line is checked for the passphrase BEFORE it is cut: a cut through a key leaves its start, which no later check can know.
         entry["lines"] = [
-            b.decode("utf-8", errors="replace")[:_PREVIOUS_JOURNAL_MAX_LINE_CHARS] for b in kept
+            _scrubbed_value(b.decode("utf-8", errors="replace"))[:_PREVIOUS_JOURNAL_MAX_LINE_CHARS] for b in kept
         ]
         cost = sum(len(ln) + 80 for ln in entry["lines"])  # 80: the `previous_run` marker per line
         if spent + cost > _PREVIOUS_JOURNAL_MAX_TOTAL_CHARS:
@@ -3331,11 +3345,14 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
                 rec = json.loads(line, parse_constant=_reject_json_constant)
                 if not isinstance(rec, dict):
                     raise ValueError("not an object")
+                rec = _scrubbed_value(rec)  # a journal an older build left may hold a passphrase an error quoted
+                if not isinstance(rec, dict):
+                    raise ValueError("could not be checked")
                 rec["previous_run"] = name
                 text = json.dumps(rec, ensure_ascii=True, allow_nan=False)
             except (ValueError, RecursionError):
                 unparsed += 1
-                rec = {"event": "unparsed", "chars": len(line), "raw": line[:200], "previous_run": name}
+                rec = {"event": "unparsed", "chars": len(line), "raw": _scrubbed_value(line)[:200], "previous_run": name}
                 text = json.dumps(rec, ensure_ascii=True)
             else:
                 ev = rec.get("event")
