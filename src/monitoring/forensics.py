@@ -828,6 +828,8 @@ def previous_session_report() -> dict[str, Any]:
         # is how an OOM was once "inferred" from the wrong process. The sidecar is
         # scoped to one session and is snapshotted at boot, so it cannot drift.
         out["previous_session_peaks"] = _previous_peaks()
+        if isinstance(out.get("how_it_ended"), dict):
+            out["how_it_ended"]["died_into_phase"] = _died_into_phase(out["previous_session_peaks"])
         sample = _last_collect_perf_sample()
         if sample is not None:
             sample = dict(sample)
@@ -838,6 +840,35 @@ def previous_session_report() -> dict[str, Any]:
             )
         out["last_collector_sample"] = sample
     return _with_answers(out)
+
+
+def _died_into_phase(peaks: dict[str, Any] | None) -> dict[str, Any]:
+    """The last phase the previous session recorded and the seconds from its first sighting to the session's last record.
+
+    The last record is the last ``observe`` call, not the moment of death, so the figure is a lower bound on how long the
+    session lived in the phase. Where either the phase or its start was not recorded the seconds are ``None`` with a reason,
+    never ``0`` (a 0 would read as "died the instant it began")."""
+    out: dict[str, Any] = {"phase": None, "seconds_phase_start_to_last_record": None}
+    if not isinstance(peaks, dict) or peaks.get("available") is False:
+        out["reason"] = "no high-water record"
+        return out
+    phase = peaks.get("phase")
+    if not isinstance(phase, str) or not phase:
+        out["reason"] = "no phase was recorded"
+        return out
+    out["phase"] = phase
+    try:
+        began = datetime.fromisoformat(str(peaks["phase_since"]))
+        last = datetime.fromisoformat(str(peaks["last_ts"]))
+        secs = (last - began).total_seconds()
+    except (KeyError, ValueError, TypeError):
+        out["reason"] = "phase start not recorded (older build)"
+        return out
+    if secs < 0:
+        out["reason"] = "clock moved"
+        return out
+    out["seconds_phase_start_to_last_record"] = round(secs, 1)
+    return out
 
 
 def _with_answers(out: dict[str, Any]) -> dict[str, Any]:
@@ -1706,6 +1737,13 @@ def render_text(d: dict[str, Any] | None = None) -> str:
     how = prev.get("how_it_ended") or {}
     if how.get("summary"):
         lines.append(f"- how it ended: {how['summary']}")
+    dip = how.get("died_into_phase")
+    if isinstance(dip, dict):
+        secs = dip.get("seconds_phase_start_to_last_record")
+        lines.append(
+            f"  - last phase: {dip.get('phase') or 'unknown'}, "
+            + (f"{secs} s from its start to the last record" if secs is not None else f"duration unmeasured ({dip.get('reason')})")
+        )
     kern = prev.get("kernel_evidence") or {}
     if kern:
         lines.append(f"- host kernel evidence: {kern.get('verdict', 'unknown')}")

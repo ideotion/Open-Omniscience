@@ -712,3 +712,52 @@ def test_an_earlier_end_with_a_dump_carries_the_kind_on_its_trace(dd):
     _trace_log(dd, "\n" + _header(702, 1) + "\n" + "\n".join(_dump("c", 10, labelled=False)) + "\n")
     t = ee.earlier_unclean_ends(None, records=recs)["sessions"][0]["trace"]
     assert t["crashing_thread_kind"] == "non-python"
+
+
+# --------------------------------------------------------------------------- #
+#  died_into_phase: where in its last phase the previous session was
+# --------------------------------------------------------------------------- #
+def test_died_into_phase_is_the_seconds_from_phase_start_to_last_record():
+    got = forensics._died_into_phase({
+        "phase": "pass-tail", "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
+    })
+    assert got == {"phase": "pass-tail", "seconds_phase_start_to_last_record": 270.0}
+
+
+@pytest.mark.parametrize("peaks, reason", [
+    (None, "no high-water record"),
+    ({"available": False, "reason": "x"}, "no high-water record"),
+    ({"last_ts": "2026-10-16T10:04:30+00:00"}, "no phase was recorded"),
+    ({"phase": "import", "last_ts": "2026-10-16T10:04:30+00:00"}, "older build"),
+    ({"phase": "import", "phase_since": "not a time", "last_ts": "2026-10-16T10:04:30+00:00"}, "older build"),
+    ({"phase": "import", "phase_since": "2026-10-16T10:05:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00"}, "clock moved"),
+])
+def test_died_into_phase_is_null_with_a_reason_never_zero(peaks, reason):
+    got = forensics._died_into_phase(peaks)
+    assert got["seconds_phase_start_to_last_record"] is None, "an unmeasured duration must not read as 0"
+    assert reason in got["reason"]
+
+
+def test_phase_since_moves_only_when_the_phase_changes(monkeypatch):
+    session_hwm.reset_for_tests()
+    monkeypatch.setattr(session_hwm, "_readings", lambda: {"rss_mb": 800.0})
+    monkeypatch.setattr(session_hwm, "composition", lambda walk_heap=False: {})
+    stamps = iter(f"2026-10-16T10:00:0{i}+00:00" for i in range(9))
+    monkeypatch.setattr(session_hwm, "_now", lambda: next(stamps))
+    session_hwm.observe("collect")
+    first = session_hwm.current()["phase_since"]
+    session_hwm.observe("collect")
+    assert session_hwm.current()["phase_since"] == first, "the same phase seen again must not restart its clock"
+    session_hwm.observe("pass-tail")
+    assert session_hwm.current()["phase_since"] != first
+    session_hwm.reset_for_tests()
+
+
+def test_died_into_phase_costs_few_serialised_bytes():
+    got = forensics._died_into_phase({
+        "phase": "collector-pass-tail", "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
+    })
+    worst = forensics._died_into_phase({"phase": "collector-pass-tail", "phase_since": "bad", "last_ts": "2026-10-16T10:04:30+00:00"})
+    new_mark = len(json.dumps({"phase_since": "2026-10-16T10:00:00+00:00"}, separators=(",", ":"))) - 1  # the key rides in previous_session_peaks too
+    sizes = [len(json.dumps(got, separators=(",", ":"))) + new_mark, len(json.dumps(worst, separators=(",", ":")))]  # the null case has no phase_since
+    assert max(sizes) <= 130, f"died_into_phase plus phase_since is {max(sizes)} B; the report has 130 B of margin"

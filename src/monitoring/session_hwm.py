@@ -1407,6 +1407,8 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                     _MARKS["swap_used_max_mb"] = swap
                     _MARKS["swap_used_max_at"] = stamp
             if phase:
+                if phase != _MARKS.get("phase"):
+                    _MARKS["phase_since"] = _now()  # when this phase was first seen, so a death can be placed inside it
                 _MARKS["phase"] = phase
             _MARKS["last_ts"] = _now()
             # A pressure snapshot is written through at once, with the marks beside it:
