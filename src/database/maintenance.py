@@ -1835,6 +1835,18 @@ def _deadline_seconds() -> float:
 _DEADLINE_KEY = "_oo_statement_deadline_at"
 
 
+def deadline_left_s(session) -> float | None:
+    """Seconds left on an enclosing :func:`statement_deadline` (negative once it has elapsed), or ``None`` when there is none.
+
+    ``None`` is the honest answer for "no deadline", which is not "expired": a loop that reads it as expired would stop on every
+    unbounded path."""
+    try:
+        at = session.info.get(_DEADLINE_KEY)
+    except Exception:  # noqa: BLE001 - a stub session with no .info
+        return None
+    return None if at is None else at - time.monotonic()
+
+
 def deadline_expired(session) -> bool:
     """Has an enclosing :func:`statement_deadline` already elapsed?
 
@@ -1846,21 +1858,8 @@ def deadline_expired(session) -> bool:
     Exception`` so one bad item cannot break the whole -- correct isolation that
     also eats the deadline, once per item, silently.
     """
-    left = deadline_remaining(session)
+    left = deadline_left_s(session)
     return left is not None and left <= 0
-
-
-def deadline_remaining(session) -> float | None:
-    """Seconds left of an enclosing :func:`statement_deadline`, or ``None`` when there is none.
-
-    Negative once it has elapsed. ``None`` is the honest answer for a session with no deadline, a stub with no
-    ``.info``, or a deadline that was disabled -- never ``0``, which would read as "expired".
-    """
-    try:
-        at = session.info.get(_DEADLINE_KEY)
-    except Exception:  # noqa: BLE001 - a stub session with no .info
-        return None
-    return None if at is None else float(at) - time.monotonic()
 
 
 @contextmanager
