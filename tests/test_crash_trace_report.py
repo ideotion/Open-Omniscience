@@ -254,7 +254,7 @@ def test_no_line_of_a_trace_runs_on(dd):
 
 @pytest.mark.parametrize("letter", ["y", "\u00e9", "\u6f22", "\U0001d518"], ids=["ascii", "accented", "cjk", "astral"])
 def test_the_member_of_a_crash_loop_with_long_lines_stays_small_in_any_script(dd, letter):
-    """Ten earlier ends of sixty lines of a thousand characters each would be about 600 KB. Cut at
+    """Ten earlier ends of lines of a thousand characters each would be about 1.2 MB. Cut at
     ``_TRACE_LINE_CHARS`` characters AND ``_TRACE_LINE_BYTES`` bytes the worst case is 10 x 60 x 202 =
     121,200 bytes, about 125 KB as the member is WRITTEN (UTF-8, not escaped): at 200 characters alone
     the same ends measured 233 KB in accented text, 346 KB in CJK and 458 KB in astral characters.

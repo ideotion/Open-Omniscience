@@ -609,3 +609,44 @@ def test_a_dump_that_names_no_current_thread_says_so_and_does_not_pick_one(dd):
     assert t["crashing_thread"] is None and "none is named" in t["crashing_thread_reason"]
     assert "no thread is marked as the crashing one" in t["cut_note"]
     assert not any(ln.startswith("Current thread") for ln in t["lines"])
+
+
+@pytest.mark.parametrize("max_lines", [3, 8, 40, 120, 400])
+def test_a_cut_never_keeps_more_lines_than_it_was_given(max_lines):
+    body = [f"Preamble line {i}" for i in range(200)] + _dump("x", 90)
+    t = ee._trace_report(body, ee.Path("c.log"), max_lines)
+    assert len(t["lines"]) <= max_lines and t["lines_kept"] == len(t["lines"]) and t["lines_total"] == len(body)
+
+
+def test_a_long_preamble_does_not_take_the_crashing_thread_s_room():
+    body = [f"Preamble line {i}" for i in range(200)] + _dump("crash_here", 90)
+    t = ee._trace_report(body, ee.Path("c.log"), 120)
+    assert sum("in crash_here" in ln for ln in t["lines"]) == 90, "the crashing block is whole"
+    assert "Preamble line 0" in t["lines"][0] and any("line 199" in ln for ln in t["lines"]), "the preamble keeps its first and its last lines"
+    assert "lines before the first thread are cut from the middle" in t["cut_note"]
+
+
+def test_a_message_line_that_starts_like_the_label_is_not_taken_for_the_current_thread():
+    body = ["Fatal Python error: Aborted", "Current thread is gone"] + _dump("busy", 90, labelled=False)[2:]
+    t = ee._trace_report(body, ee.Path("c.log"), 120)
+    assert t["crashing_thread"] is None
+
+
+def test_without_a_current_thread_the_room_is_shared_alike_not_given_to_the_first_thread():
+    t = ee._trace_report(_dump("x", 90, labelled=False), ee.Path("c.log"), 120)
+    first = [ln for ln in t["lines"] if "in idle0" in ln]
+    assert t["crashing_thread"] is None and len(first) < 10, len(first)
+
+
+def test_a_dump_with_no_thread_blocks_is_cut_to_the_first_lines_and_says_so():
+    t = ee._trace_report([f"line {i}" for i in range(500)], ee.Path("c.log"), 50)
+    assert len(t["lines"]) == 50 and "no thread blocks" in t["cut_note"] and t["lines_total"] == 500
+
+
+def test_the_leftover_of_short_threads_goes_to_the_threads_that_were_cut():
+    body = ["Fatal Python error: Aborted", ""]
+    body += ["Thread 0x1 (most recent call first):", "  File \"a.py\", line 1 in a", ""]  # a short thread
+    body += ["Thread 0x2 (most recent call first):"] + [f'  File "b.py", line {j} in b' for j in range(80)] + [""]
+    body += ["Current thread 0x3 (most recent call first):", '  File "c.py", line 1 in c']
+    t = ee._trace_report(body, ee.Path("c.log"), 50)
+    assert len(t["lines"]) == 50, "nothing of the room is left unused while a thread is cut"

@@ -585,6 +585,13 @@ def _fair_lines(ordered: list[str], max_lines: int, crashing: bool = True) -> tu
     pre = ordered[: heads[0]]
     ends = heads[1:] + [len(ordered)]
     blocks = [ordered[h:e] for h, e in zip(heads, ends, strict=True)]
+    pre_cut = 0
+    # the lines before the first thread get at most a quarter of the room, and less when the crashing block needs it whole
+    pre_room = max(min(max_lines // 4, max_lines - (len(blocks[0]) if crashing else 0)), 2)
+    if len(pre) > pre_room:
+        # an escaped exception can precede the dump: its first lines and its LAST (the exception itself), never the room the threads need
+        pre_cut = len(pre) - pre_room
+        pre = pre[: pre_room // 2] + pre[len(pre) - (pre_room - pre_room // 2) :]
     if crashing:
         kept = pre + blocks[0][: max(max_lines - len(pre), 0)]
         rest = blocks[1:]
@@ -600,11 +607,16 @@ def _fair_lines(ordered: list[str], max_lines: int, crashing: bool = True) -> tu
             take = min(len(blk), share, room)
             takes.append(take)
             room -= take
-        # what the shares left over (a short thread gave some back) goes to the threads cut, in order
-        for i, blk in enumerate(rest[: len(takes)]):
-            extra = min(len(blk) - takes[i], room)
-            takes[i] += extra
-            room -= extra
+        # what the shares left over (a short thread gave some back) goes to the threads that were cut, one line at a time round the
+        # list, so that no thread is given the whole of it
+        grown = True
+        while room > 0 and grown:
+            grown = False
+            for i, blk in enumerate(rest[: len(takes)]):
+                if room > 0 and takes[i] < len(blk):
+                    takes[i] += 1
+                    room -= 1
+                    grown = True
     for blk, take in zip(rest, takes, strict=False):
         kept += blk[:take]
     listed = len(takes)
@@ -614,6 +626,7 @@ def _fair_lines(ordered: list[str], max_lines: int, crashing: bool = True) -> tu
         + ("the crashing thread's block first, then each other thread's first lines (its top frames); " if crashing
            else "no thread is marked as the crashing one, so every thread's first lines (its top frames) are kept alike; ")
         + (f"{omitted} of {len(rest)} {'other ' if crashing else ''}threads are not listed" if omitted else "every thread is listed")
+        + (f"; {pre_cut} lines before the first thread are cut from the middle" if pre_cut else "")
     )
     return kept, {"lines_kept": len(kept), "threads_total": len(blocks), "threads_not_listed": omitted, "cut_note": note}
 
@@ -642,7 +655,7 @@ def _trace_report(
         (ln.strip() for ln in body if ln.startswith(("Fatal Python error", "Uncaught exception"))),
         body[0].strip(),
     )
-    current = next((ln for ln in body if ln.startswith("Current thread")), None)
+    current = next((ln for ln in body if _THREAD_HEAD.match(ln) and ln.startswith("Current thread")), None)
     kept, cut = _fair_lines(ordered, max_lines, crashing=current is not None)
     out: dict[str, Any] = {
         "summary": _trace_line(head),
@@ -689,15 +702,15 @@ def previous_trace(
 #  3b. The traces of the EARLIER unclean ends (finding D, 2026-10-01)
 # --------------------------------------------------------------------------- #
 
-#: How many earlier unclean ends the report carries, newest first. 10 ends of 60 lines of at most
-#: ``_TRACE_LINE_BYTES`` bytes of UTF-8 is 10 x 60 x 202 = 121,200 bytes, about 125 KB of JSON worst case in
-#: any script (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that): the
-#: member's slot in the redesign's slot table (R119) is sized from that worst case. Where a part ends is the
+#: How many earlier unclean ends the report carries, newest first. The newest end keeps ``NEWEST_EARLIER_TRACE_LINES`` and the others
+#: ``EARLIER_TRACE_LINES`` of at most ``_TRACE_LINE_BYTES`` bytes of UTF-8 each: (400 + 9 x 120) x 202 = about 300 KB for printable text
+#: (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that). JSON ESCAPING multiplies a line of quotes,
+#: backslashes or control characters (up to six bytes for one), so the member can exceed that; it is written whole, never cut for it. Where a part ends is the
 #: volume writer's business. A machine that crashed 9 times in 5 hours is the case that prompted it, and an
 #: older end is still in the ledger and the chronology.
 EARLIER_ENDS_LIMIT = 10
-#: Lines of trace kept per earlier end. 60 is the fatal-error header and the crashing thread's stack,
-#: which faulthandler writes first; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (120).
+#: Lines of trace kept per earlier end: the fatal-error header, the crashing thread's block (about 103 lines at faulthandler's 100-frame
+#: cap) and the top of the other threads; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (400).
 EARLIER_TRACE_LINES = 120
 #: Lines kept of the NEWEST earlier end: the one a reader opens first, and a real crash (50 collect workers, 1,336 lines) did not fit in 60.
 #: Worst case of the member: (400 + 9 x 120) x 202 bytes = about 300 KB, against the +125 KB the plan's estimate holds for it.
@@ -797,13 +810,14 @@ def earlier_unclean_ends(
         "method": (
             "The session ledger's unclean ends before the previous session, newest first, each looked "
             f"up in the crash trace log by the pid and machine boot its boot record carries (up to "
-            f"{max_lines} lines of its trace, {NEWEST_EARLIER_TRACE_LINES} for the newest: the crashing thread whole, then the top of "
+            f"{max_lines} lines of its trace, {max(max_lines, NEWEST_EARLIER_TRACE_LINES) if max_lines == EARLIER_TRACE_LINES else max_lines} for the newest: the crashing thread whole, then the top of "
             "every other thread; a trace that is cut says how many lines and threads it kept). A session with no trace says why, by what it ended by; "
             "a SIGKILL cannot leave one. The log keeps one rotated generation, so an old end may have "
             "lost its trace to rotation."
         ),
         "limit": limit,
         "lines_per_trace": max_lines,
+        "lines_newest_trace": max(max_lines, NEWEST_EARLIER_TRACE_LINES) if max_lines == EARLIER_TRACE_LINES else max_lines,
         "unclean_ends_in_ledger": len(ends),
         "shown": 0,
         "older_not_shown": 0,
