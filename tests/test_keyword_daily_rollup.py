@@ -186,7 +186,7 @@ def test_parity_probe_reports_exact_on_the_real_corpus(session):
     p = columnar.keyword_daily_parity(con, session)
     assert p["mentions_exact"] is True
     assert p["distinct_upper_bound_holds"] is True
-    assert p["distinct_gap_total"] == 0
+    assert p["distinct_over_count_total"] == 0
     assert p["keywords_compared"] > 0
 
 
@@ -210,7 +210,7 @@ def test_parity_probe_holds_under_a_tiny_batch_size_forcing_many_mid_stream_comm
     assert p["mentions_exact"] is True
     assert p["mention_mismatches"] == 0
     assert p["distinct_upper_bound_holds"] is True
-    assert p["distinct_gap_total"] == 0
+    assert p["distinct_over_count_total"] == 0
     assert p["keywords_compared"] > 0
 
     # And it matches a single-batch build bit-for-bit (the batch-size-invariance guarantee,
