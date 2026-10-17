@@ -60,9 +60,11 @@ WINDOW_WAIT_S = 60.0
 #: THE LONGEST A LOST WAKE-UP MAY COST, not a timeout. A connection open waits for the window in steps of this many seconds and looks again
 #: after each, so it still waits as long as the window is held; what the step bounds is a wake-up that never came. The window is given back by
 #: clearing the holder and THEN calling ``notify_all``; a MemoryError in that call (forced in ``tests/test_swap_window_allocation_failures.py``)
-#: leaves the holder clear and every open that was already waiting asleep with nothing to wake it. WHAT IT PROTECTS: a request that waits for a
-#: connection against one that waits for ever. One second because the wait it adds is paid only after that failure, and a stalled request is
-#: noticed in seconds; it is chosen, not measured (the failure has been seen only when forced).
+#: leaves the holder clear and every open that was already waiting asleep with nothing to wake it. The give-back of a shared level (the end of
+#: ``connecting``) loses the swap's wake-up the same way, and the swap's own wait takes steps of this size too (never longer than the time it has
+#: left). WHAT IT PROTECTS: a request that waits for a connection against one that waits for ever, and a swap that waits for an open that was
+#: already over. One second because the wait it adds is paid only after that failure, and a stalled request is noticed in seconds; it is chosen,
+#: not measured (the failure has been seen only when forced).
 _RECHECK_S = 1.0
 
 
@@ -133,6 +135,13 @@ def _close_window(*, swapped: bool) -> None:
 # --- the lock --------------------------------------------------------------------------------------------------------------
 
 
+class _Levels(threading.local):
+    """The shared levels THIS thread holds. ``n`` has a class default so that reading it is an attribute load, not a ``getattr`` call: the
+    take and the give-back below then have no call between the lock's count and the thread's record of it."""
+
+    n = 0
+
+
 class _Lock:
     """Shared by every connect, exclusive for the swap; the holder's own thread passes through (the swap opens connections itself,
     to fold the log and to read the data version). No writer preference: a shared holder can never be made to wait on a swap that
@@ -145,10 +154,10 @@ class _Lock:
         self._cond = threading.Condition(self._lock)
         self._shared = 0
         self._holder: int | None = None
-        self._mine = threading.local()  # shared levels THIS thread holds: what a caller reads to learn, after an exception, whether it took one
+        self._mine = _Levels()  # shared levels THIS thread holds: what a caller reads to learn, after an exception, whether it took one
 
     def shared_held_here(self) -> int:
-        return getattr(self._mine, "n", 0)
+        return self._mine.n
 
     def shared(self) -> bool:
         me = threading.get_ident()
@@ -163,15 +172,29 @@ class _Lock:
             # the count and this thread's record in one step, with no call between them: an exception after the count was raised and before
             # the caller saw the answer still leaves the record, which is what the caller releases by
             self._shared += 1
-            self._mine.n = getattr(self._mine, "n", 0) + 1
+            self._mine.n += 1
             return True
 
     def release_shared(self) -> None:
         with self._lock:
             self._shared -= 1
-            self._mine.n = getattr(self._mine, "n", 1) - 1
+            self._mine.n -= 1
             if not self._shared:
                 self._cond.notify_all()
+
+    def release_shared_since(self, before: int) -> None:
+        """Give back the level this thread took since it held ``before`` (what :meth:`shared_held_here` said, read BEFORE it asked for one), if
+        it took one: the comparison and the two decrements are plain loads, stores and small-integer arithmetic (a result below 257 is a cached
+        object, so it makes none), with no call between "the record says it is ours" and "it is released". A caller whose ``shared`` may have
+        been interrupted after the level was raised and before it saw the answer cannot tell from outside, and a check made by a call of its
+        own (``shared_held_here()`` again) is an instruction that can fail before the release. The one call left after the level is back is
+        ``notify_all``; a failure there loses a wake-up, which the swap's bounded wait (:data:`_RECHECK_S`) turns into a delay."""
+        with self._lock:
+            if self._mine.n > before:
+                self._shared -= 1
+                self._mine.n -= 1
+                if not self._shared:
+                    self._cond.notify_all()
 
     def exclusive(self, timeout: float) -> None:
         me = threading.get_ident()
@@ -188,7 +211,7 @@ class _Lock:
                     raise LibraryBusy(
                         f"a connection to the library was still being opened after {timeout:.0f} s, so the file was not switched"
                     )
-                _wait(self._cond, self._lock, left)
+                _wait(self._cond, self._lock, min(left, _RECHECK_S))  # a step, not a shorter timeout: see _RECHECK_S
             self._holder = me
 
     def held_here(self) -> bool:
@@ -234,9 +257,10 @@ def connecting() -> Iterator[None]:
         _local.stamp = None  # an open that failed hands nothing to the next ``connect`` event of this thread
         raise
     finally:
-        # what THIS thread holds says whether a level was taken, even if the exception arrived between the take and the answer
-        if _LOCK.shared_held_here() > before:
-            _LOCK.release_shared()
+        # what THIS thread holds says whether a level was taken, even if the exception arrived between the take and the answer; ``before`` was
+        # read ahead of the take, so the release compares with a value it already has. The one call here that cannot be made safe: if the
+        # allocator refuses to start it, nothing after it can run (tests/test_connecting_allocation_failures.py names the site)
+        _LOCK.release_shared_since(before)
 
 
 def _first_read(conn: Any) -> None:
