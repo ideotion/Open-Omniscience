@@ -2603,6 +2603,13 @@ def get_scheduler() -> BackgroundScheduler:
 _EXCL_LOCK = threading.Lock()
 _EXCL_WINDOW = False
 _EXCL_TOKEN = 0
+#: How many windows are open right now, and what the flag held before the first of them: windows from two threads OVERLAP without
+#: nesting (a backup's window on a job thread, an encryption's on a request thread), so "restore what I found on entry" is wrong for
+#: the one that leaves first. Changed only by :func:`exclusive_window`, in its own try/finally, so an imbalance elsewhere cannot move it.
+_EXCL_DEPTH = 0
+_EXCL_BASE = False
+#: A window of the set paused collection: the LAST window out resumes it, whichever one paused.
+_EXCL_PAUSED = False
 
 
 def exclusive_window_open() -> bool:
@@ -2666,7 +2673,7 @@ def exclusive_window_token() -> int:
 
 
 @contextmanager
-def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
+def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iterator[bool]:
     """Hold ONE exclusive window for everything nested inside it.
 
     Pauses background collection on entry and resumes it on exit -- once, for the
@@ -2674,26 +2681,59 @@ def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
     ``was_paused`` fact :func:`pause_for_exclusive_operation` returns, for callers
     that tune themselves on whether exclusivity was actually confirmed.
 
-    Re-entrant and imbalance-proof: an inner ``with`` restores the flag to what it
-    found rather than clearing it, so only the OUTERMOST block ever resumes."""
-    global _EXCL_TOKEN, _EXCL_WINDOW
+    Re-entrant and imbalance-proof: an inner ``with`` leaves the window standing, so only
+    the LAST block out ever lowers the flag and resumes. That holds for windows that
+    OVERLAP without nesting too (one opened on a job thread, one on a request thread, the
+    first to enter not the last to leave): each exit takes one off the count, and the
+    window that finds the count at zero restores what the first one found and resumes
+    collection if any window of the set paused it. (The first cut restored, on every exit,
+    the value ITS entry found; for a window that began inside another and ended after it,
+    that lowered the flag under the survivor and raised it again for good.)
+
+    ``resume_retries`` is passed to :func:`resume_after_exclusive_operation` by the window
+    that resumes: a request handler passes 0, so it does not sit in the retry loop (up to 19
+    x 30 s) while a lingering pass winds down; the pending-resume watcher takes over."""
+    global _EXCL_TOKEN, _EXCL_WINDOW, _EXCL_DEPTH, _EXCL_BASE, _EXCL_PAUSED
     already = exclusive_window_open()
     # The flag is raised AFTER the pause and lowered BEFORE the resume, so this
     # window's own pause/resume go through the SAME guarded functions everything
     # else uses rather than a private copy of the logic. Raising it first would be
     # self-defeating: the pause would read its own flag and decline to pause.
-    was_paused = pause_for_exclusive_operation(timeout=timeout) if not already else False
-    with _EXCL_LOCK:
-        if not already:
-            _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
-        _EXCL_WINDOW = True
+    #
+    # The pause and the count are INSIDE the ``try`` (R171): the pause holds the scheduler (``hold_exclusive``) before it stops it, so an
+    # interrupt delivered anywhere between that and the old ``try`` left collection held for good (and, once the count was taken, the
+    # depth up for good). ``counted`` is set in the same step as the depth, so the ``finally`` lowers the depth only for a window that
+    # raised it. If the interrupt lands before the pause has REPORTED, ``was_paused`` is still False and the ``finally`` releases the hold
+    # without starting the loop (it cannot tell whether the stop happened): the worst case is a scheduler that is neither held nor running,
+    # which the operator's Start button puts right. After the pause has reported, the resume is exact.
+    was_paused = False
+    counted = False
     try:
+        if not already:
+            was_paused = pause_for_exclusive_operation(timeout=timeout)
+        with _EXCL_LOCK:
+            if was_paused:
+                _EXCL_PAUSED = True  # before the count: a window that is interrupted next still resumes what it stopped
+            if _EXCL_DEPTH == 0:
+                _EXCL_BASE = _EXCL_WINDOW  # what the first window found (False outside a test that raises the flag by hand)
+                if not _EXCL_WINDOW:
+                    _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
+            _EXCL_DEPTH += 1
+            counted = True
+            _EXCL_WINDOW = True
         yield was_paused
     finally:
         with _EXCL_LOCK:
-            _EXCL_WINDOW = already
-        if not already:
-            resume_after_exclusive_operation(was_paused)
+            if counted:
+                _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
+            last = _EXCL_DEPTH == 0
+            resume = False
+            if last:
+                if counted:
+                    _EXCL_WINDOW = _EXCL_BASE
+                resume, _EXCL_PAUSED = _EXCL_PAUSED, False
+        if last and (counted or not already):  # a nested window that never counted owns nothing to give back
+            resume_after_exclusive_operation(resume, retries=resume_retries)
 
 
 def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
@@ -2738,6 +2778,25 @@ def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
         return False
     get_scheduler().hold_exclusive()
     return get_scheduler().stop(timeout=timeout)
+
+
+def _start_or_stand_down(retries: int, retry_delay: float) -> bool:
+    """True when collection runs or must not be started (the kill switch); False when the retries are spent.
+
+    The retry loop of :func:`resume_after_exclusive_operation`, a function of its own and called from inside that function's ``try``: CPython
+    3.13 leaves a loop's back-edge outside the exception table of the ``try`` around it, so an interrupt delivered there would skip the
+    ``finally`` that releases the scheduler's exclusive window. This function has no handler, so there is nothing for an interrupt to skip;
+    it reaches the call, which the ``finally`` covers (R163; tests/test_gates_survive_an_interrupt.py)."""
+    from src.ingest import kill_switch_active
+
+    for attempt in range(retries + 1):
+        if kill_switch_active():
+            return True
+        if get_scheduler().start():
+            return True
+        if attempt < retries:
+            time.sleep(retry_delay)
+    return False
 
 
 def resume_after_exclusive_operation(
@@ -2799,15 +2858,8 @@ def resume_after_exclusive_operation(
     try:
         if not was_paused:
             return
-        from src.ingest import kill_switch_active
-
-        for attempt in range(retries + 1):
-            if kill_switch_active():
-                return
-            if get_scheduler().start():
-                return
-            if attempt < retries:
-                time.sleep(retry_delay)
+        if _start_or_stand_down(retries, retry_delay):
+            return
         # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
         # still alive. The budget was sized against one blocked WRITE (438 s); on a
         # write-bound machine the unit is a pass's wind-down, and Lenn's took 39 minutes,

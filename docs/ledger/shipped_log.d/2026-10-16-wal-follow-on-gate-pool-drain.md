@@ -1,0 +1,7 @@
+## 2026-10-16 — the WAL, disk and pool follow-on: pool before gate everywhere, the hold's phase, the measured pin, the explicit pause list, the encryption guard and the gate-free copy (PR #1421)
+
+Built on the pushed #1421 head as local commits and pushed after #1416 merges (writer.py is the shared file): `writer.connection_first` in both ORM hooks and at eleven raw sites, `thread_phase`/`thread_phases` shared by the gate hold and the pin report, `pin` from the drain's passive step, `PAUSED_WHILE_WAL_PINNED` in `heavy.py` with `log_pause_in_force` (log latch and a running supervisor) and the briefing's stand-aside, the encryption route's exclusive window with the drain's second ask under its lease, and `checkpoint_wal(passive_without_gate=True)` for the guard's drain only.
+
+Measured: the follow-on adds 23 files, the widest journal is 123,344 bytes (ordinary names 78,634) against the 125,000 slot (1.3 % headroom), and a part keeps 1,502,415 bytes free after RC2's 10,329 are counted (2,415 over the floor). Trial merges of #1416, #1419, #1421 and RC2's head (1d8d39df7) are clean; the tests each added pass on the merged tree.
+
+Mutation work found what the first tests missed: a flight name followed by a colon, a drive latch holding the briefing rebuild back, a scan exemption that any earlier line could earn, and a copy that ran twice per call (once without the gate and once inside it); each got a test that fails without it.

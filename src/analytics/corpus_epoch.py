@@ -83,9 +83,10 @@ def bump_corpus_epoch(session: Session, *, reason: str = "") -> int:
     never in a per-row loop. Over-bumping is harmless but wasteful.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     try:
+        connection_first(session)  # inside the try: a pool timeout here is a missed bump, as before
         with write_lock():
             row = session.get(DerivedMeta, CORPUS_EPOCH_KEY)
             if row is None:

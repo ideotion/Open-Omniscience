@@ -353,12 +353,15 @@ class SearchReindexJobManager:
                 self._park()
                 if self._stop.is_set():
                     break
-                with corpus_lease("search-reindex"), write_lock():
+                with corpus_lease("search-reindex"):
+                    # The connection first, then the gate: the commit of the last step gave its connection back, so the order
+                    # the text had (the gate, then session.connection()) waited for the pool while holding the gate.
                     conn = session.connection()
-                    last, exhausted, tally = reindex_step(
-                        conn, after_id=self._cursor, caps=caps, budget_s=self._budget_s
-                    )
-                    session.commit()
+                    with write_lock():
+                        last, exhausted, tally = reindex_step(
+                            conn, after_id=self._cursor, caps=caps, budget_s=self._budget_s
+                        )
+                        session.commit()
                 with self._lock:
                     self._cursor = last
                     for k, n in tally.items():

@@ -157,10 +157,11 @@ def open_state(session: Session, planned: Iterable[str], *, now=None) -> str:
     an index the heal will never look for.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     stamp = (now or datetime.now(UTC)).isoformat(timespec="seconds")
     payload = "\n".join([stamp, *sorted(planned)])
+    connection_first(session)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         row = session.get(DerivedMeta, BULK_BUILD_KEY)
         if row is None:
@@ -179,8 +180,9 @@ def close_state(session: Session) -> bool:
     clearing it early costs the indexes it was protecting.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
+    connection_first(session)
     with write_lock():
         row = session.get(DerivedMeta, BULK_BUILD_KEY)
         if row is None:
@@ -223,8 +225,8 @@ def _drop(session: Session, names: list[str]) -> list[str]:
     from src.database.writer import write_lock
 
     dropped: list[str] = []
+    conn = session.connection()  # the connection first, then the gate (writer.connection_first)
     with write_lock():
-        conn = session.connection()
         existing = _existing_indexes(conn)
         for name in names:
             if name not in existing:
@@ -256,8 +258,8 @@ def _rebuild_missing(session: Session, planned: list[str]) -> list[str]:
         if index is None:
             _LOG.warning("bulk build cannot rebuild unknown index %s", name)
             continue
+        conn = session.connection()  # the connection first, then the gate: the commit below gave the last one back
         with write_lock():
-            conn = session.connection()
             if name in _existing_indexes(conn):
                 continue
             conn.execute(CreateIndex(index))

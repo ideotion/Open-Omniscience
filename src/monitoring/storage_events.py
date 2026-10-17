@@ -127,6 +127,16 @@ LONGEST: dict[str, tuple[str, int]] = {
 }
 
 
+#: THE ONSET IS KEPT BESIDE THE SAMPLE, NOT READ OFF IT. For the two kinds below the journal records ``first_seen_at``, the ``at`` of the
+#: first event of the kind ever recorded in this journal, at the moment it is recorded and in the file with the counters. WHAT THIS
+#: PROTECTS: the time extreme a keep rule drops. Two bundles of ONE process (16 Oct 2026) put the first bad hour of the pool at 16:00 in one
+#: and 15:00 in the other, because the oldest kept pool timeout was the first of the ten newest or the longest (10 of 1,575 kept, then
+#: 10 of 1,362), and the sample moves as events arrive. ``total`` is the count since this onset (both start at the kind's first event and
+#: are written together, so no separate "count since" is stored). The kinds are the two whose history is read by the hour; any other
+#: kind is a run or a transition whose first event is not what a reader asks for.
+ONSET_KINDS: tuple[str, ...] = ("gate_hold", "pool_timeout")
+
+
 def _length(event: dict[str, Any], field: str) -> float | None:
     """The number an event is ranked by, or None (absent, or not a number: a bool is not a duration)."""
     value = event.get(field)
@@ -325,7 +335,7 @@ def _used_path() -> Path:
 
 
 def _empty_kind() -> dict[str, Any]:
-    return {"total": 0, "events": []}
+    return {"total": 0, "events": []}  # + "first_seen_at" for ONSET_KINDS, set by record() at the first event
 
 
 def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
@@ -348,6 +358,9 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
                 e["open"] = False
                 e["ended"] = "the process ended while this was open; its end was not recorded"
         earlier[kind] = {"total": total, "events": _select(kind, events)}
+        first = entry.get("first_seen_at")
+        if kind in ONSET_KINDS and isinstance(first, str) and first:
+            earlier[kind]["first_seen_at"] = first
     since = data.get("since")
     return earlier, since if isinstance(since, str) else None
 
@@ -424,6 +437,13 @@ def _combined_locked() -> tuple[dict[str, dict[str, Any]], str | None]:
         old = _EARLIER.get(kind) or _empty_kind()
         new = _STATE.get(kind) or _empty_kind()
         kinds[kind] = {"total": old["total"] + new["total"], "events": _select(kind, [*old["events"], *new["events"]])}
+        if kind in ONSET_KINDS:
+            # The file's onset when it has one; this process's own only when the file held no event of the kind. A file that counted
+            # events and recorded no onset (written before the field existed) has an onset that is UNKNOWN: this process's first event
+            # is not it, and the reader is told so rather than handed a later time.
+            first = old.get("first_seen_at") or (None if old["total"] else new.get("first_seen_at"))
+            if first:
+                kinds[kind]["first_seen_at"] = first
     return kinds, _SINCE_FILE or _SINCE
 
 
@@ -465,18 +485,30 @@ def _wait_out(generation: int, seconds: float) -> None:
     """Wait ``seconds`` on the condition, to the deadline whatever wakes it (every change does), or until a reset."""
     deadline = time.monotonic() + seconds
     with _COND:
-        while generation == _GENERATION and (left := deadline - time.monotonic()) > 0:
+        # ``while True: if <done>: break`` and not ``while <wanted>:``: on CPython 3.13 the jump back of the second form sits outside the
+        # ``with``'s exception-table entry, so an exception raised there leaves the condition's lock owned (R161, src/utils/interrupts.py)
+        while True:
+            left = deadline - time.monotonic()
+            if generation != _GENERATION or left <= 0:
+                break
             _COND.wait(left)
+
+
+def _wait_until_dirty() -> int:
+    """Block until a change is waiting to be written; the generation at that moment."""
+    with _COND:
+        while True:  # this form and not ``while not _DIRTY:``: see _wait_out
+            if _DIRTY:
+                break
+            _COND.wait()
+        return _GENERATION
 
 
 def _flusher_loop() -> None:
     failures = 0  # consecutive failed writes: the retry waits longer each time, to RETRY_MAX_S
     while True:
         try:
-            with _COND:
-                while not _DIRTY:
-                    _COND.wait()
-                generation = _GENERATION
+            generation = _wait_until_dirty()
             # Let a burst of changes become one write: every change wakes the wait, so it runs to the deadline, not to the next wake.
             # A reset ends the wait too (it wakes it): what was waiting to be written is gone.
             _wait_out(generation, FLUSH_DELAY_S)
@@ -592,6 +624,28 @@ def _build(fields: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
+def _forget_open_of(gone: dict[str, Any]) -> None:
+    """Drop the open-event keys that point at ``gone``. A function of its own, with no handler in it, so its loops have nothing for an interrupt to skip."""
+    for k in [k for k, v in _OPEN.items() if v is gone]:
+        _OPEN.pop(k, None)
+
+
+def _forget_unkept(events: list[dict[str, Any]], kept_ids: set[int]) -> None:
+    """Forget the open keys of every event of ``events`` that is not in ``kept_ids`` (the caller then replaces the list by the kept ones)."""
+    for gone in [e for e in events if id(e) not in kept_ids]:
+        _forget_open_of(gone)
+
+
+def _evict_one(events: list[dict[str, Any]], kind: str) -> None:
+    """Drop one event from ``events`` to make room.
+
+    A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one long backup would otherwise
+    evict its open record, and its end would be lost. The oldest event that is not live goes first; only when every event is live does the oldest go.
+    The other kinds keep the plain rule (the oldest goes)."""
+    live = {id(v) for v in _OPEN.values()} if kind in _RUN_JOURNAL_KINDS else set()
+    _forget_open_of(events.pop(next((i for i, e in enumerate(events) if id(e) not in live), 0)))
+
+
 def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
     """Record one event of ``kind``. With a ``key`` it stays addressable as an OPEN event: :func:`update` and :func:`end` find it by
     that key for as long as this process runs, and an earlier process's open event is closed as "not recorded" when the file is read.
@@ -606,10 +660,13 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
         with _LOCK:
             if key is not None and (kind, key) in _ENDED:
                 return  # its closer ran first (see end): the entry that closer wrote is the record of this event
+            event["at"] = _now()  # stamped HERE, under the lock, so the order of the stamps is the order of the records: the onset is never later than an event it counts
             if _SINCE is None:
                 _SINCE = event["at"]
             entry = _STATE.setdefault(kind, _empty_kind())
             entry["total"] += 1
+            if kind in ONSET_KINDS and "first_seen_at" not in entry:
+                entry["first_seen_at"] = event["at"]  # at the event: the keep rule below can drop the event, never the onset
             entry["events"].append(event)
             if key is not None:
                 _OPEN[(kind, key)] = event
@@ -617,19 +674,14 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
                 # The longest are kept beside the newest (see LONGEST); an event that is not kept is forgotten, open or not (an open hold
                 # is the newest, so it is always kept).
                 kept = _select(kind, entry["events"])
-                kept_ids = {id(e) for e in kept}
-                for gone in [e for e in entry["events"] if id(e) not in kept_ids]:
-                    for k in [k for k, v in _OPEN.items() if v is gone]:
-                        _OPEN.pop(k, None)
+                _forget_unkept(entry["events"], {id(e) for e in kept})
                 entry["events"] = kept
-            while len(entry["events"]) > KEEP[kind]:
-                # A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one
-                # long backup would otherwise evict its open record, and its end would be lost. The oldest event that is not live
-                # goes first; only when every event is live does the oldest go. The other kinds keep the plain rule (the oldest goes).
-                live = {id(v) for v in _OPEN.values()} if kind in _RUN_JOURNAL_KINDS else set()
-                gone = entry["events"].pop(next((i for i, e in enumerate(entry["events"]) if id(e) not in live), 0))
-                for k in [k for k, v in _OPEN.items() if v is gone]:
-                    _OPEN.pop(k, None)
+            # ``while True: if not <cond>: break`` and the comprehensions in helpers (R163): on CPython 3.13 the back-edge of ``while <cond>:`` and of an
+            # inlined comprehension sits outside the ``with``'s exception table, so a Ctrl-C landing there leaves ``_LOCK`` taken (src/utils/interrupts.py)
+            while True:
+                if len(entry["events"]) <= KEEP[kind]:
+                    break
+                _evict_one(entry["events"], kind)
             _mark_dirty_locked()
     except Exception as exc:  # noqa: BLE001
         _internal_failure("record", exc)
@@ -666,7 +718,11 @@ def end(kind: str, key: Any, fields: dict[str, Any] | None = None, *, tombstone:
         with _LOCK:
             if tombstone:
                 _ENDED[(kind, key)] = None
-                while len(_ENDED) > ENDED_KEYS_MAX:
+                # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of
+                # the ``with`` on CPython 3.13, so an interrupt delivered there would leave ``_LOCK`` owned (src/utils/interrupts.py; R161/R163)
+                while True:
+                    if len(_ENDED) <= ENDED_KEYS_MAX:
+                        break
                     _ENDED.pop(next(iter(_ENDED)), None)
             event = _OPEN.get((kind, key))
             if event is None:
@@ -1110,23 +1166,30 @@ def run_refusals_net(
     changes. A wrapper round ``if not destp.is_dir():`` moves that line (one level in), and a record inside the branch changes the text
     that follows it: either way a check that was already on the base branch comes back as a new finding of the pull request, whatever
     its text hashes to. A net round the header leaves the statement and its neighbours exactly as they were written."""
-    scope = _RefusalScope(_REFUSAL_SCOPE.get())
-    token = _REFUSAL_SCOPE.set(scope)
+    # THE SCOPE IS MADE AND SET INSIDE THE ``try`` (R171), and the ``finally`` puts the PARENT back instead of undoing a token: an interrupt
+    # delivered between the ``set`` and the old ``try`` left this start's scope as the thread's current one for good, so every later net in
+    # the thread nested under a scope nobody would reset. Putting the parent back asks the variable and needs no flag to say whether the
+    # ``set`` happened, so it is right at every point of the block (the value before the ``set`` is the parent too). ``scope`` is None
+    # until it is made, and an error raised before that records nothing: there is no scope to say a refusal was or was not written.
+    parent = _REFUSAL_SCOPE.get()
+    scope: _RefusalScope | None = None
     try:
+        scope = _RefusalScope(parent)
+        _REFUSAL_SCOPE.set(scope)
         yield
     except OSError as exc:
-        if not scope.recorded:
+        if scope is not None and not scope.recorded:
             run_refused(what, "path-unreadable", failure=type(exc).__name__, via=via)
         raise
     except Exception as exc:
-        if not scope.recorded:
+        if scope is not None and not scope.recorded:
             for cls, key in refused_as:
                 if isinstance(exc, cls):
                     run_refused(what, key, failure=type(exc).__name__, via=via)
                     break
         raise
     finally:
-        _REFUSAL_SCOPE.reset(token)
+        _REFUSAL_SCOPE.set(parent)
 
 
 @contextmanager
@@ -1138,9 +1201,15 @@ def run_open(what: str, *, via: str, free: str = "data_free_bytes", **facts: Any
     HTTP error's), unless the block already ended it as
     something it knows better (``refused``, ``stopped-by-operator``: the first outcome written stands), and whatever is still open ends as
     ``ended-without-a-recorded-outcome``, a no-op for a run already closed. The error goes on unchanged. Never raises of its own."""
-    note = run_started(what, via=via, **facts)
-    run_free_space(note, free)
+    # THE RUN IS OPENED INSIDE THE ``try`` (R171): an interrupt delivered between the journal write that opened it and the old ``try`` left a
+    # run "open" for the life of the process, which says it is still going. ``note`` is None until ``run_started`` has returned, and
+    # ``run_ended`` does nothing for None. STATED LIMIT: an interrupt that lands between the journal write inside ``run_started`` and the
+    # store of its return value still leaves the run open; what that leaves is "started, never ended", which is true of a process the
+    # interrupt ends, and the next process reads it as an entry an earlier process left open, closed as "not recorded".
+    note: RunNote | None = None
     try:
+        note = run_started(what, via=via, **facts)
+        run_free_space(note, free)
         yield note
     except Exception as exc:
         run_ended(note, "error", failure=type(exc).__name__)
@@ -1152,16 +1221,97 @@ def run_open(what: str, *, via: str, free: str = "data_free_bytes", **facts: Any
 # ---------------------------------------------------------------------------------------------------------------------------------
 #  The Diagnostics member (the slot contract: ``(max_bytes) -> dict``, never raises, counts and names the cut)
 # ---------------------------------------------------------------------------------------------------------------------------------
+#: Why a gate hold carries no ``seconds_by`` (where its seconds went, written by the gate): the member cut it to fit the zip's budget, or the
+#: event has none (a journal written by a build without the field, or a sample the hold's end overtook). A hold never shows a missing split
+#: as zeros.
+OMITTED_TO_FIT = "zip-budget"
+OMITTED_UNKNOWN = "not-recorded"
+
+
+def _name_missing_breakdowns(events: list[dict[str, Any]]) -> None:
+    """Every gate hold without a ``seconds_by`` says why (``OMITTED_UNKNOWN``), and so does every one without the holder's kernel state
+    (``ws``: null and ``ws_why``). Works on the member's copies, never the journal."""
+    for event in events:
+        if not isinstance(event.get("seconds_by"), dict):
+            event["seconds_by"] = {"omitted": OMITTED_UNKNOWN}
+        if "ws" not in event:
+            event["ws"], event["ws_why"] = None, OMITTED_UNKNOWN
+
+
+def _cut_breakdowns_to_fit(out: dict[str, Any], kinds: dict[str, Any], budget: int) -> dict[int, dict[str, Any]]:
+    """While the member is over ``budget``, take the ``seconds_by`` off the SHORTEST gate hold that still has one and put the reason in its
+    place; the longest holds keep it, so the count of holds that carry the split is whatever the free bytes allow, computed here and never
+    fixed. An event is never dropped for this: a hold without the split is still a hold, and what is dropped to fit afterwards is the
+    existing cut's. Returns what was taken off (by the event's ``id``), for :func:`_restore_breakdowns_that_fit`."""
+    taken: dict[int, dict[str, Any]] = {}
+    holds = kinds.get("gate_hold")
+    if not holds:
+        return taken
+    while _size(out) > budget:
+        carrying = [e for e in holds["events"] if "omitted" not in e.get("seconds_by", {})]
+        if not carrying:
+            break
+        shortest = min(carrying, key=lambda e: _length(e, "seconds") or 0.0)
+        taken[id(shortest)] = shortest["seconds_by"]
+        shortest["seconds_by"] = {"omitted": OMITTED_TO_FIT}
+        holds["seconds_by_omitted_to_fit"] = len(taken)  # inside the loop: the count is part of what the budget measures
+    return taken
+
+
+def _restore_breakdowns_that_fit(out: dict[str, Any], kinds: dict[str, Any], budget: int, taken: dict[int, dict[str, Any]]) -> None:
+    """After the existing cut has dropped what it had to, give the splits back to the LONGEST holds that still fit (the bytes the dropped
+    events freed are real). ``seconds_by_omitted_to_fit`` ends as the number of KEPT holds still without one: a hold that was dropped
+    afterwards is not in it (it is in ``dropped_to_fit``)."""
+    holds = kinds.get("gate_hold")
+    if not holds:
+        return
+
+    def without_split() -> list[dict[str, Any]]:
+        return [e for e in holds["events"] if e.get("seconds_by", {}).get("omitted") == OMITTED_TO_FIT]
+
+    def count(n: int) -> None:
+        if n:
+            holds["seconds_by_omitted_to_fit"] = n
+        else:
+            holds.pop("seconds_by_omitted_to_fit", None)
+
+    candidates = sorted((e for e in without_split() if id(e) in taken), key=lambda e: _length(e, "seconds") or 0.0, reverse=True)
+    count(len(without_split()))
+    for event in candidates:
+        left = len(without_split())
+        event["seconds_by"] = taken[id(event)]
+        count(left - 1)
+        if _size(out) > budget:
+            event["seconds_by"] = {"omitted": OMITTED_TO_FIT}
+            count(left)
+            break
+
+
+#: Why a kind that counted events has no onset: its file was written before the field existed (this process's first event is not it).
+ONSET_UNKNOWN = "not-recorded"
+#: Why a kind that counted events in this process has no onset to show: the file holding the earlier history could not be read, so this process's first event is not the first ever.
+ONSET_UNREAD = "history-unread"
+
 _METHOD = (
-    "Events recorded at the sites that already measure them (the write gate's release and its 15-second watchdog, the storage "
-    "guard's transitions, the checkpoint sites, the unlock and the boot, the pool's timeout) and kept in a small file written by a "
-    "background thread at most once a second. 'total' counts every event since 'since', across restarts; 'kept' is what the file "
-    "holds (the newest, the cap is 'keep'; for 'gate_hold', 'guard', 'pool_timeout' and 'open' the cap is split by 'keep_rule': the "
-    "longest by the named field AND the newest, each event saying why it is there in 'picked_by': 'longest', 'newest' or 'both', so a "
-    "long hold is not pushed out by a stream of shorter, newer ones); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
-    "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
-    "shown. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
-    "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
+    "Events recorded where the code already measures them (the write gate's release and watchdog, the storage guard, "
+    "the checkpoints, the unlock, the boot, the pool's timeout), kept in a small file a background thread writes at most once a "
+    "second. 'total' counts every event since 'since', across restarts; 'gate_hold' and 'pool_timeout' also carry 'first_seen_at', "
+    "their first event ever, recorded at the event, not read off the kept ones ('total' counts from it); else null, with "
+    "'first_seen_unknown': 'not-recorded' (the file predates it) or 'history-unread'. 'kept' is what the file holds (the newest, "
+    "the cap is 'keep'; for 'gate_hold', 'guard', "
+    "'pool_timeout' and 'open' it is split by 'keep_rule' into the longest by the named field AND the newest, 'picked_by' says "
+    "which: 'longest', 'newest' or 'both'); 'dropped' is total minus the file's events. If the zip's budget cut further, "
+    "'dropped_to_fit' counts the events removed per kind and 'kept' is what is "
+    "shown. A hold's 'seconds_by' splits its seconds into insert, savepoint, other_statement, commit and between_statements (Python work, "
+    "waits, raw-driver calls, a SELECT's rows after the first); an open hold shows them so far. 'omitted' says why a hold has none: 'zip-budget' (the shortest holds are "
+    "cut first to fit; 'seconds_by_omitted_to_fit' counts them) or 'not-recorded'. A hold's 'ws' counts, once a second from "
+    "the watchdog's first look (30 to 45 s in), what its writer thread was doing in the kernel, as [run, futex, nap, disk, other, unknown]: "
+    "run on a CPU or waiting for one, futex the GIL or a lock (a floor for the GIL: a look can hand it to its only waiter), nap a sleep call (SQLite's busy handler, or the streaming backup's wait between WAL tries), "
+    "disk an uninterruptible wait (disk or swap), other a wait the kernel named otherwise (a socket, a poll, a pipe), unknown a wait it did not name (the read raced a wake-up, or the kernel prints no names). "
+    "They count looks, not time. 'rq' is the seconds it spent waiting for a CPU from the first look to the last, "
+    "from the scheduler's own total, to 0.1 s; null, never 0, when the totals could not be read at two looks. 'gap' is the longest "
+    "time between two looks, over 1 s when the looks were late (a starved process, a look that could not be read, the watchdog's own tick). Else 'ws' is null and 'ws_why' says why ('unsupported-os', 'thread-gone', 'proc-unreadable', 'not-recorded'). An 'open' event was still going when this member was built; 'ended' says its process ended first. A field "
+    "in 'fields_dropped' was too large for one event and was left out ('oversize_bytes': the size it would have been). "
     "'run_export' (the volume backup and the folder backup of the large data), 'run_import' (the volume restore, the single-file "
     "restore of a legacy backup, the folder restore of the large data and the folder import of newsletter files) and 'run_verify' (the "
     "volume-set and the folder verification) keep the last ten runs of each, every run saying which way it came in ('via': "
@@ -1175,15 +1325,14 @@ _METHOD = (
     "except 'refused' here for a backup the newsletter filter refused or a legacy restore refused by a merge check, and "
     "'stopped-by-operator' here for the operator's stop of a legacy restore ('error' there for all three). A folder "
     "verification's 'mismatches' counts what its verdict counts, a bad signature among them. Refused starts share the ten "
-    "kept with the runs ('total' counts them all); a run still open is the last to be pushed out."
+    "kept ('total' counts all); an open run is the last pushed out."
 )
 _CAVEAT = (
-    "A process kill loses the last second of events when writes succeed (a failed write is tried again, doubling to a minute), and a "
+    "A process kill loses the last second of events when writes succeed (a failed one is retried); a "
     "power loss can lose more or leave an unreadable file (no fsync). An event is a count, a duration or a name; a hold is attributed to the thread that held "
-    "the gate, not to the code that was running (the frames are the watchdog's sample and are absent for a hold it never saw "
-    "while it lasted). The file is read once at the first use after a start: events of earlier processes are marked 'earlier'. A file "
+    "the gate, not to the code that was running (the frames are the watchdog's sample, absent for a hold it never saw). The file is read once, at the first use after a start; earlier processes' events say 'earlier'. A file "
     "that cannot be READ (an I/O error that outlasts three looks) is not written over: 'history_loaded' is false, 'read_failures' counts "
-    "the tries, and the events shown are this process's only."
+    "the tries, and only this process's events are shown."
 )
 
 
@@ -1218,6 +1367,16 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                 if kind in LONGEST:
                     field, n_long = LONGEST[kind]
                     kinds[kind]["keep_rule"] = {"longest": n_long, "by": field, "newest": cap - n_long}
+                if kind in ONSET_KINDS:
+                    first, why = entry.get("first_seen_at"), None
+                    if entry["total"] and not _LOADED:
+                        first, why = None, ONSET_UNREAD  # this process's first event is all the journal has, and a later read of the file may say it was not the first
+                    elif entry["total"] and first is None:
+                        why = ONSET_UNKNOWN
+                    kinds[kind]["first_seen_at"] = first
+                    if why:
+                        kinds[kind]["first_seen_unknown"] = why
+            _name_missing_breakdowns(kinds["gate_hold"]["events"])
             file_state = {
                 "read_at_first_use": _READ_STATE,
                 "history_loaded": _LOADED,
@@ -1240,6 +1399,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             "kinds": kinds,
             "dropped_to_fit": {},
         }
+        taken = _cut_breakdowns_to_fit(out, kinds, budget)
         while _size(out) > budget:
             biggest = max(kinds, key=lambda k: _size(kinds[k]["events"]))
             if not kinds[biggest]["events"]:
@@ -1249,6 +1409,8 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             events.pop(next((i for i, e in enumerate(events) if e.get("picked_by") not in ("longest", "both")), 0))
             kinds[biggest]["kept"] -= 1
             out["dropped_to_fit"][biggest] = out["dropped_to_fit"].get(biggest, 0) + 1
+        if taken:
+            _restore_breakdowns_that_fit(out, kinds, budget, taken)
         return out
     except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
         return {"error": _label(exc)}

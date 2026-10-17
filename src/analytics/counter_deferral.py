@@ -66,9 +66,10 @@ def open_deferral(session: Session, *, reason: str = "", now=None) -> str:
     the caller must learn about it and decline to defer.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     stamp = (now or datetime.now(UTC)).isoformat(timespec="seconds")
+    connection_first(session)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         row = session.get(DerivedMeta, COUNTER_DEFERRAL_KEY)
         if row is None:
@@ -113,8 +114,9 @@ def close_deferral(session: Session) -> bool:
     ``complete: true``). A partial sweep must leave it open.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
+    connection_first(session)
     with write_lock():
         row = session.get(DerivedMeta, COUNTER_DEFERRAL_KEY)
         if row is None:

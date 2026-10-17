@@ -1054,3 +1054,38 @@ artifacts:
     refresh: "let Dependabot bump; re-pin to the new SHA with the tag comment"
     freshness: {policy: on-security}
     last_verified: "2026-06-15"
+
+  # --- Library NAMES the app looks for on a call stack (a coupling to what a library calls its functions, not to a data file) ----------
+  - id: sqlalchemy-phase-names
+    title: SQLAlchemy function names the write-gate hold classifier recognises
+    kind: runtime-coupling
+    description: >
+      src/database/writer.py `_PHASE_AT` names six functions of SQLAlchemy (`sqlalchemy.pool.impl._do_get`, `sqlalchemy.util.queue.get`,
+      `sqlalchemy.engine.default.do_execute`, `do_executemany`, `do_execute_no_params`, `do_commit` and `do_rollback`; the pool-wait
+      row also names our own `pool_reserve.acquire`). The watchdog reads a thread's stack with them once a hold of the single-writer
+      gate is past HOLD_RECORD_S and records whether the holder was waiting for a pooled connection (`pool-wait`), inside the driver's
+      execute (`execute`) or commit (`commit`), or in Python. A release that renames one of them makes that phase read `python`: never a
+      wrong word, but the one question the record exists to answer (was the hold spent waiting for the pool?) is then unanswered.
+      tests/test_write_gate_phase.py::test_every_name_the_phase_table_relies_on_still_exists_in_the_libraries_installed fails on an
+      install where a name is gone, and the same file drives the real library for the pool-wait and execute phases. Read on 2026-10-17
+      against 2.0.31, 2.0.51 (what requirements.lock pins), 2.1.1 and 2.1.5 (the newest then; pyproject.toml has no ceiling, so the range
+      admits it): the file passes (10 tests) on each. 2.0.30, the floor pyproject.toml names, does NOT import on Python 3.13 (a TypeError
+      in sqlalchemy/util/langhelpers.py, "Can't replace canonical symbol for '__firstlineno__'"), so the lowest release that runs on this
+      app's interpreter (requires-python >=3.13) is 2.0.31. pyproject.toml carries that floor (it said 2.0.30 until 2026-10-17) and
+      requirements.lock pins 2.0.51, above it; the lock-file install job (`pip install --require-hashes -r requirements.lock`, then
+      `pip install -e . --no-deps`) reads neither the specifier nor a metadata hash of pyproject.toml, so the lock needed no change.
+    upstream: https://pypi.org/project/SQLAlchemy/ (https://github.com/sqlalchemy/sqlalchemy)
+    check_upstream: "pypi.org/pypi/sqlalchemy/json - compare info.version; 2.1.5 was the newest on 2026-10-17. No upstream_check on purpose: the project tags releases rel_2_1_5, which the GitHub release watch would read as different from 2.1.5 every week"
+    license: MIT
+    pin: {floor: "2.0.31", verified: "2.1.5"}
+    refresh: >
+      let Dependabot bump the pin (pyproject.toml has no ceiling, so the range admits a new release as soon as pip resolves it): the CI test
+      job runs tests/test_write_gate_phase.py on it. For a release not yet admitted, put its unpacked wheel first on PYTHONPATH and run that
+      file. A failure of the names test means the table is out of date: find the function's new name in the release's source and extend
+      `_PHASE_AT` (keep the old name while the floor still has it), never loosen the test to pass; then move `verified` here.
+    freshness: {max_age_months: 6}
+    couplings:
+      - "src/database/writer.py _PHASE_AT names exist in the installed SQLAlchemy and in src.database.pool_reserve (test-enforced)"
+      - "pyproject.toml dependencies sqlalchemy carries the same floor (2.0.31); requirements.lock pins a release at or above it (test-enforced)"
+      - "requirements.lock pins a release the names test passes on (2.0.51 today)"
+    last_verified: "2026-10-17"
