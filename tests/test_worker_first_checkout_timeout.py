@@ -121,6 +121,7 @@ def test_a_pool_timeout_on_a_sources_first_checkout_leaves_that_source_for_the_n
     assert seen["stored"] == 4, "the other four sources carried on"
     assert result["sources_processed"] == 4 and result["articles_stored"] == 4
     assert result["tally"].get("errors") == 1, "the source is counted as an error, not lost"
-    assert result["deferred_next_pass"] == 1 and result["recycled"] == "pool-timeout"
+    assert result["deferred_next_pass"] == 1 and result["pool_timeout_deferred"] == 1
+    assert "recycled" not in result, "the pass did not wind down: it kept taking sources, so no wind-down reason is reported"
     assert runner.deferred_carryover_count() == 1, "it keeps its run-first claim on the next pass"
     assert any(f"source id {first}" in m for m in messages), "the log line names the source"

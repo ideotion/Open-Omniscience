@@ -953,12 +953,19 @@ def run_scrape_once(
     deferred_sources: list = []
     deferred_lock = threading.Lock()
     wind_reasons: dict[str, int] = {}
+    pool_deferred: list = []
 
     def _defer(source, reason: str) -> None:
         with deferred_lock:
             deferred_sources.append(source)
             wind_reasons[reason] = wind_reasons.get(reason, 0) + 1
 
+    def _defer_unpooled(source) -> None:
+        # A source that found no pooled connection is carried to the next pass like a wound-down one, but it is not a wind-down:
+        # the pass kept running, so it stays out of ``wind_reasons`` (which names why a pass stopped taking sources).
+        with deferred_lock:
+            deferred_sources.append(source)
+            pool_deferred.append(source)
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
@@ -1080,7 +1087,7 @@ def run_scrape_once(
                             # nothing retries in this one (a retry holds the very slot the
                             # pool is short of), and the other sources carry on.
                             log_failure(_LOG, f"scrape run: source id {source_id} found no pooled connection", exc, level=logging.WARNING)
-                            _defer(source, "pool-timeout")
+                            _defer_unpooled(source)
                             return {"errors": 1}, 0, 0
                         if own is None:  # deleted since the selection: nothing to fetch
                             return {}, 0, 0
@@ -1225,13 +1232,15 @@ def run_scrape_once(
             _record_deferred([s.id for s in deferred_sources])
 
     recycled: str | None = None
-    if deferred_sources:
+    if wind_reasons:
         recycled = max(wind_reasons.items(), key=lambda kv: kv[1])[0]
         _LOG.info(
             "pass wound down (%s): %d source(s) deferred to run first next pass",
             recycled,
-            len(deferred_sources),
+            len(deferred_sources) - len(pool_deferred),
         )
+    if pool_deferred:
+        _LOG.info("%d source(s) found no pooled connection and run first next pass", len(pool_deferred))
 
     finished = datetime.now(UTC)
     out = {
@@ -1245,8 +1254,11 @@ def run_scrape_once(
         "duration_s": round((finished - started).total_seconds(), 2),
     }
     if deferred_sources:
-        out["recycled"] = recycled
+        if recycled is not None:
+            out["recycled"] = recycled
         out["deferred_next_pass"] = len(deferred_sources)
+        if pool_deferred:
+            out["pool_timeout_deferred"] = len(pool_deferred)
     if extraction_lock is not None:
         out["extraction_lock"] = extraction_lock
     if encrypted_opens is not None:
