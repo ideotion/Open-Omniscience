@@ -284,6 +284,109 @@ def test_the_lock_is_taken_back_even_when_another_thread_took_it_in_the_gap():
     _finish(t, flaky, box)
 
 
+# --- the back-edge of a wait loop ------------------------------------------------------------------------------------------------------
+
+
+def _uncovered_back_edges(fn) -> list[int]:
+    """Line numbers of ``JUMP_BACKWARD`` instructions that no exception-table entry covers, in ``fn`` and the functions nested in it."""
+    import dis
+    import inspect
+    import types
+
+    def walk(code):
+        yield code
+        for const in code.co_consts:
+            if isinstance(const, types.CodeType):
+                yield from walk(const)
+
+    out: list[int] = []
+    for code in walk(inspect.unwrap(fn).__code__):
+        ranges = [(e.start, e.end) for e in dis.Bytecode(code).exception_entries]
+        for ins in dis.get_instructions(code):
+            if ins.opname == "JUMP_BACKWARD" and not any(start <= ins.offset < end for start, end in ranges):
+                out.append(ins.positions.lineno if ins.positions else -1)
+    return out
+
+
+def _loop_shaped_like_the_gates_used_to_be(lock, cond, held):
+    with lock:
+        while held():
+            cond.wait()
+
+
+def _loop_shaped_like_the_gates_are_now(lock, cond, held):
+    with lock:
+        while True:
+            if not held():
+                break
+            cond.wait()
+
+
+def test_the_probe_function_sees_the_old_loop_shape_as_uncovered_and_the_new_one_as_covered():
+    """The measurement the next test rests on, pinned: if a Python covers the old shape too, the next test is vacuous and this one says so."""
+    assert _uncovered_back_edges(_loop_shaped_like_the_gates_used_to_be), (
+        "this Python covers the back-edge of `while cond:` inside a `with` too: re-run scripts/signal_leak_probe.py gate_pool --plain "
+        "and src/utils/interrupts.py's account of the loop form before keeping the rewrite"
+    )
+    assert not _uncovered_back_edges(_loop_shaped_like_the_gates_are_now)
+
+
+def test_no_wait_loop_leaves_its_back_edge_outside_the_with():
+    """CPython 3.13 leaves the ``JUMP_BACKWARD`` of ``while cond:`` outside the exception table of a ``with`` around it, so an interrupt delivered
+    there skips the lock's release: measured 0.7 % of interrupts left the pool slots' lock owned for ever. ``while True: if not cond: break`` keeps
+    the jump inside (see :func:`_loop_shaped_like_the_gates_are_now`). Every gate's wait loop is written that way."""
+    from src.config import kv_store
+    from src.database import library_generation as lg
+    from src.database import pool_reserve
+    from src.scheduler.bandwidth import _AdjustableSemaphore
+
+    gates = {
+        "pool_reserve._Slots.acquire": pool_reserve._Slots.acquire,
+        "bandwidth._AdjustableSemaphore.acquire": _AdjustableSemaphore.acquire,
+        "library_generation._Lock.shared": lg._Lock.shared,
+        "library_generation._Lock.exclusive": lg._Lock.exclusive,
+        "kv_store._write_slot": kv_store._write_slot,
+        "kv_store.hold_writes": kv_store.hold_writes,
+        "writer.WriterGate.acquire": writer.WriterGate.acquire,
+    }
+    bad = {name: _uncovered_back_edges(fn) for name, fn in gates.items() if _uncovered_back_edges(fn)}
+    assert not bad, f"a wait loop's back-edge is outside the with (lines): {bad}"
+
+
+class _AppendThenInterrupt(list):
+    """A queue whose first ``append`` stores the entry and then raises: an interrupt landing right after the thread joined the queue."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+
+    def append(self, item):
+        super().append(item)
+        if self.armed:
+            self.armed = False
+            raise KeyboardInterrupt
+
+
+@pytest.mark.parametrize("timeout", [None, 3], ids=["unbounded wait", "bounded wait"])
+def test_a_writer_interrupted_right_after_joining_the_queue_leaves_no_entry_behind(timeout):
+    """The head of the queue is the one thread FIFO lets take a free gate: an entry nobody owns would hold every later writer for ever."""
+    gate = writer.WriterGate()
+    assert gate.acquire()  # held by this thread
+    queue = _AppendThenInterrupt()
+    gate._queue = queue
+
+    def waiter():
+        queue.armed = True
+        return gate.acquire(timeout=timeout)
+
+    box = _in_thread(waiter)
+    assert isinstance(box.get("exc"), KeyboardInterrupt), box
+    assert not gate._queue and gate.waiters() == 0, "the interrupted writer left its entry queued or counted"
+    gate.release()
+    other = _in_thread(lambda: (gate.acquire(timeout=1), gate.release()))
+    assert other.get("value") == (True, None), f"a later writer could not take the free gate: {other}"
+
+
 # --- the acquire -> try gap ---------------------------------------------------------------------------------------------------------------
 
 

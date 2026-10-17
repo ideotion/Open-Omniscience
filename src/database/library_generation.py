@@ -145,7 +145,10 @@ class _Lock:
         with self._lock:
             if self._holder == me:
                 return False
-            while self._holder is not None:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if self._holder is None:
+                    break
                 _wait(self._cond, self._lock)
             # the count and this thread's record in one step, with no call between them: an exception after the count was raised and before
             # the caller saw the answer still leaves the record, which is what the caller releases by
@@ -166,7 +169,10 @@ class _Lock:
         with self._lock:
             if self._holder == me:
                 raise RuntimeError("the library swap window is already held by this thread")
-            while self._holder is not None or self._shared:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if self._holder is None and not self._shared:
+                    break
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise LibraryBusy(

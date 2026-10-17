@@ -100,7 +100,10 @@ class _Slots:
         deadline = time.monotonic() + timeout
         with self._lock:
             queued = False
-            while len(self._held) >= self.limit:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if len(self._held) < self.limit:
+                    break
                 if not queued:
                     queued = True
                     self.waits += 1

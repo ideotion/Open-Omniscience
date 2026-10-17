@@ -68,7 +68,10 @@ class _AdjustableSemaphore:
 
     def acquire(self) -> None:
         with self._lock:
-            while self._active >= self._permits:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if self._active < self._permits:
+                    break
                 _wait(self._cond, self._lock)
             self._active += 1
 

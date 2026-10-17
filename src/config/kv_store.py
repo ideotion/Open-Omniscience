@@ -166,7 +166,10 @@ def _write_slot() -> Iterator[int]:
                 if write_gate.held_by_current_thread():  # waiting here would make the restore wait for this thread's connection: refuse now
                     raise KvWriteRefused(_REFUSED_TEXT)
                 deadline = time.monotonic() + KV_WRITE_WAIT_S
-                while _hold_by is not None:
+                # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+                while True:
+                    if _hold_by is None:
+                        break
                     left = deadline - time.monotonic()
                     if left <= 0:
                         raise KvWriteRefused(_REFUSED_TEXT)
@@ -210,7 +213,10 @@ def hold_writes(timeout: float) -> Iterator[None]:
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
         with _hold_lock:
-            while _inflight:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if not _inflight:
+                    break
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise KvWriteBusy("a settings save was still in flight")

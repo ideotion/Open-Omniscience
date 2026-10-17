@@ -125,7 +125,6 @@ class WriterGate:
         self._cond = threading.Condition(self._lock)
         self._owner: int | None = None  # thread ident holding the write window
         self._depth = 0  # reentrant depth for the owner thread
-        self._waiters = 0  # threads currently blocked waiting to write
         # Observability (feeds the task-manager System view later; proves
         # serialisation in tests). Plain counters under the condition lock.
         self._grants = 0  # total acquisitions granted
@@ -169,6 +168,13 @@ class WriterGate:
         # Arrival order is the LIST order, and each waiter parks on its OWN
         # condition over the shared lock, so a handoff costs exactly one wakeup.
         self._queue: list[threading.Condition] = []
+
+    @property
+    def _waiters(self) -> int:
+        """Threads currently blocked waiting to write: the queue's length, NOT a second counter kept beside it. Two statements (``append``, then
+        ``+= 1``) have a gap an interrupt can land in, and a queue entry that nobody owns is the head every later writer waits behind for ever;
+        one statement cannot be split."""
+        return len(self._queue)
 
     def _take(self, me: int) -> None:
         """Grant the window to ``me``. Caller holds ``self._lock``."""
@@ -221,14 +227,15 @@ class WriterGate:
             # and the real collector is network-bound BETWEEN writes, so the
             # fully-contended figure is the worst case and not the typical one.
             cv = threading.Condition(self._lock)
-            self._queue.append(cv)
-            self._waiters += 1
-            self._contended += 1
-            self._peak_waiters = max(self._peak_waiters, self._waiters)
             start = time.monotonic()
             deadline = None if timeout is None else start + timeout
             granted = False
+            # the try opens BEFORE the queue is joined: an interrupt after the append and before the try left the entry queued with no owner
+            # (measured: 1 to 5 of 49,500 interrupts), and the head of the queue is the one thread FIFO lets take a free gate
             try:
+                self._queue.append(cv)
+                self._contended += 1
+                self._peak_waiters = max(self._peak_waiters, self._waiters)
                 while True:
                     if self._owner is None and self._queue and self._queue[0] is cv:
                         granted = True
@@ -242,7 +249,6 @@ class WriterGate:
                         _wait(cv, self._lock, remaining)
             finally:
                 # Under the lock whatever interrupted the wait: this block edits the queue and the counters (see src.utils.interrupts)
-                self._waiters -= 1
                 waited = time.monotonic() - start
                 self._total_wait_s += waited
                 self._max_wait_s = max(self._max_wait_s, waited)

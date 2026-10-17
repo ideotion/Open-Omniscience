@@ -14,6 +14,13 @@ lock was back) but in the Python code between ``_release_save`` and the ``try``.
 it: it takes the lock back itself in that one case, with the same uninterruptible restore the Condition uses, and lets the original exception
 go on. When the lock IS owned at the exception (the common case: the interrupt landed after the re-take) it does nothing.
 
+THE LOOP FORM IS PART OF THE GUARANTEE. Every caller waits in a loop under ``with lock:``. On CPython 3.13 the back-edge (``JUMP_BACKWARD``) of
+``while <wanted>:`` is compiled OUTSIDE the ``with``'s exception-table entry, and outside the ``try``/``finally`` around it, so an interrupt
+delivered at that instruction skips the release and every cleanup: measured with ``scripts/signal_leak_probe.py gate_*``, 0.3 to 0.9 % of
+interrupts left the pool slots', the governor's, the library lock's and the settings hold's lock owned (and the hold set, refusing every later save)
+for ever. ``while True: if not <wanted>: break`` keeps the jump inside the entry (checked with ``dis``; pinned by
+``tests/test_gates_survive_an_interrupt.py``). Write every wait loop that way.
+
 It assumes the lock is held exactly ONCE by the caller (every use here is one ``with self._lock:`` around the wait), which is the only
 level at which restoring ``(1, this thread)`` gives back what the ``with`` expects.
 """
