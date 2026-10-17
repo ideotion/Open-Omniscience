@@ -89,8 +89,11 @@ def encrypt_database(path: Path | str, key: str) -> dict:
 
         for suffix in ("-wal", "-shm"):
             stale = p.with_name(p.name + suffix)
-            if stale.exists():
-                stale.unlink()
+            # the guard-clause form, not ``if stale.exists(): stale.unlink()``: a loop whose body ends in a bare ``if`` has its back-edge
+            # outside the exception table of the ``try`` around it on CPython 3.13 (R163; tests/test_gates_survive_an_interrupt.py)
+            if not stale.exists():
+                continue
+            stale.unlink()
         os.replace(enc_tmp, p)  # atomic on the same filesystem
     finally:
         enc_tmp.unlink(missing_ok=True)

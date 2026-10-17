@@ -234,7 +234,11 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
     damage_kinds = collections.Counter()
     end = time.monotonic() + seconds
     try:
-        while time.monotonic() < end:
+        # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of the
+        # ``try`` on CPython 3.13, so a real Ctrl-C landing there would skip the ``finally`` that stops the timer (src/utils/interrupts.py; R163)
+        while True:
+            if time.monotonic() >= end:
+                break
             iterations += 1
             try:
                 armed[0] = True
@@ -247,7 +251,9 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
                 outcomes[type(exc).__name__] += 1
             if sc.lock._is_owned():  # noqa: SLF001 - the question is exactly whether this thread still holds it
                 lock_left += 1
-                while sc.lock._is_owned():  # noqa: SLF001
+                while True:
+                    if not sc.lock._is_owned():  # noqa: SLF001
+                        break
                     sc.lock.release()
             bad = sc.damage()
             if bad:
@@ -292,7 +298,11 @@ def main(argv: list[str]) -> int:
     left_held = iterations = 0
     end = time.monotonic() + seconds
     try:
-        while time.monotonic() < end:
+        # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of the
+        # ``try`` on CPython 3.13, so a real Ctrl-C landing there would skip the ``finally`` that stops the timer (src/utils/interrupts.py; R163)
+        while True:
+            if time.monotonic() >= end:
+                break
             iterations += 1
             try:
                 armed[0] = True

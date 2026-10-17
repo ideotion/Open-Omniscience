@@ -1093,21 +1093,27 @@ class DamageRegistry:
         except Exception as exc:  # noqa: BLE001 - a latch that cannot be re-read stays
             _LOG.warning("database damage: could not start the re-read of the reported tables (%s)", type(exc).__name__)
             outcome = {}
-        released: list[str] = []
         with self._lock:
-            for key in recheck:
-                if outcome.get(key) == "started":
-                    continue
-                st = self._files.get(key)
-                if st is None:
-                    continue
-                if self._claim_is(st, claims.get(key)):
-                    st.pop("rechecking", None)
-                if outcome.get(key) == "nothing-to-read" and st["latched"]:
-                    st["latched"] = False
-                    st.pop("check_tables", None)
-                    st.pop("check_stopped_after", None)
-                    released.append(key)
+            return self._settle_unstarted(recheck, outcome, claims)
+
+    def _settle_unstarted(self, recheck: dict[str, list[str]], outcome: dict[str, str], claims: dict[str, int]) -> list[str]:
+        """The loop of :meth:`_start_recheck`, called with ``self._lock`` held. A function of its own because CPython 3.13 leaves a loop's back-edge
+        outside the exception table of the ``with`` around it, so an interrupt delivered there would leave the lock owned (R163: the restore CLI
+        reaches this through ``DamageRegistry.retry``). A function with no handler has nothing to skip."""
+        released: list[str] = []
+        for key in recheck:
+            if outcome.get(key) == "started":
+                continue
+            st = self._files.get(key)
+            if st is None:
+                continue
+            if self._claim_is(st, claims.get(key)):
+                st.pop("rechecking", None)
+            if outcome.get(key) == "nothing-to-read" and st["latched"]:
+                st["latched"] = False
+                st.pop("check_tables", None)
+                st.pop("check_stopped_after", None)
+                released.append(key)
         return released
 
     @staticmethod

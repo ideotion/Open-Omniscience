@@ -312,6 +312,44 @@ def _uncovered_back_edges(fn) -> list[int]:
     return out
 
 
+def _uncovered_loop_heads(relpath: str, funcname: str) -> set[str]:
+    """The source text of the first line of the head of every loop of ``funcname`` in the repo file ``relpath`` (and of the functions nested in
+    it) whose ``JUMP_BACKWARD`` lies outside an exception-table entry that covers the loop's head: what :func:`_uncovered_back_edges` finds, but
+    read from the file's SOURCE without importing it (a script may import a library this machine lacks), and named by text, which survives edits
+    elsewhere in the file where a line number does not.
+
+    A ``while <cond>:`` loop is reported by its first body line, since that is where CPython 3.13 puts its head. A list or dict comprehension is
+    inlined into its function there, with a cleanup entry of its own, so one inside a function that has a handler is reported too: callers name
+    the heads they watch and ignore the rest."""
+    import dis
+    import linecache
+    import types
+    from pathlib import Path
+
+    path = str(Path(__file__).resolve().parents[1] / relpath)
+
+    def walk(code):
+        yield code
+        for const in code.co_consts:
+            if isinstance(const, types.CodeType):
+                yield from walk(const)
+
+    out: set[str] = set()
+    for code in walk(compile(Path(path).read_text(encoding="utf-8"), path, "exec")):
+        if code.co_name != funcname:
+            continue
+        ranges = [(e.start, e.end) for e in dis.Bytecode(code).exception_entries]
+        instructions = list(dis.get_instructions(code))
+        for ins in instructions:
+            if ins.opname != "JUMP_BACKWARD" or any(start <= ins.offset < end for start, end in ranges):
+                continue
+            if any(start <= ins.argval < end for start, end in ranges):
+                head = next(i for i in instructions if i.offset == ins.argval)
+                lineno = head.positions.lineno if head.positions else None
+                out.add(linecache.getline(path, lineno).strip() if lineno else "?")
+    return out
+
+
 def _loop_shaped_like_the_gates_used_to_be(lock, cond, held):
     with lock:
         while held():
@@ -401,15 +439,39 @@ def _worker_only_loops() -> dict:
     }
 
 
-def test_each_worker_only_loop_names_its_reason_and_still_needs_it():
+_EVENT_LOOP_REPORT = "/mnt/project-files/rc-diagnostics/sigint-probe-2026-10-17/REPORT.md"
+
+
+def _event_loop_loops() -> dict:
+    """The loops that run on the event loop's thread (the lifespan's boot code, a request middleware) and nowhere else on the main thread.
+
+    R165: they are exempt because uvicorn takes SIGINT and SIGTERM, so no KeyboardInterrupt is raised in them (measured 18 of 18 by
+    :data:`_EVENT_LOOP_REPORT`). The exemption holds only while the app is served that way, which tests/test_event_loop_signal_exemption.py pins:
+    every reason below names it, so removing it leaves these entries without their precondition."""
+    from src.database import damage
+    from src.monitoring import storage_events, vitals_history
+
+    why = f"event-loop: server handles signals; see {_EVENT_LOOP_REPORT} and tests/test_event_loop_signal_exemption.py"
+    return {
+        "damage.DamageRegistry.incident_after_last_check": (damage.DamageRegistry.incident_after_last_check, why + " (lifespan -> owe_at_locked_boot)"),
+        "damage.DamageRegistry.notes": (damage.DamageRegistry.notes, why + " (monitor_requests -> MemoryGuard; reach inferred, see the R163 report)"),
+        "storage_events.record": (storage_events.record, why + " (lifespan -> run_deferred_startup -> note_open)"),
+        "vitals_history.start": (vitals_history.start, why + " (lifespan -> record_session_start)"),
+    }
+
+
+def test_each_exempt_loop_names_its_reason_and_still_needs_it():
     """An entry without a reason exempts nothing, and an entry whose loop is already written in the covered shape is stale: it would go on
-    exempting the function after somebody wrote the old shape back. Both fail here, so the allowlist can only shrink."""
-    entries = _worker_only_loops()
-    assert entries
-    no_reason = [name for name, (_fn, reason) in entries.items() if _WORKER_ONLY_REPORT not in reason]
-    assert not no_reason, f"worker-only entries without the report as their reason: {no_reason}"
-    stale = [name for name, (fn, _reason) in entries.items() if not _uncovered_back_edges(fn)]
-    assert not stale, f"these loops are already in the covered shape: delete their entries from _worker_only_loops: {stale}"
+    exempting the function after somebody wrote the old shape back. Both fail here, so the allowlists can only shrink."""
+    workers, events = _worker_only_loops(), _event_loop_loops()
+    assert workers and events
+    no_reason = [name for name, (_fn, reason) in workers.items() if _WORKER_ONLY_REPORT not in reason]
+    no_reason += [name for name, (_fn, reason) in events.items() if _EVENT_LOOP_REPORT not in reason or "test_event_loop_signal_exemption" not in reason]
+    assert not no_reason, f"exempt entries without their report (and, for the event loop, its pinning test) as the reason: {no_reason}"
+    stale = [name for name, (fn, _reason) in {**workers, **events}.items() if not _uncovered_back_edges(fn)]
+    assert not stale, f"these loops are already in the covered shape: delete their entries from the allowlists: {stale}"
+    twice = sorted(set(workers) & set(events))
+    assert not twice, f"an entry is in both allowlists: {twice}"
 
 
 def test_kv_invalidate_still_forgets_exactly_the_entries_of_its_key():
