@@ -115,6 +115,18 @@ class _InterruptOnFirstEnter:
         return self.real.__exit__(*exc)
 
 
+def test_an_interrupt_between_the_pause_report_and_the_body_still_resumes_what_the_pause_stopped(sched, monkeypatch):
+    """The gap the first-exit test cannot reach: the pause REPORTED (it stopped the loop and returned True) and the interrupt lands before the
+    body of the window's lock raises the paused flag, as one delivered at a Python-level lock wrapper does (a C lock has practically no such
+    gap). The ``finally`` raises the flag itself from ``was_paused``; without that it found nothing to resume and the loop stayed stopped."""
+    monkeypatch.setattr(R, "_EXCL_LOCK", _InterruptOnFirstEnter(R._EXCL_LOCK))
+    monkeypatch.setattr(R, "exclusive_window_open", lambda: False)  # its own use of the lock must not spend the one interrupt
+    with pytest.raises(KeyboardInterrupt), R.exclusive_window():
+        pytest.fail("the body must not run")
+    assert not sched.held and sched.running and sched.starts == 1 and sched.releases == 1
+    assert R._EXCL_DEPTH == 0 and not R._EXCL_PAUSED and not R._EXCL_WINDOW
+
+
 def test_an_inner_window_interrupted_before_it_counted_leaves_the_outer_one_standing(sched, monkeypatch):
     with R.exclusive_window() as outer_paused:
         assert outer_paused is True and R._EXCL_DEPTH == 1
