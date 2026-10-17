@@ -415,3 +415,16 @@ def test_a_corpus_five_percent_smaller_releases_a_serve_check_stop(monkeypatch, 
     monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 11_000_000)
     calls, outcome = _build_attempts(monkeypatch)
     assert outcome == "built" and calls == [1]
+
+
+def test_a_compact_stop_is_a_duckdb_limit_stop_kept_with_its_stage_and_the_class_and_refuses_a_rebuild(monkeypatch, _env):
+    """R164: the compacting checkpoint's wall is held like any other; the instance was invalid, so only the size before is kept."""
+    _stop(monkeypatch, stage="compact", resident_mib=765.5, engine_error_class="FatalException",
+          canary_text="engine words that must not be kept")
+    rec = json.loads(_env.read_text(encoding="utf-8"))
+    assert rec["reason"] == "duckdb-limit" and rec["stage"] == "compact" and rec["resident_mib"] == 765.5
+    assert rec["engine_error_class"] == "FatalException" and "engine words" not in _env.read_text(encoding="utf-8")
+    _restart()
+    calls, outcome = _build_attempts(monkeypatch)
+    assert outcome == "declined" and calls == []
+    assert rollup_serve.status()["stopped"]["stage"] == "compact"

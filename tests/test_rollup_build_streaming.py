@@ -1670,3 +1670,138 @@ def test_a_stop_after_the_aggregate_names_the_sizes_read_during_it_not_the_stale
     assert d["stage"] == "keywords"
     assert d["resident_mib"] == float(len(calls)) == d["peak_mib"], "the last reading taken, which the aggregate's readings advanced"
     assert d["resident_mib"] > 2.0, "more than the stage inserts' own readings"
+
+
+# --------------------------------------------------------------------------- #
+# R164: the finished in-memory rollup is checkpointed once, before the serve check
+# --------------------------------------------------------------------------- #
+
+def _compacted(**extra):
+    return {"outcome": "ok", "compacted": True, "reason": None, "resident_before_mib": 456.1,
+            "resident_after_mib": 73.2, "secs": 0.7, **extra}
+
+
+class _CheckpointCon(_FakeCon):
+    """A connection that answers the size reading and fails ``CHECKPOINT`` with ``exc`` (or passes it)."""
+
+    def __init__(self, exc=None, readings=(456.1, 73.2)):
+        super().__init__(None)
+        self.ck_exc, self.readings = exc, list(readings)
+
+    def execute(self, sql, params=None):
+        self.statements.append((sql, params))
+        if "duckdb_memory" in sql:
+            return _Rows([(self.readings.pop(0) if self.readings else None,)])
+        if sql.strip().upper() == "CHECKPOINT" and self.ck_exc is not None:
+            raise self.ck_exc
+        return _Rows([])
+
+
+def test_compact_checkpoints_once_and_reads_the_size_before_and_after():
+    con = _CheckpointCon()
+    out = columnar.compact(con)
+    assert out["outcome"] == "ok" and out["compacted"] is True and out["reason"] is None
+    assert out["resident_before_mib"] == 456.1 and out["resident_after_mib"] == 73.2
+    assert [s for s, _ in con.statements if s.strip().upper() == "CHECKPOINT"] == ["CHECKPOINT"]
+
+
+def test_compact_reads_a_fatal_allocation_error_as_the_wall_and_any_other_fatal_as_unusable():
+    wall = columnar.compact(_CheckpointCon(FatalException(_FATAL_WORDS)))
+    assert wall["outcome"] == "out-of-memory" and wall["reason"] == "FatalException" and wall["compacted"] is False
+    assert "allocate" not in repr(wall) and "957" not in repr(wall), "the engine's words are matched and dropped"
+    other = columnar.compact(_CheckpointCon(FatalException("FATAL Error: database has been invalidated")))
+    assert other["outcome"] == "fatal" and other["reason"] == "FatalException" and other["compacted"] is False
+
+
+def test_compact_failing_for_any_other_reason_is_not_silent_and_leaves_the_rollup_intact(caplog):
+    out = columnar.compact(_CheckpointCon(RuntimeError("engine words that must not be kept")))
+    assert out["outcome"] == "failed" and out["compacted"] is False and out["reason"] == "RuntimeError"
+    assert "engine words" not in repr(out) and out["resident_after_mib"] is None
+    assert "serves uncompacted" in caplog.text, "named in the log, by class"
+
+
+def test_a_compacted_build_records_that_it_was_compacted_before_it_was_asked_anything(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    order: list[str] = []
+    real_compact = columnar.compact
+    monkeypatch.setattr(columnar, "compact", lambda con: (order.append("compact"), real_compact(con))[1])
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: (order.append("canary"), _canary("ok"))[1])
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert order == ["compact", "canary"], "the serve check reads the compacted rollup"
+    c = rollup_serve.status()["last_build"]["compact"]
+    assert c["outcome"] == "ok" and c["compacted"] is True and c["reason"] is None
+    assert c["resident_before_mib"] is not None and c["resident_after_mib"] is not None
+
+
+def test_a_rollup_whose_compacting_checkpoint_hits_the_wall_is_a_stop_that_swaps_nothing_in_and_asks_nothing(
+        serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    built = []
+    real_connect = columnar.connect
+    monkeypatch.setattr(columnar, "connect", lambda **kw: built.append(real_connect(**kw)) or built[-1])
+    monkeypatch.setattr(columnar, "compact", lambda con: {
+        "outcome": "out-of-memory", "compacted": False, "reason": "FatalException", "resident_before_mib": 765.5,
+        "resident_after_mib": None, "secs": 0.1})
+    asked: list[int] = []
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: asked.append(1) or _canary("ok"))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    rollup_serve._STATE["last_build"] = None
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "compact"
+    assert stopped["resident_mib"] == 765.5 and stopped["engine_error_class"] == "FatalException"
+    assert stopped["duckdb_limit_mb"] > 0 and "epoch" in stopped and "mentions_count" in stopped, "the release rules' evidence"
+    assert asked == [] and rollup_serve._STATE["con"] is previous and rollup_serve._STATE["last_build"] is None
+    with pytest.raises(Exception):  # noqa: B017 - the engine's own closed-connection error
+        built[0].execute("SELECT 1")
+
+
+def test_a_build_whose_compacting_checkpoint_left_the_instance_unusable_serves_nothing_and_keeps_no_stop(
+        serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "compact", lambda con: {
+        "outcome": "fatal", "compacted": False, "reason": "FatalException", "resident_before_mib": 1.0,
+        "resident_after_mib": None, "secs": 0.1})
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    with pytest.raises(RuntimeError, match="unusable"):
+        rollup_serve._build_inmemory_and_swap()
+    assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["stopped"] is None and rollup_marker.read() is None
+
+
+def test_a_compact_that_failed_otherwise_still_serves_and_the_build_record_says_why_not(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "compact", lambda con: {
+        "outcome": "failed", "compacted": False, "reason": "IOException", "resident_before_mib": 456.1,
+        "resident_after_mib": None, "secs": 0.1})
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("ok"))
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["con"] is not None
+    c = rollup_serve.status()["last_build"]["compact"]
+    assert c["compacted"] is False and c["reason"] == "IOException"
+
+
+def test_compacting_changes_no_answer_in_any_window(serve_env, session):
+    """Counts of every term and the ranked top terms of three windows, on the real rollup, before and after the checkpoint."""
+    import datetime
+
+    _seed(session, keywords=60, mentions_per=9)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    con = rollup_serve._STATE["con"]
+
+    def answers():
+        out = {}
+        for name, start in (("all", None), ("mid", datetime.date(2026, 3, 4)), ("narrow", datetime.date(2026, 3, 8))):
+            counts = columnar.windowed_term_counts(con, start_day=start)
+            top = columnar.windowed_top_terms_raw(con, start_day=start, limit=80)
+            out[name] = (counts, [(r["mentions"], r["articles"]) for r in top])
+            assert counts and top, f"{name}: the window has rows"
+        return out
+
+    before = answers()
+    done = columnar.compact(con)
+    assert done["compacted"] is True
+    after = answers()
+    for name in before:
+        assert before[name][0] == after[name][0], f"{name}: counts"
+        assert before[name][1] == after[name][1], f"{name}: the ranked (mentions, articles) pairs"

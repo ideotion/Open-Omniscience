@@ -1694,6 +1694,43 @@ def serve_canary(con, *, today=None, max_s: float = CANARY_MAX_S) -> dict:
     return out
 
 
+def compact(con) -> dict:
+    """Checkpoint the finished in-memory rollup once, so what it holds is stored compressed (R164).
+
+    A rollup built in memory stays in the engine's uncompressed write buffers until something checkpoints it, and
+    nothing does: measured 2026-10-17 at 1,004 MB with no other cursor reading, ``CHECKPOINT`` took under a second and
+    brought the resident rollup from 530 to 55 MiB (12 M mentions) and 456 to 73 MiB (16 M), the 30-day top-terms
+    query's peak from 701 to 309 MiB at 16 M, and let the all-history top terms answer at 12 M, with identical counts.
+    It costs no process memory (the process high-water mark did not move). It needs a little room of its own, so it is
+    asked right after the build and before any query.
+
+    Returns ``{"outcome", "compacted", "reason", "resident_before_mib", "resident_after_mib", "secs"}``. ``outcome`` is
+    ``"ok"``; ``"out-of-memory"`` (a FATAL allocation error: the memory wall, the instance is invalid); ``"fatal"``
+    (any other FATAL error: the instance is unusable and must not be served); or ``"failed"`` (any other error: the
+    rollup is intact and serves as it would uncompacted, ``compacted`` false). ``reason`` is the error CLASS name, never
+    the engine's text. Counts and sizes only."""
+    out: dict = {"outcome": "failed", "compacted": False, "reason": None, "resident_before_mib": None,
+                 "resident_after_mib": None, "secs": None}
+    before = _read_mib(con)
+    out["resident_before_mib"] = None if before is None else round(before, 1)
+    started = time.monotonic()
+    try:
+        con.execute("CHECKPOINT")
+    except Exception as exc:  # noqa: BLE001 - classified by name, as the build's own limit is
+        out["reason"] = type(exc).__name__
+        if out["reason"] == _ALLOCATION_FATAL_CLASS:
+            out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"
+        else:
+            log_failure(_LOG, "rollup compact: the checkpoint failed; the rollup serves uncompacted", exc, level=logging.WARNING)
+    else:
+        out["outcome"] = "ok"
+        out["compacted"] = True
+        after = _read_mib(con)
+        out["resident_after_mib"] = None if after is None else round(after, 1)
+    out["secs"] = round(time.monotonic() - started, 2)
+    return out
+
+
 #: ``keyword_daily_parity(scan_bound=...)`` default: the live side is NOT bounded (the old behaviour, right
 #: for a rollup compared with a corpus nothing is writing to). ``None`` is a real value there (see below), so
 #: "not given" needs its own marker.

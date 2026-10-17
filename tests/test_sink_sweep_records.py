@@ -806,6 +806,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('windowed_term_counts', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
         ('windowed_top_terms_raw', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
         ('serve_canary', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
+        ('compact', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
     },
     'src/analytics/equivalence.py': {
         # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere

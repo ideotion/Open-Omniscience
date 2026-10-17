@@ -311,6 +311,15 @@ def _note_decline(kind: str, source: str, record: dict) -> None:
         _STATE["last_decline"] = {"kind": kind, "source": source, **record, "repeats": 0}
 
 
+def _compact_stop(compact: dict) -> dict:
+    """The stop record for a rollup whose compacting checkpoint hit DuckDB's own limit (a FATAL allocation error, R164).
+
+    ``duckdb-limit`` so the release rules of that stop apply unchanged. Sizes read BEFORE it (the instance is invalid
+    afterwards) and the error class, as numbers and codes only."""
+    return {"reason": "duckdb-limit", "at": time.time(), "stage": "compact", "resident_mib": compact.get("resident_before_mib"),
+            "engine_error_class": compact.get("reason")}
+
+
 def _serve_check_stop(canary: dict) -> dict:
     """The stop record for a rollup that was built and cannot answer: DuckDB's own limit, found at the serve check.
 
@@ -374,11 +383,18 @@ def _build_inmemory_and_swap() -> dict | None:
             else:
                 # R157: a rollup that fits its limit can still leave no room for the query that uses it. Ask it the
                 # one question the serve asks first (the 30-day terms), now, on the connection nobody else holds.
-                canary = columnar.serve_canary(con)
-                if canary["outcome"] == "fatal":
-                    # a FATAL engine error leaves the instance unusable: never served, never retried on (a plain failure)
-                    raise RuntimeError("the serve check found the DuckDB instance unusable")
-                skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
+                # R164: first store what was built compressed (the in-memory rollup is otherwise held uncompressed).
+                compact = columnar.compact(con)
+                if compact["outcome"] == "fatal":
+                    raise RuntimeError("compacting the rollup found the DuckDB instance unusable")
+                if compact["outcome"] == "out-of-memory":
+                    skip = _compact_stop(compact)
+                else:
+                    canary = columnar.serve_canary(con)
+                    if canary["outcome"] == "fatal":
+                        # a FATAL engine error leaves the instance unusable: never served, never retried on (a plain failure)
+                        raise RuntimeError("the serve check found the DuckDB instance unusable")
+                    skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
             if skip is not None:
                 skip.update({
                     # the limit and the machine total this build ran under, whatever stopped it (R147)
@@ -419,6 +435,8 @@ def _build_inmemory_and_swap() -> dict | None:
             "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
             # what the finished rollup was asked before it was served, and what that cost (R157)
             "serve_check": canary,
+            # whether the rollup was stored compressed before it was asked, and why not when it was not (R164)
+            "compact": compact,
         }
         old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
