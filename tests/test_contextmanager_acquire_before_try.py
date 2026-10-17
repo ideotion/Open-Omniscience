@@ -17,6 +17,7 @@ the gap would leak and not by who calls it.
 from __future__ import annotations
 
 import ast
+import warnings
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,16 @@ _ALLOWED: dict[tuple[str, str], str] = {
 _OWED: dict[tuple[str, str], str] = {
     ("scheduler/runner.py", "exclusive_window"): "WAL: r163-cm/wal, the scheduler stays held if the interrupt lands inside the pause",
     ("backup/stream_backup.py", "active_staging"): "RC2: r163-cm/rc2, the path stays marked as a live job's staging",
+}
+
+# Owed IF PRESENT: two context managers of #1421's run records (WAL) that take shared state before their try. They exist only on a tree that has that
+# PR, and this file must pass on a tree that has not (the follow-on alone) and on one that has. So, unlike _OWED, a name here need not exist: if the
+# file defines it, it must still be a @contextmanager; if it no longer takes anything before its try (WAL's conversion landed) the entry is REPORTED as
+# stale by a warning and does not fail, because the conversion merges after this file and its owner cannot edit it. Delete the entries here, by the Q
+# thread, once WAL's follow-on is in the base.
+_OWED_IF_PRESENT: dict[tuple[str, str], str] = {
+    ("monitoring/storage_events.py", "run_open"): "WAL: R171 in its follow-on, the run record's open is taken before the try",
+    ("monitoring/storage_events.py", "run_refusals_net"): "WAL: R171 in its follow-on, the refusal round's hold is taken before the try",
 }
 
 
@@ -128,7 +139,7 @@ def _scan() -> dict[tuple[str, str], list[str]]:
 
 def test_every_context_manager_that_takes_something_before_its_try_is_named():
     found = _scan()
-    new = sorted(set(found) - set(_ALLOWED) - set(_OWED))
+    new = sorted(set(found) - set(_ALLOWED) - set(_OWED) - set(_OWED_IF_PRESENT))
     assert not new, (
         "a @contextmanager takes something before its yield (an interrupt in that gap skips its give-back); read it, then either move the take "
         "inside the try (R161 shape: release by asking the lock, or an idempotent finally) or name it in _ALLOWED with the reason:\n"
@@ -147,6 +158,42 @@ def test_each_owed_entry_names_a_real_context_manager():
         tree = ast.parse((_SRC / rel).read_text(encoding="utf-8"))
         assert any(_is_cm(fn) and fn.name == name for fn in ast.walk(tree)), f"{rel}::{name} ({lane}) is not a @contextmanager any more: delete the owed entry"  # type: ignore[attr-defined]
     assert not set(_OWED) & set(_ALLOWED), "an entry is both allowed and owed"
+
+
+def _check_owed_if_present(table: dict[tuple[str, str], str], found: dict[tuple[str, str], list[str]]) -> None:
+    for (rel, name), lane in table.items():
+        path = _SRC / rel
+        if not path.exists():
+            continue  # a tree without that file (or that PR): nothing is owed yet
+        defined = [fn for fn in ast.walk(ast.parse(path.read_text(encoding="utf-8"))) if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name == name]
+        if not defined:
+            continue
+        assert any(_is_cm(fn) for fn in defined), f"{rel}::{name} ({lane}) exists but is not a @contextmanager: delete the owed entry"
+        if (rel, name) not in found:
+            warnings.warn(f"{rel}::{name} ({lane}) no longer takes anything before its try: delete the _OWED_IF_PRESENT entry", stacklevel=2)
+
+
+def test_each_owed_if_present_entry_is_a_context_manager_where_it_exists():
+    assert not set(_OWED_IF_PRESENT) & (set(_ALLOWED) | set(_OWED)), "an entry is in two tables"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # a stale entry is reported by the check itself; here only the failures count
+        _check_owed_if_present(_OWED_IF_PRESENT, _scan())
+
+
+def test_an_owed_if_present_entry_that_was_converted_is_reported_not_failed():
+    converted = {("database/corpus_lease.py", "corpus_lease"): "a context manager that takes inside its try"}
+    with pytest.warns(UserWarning, match="delete the _OWED_IF_PRESENT entry"):
+        _check_owed_if_present(converted, _scan())
+
+
+def test_an_owed_if_present_entry_that_is_not_a_context_manager_fails():
+    not_a_cm = {("database/corpus_lease.py", "active_leases"): "a plain function"}
+    with pytest.raises(AssertionError, match="is not a @contextmanager"):
+        _check_owed_if_present(not_a_cm, _scan())
+
+
+def test_an_owed_if_present_entry_for_a_missing_function_or_file_is_fine():
+    _check_owed_if_present({("database/corpus_lease.py", "not_there"): "x", ("no/such_file.py", "f"): "y"}, _scan())
 
 
 @pytest.mark.parametrize("key", sorted(_ALLOWED))
