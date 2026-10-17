@@ -20,7 +20,9 @@ test's own (``tmp_path``); nothing here writes the suite's shared data directory
 
 from __future__ import annotations
 
+import copy
 import errno
+import itertools
 import json
 import sqlite3
 import threading
@@ -30,6 +32,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
+from src.monitoring import holder_state
 from src.monitoring import storage_events as se
 
 MARKER = "MARKER-passphrase-4711-correct-horse"
@@ -377,6 +380,9 @@ _PAGES_AT_THE_WIDEST = {
 }
 
 
+#: What the gate writes as a hold's ``seconds_by`` (``writer._SPENT_KINDS`` and ``between_statements``), each at the widest a day-long hold gives.
+_SECONDS_BY_KEYS = ("insert", "savepoint", "other_statement", "commit", "between_statements")
+
 _WIDEST_CLASS = "Module." + "E" * (se._CLASS_NAME_MAX - len("Module."))  # 80 characters, the most the journal lets through
 
 
@@ -408,11 +414,17 @@ def _fill_runs() -> None:
 
 def _fill_like_the_hooks(long_names: bool) -> None:
     """Every kind to its cap with the events the hooks write, names at the cut or ordinary."""
+    from src.database import writer
 
     def nm(text: str) -> str:
         return (text + _NAME)[: se.STR_CHARS] if long_names else text
 
-    frames = [nm(f) for f in ("src.analytics.keyword_rollup:rebuild_segment_batches:412", "src.database.maintenance:run_in_write_window:1893", "src.database.writer:write_lock:540")]
+    def frame(text: str) -> str:
+        # The widest a frame the gate's watchdog writes can be: ``writer.FRAME_CHARS``, a measured maximum that tests/test_holder_state.py pins
+        # against every function under src/. The journal's own 160-character cut is NOT the width of a frame: no frame reaches it.
+        return (text + _NAME)[: writer.FRAME_CHARS - 1] + "…" if long_names else text  # the cut form the watchdog writes: FRAME_CHARS, the last one the ellipsis
+
+    frames = [frame(f) for f in ("src.analytics.keyword_rollup:rebuild_segment_batches:412", "src.database.maintenance:run_in_write_window:1893", "src.database.writer:write_lock:540")]
     for i in range(se.KEEP["gate_hold"] + 5):
         se.record(
             "gate_hold",
@@ -420,7 +432,17 @@ def _fill_like_the_hooks(long_names: bool) -> None:
              "route": nm("POST /api/keywords/reindex/{job_id}/resume"), "frames": frames},
             key=("hold", i),
         )
-        se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume")})
+        # The widest a long hold's record gets: the phase and its sample counts (a day of 15 s samples in each of the four), and what the
+        # holder thread did over the hold and the machine's memory at its end, each at ten digits.
+        se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760},
+                                              # the holder's kernel state: six counts of five digits (a day of one-second looks, 14,400 in each class), the longest gap and
+                                              # the seconds spent waiting for a CPU (``rq``: a day, 86,400.0, the same bound as the gap, since neither can exceed the looks'
+                                              # own span) and a reason that was cleared by the counts (the journal merges: the key stays, null)
+                                              "ws": [14_400] * len(holder_state.CLASSES), "gap": 86_400.0, "rq": 86_400.0, "ws_why": None})
+        se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume"),
+                                           "cpu_ms": 86_400_000.0, "nvcsw": 9_999_999_999, "nivcsw": 9_999_999_999, "majflt": 9_999_999_999,
+                                           "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999,
+                                           "seconds_by": dict.fromkeys(_SECONDS_BY_KEYS, 86_400.0)})
     for _ in range(se.KEEP["guard"] + 4):
         se.record("guard", {"kind": "wal", "since": "2026-10-13T12:00:00+00:00", "wal_bytes_at_trip": 12_345_678_901,
                             "disk_free_bytes_at_trip": 9_876_543_210, "corpus_bytes_at_trip": 98_765_432_101,
@@ -452,25 +474,160 @@ def _fill_like_the_hooks(long_names: bool) -> None:
                       "collector": True, "pool": "corpus"} for k in range(3)])
 
 
+def _fill_and_write(monkeypatch, long_names: bool) -> None:
+    """:func:`_fill_like_the_hooks`, then the file written: the state a running app is in when a bundle is built. The member's ``file`` block
+    carries ``last_write_ok_at``, null before the background writer's first write and a 25-character time after it (23 bytes more), and the
+    fixture's 20 ms delay made WHETHER the writer had run before the member was built a matter of timing (the Opus read of ed2d170f1: the
+    widest-names floor failed 4 runs of 6). The delay is made long so the thread cannot race, and the write is made here."""
+    monkeypatch.setattr(se, "FLUSH_DELAY_S", 3600.0)
+    _fill_like_the_hooks(long_names)
+    se.flush()
+    assert _member()["file"]["last_write_ok_at"], "the file has been written: the member is measured in the state a running app is in"
+
+
+#: The widest a gate hold event the fixture writes (every name at the cut, the file written), in the journal's own count of bytes, and the widest
+#: journal it writes. WHAT THEY PROTECT: the 125,000 bytes of the slot's row and the bytes left under it (749 after the holder's kernel state
+#: gained ``rq``). They are measured maxima pinned both ways, like ``writer.FRAME_CHARS``: a number nothing measured is a margin nobody can
+#: account for, and one that moves without a re-measure is a budget claim nobody checked.
+_WIDEST_HOLD_EVENT_BYTES = 1222
+_WIDEST_JOURNAL_BYTES = 124_251
+
+
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
-def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
+def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
-    every kind, with the events the hooks write. Measured 73,714 bytes with ordinary names and 118,424 with every name at the cut, 1,494 of which are the keep rule's (``picked_by`` on the 50 events of the four split kinds, and the method sentence and ``keep_rule`` lines) (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
-    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
+    every kind, with the events the hooks write. Measured 78,634 bytes with ordinary names and 123,344 with every name at the cut, 1,494 of which are the keep rule's (``picked_by`` on the 50 events of the four split kinds, and the method sentence and ``keep_rule`` lines) (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
+    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip.
+
+    THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,483 bytes with ordinary names and 126,193 with every name at the cut, over the row by 1,193; the member built at the row's budget (124,934 bytes) takes the split off the shortest holds until it fits and keeps it on the other 5, counting the 15 it cut. Ordinary names keep all twenty.
+
+    THE ONSET (``first_seen_at`` on ``gate_hold`` and ``pool_timeout``, 17 Oct) is paid for in the member's words, not in splits: the two keys
+    add 88 bytes, and the method and the caveat, with the sentence that names the key in them and others tightened, are 64 characters shorter
+    than before (the method +3, the caveat -67), so the fixed part grows by 24 bytes: 5,152 to 5,176 once the file has been written, 5,129 to
+    5,153 before the first write. "THE FIXED PART" in this docstring is the member with every kind's ``events`` list emptied, less the 20 bytes
+    of ``,"dropped_to_fit":{}``, which is the definition RC2's independent re-measure used; it corrected the first cut's +26 (88 - 64 is 24) and
+    its "the method gives back 23 bytes" (25). The ``file`` block's ``last_write_ok_at`` is null until the first write and a 25-character time
+    after it (23 bytes more), and WHICH state the member is built in must not be left to the writer thread's timing: ``_fill_and_write`` makes
+    it the written one, the state a running app is in. Measured with the real fixtures, written: ordinary names 81,532 bytes (43,468 free), every
+    name at the cut 126,242 with every split and 124,983 at the
+    row's budget, 17 free, 5 splits kept (before the onset: 43 free, 5 kept). If a later change costs a split,
+    ``len(_carrying(...)) == 20`` below says so (it said ``>= 5`` before the frame width, below). An onset that is UNKNOWN (a file from before the field, or a history that could not be read)
+    shows a short reason instead of a time (23 and 62 bytes more for the two kinds): the widest names then still keep every split (4 of 20
+    before the frame width, below), pinned by ``test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown...``.
+
+    THE HOLDER'S KERNEL STATE (``ws`` and ``gap`` on each gate hold, 17 Oct) is paid for by the width of the frames, not by splits and not by a
+    bigger row. The model above wrote each of a hold's three frames at the journal's 160-character cut; a frame is ``module:function:line``,
+    the longest any function under ``src/`` can produce is 79 characters (pinned in ``tests/test_holder_state.py``), and ``writer.FRAME_CHARS`` (79, the
+    same number, pinned both ways) is now both what the watchdog writes at most and what this model uses: 3 frames x 81 characters x 20 holds
+    = 4,860 bytes that no real event could reach (4,740 once a cut frame's ellipsis is counted: the model writes the frame in the cut form,
+    78 characters and the ellipsis). It was 90 in the first cut: eleven characters nothing had measured, 660 bytes of margin the budget did not need. The new fields cost 57 bytes a hold at their widest (six five-digit counts and a five-digit gap: 1,140 over the 20), 14 more for
+    the ``ws_why`` null that stays when counts follow a reason (the journal merges: 280 over the 20), and their sentence in the method 827
+    (the fixed part, defined above, 5,176 to 6,003). Measured with the real fixtures, written: ordinary names 83,779 bytes (41,221 free), every
+    name at the cut 123,749, 1,251 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
+    the row with 5 splits kept; 126,242 - 4,740 + 1,140 + 280 + 827 = 123,749). A count reaches six digits only after about 28 hours of
+    looks at one hold and all six pass the five modelled digits together after about 67: the free bytes absorb that.
+
+    THE HOLDER'S SECONDS WAITING FOR A CPU (``rq``, 17 Oct) and the change of class (running and runnable become ``run`` and ``unknown`` joins:
+    still six counts) cost 13 bytes a hold at the widest (``,"rq":86400.0``: 260 over the 20, ``rq`` bound to a day like the gap, since neither
+    can pass the span of the looks) and 242 in the method (4,033 to 4,275). That is 502 bytes of the 1,251 free: the widest journal is
+    124,251 and 749 are free, every hold keeps its split and no event is dropped (measured with the real fixtures, written; the probe's output
+    is in /mnt/project-files/wal-disk-pool/night-2026-10-16/record-change/). THE TWO MEASURED MAXIMA ARE PINNED below
+    (``_WIDEST_HOLD_EVENT_BYTES`` and ``_WIDEST_JOURNAL_BYTES``) the way ``writer.FRAME_CHARS`` is: either moving, up or down, fails this test, and
+    the next change re-measures them and pays from what is left under the row."""
     from src.api import diagnostics_slots as slots
+    from src.database import writer
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
-    _fill_like_the_hooks(long_names)
+    _fill_and_write(monkeypatch, long_names)
     m = se.diagnostics_member(10**9)
     for kind, cap in se.KEEP.items():
         assert m["kinds"][kind]["kept"] == min(cap, m["kinds"][kind]["total"]), kind
     assert m["kinds"]["gate_hold"]["kept"] == 20 and m["kinds"]["checkpoint_notable"]["kept"] == 10, "full retention"
     size = len(json.dumps(m, separators=(",", ":")))
-    assert size <= slot.budget_bytes, f"{size} bytes at full retention, the row says {slot.budget_bytes}"
     assert size >= 20_000, "the fixture still resembles the real events"
-    assert not m["dropped_to_fit"], "nothing is cut to fit at the budget"
-    assert se.diagnostics_member(slot.budget_bytes)["dropped_to_fit"] == {}
+    # The split of a hold's seconds (``seconds_by``) is the part that gives way: at the widest names the journal with all twenty splits is
+    # over the row, so the member built at the row's budget cuts the splits from the shortest holds (never an event) until it fits.
+    at_budget = se.diagnostics_member(slot.budget_bytes)
+    # counted as the bundle writes a member (compact, UTF-8, not ASCII-escaped): the member's own ``_size``
+    written = se._size(at_budget)
+    assert written <= slot.budget_bytes, f"{written} bytes written (the member with every split is {size}), the row says {slot.budget_bytes}"
+    assert at_budget["dropped_to_fit"] == {}, "no event is dropped to fit: only splits are"
+    assert at_budget["kinds"]["gate_hold"]["kept"] == 20
+    assert size <= slot.budget_bytes and "seconds_by_omitted_to_fit" not in at_budget["kinds"]["gate_hold"], "every hold keeps its split, at the widest names too"
+    assert len(_carrying(at_budget)) == 20
+    for event in at_budget["kinds"]["gate_hold"]["events"]:
+        assert len(event["ws"]) == len(holder_state.CLASSES) and event["gap"] == 86_400.0 and event["rq"] == 86_400.0, "the holder's kernel state is in the widest hold"
+        if long_names:
+            assert max(len(f) for f in event["frames"]) == writer.FRAME_CHARS, "the model writes each frame at the width the watchdog can"
+    if long_names:
+        widest = max(se._size(e) for e in at_budget["kinds"]["gate_hold"]["events"])
+        assert widest == _WIDEST_HOLD_EVENT_BYTES, f"the widest hold event is {widest} bytes, the pin says {_WIDEST_HOLD_EVENT_BYTES}: re-measure and move the pin and this docstring's figures together"
+        assert written == _WIDEST_JOURNAL_BYTES, f"the widest journal is {written} bytes, the pin says {_WIDEST_JOURNAL_BYTES}: re-measure and move the pin and this docstring's figures together"
+    for kind in se.ONSET_KINDS:
+        assert at_budget["kinds"][kind]["first_seen_at"], f"{kind}: the onset is part of the fixed member, so no budget cut can take it"
     assert len(json.dumps(m["kinds"]["gate_hold"]["events"][0])) < se.MAX_EVENT_BYTES
+
+
+def _carrying(member: dict) -> list[dict]:
+    return [e for e in member["kinds"]["gate_hold"]["events"] if "omitted" not in e["seconds_by"]]
+
+
+#: How far short of the widest journal the cut rule's tests make the row. WHAT IT PROTECTS: the premise of those tests, that the member is over
+#: its row by some splits and not others. The real row is no longer short of the widest journal (the frames are written at their measured
+#: width, not the journal's 160-character cut, 17 Oct), so the rule is exercised against a row this many bytes below it: five splits' worth.
+_SHORT_OF_THE_WIDEST = 700
+
+
+def _short_row() -> int:
+    """A row ``_SHORT_OF_THE_WIDEST`` bytes below the size of the widest journal (every name at the cut, every split present)."""
+    return se._size(se.diagnostics_member(10**9)) - _SHORT_OF_THE_WIDEST
+
+
+def test_the_split_stays_on_as_many_of_the_longest_holds_as_the_free_bytes_allow(journal):
+    """The count is computed from the budget, never fixed: with a row short of the widest journal the member is over it by some splits, and
+    the shortest holds give theirs up first. Four properties, each one a way the rule is wrong: it fits; the holds that keep it are the
+    longest; it is MAXIMAL (putting one more back overflows); and each hold without one says why, counted."""
+    _fill_like_the_hooks(True)
+    row = _short_row()
+    m = se.diagnostics_member(row)
+    holds = m["kinds"]["gate_hold"]["events"]
+    cut = [e for e in holds if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT]
+    kept = _carrying(m)
+    assert kept and cut, "the widest journal is over this row by the splits: some are kept and some are cut"
+    assert se._size(m) <= row and m["dropped_to_fit"] == {}
+    assert len(kept) + len(cut) == 20 == len(holds), "every hold is still there; the others carry a reason"
+    assert m["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] == len(cut)
+    assert min(e["seconds"] for e in kept) >= max(e["seconds"] for e in cut), "the longest holds keep the split"
+    # Maximal: give the longest cut hold its split back (and take the counter down by one) and the member no longer fits.
+    back = copy.deepcopy(m)
+    longest_cut = max((e for e in back["kinds"]["gate_hold"]["events"] if e["seconds_by"].get("omitted")), key=lambda e: e["seconds"])
+    longest_cut["seconds_by"] = dict.fromkeys(_SECONDS_BY_KEYS, 86_400.0)
+    back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] -= 1
+    if not back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"]:
+        del back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"]
+    assert len(json.dumps(back, separators=(",", ":"), ensure_ascii=False).encode()) > row, "one more split would have fitted: the count is not the most the free bytes allow"
+    # The count follows the budget: a bigger budget keeps more, an unlimited one keeps all twenty.
+    assert len(_carrying(se.diagnostics_member(row + 1_000))) > len(kept)
+    assert len(_carrying(se.diagnostics_member(10**9))) == 20
+
+
+def test_a_hold_without_a_split_says_why_and_never_shows_zeros(journal):
+    se.record("gate_hold", {"holder": "old", "seconds": 40.0}, key=("hold", 1))  # written by a build without the field
+    se.record("gate_hold", {"holder": "new", "seconds": 50.0, "seconds_by": dict.fromkeys(_SECONDS_BY_KEYS, 1.5)}, key=("hold", 2))
+    holds = {e["holder"]: e for e in _events("gate_hold")}
+    assert holds["old"]["seconds_by"] == {"omitted": se.OMITTED_UNKNOWN}
+    assert holds["new"]["seconds_by"] == dict.fromkeys(_SECONDS_BY_KEYS, 1.5)
+    assert "insert" not in holds["old"]["seconds_by"], "an unmeasured split is a reason, not zeros"
+
+
+def test_a_cut_split_is_the_members_only_the_file_keeps_it(journal):
+    _fill_like_the_hooks(True)
+    cut = se.diagnostics_member(_short_row())
+    assert len(_carrying(cut)) < 20, "the member was cut"
+    se.flush()
+    on_disk = json.loads(journal.read_text(encoding="utf-8"))["kinds"]["gate_hold"]["events"]
+    assert len(on_disk) == 20 and all(isinstance(e["seconds_by"], dict) and "omitted" not in e["seconds_by"] for e in on_disk), "building the member cut nothing in the journal"
+    assert len(_carrying(se.diagnostics_member(10**9))) == 20
 
 
 def test_the_hard_ceiling_is_the_event_cap_times_the_largest_event_and_still_fits_one_part():
@@ -1779,3 +1936,445 @@ def test_a_reset_of_a_journal_that_was_written_removes_its_file(journal):
     assert journal.exists()
     se.reset_for_tests()
     assert not journal.exists()
+
+
+# --------------------------------------------------------------------------- #
+#  The journal writer's wait loops keep their jump back inside the ``with`` (R161)
+# --------------------------------------------------------------------------- #
+def _uncovered_back_edges(fn) -> list[int]:
+    """Line numbers of the ``JUMP_BACKWARD`` instructions in ``fn`` (and the functions nested in it) that no exception-table entry covers.
+    The same reading as ``tests/test_gates_survive_an_interrupt.py``: on CPython 3.13 the jump back of ``while <wanted>:`` under
+    ``with lock:`` is outside the ``with``'s entry, so an exception raised there skips the release."""
+    import dis
+    import inspect
+    import types
+
+    def walk(code):
+        yield code
+        for const in code.co_consts:
+            if isinstance(const, types.CodeType):
+                yield from walk(const)
+
+    out: list[int] = []
+    for code in walk(inspect.unwrap(fn).__code__):
+        ranges = [(e.start, e.end) for e in dis.Bytecode(code).exception_entries]
+        for ins in dis.get_instructions(code):
+            if ins.opname == "JUMP_BACKWARD" and not any(start <= ins.offset < end for start, end in ranges):
+                out.append(ins.positions.lineno if ins.positions else -1)
+    return out
+
+
+def _loop_as_it_was(lock, cond, held):
+    with lock:
+        while held():
+            cond.wait()
+
+
+def _loop_as_it_is(lock, cond, held):
+    with lock:
+        while True:
+            if not held():
+                break
+            cond.wait()
+
+
+def test_the_reading_sees_the_old_loop_shape_as_uncovered_and_the_new_one_as_covered():
+    """The canary the next test rests on: if this Python covers the old shape too, the next test passes for any loop and says so here."""
+    assert _uncovered_back_edges(_loop_as_it_was), (
+        "this Python covers the jump back of `while cond:` inside a `with` too: the loop form of R161 is no longer needed here, and "
+        "the next test measures nothing"
+    )
+    assert not _uncovered_back_edges(_loop_as_it_is)
+
+
+def test_no_wait_loop_of_the_journal_writer_leaves_its_jump_back_outside_the_with():
+    bad = {name: _uncovered_back_edges(fn) for name, fn in {"_wait_out": se._wait_out, "_wait_until_dirty": se._wait_until_dirty}.items()}
+    assert not any(bad.values()), f"a wait loop's jump back is outside the with (lines): {bad}"
+
+
+def test_wait_out_returns_at_the_deadline_and_never_leaves_the_condition_held():
+    start = time.monotonic()
+    se._wait_out(se._GENERATION, 0.05)
+    assert 0.04 <= time.monotonic() - start < 1.0
+    assert se._COND.acquire(timeout=1.0), "the condition's lock was left held by the wait"
+    se._COND.release()
+
+
+def test_wait_out_returns_at_once_when_a_reset_made_its_generation_old():
+    stale = se._GENERATION
+    se.reset_for_tests()
+    start = time.monotonic()
+    se._wait_out(stale, 30.0)
+    assert time.monotonic() - start < 1.0, "a wait for a generation that was reset must not run to its deadline"
+
+
+def test_a_reset_ends_a_wait_out_in_progress(journal):
+    box: list[float] = []
+    gen = se._GENERATION
+    t = threading.Thread(target=lambda: (se._wait_out(gen, 30.0), box.append(time.monotonic())), daemon=True)
+    began = time.monotonic()
+    t.start()
+    time.sleep(0.1)
+    se.reset_for_tests()
+    t.join(timeout=5.0)
+    assert not t.is_alive() and box and box[0] - began < 5.0, "the reset did not wake the wait"
+
+
+def test_wait_until_dirty_returns_when_a_change_is_waiting_and_leaves_the_condition_free(journal):
+    box: list[int] = []
+    t = threading.Thread(target=lambda: box.append(se._wait_until_dirty()), daemon=True)
+    t.start()
+    time.sleep(0.1)
+    assert t.is_alive() and not box, "nothing was waiting to be written, so the wait must not have returned"
+    se.record("guard", {"n": 1})
+    t.join(timeout=5.0)
+    assert box == [se._GENERATION]
+    assert se._COND.acquire(timeout=1.0)
+    se._COND.release()
+
+
+# --------------------------------------------------------------------------- #
+#  The split of a hold's seconds when the member must lose events anyway (the read of 17 Oct)
+# --------------------------------------------------------------------------- #
+def _holds_with_a_split(m):
+    return [e for e in m["kinds"]["gate_hold"]["events"] if "omitted" not in e["seconds_by"]]
+
+
+def test_when_events_must_go_anyway_the_bytes_they_free_go_back_to_the_longest_splits(journal):
+    """Cutting every split first and then dropping events left the member with room and no split at all. The splits are given back, longest hold
+    first, for as long as they fit; ``seconds_by_omitted_to_fit`` counts the KEPT holds still without one."""
+    _fill_like_the_hooks(True)
+    budget = 110_000  # a journal whose events are wider than the fixture's: the drop loop's reason to exist
+    m = se.diagnostics_member(budget)
+    assert m["dropped_to_fit"], "ANTI-VACUITY: events had to go, or this tests nothing"
+    assert se._size(m) <= budget
+    carrying = _holds_with_a_split(m)
+    assert carrying, "events were dropped and the bytes they freed fit a split, yet no hold has one"
+    without = [e for e in m["kinds"]["gate_hold"]["events"] if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT]
+    assert m["kinds"]["gate_hold"].get("seconds_by_omitted_to_fit", 0) == len(without), "the count is of the kept holds without a split"
+    # the longest holds are the ones that kept it
+    assert min(e["seconds"] for e in carrying) >= max((e["seconds"] for e in without), default=0.0)
+    # and no more would fit: the longest hold still without one, given a split at its widest, is over the budget
+    if without:
+        longest = max(without, key=lambda e: e["seconds"])
+        longest["seconds_by"] = dict.fromkeys(_SECONDS_BY_KEYS, 86_400.0)
+        m["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] -= 1
+        assert se._size(m) > budget, "a split would still have fitted: the member left room unspent"
+
+
+def test_a_member_that_loses_events_does_not_count_a_dropped_hold_as_cut_for_its_split(journal):
+    _fill_like_the_hooks(True)
+    m = se.diagnostics_member(110_000)
+    kept_without = sum(1 for e in m["kinds"]["gate_hold"]["events"] if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT)
+    assert m["kinds"]["gate_hold"].get("seconds_by_omitted_to_fit", 0) == kept_without
+    assert kept_without + len(_holds_with_a_split(m)) == m["kinds"]["gate_hold"]["kept"]
+
+
+def test_a_non_numeric_seconds_in_the_file_does_not_turn_the_member_into_an_error(journal):
+    """An earlier process's file is only checked for ``at``: an event whose ``seconds`` is not a number is ranked as no length (the same as
+    ``_length`` ranks it for the keep rule) and loses its split first, instead of the cut raising and the whole member becoming an error."""
+    _fill_like_the_hooks(True)
+    se.flush()
+    data = json.loads(journal.read_text(encoding="utf-8"))
+    data["kinds"]["gate_hold"]["events"][0]["seconds"] = "62.0s"
+    journal.write_text(json.dumps(data), encoding="utf-8")
+    se.reset_for_tests(keep_file=True)  # a restart: memory gone, file kept
+    m = se.diagnostics_member(_short_row())  # a row the splits do not all fit in: something has to be cut
+    assert "error" not in m, m
+    assert m["kinds"]["gate_hold"]["events"], "the member carries the holds"
+    odd = [e for e in m["kinds"]["gate_hold"]["events"] if e.get("seconds") == "62.0s"]
+    assert odd and odd[0]["seconds_by"].get("omitted") in (se.OMITTED_TO_FIT, se.OMITTED_UNKNOWN), "the odd event is the first to lose its split"
+
+
+# --------------------------------------------------------------------------- #
+#  The onset of a kind (``first_seen_at``) is recorded at the event, beside the sample
+# --------------------------------------------------------------------------- #
+def _clock(monkeypatch, start_hour: int = 15):
+    """``se._now`` as a hand-turned clock: ``tick(h)`` makes the next event happen at ``2026-10-16T<h>:00:00+00:00``."""
+    now = {"h": start_hour}
+    monkeypatch.setattr(se, "_now", lambda: f"2026-10-16T{now['h']:02d}:00:00+00:00")
+
+    def tick(h: int) -> None:
+        now["h"] = h
+
+    return tick
+
+
+@pytest.mark.parametrize("kind", list(se.ONSET_KINDS))
+def test_the_onset_is_the_first_event_ever_even_after_the_keep_rule_has_dropped_it(journal, monkeypatch, kind):
+    """THE BUG THIS PINS (16 Oct 2026): two bundles of ONE process put the first bad hour at 16:00 in one and 15:00 in the other, because
+    the oldest KEPT pool timeout moved as events arrived. The first event is recorded short and the events after it are longer, so by
+    the keep rule it is not one of the longest and, once the newest are in, not one of the newest either."""
+    tick = _clock(monkeypatch)
+    field, n_long = se.LONGEST[kind]
+    se.record(kind, {field: 0.1, "n": "first"})  # 15:00, the shortest
+    for n in range(se.KEEP[kind] + 5):
+        tick(16 + n % 6)
+        se.record(kind, {field: 10.0 + n, "n": n})
+    k = _member()["kinds"][kind]
+    assert "first" not in {e["n"] for e in k["events"]}, "ANTI-VACUITY: the first event has left the sample, so the sample cannot give the onset"
+    assert min(e["at"] for e in k["events"]) == "2026-10-16T16:00:00+00:00", "what the sample alone would say: an hour late"
+    assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert k["total"] == se.KEEP[kind] + 6, "'total' counts from that onset: the first event and every one after it"
+    assert k["dropped"] == k["total"] - k["kept"]
+
+
+def test_the_onset_does_not_move_when_the_sample_does(journal, monkeypatch):
+    """The two bundles of one process: the same onset in both, whatever the counts and the kept events have become between them."""
+    tick = _clock(monkeypatch)
+    for n in range(12):
+        tick(15 + n // 6)
+        se.record("pool_timeout", {"waited_s": 30.0 + n, "n": n})
+    first = _member()["kinds"]["pool_timeout"]
+    for n in range(12, 40):
+        tick(17)
+        se.record("pool_timeout", {"waited_s": 30.0 + n, "n": n})
+    second = _member()["kinds"]["pool_timeout"]
+    assert first["first_seen_at"] == second["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert first["total"] == 12 and second["total"] == 40
+    assert 0 not in {e["n"] for e in second["events"]}, "ANTI-VACUITY: the first event is gone from the later sample"
+
+
+def test_the_onset_survives_a_restart_and_is_the_files_not_the_new_processes(journal, monkeypatch):
+    tick = _clock(monkeypatch)
+    for kind in se.ONSET_KINDS:
+        se.record(kind, {se.LONGEST[kind][0]: 1.0})
+    se.flush()
+    on_disk = json.loads(journal.read_text(encoding="utf-8"))["kinds"]
+    assert {k: on_disk[k]["first_seen_at"] for k in se.ONSET_KINDS} == dict.fromkeys(se.ONSET_KINDS, "2026-10-16T15:00:00+00:00")
+    se.reset_for_tests(keep_file=True)  # the process ends
+    monkeypatch.setattr(se, "_PROC", "the-next-process")
+    tick(19)
+    for kind in se.ONSET_KINDS:
+        se.record(kind, {se.LONGEST[kind][0]: 2.0})
+    for kind in se.ONSET_KINDS:
+        k = _member()["kinds"][kind]
+        assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00", f"{kind}: the later process's first event is not the onset"
+        assert k["total"] == 2
+    se.flush()
+    again = json.loads(journal.read_text(encoding="utf-8"))["kinds"]
+    assert all(again[k]["first_seen_at"] == "2026-10-16T15:00:00+00:00" for k in se.ONSET_KINDS), "and the file keeps it for the next start"
+
+
+def test_a_file_that_counted_events_without_an_onset_says_unknown_and_does_not_take_the_new_processs_first_event(journal, monkeypatch):
+    """A file written before the field existed: its first event is not known, and this process's is not a stand-in for it."""
+    tick = _clock(monkeypatch)
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "pool_timeout": {"total": 7, "events": [{"at": "2026-10-12T09:00:00+00:00", "proc": "gone", "waited_s": 31.0}]},
+        "gate_hold": {"total": 0, "events": []}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    tick(18)
+    se.record("pool_timeout", {"waited_s": 32.0})
+    se.record("gate_hold", {"seconds": 40.0})
+    m = _member()["kinds"]
+    assert m["pool_timeout"]["first_seen_at"] is None and m["pool_timeout"]["first_seen_unknown"] == se.ONSET_UNKNOWN
+    assert m["pool_timeout"]["total"] == 8
+    assert m["gate_hold"]["first_seen_at"] == "2026-10-16T18:00:00+00:00", "the file counted none: this process's first is the onset"
+    assert "first_seen_unknown" not in m["gate_hold"]
+    se.flush()
+    assert "first_seen_at" not in json.loads(journal.read_text(encoding="utf-8"))["kinds"]["pool_timeout"], "an unknown onset is not written as a time"
+
+
+@pytest.mark.parametrize("junk", [None, 12, ["2026-10-16T15:00:00+00:00"], "", True])
+def test_a_first_seen_that_is_not_a_time_in_the_file_is_unknown_not_an_error(journal, junk):
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "gate_hold": {"total": 3, "events": [], "first_seen_at": junk}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    k = _member()["kinds"]["gate_hold"]
+    assert k["first_seen_at"] is None and k["first_seen_unknown"] == se.ONSET_UNKNOWN and k["total"] == 3
+
+
+def test_a_kind_with_no_event_has_no_onset_and_no_reason(journal):
+    for kind in se.ONSET_KINDS:
+        k = _member()["kinds"][kind]
+        assert k["total"] == 0 and k["first_seen_at"] is None and "first_seen_unknown" not in k, kind
+
+
+def test_only_the_two_kinds_carry_an_onset(journal):
+    """Every key is bytes in a slot that is full at its widest: the other kinds are runs and transitions whose first event is not asked for."""
+    assert se.ONSET_KINDS == ("gate_hold", "pool_timeout")
+    for kind in se.KEEP:
+        se.record(kind, {"n": 1})
+    m = _member()["kinds"]
+    assert {k for k, v in m.items() if "first_seen_at" in v} == set(se.ONSET_KINDS)
+    se.flush()
+    on_disk = json.loads(se._path().read_text(encoding="utf-8"))
+    assert {k for k, v in on_disk["kinds"].items() if "first_seen_at" in v} == set(se.ONSET_KINDS)
+
+
+def test_the_zip_budget_cuts_events_and_splits_but_never_the_onset(journal, monkeypatch):
+    tick = _clock(monkeypatch)
+    se.record("pool_timeout", {"waited_s": 0.5, "n": "first"})
+    for n in range(40):
+        tick(16)
+        se.record("pool_timeout", {"waited_s": 20.0 + n, "n": n})
+        se.record("gate_hold", {"seconds": 40.0 + n, "holder": "writer"})
+    full = _member()
+    squeezed = se.diagnostics_member(7_000)  # a little over the fixed part (6,003 bytes written), so some events fit and the rest are cut
+    assert squeezed["dropped_to_fit"], "ANTI-VACUITY: the budget did cut events"
+    for kind in se.ONSET_KINDS:
+        assert squeezed["kinds"][kind]["first_seen_at"] == full["kinds"][kind]["first_seen_at"] is not None, kind
+    assert squeezed["kinds"]["pool_timeout"]["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert squeezed["kinds"]["pool_timeout"]["total"] == full["kinds"]["pool_timeout"]["total"] == 41, "'total' never changes by the cut either"
+
+
+def test_the_onset_is_set_by_record_and_not_by_the_event_that_a_later_record_pushes_out(journal, monkeypatch):
+    """A hold recorded OPEN (the watchdog's first sight) is the first event of its kind: its onset is its record, whatever becomes of it."""
+    tick = _clock(monkeypatch)
+    se.record("gate_hold", {"holder": "writer", "seconds": 31.0}, key=("hold", 1))
+    tick(17)
+    se.end("gate_hold", ("hold", 1), {"seconds": 44.0})
+    for n in range(30):
+        tick(18)
+        se.record("gate_hold", {"seconds": 100.0 + n})
+    k = _member()["kinds"]["gate_hold"]
+    assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00", "the hold's record time, not its close (17:00) and not the sample's oldest"
+
+
+def test_an_onset_in_the_file_is_kept_whatever_the_file_holds_of_events(journal):
+    """The onset is a fact about the kind, not about the sample: a file whose events are all gone still names when the kind began."""
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "pool_timeout": {"total": 3, "events": [], "first_seen_at": "2026-10-11T07:00:00+00:00"}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    k = _member()["kinds"]["pool_timeout"]
+    assert (k["first_seen_at"], k["total"], k["kept"]) == ("2026-10-11T07:00:00+00:00", 3, 0) and "first_seen_unknown" not in k
+
+
+# --------------------------------------------------------------------------- #
+#  The onset, second read (137a85525): the file and the next process, the order of the stamps, the states with no onset to show
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("kind", list(se.ONSET_KINDS))
+def test_the_onset_written_to_the_file_and_read_by_the_next_process_is_the_first_event_not_the_oldest_kept(journal, monkeypatch, kind):
+    """The 16 Oct bug again, at every restart: an onset read off the kept events AT THE WRITE or AT THE READ moves exactly as the sample does.
+    The first event is short and the ones after it longer, so it has left the sample by the time the file is written."""
+    tick = _clock(monkeypatch)
+    field = se.LONGEST[kind][0]
+    se.record(kind, {field: 0.1, "n": "first"})  # 15:00
+    for n in range(se.KEEP[kind] + 5):
+        tick(16)
+        se.record(kind, {field: 10.0 + n, "n": n})
+    se.flush()
+    on_disk = json.loads(journal.read_text(encoding="utf-8"))["kinds"][kind]
+    assert "first" not in {e.get("n") for e in on_disk["events"]}, "ANTI-VACUITY: the first event is not in the file's sample"
+    assert on_disk["first_seen_at"] == "2026-10-16T15:00:00+00:00", "what the file says is the recorded onset, not the file's own oldest event"
+    se.reset_for_tests(keep_file=True)  # the process ends
+    monkeypatch.setattr(se, "_PROC", "the-next-process")
+    tick(19)
+    se.record(kind, {field: 99.0, "n": "after"})
+    k = _member()["kinds"][kind]
+    assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert min(e["at"] for e in k["events"]) == "2026-10-16T16:00:00+00:00", "ANTI-VACUITY: the next process's sample alone would say 16:00"
+
+
+def test_the_stamps_are_taken_in_the_order_of_the_records_so_the_onset_is_never_later_than_an_event_it_counts(journal, monkeypatch):
+    """``record`` stamped ``at`` BEFORE taking the journal's lock: a recorder stamped 15:00 that reached the lock after one stamped 16:00 left
+    the onset at 16:00 beside a kept event of 15:00. Forced here: the first recorder is held between its build and the lock until the second
+    has recorded. The clock is a counter, so the stamp order is the order the stamps were asked for."""
+    ticks = itertools.count(15)
+    monkeypatch.setattr(se, "_now", lambda: f"2026-10-16T{next(ticks):02d}:00:00+00:00")
+    real_build = se._build
+    built, second_done = threading.Event(), threading.Event()
+
+    def build(fields):
+        event = real_build(fields)
+        if fields.get("who") == "first":
+            built.set()
+            assert second_done.wait(5)
+        return event
+
+    monkeypatch.setattr(se, "_build", build)
+    t = threading.Thread(target=lambda: se.record("pool_timeout", {"who": "first", "waited_s": 1.0}))
+    t.start()
+    assert built.wait(5)
+    se.record("pool_timeout", {"who": "second", "waited_s": 2.0})
+    second_done.set()
+    t.join(5)
+    assert not t.is_alive()
+    k = _member()["kinds"]["pool_timeout"]
+    assert k["total"] == 2
+    assert k["first_seen_at"] == min(e["at"] for e in k["events"]), "the onset is later than an event it counts"
+    assert _member()["since"] == k["first_seen_at"], "'since' is the first event of the journal: the same stamp"
+    assert [e["who"] for e in sorted(k["events"], key=lambda e: e["at"])] == ["second", "first"], "the stamp follows the record, not the build"
+
+
+def test_a_record_refused_because_its_closer_ran_first_does_not_set_the_onset(journal, monkeypatch):
+    """``total`` does not count a refused record, so the onset must not move for one (the late opener of a hold the watchdog's sample closed)."""
+    tick = _clock(monkeypatch)
+    assert se.end("gate_hold", ("hold", 9), tombstone=True) is False  # the closer came first
+    se.record("gate_hold", {"holder": "late", "seconds": 31.0}, key=("hold", 9))  # refused
+    k = _member()["kinds"]["gate_hold"]
+    assert (k["total"], k["first_seen_at"]) == (0, None)
+    tick(17)
+    se.record("gate_hold", {"holder": "real", "seconds": 40.0})
+    assert _member()["kinds"]["gate_hold"]["first_seen_at"] == "2026-10-16T17:00:00+00:00"
+
+
+def test_a_file_with_a_count_and_no_onset_stays_unknown_after_this_process_records(journal, monkeypatch):
+    """Even a file that holds no events at all: the count says there were some, so this process's first is not the first."""
+    tick = _clock(monkeypatch)
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {"gate_hold": {"total": 3, "events": []}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    tick(18)
+    se.record("gate_hold", {"seconds": 40.0})
+    k = _member()["kinds"]["gate_hold"]
+    assert (k["first_seen_at"], k["first_seen_unknown"], k["total"]) == (None, se.ONSET_UNKNOWN, 4)
+
+
+def test_the_files_onset_wins_even_when_this_processs_clock_reads_earlier(journal, monkeypatch):
+    """The onset is the first event RECORDED, not the smallest time: a clock stepped back between two processes does not rewrite it."""
+    tick = _clock(monkeypatch, 15)
+    se.record("pool_timeout", {"waited_s": 5.0})
+    se.flush()
+    se.reset_for_tests(keep_file=True)
+    monkeypatch.setattr(se, "_PROC", "after-a-clock-step")
+    tick(12)
+    se.record("pool_timeout", {"waited_s": 6.0})
+    k = _member()["kinds"]["pool_timeout"]
+    assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00" and k["total"] == 2
+    assert min(e["at"] for e in k["events"]) == "2026-10-16T12:00:00+00:00", "ANTI-VACUITY: the new process's own event is the earlier time"
+
+
+def test_while_the_earlier_history_cannot_be_read_the_onset_is_not_this_processs_first_event(journal, monkeypatch):
+    """A read that ends in 'retry later' leaves the journal with this process's events only; the first of them is not the first ever, and a later
+    read can say it was not. So no time is shown (null, with the reason) until the file has been read, and then the file's wins."""
+    _clock(monkeypatch)
+    on_disk = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "pool_timeout": {"total": 2, "events": [], "first_seen_at": "2026-10-10T07:00:00+00:00"}}}
+    journal.write_text(json.dumps(on_disk), encoding="utf-8")
+    real_read = se._read_file
+    monkeypatch.setattr(se, "_read_file", lambda: ({}, None, "unreadable (OSError)", True))
+    se.record("pool_timeout", {"waited_s": 5.0})
+    m = _member()
+    k = m["kinds"]["pool_timeout"]
+    assert m["file"]["history_loaded"] is False
+    assert (k["first_seen_at"], k["first_seen_unknown"], k["total"]) == (None, se.ONSET_UNREAD, 1)
+    assert "first_seen_unknown" not in m["kinds"]["gate_hold"] and m["kinds"]["gate_hold"]["first_seen_at"] is None, "a kind with no event has nothing to explain"
+    monkeypatch.setattr(se, "_read_file", real_read)  # the disk is back
+    k = _member()["kinds"]["pool_timeout"]
+    assert k["first_seen_at"] == "2026-10-10T07:00:00+00:00" and "first_seen_unknown" not in k and k["total"] == 3
+
+
+@pytest.mark.parametrize("state", ["a file from before the onset", "a history that could not be read"])
+def test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown_and_loses_at_most_one_split(journal, monkeypatch, state):
+    """The reasons cost bytes the known onset does not (23 for the first state, 62 for the second): the member still fits the row, no event is
+    dropped, and (since the frames are written at their measured width, 17 Oct) every hold still keeps its split. Before that the widest names
+    kept 4 splits of 20 here where a known onset kept 5."""
+    from src.api import diagnostics_slots as slots
+
+    (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
+    if state.startswith("a file"):
+        old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {k: {"total": 7, "events": []} for k in se.ONSET_KINDS}}
+        journal.write_text(json.dumps(old), encoding="utf-8")
+        why = se.ONSET_UNKNOWN
+    else:
+        monkeypatch.setattr(se, "_read_file", lambda: ({}, None, "unreadable (OSError)", True))
+        why = se.ONSET_UNREAD
+    if state.startswith("a file"):
+        _fill_and_write(monkeypatch, True)
+    else:
+        _fill_like_the_hooks(True)  # nothing can be written while the history cannot be read
+    m = se.diagnostics_member(slot.budget_bytes)
+    assert se._size(m) <= slot.budget_bytes and m["dropped_to_fit"] == {}
+    for kind in se.ONSET_KINDS:
+        assert (m["kinds"][kind]["first_seen_at"], m["kinds"][kind]["first_seen_unknown"]) == (None, why), kind
+    assert len(_carrying(m)) == 20, "no split is lost to the reasons"

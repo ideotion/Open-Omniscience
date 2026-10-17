@@ -88,10 +88,11 @@ import os
 import re
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
 
+from src.monitoring import holder_state, thread_usage
 from src.monitoring.secret_scrub import log_failure, scrubbed_name
 from src.utils.interrupts import wait as _wait
 
@@ -138,6 +139,19 @@ class WriterGate:
         # path (the 2026-08-06 lesson); the watchdog captures one on demand.
         self._holder: str | None = None
         self._held_since: float | None = None
+        # The holder thread's CPU time and kernel counters at the moment it was granted the window (``thread_usage.sample``), so the release
+        # of a LONG hold can say what the thread did over the whole of it: worked (CPU close to the seconds) or waited. Written and read
+        # only by the owner thread, under the lock it already holds.
+        self._hold_usage: thread_usage.Sample | None = None
+        # WHERE THE HOLD'S SECONDS WENT (``hold_breakdown``): the seconds the holder thread spent inside INSERT statements, savepoint
+        # statements, any other statement and commits, in the order of ``_SPENT_KINDS``. Written ONLY by the owner thread, by the engine and
+        # session listeners below (each checks ``_owner`` first, so a statement of any other thread is never counted), without the lock: a
+        # float added to a list slot by the one thread that owns it. ``_spent_for`` is the grant (``_grants``) the figures belong to, so a new
+        # hold starts from zero at its first statement and a hold with none costs nothing; ``_running`` is the statement or commit in
+        # progress, (kind, start), so the watchdog can count a statement that has not ended yet.
+        self._spent = [0.0] * len(_SPENT_KINDS)
+        self._spent_for = 0
+        self._running: tuple[int, float] | None = None
         self._max_hold_s = 0.0
         self._max_hold_holder: str | None = None
         # Cumulative HELD time, so a soak can ask "what share of the run was the single
@@ -180,9 +194,11 @@ class WriterGate:
         """Grant the window to ``me``. Caller holds ``self._lock``."""
         self._owner = me
         self._depth = 1
+        self._running = None  # a raw connection's commit has no end event: the last hold's statement is not this hold's (read by the sampler under this lock)
         self._grants += 1
         self._holder = threading.current_thread().name
         self._held_since = time.monotonic()
+        self._hold_usage = thread_usage.sample()  # under a microsecond (thread_usage's docstring has the measurement)
         watched = self._watched.get(me)
         if watched is not None:
             watched["grants"] += 1
@@ -265,8 +281,8 @@ class WriterGate:
 
     def release(self) -> None:
         me = threading.get_ident()
-        # (holder name, seconds, start) of the hold that ended on THIS call, for the line written after the lock is dropped.
-        released: tuple[str | None, float, float | None] | None = None
+        # (holder name, seconds, start, usage at the grant) of the hold that ended on THIS call, for the line written after the lock is dropped.
+        released: tuple[str | None, float, float | None, thread_usage.Sample | None, dict[str, float] | None] | None = None
         with self._lock:
             if self._owner != me:
                 # Defensive: only the owner releases. A non-owner call is a
@@ -277,8 +293,13 @@ class WriterGate:
                 held = None
                 holder = self._holder
                 started = self._held_since
+                usage0 = self._hold_usage
+                self._hold_usage = None
+                breakdown: dict[str, float] | None = None
                 if self._held_since is not None:
                     held = time.monotonic() - self._held_since
+                    if held >= HOLD_RECORD_S:  # a hold the journal keeps: where its seconds went, while the ledger is still this hold's
+                        breakdown = self._breakdown_locked(held)
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
                     # is counted once rather than once per level.
                     self._total_held_s += held
@@ -295,7 +316,7 @@ class WriterGate:
                 # AFTER the gate is free and the next waiter woken: this bookkeeping can never
                 # leave the gate held, whatever it does.
                 if held is not None:
-                    released = (holder, held, started)
+                    released = (holder, held, started, usage0, breakdown)
                     watched = self._watched.get(me)
                     if watched is not None:
                         watched["held_s"] += held
@@ -339,6 +360,50 @@ class WriterGate:
     def held_by_current_thread(self) -> bool:
         with self._lock:
             return self._owner == threading.get_ident()
+
+    def _work_begins(self, kind: int) -> None:
+        """The owner thread starts a statement (``kind`` indexes ``_SPENT_KINDS``) or a commit. Called by the listeners, which have checked
+        that the calling thread owns the gate. A commit still open (a raw connection's commit has no end event) is closed here, at the
+        start of the next work, which makes it an upper bound; a session's commit is closed exactly by :meth:`_work_ends`."""
+        now = time.monotonic()
+        if self._spent_for != self._grants:
+            self._spent[:] = _NO_SPENT
+            self._spent_for = self._grants
+        else:
+            running = self._running
+            if running is not None:
+                self._spent[running[0]] += now - running[1]
+        self._running = (kind, now)
+
+    def _work_ends(self) -> None:
+        """The statement or commit the owner thread was in has ended (after the cursor, after a failed statement, after the session's commit)."""
+        running = self._running
+        if running is not None and self._spent_for == self._grants:
+            self._running = None
+            self._spent[running[0]] += time.monotonic() - running[1]
+
+    def _breakdown_locked(self, held: float) -> dict[str, float]:
+        """The hold's ``held`` seconds split by where they went, in seconds to a tenth. Caller holds the lock. Work still running is counted up
+        to now; what no measured statement or commit covers is ``between_statements``: Python work, the driver calls the listeners cannot see
+        (a raw connection's), waits, and the SQLite work of the rows a SELECT hands back AFTER its first (they are stepped while the caller
+        reads them, after the statement's end event)."""
+        spent = list(self._spent) if self._spent_for == self._grants else [0.0] * len(_SPENT_KINDS)
+        running = self._running if self._spent_for == self._grants else None
+        if running is not None and self._held_since is not None:
+            spent[running[0]] += max(0.0, self._held_since + held - running[1])
+        return {
+            **{name: round(spent[i], 1) for i, name in enumerate(_SPENT_KINDS)},
+            "between_statements": round(max(0.0, held - sum(spent)), 1),
+        }
+
+    def hold_breakdown(self, started: float) -> dict[str, float] | None:
+        """Where the seconds of the hold that began at ``started`` (the gate's own ``_held_since``) have gone so far, or ``None`` when that hold is
+        over or another has begun. A sample for the watchdog's journal entry: a statement that ends while it is taken can be missed or counted
+        twice (one statement), the figure written when the hold ends is exact."""
+        with self._lock:
+            if self._held_since is None or self._held_since != started:
+                return None
+            return self._breakdown_locked(time.monotonic() - started)
 
     def depth_of_current_thread(self) -> int:
         """How many levels of the window THIS thread holds (0 when it does not): the reading a caller takes before an acquire, so that
@@ -435,6 +500,7 @@ class WriterGate:
                 "timeouts": self._timeouts,
                 "by_holder": [],
             }
+        out["pool_wait_before_gate"] = pool_wait_stats()
         out["holder"] = _scrubbed_name(holder)
         out["max_hold_holder"] = _scrubbed_name(max_hold_holder)
         out["by_holder"] = [
@@ -459,6 +525,16 @@ class WriterGate:
 
 
 # Process-wide singleton: there is exactly one write window for the one store.
+#: What a hold's statements are sorted into, in the order of the gate's ``_spent`` list: ``insert`` (any INSERT, an executemany is one statement),
+#: ``savepoint`` (SAVEPOINT, RELEASE and ROLLBACK TO), ``other_statement`` (every other statement: reads, UPDATE, DELETE, PRAGMA) and ``commit``
+#: (the engine's commit event to the session's after-commit, or to the next work or the release for a raw connection's). The journal's
+#: ``seconds_by`` carries these and ``between_statements`` (what no measured statement covers: Python, waits, a raw connection's driver calls and the SQLite work of a
+#: SELECT's rows after its first, which runs as the caller reads them, so a read's seconds land THERE and not in ``other_statement``). WHAT THE FIVE ANSWER: the 16 Oct bundles' holds were INSERT INTO articles 58.6 %,
+#: SAVEPOINT 11.5 % and a read of mention rows inside the hold about 16 %, from the slow-query ring; this puts the split on the hold itself.
+_SPENT_KINDS = ("insert", "savepoint", "other_statement", "commit")
+_INSERT, _SAVEPOINT, _OTHER, _COMMIT = range(4)
+_NO_SPENT = (0.0,) * len(_SPENT_KINDS)
+
 write_gate = WriterGate()
 
 
@@ -637,9 +713,22 @@ def _scrubbed_name(name: str | None) -> str | None:
 _JOURNALED_HOLD: float | None = None
 
 
+#: The most characters one frame of a hold's ``frames`` is written with. WHAT IT PROTECTS: the storage-events slot's byte budget, which counts
+#: three frames on each of the twenty kept holds at this width instead of the journal's 160-character string cut. IT IS A MEASURED MAXIMUM, not a
+#: choice, with NO slack: the longest ``module:function:line`` any function under ``src/`` can produce is 79 characters (``src.ai_layer.
+#: perception_extract_job:_perception_extract_sleep_interruptible`` and a three-digit line), and ``tests/test_holder_state.py`` walks every
+#: module's names and fails BOTH ways: on a function whose frame would be wider than this (the fix is to raise it and re-measure the slot) and
+#: when this is wider than any frame can be (lower it: the bytes are the budget's). So a frame is never cut in practice and the budget cannot be
+#: wrong by a long name. A frame that WERE longer (a function made by ``exec``, say) ends in an ellipsis, as the journal's own cut does, so a cut
+#: is never mistaken for a whole name. (It was 90 in the first cut of this record: eleven characters nothing had measured, a margin, which is
+#: what a measured maximum is not.)
+FRAME_CHARS = 79
+
+
 def _app_frames(ident: int | None, limit: int = 3) -> list[str]:
     """The innermost ``limit`` frames of app code (``src.*``, this module excluded) of the thread with this ident, as
-    ``module:function:line``: names and numbers, no argument and no source text. Best-effort, [] when the thread is gone."""
+    ``module:function:line``: names and numbers, no argument and no source text, each at most :data:`FRAME_CHARS` characters.
+    Best-effort, [] when the thread is gone."""
     out: list[str] = []
     try:
         import sys
@@ -648,9 +737,93 @@ def _app_frames(ident: int | None, limit: int = 3) -> list[str]:
         while frame is not None and len(out) < limit:
             module = str(frame.f_globals.get("__name__", ""))
             if module.startswith("src.") and module != __name__:
-                out.append(f"{module}:{frame.f_code.co_name}:{frame.f_lineno}")
+                text = f"{module}:{frame.f_code.co_name}:{frame.f_lineno}"
+                out.append(text if len(text) <= FRAME_CHARS else text[: FRAME_CHARS - 1] + "…")
             frame = frame.f_back
     except Exception:  # noqa: BLE001 - a diagnostic must never raise
+        return out
+    return out
+
+
+#: Where a held window's thread is, read from its INNERMOST matching frame: ``(module, function) -> phase``. Sampling only (the watchdog's tick,
+#: once a hold is past :data:`HOLD_RECORD_S`), so it costs nothing on the acquire path. WHAT IT ANSWERS: whether a long hold was spent
+#: waiting for a pooled connection, inside the driver's execute or commit, or in Python. It names the library's own functions, so a
+#: library that renames one makes the phase "python" rather than a wrong one; ``tests/test_write_gate_phase.py`` pins that every name
+#: here still exists in the installed SQLAlchemy and in ``pool_reserve``, so a version bump that moves one fails a test instead of
+#: quietly misreporting.
+_PHASE_AT: dict[tuple[str, str], str] = {
+    ("sqlalchemy.pool.impl", "_do_get"): "pool-wait",
+    ("sqlalchemy.util.queue", "get"): "pool-wait",
+    ("src.database.pool_reserve", "acquire"): "pool-wait",
+    ("sqlalchemy.engine.default", "do_execute"): "execute",
+    ("sqlalchemy.engine.default", "do_executemany"): "execute",
+    ("sqlalchemy.engine.default", "do_execute_no_params"): "execute",
+    ("sqlalchemy.engine.default", "do_commit"): "commit",
+    ("sqlalchemy.engine.default", "do_rollback"): "commit",
+}
+#: The most frames one classification walks. WHAT IT PROTECTS: the watchdog's tick from a pathological stack; a stack this deep is "python".
+_PHASE_FRAMES = 400
+
+#: How many watchdog samples of the CURRENT long hold fell in each phase (cleared when a new hold is first sampled); written by the watchdog thread only.
+_PHASE_SAMPLES: dict[str, int] = {}
+
+
+def _phase_of(frame: Any) -> str:
+    """The phase of one thread's innermost-matching frame (``python`` when none of the table's functions is on its stack)."""
+    walked = 0
+    while frame is not None and walked < _PHASE_FRAMES:
+        hit = _PHASE_AT.get((str(frame.f_globals.get("__name__", "")), frame.f_code.co_name))
+        if hit is not None:
+            return hit
+        frame = frame.f_back
+        walked += 1
+    return "python"
+
+
+def thread_phases(idents: Iterable[int | None]) -> dict[int, str | None]:
+    """:func:`thread_phase` for several threads from ONE snapshot of the interpreter's frames (the pin report asks for up to a handful
+    at once, and a snapshot per thread would read the stacks at different instants). A thread that is gone, or an ident that is
+    ``None``, maps to ``None``. Best-effort, never raises: when the snapshot itself fails every ident maps to ``None``."""
+    wanted = [i for i in idents if i is not None]
+    out: dict[int, str | None] = dict.fromkeys(wanted)
+    frames: dict[int, Any] | None = None
+    frame: Any = None
+    try:
+        import sys
+
+        frames = sys._current_frames()
+        for ident in wanted:
+            frame = frames.get(ident)
+            out[ident] = _phase_of(frame) if frame is not None else None
+    except Exception:  # noqa: BLE001 - a diagnostic must never raise
+        return dict.fromkeys(wanted)
+    finally:
+        # The snapshot holds THIS function's own frame (the calling thread's innermost), and this frame holds the snapshot: a reference
+        # cycle that keeps every frame in the chain, and every local in them, alive until the next collection. The watchdog asks every
+        # 15 s of a long hold, so the names are dropped as the function ends.
+        del frames, frame
+    return out
+
+
+def thread_phase(ident: int | None) -> str | None:
+    """``pool-wait``, ``execute``, ``commit`` or ``python`` for the thread with this ident, from its innermost matching frame; ``None`` when
+    the thread is gone. Best-effort, never raises. Public because the storage guard's pin report reads it for the threads that hold a
+    checkout, and the gate-hold journal for the thread that holds the gate: one classifier, so the two records agree."""
+    if ident is None:
+        return None
+    return thread_phases([ident]).get(ident)
+
+
+def _memory_numbers() -> dict[str, int]:
+    """``mem_available_mb`` and ``swap_used_mb`` now, whole megabytes; a figure that cannot be read is absent, never 0. Read when a LONG hold
+    ends (a few hundred microseconds, on a path that runs at most a few times an hour), so a slow hold can be read against memory pressure."""
+    out: dict[str, int] = {}
+    try:
+        import psutil
+
+        out["mem_available_mb"] = int(psutil.virtual_memory().available // (1024 * 1024))
+        out["swap_used_mb"] = int(psutil.swap_memory().used // (1024 * 1024))
+    except Exception:  # noqa: BLE001 - a diagnostic must never raise; what was read stays
         return out
     return out
 
@@ -682,6 +855,17 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
             "waiters": s.get("waiters"),
             "queued": s.get("queued"),
         }
+        spent = gate.hold_breakdown(started)
+        if spent is not None:  # None: the hold ended while this sample was being taken, and its end writes the exact figures
+            fields["seconds_by"] = spent
+        phase = thread_phase(ident)
+        if started != _JOURNALED_HOLD:
+            _PHASE_SAMPLES.clear()  # a new hold: its samples start from none
+        if phase is not None:
+            _PHASE_SAMPLES[phase] = _PHASE_SAMPLES.get(phase, 0) + 1
+            fields["phase"] = phase
+            fields["phase_samples"] = dict(_PHASE_SAMPLES)
+        fields.update(holder_state.fields_for(started))  # the holder's kernel state, counted once a second since the last sample (module docstring)
         if started == _JOURNALED_HOLD and storage_events.update("gate_hold", ("hold", started), fields):
             return
         storage_events.record(
@@ -694,7 +878,13 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
         log_failure(_LOG, "write gate hold could not be journaled", exc, level=logging.DEBUG)
 
 
-def _note_hold_end(holder: str | None, held: float, started: float | None) -> None:
+def _note_hold_end(
+    holder: str | None,
+    held: float,
+    started: float | None,
+    usage0: thread_usage.Sample | None = None,
+    breakdown: dict[str, float] | None = None,
+) -> None:
     """A hold of :data:`HOLD_RECORD_S` or more ended, on the holder's own thread: close its journal entry with the final length and
     the route (read from the request's context, which this thread still has), or write it whole when the watchdog never sampled it
     while it lasted. Never raises."""
@@ -703,6 +893,14 @@ def _note_hold_end(holder: str | None, held: float, started: float | None) -> No
         from src.monitoring import storage_events
 
         fields: dict[str, object] = {"holder": holder, "seconds": round(held, 1)}
+        if usage0 is not None:
+            # What the holder's own thread did over the whole hold, taken here on that thread: ``cpu_ms`` close to ``seconds`` is work, far
+            # below it is waiting (``thread_usage`` says what each counter means and what it cannot tell apart).
+            fields.update(thread_usage.since(usage0))
+        fields.update(_memory_numbers())
+        fields.update(holder_state.fields_for(started))  # the looks up to the release, not the last 15-second sample's
+        if breakdown is not None:
+            fields["seconds_by"] = breakdown  # exact: taken by the gate at the release, over the whole hold
         route = pool_watch.endpoint_template()
         if route is not None:  # no template found: the label the watchdog sampled stays, it is not overwritten with nothing
             fields["route"] = route
@@ -712,6 +910,9 @@ def _note_hold_end(holder: str | None, held: float, started: float | None) -> No
             storage_events.record("gate_hold", {**fields, "sampled_while_held": False})
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "write gate hold could not be journaled", exc, level=logging.DEBUG)
+    finally:
+        if started is not None:
+            holder_state.forget(started)  # read above, on this thread; the watchdog never drops a hold's looks (holder_state.forget)
 
 
 def _watchdog_interval_s() -> float:
@@ -765,14 +966,54 @@ def watchdog_tick(gate: WriterGate, warned_since: float | None) -> float | None:
     return started
 
 
+#: How often the holder of a hold the journal keeps is looked at (``holder_state``), in seconds. WHAT IT PROTECTS: the resolution of the counts
+#: (a hold of 30 s has thirty looks) against the cost of three small ``/proc`` reads on the watchdog thread; the full tick stays at its own
+#: 15 s. The looks run only while a hold is past :data:`HOLD_RECORD_S` AND already in the journal, so an idle gate costs nothing.
+HOLD_LOOK_S = 1.0
+
+
+def sample_holder_state(gate: WriterGate, now: float | None = None) -> bool:
+    """One look at the holder of a long hold the journal already has (see :mod:`src.monitoring.holder_state`). True while the looks should
+    go on at :data:`HOLD_LOOK_S`. Called by the watchdog thread after its full tick; never raises, never touches the gate's lock beyond the
+    snapshot every tick takes."""
+    try:
+        holder, started, ident = gate._holder_snapshot()
+        if started is None or holder is None:
+            return False  # the gate is free: the looks stop; the thread that released it reads and forgets them (_note_hold_end)
+        if started != _JOURNALED_HOLD:
+            return False  # not a hold the journal keeps (yet): the full tick opens the entry first, at HOLD_RECORD_S or more
+        return holder_state.look(started, ident, time.monotonic() if now is None else now)
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must never raise
+        log_failure(_LOG, "write gate holder state could not be sampled", exc, level=logging.DEBUG)
+        return False
+
+
+def _next_wait_s(interval: float, due: float, now: float, looking: bool) -> float:
+    """How long the watchdog sleeps next: until the full tick is due, or until the next look at a long hold's holder when that comes first."""
+    until_full = max(0.0, due - now)
+    return min(until_full, HOLD_LOOK_S) if looking else until_full
+
+
 def _watchdog_loop(stop: threading.Event) -> None:
     interval = _watchdog_interval_s()
     warned_since: float | None = None
-    while not stop.wait(interval):
+    due = time.monotonic() + interval  # the next full tick; the looks at a long hold's holder run between them
+    wait = interval
+    while not stop.wait(wait):
+        looking = False
         try:
-            warned_since = watchdog_tick(write_gate, warned_since)
+            now = time.monotonic()
+            if now >= due:
+                due = now + interval  # set BEFORE the tick: a tick that raises still waits its interval, it does not spin
+                warned_since = watchdog_tick(write_gate, warned_since)
+                due = time.monotonic() + interval
         except Exception as exc:  # noqa: BLE001 - the watchdog must never take the app down
             log_failure(_LOG, "write gate watchdog tick failed", exc, level=logging.DEBUG)
+        try:
+            looking = sample_holder_state(write_gate)  # its own try: a failing tick does not stop the looks
+        except Exception as exc:  # noqa: BLE001 - sample_holder_state does not raise; the loop does not rely on it
+            log_failure(_LOG, "write gate holder state could not be sampled", exc, level=logging.DEBUG)
+        wait = _next_wait_s(interval, due, time.monotonic(), looking)
 
 
 def start_write_gate_watchdog() -> bool:
@@ -860,6 +1101,57 @@ def hold_write_window(session) -> bool:
 _REGISTERED = False
 
 
+def _statement_kind(statement: object) -> int:
+    """Which of the gate's buckets a statement's seconds go to: INSERT, a savepoint statement, or any other (``_SPENT_KINDS``). The first
+    word only, so a ``WITH ... INSERT`` counts as other; never raises."""
+    head = statement[:24].lstrip().upper() if isinstance(statement, str) else ""
+    if head.startswith("INSERT"):
+        return _INSERT
+    if head.startswith(("SAVEPOINT", "RELEASE", "ROLLBACK TO")):
+        return _SAVEPOINT
+    return _OTHER
+
+
+def _on_statement_start(conn, cursor, statement, parameters, context, executemany) -> None:  # pragma: no cover - event, exercised through the engine
+    """``before_cursor_execute`` on every engine: the gate's holder starts a statement. Any other thread, and the holder outside a hold,
+    return at once (one attribute read and one comparison). Never raises: it runs on every statement of the process."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_begins(_statement_kind(statement))
+
+
+def _on_statement_end(conn, cursor, statement, parameters, context, executemany) -> None:  # pragma: no cover - event
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_ends()
+
+
+def _on_statement_error(exception_context) -> None:  # pragma: no cover - event
+    """A statement that raised has no ``after_cursor_execute``; its seconds end here. Returns None so no exception is replaced."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_ends()
+
+
+def _on_commit_start(conn) -> None:  # pragma: no cover - event
+    """The engine's ``commit`` event, before the driver commits: the holder's commit begins."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_begins(_COMMIT)
+
+
+def _on_session_commit(session) -> None:  # pragma: no cover - event
+    """The session's ``after_commit``: the commit that began at the engine's event has ended."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_ends()
+
+
 def register_write_gate(session_factory) -> None:
     """Attach the gate to a SQLAlchemy ``sessionmaker`` (or ``Session`` class).
 
@@ -888,6 +1180,16 @@ def register_write_gate(session_factory) -> None:
     # after_rollback in SQLAlchemy 2.0, but its outermost transaction ending on
     # close DOES emit after_transaction_end — so this is the leak-proof hook.
     event.listen(session_factory, "after_transaction_end", _on_after_transaction_end)
+    # Where a hold's seconds go (``hold_breakdown``): the holder thread's statements and commits, on every engine. The class, not one engine,
+    # so a second engine (a test's, the keyed copy a restore opens) is measured the same way; a statement of any thread that does not own
+    # the gate costs one comparison.
+    from sqlalchemy.engine import Engine
+
+    event.listen(Engine, "before_cursor_execute", _on_statement_start)
+    event.listen(Engine, "after_cursor_execute", _on_statement_end)
+    event.listen(Engine, "handle_error", _on_statement_error)
+    event.listen(Engine, "commit", _on_commit_start)
+    event.listen(session_factory, "after_commit", _on_session_commit)
     # S2.6: a long hold names itself in the log. The watchdog is NOT started
     # here -- this function runs at import (session.py calls it at module level),
     # and importing must not spawn a monitoring thread. It arms on the first
@@ -895,10 +1197,67 @@ def register_write_gate(session_factory) -> None:
     _REGISTERED = True
 
 
+#: A wait for the pooled connection of this many seconds or more, before the gate was asked for, is counted apart (``stalls``). WHAT IT
+#: PROTECTS: the meaning of the count: a checkout is microseconds and an opened encrypted connection is about 0.17 s, so a second is a
+#: wait for a connection to come back, which is the pool's 30 s timeout starting.
+POOL_WAIT_STALL_S = 1.0
+
+_POOL_WAIT_LOCK = threading.Lock()
+_POOL_WAIT: dict[str, float] = {"n": 0, "total_s": 0.0, "max_s": 0.0, "stalls": 0}
+
+
+def _note_pool_wait(waited: float) -> None:
+    with _POOL_WAIT_LOCK:
+        _POOL_WAIT["n"] += 1
+        _POOL_WAIT["total_s"] += waited
+        if waited > _POOL_WAIT["max_s"]:
+            _POOL_WAIT["max_s"] = waited
+        if waited >= POOL_WAIT_STALL_S:
+            _POOL_WAIT["stalls"] += 1
+
+
+def pool_wait_stats() -> dict[str, float]:
+    """How long writers waited for their pooled connection BEFORE asking for the gate: ``n`` writes timed, ``total_s``, ``max_s`` and ``stalls``
+    (waits of :data:`POOL_WAIT_STALL_S` or more). Process-cumulative, like the rest of the gate's counters."""
+    with _POOL_WAIT_LOCK:
+        return {k: (round(v, 4) if isinstance(v, float) else v) for k, v in _POOL_WAIT.items()}
+
+
+def connection_first(session) -> None:
+    """Check the session's pooled connection out BEFORE the write window is asked for.
+
+    THE ORDER WAS WRONG. ``before_flush`` and ``do_orm_execute`` fire BEFORE SQLAlchemy checks a connection out for the statement, so a
+    session whose first statement is its write (a ``release_idle_connection`` gives the connection back between statements, so every
+    collector write after one is exactly that) took the gate and THEN waited for the pool. With 23 of 24 connections out (the 16 Oct 2026
+    bundles) the wait is the pool's 30 s timeout, and the whole write queue stood behind a writer that was not writing. Reproduced: a
+    pool of one with its connection out, a session adding a row, the gate held by the waiter. :func:`hold_write_window` already did it
+    in this order (``session.connection()`` first); the two hooks now do too.
+
+    THE RULE IS ONE ORDER EVERYWHERE: the pooled connection, then the gate. A writer that holds a connection while it queues for the gate is
+    safe only if every other taker of both asks for the connection first, or the queued writers hold the pool and the gate holder waits
+    for the pool's timeout. This function is for a session whose work follows under ``write_lock()``; a raw connection is taken as
+    ``with engine.connect() as conn, write_lock():``. ``tests/test_gate_connection_order.py`` scans ``src/`` for the other order.
+
+    A session with more than one bind and no default raises ``UnboundExecutionError`` here; the flush chooses the bind per mapper, so that
+    case keeps its old order (the gate, then the connection). Any other error, a pool timeout included, is raised from here exactly as
+    the flush would have raised it, with the gate NOT taken, so there is nothing to release. The wait is recorded in
+    :func:`pool_wait_stats`. Never swallows a failure to get a connection."""
+    from sqlalchemy.exc import UnboundExecutionError
+
+    started = time.monotonic()
+    try:
+        session.connection()
+    except UnboundExecutionError:
+        return
+    finally:
+        _note_pool_wait(time.monotonic() - started)
+
+
 def _on_before_flush(session, _flush_context, _instances) -> None:
     # First write of this session's transaction is about to hit the file —
     # take the write window. Idempotent within the transaction via the flag.
     if not session.info.get(_SESSION_FLAG):
+        connection_first(session)
         _take_for_session(session)
 
 
@@ -942,6 +1301,7 @@ def _on_orm_execute(orm_execute_state) -> None:
         return
     session = orm_execute_state.session
     if not session.info.get(_SESSION_FLAG):
+        connection_first(session)
         _take_for_session(session)
 
 

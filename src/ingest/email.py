@@ -927,7 +927,7 @@ def delete_imported_newsletters(session: Session) -> dict:
     the removal is run again, which finds the articles that are left, or the counter sweep (``reconcile_keyword_counters``) runs.
     """
     from src.database.models import Base
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     art_ids = _newsletter_article_ids(session)
     if not art_ids:
@@ -948,6 +948,7 @@ def delete_imported_newsletters(session: Session) -> dict:
     # and running the removal again finds exactly the ones left.
     for lo in range(0, len(art_ids), _NEWSLETTER_DELETE_CHUNK):
         chunk = art_ids[lo : lo + _NEWSLETTER_DELETE_CHUNK]
+        connection_first(session)  # the last chunk's commit gave the connection back: check one out BEFORE the gate
         with write_lock():
             for t in dep_tables:
                 session.execute(t.delete().where(t.c.article_id.in_(chunk)))

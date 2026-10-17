@@ -1,0 +1,5 @@
+## 2026-10-16 — a test that checks a typed number against another typed number cannot fail, and a frame snapshot is a reference cycle (PR #1429)
+
+**A budget figure is a ceiling computed from the code, or it is decoration.** The slot test asserted `(400 + 9 * 120) * 206 + ... == 397_280`: constants typed into the test and compared with themselves. A mutation raising the export's cut to 4000 lines survived (`1 passed`). It now computes the worst case from `exit_evidence`'s own constants and asserts a ceiling of 400,000; the same mutation fails with 8,274,720.
+
+**`sys._current_frames()` includes the asking thread's own frame, and that frame holds the dict.** A local named `frames` (and the loop variable that can be the same frame) is a cycle that keeps every frame in the stack, and every local in them, alive until the next collection: a 50 MB local lived on after its thread ended. Drop the names in a `finally`. Test with the collector off and a weak reference to a local of the asking thread, once asking about itself and once about another thread; the first catches a missing `del frame`, the second a missing `del frames`.

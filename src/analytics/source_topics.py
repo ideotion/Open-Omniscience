@@ -177,9 +177,10 @@ def _apply_source_topics_on_a_shared_session(session, *, min_articles: int, top_
     risking a stale-session rollback.
     """
     from src.database.models import Source
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     updated = added = 0
+    connection_first(session)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         proposed = {
             r["domain"]: r["topics"]
@@ -238,7 +239,7 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
         return _apply_source_topics_on_a_shared_session(session, min_articles=min_articles, top_n=top_n)
 
     from src.database.models import Source
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     decided = source_topic_candidates(session, min_articles=min_articles, top_n=top_n)
     candidates = decided["candidates"]
@@ -249,6 +250,7 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
     session.rollback()
 
     updated = added = 0
+    connection_first(session)  # the rollback gave the connection back: check one out BEFORE the gate, not under it
     with write_lock():
         for cand in candidates:
             src = session.get(Source, cand["id"])

@@ -319,7 +319,7 @@ def newsletter_attach_undo(db: Session = Depends(get_db)) -> dict:
     re-runs the ladder and re-attaches them.
     """
     from src.database.models import Article
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     bucket = _get_newsletter_source(db)
     rows = db.query(Article.id, Article.source_id, Article.newsletter_attached_via).filter(
@@ -339,6 +339,7 @@ def newsletter_attach_undo(db: Session = Depends(get_db)) -> dict:
         )
     }
     art_ids = [int(aid) for aid, _sid, _via in rows]
+    connection_first(db)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         for lo in range(0, len(art_ids), 900):  # under SQLite's 999-variable cap
             chunk = art_ids[lo : lo + 900]

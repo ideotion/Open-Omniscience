@@ -216,6 +216,21 @@ def _read_mention_rows(session: Session, article_id: int) -> dict[int, tuple[int
     return out
 
 
+def articles_with_stored_mentions(session: Session, article_ids: list[int]) -> set[int]:
+    """Which of ``article_ids`` have at least one stored mention row: ONE statement per ``_MENTION_ID_CHUNK`` ids, for the whole list.
+
+    What ``ArticleBatch`` asks ONCE per flush instead of reading each new article's rows (``index_article(inserted_in_this_transaction=True)``
+    takes the empty answer on the caller's word, and this is how the caller knows it is true). A just-inserted article has rows only when its
+    id was handed out AGAIN while rows still carried it: something that ran with foreign keys off (a database tool; salvage's
+    ``id_reuse_possible``) deleted the old article and left them. Those articles are indexed the old way, where the read and the diff replace
+    the rows."""
+    out: set[int] = set()
+    for i in range(0, len(article_ids), _MENTION_ID_CHUNK):
+        chunk = article_ids[i : i + _MENTION_ID_CHUNK]
+        out.update(session.execute(select(_MT.c.article_id).where(_MT.c.article_id.in_(chunk)).distinct()).scalars())
+    return out
+
+
 def _write_mention_diff(
     session: Session,
     article_id: int,
@@ -513,6 +528,7 @@ def index_article(
     precomputed_www: dict | None = None,
     maintain_counters: bool = True,
     timings: dict | None = None,
+    inserted_in_this_transaction: bool = False,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -523,6 +539,26 @@ def index_article(
     tally gains ``mentions_kept`` / ``mentions_updated`` / ``mentions_removed`` /
     ``mentions_added`` (see ``_write_mention_diff``); ``mentions`` keeps meaning "rows
     the article now has".
+
+    ``inserted_in_this_transaction`` (default ``False``: the article's mention rows are read, as for every
+    caller before): the caller INSERTED this article in the transaction it is still inside (its flush gave
+    the article its id, nothing has committed since) and KNOWS it has no mention rows, which turns the read of
+    the article's stored mention rows into the empty answer without asking the database. A batched collect
+    flush is the one such caller (``ArticleBatch``). The read was a statement per article inside the gate hold
+    that returned nothing, and the hold is what every other writer waits behind.
+    WHY THE ANSWER IS EMPTY: an id is new to the table, or it is the highest id handed out again after a
+    delete (SQLite keeps no counter without AUTOINCREMENT, ``src/database/query.py``), and in that
+    case the delete removed the old article's mention rows with it, because every pooled connection
+    runs ``PRAGMA foreign_keys=ON`` (``src/database/session.py``) and the mention model's ``article_id``
+    is ``ON DELETE CASCADE``. Nothing writes an article's mention rows before this call (this function
+    is the one writer). THE ONE EXCEPTION is a row left behind by something that ran with foreign keys off
+    (a database tool, salvage's ``id_reuse_possible``): the flag does NOT see it. Keywords that overlap
+    meet the unique index ``(keyword_id, article_id)`` and fail loudly; keywords that do not would stay
+    attached to the new article, silently. So the flag is the CALLER's claim and the caller checks it:
+    ``ArticleBatch`` asks :func:`articles_with_stored_mentions` once per flush and leaves the flag off for
+    an article it names, which is read and healed as before. A caller that cannot say all of that, or that
+    is RE-indexing an article, leaves the flag off. Pinned by
+    ``tests/test_index_article_inserted_in_transaction.py`` and ``tests/test_batch_inserted_in_transaction.py``.
 
     ``scope`` (keyword-engine Phase 1.2): ``"full"`` (default) recomputes keywords +
     when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword
@@ -621,7 +657,8 @@ def index_article(
 
     hold_write_window(session)  # its wait for the window is not read time
     _t_read = time.monotonic() if timings is not None else 0.0
-    old_rows = _read_mention_rows(session, article.id)
+    # ``{}`` and not ``None``: ``None`` is "two rows share a keyword", the legacy delete-then-insert shape.
+    old_rows = {} if inserted_in_this_transaction else _read_mention_rows(session, article.id)
     old_contrib: dict[int, int] = {}
     if maintain_counters:
         if old_rows is None:  # two rows for one keyword: sum them, as the old read did
@@ -1752,8 +1789,8 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
 
     Curation-safe: a keyword whose ``normalized_term`` is referenced by a family override
     or a super-group member is KEPT even if momentarily mention-less (the user's
-    structure must survive). Takes the single-writer gate per slice; chunked under the
-    999-variable limit. Counts only — no score.
+    structure must survive). Takes the single-writer gate per CHUNK of deletes (the connection
+    first, then the gate); chunked under the 999-variable limit. Counts only — no score.
 
     P1.12: the scan walks the keyword table in id-ordered SLICES (each slice's orphan
     test is one covering-index range scan of the mentions table — never the old
@@ -1766,7 +1803,7 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
     import time as _time
 
     from src.database.models import KeywordFamilyOverride, KeywordSuperGroupMember
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     budget = budget_s if budget_s is not None else _maint_budget_s("OO_PRUNE_BUDGET_S")
     scan_chunk = _PRUNE_SCAN_CHUNK  # ids per slice (one mention index range scan each)
@@ -1830,11 +1867,24 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
 
             bump_corpus_epoch(session, reason="prune_orphan_keywords")
             epoch_bumped = True
-        if prunable:
-            with write_lock():
-                for i in range(0, len(prunable), chunk):
-                    batch = prunable[i : i + chunk]
-                    try:
+        # One hold of the gate PER CHUNK, the connection checked out first: the commit that ends a chunk gives the session's connection
+        # back to the pool, so a hold across the chunks took the pool again UNDER the gate for every chunk after the first (a pool
+        # timeout with the gate held and the write queue behind it). The ids were decided before the first chunk, and a writer can run
+        # between two chunks now, so each chunk asks again, under the gate, which of its ids have a mention since: those are kept, with
+        # their tags (a keyword that gained a mention is no longer garbage; deleting it would leave the mention without its keyword).
+        for i in range(0, len(prunable), chunk):
+            batch = prunable[i : i + chunk]
+            try:
+                connection_first(session)
+                with write_lock():
+                    gained = {
+                        kid
+                        for (kid,) in session.query(KeywordMentionRead.keyword_id)
+                        .filter(KeywordMentionRead.keyword_id.in_(batch))
+                        .distinct()
+                    }
+                    batch = [kid for kid in batch if kid not in gained]
+                    if batch:
                         session.query(KeywordTag).filter(
                             KeywordTag.keyword_id.in_(batch)
                         ).delete(synchronize_session=False)
@@ -1844,10 +1894,10 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
                             .delete(synchronize_session=False)
                             or 0
                         )
-                        session.commit()
-                    except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort the GC
-                        session.rollback()
-                        log_failure(_LOG, "orphan-keyword prune chunk failed", exc, level=logging.WARNING)
+                    session.commit()
+            except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort the GC
+                session.rollback()
+                log_failure(_LOG, "orphan-keyword prune chunk failed", exc, level=logging.WARNING)
         scanned += len(ids)
         after_id = hi
         # Persist the watermark WITH the slice (the resume point survives a restart).
@@ -1891,7 +1941,7 @@ def backfill_keyword_counters(session: Session) -> dict:
     exact is not claimed as verified."""
     from sqlalchemy import func
 
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     after_id = 0
     with_mentions = 0
@@ -1921,7 +1971,8 @@ def backfill_keyword_counters(session: Session) -> dict:
         }
         # Gated explicitly and as one unit: ``bulk_update_mappings`` is invisible to both write-gate hooks (C8), and the zero
         # before it IS gated (it fires ``do_orm_execute``), so without this the two halves of one slice ran on opposite sides
-        # of the gate.
+        # of the gate. The connection first (the last slice's commit gave it back), then the gate.
+        connection_first(session)
         with write_lock():
             session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
                 {Keyword.mention_count: 0, Keyword.article_count: 0}, synchronize_session=False
@@ -2055,9 +2106,10 @@ def reconcile_keyword_counters(
         # hooks, so without this the zero-out and the repair that restores the real counts
         # ran on opposite sides of the gate -- and a reader landing between them would see
         # every keyword in the slice at zero. The gate is reentrant per thread, so the
-        # inner acquisitions are no-ops.
-        from src.database.writer import write_lock
+        # inner acquisitions are no-ops. The connection first (the last slice's commit gave it back), then the gate.
+        from src.database.writer import connection_first, write_lock
 
+        connection_first(session)
         with write_lock():
             session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
                 {
@@ -2144,7 +2196,7 @@ def reconcile_source_counters(
 
     from sqlalchemy import func
 
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     stamp = now or datetime.now(UTC)
     wanted: list[int] | None = None
@@ -2180,6 +2232,7 @@ def reconcile_source_counters(
         # Gated EXPLICITLY: ``bulk_update_mappings`` is invisible to both write-gate hooks
         # (the recorded C8 note; the same reason the language backfill takes the lock by
         # hand a few hundred lines below).
+        connection_first(session)
         with write_lock():
             session.bulk_update_mappings(Source, rows)
             session.commit()
@@ -2319,8 +2372,9 @@ def _write_keyword_updates(session: Session, updates: list[dict]) -> None:
     ``bulk_update_mappings`` fires NEITHER ``before_flush`` NOR ``do_orm_execute``, so it reaches SQLite outside the gate unless it is
     taken by hand (C8, the long note on :func:`_write_keyword_languages`). The caller hands it at most ``_LANG_UPDATE_BATCH`` rows, which
     is what bounds the hold."""
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
+    connection_first(session)
     with write_lock():
         session.bulk_update_mappings(Keyword, updates)
         session.commit()
@@ -2345,8 +2399,9 @@ def _write_keyword_languages(session: Session, updates: list[dict]) -> None:
     the file's own raw-write callers do it (``write_lock()``, e.g.
     ``prune_orphan_keywords``): take the gate explicitly around the bulk write.
     """
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
+    connection_first(session)
     with write_lock():
         session.bulk_update_mappings(Keyword, updates)
         # Savepoint-aware for the same reason the scan loop is: a tail commit here would
@@ -2741,8 +2796,9 @@ def reconcile_article_language(
     if updates:
         # Gated explicitly: see the C8 note above -- bulk_update_mappings is invisible
         # to both write-gate hooks.
-        from src.database.writer import write_lock
+        from src.database.writer import connection_first, write_lock
 
+        connection_first(session)
         with write_lock():
             session.bulk_update_mappings(Article, updates)
             session.commit()
