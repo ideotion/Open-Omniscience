@@ -57,7 +57,7 @@ def test_a_held_writer_gate_with_a_queue_is_attributed_to_the_gate(monkeypatch):
 
     assert rec is not None
     assert "writer-gate-contention" in rec["consistent_with"]
-    assert rec["undetermined"] is False
+    assert rec["consistent_with"] != ["undetermined"]
     # The evidence travels WITH the verdict, so a reader can disagree with the class
     # without re-running anything.
     assert rec["evidence"]["write_gate"]["waiters"] == 4
@@ -82,7 +82,7 @@ def test_a_gate_held_with_nobody_queued_is_not_contention(monkeypatch):
     assert rec is not None
     assert "writer-gate-contention" not in rec["consistent_with"]
     assert rec["consistent_with"] == ["undetermined"]
-    assert rec["undetermined"] is True
+    assert "undetermined" not in rec  # derived from consistent_with; a second copy cost 23 B a record
 
 
 # --------------------------------------------------------------------------
@@ -136,7 +136,7 @@ def test_silent_instruments_yield_undetermined_never_a_nearest_class(monkeypatch
     _quiet(monkeypatch)
     rec = sf.note_stall("GET /api/whatever", 200, 60_000.0)
     assert rec["consistent_with"] == ["undetermined"]
-    assert rec["undetermined"] is True
+    assert "undetermined" not in rec  # derived from consistent_with; a second copy cost 23 B a record
 
 
 def test_an_unreadable_instrument_is_a_gap_not_a_verdict(monkeypatch):
@@ -317,3 +317,105 @@ def test_the_verdict_is_phrased_as_correlation_not_causation():
     # The field is named for what it can support, not for a cause it cannot prove.
     assert "consistent_with" in str(sf.note_stall.__doc__ or "") or True
     assert "never a proof" in rep["method"]
+
+
+def _row(end, ms, sql="SELECT 1"):
+    return {"at": end.isoformat(timespec="seconds"), "duration_ms": ms, "sql": sql}
+
+
+def test_a_slow_statement_is_named_only_when_it_ran_inside_the_request(monkeypatch):
+    """The field case: a 55.6 s request, a writer's 56.9 s SAVEPOINT that ended in the same minute (longer than the request, so it
+    cannot be part of it) and an older 55 s COUNT that ended four minutes before a later 174 s request began."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.monitoring import slowquery
+
+    end = datetime(2026, 10, 16, 16, 19, 59, tzinfo=UTC)
+    rows = [
+        _row(end - timedelta(minutes=5), 41_100.0, "SAVEPOINT sa_savepoint_1"),
+        _row(end - timedelta(seconds=2), 56_853.6, "SAVEPOINT sa_savepoint_1"),  # longer than the request: not its own
+        _row(end, 55_310.8, "SELECT count(*) AS count_1 FROM keyword_mentions_all"),
+    ]
+    monkeypatch.setattr(slowquery, "recent", lambda limit=20: rows)
+    got = sf._statement_evidence(55_554.8, now=end)
+    assert got["found"] and got["sql"].startswith("SELECT count(*)") and got["duration_ms"] == 55_310.8
+    assert got["share_of_request"] < 1.0
+    # a later request that began after the COUNT ended is not attributed to it
+    later = end + timedelta(seconds=240)
+    none = sf._statement_evidence(174_128.3, now=later)
+    assert none["found"] is False and "ended inside this request's window" in none["note"]
+    # a row whose time cannot be read is skipped, not trusted
+    monkeypatch.setattr(slowquery, "recent", lambda limit=20: [{"at": "x", "duration_ms": 10.0, "sql": "S"}])
+    assert sf._statement_evidence(100.0, now=end)["found"] is False
+
+
+# --------------------------------------------------------------------------
+# before_dispatch_ms: how much of the duration was spent before routing handed the request to its endpoint.
+# --------------------------------------------------------------------------
+from src.monitoring import latency as _latency  # noqa: E402
+
+_needs_split = pytest.mark.skipif(
+    not hasattr(_latency, "current_split"),
+    reason="latency.current_split arrives with the before-dispatch change in the diagnostics lane; this file lands after it",
+)
+
+
+@_needs_split
+def test_a_stall_record_carries_the_time_before_dispatch(monkeypatch):
+    _quiet(monkeypatch)
+    monkeypatch.setattr(_latency, "current_split", lambda: 420.6)
+    rec = sf.note_stall("GET /api/x", 200, sf.threshold_ms() + 1.0)
+    assert rec["before_dispatch_ms"] == 421
+    monkeypatch.setattr(_latency, "current_split", lambda: None)
+    # not stamped is unknown, never 0 (a 0 would read as "routing took no time")
+    assert sf.note_stall("GET /api/x", 200, sf.threshold_ms() + 1.0)["before_dispatch_ms"] is None
+
+
+def test_a_missing_or_failing_split_reader_files_the_stall_with_the_split_unknown(monkeypatch):
+    _quiet(monkeypatch)
+
+    def _boom():
+        raise RuntimeError("no scope")
+
+    monkeypatch.setattr(_latency, "current_split", _boom, raising=False)
+    rec = sf.note_stall("GET /api/x", 200, sf.threshold_ms() + 1.0)
+    assert rec is not None and rec["before_dispatch_ms"] is None
+
+
+# The serialised size of a FULL ring of field-shaped records (what 10-16's two zips carried: 200 records, pool attached, 8 holders,
+# a recorded statement, the fixture below) on the base that preceded the split, 39f8dd7c5: 338,600 B with ``json.dumps`` defaults. Adding the split must not
+# raise it -- the diagnostics part has no room (its floor is fixed) -- so the field is paid for inside the record.
+_RING_BYTES_BEFORE_THE_SPLIT = 338_600
+
+
+def _field_shaped_ring(monkeypatch, split):
+    from src.database import pool_watch
+
+    monkeypatch.setattr(sf, "_gate_evidence", lambda: {"available": True, "held": True, "waiters": 7, "max_wait_s": 123.4567})
+    monkeypatch.setattr(sf, "_loop_evidence", lambda route: {"available": True, "overlapped": True, "lag_ms": 12345.6,
+                                                              "at": "2026-10-16T07:51:08+00:00"})
+    monkeypatch.setattr(sf, "_statement_evidence", lambda ms: {"available": True, "found": True, "duration_ms": 123456.7,
+                                                                "sql": "x" * 200, "share_of_request": 0.987})
+    monkeypatch.setattr(pool_watch, "is_registered", lambda: True)
+    monkeypatch.setattr(
+        pool_watch, "checked_out",
+        lambda: [{"thread": "oo-collect_13", "endpoint": None, "collector": True, "age_s": 1234.567} for _ in range(12)],
+    )
+    monkeypatch.setattr(_latency, "current_split", lambda: split, raising=False)
+    for _ in range(sf._RING_CAP):
+        sf.note_stall("GET /api/library/figures", 200, 123456.7)
+    return sf.report(limit=sf._RING_CAP)["stalls"]
+
+
+def test_the_split_is_paid_for_inside_the_record_a_full_ring_is_no_bigger_than_before(monkeypatch):
+    import json
+
+    stalls = _field_shaped_ring(monkeypatch, 123456.789)
+    assert stalls[0]["before_dispatch_ms"] == 123457  # whole milliseconds: a fraction of one is not a reading
+    assert stalls[0]["duration_ms"] == 123457 and isinstance(stalls[0]["duration_ms"], int)
+    assert "undetermined" not in stalls[0]  # derived from consistent_with
+    assert all(h["age_s"] == 1234.6 for h in stalls[0]["evidence"]["pool"]["holders"])  # a tenth of a second, not a thousandth
+    assert len(json.dumps(stalls)) <= _RING_BYTES_BEFORE_THE_SPLIT
+    sf._reset_for_tests()
+    # and a record with no split costs no more than one with it
+    assert len(json.dumps(_field_shaped_ring(monkeypatch, None))) <= len(json.dumps(stalls))

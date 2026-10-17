@@ -777,6 +777,27 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     }
 
 
+def _source_label(source) -> str:
+    """The source's domain for a log line or a progress line, or ``?``. After a failure rolls the session back, every Source
+    object that session holds is expired, and reading one attribute reloads the row through a pooled connection: with the pool
+    exhausted that checkout times out, and a label is never worth ending a pass for."""
+    try:
+        return source.domain
+    except Exception:  # noqa: BLE001 - a label; never worth a failure
+        return "?"
+
+
+def _source_key(source) -> int:
+    """The source's primary key WITHOUT loading it. The deferred sources are objects of the caller's session, expired by any
+    commit or rollback since they were selected, and ``source.id`` on an expired instance reloads the row through a pooled
+    connection: with the pool exhausted that timed out inside the pass's ``finally`` and the deferrals were never recorded.
+    The session already holds the identity."""
+    from sqlalchemy import inspect
+
+    identity = inspect(source).identity
+    return identity[0] if identity else source.id
+
+
 def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     """Scrape ONE source into ``session``; returns (tally, pages_fetched, processed).
 
@@ -805,6 +826,12 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     # src/ingest/fetch_release.py for what is and is not covered).
     fetcher = wrap_fetcher(fetcher, session)
 
+    # Read the label BEFORE the try: a failure inside ingest_source rolls the session
+    # back, which expires every attribute, and reading ``source.domain`` in the handler
+    # then reloads it through a pooled connection — a second checkout that can time out
+    # (the pool is exactly what is exhausted) and escape the handler, ending the pass.
+    domain = _source_label(source)
+
     try:
         # Feeds only. The whole-source crawl branch that sat here served the retired
         # ``mode="crawl"`` (Q1020 = a); crawling now happens beside the pass, bounded, in
@@ -813,7 +840,7 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
             return {}, 0, 0
         return ingest_source(session, source, fetcher=fetcher), 0, 1
     except Exception as exc:  # noqa: BLE001 - one bad source must not abort the batch
-        log_failure(_LOG, f"scrape run: source {getattr(source, 'domain', '?')!r} failed", exc, level=logging.WARNING)
+        log_failure(_LOG, f"scrape run: source {domain!r} failed", exc, level=logging.WARNING)
         return {"errors": 1}, 0, 0
 
 
@@ -937,11 +964,19 @@ def run_scrape_once(
     deferred_sources: list = []
     deferred_lock = threading.Lock()
     wind_reasons: dict[str, int] = {}
+    pool_deferred: list = []
 
     def _defer(source, reason: str) -> None:
         with deferred_lock:
             deferred_sources.append(source)
             wind_reasons[reason] = wind_reasons.get(reason, 0) + 1
+
+    def _defer_unpooled(source) -> None:
+        # A source that found no pooled connection is carried to the next pass like a wound-down one, but it is not a wind-down:
+        # the pass kept running, so it stays out of ``wind_reasons`` (which names why a pass stopped taking sources).
+        with deferred_lock:
+            deferred_sources.append(source)
+            pool_deferred.append(source)
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
@@ -991,6 +1026,8 @@ def run_scrape_once(
             # holds no connection); writes still serialise through the single-writer
             # gate, and the shared fetcher's per-host lock keeps politeness intact.
             from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            from sqlalchemy.exc import TimeoutError as _PoolTimeout
 
             from src.database.models import Source as _Source
             from src.database.pool_reserve import collector_role
@@ -1051,7 +1088,18 @@ def run_scrape_once(
                         # ``source_metadata``) lazy-loaded through that one session and
                         # its one connection, from every worker at once, and segfaulted
                         # the process (2 crashes in 30 runs of the pool test, 2026-09-25).
-                        own = worker_session.get(_Source, source_id)
+                        try:
+                            own = worker_session.get(_Source, source_id)
+                        except _PoolTimeout as exc:
+                            # This read is the worker's first pooled checkout. With the pool
+                            # exhausted it times out, and an exception out of here ends the
+                            # WHOLE pass at ``fut.result()`` — one source ending the batch.
+                            # Record it against this source and leave it for the next pass;
+                            # nothing retries in this one (a retry holds the very slot the
+                            # pool is short of), and the other sources carry on.
+                            log_failure(_LOG, f"scrape run: source id {source_id} found no pooled connection", exc, level=logging.WARNING)
+                            _defer_unpooled(source)
+                            return {"errors": 1}, 0, 0
                         if own is None:  # deleted since the selection: nothing to fetch
                             return {}, 0, 0
                         return _process_source(
@@ -1168,7 +1216,7 @@ def run_scrape_once(
                 if reason:
                     _defer(source, reason)
                     continue
-                _progress_set(current=source.domain, done=idx, pages=pages_fetched)
+                _progress_set(current=_source_label(source), done=idx, pages=pages_fetched)
                 tally, pages, processed = _process_source(
                     source, session=session, fetcher=fetcher,
                 )
@@ -1192,16 +1240,18 @@ def run_scrape_once(
         # claim on the next pass (the exactness invariant: every selected
         # source was either processed or is recorded here, in order).
         if deferred_sources:
-            _record_deferred([s.id for s in deferred_sources])
+            _record_deferred([_source_key(s) for s in deferred_sources])
 
     recycled: str | None = None
-    if deferred_sources:
+    if wind_reasons:
         recycled = max(wind_reasons.items(), key=lambda kv: kv[1])[0]
         _LOG.info(
             "pass wound down (%s): %d source(s) deferred to run first next pass",
             recycled,
-            len(deferred_sources),
+            len(deferred_sources) - len(pool_deferred),
         )
+    if pool_deferred:
+        _LOG.info("%d source(s) found no pooled connection and run first next pass", len(pool_deferred))
 
     finished = datetime.now(UTC)
     out = {
@@ -1215,8 +1265,11 @@ def run_scrape_once(
         "duration_s": round((finished - started).total_seconds(), 2),
     }
     if deferred_sources:
-        out["recycled"] = recycled
+        if recycled is not None:
+            out["recycled"] = recycled
         out["deferred_next_pass"] = len(deferred_sources)
+        if pool_deferred:
+            out["pool_timeout_deferred"] = len(pool_deferred)
     if extraction_lock is not None:
         out["extraction_lock"] = extraction_lock
     if encrypted_opens is not None:

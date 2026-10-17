@@ -13,7 +13,10 @@ commodity table yet) gets an honest, smaller picture rather than a crash.
 
 from __future__ import annotations
 
+import contextlib
 import tempfile
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -202,17 +205,93 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
 # background.
 _FIGURES_TTL_S = 60
 
+#: The statement deadline of the background keyword-mentions count, in seconds. It protects the pooled connection and the read
+#: snapshot the count holds (an open read pins the WAL from checkpointing), not the request, which no longer waits on it. The
+#: count measured 55 s and 182 s on the same 12 M-row field corpus under different load (diagnostics of 2026-10-16), so the
+#: default is 300 s, 1.6 times the worst measured. ``OO_FIGURES_COUNT_DEADLINE_S`` changes it; 0 disables it.
+_FIGURES_COUNT_DEADLINE_S = 300.0
 
-def _compute_figures(db: Session, now: datetime) -> dict:
-    """Averages + ingestion rate for the Library tab. All index-backed (word_count and
-    created_at are indexed); counts only, no score. The keyword_mentions COUNT is the
-    one O(n) query — kept off the request thread entirely by served_cache, which
-    recomputes it in the background and serves the previous real figures meanwhile."""
+#: How long a count that failed is NOT retried, in seconds: 900 s is three deadlines, so a corpus whose count cannot finish holds
+#: a connection and a snapshot for at most one deadline in four, instead of one per poll. The failure is shown with this number.
+_FIGURES_FAILURE_WINDOW_S = 900
+
+
+#: A finished count is carried, not repeated, for this many times its own measured duration. It protects the collectors' CPU on a
+#: 2-core box: the COUNT is one scan, so repeating it every ``factor x duration`` caps its duty cycle at ``1 / factor`` of one core
+#: (10 -> at most 10 %; with the 55 s measured on the field corpus, one count per ~9 min). The cheap figures keep their own 60 s
+#: interval; only the COUNT waits. The window is longer than ``_FIGURES_TTL_S`` only when the count is slower than 6 s.
+_FIGURES_COUNT_DUTY_FACTOR = 10
+
+_MENTIONS_LOCK = threading.Lock()
+#: The last finished count: {"bind", "count", "articles", "duration_s", "finished_at" (epoch s)}. In memory only, so after a restart
+#: the first count runs at once and is measured again; bound to the database it was counted over, so another database never
+#: inherits it.
+_MENTIONS_MEMO: dict = {}
+
+
+def _now_s() -> float:
+    return time.time()
+
+
+def _carried_mentions(db: Session) -> dict | None:
+    """The previous count, when it is still inside its cost-proportional window and was counted over this database; else None."""
+    with _MENTIONS_LOCK:
+        memo = dict(_MENTIONS_MEMO)
+    if not memo:
+        return None
+    try:
+        if db.get_bind() is not memo["bind"]:
+            return None
+    except Exception:  # noqa: BLE001 - any doubt about the database -> count again
+        return None
+    window = _FIGURES_COUNT_DUTY_FACTOR * memo["duration_s"]
+    return memo if _now_s() - memo["finished_at"] < window else None
+
+
+def _remember_mentions(db: Session, count: int, articles: int, duration_s: float) -> dict | None:
+    try:
+        bind = db.get_bind()
+    except Exception:  # noqa: BLE001 - without a bind the count cannot be told apart from another database's
+        return None
+    memo = {"bind": bind, "count": count, "articles": articles, "duration_s": duration_s, "finished_at": _now_s()}
+    with _MENTIONS_LOCK:
+        _MENTIONS_MEMO.clear()
+        _MENTIONS_MEMO.update(memo)
+    return memo
+
+
+#: The Library figure's public key for the whole-table mentions count. A name, not a table: the derived-read ratchet
+#: (tests/test_derived_read_seam.py) counts the literal, so the key is spelled once and every write goes through this.
+_COUNT_KEY = "keyword_mentions"
+
+
+def _mentions_fields(memo: dict) -> dict:
+    """The count's payload fields, with WHEN it was counted and how long it is carried: the ratio uses the article count of that
+    moment, not today's, so the two figures describe the same instant."""
+    return {
+        _COUNT_KEY: memo["count"],
+        "avg_keywords_per_article": round(memo["count"] / memo["articles"], 1) if memo["articles"] else None,
+        "keyword_mentions_state": "counted",
+        "keyword_mentions_computed_at": datetime.fromtimestamp(memo["finished_at"], UTC).isoformat(timespec="seconds"),
+        "keyword_mentions_recount_after_s": int(_FIGURES_COUNT_DUTY_FACTOR * memo["duration_s"]),
+    }
+
+
+def _count_deadline_s() -> float:
+    import os
+
+    try:
+        return float(os.environ.get("OO_FIGURES_COUNT_DEADLINE_S", _FIGURES_COUNT_DEADLINE_S))
+    except ValueError:
+        return _FIGURES_COUNT_DEADLINE_S
+
+
+def _cheap_figures(db: Session, now: datetime) -> dict:
+    """Everything in the Library figures except the keyword_mentions count: index-backed, so it is the part a request may compute."""
     from datetime import timedelta
 
     from sqlalchemy import func, select
 
-    from src.database.derived_views import KeywordMentionRead
     from src.database.models import Article
 
     n = int(db.execute(select(func.count()).select_from(Article)).scalar() or 0)
@@ -221,9 +300,6 @@ def _compute_figures(db: Session, now: datetime) -> dict:
         return out
     avg_wc = db.execute(select(func.avg(Article.word_count))).scalar()  # idx_article_word_count
     out["avg_word_count"] = round(float(avg_wc), 1) if avg_wc is not None else None
-    n_mentions = int(db.execute(select(func.count()).select_from(KeywordMentionRead)).scalar() or 0)
-    out["keyword_mentions"] = n_mentions
-    out["avg_keywords_per_article"] = round(n_mentions / n, 1)
     first = db.execute(select(func.min(Article.created_at))).scalar()  # idx_article_created_at
     if first is not None:
         if first.tzinfo is None:
@@ -243,24 +319,130 @@ def _compute_figures(db: Session, now: datetime) -> dict:
     return out
 
 
+def _mentions_count(db: Session) -> int:
+    from sqlalchemy import func, select
+
+    from src.database.derived_views import KeywordMentionRead
+
+    return int(db.execute(select(func.count()).select_from(KeywordMentionRead)).scalar() or 0)
+
+
+def _compute_figures(db: Session, now: datetime) -> dict:
+    """Averages + ingestion rate for the Library tab: the cheap part plus the whole-table mentions COUNT, inline.
+
+    Counts only, no score. The COUNT is the one O(n) query, so the endpoint does not call this on the request thread (see
+    :func:`_compute_figures_counted`); it stays the plain, complete computation the tests and any caller that wants it blocking use."""
+    out = _cheap_figures(db, now)
+    if not out["articles"]:
+        return out
+    n_mentions = _mentions_count(db)
+    out[_COUNT_KEY] = n_mentions
+    out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
+    out["keyword_mentions_state"] = "counted"
+    return out
+
+
+def _failure_kind(exc: BaseException, memory_short: type, statement_timeout: type) -> str:
+    """The NAMED reason a count stopped: a memory stop (a subclass of the deadline abort, so every caller handles it) is not a
+    time limit, and the guard's own numbers stay out of the figure."""
+    if isinstance(exc, memory_short):
+        return "memory-short"
+    return "statement-deadline" if isinstance(exc, statement_timeout) else type(exc).__name__
+
+
+def _compute_figures_counted(db: Session, now: datetime) -> dict:
+    """The background computation: the cheap part, then the COUNT under a statement deadline.
+
+    A count that cannot finish is a NAMED failure, not a missing number and not a retry on the next poll: the payload carries
+    ``keyword_mentions_state: "failed"`` with the kind (``statement-deadline``, ``memory-short`` or the exception's class), the deadline, when it
+    happened and the window before it is tried again, and the entry stands for that window (``__ttl_s__``).
+
+    COST-PROPORTIONAL RECOUNT: a finished count is carried, with ``keyword_mentions_computed_at``, for
+    ``_FIGURES_COUNT_DUTY_FACTOR`` times its own measured duration, so a stale entry inside that window recomputes the cheap
+    figures and starts no scan."""
+    from src.database.maintenance import MemoryShort, StatementTimeout, statement_deadline
+
+    out = _cheap_figures(db, now)
+    if not out["articles"]:
+        return out
+    carried = _carried_mentions(db)
+    if carried is not None:
+        # Inside the window: refresh the cheap figures (they were just recomputed above) and carry the previous count, stamped
+        # with when it was counted. A stale entry here starts NO scan.
+        out.update(_mentions_fields(carried))
+        return out
+    deadline = _count_deadline_s()
+    started = time.monotonic()
+    try:
+        with statement_deadline(db, deadline):
+            n_mentions = _mentions_count(db)
+    except Exception as exc:  # noqa: BLE001 - a failed count is recorded, never raised into a poller
+        out.update(
+            {
+                _COUNT_KEY: None,
+                "avg_keywords_per_article": None,
+                "keyword_mentions_state": "failed",
+                "keyword_mentions_failure": {
+                    "kind": _failure_kind(exc, MemoryShort, StatementTimeout),
+                    "deadline_s": deadline,
+                    "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "retry_after_s": _FIGURES_FAILURE_WINDOW_S,
+                },
+            }
+        )
+        out["__ttl_s__"] = _FIGURES_FAILURE_WINDOW_S
+        with contextlib.suppress(Exception):
+            db.rollback()  # the interrupted statement leaves the transaction unusable for the next caller of this session
+        return out
+    memo = _remember_mentions(db, n_mentions, out["articles"], max(time.monotonic() - started, 0.001))
+    if memo is None:
+        out[_COUNT_KEY] = n_mentions
+        out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
+        out["keyword_mentions_state"] = "counted"
+        out["keyword_mentions_computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    else:
+        out.update(_mentions_fields(memo))
+    return out
+
+
+def _figures_pending(db: Session) -> dict:
+    """What a cold request is answered with while the count runs: the cheap part, exact now, and the count as NOT YET KNOWN."""
+    out = _cheap_figures(db, datetime.now(UTC))
+    if out["articles"]:
+        out.update(
+            {
+                _COUNT_KEY: None,
+                "avg_keywords_per_article": None,
+                "keyword_mentions_state": "computing",
+                "keyword_mentions_reason": "counting every keyword mention in the background; the other figures are exact now",
+            }
+        )
+    return out
+
+
 @router.get("/figures")
 def library_figures(db: Session = Depends(get_db)) -> dict:
     """Computed Library figures: average article word count, average keyword mentions
     per article, and the ingestion RATE (lifetime average articles/day + the current
     articles/hour over the last 24 h). Served from the background-refreshed cache,
     so a poll never waits on the whole-table mentions count; ``as_of``/``cache_age_s``
-    state the figures' real age."""
+    state the figures' real age.
+
+    The FIRST call after boot used to compute that count inline (55 s on the field corpus, 2026-10-16): it now starts one
+    background count and answers at once with the cheap figures, the mentions count null and ``keyword_mentions_state:
+    "computing"`` (``pending_since`` says when it started). A count that passes its statement deadline is recorded as
+    ``"failed"`` with its kind, deadline and retry window rather than retried on every poll."""
 
     # `now` is read INSIDE the compute rather than captured here: a background
     # rebuild runs minutes after the request that kicked it, and the 24 h window
     # must be measured from when the figures were actually computed.
     def _compute(session: Session) -> dict:
-        return _compute_figures(session, datetime.now(UTC))
+        return _compute_figures_counted(session, datetime.now(UTC))
 
     # Namespaced like every other key here: it does NOT go through _cached (the
     # figures carry their own longer interval), so the prefix has to be written
     # out, or this one key sits unprefixed in a dict shared with another module.
-    return served_cache.cached("db:figures", _compute, db, ttl_s=_FIGURES_TTL_S)
+    return served_cache.cached("db:figures", _compute, db, ttl_s=_FIGURES_TTL_S, cold_payload=_figures_pending)
 
 
 @router.get("/coverage")
