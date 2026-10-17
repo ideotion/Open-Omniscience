@@ -234,3 +234,17 @@ def test_last_outcome_keeps_saying_failed_while_the_hold_refuses_the_requests_th
     assert len(builds) == 1, "the hold refused the later requests: no build ran"
     st = rollup_serve.status()
     assert st["last_outcome"] == "failed" and st["consecutive_failures"] == 1
+
+
+def test_an_error_in_a_verdict_before_any_build_started_keeps_no_failure_hold(monkeypatch):
+    builds: list[int] = []
+
+    def broken_verdict():
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(rollup_serve, "_boot_order_verdict", broken_verdict)
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", lambda: builds.append(1))
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "failed"
+    assert builds == [] and rollup_serve._STATE["stopped"] is None, "no build ran, so no build-failed hold"
+    assert rollup_serve._STATE["failures"] == 0 and rollup_serve.status().get("consecutive_failures") is None

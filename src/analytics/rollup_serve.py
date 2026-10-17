@@ -1253,7 +1253,8 @@ def _build_and_swap() -> str:
         outcome = "failed"
         stage, _LAST_STAGE["value"] = _LAST_STAGE["value"], None
         try:
-            _record_failure(type(exc).__name__, stage)  # the class only: the sink sweep's rule
+            if ran:  # an error in a verdict, before any build started, is no build that failed: it keeps no hold that would refuse real builds
+                _record_failure(type(exc).__name__, stage)  # the class only: the sink sweep's rule
         except Exception as hold_exc:  # noqa: BLE001 - a hold that cannot be kept must not turn a failed build into a crash
             log_failure(_LOG, "rollup serve: could not keep the failure hold", hold_exc, level=logging.WARNING)
         return outcome
