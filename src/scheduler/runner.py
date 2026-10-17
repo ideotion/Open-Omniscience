@@ -2679,27 +2679,40 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
     # window's own pause/resume go through the SAME guarded functions everything
     # else uses rather than a private copy of the logic. Raising it first would be
     # self-defeating: the pause would read its own flag and decline to pause.
-    was_paused = pause_for_exclusive_operation(timeout=timeout) if not already else False
-    with _EXCL_LOCK:
-        if _EXCL_DEPTH == 0:
-            _EXCL_BASE = _EXCL_WINDOW  # what the first window found (False outside a test that raises the flag by hand)
-            if not _EXCL_WINDOW:
-                _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
-        _EXCL_DEPTH += 1
-        _EXCL_WINDOW = True
-        if was_paused:
-            _EXCL_PAUSED = True
+    #
+    # The pause and the count are INSIDE the ``try`` (R171): the pause holds the scheduler (``hold_exclusive``) before it stops it, so an
+    # interrupt delivered anywhere between that and the old ``try`` left collection held for good (and, once the count was taken, the
+    # depth up for good). ``counted`` is set in the same step as the depth, so the ``finally`` lowers the depth only for a window that
+    # raised it. If the interrupt lands before the pause has REPORTED, ``was_paused`` is still False and the ``finally`` releases the hold
+    # without starting the loop (it cannot tell whether the stop happened): the worst case is a scheduler that is neither held nor running,
+    # which the operator's Start button puts right. After the pause has reported, the resume is exact.
+    was_paused = False
+    counted = False
     try:
+        if not already:
+            was_paused = pause_for_exclusive_operation(timeout=timeout)
+        with _EXCL_LOCK:
+            if was_paused:
+                _EXCL_PAUSED = True  # before the count: a window that is interrupted next still resumes what it stopped
+            if _EXCL_DEPTH == 0:
+                _EXCL_BASE = _EXCL_WINDOW  # what the first window found (False outside a test that raises the flag by hand)
+                if not _EXCL_WINDOW:
+                    _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
+            _EXCL_DEPTH += 1
+            counted = True
+            _EXCL_WINDOW = True
         yield was_paused
     finally:
         with _EXCL_LOCK:
-            _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
+            if counted:
+                _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
             last = _EXCL_DEPTH == 0
             resume = False
             if last:
-                _EXCL_WINDOW = _EXCL_BASE
+                if counted:
+                    _EXCL_WINDOW = _EXCL_BASE
                 resume, _EXCL_PAUSED = _EXCL_PAUSED, False
-        if last:
+        if last and (counted or not already):  # a nested window that never counted owns nothing to give back
             resume_after_exclusive_operation(resume, retries=resume_retries)
 
 
