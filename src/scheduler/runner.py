@@ -2583,6 +2583,13 @@ def get_scheduler() -> BackgroundScheduler:
 _EXCL_LOCK = threading.Lock()
 _EXCL_WINDOW = False
 _EXCL_TOKEN = 0
+#: How many windows are open right now, and what the flag held before the first of them: windows from two threads OVERLAP without
+#: nesting (a backup's window on a job thread, an encryption's on a request thread), so "restore what I found on entry" is wrong for
+#: the one that leaves first. Changed only by :func:`exclusive_window`, in its own try/finally, so an imbalance elsewhere cannot move it.
+_EXCL_DEPTH = 0
+_EXCL_BASE = False
+#: A window of the set paused collection: the LAST window out resumes it, whichever one paused.
+_EXCL_PAUSED = False
 
 
 def exclusive_window_open() -> bool:
@@ -2646,7 +2653,7 @@ def exclusive_window_token() -> int:
 
 
 @contextmanager
-def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
+def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iterator[bool]:
     """Hold ONE exclusive window for everything nested inside it.
 
     Pauses background collection on entry and resumes it on exit -- once, for the
@@ -2654,9 +2661,19 @@ def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
     ``was_paused`` fact :func:`pause_for_exclusive_operation` returns, for callers
     that tune themselves on whether exclusivity was actually confirmed.
 
-    Re-entrant and imbalance-proof: an inner ``with`` restores the flag to what it
-    found rather than clearing it, so only the OUTERMOST block ever resumes."""
-    global _EXCL_TOKEN, _EXCL_WINDOW
+    Re-entrant and imbalance-proof: an inner ``with`` leaves the window standing, so only
+    the LAST block out ever lowers the flag and resumes. That holds for windows that
+    OVERLAP without nesting too (one opened on a job thread, one on a request thread, the
+    first to enter not the last to leave): each exit takes one off the count, and the
+    window that finds the count at zero restores what the first one found and resumes
+    collection if any window of the set paused it. (The first cut restored, on every exit,
+    the value ITS entry found; for a window that began inside another and ended after it,
+    that lowered the flag under the survivor and raised it again for good.)
+
+    ``resume_retries`` is passed to :func:`resume_after_exclusive_operation` by the window
+    that resumes: a request handler passes 0, so it does not sit in the retry loop (up to 19
+    x 30 s) while a lingering pass winds down; the pending-resume watcher takes over."""
+    global _EXCL_TOKEN, _EXCL_WINDOW, _EXCL_DEPTH, _EXCL_BASE, _EXCL_PAUSED
     already = exclusive_window_open()
     # The flag is raised AFTER the pause and lowered BEFORE the resume, so this
     # window's own pause/resume go through the SAME guarded functions everything
@@ -2664,16 +2681,26 @@ def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
     # self-defeating: the pause would read its own flag and decline to pause.
     was_paused = pause_for_exclusive_operation(timeout=timeout) if not already else False
     with _EXCL_LOCK:
-        if not already:
-            _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
+        if _EXCL_DEPTH == 0:
+            _EXCL_BASE = _EXCL_WINDOW  # what the first window found (False outside a test that raises the flag by hand)
+            if not _EXCL_WINDOW:
+                _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
+        _EXCL_DEPTH += 1
         _EXCL_WINDOW = True
+        if was_paused:
+            _EXCL_PAUSED = True
     try:
         yield was_paused
     finally:
         with _EXCL_LOCK:
-            _EXCL_WINDOW = already
-        if not already:
-            resume_after_exclusive_operation(was_paused)
+            _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
+            last = _EXCL_DEPTH == 0
+            resume = False
+            if last:
+                _EXCL_WINDOW = _EXCL_BASE
+                resume, _EXCL_PAUSED = _EXCL_PAUSED, False
+        if last:
+            resume_after_exclusive_operation(resume, retries=resume_retries)
 
 
 def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:

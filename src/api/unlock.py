@@ -238,18 +238,26 @@ ENCRYPT_QUIESCE_S = 180.0
 @contextmanager
 def _alone_with_the_library() -> Iterator[None]:
     """Hold the machine for the whole of an encryption in place: ``owns_the_machine()`` is true from before the pool is disposed
-    until after the keyed pool is back, and nothing that was already writing is still doing so.
+    until after the keyed pool is back, and work already in flight that takes a lease has ended (or the encryption is refused, by name).
+    A connection a request holds from before the swap takes no lease: the swap is made inside the library's window
+    (``encrypt_database(..., library=True)``), which refuses such a connection from its first line, so a save queued on the gate fails
+    loudly ("do it again") instead of landing in the replaced file.
 
     Encrypting swaps the corpus file (``os.replace``) under the write gate, and the gate does not reach the storage guard's drain
     (its checkpoint opens a connection to the live path, and since the passive step needs no gate it can start while a writer
     holds it). A drain that opened a connection to the plaintext path between the swap and the keyed dispose would leave a log of
     the old file beside the new one. So: the exclusive window (``drain_if_due`` declines while it is open, the collection loop
     stands aside, as for a restore), then a wait for the leases of work already in flight, refused by name when it does not end.
-    The window is opened BEFORE the wait: the drain asks again once it holds its lease, so one of the two always sees the other."""
+    The window is opened BEFORE the wait: the drain asks again once it holds its lease, so one of the two always sees the other.
+
+    This is a request handler, so the window's resume does not retry on this thread (``resume_retries=0``): a collection pass that is
+    still winding down when the encryption ends (``stop()`` joins for 10 s only) would otherwise keep the response, and the drain's
+    refusal, for up to 19 x 30 s after the store was already encrypted. The pending-resume watcher takes it over, as it does for any
+    resume that finds the old pass alive."""
     from src.database.corpus_lease import wait_for_quiescence
     from src.scheduler.runner import exclusive_window
 
-    with exclusive_window():
+    with exclusive_window(resume_retries=0):
         held = wait_for_quiescence(ENCRYPT_QUIESCE_S)
         if held:
             raise HTTPException(

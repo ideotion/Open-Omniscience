@@ -199,3 +199,64 @@ def test_the_drain_holds_its_lease_while_it_asks_so_the_wait_of_an_exclusive_ope
     g = _pinned_guard([])
     g.drain_if_due()
     assert held_at_ask == [[], ["storage-guard-drain"]], held_at_ask
+
+
+def test_a_collection_pass_still_winding_down_does_not_hold_the_response_or_the_drain_for_minutes(monkeypatch, route):
+    """The window's resume on a request thread: the old pass is still alive when the encryption ends, so ``start()`` refuses. The route
+    answers now and hands the resume to the pending-resume watcher. RED WITHOUT ``resume_retries=0``: the request sleeps 19 x 30 s and
+    the machine stays owned (the drain declined) for all of it."""
+
+    class Stubborn:
+        def __init__(self) -> None:
+            self.holds = self.releases = self.starts = 0
+
+        def hold_exclusive(self) -> None:
+            self.holds += 1
+
+        def release_exclusive(self) -> None:
+            self.releases += 1
+
+        def holds_exclusive(self) -> bool:
+            return self.holds > self.releases
+
+        def stop(self, timeout: float = 10.0) -> bool:
+            return True  # the loop was running; the join gave up after its bound with the pass still alive
+
+        def start(self) -> bool:
+            self.starts += 1
+            return False
+
+    sched = Stubborn()
+    slept: list[float] = []
+    watched: list[object] = []
+    monkeypatch.setattr(runner, "get_scheduler", lambda: sched)
+    monkeypatch.setattr(runner.time, "sleep", slept.append)
+    monkeypatch.setattr(runner, "_watch_for_resume", lambda s, **k: watched.append(s))
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: {})
+    unlock_mod.encrypt_db(_body())
+    assert slept == [], f"the request thread slept {sum(slept)} s waiting for a pass to wind down"
+    assert sched.starts == 1 and watched == [sched], "one attempt, then the pending-resume watcher owns it"
+    assert sched.releases == 1 and runner.owns_the_machine() is False, "the machine is free the moment the route ends"
+
+
+def test_a_backup_window_that_ends_during_the_swap_does_not_free_the_machine_under_it(monkeypatch, route):
+    """The natural order of the independent read's B1: an export holds the gate and its window; the encryption's window opens inside it;
+    the export ends first, while the file is being swapped. RED WITHOUT the window count: the export's exit restores the value its
+    entry found, the drain runs on the live path under the swap, and when the route ends the flag is raised for ever."""
+    drains: list = []
+    g = _pinned_guard(drains)
+    export = runner.exclusive_window()
+    export.__enter__()
+    seen: list = []
+
+    def encrypt(key):
+        export.__exit__(None, None, None)
+        seen.append((runner.owns_the_machine(), g.drain_if_due()))
+        return {}
+
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", encrypt)
+    unlock_mod.encrypt_db(_body())
+    assert seen == [(True, None)] and drains == [], "the drain ran, or the machine was free, while the file was being replaced"
+    assert runner.owns_the_machine() is False and runner.exclusive_window_open() is False, "and it is free once the route is over"
+    assert g.drain_if_due() is not None and drains == [1]
