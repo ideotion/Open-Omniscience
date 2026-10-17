@@ -145,7 +145,11 @@ def test_a_line_that_is_not_a_row_is_skipped_not_an_error(dd, junk):
     got = ee.launcher_exit(4242, "b" * 8)
     assert got is not None and got["kind"] == "stop asked" and got["signal"] == "SIGTERM", "the good row between the junk lines is still read"
     (dd / "diagnostics" / ee.LAUNCHER_STOPS).write_text(junk + "\n", encoding="utf-8")
-    assert ee.launcher_exit(4242, "b" * 8) is None
+    only_junk = ee.launcher_exit(4242, "b" * 8)
+    if junk.startswith('{"pid"'):
+        assert only_junk is None  # a row with a signal that is not a name: a row, read and refused
+    else:  # a file of lines none of which is a row is UNREADABLE, never 'the launcher left nothing' (tests/test_launcher_rows_encoding.py)
+        assert only_junk is not None and only_junk["kind"] == "unreadable" and only_junk["unparsed_lines"] == 1
 
 
 def test_the_sentence_says_stop_requested_teardown_incomplete_and_without_a_row_keeps_the_old_one():

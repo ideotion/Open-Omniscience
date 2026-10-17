@@ -136,11 +136,12 @@ def test_the_reader_shows_the_newest_few_and_the_full_count(dd):
     assert len(out["lines"]) == ee.STDERR_LINES_SHOWN and out["lines_recorded"] == 8
 
 
-def test_an_unreadable_or_absent_file_is_none_not_an_error(dd):
+def test_an_absent_file_is_none_and_an_unreadable_one_says_so_not_an_error(dd):
     assert ee.launcher_stderr(5, "b1") is None
     (dd / "diagnostics").mkdir()
     (dd / "diagnostics" / ee.LAUNCHER_STDERR).write_bytes(b"\xff\xfe not json\n")
-    assert ee.launcher_stderr(5, "b1") is None
+    got = ee.launcher_stderr(5, "b1")
+    assert got["unreadable"] is True and got["unparsed_lines"] == 1 and got["lines"] == []
 
 
 def test_an_earlier_end_carries_the_launcher_stderr_beside_its_trace(dd):

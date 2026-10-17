@@ -1648,7 +1648,9 @@ def _render_exit_evidence(ev: Any) -> list[str]:
     if ev.get("unavailable"):
         out.append(f"  - unavailable: {ev['unavailable']}")
     launcher = ev.get("launcher")
-    if isinstance(launcher, dict):
+    if isinstance(launcher, dict) and launcher.get("kind") == "unreadable":
+        out.append(f"  - launcher: record file unreadable — {launcher.get('unparsed_lines')} lines, none a row; this is not a record that nothing was seen")
+    elif isinstance(launcher, dict):
         how = launcher.get("signal") or f"exit status {launcher.get('status')}"
         out.append(f"  - launcher: {how} at {launcher.get('at')} — {launcher.get('meaning')}")
     elif "launcher" in ev:

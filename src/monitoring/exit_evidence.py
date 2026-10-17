@@ -31,6 +31,7 @@ turns the journal read off with the kernel one. An empty result is never "clean"
 
 from __future__ import annotations
 
+import contextlib
 import faulthandler
 import json
 import logging
@@ -212,20 +213,25 @@ def launcher_exit(pid: int | None, boot_id: str | None = None, session_started: 
     parse is not compared (nothing is claimed either way)."""
     if not isinstance(pid, int):
         return None
-    try:
-        raw = _tail_text(_diag_dir() / LAUNCHER_EXITS, _STDERR_READ_BYTES)
-    except OSError:
-        raw = ""  # no exit file: the stop row may still answer
-    for line in reversed(raw.splitlines()):
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(rec, dict) and rec.get("pid") == pid and _same_boot(rec.get("boot_id"), boot_id):
+    unparsed = 0
+    rows: list[dict[str, Any]] = []
+    with contextlib.suppress(OSError):  # no exit file: the stop row may still answer
+        rows, unparsed = _json_rows(_tail_text(_diag_dir() / LAUNCHER_EXITS, _STDERR_READ_BYTES))
+    for rec in reversed(rows):
+        if rec.get("pid") == pid and _same_boot(rec.get("boot_id"), boot_id):
             if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
                 continue
-            return describe_exit(rec)
-    return launcher_stop(pid, boot_id, session_started)
+            out = describe_exit(rec)
+            if unparsed:
+                out["unparsed_lines"] = unparsed
+            return out
+    stop = launcher_stop(pid, boot_id, session_started)
+    if not rows and unparsed:
+        if stop is None:
+            return _unreadable([LAUNCHER_EXITS], unparsed)
+        if stop.get("kind") == "unreadable":
+            return _unreadable([LAUNCHER_EXITS, *stop["unreadable_files"]], unparsed + stop["unparsed_lines"])
+    return stop
 
 
 def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
@@ -237,23 +243,17 @@ def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: 
     if not isinstance(pid, int):
         return None
     try:
-        raw = _tail_text(_diag_dir() / LAUNCHER_STOPS, _STDERR_READ_BYTES)
+        rows, unparsed = _json_rows(_tail_text(_diag_dir() / LAUNCHER_STOPS, _STDERR_READ_BYTES))
     except OSError:
         return None
-    for line in reversed(raw.splitlines()):
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(rec, dict):
-            continue  # a torn or interleaved line can be valid JSON that is not a row (a number, null, a list): not a row, not an error
+    for rec in reversed(rows):
         sig = rec.get("signal") if isinstance(rec.get("signal"), str) else None  # a list or a dict there is not a signal name (and is not hashable)
         # a signal the launcher trapped (bash), or Windows' Ctrl-C: no signal name, the NTSTATUS the server ended with (launch_server.ps1)
         asked = sig if sig in STOP_SIGNALS else ("Ctrl-C" if rec.get("signal") is None and rec.get("status") == _WINDOWS_CTRL_C else None)
         if rec.get("pid") == pid and asked and _same_boot(rec.get("boot_id"), boot_id):
             if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
                 continue
-            return {
+            out = {
                 "seen_by": "the launcher (scripts/launch.sh), the process's parent" if sig else "the launcher (scripts/launch_server.ps1), the process's parent",
                 "at": _stamp_or_none(rec.get("at")),
                 "started_at": None,
@@ -262,7 +262,10 @@ def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: 
                 "kind": "stop asked",
                 "meaning": f"a stop was asked of the launcher ({asked}) and the session's end was not clean: its shutdown did not complete. Not a crash",
             }
-    return None
+            if unparsed:
+                out["unparsed_lines"] = unparsed
+            return out
+    return _unreadable([LAUNCHER_STOPS], unparsed) if not rows and unparsed else None
 
 
 def _utc(v: Any) -> Any:
@@ -435,8 +438,48 @@ def _tail_text(path: Path, limit: int) -> str:
         size = fh.tell()
         fh.seek(max(0, size - limit))
         data = fh.read(limit)
-    text = data.decode("utf-8", errors="replace")
+    # utf-8-sig: a file an editor saved with a byte-order mark would otherwise start its first line with U+FEFF, which json.loads rejects,
+    # and the oldest row would go unread without a word. The mark can only be at byte 0, so a read from further in is not changed by it.
+    text = data.decode("utf-8-sig", errors="replace")
     return text.split("\n", 1)[1] if size > limit and "\n" in text else text  # drop the line the cut fell inside
+
+
+def _json_rows(raw: str) -> tuple[list[dict[str, Any]], int]:
+    """The rows of a launcher record file in file order, and how many non-blank lines were NOT a row (not JSON, or JSON that is not an
+    object). The count is of lines after the text was decoded as UTF-8, so a file in another encoding gives a count of fragments, not of rows:
+    the point of it is that a file nothing could be read from is never reported as an empty one."""
+    rows: list[dict[str, Any]] = []
+    unparsed = 0
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            unparsed += 1
+            continue
+        if isinstance(rec, dict):
+            rows.append(rec)
+        else:
+            unparsed += 1  # a torn or interleaved line can be valid JSON that is not a row (a number, null, a list): not a row, not an error
+    return rows, unparsed
+
+
+def _unreadable(files: list[str], unparsed: int) -> dict[str, Any]:
+    """What a reader returns when a launcher record file holds lines and none of them is a row: the file was UNREADABLE, which is not the
+    same fact as 'the launcher left no record'. ``unparsed_lines`` is how many lines it held."""
+    return {
+        "seen_by": "the launcher record files",
+        "at": None,
+        "started_at": None,
+        "status": None,
+        "signal": None,
+        "kind": "unreadable",
+        "meaning": f"the launcher's record file ({', '.join(files)}) could not be read: {unparsed} lines, none of them a row (an editor or another "
+        "program may have changed its encoding). That is not a record that the launcher saw nothing",
+        "unreadable_files": files,
+        "unparsed_lines": unparsed,
+    }
 
 
 def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
@@ -452,7 +495,7 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
     if not isinstance(pid, int) or isinstance(pid, bool):
         return None
     try:
-        raw = _tail_text(_diag_dir() / LAUNCHER_STDERR, _STDERR_READ_BYTES)
+        all_rows, unparsed = _json_rows(_tail_text(_diag_dir() / LAUNCHER_STDERR, _STDERR_READ_BYTES))
     except OSError:
         return None
     from src.monitoring.secret_scrub import scrubbed
@@ -461,12 +504,8 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
     summary: dict[str, Any] | None = None
     found = rejected = 0
     pid_only = False
-    for line in raw.splitlines():
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(rec, dict) or type(rec.get("pid")) is not int or rec["pid"] != pid or not _same_boot(rec.get("boot_id"), boot_id):
+    for rec in all_rows:
+        if type(rec.get("pid")) is not int or rec["pid"] != pid or not _same_boot(rec.get("boot_id"), boot_id):
             continue
         if not isinstance(rec.get("boot_id"), str) or not isinstance(boot_id, str):
             # pid is all that ties it: a row written well before this session began (the slack covers an abort before the sentinel stamp)
@@ -485,6 +524,9 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
         entries.append((rec["at"] if isinstance(rec.get("at"), str) else "", found, scrubbed(str(text))))
     shown = [x[2] for x in sorted(entries, key=lambda e: (e[0], e[1]))]
     if summary is None and not shown and not rejected:
+        if not all_rows and unparsed:
+            # the file holds lines and none is a row: unreadable, which is not 'nothing recorded for this pid'
+            return {"lines": [], "lines_recorded": None, "unreadable": True, "unparsed_lines": unparsed}
         return None
     kept = _count(summary.get("kept_lines")) if summary else None
     recorded = max(found, kept) if kept is not None else found
@@ -512,6 +554,8 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
         out["no_summary"] = True
     if pid_only:
         out["pid_only_match"] = True
+    if unparsed:
+        out["unparsed_lines"] = unparsed
     return out
 
 
