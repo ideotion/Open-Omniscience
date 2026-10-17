@@ -46,7 +46,6 @@ FEED_LEVEL = {
     ("src/analytics/claim_workspace.py", "_corpus_source_facets"): ("registry", "which countries, languages and source types the sources list holds, a presence test against the trail, never a voice count"),
     ("src/catalog/qualification.py", "admission_audit"): ("registry", "sources collection can reach vs sources the audit accounts for"),
     ("src/analytics/concentration.py", "find_flooded_topics"): ("per_feed", "a flood is one feed's share; the ubiquity ratio compares feeds with feeds"),
-    ("src/analytics/queries.py", "corpus_coordination"): ("named_limit", "counts distinct source LABELS (a source's name, else its domain), so an outlet with several feeds can read as several voices; named in OPEN_QUEUE, the file belongs to the keyword-rollup PR and is changed after it merges"),
     ("src/analytics/concentration.py", "find_buried_topics"): ("per_feed", "breadth gate on per-feed shares, feeds on both sides"),
 }
 
@@ -70,7 +69,7 @@ OUTLET_GATES = [
     "src/analytics/copypasta.py", "src/analytics/recycled_claim.py", "src/analytics/convergence.py",
     "src/analytics/story_propagation.py", "src/api/link_analysis.py", "src/analytics/emergence.py",
     "src/analytics/supergroup_rising.py", "src/discovery/cited_sources.py", "src/analytics/supply_chain_ripple.py",
-    "src/analytics/claim_workspace.py",
+    "src/analytics/claim_workspace.py", "src/analytics/source_quality.py", "src/analytics/source_audit.py",
 ]
 
 

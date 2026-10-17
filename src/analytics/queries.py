@@ -2271,7 +2271,7 @@ def server_locations(session) -> dict:
 
     Reads only the small ``server_ip`` / ``server_ip_reason`` / ``source_id`` columns
     (no article body decrypt); geolocation is per DISTINCT IP (cached) -- bounded. Counts
-    only, NO score. Clustering = IPs shared by 2+ DISTINCT sources (the network-layer
+    only, NO score. Clustering = IPs shared by 2+ DISTINCT OUTLETS (the network-layer
     cousin of source-laundering); surfaced as a shape to investigate, never a verdict.
     """
     from src.geo import ip_geo
@@ -2286,7 +2286,10 @@ def server_locations(session) -> dict:
         .group_by(Article.server_ip, Article.server_ip_reason, Article.source_id)
         .all()
     )
-    names = {sid: nm for sid, nm in session.query(Source.id, Source.name)}
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # two feeds of one site on one host are one outlet, not a shared-hosting shape
+    names = {outlets.key(sid): outlets.label(sid, nm) for sid, nm in session.query(Source.id, Source.name)}
 
     by_country: dict[str, dict] = {}
     ip_sources: dict[str, set] = {}
@@ -2307,7 +2310,7 @@ def server_locations(session) -> dict:
         if g is None:
             g = ip_geo.lookup(ip)
             geo_cache[ip] = g
-        ip_sources.setdefault(ip, set()).add(sid)
+        ip_sources.setdefault(ip, set()).add(outlets.key(sid))
         ip_articles[ip] = ip_articles.get(ip, 0) + cnt
         cc = g.get("country")
         if g.get("level") == "unavailable" or not cc:
@@ -2319,7 +2322,7 @@ def server_locations(session) -> dict:
         )
         b["articles"] += cnt
         b["ips"].add(ip)
-        b["sources"].add(sid)
+        b["sources"].add(outlets.key(sid))
 
     # Sort the underlying (typed) data, then build the display dicts -- so the sort key
     # is a plain int, not a heterogeneous dict-value union.
@@ -2461,8 +2464,8 @@ def corpus_coordination(
     """Near-duplicate clusters WITHIN the matched set -- "N near-identical copies across M
     sources = effectively one voice" (the anti-false-triangulation surface, ruled ambient
     in the analysis window). Reuses the high-precision MinHash+LSH clusterer; independence
-    is the count of DISTINCT SOURCES in a cluster (a single source repeating itself is one
-    voice, flagged as such, not co-publication). Counts only, NO score; the honesty caveat
+    is the count of DISTINCT OUTLETS in a cluster (a single outlet repeating itself, through one feed or
+    several, is one voice, flagged as such, not co-publication). Counts only, NO score; the honesty caveat
     travels with the data."""
     if not article_ids:
         return {"clusters": [], "n_articles": 0, "n_clusters": 0,
@@ -2473,12 +2476,17 @@ def corpus_coordination(
         .filter(Article.id.in_(article_ids))
         .all()
     )
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # a voice is an OUTLET: one site's several feeds are one (row J, R146)
     docs: dict[str, str] = {}
     meta: dict[str, dict] = {}
+    outlet_of: dict[int, str] = {}
     for a, sname, sdom in rows:
         docs[str(a.id)] = ((a.title or "") + "\n" + (a.get_content() or "")).strip()
+        outlet_of[a.id] = outlets.key(a.source_id, sdom)
         meta[str(a.id)] = {
-            "id": a.id, "title": a.title, "source": sname or sdom or "?",
+            "id": a.id, "title": a.title, "source": outlets.label(a.source_id, sname, sdom) or "?",
             "domain": sdom, "url": a.url,
             "published_at": a.published_at.isoformat() if a.published_at else None,
         }
@@ -2490,16 +2498,17 @@ def corpus_coordination(
         members = [meta[m] for m in c.members if m in meta]
         if len(members) < min_members:
             continue
-        srcs = sorted({m["source"] for m in members})
+        by_outlet = {outlet_of[m["id"]]: m["source"] for m in members}
+        srcs = sorted(by_outlet.values())
         clusters.append({
             "representative": int(c.representative),
             "size": len(members),
             "article_ids": [m["id"] for m in members],
             "members": members,
-            "distinct_sources": len(srcs),
+            "distinct_sources": len(by_outlet),
             "sources": srcs,
             "avg_similarity": round(c.avg_similarity, 3),
-            "single_source": len(srcs) <= 1,
+            "single_source": len(by_outlet) <= 1,
         })
     clusters.sort(key=lambda x: (-x["size"], -x["distinct_sources"]))
     return {
