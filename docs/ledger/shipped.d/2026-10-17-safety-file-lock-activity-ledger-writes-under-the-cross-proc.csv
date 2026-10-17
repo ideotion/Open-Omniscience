@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,safety/file_lock,activity_ledger writes under the cross-process file lock (R176 step 2),"shipped (local bundle, not pushed)",PR pending; R176,src/monitoring/activity_ledger.py; tests/test_activity_ledger.py,Before: activity_ledger trimmed or appended with no lock across processes. After: it takes src.safety.file_lock and a unique temp; a test with a second process pins that no line is lost.

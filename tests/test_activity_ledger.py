@@ -371,3 +371,31 @@ def test_the_ledger_lens_lives_in_the_existing_task_manager():
     for label in ("Why", "Touched", "Budget", "Caveat", "Undo"):
         assert f'row("{label}"' in body, f"the {label} field is not drawn"
     assert "hidden" not in body and "<details" not in body, "a ledger field is behind a toggle"
+
+
+def test_a_compaction_never_loses_a_line_written_by_another_process(tmp_path, monkeypatch):
+    """R176: the compaction read the file, then swapped a temp over it, and a second server's entry written between the two was lost. Both now hold the ledger's lock."""
+    import subprocess
+    import sys
+    import textwrap
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    root = str(Path(al.__file__).parents[2])
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {root!r})
+        os.environ["OO_DATA_DIR"] = {str(tmp_path)!r}
+        from src.monitoring import activity_ledger as al
+        for i in range(300):
+            al._append({{"action": "child", "n": i}})
+        """
+    )
+    al._append({"action": "seed", "n": -1})
+    child = subprocess.Popen([sys.executable, "-c", script])
+    while child.poll() is None:
+        al.compact_if_needed(max_lines=100)
+    child.wait()
+    got = [json.loads(ln)["n"] for ln in al.ledger_path().read_text().splitlines() if '"child"' in ln]
+    assert got == list(range(300 - len(got), 300)), "an entry written by the other process was lost by a compaction"
+    assert got

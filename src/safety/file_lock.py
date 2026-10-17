@@ -216,13 +216,13 @@ def sweep_dead_temps(path: Path) -> None:
         pass
 
 
-def atomic_replace(path: Path, data: str | bytes, *, encoding: str = "utf-8") -> None:
+def atomic_replace(path: Path, data: str | bytes, *, encoding: str = "utf-8", newline: str | None = None) -> None:
     """Write ``data`` to a unique temp beside ``path``, flush it, and move it over ``path``. The caller holds :func:`file_lock` when the new content depends on
     the old. A failure leaves the old file whole and removes the temp."""
     path = Path(path)
     tmp = temp_name(path)
     try:
-        fh = tmp.open("wb") if isinstance(data, bytes) else tmp.open("w", encoding=encoding)
+        fh = tmp.open("wb") if isinstance(data, bytes) else tmp.open("w", encoding=encoding, newline=newline)
         with fh as f:
             f.write(data)
             f.flush()
@@ -235,8 +235,8 @@ def atomic_replace(path: Path, data: str | bytes, *, encoding: str = "utf-8") ->
     sweep_dead_temps(path)
 
 
-def locked_append(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+def locked_append(path: Path, text: str, *, encoding: str = "utf-8", newline: str | None = None) -> None:
     """Append ``text`` under a SHARED lock (a trim holds it exclusive, so no append lands between the trim's read and its swap)."""
     path = Path(path)
-    with file_lock(path, shared=True), path.open("a", encoding=encoding) as f:
+    with file_lock(path, shared=True), path.open("a", encoding=encoding, newline=newline) as f:
         f.write(text)
