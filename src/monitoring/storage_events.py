@@ -701,7 +701,11 @@ def end(kind: str, key: Any, fields: dict[str, Any] | None = None, *, tombstone:
         with _LOCK:
             if tombstone:
                 _ENDED[(kind, key)] = None
-                while len(_ENDED) > ENDED_KEYS_MAX:
+                # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of
+                # the ``with`` on CPython 3.13, so an interrupt delivered there would leave ``_LOCK`` owned (src/utils/interrupts.py; R161/R163)
+                while True:
+                    if len(_ENDED) <= ENDED_KEYS_MAX:
+                        break
                     _ENDED.pop(next(iter(_ENDED)), None)
             event = _OPEN.get((kind, key))
             if event is None:
