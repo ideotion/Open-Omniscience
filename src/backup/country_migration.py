@@ -773,7 +773,11 @@ def migrate(
             if span is None:
                 continue
             lo = cursors.get(cp.key, span[0] - 1)
-            while lo < span[1]:
+            # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of the
+            # ``try`` on CPython 3.13, so an interrupt delivered there would skip its cleanup (src/utils/interrupts.py; R161/R163)
+            while True:
+                if lo >= span[1]:
+                    break
                 if should_stop is not None and should_stop():
                     journal.update(state="interrupted")
                     con.execute("BEGIN IMMEDIATE")
@@ -820,8 +824,11 @@ def migrate(
             for key, orig in original.items():
                 bal = _balance(orig, by_key_after[key])
                 report.balance[key] = bal
-                if not bal["balanced"]:
-                    raise MigrationRefused(f"{key} does not balance after the run. The marker was NOT flipped; the safety copy is intact.")
+                # the guard-clause form: a loop whose body ends in a bare ``if`` has its back-edge outside the exception table of the ``try``
+                # around it on CPython 3.13, so an interrupt delivered there would skip the ``except`` that rolls the transaction back (R163)
+                if bal["balanced"]:
+                    continue
+                raise MigrationRefused(f"{key} does not balance after the run. The marker was NOT flipped; the safety copy is intact.")
             if after.to_rewrite:
                 raise MigrationRefused("values that should have converted are still there. The marker was NOT flipped; run it again.")
             # The codes inside an alternate's identity and field JSON are not columns, so the sweep never touched them;

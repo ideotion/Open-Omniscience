@@ -105,11 +105,11 @@ class Slot:
 #:   * ``storage-events`` 125,000: MEASURED at the journal's full retention (``storage_events.KEEP``: 20 holds of the write gate, 10 each
 #:     of guard engagements, checkpoints, notable checkpoints, store opens, pool timeouts and the three run kinds: the volume backup, restore and
 #:     verification, the legacy single-file restores, the newsletter folder imports and the folder backups, restores and verifications of the large data) with the events the hooks write, the checkpoints with the reader snapshot ``hygiene`` hands every one of
-#:     them, each run with EVERY field it can carry at once at a large value and the seconds of a run of more than a day (963 bytes raw with the process id, 945 as the member shows it; a real run is 146 to 299): 73,714
-#:     bytes with ordinary names, 118,424 with every thread, route and frame name at the 160-character cut (the longest ``_clean`` lets
-#:     through), of which 4,735 is the fixed part, the member's own text (each figure moves by a byte or two with the width of the process id every event carries). The keep rule added 1,494 to
-#:     each: 494 to the fixed part (its sentence in the method and a ``keep_rule`` line for each of the four kinds it splits) and 1,000 for the ``picked_by`` of the 50 events of those kinds; the longest are kept beside the newest, so the cap does not move. 125,000 is
-#:     5.6 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The hard ceiling is 100 events at
+#:     them, each run with EVERY field it can carry at once at a large value and the seconds of a run of more than a day (963 bytes raw with the process id, 945 as the member shows it; a real run is 146 to 299): 78,634
+#:     bytes with ordinary names, 123,344 with every thread, route and frame name at the 160-character cut (the longest ``_clean`` lets
+#:     through), of which 4,735 is the fixed part, the member's own text (each figure moves by a byte or two with the width of the process id every event carries). The keep rule
+#:     (the longest beside the newest) added 1,494 to each: 494 to the fixed part (its sentence in the method and a ``keep_rule`` line for each of the four kinds it splits) and 1,000 for the ``picked_by`` of the 50 events of those kinds; the longest are kept beside the newest, so the cap does not move. 125,000 is
+#:     1.3 per cent above the second (the page reading each store open carries, with every field either source can carry at its widest, adds 337 bytes to each of the ten). The gate holds carry the phase, its sample counts, the holder thread's CPU and switch counts and the machine's memory (4,920 bytes over the 20), and the split of their seconds (``seconds_by``: 125 bytes a hold at its widest, 2,500 over the 20, with its sentence in the method): the budget is NOT raised for it, the member takes the split off the shortest holds until it fits. THE HOLDER'S KERNEL STATE (``ws``, six counts, and ``gap``: 57 bytes a hold at its widest, 1,140 over the 20, 14 more for the ``ws_why`` null a reason cleared leaves, and its sentence in the method) is paid for by the width of the frames: they were counted at the journal's 160-character cut and are written at most ``writer.FRAME_CHARS`` (79), the measured maximum (the longest ``module:function:line`` under ``src/``) that ``tests/test_holder_state.py`` pins against every function, both ways, which frees 4,860 bytes no real event reaches (4,740 once a cut frame's ellipsis is counted). With that, 123,749 bytes with every name at the cut (1,251 free, every hold keeps its split and no event is dropped) and 83,779 with ordinary names. THE HOLDER'S SECONDS WAITING FOR A CPU (``rq``) and the class change (``run`` for running and runnable, ``unknown`` added: still six counts) cost 13 bytes a hold at the widest (260 over the 20) and 242 in the method: 124,251 bytes with every name at the cut (749 free, every hold keeps its split, no event dropped) and 84,281 with ordinary names; the widest hold event (1,222 bytes) and the widest journal are pinned like ``FRAME_CHARS`` in ``test_the_storage_events_budget_holds_a_full_journal``. The hard ceiling is 100 events at
 #:     ``MAX_EVENT_BYTES`` (3,000), 300 KB, and a member over its budget drops the OLDEST events of its largest kind (one kept as a longest goes last) and says how
 #:     many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut. ``test_the_storage_events_budget_holds_a_full_journal``
 #:     rebuilds both measurements and holds them to this number.
@@ -147,15 +147,24 @@ TOTAL_BUDGET_BYTES = 600_000
 #: (machine 20, selftests 4, storage 120, contention 200, session-forensics, release-run 150,
 #: wiki-lane-history 300 KB): an ESTIMATE, which the plan says it is, and it is the figure to replace
 #: when those members are measured. The session-forensics part was +125 KB in the plan and is now the crash trace
-#: export's stated worst case after its cut grew from 60 lines to 400/400/120: (400 + 9 x 120) lines x 202 bytes a line
-#: = 298,960 bytes, counted whole as the member's increment (the 60 lines it replaces are already inside the measured
-#: figure below, so this is the safe side). The sum is 919,000 - 125,000 + 298,960 = 1,092,960;
+#: export's stated worst case at the cut the crash-evidence change sets (400 lines for the previous session, 400 for the newest
+#: earlier end and 120 for each of the nine others, each line cut to 202 bytes as written, 206 with the JSON around it): the
+#: earlier ends (400 + 9 x 120) = 1,480 lines x 206 = 304,880 bytes, about 10,000 of framing, and the previous session's trace
+#: 400 lines x 206 = 82,400 bytes, together 397,280, bounded at 400,000 and counted whole as the member's increment (the 60
+#: lines it replaces are already inside the measured figure below, so this is the safe side; the export's own measure on the
+#: nastiest text is 259,137 to 289,001 bytes for the earlier ends). THE TEST COMPUTES THIS FROM THE EXPORT'S OWN CONSTANTS,
+#: whichever cut the tree has, and fails when the result passes 400,000: the figure is a ceiling, not a copy of today's cut. The
+#: sum is 919,000 - 125,000 + 400,000 = 1,194,000, and the crash-evidence change adds three readings to the same
+#: member (session-forensics.json), measured by that change with every counter at 2^62, a 200-character cgroup path, 400 matching
+#: mapped libraries and every reason at its clip: oom_counters 2,145 + previous_session_native_libs 6,437 (its name list has
+#: its own 6,000-byte budget) + can_answer 1,747 = 10,329 bytes, typically about 2.5 KB. All of it is counted here, whole:
+#: 1,194,000 + 10,329 = 1,204,329;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 595,720 with all seven rows and the free room 1,613,784 bytes, so a row can grow by that much before
+#: 595,720 with all seven rows and the free room 1,502,415 bytes (2,415 over the 1,500,000 floor), so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
-OTHER_NEW_MEMBERS_BYTES = 1_092_960
+OTHER_NEW_MEMBERS_BYTES = 1_204_329
 HEADROOM_AT_LEAST_BYTES = 1_500_000
 
 

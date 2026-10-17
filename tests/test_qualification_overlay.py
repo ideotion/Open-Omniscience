@@ -26,7 +26,7 @@ from src.catalog.qualification import (
     VERDICT_INHERITED,
     select_due_qualified,
 )
-from src.catalog.qualification_overlay import apply_overlay, load_overlay
+from src.catalog.qualification_overlay import apply_overlay, load_overlay, log_outlet_holds
 from src.database.models import Base, Source, SourceQualificationAttempt
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
@@ -45,8 +45,9 @@ def _overlay_file(tmp_path: Path, rows: list[dict], **top) -> Path:
     return p
 
 
-def _src(db, domain, status=STATUS_UNQUALIFIED, *, qualified_at=None):
-    s = Source(name=domain, domain=domain, status=status, qualified_at=qualified_at)
+def _src(db, domain, status=STATUS_UNQUALIFIED, *, qualified_at=None, feed=None):
+    s = Source(name=domain, domain=domain, status=status, qualified_at=qualified_at,
+               rss_url=f"https://{domain}/{feed}.xml" if feed else None)
     db.add(s)
     db.commit()
     return s
@@ -151,6 +152,50 @@ def test_a_local_qualified_verdict_is_not_downgraded_by_the_shipped_file(db, tmp
 
     s = db.query(Source).filter_by(domain="mine.example").one()
     assert s.status == STATUS_QUALIFIED and s.qualified_at.date() == earned.date()
+
+
+def test_a_shipped_qualified_verdict_is_not_adopted_onto_a_sibling_of_a_disqualified_outlet(db, tmp_path):
+    """R100/R153, from the read of the J3 delta: the overlay runs BEFORE the curated stamp at boot, so a sibling feed made by
+    an import or POST /sources under an outlet this install disqualified was adopted `qualified` here before the stamp's own
+    outlet check could see it. The outlet's disqualification is the outlet's: the sibling stays unqualified (its own
+    trial), and the report counts it apart from a feed's own local verdict."""
+    refused = _src(db, "dw.com", STATUS_DISQUALIFIED, feed="en")
+    sibling = _src(db, "dw.com", feed="ar")
+    other = _src(db, "bbc.com")
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "qualified", "qualified_at": "2026-08-20"},
+                                 {"domain": "bbc.com", "status": "qualified", "qualified_at": "2026-08-20"}])
+    out = apply_overlay(db, now=NOW, path=p)
+    for s in (refused, sibling, other):
+        db.refresh(s)
+    assert refused.status == STATUS_DISQUALIFIED
+    assert sibling.status == STATUS_UNQUALIFIED and not db.query(SourceQualificationAttempt).filter_by(source_id=sibling.id).count()
+    assert other.status == STATUS_QUALIFIED                      # another outlet adopts as before
+    assert out["adopted"] == 1 and out["held_by_outlet_disqualified"] == 1 and out["kept_local"] == 1
+
+
+def test_a_shipped_disqualification_still_reaches_every_feed_of_the_outlet(db, tmp_path):
+    """The hold is one direction only: a shipped `disqualified` is adopted onto an unjudged sibling whatever the outlet's
+    other feeds read."""
+    _src(db, "dw.com", STATUS_QUALIFIED, qualified_at=NOW, feed="en")
+    sibling = _src(db, "dw.com", feed="ar")
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "disqualified"}])
+    out = apply_overlay(db, now=NOW, path=p)
+    db.refresh(sibling)
+    assert sibling.status == STATUS_DISQUALIFIED and out["held_by_outlet_disqualified"] == 0
+
+
+def test_a_shipped_disqualification_reaches_a_sibling_even_when_the_outlet_already_has_a_disqualified_feed(db, tmp_path):
+    """The direction test above uses an outlet whose other feed is QUALIFIED, so no outlet is refused and the hold never
+    applies: widening the hold to both directions (dropping the status check in ``apply_overlay``) passed it, and the whole
+    repo suite (R153, the independent read's L1). Here the outlet IS refused (one feed already disqualified), so only the
+    direction keeps a shipped `disqualified` from being held back from the unjudged sibling. Red under that widening."""
+    _src(db, "dw.com", STATUS_DISQUALIFIED, feed="en")
+    sibling = _src(db, "dw.com", feed="ar")
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "disqualified"}])
+    out = apply_overlay(db, now=NOW, path=p)
+    db.refresh(sibling)
+    assert sibling.status == STATUS_DISQUALIFIED
+    assert out["held_by_outlet_disqualified"] == 0 and out["adopted"] == 1
 
 
 def test_a_domain_absent_from_the_overlay_stays_unqualified(db, tmp_path):
@@ -312,3 +357,47 @@ def test_the_binding_check_is_not_vacuous():
     bad = "def g():\n    from m import apply_overlay\n\ndef f():\n    apply_overlay(1)\n"
     assert len(_calls_with_binding(good, "apply_overlay")) == 1
     assert _calls_with_binding(bad, "apply_overlay") == []
+
+
+# --- the boot log counts a held feed once per step and never sums the two (the independent read's L3) -----------------
+def test_the_boot_log_names_the_two_hold_counts_separately_and_never_sums_them(db, tmp_path, monkeypatch, caplog):
+    """The overlay holds the sibling of a refused outlet unqualified, and the stamp, which runs after it, meets the same
+    unqualified curated row and counts it too: ONE feed, and the old line summed the two into "2 source(s)". The line now
+    names each step's figure and says a feed can be in both. Red when the two are summed again."""
+    import logging
+
+    from src.catalog import provenance_scope
+    from src.catalog.qualification import stamp_curated_catalog
+
+    monkeypatch.setattr(provenance_scope, "curated_catalogue_domains", lambda: frozenset({"dw.com"}))
+    refused = _src(db, "dw.com", STATUS_DISQUALIFIED, feed="en")
+    refused.tags = "via:curated"
+    sibling = _src(db, "dw.com", feed="ar")
+    sibling.tags = "via:import"
+    db.commit()
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "qualified", "qualified_at": "2026-08-20"}])
+    adopted = apply_overlay(db, now=NOW, path=p)
+    curated = stamp_curated_catalog(db, now=NOW)
+    assert db.query(Source).filter(Source.status == STATUS_UNQUALIFIED).count() == 1, "one feed is held"
+    assert curated.get("outlet_disqualified", 0) + adopted["held_by_outlet_disqualified"] == 2, "and both steps count it"
+    with caplog.at_level(logging.INFO, logger="boot-test"):
+        log_outlet_holds(logging.getLogger("boot-test"), curated, adopted)
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "1 counted by the curated stamp" in text and "1 counted by the shipped verdicts" in text
+    assert "one feed can be counted by both" in text and "2 source" not in text
+
+
+def test_the_boot_log_is_silent_when_nothing_was_held(caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="boot-test"):
+        log_outlet_holds(logging.getLogger("boot-test"), {"outlet_disqualified": 0}, {"held_by_outlet_disqualified": 0})
+    assert caplog.records == []
+
+
+def test_the_startup_path_logs_the_holds_through_the_helper_and_sums_nothing():
+    """The line lives in a function of ``main.py`` no test boots; pin that it goes through the helper."""
+    src = (Path(__file__).resolve().parents[1] / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert "log_outlet_holds(logger, curated, adopted)" in src
+    assert 'curated.get("outlet_disqualified", 0) + adopted.get("held_by_outlet_disqualified", 0)' not in src
+

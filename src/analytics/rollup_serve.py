@@ -107,6 +107,11 @@ _STATE: dict = {
     # How the last FINISHED in-memory build ran: the shard count it used, what the model predicted for it, DuckDB's own
     # total read between shards, and how long it took (see ``columnar.plan_build_shards``). None until one finishes.
     "last_build": None,
+    # How the last build that ENDED ended in this process (built / declined / failed; None until one ends), and the run of builds that
+    # ended "failed" since one last served (R172). ``failure_class`` is the exception CLASS NAME of the last of them, never its text.
+    "last_outcome": None,
+    "failures": 0,
+    "failure_class": None,
     # The offload folder of the connection in "con" (None when it has none): removed when that
     # connection is replaced.
     "spill": None,
@@ -212,7 +217,9 @@ def status() -> dict:
         stopped = dict(_STATE["stopped"]) if _STATE["stopped"] else None
         last_decline = dict(_STATE["last_decline"]) if _STATE["last_decline"] else None
         last_build = dict(_STATE["last_build"]) if _STATE.get("last_build") else None
-    return {
+        last_outcome = _STATE.get("last_outcome")
+    failures, failure_class = _failure_view()
+    out = {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
         "store": "persisted" if persisted else "memory",  # D1: persisted encrypted vs in-memory
@@ -223,8 +230,8 @@ def status() -> dict:
         "keyword_daily_rows": rows,
         "building": _BUILD_LOCK.locked(),
         "build_progress": build_progress(),
-        # P1.10 change gate: rebuild on CHANGE (epoch / mention tail), not on a timer.
-        "refresh": "change-gated",
+        # P1.10 change gate: rebuild on CHANGE (epoch / mention tail), not on a timer. (The constant ``refresh: "change-gated"`` that stood
+        # here is gone: it was the same string in every report, and R172 needed the bytes. The refresh is change-gated, always.)
         "change_pending": pending,
         "min_rebuild_s": rollup_serve_ttl_s(),
         "backstop_s": _BACKSTOP_S,
@@ -250,6 +257,14 @@ def status() -> dict:
         # stop, not a count here; this is the wider windows that fail later.
         "serve_fallbacks": _serve_fallbacks(),
     }
+    # R172, the failure fields: ABSENT MEANS ZERO FAILURES SINCE THE LAST BUILD THAT SERVED (a reader must not read absence as unknown). Present
+    # when the run is above 0: how the last build ended in this process, the run itself (carried over a restart by the kept record) and the
+    # exception CLASS NAME of the last failure (never its text). The ``stage`` of a failure hold is the LAST REPORTED stage, not the raising statement.
+    if failures > 0:
+        out["last_outcome"] = last_outcome
+        out["consecutive_failures"] = failures
+        out["last_failure_class"] = failure_class
+    return out
 
 
 def _serve_fallbacks() -> dict:
@@ -262,7 +277,8 @@ def _serve_fallbacks() -> dict:
 #: against the budget. Free text of the engine is never among them.
 _DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
                   "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split",
-                  "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib", "engine_error_class")
+                  "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib", "engine_error_class",
+                  "consecutive_failures", "stage_why")
 
 
 def decline_detail() -> dict:
@@ -411,6 +427,8 @@ def _build_inmemory_and_swap() -> dict | None:
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
         ok = True
     finally:
+        if not ok:
+            _remember_stage()  # the stage the build had reached, for a failure hold: the progress record is gone after this
         _progress_end()
         rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
         if not ok:  # a decline or an error: this connection is never served, so it must not leak
@@ -431,6 +449,9 @@ def _build_inmemory_and_swap() -> dict | None:
             "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
             "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
             "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
+            "shard_checkpoints": tally.get("shard_checkpoints"), "shard_checkpoint_secs": tally.get("shard_checkpoint_secs"),
+            "shard_checkpoint_failures": tally.get("shard_checkpoint_failures"),
+            "shard_checkpoint_first_failure": tally.get("shard_checkpoint_first_failure"),
             "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
             "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
             # what the finished rollup was asked before it was served, and what that cost (R157)
@@ -628,7 +649,9 @@ def _current_mention_count() -> int | None:
 #: after the upgrade until the limit grew. A kept record from before this field existed has neither, so it is released too.
 #: 2 (2026-10-16): the aggregate is sharded and each stage dropped as it is aggregated (``columnar.plan_build_shards``);
 #: every stop kept by version 1 was the single GROUP BY meeting the limit and is released.
-BUILD_CODE_VERSION = 2
+#: 3 (2026-10-17): a CHECKPOINT before each shard's aggregate (R169) builds corpora that version 2 stopped on DuckDB's limit
+#: (20 M mentions at 1,004 MB), so every stop kept by version 2 is released and the build is tried again.
+BUILD_CODE_VERSION = 3
 
 #: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. WHAT IT PROTECTS:
 #: repeated stop/retry cycles near the limit (each a ~15-minute scan that ends at the same wall). The wall is
@@ -642,6 +665,10 @@ _SHRINK_TO_RETRY = 0.05
 #: The shortest gap between two counts of the whole mention table for this hold (seconds). The rebuild TTL may be set
 #: to 0, and the epoch moves on every 300-article call of a re-index drain; a COUNT is a read of the whole table.
 _COUNT_MIN_INTERVAL_S = 60.0
+
+#: The reasons of a hold released by what changes the WALL (a larger limit, offload allowed, a smaller corpus, another version): the build ran into the
+#: engine's limit, or ended in an error of its own (R172). One rule for both, so a build that fails is not started again by the very next request.
+_WALL_REASONS = ("duckdb-limit", "build-failed")
 
 #: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
 #: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
@@ -695,10 +722,55 @@ def _read_kept_stop() -> dict | None:
                   kept.get("app_version"), kept.get("build_code"))
         rollup_hold.clear()
         return None
+    if kept.get("reason") == "build-failed":
+        # R172: a failure hold is this process's only. The kept record hands over the run of failures and the class, nothing holds.
+        n = kept.get("consecutive_failures")
+        with _LOCK:
+            if isinstance(n, int) and n > int(_STATE.get("failures") or 0):
+                _STATE["failures"], _STATE["failure_class"] = n, kept.get("engine_error_class")
+        return None
     with _LOCK:
         if _STATE.get("stopped") is None:
             _STATE["stopped"] = {**kept, "restored": True}
         return _STATE["stopped"]
+
+
+def _failure_view() -> tuple[int, str | None]:
+    """(consecutive failures, class of the last) for ``status()``: this process's own run, which starts from the count an earlier process kept."""
+    with _LOCK:
+        return int(_STATE.get("failures") or 0), _STATE.get("failure_class")
+
+
+def _record_failure(error_class: str, stage: str | None) -> None:
+    """A build ended in an error that no hold maps (R172): keep a failure hold, released by what releases a ``duckdb-limit`` hold, so the very next
+    request does not start the same build again. The hold lives in THIS process only: a restart retries once (a transient error must not keep the
+    accelerator off), while the kept record carries the run of failures across it. The record's ``stage`` is the LAST REPORTED stage, not the raising
+    statement (the key is the one a ``duckdb-limit`` hold uses, and it means the same there). The record carries the stage the build had last reported (None, and ``stage_why``, when it had
+    reported none), the exception CLASS (passed as its name) and the run of consecutive failures; never the exception's text. The persisted store is not touched."""
+    if _persisted_serve_active():
+        return
+    cls = error_class
+    with _LOCK:
+        prior = int(_STATE.get("failures") or 0)
+        held = _STATE.get("stopped")
+    if held and held.get("reason") == "build-failed" and isinstance(held.get("consecutive_failures"), int):
+        prior = max(prior, held["consecutive_failures"])
+    n = prior + 1
+    with _LOCK:
+        _STATE["failures"] = n
+        _STATE["failure_class"] = cls
+    budget = _build_budget()
+    record = {
+        "reason": "build-failed", "at": time.time(), "engine_error_class": cls, "consecutive_failures": n,
+        "duckdb_limit_mb": budget.get("duckdb_limit_mb"), "offload_allowed": budget.get("offload_allowed"),
+        "epoch": _current_epoch(), "mentions_count": _current_mention_count(),
+    }
+    if stage:
+        record["stage"] = stage
+    else:
+        record["stage_why"] = "not-recorded"
+    _keep_stopped(record)
+    _note_decline("stopped", "build", record)
 
 
 def _keep_stopped(record: dict) -> None:
@@ -710,6 +782,10 @@ def _keep_stopped(record: dict) -> None:
     record = {**record, "app_version": __version__, "build_code": BUILD_CODE_VERSION}
     with _LOCK:
         _STATE["stopped"] = record
+        if record.get("reason") != "build-failed":
+            # R172: the run counts builds that ended "failed", one after another. A build that ended in a stop of another kind is not one of them
+            # and ends the run, so a failure run and a duckdb-limit hold are never in one report (the report's worst case stays what it was).
+            _STATE["failures"], _STATE["failure_class"] = 0, None
         _HOLD_LOOKED = True
     rollup_hold.write(record)
 
@@ -751,7 +827,7 @@ def _stopped_build_verdict() -> dict | None:
     if not st:
         return None
     try:
-        if st.get("reason") == "duckdb-limit":
+        if st.get("reason") in _WALL_REASONS:
             # The wall is DuckDB's limit against the size of the corpus, and the epoch moves for reasons that do not
             # touch either (``/api/insights/reindex-all`` bumps it on every 300-article call): a release per epoch
             # would start the same 15-minute scan again for the length of a re-index drain, and again after every
@@ -788,9 +864,10 @@ def _stopped_build_verdict() -> dict | None:
                         _keep_stopped({**st, "epoch": now_epoch if now_epoch is not None else st.get("epoch"),
                                        "checked_at": time.time(),
                                        "mentions_count": base if isinstance(base, int) else count})
-            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
+            return {"reason": st["reason"], "at": time.time(), "duckdb_limit_mb": limit,
                     "stopped_at": st.get("at"), "restored": bool(st.get("restored")),
-                    "note": "a build under this limit was already stopped by it; retried when the memory budget's "
+                    "note": ("a build under this limit was already stopped by it" if st["reason"] == "duckdb-limit" else
+                             "the last build ended in an error (its class is in the hold) and the same build is not started again until something it depends on changes") + "; retried when the memory budget's "
                             "limit grows, offload becomes allowed, or the corpus is smaller than at the stop "
                             "(counted when the corpus epoch moves, and at the long backstop for a delete the epoch "
                             "does not see)"}
@@ -919,6 +996,15 @@ def _progress_note(stage: str, rows_done: int) -> None:
             # statement before it is not charged to its rate
             p.update(stage=stage, stage_started_at=now if int(rows_done) == 0 else p["updated_at"])
         p.update(rows_done=int(rows_done), updated_at=now)
+
+
+#: The stage the last build that did not finish had reported (None: none reported). Read once by ``_record_failure``.
+_LAST_STAGE: dict = {"value": None}
+
+
+def _remember_stage() -> None:
+    with _PROGRESS_LOCK:
+        _LAST_STAGE["value"] = _PROGRESS["stage"] if _PROGRESS is not None and isinstance(_PROGRESS.get("stage"), str) else None
 
 
 def _progress_end() -> None:
@@ -1078,6 +1164,8 @@ def _build_and_swap() -> str:
 
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
     outcome = "failed"
+    ran = False  # a build was started (not refused by a verdict): only then does ``last_outcome`` change
+    _LAST_STAGE["value"] = None  # a decline of an earlier build left its stage here: this build reports its own or none
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
         # `last_skip` always names the condition that actually stopped this build rather
@@ -1108,6 +1196,7 @@ def _build_and_swap() -> str:
             )
             outcome = "declined"
             return outcome
+        ran = True
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:
@@ -1154,14 +1243,26 @@ def _build_and_swap() -> str:
                 outcome = "declined"
                 return outcome
         _release_stopped()
+        with _LOCK:  # a build that serves ends the run of failures (R172)
+            _STATE["failures"] = 0
+            _STATE["failure_class"] = None
         outcome = "built"
         return outcome
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
         log_failure(_LOG, "rollup serve: background build failed", exc, level=logging.WARNING)
         outcome = "failed"
+        stage, _LAST_STAGE["value"] = _LAST_STAGE["value"], None
+        try:
+            if ran:  # an error in a verdict, before any build started, is no build that failed: it keeps no hold that would refuse real builds
+                _record_failure(type(exc).__name__, stage)  # the class only: the sink sweep's rule
+        except Exception as hold_exc:  # noqa: BLE001 - a hold that cannot be kept must not turn a failed build into a crash
+            log_failure(_LOG, "rollup serve: could not keep the failure hold", hold_exc, level=logging.WARNING)
         return outcome
     finally:
         _LAST_OUTCOME["value"] = outcome
+        if ran or outcome == "failed":  # a request the hold refuses ran no build: the field says how the last build that ENDED ended
+            with _LOCK:
+                _STATE["last_outcome"] = outcome
         _BUILD_LOCK.release()
 
 

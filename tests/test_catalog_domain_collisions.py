@@ -54,29 +54,38 @@ from src.ingest.seed_sources import (
     seed_sources,
 )
 
-#: Measured 2026-09-07 on configs/sources.yml alone: 54 domains, 227 entries that can
-#: never be registered. Lower it when a collision is genuinely resolved; never raise it
-#: to admit a new one -- adding a second entry for a domain the catalogue already
-#: claims silently discards the new entry, which is the thing this pins.
-_COLLIDING_DOMAINS_BUDGET = 54
-_SHADOWED_ENTRIES_BUDGET = 227
-
-#: Measured 2026-09-07 on what seed_default_sources really builds. This is the one an
-#: install reports, and the one that catches a CROSS-catalogue collision -- invisible
-#: to the per-file budget above, and already 248 entries strong.
-_BOOT_COLLIDING_DOMAINS_BUDGET = 299
-_BOOT_SHADOWED_ENTRIES_BUDGET = 475
+#: (The 2026-09-07 multiplicity budgets -- 54/227 per file, 299/475 on a boot -- are retired: after row J they measure how many
+#: entries share a domain, not what is lost. The losses are pinned by ``_UNREGISTERED_BUDGET`` below.)
 
 #: Shadowed entries that declare a language and declare a DIFFERENT one than the
 #: sibling that survives -- the loss that is genuinely a lost language, as opposed to
 #: a field one side simply left blank. This is the number the "do not delete" argument
 #: rests on; see the test for why the looser 108 does not.
-_LANGUAGE_LOSSES = 75
+_LANGUAGE_FLOOR = 70  # measured 75 on 2026-09-07; a floor since row J, so adding a language service cannot redden it
 
 #: Shadowed entries carrying a `lean-*` tag their surviving sibling lacks. The tag
 #: never reaches Source.tags for these outlets, so the political-lean vocabulary is
 #: mostly absent from the database it was written for.
-_LEAN_TAGS_LOST_BUDGET = 192
+_LEAN_TAGS_LOST_BUDGET = 192  # measured 2026-09-07; the recovery ratchet below compares with it
+_LEAN_TAGS_FLOOR = 150
+
+#: Row J (S05-10 J3): a source is (domain, feed), so what a catalogue can NOT register is a feed-less duplicate of a
+#: feed-less domain or a second legal entry for a host (the same feed named by a second catalogue merges its tags). The per-file figure is
+#: ``configs/sources.yml`` alone; the boot figure is what ``seed_default_sources`` hands the seeder. Measured
+#: 2026-10-16: 475 shadowed became 19 (216 more rows, 240 entries merged as tags, 189 of the 192 lean tags
+#: recovered). The boot figures below count the default seed's own list, which since R152 carries the generated legal catalogue
+#: too (the legal seed registered those rows a moment later anyway): +205 rows, +5 merged, +14 designed legal_collapse. Lower it when an entry is fixed; never raise it to admit one.
+_UNREGISTERED_BUDGET = 16
+#: What the boot list leaves out for a reason that is NOT designed: a feed-less duplicate of a feed-less host, or the same feed
+#: named twice. Protects against a catalogue edit that adds one: lower it when an entry is fixed, never raise it to admit one.
+_BOOT_UNREGISTERED_BUDGET = 19
+#: The DESIGNED collapse (ruled 2026-07-17): the legal catalogue carries a host as two rows when it publishes both a codes
+#: portal and a gazette, and registration collapses them. Counted apart so a designed collapse can never hide a real loss
+#: inside the one number, and a real one can never read as designed. 14 are the generated legal catalogue's own.
+_BOOT_LEGAL_COLLAPSE = 14
+_BOOT_ROWS = 6616  # 6,411 + the 205 generated legal rows seed_default_sources now builds as seed_legal_sources does (R152)
+_BOOT_MERGED = 245  # 240 + 5 generated legal entries that describe a host that already has a feed row
+_BOOT_LEAN_RECOVERED = 189
 
 
 @pytest.fixture(scope="module")
@@ -119,44 +128,17 @@ def session():
         s.close()
 
 
-def test_the_curated_catalog_does_not_grow_new_unreachable_entries(catalog):
-    collisions = catalog_domain_collisions(catalog)
-    shadowed = sum(len(v) for v in collisions.values())
-    assert len(collisions) <= _COLLIDING_DOMAINS_BUDGET, (
-        f"{len(collisions)} domains now carry more than one catalogue entry "
-        f"(budget {_COLLIDING_DOMAINS_BUDGET}). A second entry for a domain the "
-        "catalogue already claims is silently discarded by the seeder."
-    )
-    assert shadowed <= _SHADOWED_ENTRIES_BUDGET, (
-        f"{shadowed} catalogue entries can never be registered "
-        f"(budget {_SHADOWED_ENTRIES_BUDGET})."
-    )
+def test_the_multiplicity_per_domain_is_a_measure_not_a_loss(catalog, boot_catalog):
+    """After row J a second entry of a domain is a second FEED (a row), a feed-less description (tags merge) or, in a few
+    cases, truly unregistered. ``catalog_domain_collisions`` counts the multiplicity, which is NOT what an install loses, so
+    it carries no growth ratchet here (a contributor adding a BBC or DW language service is doing the right thing): the
+    losses are pinned where they are measured, by ``plan_registration`` below (``_UNREGISTERED_BUDGET``). What this keeps is
+    the relation, so the two figures cannot drift apart unseen: the unregistered entries are a subset of the multiplicity."""
+    from src.ingest.seed_plan import plan_registration
 
-
-def test_the_budget_is_not_left_above_the_real_count(catalog):
-    """A ratchet left slack is a ratchet that cannot fire."""
-    collisions = catalog_domain_collisions(catalog)
-    assert len(collisions) == _COLLIDING_DOMAINS_BUDGET
-    assert sum(len(v) for v in collisions.values()) == _SHADOWED_ENTRIES_BUDGET
-
-
-def test_the_boot_path_does_not_grow_new_unreachable_entries(boot_catalog):
-    """The per-file budget cannot see a CROSS-catalogue collision, and 248 of them
-    already exist -- including the whole political-lean catalogue. This pins what an
-    install actually loses, which is the number the seeder reports."""
-    collisions = catalog_domain_collisions(boot_catalog)
-    shadowed = sum(len(v) for v in collisions.values())
-    assert len(collisions) == _BOOT_COLLIDING_DOMAINS_BUDGET, (
-        f"{len(collisions)} domains carry more than one entry across the catalogues "
-        f"seed_default_sources loads (budget {_BOOT_COLLIDING_DOMAINS_BUDGET})."
-    )
-    assert shadowed == _BOOT_SHADOWED_ENTRIES_BUDGET, (
-        f"{shadowed} entries can never be registered on a real boot "
-        f"(budget {_BOOT_SHADOWED_ENTRIES_BUDGET})."
-    )
-    # The per-file figure is a strict subset of it, or one of the two is measuring
-    # something other than what it says.
-    assert shadowed > _SHADOWED_ENTRIES_BUDGET
+    for entries in (catalog, boot_catalog):
+        multiplicity = sum(len(v) for v in catalog_domain_collisions(entries).values())
+        assert len(plan_registration(entries).unregistered) <= multiplicity
 
 
 def test_the_political_lean_vocabulary_is_the_half_with_a_live_consumer(boot_catalog):
@@ -172,11 +154,11 @@ def test_the_political_lean_vocabulary_is_the_half_with_a_live_consumer(boot_cat
         for e in shadowed_entries:
             if {t for t in (e.get("tags") or []) if t.startswith("lean-")} - kept:
                 lost += 1
-    assert lost == _LEAN_TAGS_LOST_BUDGET, (
-        f"{lost} shadowed entries carry a lean-* tag the surviving sibling lacks "
-        f"(recorded {_LEAN_TAGS_LOST_BUDGET})."
+    # A FLOOR, not a pin (Opus read of the J3 fold, F2): after row J a contributor who adds a catalogue entry is doing the right
+    # thing, and the recovery is pinned where it is measured (``_BOOT_LEAN_RECOVERED``). This only keeps the claim true.
+    assert lost >= _LEAN_TAGS_FLOOR, (
+        f"{lost} entries share a domain with an earlier one and carry a lean-* tag it lacks (floor {_LEAN_TAGS_FLOOR})."
     )
-    assert lost > 0
 
 
 def test_the_shadowed_entries_include_real_language_losses(catalog):
@@ -203,16 +185,17 @@ def test_the_shadowed_entries_include_real_language_losses(catalog):
         and winner[dom].get("language")
         and e["language"] != winner[dom]["language"]
     ]
-    assert len(both_declared_and_differ) == _LANGUAGE_LOSSES, (
-        f"{len(both_declared_and_differ)} shadowed entries declare a language their "
-        f"surviving sibling does not (recorded {_LANGUAGE_LOSSES}). Re-measure and "
-        "update deliberately -- this number is the argument against deletion."
+    # A FLOOR, not a pin: adding a language service is the right thing to do and must not redden this (the Opus read of the
+    # J3 fold, F2). The claim is "there are real language services behind a shared domain", which a floor keeps true.
+    assert len(both_declared_and_differ) >= _LANGUAGE_FLOOR, (
+        f"{len(both_declared_and_differ)} entries declare a language their domain's first entry does not "
+        f"(floor {_LANGUAGE_FLOOR})."
     )
     # The specific case the ruling is about, named so a future reader can check it.
     assert any(e.get("name") == "BBC Arabic" for e in collisions.get("bbc.com", []))
     # ... and it is not one stray entry: every bbc.com loser is a non-English service.
     bbc_losers = collisions.get("bbc.com", [])
-    assert len(bbc_losers) == 30
+    assert len(bbc_losers) >= 30
     assert all((e.get("language") or "en") != "en" for e in bbc_losers)
 
 
@@ -231,7 +214,8 @@ def test_a_shadowed_entry_is_reported_apart_from_an_idempotent_skip(session):
     # The second feed lost to its own sibling, not to a pre-existing database row.
     assert first["shadowed"] == 1
     assert first["skipped_existing"] == 0
-    assert first["shadowed_examples"] == [{"name": "Outlet AR", "domain": "outlet.example"}]
+    assert first["shadowed_examples"] == [
+        {"name": "Outlet AR", "domain": "outlet.example", "reason": "feedless_duplicate"}]
     # `skipped` keeps its old meaning (the sum), so existing callers read unchanged.
     assert first["skipped"] == 1
     assert first["created"] + first["skipped"] == first["total"]
@@ -266,15 +250,17 @@ def test_the_seeder_and_the_report_agree_on_the_real_catalog(catalog, session):
     """One rule, two implementations: the loop that decides what lands and the
     function that reports what cannot must never drift. Asserted on the real
     catalogue rather than a fixture, because that is where a drift would matter."""
+    from src.ingest.seed_plan import plan_registration
+
     result = seed_sources(session, catalog)
-    expected = sum(len(v) for v in catalog_domain_collisions(catalog).values())
-    assert result["shadowed"] == expected == _SHADOWED_ENTRIES_BUDGET
+    plan = plan_registration(catalog)
+    # A source is its domain AND its feed (row J): what stays out is what the PLAN names, and the
+    # catalogue's multiplicity per domain (``catalog_domain_collisions``) is no longer the loss.
+    assert result["shadowed"] == len(plan.unregistered) == _UNREGISTERED_BUDGET
     assert result["skipped_existing"] == 0
-    # And every non-shadowed entry did land. Counted in the DATABASE, not from the
-    # function's own counters: `created + skipped_existing + shadowed == total` is an
-    # identity of the loop that produces them, so asserting it proves nothing about
-    # what was actually written.
-    assert session.query(Source).count() == len(catalog) - expected
+    # And every row the plan names did land. Counted in the DATABASE, not from the function's own
+    # counters: an identity of the loop that produces them proves nothing about what was written.
+    assert session.query(Source).count() == len(plan.rows) == len(catalog) - len(plan.unregistered) - len(plan.merges)
     assert result["created"] == session.query(Source).count()
 
 
@@ -301,3 +287,43 @@ def test_the_two_implementations_agree_on_a_malformed_entry(entry, session):
     assert result["skipped_malformed"] == 2
     assert result["created"] + result["skipped"] == result["total"]
     assert session.query(Source).count() == 0
+
+
+# --------------------------------------------------------------------------- #
+#  Row J: what a keyed-on-(domain, feed) seeder registers
+# --------------------------------------------------------------------------- #
+def test_the_boot_catalogue_registers_the_language_services_and_names_what_stays_out(boot_catalog):
+    from src.ingest.seed_plan import plan_registration
+
+    plan = plan_registration(boot_catalog)
+    assert plan.counts["rows"] == _BOOT_ROWS and plan.counts["merged"] == _BOOT_MERGED
+    designed = [r for _e, r in plan.unregistered if r == "legal_collapse"]
+    assert len(designed) == _BOOT_LEGAL_COLLAPSE
+    assert len(plan.unregistered) - len(designed) == _BOOT_UNREGISTERED_BUDGET
+    assert all(reason for _e, reason in plan.unregistered)  # every one is named with a reason
+    assert plan.counts["rows"] + plan.counts["merged"] + plan.counts["unregistered"] == len(boot_catalog)
+    # the thirty BBC language services are rows now, not losers of the first
+    assert sum(1 for e in plan.rows if e["domain"] == "bbc.com") == 31
+
+
+def test_the_lean_tags_the_shadowing_lost_are_recovered_through_the_merge(boot_catalog):
+    from src.ingest.seed_plan import plan_registration
+
+    plan = plan_registration(boot_catalog)
+    recovered = sum(1 for e, _t in plan.merges if any(str(t).startswith("lean-") for t in (e.get("tags") or [])))
+    assert recovered == _BOOT_LEAN_RECOVERED < _LEAN_TAGS_LOST_BUDGET
+
+
+def test_two_feeds_of_one_domain_are_two_rows_and_a_feedless_description_is_not_a_third(session):
+    entries = [
+        {"name": "Outlet EN", "domain": "outlet.example", "rss_url": "https://outlet.example/en.xml", "language": "en"},
+        {"name": "Outlet AR", "domain": "outlet.example", "rss_url": "https://outlet.example/ar.xml", "language": "ar"},
+        {"name": "Outlet", "domain": "outlet.example", "tags": ["lean-right"]},  # a feed-less description
+    ]
+    result = seed_sources(session, entries)
+    assert result["created"] == 2 and result["merged"] == 1 and result["shadowed"] == 0
+    rows = session.query(Source).order_by(Source.id).all()
+    assert [r.feed_key for r in rows] == ["f:outlet.example/en.xml", "f:outlet.example/ar.xml"]
+    assert "lean-right" in (rows[0].tags or "") and "lean-right" not in (rows[1].tags or "")  # the first feed row
+    again = seed_sources(session, entries)
+    assert again["created"] == 0 and again["tag_merge"]["tags_merged"] == 0  # idempotent

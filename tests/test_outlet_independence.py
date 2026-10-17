@@ -326,6 +326,23 @@ def test_a_claim_trail_joins_the_feeds_of_one_site_into_one_path():
     assert top["article_ids"] == [1, 2] and [(j["kind"], j["detail"]) for j in top["joins"]] == [("same_source", "BBC News")]
 
 
+def test_a_claim_trails_source_counts_are_outlets_not_feed_labels():
+    """The read of the J3 delta: the join was made on the outlet but ``n_sources`` and each path's ``sources`` listed distinct
+    FEED labels, so one joined path read as two sources and the trail as three."""
+    from src.analytics.claim_workspace import group_paths
+
+    arts = [
+        {"id": 1, "source_id": 1, "source": "BBC News", "outlet": "bbc.com", "outlet_label": "BBC News"},
+        {"id": 2, "source_id": 2, "source": "BBC Arabic", "outlet": "bbc.com", "outlet_label": "BBC News"},
+        {"id": 3, "source_id": 3, "source": "DW", "outlet": "dw.com", "outlet_label": "DW"},
+    ]
+    out = group_paths(arts, {}, [])
+    assert out["n_sources"] == 2 and out["paths"][0]["sources"] == ["BBC News"] and out["paths"][0]["n_sources"] == 1
+    # a caller that gives no outlet label keeps counting what it was given
+    plain = group_paths([{"id": 1, "source_id": 1, "source": "A"}, {"id": 2, "source_id": 2, "source": "B"}], {}, [])
+    assert plain["n_sources"] == 2
+
+
 def test_a_feed_level_count_says_it_counts_feeds_on_every_surface(tmp_path, monkeypatch):
     """R146 (b): the passport, the evidence plan and the upcoming-dates view each carry the sentence."""
     from datetime import date
@@ -451,3 +468,119 @@ def test_the_framing_split_producer_groups_by_outlet():
     from src.briefing import producers
 
     assert "outlets.label(" in inspect.getsource(producers.framing_split)
+
+
+def test_a_briefing_leads_evidence_carries_the_outlet_so_two_feeds_of_a_site_count_once(s):
+    """The evidence builder writes the OUTLET (the source's domain) beside the feed label; the leads count reads it."""
+    from src.briefing.card import Card
+    from src.briefing.leads import _distinct_outlets
+    from src.briefing.producers import _evidence_from_articles
+
+    en = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en.xml")
+    ar = _feed(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar.xml")
+    other = _feed(s, "Reuters", "reuters.com", "https://reuters.com/rss")
+    rows = [(a, s.get(Source, a.source_id).name) for a in s.query(Article).order_by(Article.id)]
+    evidence = _evidence_from_articles(rows)
+    assert {e["source"]: e["outlet"] for e in evidence} == {
+        "BBC News": "bbc.com", "BBC Arabic": "bbc.com", "Reuters": "reuters.com",
+    }
+    assert {en, ar, other}  # three feeds, two outlets
+    card = Card(type="rising", title="t", summary="s", bucket="rising", method="m", caveat="c", key="k", n=3,
+                evidence=evidence)
+    assert _distinct_outlets(card) == 2
+
+
+# ---- the other producers that build article evidence (the read of the J3 delta, F1) --------------------------------------
+
+def _two_bbc_feeds_and_dw(s):
+    """BBC News and BBC Arabic (one outlet) and DW, each with one near-identical article; returns the article ids."""
+    now = datetime.now(UTC)
+    ids = []
+    for i, (name, domain, feed) in enumerate((("BBC News", "bbc.com", "en"), ("BBC Arabic", "bbc.com", "ar"),
+                                              ("DW", "dw.com", "rss"))):
+        src = Source(name=name, domain=domain, rss_url=f"https://{domain}/{feed}.xml")
+        s.add(src)
+        s.flush()
+        a = Article(url=f"https://{domain}/{feed}/1", canonical_url=f"https://{domain}/{feed}/1", source_id=src.id,
+                    title="Reforms announced by the ministry", content=_TEXT + " Acquisition of the company agreed.",
+                    hash=f"h{i}", language="en", published_at=now - timedelta(hours=3 - i), created_at=now)
+        s.add(a)
+        s.flush()
+        ids.append(a.id)
+    s.commit()
+    return ids
+
+
+def test_evidence_built_by_articles_by_id_carries_the_outlet(s):
+    """echo_chamber, lonely_signal and story_lineage build their evidence here: two feeds of one site count once."""
+    from src.briefing.card import Card
+    from src.briefing.leads import _distinct_outlets, _evidence_without_outlet
+    from src.briefing.producers import _articles_by_id
+
+    ids = _two_bbc_feeds_and_dw(s)
+    evidence = list(_articles_by_id(s, [str(i) for i in ids]).values())
+    assert sorted(e["outlet"] for e in evidence) == ["bbc.com", "bbc.com", "dw.com"]
+    card = Card(type="echo_chamber", title="t", summary="s", bucket="overtold", method="m", caveat="c", key="k",
+                n=3, evidence=evidence)
+    assert _distinct_outlets(card) == 2 and _evidence_without_outlet(card) == 0
+
+
+def test_story_lineage_counts_outlets_so_two_feeds_of_a_site_do_not_make_three_sources(s):
+    """Two BBC feeds plus DW carry one story: that is TWO outlets, below the three-source gate, so no lineage card says
+    "echoed across 3 sources". With a third outlet the card appears and says 3."""
+    from src.briefing import producers
+
+    _two_bbc_feeds_and_dw(s)
+    assert producers.story_lineage(s) == []
+    src = Source(name="Reuters", domain="reuters.com", rss_url="https://reuters.com/rss")
+    s.add(src)
+    s.flush()
+    s.add(Article(url="https://reuters.com/1", canonical_url="https://reuters.com/1", source_id=src.id,
+                  title="Reforms announced by the ministry", content=_TEXT + " Acquisition of the company agreed.",
+                  hash="h9", language="en", published_at=datetime.now(UTC), created_at=datetime.now(UTC)))
+    s.commit()
+    cards = producers.story_lineage(s)
+    assert len(cards) == 1 and cards[0].to_dict()["evidence"]
+    assert {e.get("outlet") for e in cards[0].to_dict()["evidence"]} <= {"bbc.com", "dw.com", "reuters.com"}
+
+
+def test_ownership_change_evidence_carries_the_outlet(s):
+    from src.briefing import producers
+
+    _two_bbc_feeds_and_dw(s)
+    cards = producers.ownership_change(s)
+    assert len(cards) == 1
+    outlets = [e["outlet"] for e in cards[0].to_dict()["evidence"]]
+    assert sorted(outlets) == ["bbc.com", "bbc.com", "dw.com"]
+
+
+def test_space_time_convergence_evidence_carries_the_outlet(s, monkeypatch):
+    from src.briefing import producers
+
+    ids = _two_bbc_feeds_and_dw(s)
+    cluster = {
+        "article_ids": ids, "place": "Paris", "place_country": "fr", "place_kind": "city", "lat": 48.85, "lon": 2.35,
+        "distinct_sources": 2, "source_names": ["BBC News", "DW"], "n_articles": 3, "method": "m",
+        "shared_origin_links": 0, "shared_origin_examples": [], "window_start": "2026-10-10", "window_end": "2026-10-17",
+    }
+    monkeypatch.setattr("src.analytics.convergence.find_convergences", lambda *_a, **_k: {"clusters": [cluster], "clusters_total": 1, "min_articles": 3, "min_sources": 2})
+    cards = producers.space_time_convergence(s)
+    assert len(cards) == 1
+    assert sorted(e["outlet"] for e in cards[0].to_dict()["evidence"]) == ["bbc.com", "bbc.com", "dw.com"]
+
+
+def test_a_promised_date_card_carries_the_outlet(s):
+    from datetime import date
+
+    from src.briefing import recipes
+    from src.database.models import ArticleMentionedDate
+
+    ids = _two_bbc_feeds_and_dw(s)
+    article = s.get(Article, ids[0])
+    article.published_at = datetime.now(UTC) - timedelta(days=10)
+    s.add(ArticleMentionedDate(article_id=article.id, mentioned_on=date.today() - timedelta(days=1), status="candidate",
+                               snippet="will reopen"))
+    s.commit()
+    cards = recipes.promises_due(s)
+    assert len(cards) == 1
+    assert [e["outlet"] for e in cards[0].to_dict()["evidence"]] == ["bbc.com"]

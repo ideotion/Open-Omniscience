@@ -261,7 +261,10 @@ def _timed(name: str, step: Callable[[], None], *, holds: str) -> None:
         state = skipped.state
     except Exception as exc:  # noqa: BLE001 - a start-up step must never take the others down
         log_failure(_LOG, f"boot step {name} failed; the next step still runs", exc, level=logging.WARNING)
-        note_detail(name, {"error": type(exc).__name__})  # the class only: a step's own text can carry a path or a term
+        with _LOCK:
+            detail = _STEPS[name].get("detail") if name in _STEPS else None
+        kept = dict(detail) if isinstance(detail, dict) else {}
+        note_detail(name, {**kept, "error": type(exc).__name__})  # the class only: a step's own text can carry a path or a term
     finally:
         slow.cancel()
         took = time.monotonic() - mono
@@ -330,6 +333,7 @@ def _rollup_first_build() -> None:
         note_detail("rollup", rollup_serve.decline_detail())
         raise _Skipped("declined")
     if outcome == "failed":
+        note_detail("rollup", rollup_serve.decline_detail())  # reason build-failed + the exception class (R172), kept beside the step's own error class
         raise RuntimeError("the rollup's first build failed (see the rollup_serve block)")
     if outcome != "built":  # only a build that happened reads as done, whatever else comes back
         raise RuntimeError(f"the rollup's first build reported {outcome!r}, not a finished build")

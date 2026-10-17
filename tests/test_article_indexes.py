@@ -1026,7 +1026,7 @@ def test_a_failed_build_or_statistics_run_records_the_type_of_the_failure_never_
     assert "article-list index build failed (OperationalError)" in caplog.text, caplog.text
 
     class _Refuses:
-        def begin(self):
+        def connect(self):  # the statistics take the connection first, then the gate
             try:
                 raise sqlite3.OperationalError(f"PRAGMA key = '{secret}' failed")
             except sqlite3.OperationalError as driver:

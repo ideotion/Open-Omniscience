@@ -160,3 +160,170 @@ def test_every_owned_field_actually_carries_a_correction(session):
     assert result["applied"] == len(CATALOGUE_OWNED_FIELDS), result
     for field in CATALOGUE_OWNED_FIELDS:
         assert str(getattr(row, field)).lower() == str(corrected[field]).lower(), field
+
+
+# ---- what Q's trace of the "kept 9 / kept 10" report found (2026-10-17): none of the nine was an operator edit ----------
+
+def _set_baseline(row, **fields):
+    base = json.loads(row.catalog_baseline)
+    base.update(fields)
+    row.catalog_baseline = json.dumps(base, sort_keys=True)
+
+
+def test_a_field_reconcile_just_filled_with_the_catalogues_own_value_is_not_reported_as_an_edit(session):
+    """Shape A: the gap was filled earlier in the SAME call with exactly what the catalogue ships now, so there is nothing to
+    apply and nothing to keep. It used to be listed as an operator edit (live 'fr' != baseline None), and nine false ones
+    pushed a real one out of the eight listed examples."""
+    row = _install(session, [_entry()])
+    row.language = None
+    _set_baseline(row, language=None)
+    session.commit()
+
+    result = seed_sources(session, [_entry(_provenance="curated")])["corrections"]
+    session.refresh(row)
+    assert row.language == "fr"
+    assert result["kept"] == 0 and result["conflicts"] == [] and result["advanced"] >= 1
+    assert json.loads(row.catalog_baseline)["language"] == "fr"        # the baseline moved: no second report either
+
+
+def test_a_baseline_taken_from_another_catalogue_against_the_column_default_is_not_an_edit(session):
+    """Shape B: the news entry ships no source_type, the row holds the column default 'news' (nobody chose it) and the
+    baseline holds the OTHER catalogue's 'law'. It is not an operator edit: the baseline moves, the row is unchanged."""
+    entry = _entry()
+    entry.pop("source_type")
+    row = _install(session, [entry])
+    row.source_type = "news"
+    _set_baseline(row, source_type="law")
+    session.commit()
+
+    result = sync_catalogue_corrections(session, [entry])
+    session.refresh(row)
+    assert row.source_type == "news"
+    assert result["kept"] == 0 and result["conflicts"] == [] and result["advanced"] == 1 and result["dropped"] == 0
+    assert json.loads(row.catalog_baseline)["source_type"] is None
+    assert sync_catalogue_corrections(session, [entry])["advanced"] == 0     # reported once
+
+
+def test_a_real_operator_edit_is_listed_even_beside_many_false_ones(session):
+    """The false kept-conflicts crowded the eight listed examples; with them gone the one real edit is the only entry."""
+    rows = []
+    for i in range(10):
+        row = _install(session, [_entry(domain=f"d{i}.example")])
+        row.language = None
+        _set_baseline(row, language=None)
+        rows.append(row)
+    mine = rows[3]
+    mine.language = None
+    mine.name = "My name for it"
+    session.commit()
+    entries = [_entry(domain=f"d{i}.example", _provenance="curated", **({"name": "Corrected"} if i == 3 else {}))
+               for i in range(10)]
+    result = seed_sources(session, entries)["corrections"]
+    assert [c["field"] for c in result["conflicts"]] == ["name"] and result["conflicts"][0]["domain"] == "d3.example"
+
+
+def test_a_catalogue_that_stops_shipping_a_field_never_nulls_the_live_value(session):
+    """R100, inferred in the trace and made a test first: the sync wrote ``computed.get(field)`` (None for an entry that
+    ships no value) over a live value that equalled the old baseline, so a dropped ``source_type`` (nullable) or a
+    feed-less entry would have nulled it. The value stays, the field is counted as dropped, and it is reported once."""
+    entry = _entry(source_type="legal")
+    row = _install(session, [entry])
+    dropped = _entry()
+    dropped.pop("source_type")
+    dropped.pop("rss_url")
+    result = sync_catalogue_corrections(session, [dropped])
+    session.refresh(row)
+    assert row.source_type == "legal" and row.rss_url == "https://ex.example/feed"
+    assert result["applied"] == 0 and result["kept"] == 0 and result["dropped"] == 2
+    assert sync_catalogue_corrections(session, [dropped])["dropped"] == 0
+
+
+# --- R167: a field the catalogue starts shipping, on a row that holds the column default --------------------------------
+def _installed_without_region_and_type(session, domain="ex.example"):
+    first = _entry(domain)
+    first.pop("region")
+    first.pop("source_type")
+    row = _install(session, [first])
+    assert (row.region, row.source_type) == ("global", "news"), "the row took the column defaults"
+    base = json.loads(row.catalog_baseline)
+    assert base["region"] is None and base["source_type"] is None, "and the baseline recorded that the catalogue shipped none"
+    return row
+
+
+def test_a_field_the_catalogue_starts_shipping_reaches_a_row_that_holds_the_column_default(session):
+    """The Opus read's M1: 1,807 of 5,580 sources.yml entries ship no region and 3,140 no source_type, so those rows hold
+    the column default with a baseline of None. When the catalogue fills either, the value fell through to the operator-edit
+    list and was never applied (live != baseline None, live != the new value, live != baseline). Red without the R167 clause."""
+    row = _installed_without_region_and_type(session)
+    result = sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])
+    session.refresh(row)
+    assert (row.region, row.source_type) == ("europe", "legal")
+    assert result["applied"] == 2 and result["kept"] == 0 and result["conflicts"] == []
+    assert json.loads(row.catalog_baseline)["region"] == "europe"
+    assert sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])["applied"] == 0
+
+
+def test_a_value_the_operator_chose_over_the_default_is_still_kept_when_the_catalogue_starts_shipping_one(session):
+    row = _installed_without_region_and_type(session)
+    row.region = "asia"
+    session.commit()
+    result = sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])
+    session.refresh(row)
+    assert row.region == "asia" and row.source_type == "legal"
+    assert result["kept"] == 1 and result["conflicts"][0]["field"] == "region" and result["applied"] == 1
+
+
+def test_r167_a_value_typed_exactly_as_the_default_is_taken_for_never_edited_a_known_limit(session):
+    """THE ASSUMPTION R167 MAKES, stated as a test so it is not discovered later: nothing in the app records which fields an
+    operator edited (the PUT allowlist does not even reach region or source_type, and the only per-row record is
+    ``catalog_baseline``), so an operator who set region to exactly ``"global"`` on a row whose baseline is None is
+    indistinguishable from one who never touched it, and receives the catalogue's value. The ``now is None`` branch makes the
+    same assumption in the other direction. If a per-field edit marker ever exists it must win here, and this test changes."""
+    row = _installed_without_region_and_type(session)
+    row.region = "global"      # typed by hand, equal to the default
+    session.commit()
+    sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])
+    session.refresh(row)
+    assert row.region == "europe"
+
+
+def test_the_catalogue_filling_region_and_type_on_the_real_sources_yml_shape_lists_no_false_edit(session):
+    """The shape of the real file, not a toy: entries of configs/sources.yml that ship no region or no source_type are seeded
+    as they are (rows hold the defaults), then the catalogue fills every one of them. Zero conflicts, every fill applied."""
+    from src.ingest.seed_sources import load_sources_from_yaml
+
+    real = [e for e in load_sources_from_yaml() if not e.get("region") or not e.get("source_type")]
+    assert len(real) > 1000, "the real catalogue still ships many entries without a region or a type"
+    real = real[:400]
+    entries = []
+    for e in real:
+        e = {k: v for k, v in e.items() if k not in ("region", "source_type")}
+        e["_provenance"] = "curated"
+        entries.append(e)
+    seed_sources(session, entries)
+    assert session.query(Source).filter(Source.region == "global", Source.source_type == "news").count() == len(entries)
+    filled = [dict(e, region="europe", source_type="legal") for e in entries]
+    result = sync_catalogue_corrections(session, filled)
+    assert result["kept"] == 0 and result["conflicts"] == []
+    assert result["applied"] == 2 * len(entries)
+    assert session.query(Source).filter(Source.region == "europe", Source.source_type == "legal").count() == len(entries)
+
+
+def test_a_field_the_catalogue_stopped_shipping_is_said_at_boot_and_a_quiet_boot_says_nothing(session, caplog):
+    """The independent read's L3: ``dropped`` and ``advanced`` were returned and read by nothing, and the only log line was
+    gated on applied or conflicts, so a kept field was invisible (F6's pattern). Red when the line goes back to that gate."""
+    import logging
+
+    entry = _entry(source_type="legal")
+    _install(session, [entry])
+    dropped = _entry()
+    dropped.pop("source_type")
+    with caplog.at_level(logging.INFO, logger="src.ingest.seed_sources"):
+        sync_catalogue_corrections(session, [dropped])
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "1 field(s) the catalogue stopped shipping kept" in text, text
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="src.ingest.seed_sources"):
+        sync_catalogue_corrections(session, [dropped])
+    assert [r for r in caplog.records if "catalogue corrections" in r.getMessage()] == []
+

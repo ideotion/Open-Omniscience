@@ -39,7 +39,7 @@ def main(argv: list[str]) -> int:
         for ex in result["shadowed_examples"]:
             print(f"    - {ex['name']} ({ex['domain']})")
     if result["skipped_malformed"]:
-        print(f"  {result['skipped_malformed']} entries carried no usable domain.")
+        print(f"  {result['skipped_malformed']} entries carried no usable domain or name.")
     return 0
 
 
