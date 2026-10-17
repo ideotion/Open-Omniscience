@@ -42,8 +42,9 @@ def test_the_member_for_a_full_ring_of_the_widest_field_records_is_within_the_li
     assert sel["of"] == sf._RING_CAP and 0 < sel["shown"] < sf._RING_CAP
     assert sel["basis"].startswith("longest+newest, fit to ")
     assert member["sections"]["stall-forensics"]["shown"] == sel["shown"] == len(member["sections"]["stall-forensics"]["stalls"])
-    # as many as fit: one more of the same width would not have
-    assert size + 1500 > sf.CONTENTION_LINE_BYTES
+    # as many as fit: what is left is less than the widest record, so no further record would have gone in
+    widest = max(len(bundle._member_bytes(r)) for r in sf._RING) + 1
+    assert sf.CONTENTION_LINE_BYTES - size < widest
     # the ring is untouched
     assert len(sf._RING) == sf._RING_CAP
 
