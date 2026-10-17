@@ -383,30 +383,68 @@ def test_a_measurement_that_raises_in_the_release_never_keeps_the_gate(world, mo
     assert granted == [True], f"another writer could not take the gate after {measuring} raised in the release"
 
 
-def test_nothing_that_can_allocate_runs_between_the_last_read_of_the_release_and_the_free():
-    """The branch of ``release`` that ends the outermost hold reads the holder, the start and the usage, clears the owner and calls
-    ``_wake_head``: no call before that point (the clock, the sums and the per-holder row come after). A MemoryError needs an instruction that
-    allocates, and the interrupt tests above reach the helpers by patching them, which cannot reach the clock's call or the arithmetic; this
-    pins the order for everything they cannot."""
-    tree = ast.parse(textwrap.dedent(inspect.getsource(writer.WriterGate.release)))
+#: What can allocate in a branch that only loads names and attributes: a call, arithmetic (a float is a new object), a container or a string built on
+#: the spot, a slice. A name or attribute load, a comparison and a store of an existing object do not.
+_ALLOCATES = (
+    ast.Call, ast.BinOp, ast.UnaryOp, ast.AugAssign, ast.Tuple, ast.List, ast.Dict, ast.Set, ast.JoinedStr,
+    ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Slice,
+)
+
+
+def _before_the_free(source: str) -> list[ast.stmt]:
+    """The statements of ``release``'s outermost branch (``self._depth == 0``) that run before it calls ``_wake_head``."""
+    tree = ast.parse(textwrap.dedent(source))
     (branch,) = [
         n
         for n in ast.walk(tree)
-        if isinstance(n, ast.If)
-        and isinstance(n.test, ast.Compare)
-        and ast.unparse(n.test) == "self._depth == 0"
+        if isinstance(n, ast.If) and isinstance(n.test, ast.Compare) and ast.unparse(n.test) == "self._depth == 0"
     ]
-    before_the_free: list[ast.stmt] = []
+    before: list[ast.stmt] = []
     for stmt in branch.body:
         if ast.unparse(stmt) == "self._wake_head()":
-            break
-        before_the_free.append(stmt)
-    else:
-        pytest.fail("the outermost branch of release no longer calls _wake_head at its own level")
-    assigned = {ast.unparse(t) for st in before_the_free if isinstance(st, ast.Assign) for t in st.targets}
+            return before
+        before.append(stmt)
+    pytest.fail("the outermost branch of release no longer calls _wake_head at its own level")
+
+
+def _allocating_before_the_free(source: str) -> list[str]:
+    found: list[str] = []
+    for stmt in _before_the_free(source):
+        # the annotation of a local (``x: dict[str, float] | None = None``) is never evaluated in a function, so its subscript and union are not instructions
+        unevaluated = {id(n) for a in ast.walk(stmt) if isinstance(a, ast.AnnAssign) for n in ast.walk(a.annotation)}
+        found += [ast.unparse(n) for n in ast.walk(stmt) if isinstance(n, _ALLOCATES) and id(n) not in unevaluated]
+    return found
+
+
+def test_nothing_that_can_allocate_runs_between_the_last_read_of_the_release_and_the_free():
+    """The branch of ``release`` that ends the outermost hold reads the holder, the start and the usage, clears the owner and calls
+    ``_wake_head``: nothing that can allocate before that point (the clock, the sums and the per-holder row come after). A MemoryError needs an
+    instruction that allocates, and the interrupt tests above reach the helpers by patching them, which cannot reach the clock's call or the
+    arithmetic; this pins the order for everything they cannot, and the test below shows it sees a tuple or a ``+=`` and not only a call."""
+    source = inspect.getsource(writer.WriterGate.release)
+    assigned = {ast.unparse(t) for st in _before_the_free(source) if isinstance(st, ast.Assign) for t in st.targets}
     assert {"self._owner", "self._held_since"} <= assigned, "the gate must be cleared before the first call of the branch"
-    calls = [ast.unparse(n) for st in before_the_free for n in ast.walk(st) if isinstance(n, ast.Call)]
-    assert not calls, f"a call runs before the gate is freed in release(): {calls}"
+    found = _allocating_before_the_free(source)
+    assert not found, f"something that can allocate runs before the gate is freed in release(): {found}"
+
+
+@pytest.mark.parametrize(
+    "mutant",
+    [
+        "self._account_holder_locked(holder, 0.0)",  # a call
+        "released = (holder, 0.0, started, usage0, None)",  # a tuple built on the spot
+        "self._total_held_s += 0.5",  # arithmetic making a float
+        'label = f"{holder}"',  # a string built on the spot
+    ],
+)
+def test_the_order_pin_sees_what_can_allocate_and_not_only_calls(mutant):
+    """The pin above is only worth having if it fails on the shapes it names: the head's source is rewritten with one statement placed just
+    before the free, and the pin must report it (the independent read of #1435's delta ran the second and third and found them passing)."""
+    lines = textwrap.dedent(inspect.getsource(writer.WriterGate.release)).splitlines()
+    (at,) = [i for i, line in enumerate(lines) if line.strip() == "self._wake_head()"]
+    indent = lines[at][: len(lines[at]) - len(lines[at].lstrip())]
+    lines.insert(at, indent + mutant)
+    assert _allocating_before_the_free("\n".join(lines)), f"the pin passed with {mutant!r} placed before the free"
 
 
 def test_the_exact_split_still_counts_the_statement_running_at_the_release(world, monkeypatch):
