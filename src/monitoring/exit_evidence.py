@@ -245,17 +245,20 @@ def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: 
             rec = json.loads(line)
         except ValueError:
             continue
+        if not isinstance(rec, dict):
+            continue  # a torn or interleaved line can be valid JSON that is not a row (a number, null, a list): not a row, not an error
+        sig = rec.get("signal") if isinstance(rec.get("signal"), str) else None  # a list or a dict there is not a signal name (and is not hashable)
         # a signal the launcher trapped (bash), or Windows' Ctrl-C: no signal name, the NTSTATUS the server ended with (launch_server.ps1)
-        asked = rec.get("signal") if rec.get("signal") in STOP_SIGNALS else ("Ctrl-C" if rec.get("signal") is None and rec.get("status") == _WINDOWS_CTRL_C else None)
-        if isinstance(rec, dict) and rec.get("pid") == pid and asked and _same_boot(rec.get("boot_id"), boot_id):
+        asked = sig if sig in STOP_SIGNALS else ("Ctrl-C" if rec.get("signal") is None and rec.get("status") == _WINDOWS_CTRL_C else None)
+        if rec.get("pid") == pid and asked and _same_boot(rec.get("boot_id"), boot_id):
             if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
                 continue
             return {
-                "seen_by": "the launcher (scripts/launch.sh), the process's parent" if rec.get("signal") else "the launcher (scripts/launch_server.ps1), the process's parent",
+                "seen_by": "the launcher (scripts/launch.sh), the process's parent" if sig else "the launcher (scripts/launch_server.ps1), the process's parent",
                 "at": _stamp_or_none(rec.get("at")),
                 "started_at": None,
                 "status": None,
-                "signal": rec.get("signal") or "Ctrl-C",
+                "signal": sig or "Ctrl-C",
                 "kind": "stop asked",
                 "meaning": f"a stop was asked of the launcher ({asked}) and the session's end was not clean: its shutdown did not complete. Not a crash",
             }

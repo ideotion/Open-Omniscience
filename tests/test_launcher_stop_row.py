@@ -135,6 +135,19 @@ def test_only_the_three_trapped_signals_are_read_as_a_stop(dd, bad):
     assert ee.launcher_exit(4242, "b" * 8) is None
 
 
+@pytest.mark.parametrize("junk", ["123", "null", '"x"', "[1, 2]", "true", '{"pid": 4242, "signal": ["SIGINT"], "boot_id": null}',
+                                  '{"pid": 4242, "signal": {"a": 1}, "boot_id": null}', "{torn", "\x00\x00\x00"])
+def test_a_line_that_is_not_a_row_is_skipped_not_an_error(dd, junk):
+    """A torn or interleaved line (or one an older launcher left) can be valid JSON that is not a row. It used to raise, which cost the caller its
+    other witnesses (forensics reads the launcher row, the stderr row and the crash trace in one try). Found by the reader audit of 17 Oct."""
+    (dd / "diagnostics").mkdir(parents=True, exist_ok=True)
+    (dd / "diagnostics" / ee.LAUNCHER_STOPS).write_text(junk + "\n" + json.dumps(_stop(pid=4242, sig="SIGTERM")) + "\n" + junk + "\n", encoding="utf-8")
+    got = ee.launcher_exit(4242, "b" * 8)
+    assert got is not None and got["kind"] == "stop asked" and got["signal"] == "SIGTERM", "the good row between the junk lines is still read"
+    (dd / "diagnostics" / ee.LAUNCHER_STOPS).write_text(junk + "\n", encoding="utf-8")
+    assert ee.launcher_exit(4242, "b" * 8) is None
+
+
 def test_the_sentence_says_stop_requested_teardown_incomplete_and_without_a_row_keeps_the_old_one():
     block = {"kind": "stop asked", "signal": "SIGTERM", "status": None}
     said = ee.how_it_ended(launcher=block, killers=None, kernel=None, trace=None)
