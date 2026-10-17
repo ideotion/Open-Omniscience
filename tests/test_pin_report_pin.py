@@ -115,12 +115,107 @@ def test_a_passive_pass_that_copied_everything_claims_no_pin_and_does_not_claim_
         ({"passive": {"busy": 0, "log_frames": True, "checkpointed_frames": 3}}, "no-passive"),
         ({"passive": {"busy": 0, "log_frames": -1, "checkpointed_frames": -1}}, "unreadable"),
         ({"passive": {"busy": 0, "log_frames": 5, "checkpointed_frames": 9}}, "unreadable"),
+        # (1, -1, -1) is what SQLite answers when ANOTHER connection holds the checkpoint lock: not a log outside WAL mode, not a pin
+        ({"passive": {"busy": 1, "log_frames": -1, "checkpointed_frames": -1}}, "checkpoint-busy"),
     ],
 )
 def test_a_drain_without_a_readable_mark_gives_no_pin_and_a_fixed_sentence_saying_why(drain, key):
     rep = storage_guard._pin_report(drain)
     assert rep["pin"] is None
     assert rep["pin_note"] == storage_guard._PIN_NOTES[key]
+
+
+def _guard_with(monkeypatch, drain):
+    from src.scheduler import runner
+
+    monkeypatch.setenv("OO_STORAGE_GUARD", "1")  # the suite switches the guard off; this file feeds it injected readings
+    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: None)
+    gib = storage_guard.GIB
+    g = storage_guard.StorageGuard(drain_fn=lambda: drain, trip_after=2, resume_after=2, clock=lambda: 1000.0)
+    for _ in range(2):
+        g.observe(wal_bytes=3 * gib, corpus_bytes=10 * gib, disk_free_bytes=300 * gib, disk_total_bytes=500 * gib)
+    return g
+
+
+def test_a_truncate_that_answers_busy_with_no_frame_counts_is_not_called_a_readers_pin(monkeypatch, caplog):
+    """The read of the final head (L1): the guard's PASSIVE no longer runs inside the gate, so it can meet another checkpointer, and
+    SQLite answers that with ``(1, -1, -1)``. ``busy == 1`` alone read as "a reader holds the log"."""
+    gib = storage_guard.GIB
+    drain = {
+        "busy": 1, "log_frames": -1, "checkpointed_frames": -1, "wal_bytes_before": 3 * gib, "wal_bytes_after": 3 * gib, "page_size": 4096,
+        "passive": {"busy": 1, "log_frames": -1, "checkpointed_frames": -1},
+    }
+    g = _guard_with(monkeypatch, drain)
+    caplog.set_level("INFO", logger=storage_guard._LOG.name)
+    assert g.drain_if_due() is not None
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "a reader holds" not in text and "TRUNCATE is busy" not in text, text
+    assert "another checkpoint held the checkpoint lock" in text, text
+    last = g.state()["last_drain"]
+    assert last["another_checkpoint"] is True and last["busy"] == 1, "the answer as SQLite gave it, and what it was"
+    assert g._last_pin_report is None, "no reader is known to hold the log: no pin report is built for it"
+
+
+def test_a_negative_count_without_busy_is_a_log_outside_wal_mode_not_another_checkpoint(monkeypatch, caplog):
+    """``busy`` 0 with no frame counts is a store that is not in WAL mode: the other checkpointer's sentence would be a false one."""
+    drain = {
+        "busy": 0, "log_frames": -1, "checkpointed_frames": -1, "wal_bytes_before": 3 * storage_guard.GIB,
+        "wal_bytes_after": 3 * storage_guard.GIB, "page_size": 4096, "passive": {"busy": 0, "log_frames": -1, "checkpointed_frames": -1},
+    }
+    g = _guard_with(monkeypatch, drain)
+    caplog.set_level("INFO", logger=storage_guard._LOG.name)
+    g.drain_if_due()
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "another checkpoint" not in text, text
+    assert g.state()["last_drain"]["another_checkpoint"] is False
+
+
+def test_a_truncate_busy_with_frames_behind_the_end_is_still_a_readers_pin(monkeypatch, caplog):
+    drain = {
+        "busy": 1, "log_frames": 1000, "checkpointed_frames": 250, "wal_bytes_before": 3 * storage_guard.GIB,
+        "wal_bytes_after": 3 * storage_guard.GIB, "page_size": 4096,
+        "passive": {"busy": 1, "log_frames": 1000, "checkpointed_frames": 250},
+    }
+    g = _guard_with(monkeypatch, drain)
+    caplog.set_level("INFO", logger=storage_guard._LOG.name)
+    g.drain_if_due()
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "a reader holds it" in text and "another checkpoint" not in text, text
+    assert g.state()["last_drain"]["another_checkpoint"] is False
+    assert g._last_pin_report is not None
+
+
+def test_a_real_second_checkpointer_gives_the_busy_answer_and_the_guard_does_not_call_it_a_pin(tmp_path):
+    """SQLite's own answer, not a typed one: a TRUNCATE that waits for an old reader holds the checkpoint lock, and the guard's PASSIVE (no
+    gate) and its TRUNCATE both come back ``(1, -1, -1)``."""
+    import sqlite3
+
+    p = str(tmp_path / "c.db")
+    w = sqlite3.connect(p, isolation_level=None, check_same_thread=False)
+    w.execute("PRAGMA journal_mode=WAL")
+    w.execute("PRAGMA wal_autocheckpoint=0")
+    w.execute("CREATE TABLE t(x)")
+    reader = sqlite3.connect(p, isolation_level=None, check_same_thread=False)
+    reader.execute("BEGIN")
+    reader.execute("SELECT count(*) FROM t").fetchone()  # an old snapshot pins the log
+    for _ in range(200):
+        w.execute("INSERT INTO t VALUES (randomblob(2000))")
+    other = sqlite3.connect(p, isolation_level=None, check_same_thread=False)
+    other.execute("PRAGMA busy_timeout=4000")
+    th = threading.Thread(target=lambda: other.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone())
+    th.start()
+    time.sleep(0.4)  # 'other' holds the checkpoint lock while it waits for the reader
+    try:
+        eng = create_engine(f"sqlite:///{p}")
+        rec = checkpoint_wal(engine=eng, force=True, gate_timeout_s=5, passive_without_gate=True)
+    finally:
+        th.join(10)
+        reader.close()
+        other.close()
+        w.close()
+    assert rec is not None and rec["passive"]["busy"] == 1 and rec["passive"]["log_frames"] < 0, rec
+    pin, why = storage_guard._pin_figures(rec)
+    assert pin is None and why == "checkpoint-busy", (pin, why)
 
 
 def test_bytes_behind_is_absent_when_the_page_size_was_not_read_not_a_guessed_4096():

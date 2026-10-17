@@ -236,8 +236,9 @@ def fold_page(
     from src.analytics.extract import ExtractedTerm
     from src.analytics.store import _get_or_create_keyword, _prefetch_keywords, top_keyword_of
     from src.database.models import Article, Keyword, KeywordMention, KeywordTag
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
+    connection_first(session)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         rows = session.execute(
             text(

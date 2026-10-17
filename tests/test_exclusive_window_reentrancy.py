@@ -231,7 +231,7 @@ def test_a_flag_raised_by_hand_before_the_first_window_is_what_the_last_window_r
     token = R._EXCL_TOKEN
     first = _enter(R.exclusive_window())
     second = _enter(R.exclusive_window())
-    assert R._EXCL_TOKEN == token, "a window inside a run that was not its own starts no new run"
+    assert token == R._EXCL_TOKEN, "a window inside a run that was not its own starts no new run"
     first.__exit__(None, None, None)
     second.__exit__(None, None, None)
     assert R.exclusive_window_open() is True

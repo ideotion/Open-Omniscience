@@ -258,6 +258,10 @@ _PIN_STATEMENT_PHASES = frozenset({"execute", "commit"})
 _PIN_NOTES = {
     "no-passive": "The passive pass did not run or gave no figures, so no reader's position was read.",
     "unreadable": "The passive pass gave figures that are not those of a log in WAL mode.",
+    "checkpoint-busy": (
+        "Another checkpoint held the checkpoint lock, so the passive pass answered busy with no frame counts. That is not a "
+        "reader's pin, and it says nothing about one."
+    ),
     "all-copied": (
         "The passive pass copied every frame of the log, so there is no position to read from it. That does not prove "
         "nothing pins the file: a reader whose snapshot is at the end of the log leaves the same figures."
@@ -684,6 +688,8 @@ def _pin_figures(drain: dict | None) -> tuple[dict[str, int] | None, str | None]
         isinstance(log, int) and not isinstance(log, bool) and isinstance(done, int) and not isinstance(done, bool)
     ):
         return None, "no-passive"
+    if log < 0 and passive.get("busy") == 1:
+        return None, "checkpoint-busy"  # SQLite's answer when ANOTHER connection holds the checkpoint lock: (1, -1, -1)
     if log < 0 or done < 0 or done > log:
         return None, "unreadable"
     if done == log:
@@ -1669,8 +1675,13 @@ class StorageGuard:
                 with self._lock:
                     self._last_drain_mono = self._clock()
         # TRUNCATE came back busy: a reader holds the log. The gate was busy: a WRITER held the
-        # write gate for the whole bounded wait and TRUNCATE never ran. Different facts.
-        pinned = isinstance(rec, dict) and rec.get("busy") == 1
+        # write gate for the whole bounded wait and TRUNCATE never ran. Different facts. A third: TRUNCATE answered busy WITHOUT frame
+        # counts ((1, -1, -1)), which is what SQLite says when ANOTHER connection holds the checkpoint lock (a commit's own
+        # autocheckpoint, a second checkpointer): no reader is known to hold anything, so it is neither of the above.
+        busy = isinstance(rec, dict) and rec.get("busy") == 1
+        log_frames = rec.get("log_frames") if isinstance(rec, dict) else None
+        another_checkpoint = busy and isinstance(log_frames, int) and not isinstance(log_frames, bool) and log_frames < 0
+        pinned = busy and not another_checkpoint
         gate_busy = isinstance(rec, dict) and "skipped" in rec
         report = None
         if (pinned or gate_busy) and (
@@ -1683,6 +1694,9 @@ class StorageGuard:
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "busy": rec.get("busy") if isinstance(rec, dict) else None,
                 "skipped": rec.get("skipped") if isinstance(rec, dict) else None,
+                # TRUNCATE answered busy with no frame counts: another checkpoint held the checkpoint lock (``busy`` above is that
+                # answer as SQLite gave it, and is not a reader's pin when this is True).
+                "another_checkpoint": another_checkpoint,
                 # A checkpoint that failed (its own outcome, never "disabled / not due"): the
                 # exception's type, e.g. the pool's TimeoutError after OO_DB_POOL_TIMEOUT.
                 "error": rec.get("error") if isinstance(rec, dict) else None,
@@ -1697,6 +1711,11 @@ class StorageGuard:
             if report is not None:
                 self._last_pin_report = report
                 self._last_pin_mono = now_mono
+        if another_checkpoint:
+            _LOG.info(
+                "storage guard: the WAL was not reset -- another checkpoint held the checkpoint lock (no reader is known to hold the "
+                "log); the next drain asks again"
+            )
         if report is not None:
             # The oldest checkout is the likeliest candidate: the younger ones churn with the workers (and
             # more so under an override, when collection runs), so keying on all of them would

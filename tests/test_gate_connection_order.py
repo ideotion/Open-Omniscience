@@ -11,11 +11,15 @@ pool timeout (reproduced with a pool of two: the holder failed with ``TimeoutErr
 
 Three kinds of test, none of which reads a count of lines:
   * the scan: no ``with write_lock(...)`` in ``src/`` asks for a pooled connection AFTER the gate (in a later item of the same ``with``, or in
-    its body), and the scan itself is proved on snippets of every wrong and every right shape;
+    its body), and no body USES A SESSION (``execute``, ``get``, ``query``, ``commit``, ``bulk_update_mappings`` ...) that has not checked its
+    connection out first (the read of the final head, finding M2: a session that committed gave its connection back, so its next
+    ``with write_lock(): session.get(...)`` took the gate and THEN waited for the pool, the same stall reached by a path the raw-connection
+    scan could not see). The scan itself is proved on snippets of every wrong and every right shape;
   * the probe: for each site that was wrong, the pool has a connection out of it when the gate is first asked for;
   * the headline: with the pool's only connection out, a site waits for the pool WITHOUT the gate held.
-What this does not see: a connection checked out deeper in a call made under the gate (a function the body calls). The scan is syntactic; a
-checkout under the gate that it cannot see shows in a bundle as a pool timeout while the gate is held.
+What this does not see: a connection checked out deeper in a call made under the gate (a function the body calls), or a session that is
+named something this scan does not take for one (``_is_session_name``). The scan is syntactic; a checkout under the gate that it cannot see
+shows in a bundle as a pool timeout while the gate is held.
 """
 
 from __future__ import annotations
@@ -84,6 +88,77 @@ def _function_asks_for_a_connection_before(func: ast.AST | None, line: int) -> b
     return False
 
 
+# What a session does that needs its connection: a statement, a flush (a commit flushes), a bulk write, a refresh. ``add`` is left out on
+# purpose: it only queues an object, and the commit that follows it is what the scan reads.
+_SESSION_USES = frozenset(
+    {"execute", "get", "query", "scalar", "scalars", "merge", "flush", "commit", "delete", "refresh", "bulk_update_mappings",
+     "bulk_insert_mappings", "bulk_save_objects", "begin_nested"}
+)
+# What gives a session's connection back to the pool: the session no longer holds one after any of these.
+_SESSION_RELEASES = frozenset({"commit", "rollback", "close", "invalidate"})
+_SESSION_FACTORIES = frozenset({"session_scope", "Session", "SessionLocal", "sessionmaker", "get_session"})
+
+
+def _is_session_name(text: str, bound: set[str]) -> bool:
+    """Whether a receiver is taken for a session: ``session``, ``db``, ``sess``, anything ending in ``session`` (``self._enr_session``), or
+    a name the function bound from a session factory. A connection (``conn``, ``c``, ``cur``) is not one: it holds its checkout already."""
+    last = text.split(".")[-1]
+    return last in ("session", "db", "sess") or last.endswith("_session") or text in bound
+
+
+def _bound_sessions(func: ast.AST | None) -> set[str]:
+    bound: set[str] = set()
+    if func is None:
+        return bound
+    for n in ast.walk(func):
+        pairs: list[tuple[ast.AST, ast.AST]] = []
+        if isinstance(n, ast.Assign):
+            pairs = [(t, n.value) for t in n.targets]
+        elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+            pairs = [(n.optional_vars, n.context_expr)]
+        for target, value in pairs:
+            if isinstance(value, ast.Call):
+                f = value.func
+                name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+                if name in _SESSION_FACTORIES and isinstance(target, ast.Name):
+                    bound.add(target.id)
+    return bound
+
+
+def _session_calls(nodes: list[ast.AST], bound: set[str]) -> list[tuple[ast.Call, str]]:
+    """``(call, receiver)`` for each ``<session>.<use>(...)`` among the nodes."""
+    found = []
+    for call in _calls(nodes):
+        f = call.func
+        if isinstance(f, ast.Attribute) and f.attr in _SESSION_USES:
+            receiver = ast.unparse(f.value)
+            if _is_session_name(receiver, bound):
+                found.append((call, receiver))
+    return found
+
+
+def _covered_by_a_connection_first(scope: ast.AST, receiver: str, line: int) -> bool:
+    """Whether, inside ``scope`` and before ``line``, ``connection_first(<receiver>)`` or ``<receiver>.connection()`` ran and the receiver
+    has not committed, rolled back or closed since (each gives the connection back, so a check-out before it covers nothing after it)."""
+    asked = 0
+    for call in _calls([scope]):
+        f = call.func
+        if call.lineno >= line:
+            continue
+        if isinstance(f, (ast.Name, ast.Attribute)) and getattr(f, "id", getattr(f, "attr", "")) == "connection_first":
+            if call.args and ast.unparse(call.args[0]) == receiver:
+                asked = max(asked, call.lineno)
+        elif isinstance(f, ast.Attribute) and f.attr == "connection" and ast.unparse(f.value) == receiver:
+            asked = max(asked, call.lineno)
+    if not asked:
+        return False
+    for call in _calls([scope]):
+        f = call.func
+        if asked < call.lineno < line and isinstance(f, ast.Attribute) and f.attr in _SESSION_RELEASES and ast.unparse(f.value) == receiver:
+            return False
+    return True
+
+
 def offenders(source: str) -> list[tuple[int, str]]:
     """The ``(line, call)`` of every pooled-connection checkout that comes AFTER a ``write_lock()`` in the same ``with`` or in its body."""
     tree = ast.parse(source)
@@ -96,6 +171,14 @@ def offenders(source: str) -> list[tuple[int, str]]:
         while node in parents:
             node = parents[node]
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return node
+        return None
+
+    def loop_of(node: ast.AST, func: ast.AST | None) -> ast.AST | None:
+        """The innermost ``for``/``while`` between the node and its function: a connection given back in an earlier turn is needed again."""
+        while node in parents and node is not func:
+            node = parents[node]
+            if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
                 return node
         return None
 
@@ -114,6 +197,16 @@ def offenders(source: str) -> list[tuple[int, str]]:
                 if kind == "nested" and _function_asks_for_a_connection_before(function_of(w), w.lineno):
                     continue
                 found.append((call.lineno, ast.unparse(call)[:60]))
+            # A session used under the gate must have checked its connection out before the gate (in the loop turn that takes it: a commit
+            # in an earlier turn gave the connection back), unless the gate is already held by an earlier item of this very ``with``.
+            func = function_of(w)
+            scope = loop_of(w, func) or func
+            if scope is None:
+                continue
+            bound = _bound_sessions(func)
+            for call, receiver in _session_calls(after, bound):
+                if not _covered_by_a_connection_first(scope, receiver, w.lineno):
+                    found.append((call.lineno, ast.unparse(call)[:60]))
     return sorted(set(found))
 
 
@@ -138,10 +231,28 @@ def test_no_with_write_lock_in_src_asks_for_a_pooled_connection_after_the_gate()
         "def f(self):\n    with corpus_lease('x'), write_lock():\n        conn = self.session.connection()\n",
         "def f(session):\n    session.add(1)\n    with write_lock(), session.begin_nested():\n        pass\n",
         "def f(session):\n    with write_lock(), session.begin_nested():\n        pass\n    session.connection()\n",
+        # a session used under the gate with no connection checked out first
+        "def f(session):\n    with write_lock():\n        session.commit()\n",
+        "def f(session):\n    with write_lock():\n        row = session.get(M, 1)\n        session.delete(row)\n",
+        "def f(db):\n    with write_lock():\n        db.query(M).update({})\n",
+        "def f(self):\n    with write_lock():\n        self.session.execute(1)\n",
+        "def f(self):\n    with write_lock():\n        self._enr_session.bulk_update_mappings(M, [])\n",
+        "def f():\n    with session_scope() as s:\n        with write_lock():\n            s.execute(1)\n",
+        # the connection was given back by the commit, rolled back or closed between the check-out and the gate
+        "def f(session):\n    connection_first(session)\n    session.rollback()\n    with write_lock():\n        session.get(M, 1)\n",
+        "def f(session):\n    session.connection()\n    session.commit()\n    with write_lock():\n        session.execute(1)\n",
+        # a check-out before the loop covers the first turn only: the commit in the turn gave the connection back
+        "def f(session, chunks):\n    connection_first(session)\n    for c in chunks:\n        with write_lock():\n            session.execute(c)\n            session.commit()\n",
+        # the check-out of ANOTHER session covers nothing
+        "def f(session, other):\n    connection_first(other)\n    with write_lock():\n        session.execute(1)\n",
+        # after the gate, not before it
+        "def f(session):\n    with write_lock():\n        connection_first(session)\n        session.execute(1)\n",
     ],
     ids=[
         "connect", "connect-autocommit", "begin", "begin-nested-in-body", "raw", "session-connection", "begin_nested-unconnected", "after-a-lease",
         "unrelated-line-before", "connection-only-after-the-gate",
+        "session-commit", "session-get-delete", "db-query", "self-session", "self-private-session", "factory-bound", "after-a-rollback",
+        "after-a-commit", "loop-turn-after-a-commit", "another-session", "connection-first-inside-the-gate",
     ],
 )
 def test_the_scan_sees_every_wrong_shape(source):
@@ -158,8 +269,22 @@ def test_the_scan_sees_every_wrong_shape(source):
         "def f(session):\n    session.connection()\n    with write_lock(), session.begin_nested():\n        pass\n",
         "def f(path):\n    with write_lock():\n        c = sqlite3.connect(path)\n",
         "def f(conn):\n    with write_lock():\n        conn.execute(1)\n",
+        # a session that asked for its connection first
+        "def f(session):\n    connection_first(session)\n    with write_lock():\n        session.get(M, 1)\n        session.commit()\n",
+        "def f(session):\n    session.connection()\n    with write_lock():\n        session.execute(1)\n",
+        "def f(session):\n    session.rollback()\n    connection_first(session)\n    with write_lock():\n        session.get(M, 1)\n",
+        "def f(self):\n    connection_first(self.session)\n    with write_lock():\n        self.session.commit()\n",
+        "def f(session, chunks):\n    for c in chunks:\n        connection_first(session)\n        with write_lock():\n            session.execute(c)\n            session.commit()\n",
+        # a raw connection holds its check-out already; a dict, a set and a query-less object are not sessions
+        "def f(engine):\n    with engine.connect() as conn, write_lock():\n        conn.execute(1)\n        conn.commit()\n",
+        "def f(seen, cache):\n    with write_lock():\n        seen.add(1)\n        cache.get(1)\n",
+        "def f(session):\n    with write_lock():\n        pass\n    session.commit()\n",
     ],
-    ids=["connect-first", "gate-inside", "hoisted-session-connection", "connection_first", "session-connection-first", "not-a-pool", "no-checkout"],
+    ids=[
+        "connect-first", "gate-inside", "hoisted-session-connection", "connection_first", "session-connection-first", "not-a-pool", "no-checkout",
+        "session-asked-first", "session-connection-then-gate", "reasked-after-a-rollback", "self-session-asked-first", "asked-in-the-turn",
+        "raw-connection", "not-a-session", "session-used-outside-the-gate",
+    ],
 )
 def test_the_scan_passes_every_right_shape(source):
     assert offenders(source) == [], source

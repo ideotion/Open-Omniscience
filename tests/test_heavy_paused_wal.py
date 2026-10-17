@@ -141,7 +141,7 @@ def test_wal_engaged_is_false_when_the_guard_is_switched_off(monkeypatch):
 #  the list: explicit, in one place, one reason each; everything else keeps running
 # --------------------------------------------------------------------------- #
 LIST = {
-    "trending-windows", "trending", "map-coverage", "server-locations", "card-audit",
+    "trending-windows", "trending", "map-coverage", "server-locations", "card-audit", "card-audit-preflight",
 }
 
 
@@ -180,7 +180,8 @@ def test_a_listed_name_is_paused_whatever_follows_it_in_the_key(name):
         "TRENDING|x",
         "a-new-heavy-route|x",
         "trending:x|y",
-        "card-audit-preflight|bind=1",
+        "card-audit-preflight-but-not-quite|bind=1",
+        "card-audit-p|bind=1",
         "",
     ],
 )

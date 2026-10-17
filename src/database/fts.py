@@ -1052,9 +1052,10 @@ def optimize_after_bulk(session: Session) -> dict:
     bind = session.get_bind()
     if bind is None or bind.dialect.name != "sqlite":
         return out
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     try:
+        connection_first(session)  # the connection, then the gate; a pool timeout is a skipped tuning step, as the gate's would be
         with write_lock():
             session.execute(text("INSERT INTO article_fts(article_fts) VALUES ('optimize')"))
             session.commit()
@@ -1066,6 +1067,7 @@ def optimize_after_bulk(session: Session) -> dict:
         from src.config.power_profiles import fts_analysis_limit
 
         _analysis_limit = fts_analysis_limit()  # §7 knob: OO_FTS_ANALYSIS_LIMIT, clamped int.
+        connection_first(session)  # the commit above gave the connection back
         with write_lock():
             # nosec B608 - _analysis_limit is a clamped int from power_profiles, never user input;
             # PRAGMA does not accept a bound parameter.

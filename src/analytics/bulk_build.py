@@ -157,10 +157,11 @@ def open_state(session: Session, planned: Iterable[str], *, now=None) -> str:
     an index the heal will never look for.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     stamp = (now or datetime.now(UTC)).isoformat(timespec="seconds")
     payload = "\n".join([stamp, *sorted(planned)])
+    connection_first(session)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         row = session.get(DerivedMeta, BULK_BUILD_KEY)
         if row is None:
@@ -179,8 +180,9 @@ def close_state(session: Session) -> bool:
     clearing it early costs the indexes it was protecting.
     """
     from src.database.models import DerivedMeta
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
+    connection_first(session)
     with write_lock():
         row = session.get(DerivedMeta, BULK_BUILD_KEY)
         if row is None:

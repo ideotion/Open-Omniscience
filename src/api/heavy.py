@@ -87,6 +87,7 @@ PAUSED_WHILE_WAL_PINNED: dict[str, str] = {
     "map-coverage": "the map's per-country coverage: a whole-corpus group-by whenever the map rollup is not serving.",
     "server-locations": "the map's server-location counts: a whole-corpus group-by that opens with the map.",
     "card-audit": "the diagnostics bundle's card-audit member: it runs every Home producer once, the first of them the trending scan.",
+    "card-audit-preflight": "the card audit's size estimate: it runs the same producer pass as the audit itself (estimate_card_audit calls observe_producers).",
 }
 
 
