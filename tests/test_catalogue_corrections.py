@@ -308,3 +308,22 @@ def test_the_catalogue_filling_region_and_type_on_the_real_sources_yml_shape_lis
     assert result["applied"] == 2 * len(entries)
     assert session.query(Source).filter(Source.region == "europe", Source.source_type == "legal").count() == len(entries)
 
+
+def test_a_field_the_catalogue_stopped_shipping_is_said_at_boot_and_a_quiet_boot_says_nothing(session, caplog):
+    """The independent read's L3: ``dropped`` and ``advanced`` were returned and read by nothing, and the only log line was
+    gated on applied or conflicts, so a kept field was invisible (F6's pattern). Red when the line goes back to that gate."""
+    import logging
+
+    entry = _entry(source_type="legal")
+    _install(session, [entry])
+    dropped = _entry()
+    dropped.pop("source_type")
+    with caplog.at_level(logging.INFO, logger="src.ingest.seed_sources"):
+        sync_catalogue_corrections(session, [dropped])
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "1 field(s) the catalogue stopped shipping kept" in text, text
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="src.ingest.seed_sources"):
+        sync_catalogue_corrections(session, [dropped])
+    assert [r for r in caplog.records if "catalogue corrections" in r.getMessage()] == []
+

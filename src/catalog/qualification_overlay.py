@@ -572,3 +572,20 @@ def revert_overlay(
         # not leave behind is a source still being scraped on a verdict it gave back.
         "still_collecting": int(still_collecting),
     }
+
+
+def log_outlet_holds(logger: logging.Logger, curated: dict, adopted: dict) -> None:
+    """Say at boot how many feeds were left unqualified because another feed of their outlet is disqualified HERE (R100,
+    R153): never admitted on the catalogue's stamp or on a shipped verdict, each stays for its own trial.
+
+    The two figures are printed SEPARATELY and never summed: the overlay holds a sibling unqualified and the stamp, which
+    runs after it, meets the same unqualified row of the same refused outlet and counts it too, so a sum reads one held feed
+    as two (the independent read of the J3 head, L3)."""
+    by_stamp = int(curated.get("outlet_disqualified", 0))
+    by_verdict = int(adopted.get("held_by_outlet_disqualified", 0))
+    if by_stamp or by_verdict:
+        logger.info(
+            "feeds left unqualified because another feed of their outlet is disqualified: %d counted by the curated stamp, "
+            "%d counted by the shipped verdicts (one feed can be counted by both).",
+            by_stamp, by_verdict,
+        )

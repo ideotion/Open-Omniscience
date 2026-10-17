@@ -383,7 +383,7 @@ def _run_startup_upkeep() -> None:
                 # every verdict from scratch. Idempotent and near-free after the first
                 # boot -- it only touches rows still reading 'unqualified'. A local
                 # verdict always wins, in both directions.
-                from src.catalog.qualification_overlay import apply_overlay
+                from src.catalog.qualification_overlay import apply_overlay, log_outlet_holds
 
                 adopted = apply_overlay(session)
                 # THE CURATED CATALOGUE IS QUALIFIED BY RULING (2026-09-10): after the
@@ -410,16 +410,7 @@ def _run_startup_upkeep() -> None:
                     adopted["adopted"], adopted.get("qualified", 0),
                     adopted.get("disqualified", 0), adopted.get("kept_local", 0),
                 )
-            held_by_outlet = curated.get("outlet_disqualified", 0) + adopted.get("held_by_outlet_disqualified", 0)
-            if held_by_outlet:
-                # A feed whose outlet has another feed disqualified HERE is never admitted on the catalogue's stamp or a
-                # shipped verdict (R100, R153): it stays unqualified for its own trial. Said at boot, with the counts.
-                logger.info(
-                    "%d source(s) left unqualified because another feed of their outlet is disqualified "
-                    "(%d from the curated stamp, %d from the shipped verdicts).",
-                    held_by_outlet, curated.get("outlet_disqualified", 0),
-                    adopted.get("held_by_outlet_disqualified", 0),
-                )
+            log_outlet_holds(logger, curated, adopted)
         except Exception as exc:  # noqa: BLE001 - seeding must never block startup
             log_failure(logger, "could not seed the source catalog at startup", exc, level=logging.WARNING)
     # WITHDRAW, NEVER RE-ADMIT, what the history already refused (2026-09-30, diagnostics

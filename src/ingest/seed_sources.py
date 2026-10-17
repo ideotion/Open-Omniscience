@@ -576,9 +576,11 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
             dirty = True
     if dirty:
         session.commit()
-    if applied or conflicts:
+    if applied or conflicts or dropped:
         _LOGGER.info(
-            "catalogue corrections: %d applied, %d kept as operator edits", applied, len(conflicts)
+            "catalogue corrections: %d applied, %d kept as operator edits, %d field(s) the catalogue stopped shipping kept "
+            "(%d baseline(s) advanced with no change to the row)",
+            applied, len(conflicts), dropped, advanced,
         )
     return {
         "checked": len(pairs), "applied": applied, "kept": len(conflicts),
