@@ -910,6 +910,9 @@ def run_scrape_once(
     # ``:memory:`` hands each thread a SEPARATE database) runs sequentially on that
     # same session — correct on any engine, parallel only where it is safe.
     use_pool = w_max > 1 and len(sources) > 1
+    # What the process-wide extraction lock cost this pass (``src.ingest.lock_stats``): set where the pass's monitor
+    # writes its summary, so the run report carries the same block as ``collect_perf.jsonl``.
+    extraction_lock: dict | None = None
     if use_pool:
         try:
             from src.database.session import engine as _global_engine
@@ -1026,6 +1029,10 @@ def run_scrape_once(
                         "pages_fetched": pages_fetched,
                     }
                 )
+                # The summary is not written for a pass shorter than one monitor tick; the figures exist all the same.
+                extraction_lock = summary.get("extraction_lock") if summary else None
+                if extraction_lock is None:
+                    extraction_lock = monitor.extraction_lock_block()
                 if summary:
                     _LOG.info(
                         "collect perf: bottleneck=%s",
@@ -1118,6 +1125,8 @@ def run_scrape_once(
     if deferred_sources:
         out["recycled"] = recycled
         out["deferred_next_pass"] = len(deferred_sources)
+    if extraction_lock is not None:
+        out["extraction_lock"] = extraction_lock
     return out
 
 
