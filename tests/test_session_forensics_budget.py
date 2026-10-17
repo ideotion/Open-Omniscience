@@ -53,6 +53,18 @@ def _stderr_worst(dd) -> int:
         both = [{"pid": 5, "boot_id": None, "at": "t", "line": pad + "(4242,0x1f2a3b4c0) malloc: double free for ptr 0x12"}] * 2
         path.write_text("".join(json.dumps(r) + "\n" for r in both), encoding="utf-8")
         worst = max(worst, _member("launcher_stderr", ee.launcher_stderr(5, None, None)))
+    # the largest shape (WAL's re-measure of 9d970ebfc): the newest accepted line fills the whole character share, the older one is cut so
+    # ``lines_cut`` sits beside a shown line, every count saturates, and ``rejected_lines`` reaches five digits from minimal rows (about
+    # 20,000 of them fit in the 256 KiB tail the reader takes; the file is on disk and anything may have written it)
+    fill = "p" * (ee.STDERR_SHOWN_CHARS - len("(4242,0x1f2a3b4c0) malloc: double free for ptr 0x12")) + "(4242,0x1f2a3b4c0) malloc: double free for ptr 0x12"
+    assert len(fill) == ee.STDERR_SHOWN_CHARS and ee.accepted_abort_line(fill)
+    big_rows = [{"pid": 5}] * 20_000
+    shape = big_rows + [{"pid": 5, "boot_id": None, "at": "t", "line": "Fatal Python error: Aborted"}, {"pid": 5, "boot_id": None, "at": "t", "line": fill},
+                        {"pid": 5, "boot_id": None, "at": "t", "summary": True, "kept_lines": big, "dropped_lines": big, "over_cap_lines": big}]
+    path.write_text("".join(json.dumps(r) + "\n" for r in shape), encoding="utf-8")
+    out = ee.launcher_stderr(5, None, None)
+    assert out["lines"] == [fill] and out["lines_cut"] == 1 and out["rejected_lines"] >= 10_000, out
+    worst = max(worst, _member("launcher_stderr", out))
     # a line too long to fit the character share is counted, not shown: the cut variant
     long_line = "p" * 100 + "(4242,0x1f2a3b4c0) malloc: double free for ptr 0x12"
     path.write_text(json.dumps({"pid": 5, "boot_id": None, "at": "t", "line": long_line}) + "\n", encoding="utf-8")
@@ -113,7 +125,7 @@ def test_the_worst_case_of_every_member_this_lane_writes_fits_the_headroom(dd, t
 
 
 def test_each_member_has_its_own_allowance_so_one_cannot_spend_anothers(dd, tmp_path, monkeypatch):
-    assert _stderr_worst(dd) <= 300
+    assert _stderr_worst(dd) <= 319  # the measured worst (WAL re-measured the same figure on 9d970ebfc)
     assert _died_worst() <= 80
     assert _native_worst() <= ni.REPORT_BYTES_BUDGET
     assert _census_worst(tmp_path, monkeypatch) <= hwm.CENSUS_BYTES
