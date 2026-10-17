@@ -329,9 +329,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/database/writer.py': {
         ('release_if_held', 'if session.info.pop(_SESSION_FLAG, False):'): 1,
-        ('hold_write_window', 'session.info[_SESSION_FLAG] = True'): 1,
-        ('_on_before_flush', 'session.info[_SESSION_FLAG] = True'): 1,
-        ('_on_orm_execute', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('_take_for_session', 'if session.info.get(_SESSION_FLAG):'): 1,
+        ('_take_for_session', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('_take_for_session', 'session.info.pop(_SESSION_FLAG, None)'): 1,
         ('hold_write_window', 'if not session.info.get(_SESSION_FLAG):'): 1,
         ('_on_before_flush', 'if not session.info.get(_SESSION_FLAG):'): 1,
         ('_on_orm_execute', 'if not session.info.get(_SESSION_FLAG):'): 1,

@@ -1498,7 +1498,7 @@
       const cfg = {scheduler: null, safety: null, custody: null};
       let answered = false;
       const reads = [["scheduler", "/api/scheduler/config"], ["safety", "/api/safety/settings"],
-                     ["custody", "/api/custody/settings"]].map(([key, path]) =>
+                     ["custody", "/api/custody/settings?late=0"]].map(([key, path]) =>
         api(path).then((v) => {
           cfg[key] = v;
           if (answered && onLate) onLate(Object.assign({}, cfg));

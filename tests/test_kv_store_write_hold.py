@@ -20,6 +20,7 @@ import os
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,14 @@ from src.config import kv_store
 from src.database.writer import write_gate, write_lock
 
 _PATIENCE_S = 30.0
+
+
+def _reset_hold_state() -> None:
+    """Back to no hold and no write counted. A test that fails with a write counted or a hold taken would otherwise leave them for every
+    later test of the session, which then refuses to start for a reason that is not theirs (one red cascading into twenty)."""
+    with kv_store._hold_lock:
+        kv_store._inflight.clear()
+        kv_store._hold_by = None
 
 
 @pytest.fixture
@@ -38,8 +47,37 @@ def store(tmp_path, monkeypatch):
     con.close()
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{live}")
     kv_store.kv_invalidate()
+    _reset_hold_state()
+    real_inflight = kv_store._inflight  # the real set: a test may have patched the module's name by the time this runs
     yield live
     kv_store.kv_invalidate()
+    leaked = (set(real_inflight), kv_store._hold_by)
+    _reset_hold_state()  # so a leak fails the test that made it, not the twenty after it
+    assert leaked == (set(), None), "the test ended with a settings write counted in flight or a hold taken"
+
+
+def test_the_reset_helper_clears_a_hold_and_a_write_a_failed_test_left():
+    kv_store._inflight.add(object())
+    kv_store._hold_by = threading.get_ident()
+    _reset_hold_state()
+    assert not kv_store._inflight and kv_store._hold_by is None
+
+
+def test_the_store_fixture_resets_before_and_after_the_test():
+    import ast
+
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    body = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "store").body
+    yield_at = next(i for i, st in enumerate(body) if isinstance(st, ast.Expr) and isinstance(st.value, ast.Yield))
+
+    def calls_reset(stmts):
+        return any(
+            isinstance(st, ast.Expr) and isinstance(st.value, ast.Call) and getattr(st.value.func, "id", "") == "_reset_hold_state"
+            for st in stmts
+        )
+
+    assert calls_reset(body[:yield_at]), "the fixture must reset the hold state before the test"
+    assert calls_reset(body[yield_at + 1 :]), "the fixture must reset the hold state after the test"
 
 
 def _stored(live, key):

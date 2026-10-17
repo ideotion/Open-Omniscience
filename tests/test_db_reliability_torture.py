@@ -150,17 +150,29 @@ def test_t6_divergent_merge_full(corpora):
 
 def test_t2_duplicate_flood_is_idempotent(corpora):
     a, art = corpora["A"], corpora["artifact"]
-    before = _run(a, "dump")["dump"]
-    for _ in range(3):
+    # Flooding repeats a merge that already happened (test_t6 makes the first). Alone, nothing has merged yet, so the first run here
+    # legitimately creates rows and is not held to "creates nothing"; after t6 (CI's order) B's rows are already in A and EVERY
+    # application here, the first included, must create nothing -- a duplicate written by the second application of a merge is
+    # exactly the defect this test exists for. The marker for "already merged" is the one test_t6 uses for
+    # the same fact: the token unique to B's corpus is findable twice (A's own row and B's).
+    already = _run(a, "fts-find", "unique")["matches"] >= 2
+    for i in range(4):
         rep = _run(a, "merge", str(art), "--passphrase", "pw-torture", "--commit")["report"]
         news = {k: v["new"] for k, v in rep["plan"].items()
                 if isinstance(v, dict) and v.get("new")}
-        assert news == {}, f"re-merge created rows: {news}"
+        if already or i > 0:
+            assert news == {}, f"re-merge {i} created rows: {news}"
+        if i == 0:
+            before = _run(a, "dump")["dump"]
     assert _run(a, "dump")["dump"] == before
 
 
 def test_t9_custody_verified_not_trusted(corpora):
     a = corpora["A"]
+    # The imported chains exist only once B has been merged into A, which test_t6 does; run alone (-k, a node id, or a worker of
+    # xdist that did not get t6) this test saw none and failed on `imported`. The merge is idempotent (T2 pins that), so it is
+    # done here too and the test no longer depends on which others ran before it.
+    _run(a, "merge", str(corpora["artifact"]), "--passphrase", "pw-torture", "--commit")
     state = _run(a, "verify-custody")
     assert state["local_ok"] is True, "local chain must stay intact after merges"
     assert state["imported"] and all(c["verified"] for c in state["imported"])

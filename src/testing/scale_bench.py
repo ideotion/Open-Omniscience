@@ -444,8 +444,11 @@ def wal_bench(
                         (f"__wal_bench_{i}", "x" * 200),
                     )
                     raw.commit()
-                    if i % 250 == 0 and wal_path.exists():
-                        peak_wal = max(peak_wal, wal_path.stat().st_size)
+                    # the guard-clause form, as in src/database/encrypt_tool.py: a loop ending in a bare ``if`` has its back-edge outside the
+                    # exception table of the ``try`` around it on CPython 3.13 (R163)
+                    if i % 250 != 0 or not wal_path.exists():
+                        continue
+                    peak_wal = max(peak_wal, wal_path.stat().st_size)
                 cur.close()
             finally:
                 raw.close()

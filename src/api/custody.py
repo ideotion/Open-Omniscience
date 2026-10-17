@@ -76,7 +76,7 @@ def export(item_id: str | None = None) -> dict:
         log.close()
 
 
-def _settings_status() -> dict:
+def _settings_status(*, count_late: bool = True) -> dict:
     """Combine stored preferences with what the build can actually do.
 
     The response always exposes both the *requested* preference and the
@@ -104,16 +104,26 @@ def _settings_status() -> dict:
         "signer": signer.public_identity().to_dict(),
         # CUST-1 (2026-09-24): ingest entries a failure left owed, and those written late.
         # Shown beside the chain's own status, because a gap nobody reports is the defect.
-        "late": _late_block(),
+        "late": _late_block(count_late=count_late),
     }
 
 
-def _late_block() -> dict:
-    from src.custody.pending import late_count, pending_count
+def _late_block(*, count_late: bool = True) -> dict:
+    from src.custody.pending import late_reading, pending_count
 
+    # ``count_late=False`` is for a reader that does not show the count (the network consent popup reads this route for
+    # the anchoring mode only): it says the count was not asked for, which is not a failure to read it.
+    if count_late:
+        reading = late_reading()
+    else:
+        reading = {"count": None, "reason": "not requested", "computed_at": None}
     return {
         "pending": pending_count(),
-        "recorded_late": late_count(),
+        "recorded_late": reading["count"],
+        # Taken now, not cached: the moment is stated so a number is never taken for a standing fact; null when it was
+        # unreadable or not asked for, and the reason says which.
+        "recorded_late_computed_at": reading["computed_at"],
+        "recorded_late_reason": reading["reason"],
         "method": (
             "an INGEST entry that could not be written when its article was stored is "
             "queued in data/custody_pending.jsonl and written later -- at the end of the next "
@@ -142,9 +152,11 @@ class SettingsUpdate(BaseModel):
 
 
 @router.get("/settings")
-def get_settings() -> dict:
-    """Return custody preferences plus their effective (availability-aware) state."""
-    return _settings_status()
+def get_settings(late: bool = True) -> dict:
+    """Return custody preferences plus their effective (availability-aware) state.
+
+    ``late=false`` leaves out the late-entries count (a scan of the custody log); everything else is unchanged."""
+    return _settings_status(count_late=late)
 
 
 @router.put("/settings")

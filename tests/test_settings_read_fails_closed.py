@@ -286,6 +286,9 @@ def test_the_first_run_defaults_send_nothing_because_the_app_boots_offline(env):
     except BaseException:  # noqa: BLE001 - the same guard as test_boot_airplane_never_revokes_online
         pytest.skip("src.api.main is unimportable here (CI runs it)")
     env.delenv("OO_NO_SCHEDULER", raising=False)
+    # the upkeep would start a REAL boot-sequence thread that nobody joins, and it would write into the next test that patches the
+    # boot steps (see tests/test_boot_airplane_never_revokes_online.py::_no_boot_sequence_thread)
+    env.setattr("src.api.boot_sequence.run", lambda *a, **k: None)
     I._reset_crossed_online_for_tests()
     I.clear_kill_switch()
     try:

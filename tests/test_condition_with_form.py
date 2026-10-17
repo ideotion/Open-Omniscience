@@ -17,7 +17,7 @@ raw RLock held in about 80 % of interrupts (and ``with condition:`` in about 30 
 ``test_the_with_statement_still_compiles_to_before_with`` fails on a Python that does not, and the next step is to re-run the probes before accepting it.
 
 This reads ``src`` and FAILS on a ``with`` whose context is a name assigned from ``threading.Condition(...)`` (not ``asyncio.Condition``, which is a
-different primitive). Two modules still use the form and are pinned by their count of sites, so a NEW site there fails, and a conversion makes
+different primitive). One module still uses the form (held behind the run-records PR) and is pinned by its count of sites, so a NEW site there fails, and a conversion makes
 the failure say the entry should go.
 
 NOT READ (none occurs in ``src`` today; each would need a person to see it): a Condition kept in a dict or list (``with self._conds[k]:``), made by a
@@ -37,8 +37,7 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 
 #: Modules that still enter a Condition with ``with``, each with its number of sites and why it is not converted yet.
 _STILL_WITH_CONDITION: dict[str, tuple[int, str]] = {
-    "database/writer.py": (9, "the single-writer gate: R144 converted the settings hold and three small gates; this one is on the hot path of every write and goes in its own PR"),
-    "monitoring/storage_events.py": (2, "the storage-event journal's wait for a change; the same sweep as the writer gate"),
+    "monitoring/storage_events.py": (2, "the storage-event journal's wait for a change; held behind the run-records PR (#1421), which edits the same lines"),
 }
 
 
@@ -102,7 +101,7 @@ def _differences(seen: dict[str, int], expected: dict[str, int]) -> list[str]:
     return lines
 
 
-def test_no_module_enters_a_condition_with_with_except_the_two_pinned_ones():
+def test_no_module_enters_a_condition_with_with_except_the_pinned_ones():
     seen: dict[str, int] = {}
     for path in sorted(_SRC.rglob("*.py")):
         sites = _with_sites(path.read_text(encoding="utf-8"))
@@ -132,7 +131,7 @@ def test_the_with_statement_still_compiles_to_before_with():
 
 @pytest.mark.parametrize(
     "path",
-    ["config/kv_store.py", "database/pool_reserve.py", "database/library_generation.py", "scheduler/bandwidth.py"],
+    ["config/kv_store.py", "database/pool_reserve.py", "database/library_generation.py", "scheduler/bandwidth.py", "database/writer.py"],
 )
 def test_the_converted_modules_build_the_condition_on_a_plain_lock_and_enter_the_lock(path):
     """Non-vacuity: each converted module still has a Condition, built on an explicit RLock, and enters the lock itself."""

@@ -262,16 +262,9 @@ def write_parity(
     handles = [open(p, "wb") for p in tmp_paths]
     try:
         for off in range(0, stripe, band_bytes):
-            blen = min(band_bytes, stripe - off)
-            acc = [np.zeros(blen, dtype=np.uint8) for _ in range(m)]
-            for k, f in enumerate(data_files):
-                band = _read_band(f, off, blen)
-                for j in range(m):
-                    coef = g[j][k]
-                    if coef:
-                        acc[j] ^= mul[coef][band]
-            for j, fh in enumerate(handles):
-                fh.write(np.ascontiguousarray(acc[j]).tobytes())
+            # one band per call: the loops of a band live in a function with no handler, so an interrupt reaches this call, which the
+            # ``finally`` covers (CPython 3.13 leaves a loop's back-edge outside the exception table of the ``try`` around it; R163)
+            _write_parity_band(np, handles, data_files, g, mul, m, off, min(band_bytes, stripe - off))
     finally:
         for fh in handles:
             fh.close()
@@ -295,6 +288,36 @@ def write_parity(
         tmp.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
         os.replace(tmp, out / MANIFEST_NAME)
     return manifest["parity"]
+
+
+def _write_parity_band(np, handles, data_files, g, mul, m: int, off: int, blen: int) -> None:
+    """One band of :func:`write_parity`: the parity of ``blen`` bytes at ``off`` of every data volume, appended to each parity file."""
+    acc = [np.zeros(blen, dtype=np.uint8) for _ in range(m)]
+    for k, f in enumerate(data_files):
+        band = _read_band(f, off, blen)
+        for j in range(m):
+            coef = g[j][k]
+            if coef:
+                acc[j] ^= mul[coef][band]
+    for j, fh in enumerate(handles):
+        fh.write(np.ascontiguousarray(acc[j]).tobytes())
+
+
+def _recover_band(np, handles, chosen, inv, mul, erased_data, data_meta, off: int, blen: int) -> None:
+    """One band of :func:`recover_volumes`: the erased volumes' bytes at ``off``, rebuilt from the surviving rows and written to their temp files."""
+    acc = {k: np.zeros(blen, dtype=np.uint8) for k in erased_data}
+    for ri, (_, path) in enumerate(chosen):
+        band = _read_band(path, off, blen)
+        for k in erased_data:
+            coef = inv[k][ri]
+            if coef:
+                acc[k] ^= mul[coef][band]
+    for k in erased_data:
+        real_len = int(data_meta[k]["bytes"])
+        # Trim the zero padding: write only the bytes inside the real volume.
+        if off < real_len:
+            keep = min(blen, real_len - off)
+            handles[k].write(np.ascontiguousarray(acc[k][:keep]).tobytes())
 
 
 def recover_volumes(
@@ -358,20 +381,8 @@ def recover_volumes(
     handles = {k: open(p, "wb") for k, p in tmp_paths.items()}
     try:
         for off in range(0, stripe, band_bytes):
-            blen = min(band_bytes, stripe - off)
-            acc = {k: np.zeros(blen, dtype=np.uint8) for k in erased_data}
-            for ri, (_, path) in enumerate(chosen):
-                band = _read_band(path, off, blen)
-                for k in erased_data:
-                    coef = inv[k][ri]
-                    if coef:
-                        acc[k] ^= mul[coef][band]
-            for k in erased_data:
-                real_len = int(data_meta[k]["bytes"])
-                # Trim the zero padding: write only the bytes inside the real volume.
-                if off < real_len:
-                    keep = min(blen, real_len - off)
-                    handles[k].write(np.ascontiguousarray(acc[k][:keep]).tobytes())
+            # see write_parity: the band's loops are a function of their own (R163)
+            _recover_band(np, handles, chosen, inv, mul, erased_data, data_meta, off, min(band_bytes, stripe - off))
     finally:
         for fh in handles.values():
             fh.close()

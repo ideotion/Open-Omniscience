@@ -55,6 +55,15 @@ def _host_memory_is_not_under_test(monkeypatch):
 def seq(monkeypatch):
     """The sequence with fake steps; ``log`` records ('start'|'end', step) in order."""
     log: list[tuple[str, str]] = []
+    # The fixture patches module attributes that ``bs.run`` looks up at call time, so ANY other thread inside ``bs.run`` calls these fakes and
+    # writes into ``log``. A boot-sequence thread a test left running (the upkeep starts a real one) is refused here by name, not waited out.
+    leaked = [t.name for t in threading.enumerate() if t.name == "oo-boot-sequence" and t.is_alive()]
+    if leaked:
+        pytest.fail(
+            f"{len(leaked)} live 'oo-boot-sequence' thread(s) left by an earlier test: they would run this test's patched steps. "
+            "The test that called the real _run_startup_upkeep() must patch src.api.boot_sequence.run or join the thread.",
+            pytrace=False,
+        )
     monkeypatch.setitem(bs._STATE, "reindex_pending", None)
     monkeypatch.setitem(bs._STATE, "warm", "pending")
     bs._reset()
@@ -418,3 +427,19 @@ def test_a_declined_rollup_build_and_a_refused_drain_are_not_shown_as_done(seq, 
     bs._reset()
     bs.run(lambda: None)
     assert _by_step(bs.snapshot())["rollup"]["state"] == "failed"
+
+
+def test_the_fixture_refuses_to_start_while_a_boot_sequence_thread_is_alive_and_names_it(request):
+    """The leak that made ``test_the_steps_run_in_order...`` fail about one run in three (a real thread from the upkeep, never joined) is
+    refused at the start of the next test that patches the boot steps, with the cause in the message, not as a log with someone else's
+    steps in it."""
+    stop = threading.Event()
+    t = threading.Thread(target=stop.wait, name="oo-boot-sequence", daemon=True)
+    t.start()
+    try:
+        with pytest.raises(pytest.fail.Exception, match="live 'oo-boot-sequence' thread"):
+            request.getfixturevalue("seq")
+    finally:
+        stop.set()
+        t.join(5)
+    assert not t.is_alive()

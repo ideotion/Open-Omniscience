@@ -51,6 +51,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import FrameType
 
+from src.utils.interrupts import wait as _wait
+
 _LOG = logging.getLogger(__name__)
 
 TABLE = "app_state"
@@ -109,9 +111,14 @@ _hold_by: int | None = None  # ident of the thread holding settings writes (a re
 #: for a token that was never added), then the lock is taken only to wake a waiting hold. A KeyboardInterrupt landing in a release that took the
 #: lock first used to arrive before the decrement and leave the write counted for ever (about 5 % of interrupted writes with real signals on
 #: CPython 3.13), so every later hold refused to start until a restart; the lock-free ``remove`` closes that, and ``_hold_lock`` above closes
-#: the same hazard for the lock itself. One residual stays: an interrupt inside ``Condition.wait``'s Python code can surface as a
-#: ``RuntimeError`` ("cannot release un-acquired lock") in place of the KeyboardInterrupt (0.27 % of interrupted waits, nothing left held).
+#: the same hazard for the lock itself. The residual that stayed (an interrupt inside ``Condition.wait``'s Python code surfacing as a
+#: ``RuntimeError`` ("cannot release un-acquired lock") in place of the KeyboardInterrupt, 0.27 % of interrupted waits) is closed by ``_wait_hold``.
 _inflight: set[object] = set()
+
+
+def _wait_hold(timeout: float) -> None:
+    """Wait on the hold (the caller holds ``_hold_lock`` once); an interrupt of the wait stays the interrupt (see ``src.utils.interrupts``)."""
+    _wait(_hold, _hold_lock, timeout)
 
 
 def _caller_of_the_write() -> str:
@@ -159,11 +166,14 @@ def _write_slot() -> Iterator[int]:
                 if write_gate.held_by_current_thread():  # waiting here would make the restore wait for this thread's connection: refuse now
                     raise KvWriteRefused(_REFUSED_TEXT)
                 deadline = time.monotonic() + KV_WRITE_WAIT_S
-                while _hold_by is not None:
+                # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+                while True:
+                    if _hold_by is None:
+                        break
                     left = deadline - time.monotonic()
                     if left <= 0:
                         raise KvWriteRefused(_REFUSED_TEXT)
-                    _hold.wait(left)
+                    _wait_hold(left)
             if not passthrough:
                 _inflight.add(token)  # the one statement that counts this write
         with _lock:
@@ -203,11 +213,14 @@ def hold_writes(timeout: float) -> Iterator[None]:
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
         with _hold_lock:
-            while _inflight:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if not _inflight:
+                    break
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise KvWriteBusy("a settings save was still in flight")
-                _hold.wait(left)
+                _wait_hold(left)
         yield
     finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         if held:  # never clears another thread's hold (the "already held" refusal above)
@@ -547,10 +560,16 @@ def kv_invalidate(key: str | None = None) -> None:
             _failed.clear()
             _seen.clear()
         else:
-            for ck in [ck for ck in _failed if ck[1] == key]:
-                _failed.pop(ck, None)
-            for ck in [ck for ck in _cache if ck[1] == key]:
-                _cache.pop(ck, None)
+            _forget_key(_failed, key)
+            _forget_key(_cache, key)
+
+
+def _forget_key(table: dict, key: str) -> None:
+    """Drop every entry of ``table`` whose key is ``(_, key)``. The loop is HERE and not in :func:`kv_invalidate`: a loop of this shape written
+    under ``with _lock:`` has a back-edge outside the ``with``'s exception-table entry on CPython 3.13 (see ``src/utils/interrupts.py``), where
+    in a function with no handler an interrupt at it simply propagates to the caller's call, which the ``with`` covers."""
+    for ck in [ck for ck in table if ck[1] == key]:
+        table.pop(ck, None)
 
 
 def _loads_strict(raw: str | None) -> dict | None:

@@ -93,6 +93,7 @@ from contextlib import contextmanager, suppress
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure, scrubbed_name
+from src.utils.interrupts import wait as _wait
 
 _LOG = logging.getLogger("database.writer")
 
@@ -124,7 +125,6 @@ class WriterGate:
         self._cond = threading.Condition(self._lock)
         self._owner: int | None = None  # thread ident holding the write window
         self._depth = 0  # reentrant depth for the owner thread
-        self._waiters = 0  # threads currently blocked waiting to write
         # Observability (feeds the task-manager System view later; proves
         # serialisation in tests). Plain counters under the condition lock.
         self._grants = 0  # total acquisitions granted
@@ -169,8 +169,15 @@ class WriterGate:
         # condition over the shared lock, so a handoff costs exactly one wakeup.
         self._queue: list[threading.Condition] = []
 
+    @property
+    def _waiters(self) -> int:
+        """Threads currently blocked waiting to write: the queue's length, NOT a second counter kept beside it. Two statements (``append``, then
+        ``+= 1``) have a gap an interrupt can land in, and a queue entry that nobody owns is the head every later writer waits behind for ever;
+        one statement cannot be split."""
+        return len(self._queue)
+
     def _take(self, me: int) -> None:
-        """Grant the window to ``me``. Caller holds ``self._cond``."""
+        """Grant the window to ``me``. Caller holds ``self._lock``."""
         self._owner = me
         self._depth = 1
         self._grants += 1
@@ -191,7 +198,7 @@ class WriterGate:
         # Outside the lock: never spawn a thread while holding the write window.
         _maybe_start_watchdog()
         me = threading.get_ident()
-        with self._cond:
+        with self._lock:
             if self._owner == me:  # reentrant: same thread, nested write
                 self._depth += 1
                 return True
@@ -220,27 +227,28 @@ class WriterGate:
             # and the real collector is network-bound BETWEEN writes, so the
             # fully-contended figure is the worst case and not the typical one.
             cv = threading.Condition(self._lock)
-            self._queue.append(cv)
-            self._waiters += 1
-            self._contended += 1
-            self._peak_waiters = max(self._peak_waiters, self._waiters)
             start = time.monotonic()
             deadline = None if timeout is None else start + timeout
             granted = False
+            # the try opens BEFORE the queue is joined: an interrupt after the append and before the try left the entry queued with no owner
+            # (measured: 1 to 5 of 49,500 interrupts), and the head of the queue is the one thread FIFO lets take a free gate
             try:
+                self._queue.append(cv)
+                self._contended += 1
+                self._peak_waiters = max(self._peak_waiters, self._waiters)
                 while True:
                     if self._owner is None and self._queue and self._queue[0] is cv:
                         granted = True
                         break
                     if deadline is None:
-                        cv.wait()
+                        _wait(cv, self._lock)
                     else:
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
                             break
-                        cv.wait(remaining)
+                        _wait(cv, self._lock, remaining)
             finally:
-                self._waiters -= 1
+                # Under the lock whatever interrupted the wait: this block edits the queue and the counters (see src.utils.interrupts)
                 waited = time.monotonic() - start
                 self._total_wait_s += waited
                 self._max_wait_s = max(self._max_wait_s, waited)
@@ -259,7 +267,7 @@ class WriterGate:
         me = threading.get_ident()
         # (holder name, seconds, start) of the hold that ended on THIS call, for the line written after the lock is dropped.
         released: tuple[str | None, float, float | None] | None = None
-        with self._cond:
+        with self._lock:
             if self._owner != me:
                 # Defensive: only the owner releases. A non-owner call is a
                 # no-op (e.g. a rollback event on a session that never wrote).
@@ -329,8 +337,14 @@ class WriterGate:
             self._queue[0].notify()
 
     def held_by_current_thread(self) -> bool:
-        with self._cond:
+        with self._lock:
             return self._owner == threading.get_ident()
+
+    def depth_of_current_thread(self) -> int:
+        """How many levels of the window THIS thread holds (0 when it does not): the reading a caller takes before an acquire, so that
+        an exception that lands after the window was taken but before the caller knows it can still give back exactly that level."""
+        with self._lock:
+            return self._depth if self._owner == threading.get_ident() else 0
 
     def waiters(self) -> int:
         """Threads blocked RIGHT NOW waiting to write: the one number a long holder needs to know whether to let go.
@@ -339,7 +353,7 @@ class WriterGate:
         ("is anyone waiting behind this batch?"). A holder that commits on a non-zero answer never starves anyone, because the
         gate is first-in-first-out and the waiter is handed the window the instant the batch's transaction ends.
         """
-        with self._cond:
+        with self._lock:
             return self._waiters
 
     def _reset_for_tests(self) -> None:
@@ -347,7 +361,7 @@ class WriterGate:
         cannot hang the next one. NEVER call in production — it would abandon a
         real in-flight write window. The per-test guard fixture uses this to
         recover and then fail the offending test loudly."""
-        with self._cond:
+        with self._lock:
             self._owner = None
             self._depth = 0
             self._holder = None
@@ -365,7 +379,7 @@ class WriterGate:
 
     def watch(self, ident: int) -> None:
         """Start (or restart, from zero) keeping the holds of the thread with this ident."""
-        with self._cond:
+        with self._lock:
             self._watched[ident] = {"grants": 0, "held_s": 0.0, "longest_s": 0.0}
 
     def take_watched(self, ident: int) -> dict[str, float] | None:
@@ -374,7 +388,7 @@ class WriterGate:
 
         A hold still in flight is not in it (it is added at release), exactly as ``stats``'s
         ``total_held_s`` says of itself."""
-        with self._cond:
+        with self._lock:
             return self._watched.pop(ident, None)
 
     def stats(self) -> dict:
@@ -383,7 +397,7 @@ class WriterGate:
         The thread names in it (``holder``, ``max_hold_holder``, ``by_holder[].holder``) are copied raw under the gate's lock and
         scrubbed of the passphrases the process holds AFTER it is released: ``served_cache.change_probe`` reads these stats two or
         three times per cached read, and the scrub (a few microseconds a name) is not work to do while a writer waits on the lock."""
-        with self._cond:
+        with self._lock:
             held_for = (
                 None if self._held_since is None else round(time.monotonic() - self._held_since, 4)
             )
@@ -438,7 +452,7 @@ class WriterGate:
         ``monotonic()`` reading, which drifts by the delta between the two --
         so every sample would look like a new hold and warn again.
         """
-        with self._cond:
+        with self._lock:
             if self._owner is None or self._held_since is None:
                 return (None, None, None)
             return (self._holder, self._held_since, self._owner)
@@ -479,17 +493,31 @@ def write_lock(timeout: float | None = None) -> Iterator[None]:
     if not gate_enabled():
         yield
         return
-    if not write_gate.acquire(timeout=timeout):
-        s = write_gate.stats()
-        raise WriteGateBusy(
-            f"write gate busy after {timeout}s "
-            f"(holder={s.get('holder')!r}, held_for_s={s.get('held_for_s')}, "
-            f"queued={s.get('queued')})"
-        )
+    # An exception (a KeyboardInterrupt) that lands after the window was TAKEN and before the caller saw the answer would leave it held for
+    # ever, so the acquire is wrapped on its own: the depth this thread holds before and after says whether a level was taken. Only the
+    # acquire is judged that way. Once the body runs, the level is this call's to give back whatever the body did with the levels
+    # (a commit of a session that already held the window gives one back, and a depth comparison would then give nothing back).
+    before = write_gate.depth_of_current_thread()
+    took = False
     try:
+        try:
+            got = write_gate.acquire(timeout=timeout)
+        except BaseException:
+            if write_gate.depth_of_current_thread() > before:
+                write_gate.release()
+            raise
+        if not got:
+            s = write_gate.stats()
+            raise WriteGateBusy(
+                f"write gate busy after {timeout}s "
+                f"(holder={s.get('holder')!r}, held_for_s={s.get('held_for_s')}, "
+                f"queued={s.get('queued')})"
+            )
+        took = True
         yield
     finally:
-        write_gate.release()
+        if took:
+            write_gate.release()
 
 
 def write_gate_stats() -> dict:
@@ -770,6 +798,27 @@ def start_write_gate_watchdog() -> bool:
     return True
 
 
+def _take_for_session(session) -> None:
+    """Take the window for ``session``'s transaction and mark the session, as ONE step an exception cannot split.
+
+    ``acquire()`` then ``session.info[flag] = True`` left a gap: an exception (a KeyboardInterrupt) between them held the window with
+    no flag, so nothing ever released it (``release_if_held`` and the transaction-end event both look at the flag). On an exception
+    here the level this call took is given back and the flag is cleared; on success the flag is the session's record that it holds one.
+    """
+    # already holds one: nothing to take, and an undo below must not drop that one's flag
+    if session.info.get(_SESSION_FLAG):
+        return
+    before = write_gate.depth_of_current_thread()
+    try:
+        write_gate.acquire()
+        session.info[_SESSION_FLAG] = True
+    except BaseException:
+        if write_gate.depth_of_current_thread() > before:
+            write_gate.release()
+        session.info.pop(_SESSION_FLAG, None)
+        raise
+
+
 def release_if_held(session) -> None:
     """Belt-and-braces release for a session that may still hold the gate.
 
@@ -804,8 +853,7 @@ def hold_write_window(session) -> bool:
             # Only a transaction's END releases the window, so there must be one to end: begin it
             # (the read that follows would have).
             session.connection()
-        write_gate.acquire()
-        session.info[_SESSION_FLAG] = True
+        _take_for_session(session)
     return True
 
 
@@ -851,8 +899,7 @@ def _on_before_flush(session, _flush_context, _instances) -> None:
     # First write of this session's transaction is about to hit the file —
     # take the write window. Idempotent within the transaction via the flag.
     if not session.info.get(_SESSION_FLAG):
-        write_gate.acquire()
-        session.info[_SESSION_FLAG] = True
+        _take_for_session(session)
 
 
 _SQL_LEADING = re.compile(r"(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)*", re.DOTALL)
@@ -895,8 +942,7 @@ def _on_orm_execute(orm_execute_state) -> None:
         return
     session = orm_execute_state.session
     if not session.info.get(_SESSION_FLAG):
-        write_gate.acquire()
-        session.info[_SESSION_FLAG] = True
+        _take_for_session(session)
 
 
 def _on_after_transaction_end(session, transaction) -> None:
