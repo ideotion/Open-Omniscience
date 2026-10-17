@@ -108,6 +108,13 @@ _SAME_START_S = 5.0
 
 # The journal identifiers of the user-space killers and of the core-dump handler.
 _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
+
+#: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included
+#: (ruled 2026-10-17: 800 B of WAL's 2,415 B). A test serialises the worst case against it.
+COREDUMP_STACK_BYTES = 800
+_COREDUMP_HEAD = re.compile(r"systemd-coredump\S*:\s+Process\s+(\d+)\s+\(")
+_COREDUMP_KEEP = re.compile(r"^(?:Stack trace of thread \d+:|#\d+\s)")
+_COREDUMP_FRAME = re.compile(r"^#\d+\s")
 _KILLER_UNITS = ("systemd-oomd", "earlyoom", "nohang")
 # systemd-oomd names the cgroup it killed: "Killed /user.slice/.../app-x.scope due to ...".
 _OOMD_KILLED = re.compile(r"\bKilled (/\S+)")
@@ -424,6 +431,67 @@ def running_killers() -> dict[str, Any]:
     }
 
 
+def _jlen(text: str) -> int:
+    """Serialised bytes of one list member: the JSON string, its quotes and the comma after it."""
+    return len(json.dumps(text, ensure_ascii=False).encode("utf-8")) + 1
+
+
+def coredump_stack(text: str, pid: int | None) -> dict[str, Any] | None:
+    """The stack systemd-coredump logged for process ``pid``, cut to :data:`COREDUMP_STACK_BYTES` from the front, or None.
+
+    In ``journalctl -o short-iso`` only the first line of a core-dump entry names the process; the thread headers and the frames
+    (``Stack trace of thread N:`` / ``#0  0x... name (lib + 0x...)``) are INDENTED CONTINUATION lines that name no pid, so they are
+    read here from the entry that follows a header naming the pid. The whole block is taken through the passphrase scrub BEFORE it is
+    cut. Lines are kept in the order the journal wrote them (thread by thread, ``#0`` upward) until the next whole line would pass the
+    budget; the rest is counted, not stored: ``frames_dropped`` (``#n`` lines) and ``bytes_dropped`` (serialised bytes of every line
+    left out). Module lists and other continuation lines are ignored and not counted. Tested on the documented systemd-coredump format
+    only; it has not been run against a real journal."""
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        return None
+    block: list[str] | None = None
+    current: list[str] | None = None
+    for line in text.splitlines():
+        m = _COREDUMP_HEAD.search(line)
+        if m and not line[:1].isspace():
+            current = [] if int(m.group(1)) == pid else None
+            if current is not None:
+                block = current
+            continue
+        if current is not None:
+            if line[:1] in (" ", "\t"):
+                current.append(line.strip())
+            else:
+                current = None
+    if block is None:
+        return None
+    from src.monitoring.secret_scrub import scrubbed
+
+    kept_src = [ln for ln in scrubbed("\n".join(block)).split("\n") if _COREDUMP_KEEP.match(ln)]
+    if not kept_src:
+        return {"result": "no-stack-in-entry"}
+    overhead = len(json.dumps({"result": "stack", "lines": [], "frames_dropped": 10**9, "bytes_dropped": 10**9}, separators=(",", ":")))
+    room = COREDUMP_STACK_BYTES - overhead
+    kept: list[str] = []
+    used = 0
+    cut = False
+    frames_dropped = bytes_dropped = 0
+    for ln in kept_src:
+        n = _jlen(ln)
+        if not cut and used + n <= room:
+            kept.append(ln)
+            used += n
+            continue
+        cut = True
+        bytes_dropped += n
+        if _COREDUMP_FRAME.match(ln):
+            frames_dropped += 1
+    out: dict[str, Any] = {"result": "stack", "lines": kept}
+    if cut:
+        out["frames_dropped"] = frames_dropped
+        out["bytes_dropped"] = bytes_dropped
+    return out
+
+
 def read_userspace_killers(
     pid: int | None, *, since: str | None = None, boot: str | None = None, cgroup: str | None = None
 ) -> dict[str, Any]:
@@ -487,6 +555,10 @@ def read_userspace_killers(
     out["lines"] = published_lines(matched, 20)
     if matched:
         out["verdict"] = _classify_killer(matched)
+        if out["verdict"] == "core-dump":
+            stack = coredump_stack(text, pid)
+            if stack is not None:
+                out["stack"] = stack
         return out
     out["reason"] = (
         "the journal was read and none of these daemons named this app's previous "
