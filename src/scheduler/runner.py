@@ -777,6 +777,16 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     }
 
 
+def _source_label(source) -> str:
+    """The source's domain for a log line or a progress line, or ``?``. After a failure rolls the session back, every Source
+    object that session holds is expired, and reading one attribute reloads the row through a pooled connection: with the pool
+    exhausted that checkout times out, and a label is never worth ending a pass for."""
+    try:
+        return source.domain
+    except Exception:  # noqa: BLE001 - a label; never worth a failure
+        return "?"
+
+
 def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     """Scrape ONE source into ``session``; returns (tally, pages_fetched, processed).
 
@@ -809,10 +819,7 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     # back, which expires every attribute, and reading ``source.domain`` in the handler
     # then reloads it through a pooled connection — a second checkout that can time out
     # (the pool is exactly what is exhausted) and escape the handler, ending the pass.
-    try:
-        domain = source.domain
-    except Exception:  # noqa: BLE001 - a label for the log; never worth a failure
-        domain = "?"
+    domain = _source_label(source)
 
     try:
         # Feeds only. The whole-source crawl branch that sat here served the retired
@@ -951,6 +958,7 @@ def run_scrape_once(
         with deferred_lock:
             deferred_sources.append(source)
             wind_reasons[reason] = wind_reasons.get(reason, 0) + 1
+
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
@@ -1190,7 +1198,7 @@ def run_scrape_once(
                 if reason:
                     _defer(source, reason)
                     continue
-                _progress_set(current=source.domain, done=idx, pages=pages_fetched)
+                _progress_set(current=_source_label(source), done=idx, pages=pages_fetched)
                 tally, pages, processed = _process_source(
                     source, session=session, fetcher=fetcher,
                 )

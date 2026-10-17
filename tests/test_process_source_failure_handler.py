@@ -140,3 +140,53 @@ def test_the_failure_is_still_logged_by_domain(faulty_ingest, caplog):
     with caplog.at_level(logging.WARNING):
         _pass(tag, 1)
     assert any(first in r.getMessage() for r in caplog.records), "the log line names the source that failed"
+
+
+@pytest.fixture
+def faulty_loop_read(monkeypatch):
+    """The sequential loop's own read of the NEXT source's label: the first source's ingest rolls the shared caller session back
+    (every Source object it holds is now expired) and the next pooled checkout made from ``run_scrape_once`` itself, outside
+    ``_process_source``, raises the pool's timeout once. Every other checkout passes through."""
+    import sys
+
+    from src.database.session import engine
+
+    state = {"armed": False, "timeouts": 0, "failed": [], "stored": 0}
+    real_connect = engine.pool.connect
+
+    def connect(*a, **kw):
+        if state["armed"]:
+            names = []
+            frame = sys._getframe(1)
+            while frame is not None:
+                names.append(frame.f_code.co_name)
+                frame = frame.f_back
+            if "run_scrape_once" in names and "_process_source" not in names:
+                state["armed"] = False
+                state["timeouts"] += 1
+                raise PoolTimeout("QueuePool limit reached for the collector; connection timed out, timeout 30.00")
+        return real_connect(*a, **kw)
+
+    def ingest(session, source, *, fetcher=None, **kw):
+        if not state["failed"]:  # the FIRST source of the pass, whichever the selection puts first: another one always follows it
+            state["failed"].append(source.domain)
+            session.rollback()  # expires every Source object the caller's session holds
+            state["armed"] = True
+            raise RuntimeError("the article failed")
+        state["stored"] += 1
+        return {"stored": 1}
+
+    monkeypatch.setattr(engine.pool, "connect", connect)
+    monkeypatch.setattr("src.ingest.pipeline.ingest_source", ingest)
+    return state
+
+
+def test_a_pool_timeout_reading_the_next_sources_label_does_not_end_the_sequential_pass(faulty_loop_read):
+    """The sequential loop shares the caller's session between sources. When one source fails inside ingest the rollback expires
+    all the others, and the loop's progress line read ``source.domain`` OUTSIDE any try: the same reload through the pool that
+    ``_process_source``'s handler had, one line earlier in the loop, and the same way for one source to end the whole pass."""
+    tag, _first = _seed(4)
+    result = _pass(tag, 1)  # red without the fix: raises sqlalchemy.exc.TimeoutError out of run_scrape_once
+    assert faulty_loop_read["timeouts"] == 1 and len(faulty_loop_read["failed"]) == 1
+    assert faulty_loop_read["stored"] == 3, "the other three sources carried on"
+    assert result["sources_processed"] == 3 and result["articles_stored"] == 3
