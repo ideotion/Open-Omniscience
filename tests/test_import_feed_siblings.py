@@ -33,6 +33,12 @@ def _sheet(*feeds, domain="outlet.example"):
     return parsed
 
 
+def _write_yaml(path, document):
+    import yaml
+
+    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+
 def _feeds(s):
     return sorted(r.rss_url for r in s.query(Source))
 
@@ -73,25 +79,21 @@ def test_a_csv_that_repeats_one_corrected_row_still_corrects_the_row_it_is_not_a
 
 
 def test_a_yaml_that_repeats_one_corrected_row_still_corrects_the_row(s, tmp_path):
-    import yaml
-
     SourceManager(s).create_source("Outlet en", "outlet.example", rss_url=EN)
     new = "https://outlet.example/en-v2.xml"
     p = tmp_path / "x.yml"
-    p.write_text(yaml.safe_dump({"sources": [{"name": "Outlet en", "domain": "outlet.example", "rss_url": new}] * 2}))
+    _write_yaml(p, {"sources": [{"name": "Outlet en", "domain": "outlet.example", "rss_url": new}] * 2})
     SourceManager(s).import_sources_from_yaml(str(p))
     assert _feeds(s) == [new]
 
 
 def test_a_yaml_of_two_feeds_into_a_store_holding_one_keeps_both(s, tmp_path):
-    import yaml
-
     m = SourceManager(s)
     m.create_source("Outlet en", "outlet.example", rss_url=EN)
     p = tmp_path / "x.yml"
-    p.write_text(yaml.safe_dump({"sources": [
+    _write_yaml(p, {"sources": [
         {"name": "Outlet en", "domain": "outlet.example", "rss_url": EN},
-        {"name": "Outlet ar", "domain": "outlet.example", "rss_url": AR}]}))
+        {"name": "Outlet ar", "domain": "outlet.example", "rss_url": AR}]})
     out = m.import_sources_from_yaml(str(p))
     assert (out["added"], out["updated"]) == (1, 1)
     assert _feeds(s) == sorted([EN, AR])
@@ -136,13 +138,11 @@ def test_a_csv_feedless_line_beside_one_corrected_feed_still_corrects_the_row(s)
 
 
 def test_a_yaml_feedless_line_beside_one_corrected_feed_still_corrects_the_row(s, tmp_path):
-    import yaml
-
     SourceManager(s).create_source("Outlet", "outlet.example", rss_url=EN)
     p = tmp_path / "x.yml"
-    p.write_text(yaml.safe_dump({"sources": [
+    _write_yaml(p, {"sources": [
         {"name": "Outlet", "domain": "outlet.example"},
-        {"name": "Outlet", "domain": "outlet.example", "rss_url": V2}]}))
+        {"name": "Outlet", "domain": "outlet.example", "rss_url": V2}]})
     SourceManager(s).import_sources_from_yaml(str(p))
     assert _feeds(s) == [V2]
 

@@ -686,12 +686,13 @@ def repair_erased_feeds(session: Session, sources: list[dict]) -> dict:
         want = {}
         if len(mine) == 1:
             computed = _to_source_kwargs(mine[0])
+            live_value = {"rss_url": row.rss_url, "region": row.region}
             for field in ("rss_url", "region"):
                 value = _norm(computed.get(field))
-                if value is not None and _norm(getattr(row, field, None)) is None:
+                if value is not None and _norm(live_value[field]) is None:
                     want[field] = (value, computed.get(field))
         elif len(mine) > 1 and any(_norm(e.get("rss_url")) for e in mine):
-            if any(_norm(getattr(row, f, None)) is None for f in ("rss_url", "region")):
+            if _norm(row.rss_url) is None or _norm(row.region) is None:
                 not_restored.append({
                     "domain": row.domain, "reason": f"the {owner} catalogue holds {len(mine)} entries for this domain",
                 })
