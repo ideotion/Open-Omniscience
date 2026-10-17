@@ -91,3 +91,34 @@ def test_untrusted_author_is_excluded_then_removed(tmp_path, monkeypatch):
 def test_invalid_kind_rejected():
     with pytest.raises(ValueError):
         bundle_mod.Annotation(target="t", kind="trust-score", value="9")
+
+
+def test_two_processes_adding_annotations_lose_none(tmp_path):
+    """R176: add_annotation read mine.json, changed it and wrote it back, so two servers on one folder each lost the other's note. The section is now one lock."""
+    import subprocess
+    import sys
+    import textwrap
+    from pathlib import Path
+
+    from src.annotations import store
+
+    root = str(Path(store.__file__).parents[2])
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {root!r})
+        os.environ["OO_DATA_DIR"] = {str(tmp_path)!r}
+        from src.annotations import store
+        for i in range(40):
+            store.add_annotation("https://example.org/a", "note", f"child-{{i}}")
+        """
+    )
+    child = subprocess.Popen([sys.executable, "-c", script])
+    mine = 0
+    while child.poll() is None:
+        store.add_annotation("https://example.org/a", "note", f"parent-{mine}")
+        mine += 1
+    child.wait()
+    values = [a["value"] for a in store.load_mine()["annotations"]]
+    assert values.count("child-39") == 1 and sum(v.startswith("child-") for v in values) == 40, "a note written by the other process was lost"
+    assert sum(v.startswith("parent-") for v in values) == mine

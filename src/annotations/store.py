@@ -26,6 +26,7 @@ from src.annotations.bundle import (
     verify_bundle,
 )
 from src.monitoring.secret_scrub import log_failure
+from src.safety.file_lock import atomic_replace, file_lock
 
 _LOG = logging.getLogger(__name__)
 STORE_VERSION = "oo-annotations-store-1"
@@ -66,32 +67,32 @@ def load_mine() -> dict:
 
 
 def _save_mine(d: dict) -> dict:
-    path = _mine_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    atomic_replace(_mine_path(), json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
     return d
 
 
 def set_author_name(name: str) -> dict:
-    d = load_mine()
-    d["author_name"] = name.strip() or _MINE_AUTHOR
-    return _save_mine(d)
+    with file_lock(_mine_path()):  # read, change, write is one section: a second server's edit cannot fall between (R176)
+        d = load_mine()
+        d["author_name"] = name.strip() or _MINE_AUTHOR
+        return _save_mine(d)
 
 
 def add_annotation(target: str, kind: str, value: str, note: str = "") -> dict:
     """Add an annotation to your authored set (validated)."""
     ann = Annotation(target=target, kind=kind, value=value, note=note)
-    d = load_mine()
-    d["annotations"].append(ann.to_dict())
-    return _save_mine(d)
+    with file_lock(_mine_path()):
+        d = load_mine()
+        d["annotations"].append(ann.to_dict())
+        return _save_mine(d)
 
 
 def remove_annotation(index: int) -> dict:
-    d = load_mine()
-    if 0 <= index < len(d["annotations"]):
-        d["annotations"].pop(index)
-    return _save_mine(d)
+    with file_lock(_mine_path()):
+        d = load_mine()
+        if 0 <= index < len(d["annotations"]):
+            d["annotations"].pop(index)
+        return _save_mine(d)
 
 
 def export_bundle() -> dict:
@@ -121,9 +122,8 @@ def import_bundle(bundle: dict, *, trusted: bool = True) -> dict:
         "verify_reason": reason,
     }
     path = _imported_dir() / f"{aid[:32]}.json"
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    with file_lock(path):
+        atomic_replace(path, json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "author_id": aid,
         "author_name": record["author_name"],
@@ -183,22 +183,21 @@ def adopt_imported_record(record: dict, *, allow_trusted: bool = False) -> dict:
         raise ValueError("imported record path escapes the annotations directory")
 
     trusted = bool(record.get("trusted")) and allow_trusted
-    if path.exists():
-        # The existing local identity/trust decision ALWAYS wins over an incoming copy.
-        return {
-            "author_id": aid,
-            "author_name": record.get("author_name"),
-            "annotations": len(record["annotations"]),
-            "trusted": trusted,
-            "adopted": False,
-            "reason": "an imported record for this author already exists locally",
-        }
-    # Write the record with the trust flag the CALLER's verification context allows —
-    # never the incoming flag verbatim (an unverified artifact must not auto-trust).
-    stored = {**record, "trusted": trusted}
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(stored, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    with file_lock(path):  # the exists check and the write are one section (R176)
+        if path.exists():
+            # The existing local identity/trust decision ALWAYS wins over an incoming copy.
+            return {
+                "author_id": aid,
+                "author_name": record.get("author_name"),
+                "annotations": len(record["annotations"]),
+                "trusted": trusted,
+                "adopted": False,
+                "reason": "an imported record for this author already exists locally",
+            }
+        # Write the record with the trust flag the CALLER's verification context allows —
+        # never the incoming flag verbatim (an unverified artifact must not auto-trust).
+        stored = {**record, "trusted": trusted}
+        atomic_replace(path, json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "author_id": aid,
         "author_name": record.get("author_name"),
@@ -240,10 +239,13 @@ def set_trusted(author_id_value: str, trusted: bool) -> bool:
         except Exception:  # noqa: BLE001
             continue
         if r.get("author_id") == author_id_value:
-            r["trusted"] = trusted
-            tmp = p.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(r, ensure_ascii=False, indent=2), "utf-8")
-            tmp.replace(p)
+            with file_lock(p):  # read again inside the lock: another server may have changed the record since the scan
+                try:
+                    r = json.loads(p.read_text("utf-8"))
+                except Exception:  # noqa: BLE001
+                    return False
+                r["trusted"] = trusted
+                atomic_replace(p, json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
             return True
     return False
 

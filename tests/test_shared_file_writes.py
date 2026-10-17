@@ -39,7 +39,6 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/analytics/store.py": (1, "keyword"),
     "src/analytics/upload_parts.py": (1, "keyword"),
     "src/analytics/weather_signals.py": (1, "keyword"),
-    "src/annotations/store.py": (4, "rc2"),
     "src/api/ai.py": (1, "rc2"),
     "src/api/diagnostics/bundle.py": (1, "rc2"),
     "src/api/diagnostics/keywords.py": (1, "keyword"),
