@@ -30,6 +30,7 @@ from pathlib import Path
 
 from src.database.corpus_lease import corpus_lease
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure, record_text, record_traceback
 
 _LOG = logging.getLogger("ingest.import_job")
@@ -202,11 +203,16 @@ class NewsletterImportManager:
         """
         with self._lock:
             if self._alive():
+                storage_events.run_refused("import", "import-running", via="newsletter-eml")
                 raise RuntimeError("A folder import is already running.")
             p = Path(folder).expanduser()
-            if not p.is_dir():
+            with storage_events.run_path_checked("import", via="newsletter-eml"):
+                is_folder = p.is_dir()
+                if is_folder:
+                    files = _files if _files is not None else _eml_files(p)
+            if not is_folder:
+                storage_events.run_refused("import", "not-a-folder", via="newsletter-eml")
                 raise ValueError(f"{p} is not a folder on this machine.")
-            files = _files if _files is not None else _eml_files(p)
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
@@ -248,6 +254,11 @@ class NewsletterImportManager:
             "newsletter-import", label=str(self._folder or ""), dest=str(self._folder or ""),
             files=len(files), resumed_from=self._cursor,
         )
+        # Also kept in the storage-events journal as an ``import`` that came ``via`` the newsletter folder: written OPEN, so a process
+        # killed in the middle leaves "started, never ended" with the free bytes of the data folder it was writing to. Numbers and
+        # the keys of fixed tables only: never the folder, a file name or a message.
+        note = storage_events.run_started("import", via="newsletter-eml", files=len(files), resumed_from=self._cursor)
+        storage_events.run_free_space(note, "data_free_bytes")
         try:
             session = (session_factory or _default_session)()
             try:
@@ -386,6 +397,10 @@ class NewsletterImportManager:
                         self._clear_state()
                     _outcome = "ok" if self._state == "done" else self._state
                 runlog.end(_outcome, tally=dict(self._tally), files_done=self._cursor)
+                # The three ways a pass ends, spelled out so the journal's table of outcomes is read from the source.
+                storage_events.run_ended(
+                    note, "ok" if _outcome == "ok" else ("cancelled" if _outcome == "cancelled" else "paused"), files_done=self._cursor
+                )
             finally:
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
@@ -398,12 +413,14 @@ class NewsletterImportManager:
                 traceback=record_traceback(exc)[-runlog.FAILURE_TRACEBACK_KEEP :],
             )
             runlog.end("error", cls=type(exc).__name__)
+            storage_events.run_ended(note, "error", failure=type(exc).__name__, files_done=self._cursor)
             with self._lock:
                 self._state = "error"
                 self._error = said
                 self._save()
         finally:
             runlog.end("ended-without-a-recorded-outcome")
+            storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
     def _yield_to_exclusive(self) -> None:
         """Block between chunks while a corpus import owns the machine.

@@ -59,7 +59,7 @@ from typing import Any
 
 import yaml
 
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import record_text, scrubbed
 
 SHIPPABLE = ("qualified", "disqualified")
 
@@ -142,6 +142,8 @@ REFUSE_MEMBER_TOO_BIG = (
 )
 REFUSE_BAD_ZIP = "{file}: not a readable zip archive ({error})."
 # What a nesting deeper than the readers can follow is called, in the refusals above.
+#: The most of a bundle's failure sidecar that is read to be quoted: it protects MEMORY (the archive is an upload), not the passphrase.
+_SIDECAR_READ_BYTES = 1_000_000
 _TOO_DEEP = "nested too deeply to read"
 # Fixed words, never the library's own message: a ValueError's text can carry the upload's content back.
 _BAD_VALUE = "a value in it cannot be read"
@@ -295,7 +297,14 @@ def rows_from_bundle_bytes(
                 for suffix in (".error.txt", ".skipped-deadline.txt"):
                     sidecar = BUNDLE_MEMBER + suffix
                     if sidecar in names:
-                        detail = z.read(sidecar)[:2000].decode("utf-8", "replace").strip()
+                        # scrubbed BEFORE the cut and the strip (a cut inside a key keeps its start). The read is bounded by memory, not by the
+                        # passphrase: a sidecar over the bound is not quoted, and the answer says so.
+                        with z.open(sidecar) as fh:
+                            raw = fh.read(_SIDECAR_READ_BYTES + 1)
+                        if len(raw) > _SIDECAR_READ_BYTES:
+                            detail = "(the reason is too long to quote: it cannot be checked for the passphrase in one piece)"
+                        else:
+                            detail = scrubbed(raw.decode("utf-8", "replace")).strip()[:2000]
                         raise MergeInputError(
                             REFUSE_MEMBER_FAILED, file=origin, member=BUNDLE_MEMBER,
                             sidecar=sidecar, detail=detail,

@@ -114,6 +114,13 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   of date; never loosen a test to pass), then move the pyproject range, the registry
   `{floor, verified, ceiling}`, `requirements.lock` (regenerate its hash block from PyPI) and the
   `sqlcipher-smoke` pin together.
+- **The CPython minor version (3.13)** — the settings write hold and the small gates take the plain lock under their
+  `Condition` (R144) because, on 3.13, a C lock's `with` is one bytecode (`BEFORE_WITH`) and a signal cannot land between
+  "taken" and "released". On 3.14.0rc2 the `with` statement no longer compiles that way and the same probe left a raw
+  RLock held in 6,516 of 8,157 interrupts (80 %) and `with condition:` in 2,410 of 8,123 (30 %). Before moving the floor or
+  the CI runtime off 3.13: `tests/test_condition_with_form.py::test_the_with_statement_still_compiles_to_before_with` will
+  fail; re-run `scripts/signal_leak_probe.py` (`condition`, `raw`, `raw_notify`, `wait`)
+  on the new interpreter, and choose a mechanism that leaves 0 held there before accepting the bump.
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
   Dependabot bump; re-pin to the new SHA with its tag comment.

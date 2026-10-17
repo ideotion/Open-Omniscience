@@ -35,8 +35,15 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
-from src.backup.merge import MergeError, RestoreRefused, check_memory_before_staging, run_restore
+from src.backup.merge import (
+    MergeError,
+    RestoreAborted,
+    RestoreRefused,
+    check_memory_before_staging,
+    run_restore,
+)
 from src.jobs.background import BackgroundJob, Framed, register_job
+from src.monitoring import storage_events
 from src.monitoring.secret_scrub import http_detail, log_failure, scrub_and_reraise
 from src.scheduler.runner import exclusive_window_open
 
@@ -188,6 +195,7 @@ def legacy_restore(body: LegacyRestoreBody) -> dict:
     )
 
 
+@storage_events.run_refusals_net("import", via="single-file", refused_as=((HTTPException, "not-a-file"),))
 def restore_legacy_path(
     path: str,
     passphrase: str | None,
@@ -211,12 +219,15 @@ def restore_legacy_path(
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
     # The passphrase handed in is not held by the process (a backup's own), so the nets that read what it holds cannot know it,
     # and an engine's error can quote the statement that carried it: what escapes the block is converted.
-    with scrub_and_reraise(_LOG, "legacy restore failed", passphrase):
+    with scrub_and_reraise(_LOG, "legacy restore failed", passphrase), storage_events.run_open(
+        "import", via="single-file"
+    ) as note:
         # Before a byte is read or staged: an encrypted corpus that this machine cannot hold a merge
         # for is told so now, not after the staging (see check_memory_before_staging).
         try:
             check_memory_before_staging()
         except MergeError as exc:
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="memory")
             raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         try:
             data = p.read_bytes()
@@ -255,9 +266,13 @@ def restore_legacy_path(
                 )
                 if defer_reindex():
                     hand_off_reindex(report)
+                storage_events.run_ended(
+                    note, "ok", articles_merged=report.get("articles_merged"), reindexed=report.get("reindexed")
+                )
                 return report
         except (MergeError, RestoreRefused) as exc:
             # See restore_commit above: a refusal keeps its own message.
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__)
             raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         except HTTPException:
             raise
@@ -266,6 +281,14 @@ def restore_legacy_path(
             # traceback (``_LOG.exception`` writes the exception as it made its message). The response below is built from
             # the scrubbed text, and the recorders that keep a response text scrub it again where they make the record.
             log_failure(_LOG, "legacy restore failed", exc, passphrase)
+            # The operator's own Stop is not a failure (the volume restore keeps the two apart too); anything else is an error.
+            # Asked of the CLASS: this function holds a passphrase, and a guard test (test_p0_validation) allows a caught exception to
+            # reach only a scrub or ``type(exc)``, so a bare ``isinstance(exc, ...)`` is refused there although it makes no text.
+            storage_events.run_ended(
+                note,
+                "stopped-by-operator" if issubclass(type(exc), RestoreAborted) else "error",
+                failure=type(exc).__name__,
+            )
             raise _restore_error("restore", exc, passphrase) from None
         finally:
             cleanup_staging(staged)

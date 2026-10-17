@@ -442,6 +442,7 @@ def _collect_members(
 ) -> list[Member]:
     """Snapshot the databases into tmp_dir and inventory every side file."""
     from src.backup.sqlite_backup import live_db_path
+    from src.monitoring.secret_scrub import scrubbed_copy
 
     members: list[Member] = []
 
@@ -467,7 +468,11 @@ def _collect_members(
     for name in _LOG_FILES:
         p = base / name
         if p.exists():
-            members.append(Member(f"logs/{name}", "logs", p))
+            # a record file that LEAVES the install: copied line by line through the scrub, so a backup (possibly unencrypted) never holds a
+            # held passphrase that an older build wrote into a log
+            staged_log = tmp_dir / "logs" / name
+            scrubbed_copy(p, staged_log)
+            members.append(Member(f"logs/{name}", "logs", staged_log))
     ann = base / _ANNOTATIONS_DIR
     if ann.is_dir():
         for p in sorted(ann.rglob("*.json")):

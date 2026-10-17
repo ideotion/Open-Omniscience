@@ -490,7 +490,7 @@ def probe_rate(con, plan: Plan) -> dict:
 
 @dataclass
 class Report:
-    state: str  # done | interrupted | refused | declined | already-done
+    state: str  # done | fts-pending | interrupted | refused | declined | already-done
     started_at: str
     finished_at: str | None = None
     store_bytes: int = 0
@@ -512,6 +512,9 @@ class Report:
     backup_seconds: float | None = None
     sweep_seconds: float | None = None
     verify_seconds: float | None = None
+    #: The search index rebuild that rides in this window (R39): what it was and what it did. ``None`` when the index
+    #: already had the current tokenizer.
+    fts: dict | None = None
     message: str = ""
 
 
@@ -551,6 +554,61 @@ def _balance(original: dict, after: ColumnPlan) -> dict:
             "nulls_before": original["nulls"], "nulls_after": after.nulls}
 
 
+#: Seconds a full rebuild of the article index took on the field's 130 GB store, from ``ensure_fts``'s own record
+#: (src/database/fts.py): the only measurement there is, so the estimate scales it by store size and says so.
+_FTS_REF_BYTES = 130 * 1024**3
+_FTS_REF_SECONDS = (981, 1645)
+
+
+def _fts_estimate(store_bytes: int) -> dict:
+    lo, hi = (round(store_bytes / _FTS_REF_BYTES * s) for s in _FTS_REF_SECONDS)
+    return {
+        "tokenizer": "legacy",
+        "seconds_about": [lo, hi],
+        "basis": (
+            "scaled from the one measurement there is, a 130 GB store that took 981 to 1,645 s to rebuild its search "
+            "index; your disk and codec decide. The index is rewritten inside ONE transaction, so the file grows by about "
+            "the size of the new index before the old one is released, and a run that dies leaves the old index in place."
+        ),
+    }
+
+
+def _fts_phase(con, report: Report, say: Progress) -> None:
+    """Recreate the article index with the current tokenizer and rebuild it (R39), in the window the app is stopped in.
+
+    One transaction: the drop, the create and the rebuild commit together or not at all. Derived data, so there is no
+    second safety copy: the articles are untouched, and a failure rolls back to the index the store had."""
+    from src.database import fts as _fts
+
+    say({"phase": "fts"})
+    t0 = time.perf_counter()
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        out = _fts.rebuild_with_current_tokenizer(con)
+        con.execute("COMMIT")
+    except BaseException:
+        if con.in_transaction:
+            con.execute("ROLLBACK")
+        raise
+    out["seconds"] = time.perf_counter() - t0
+    report.fts = out
+    say({"phase": "fts-done", "fts": out})
+
+
+def _run_fts_after_country_flip(con, report: Report, say: Progress) -> None:
+    """The index rebuild after the country marker has flipped. A failure here does NOT undo the country migration
+    (it committed, and it is complete): the report says the index is still the old one and a second run finishes it."""
+    try:
+        _fts_phase(con, report, say)
+    except Exception as exc:  # noqa: BLE001 - named by class only; the engine's text can carry a path or a value
+        report.state = "fts-pending"
+        report.fts = {"state": "failed", "error": type(exc).__name__}
+        report.message = (
+            "the country codes are migrated, but the search index could not be rebuilt "
+            f"({type(exc).__name__}) and still has the old tokenizer. Nothing is lost: run this again to finish it."
+        )
+
+
 def migrate(
     db_path: Path,
     *,
@@ -577,16 +635,21 @@ def migrate(
     if estimate_only:
         con = connect(db_path, check_same_thread=False, timeout=5, read_only=True)
         try:
+            from src.database import fts as _fts
+
             form = cf.read_form(con)
             plan = read_plan(con)
+            fts_legacy = _fts.fts_tokenizer(con) == "legacy"
         finally:
             con.close()
-        report.state = "already-done" if form == "alpha3" and plan.to_rewrite == 0 else "declined"
+        report.state = "already-done" if form == "alpha3" and plan.to_rewrite == 0 and not fts_legacy else "declined"
         report.plan = _plan_dict(plan)
         report.unmapped = plan.unmapped_report()
         report.estimate = {"rows_to_rewrite": plan.to_rewrite, "store_bytes": report.store_bytes,
                            "free_bytes": _free_bytes(backup_dir or db_path.parent),
                            "time": "not measured: the estimate is taken in the run itself, on a window it rolls back"}
+        if fts_legacy:
+            report.estimate["fts"] = _fts_estimate(report.store_bytes)
         report.message = "estimate only: nothing was changed"
         say({"phase": "plan", "plan": report.plan, "estimate": report.estimate})
         return report
@@ -602,10 +665,34 @@ def migrate(
         report.table_rows_before = dict(plan.table_rows)
         report.plan = _plan_dict(plan)
         report.unmapped = plan.unmapped_report()
+        from src.database import fts as _fts
+
+        fts_legacy = _fts.fts_tokenizer(con) == "legacy"
 
         if form == "alpha3" and plan.to_rewrite == 0:
-            report.state = "already-done"
-            report.message = "the store is already in alpha-3 and nothing is left to convert"
+            if not fts_legacy:
+                report.state = "already-done"
+                report.message = "the store is already in alpha-3 and nothing is left to convert"
+                return report
+            # The codes are done (a store migrated before the search index moved, or interrupted after the flip):
+            # only the index is left, and it asks nothing of the codes.
+            est: dict = {
+                "rows_to_rewrite": 0,
+                "store_bytes": report.store_bytes,
+                "free_bytes": _free_bytes(backup_dir or db_path.parent),
+                "fts": _fts_estimate(report.store_bytes),
+            }
+            report.estimate = est
+            say({"phase": "plan", "plan": report.plan, "estimate": est})
+            if confirm is not None and not confirm(plan, est):
+                report.state = "declined"
+                report.message = "declined: nothing was changed"
+                return report
+            _run_fts_after_country_flip(con, report, say)
+            if report.state != "fts-pending":
+                report.state = "done"
+                report.finished_at = datetime.now(UTC).isoformat()
+                report.message = "the search index was rebuilt with the current tokenizer; the country codes were already done"
             return report
         if form == "alpha3":
             raise MigrationRefused(
@@ -635,6 +722,8 @@ def migrate(
             free_bytes=_free_bytes(backup_dir or db_path.parent),
             seconds_about=(plan.to_rewrite / rate) if rate else None,
         )
+        if fts_legacy:
+            est["fts"] = _fts_estimate(report.store_bytes)
         report.estimate = est
         say({"phase": "plan", "plan": report.plan, "estimate": est})
         if confirm is not None and not confirm(plan, est):
@@ -760,6 +849,11 @@ def migrate(
         report.state = "done"
         report.finished_at = datetime.now(UTC).isoformat()
         report.message = "migrated: every convertible value is alpha-3 and the store says so"
+        if fts_legacy:
+            _run_fts_after_country_flip(con, report, say)
+            if report.state == "done":
+                report.message += "; the search index was rebuilt with the current tokenizer"
+            report.finished_at = datetime.now(UTC).isoformat()
         say({"phase": "done"})
         return report
     finally:
@@ -835,8 +929,11 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {key}: {sum(n for v, n in c['spellings'].items() if v in c['convert']):,} to convert, {sum(c['unmapped'].values()):,} left as stored")
             if "time" in est:
                 print("Time: " + est["time"])
-            else:
+            elif est.get("rows_to_rewrite"):
                 print("Time: about " + _duration(est.get("seconds_about")) + " for the sweep alone.  " + est["basis"])
+            if est.get("fts"):
+                lo, hi = est["fts"]["seconds_about"]
+                print(f"Search index: rebuilt with the new tokenizer afterwards, about {_duration(lo)} to {_duration(hi)}.  " + est["fts"]["basis"])
         elif ph == "backup":
             print(f"Taking the verified safety copy in {event['dir']} ...")
         elif ph == "backup-verified":
@@ -846,6 +943,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {event['column']}: rowid {event['cursor']:,} of {event['of']:,}   {event['done']:,}/{event['total']:,} rows ({pct:.1f}%)", flush=True)
         elif ph == "verify":
             print("Verifying every table and column ...")
+        elif ph == "fts":
+            print("Rebuilding the search index with the new tokenizer (one transaction, no progress until it ends) ...", flush=True)
+        elif ph == "fts-done":
+            print(f"Search index rebuilt: {event['fts']['indexed']:,} articles in {_duration(event['fts']['seconds'])}.")
 
     def ask(plan: Plan, est: dict) -> bool:
         if args.yes:
@@ -859,6 +960,12 @@ def main(argv: list[str] | None = None) -> int:
         rep = migrate(path, backup_dir=args.backup_dir, confirm=ask, progress=show, estimate_only=args.estimate)
     except MigrationRefused as exc:
         print(f"Stopped: {exception_text(exc, typed=False)}", file=sys.stderr)
+        return 3
+    except KeyboardInterrupt:
+        print("Interrupted. Nothing half-done is kept: run this again and it finishes.", file=sys.stderr)
+        return 3
+    except Exception as exc:  # noqa: BLE001 - class only: the engine's text and its chained context can carry a path or a value
+        print(f"Stopped: the run failed ({type(exc).__name__}). Nothing was lost; run this again to finish it.", file=sys.stderr)
         return 3
     print(rep.message)
     if rep.collisions:

@@ -168,7 +168,10 @@ _CEILING: dict[str, int] = {
     "src/analytics/columnar.py": 7,
     "src/analytics/keyword_fold.py": 17,
     "src/analytics/serve_gate.py": 2,
-    "src/analytics/store.py": 20,
+    # 22 since 2026-10-16: ``backfill_keyword_counters`` walks the keywords in id slices so the write gate is held for one slice and not for
+    # the table, and each slice's GROUP BY filters the mentions by the slice's id range (two more references to the columns the existing
+    # aggregate already groups by). It is a WRITER that reads the mentions to repair the counters it writes, so it stays on the write model.
+    "src/analytics/store.py": 22,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,
