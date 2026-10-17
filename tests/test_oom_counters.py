@@ -16,18 +16,18 @@ def _tree(tmp: Path, *, oom_kill: int | None = 3, v2: bool = True, events: str |
     proc, cg = tmp / "proc", tmp / "cg"
     (proc / "self").mkdir(parents=True)
     if oom_kill is not None:
-        (proc / "vmstat").write_text(f"nr_free_pages 5\noom_kill {oom_kill}\n")
+        (proc / "vmstat").write_text(f"nr_free_pages 5\noom_kill {oom_kill}\n", encoding="utf-8")
     if v2:
-        (proc / "self" / "cgroup").write_text("0::/app.slice/oo.service\n")
+        (proc / "self" / "cgroup").write_text("0::/app.slice/oo.service\n", encoding="utf-8")
         d = cg / "app.slice" / "oo.service"
         d.mkdir(parents=True)
-        (d / "memory.events").write_text(events or "low 0\nhigh 0\nmax 12\noom 2\noom_kill 1\noom_group_kill 0\n")
-        (d / "memory.max").write_text("5153960755\n")
-        (d / "memory.high").write_text("max\n")
-        (d / "memory.current").write_text("1000\n")
-        (d / "memory.peak").write_text("4000\n")
+        (d / "memory.events").write_text(events or "low 0\nhigh 0\nmax 12\noom 2\noom_kill 1\noom_group_kill 0\n", encoding="utf-8")
+        (d / "memory.max").write_text("5153960755\n", encoding="utf-8")
+        (d / "memory.high").write_text("max\n", encoding="utf-8")
+        (d / "memory.current").write_text("1000\n", encoding="utf-8")
+        (d / "memory.peak").write_text("4000\n", encoding="utf-8")
     else:
-        (proc / "self" / "cgroup").write_text("4:memory:/docker/abc\n")
+        (proc / "self" / "cgroup").write_text("4:memory:/docker/abc\n", encoding="utf-8")
     return proc, cg
 
 
@@ -49,13 +49,13 @@ def test_an_unreadable_counter_is_named_with_its_reason_and_is_never_zero(tmp_pa
     (d / "memory.peak").unlink()  # older kernels have no memory.peak
     r = oc.read(proc=proc, cgroup_root=cg)
     assert r["cgroup"]["values"]["memory.peak"] == {"unreadable": "absent (the file does not exist)"}
-    (d / "memory.events").write_text("low 0\n")  # a key the file does not list
+    (d / "memory.events").write_text("low 0\n", encoding="utf-8")  # a key the file does not list
     assert oc.read(proc=proc, cgroup_root=cg)["cgroup"]["events"]["oom_kill"] == {"unreadable": "absent (the key is not listed)"}
 
 
 def test_a_vmstat_without_the_counter_names_the_kernel_age(tmp_path):
     proc, cg = _tree(tmp_path)
-    (proc / "vmstat").write_text("nr_free_pages 5\n")
+    (proc / "vmstat").write_text("nr_free_pages 5\n", encoding="utf-8")
     assert "no oom_kill counter" in oc.read(proc=proc, cgroup_root=cg)["vmstat"]["oom_kill"]["unreadable"]
 
 
@@ -73,12 +73,12 @@ def _restart_cgroup(cg: Path) -> None:
     import shutil
 
     d = cg / "app.slice" / "oo.service"
-    files = {p.name: p.read_text() for p in d.iterdir()}
+    files = {p.name: p.read_text(encoding="utf-8") for p in d.iterdir()}
     shutil.rmtree(d)
     d.mkdir(parents=True)
     for name, text in files.items():
-        (d / name).write_text(text)
-    (d / "memory.events").write_text("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n")
+        (d / name).write_text(text, encoding="utf-8")
+    (d / "memory.events").write_text("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n", encoding="utf-8")
 
 
 def test_a_recreated_cgroup_at_the_same_path_is_not_counted_as_zero_kills(tmp_path):
@@ -103,12 +103,12 @@ def test_an_unparseable_counter_is_named_not_stored_as_a_number(tmp_path):
 def test_a_cgroup_v1_reading_counts_oom_kill_and_names_the_counters_it_does_not_have(tmp_path):
     proc, cg = tmp_path / "proc", tmp_path / "cg"
     (proc / "self").mkdir(parents=True)
-    (proc / "vmstat").write_text("oom_kill 1\n")
-    (proc / "self" / "cgroup").write_text("5:cpu,cpuacct:/x\n4:memory:/docker/abc\n")
+    (proc / "vmstat").write_text("oom_kill 1\n", encoding="utf-8")
+    (proc / "self" / "cgroup").write_text("5:cpu,cpuacct:/x\n4:memory:/docker/abc\n", encoding="utf-8")
     d = cg / "memory" / "docker" / "abc"
     d.mkdir(parents=True)
-    (d / "memory.oom_control").write_text("oom_kill_disable 0\nunder_oom 0\noom_kill 2\n")
-    (d / "memory.limit_in_bytes").write_text("1000\n")
+    (d / "memory.oom_control").write_text("oom_kill_disable 0\nunder_oom 0\noom_kill 2\n", encoding="utf-8")
+    (d / "memory.limit_in_bytes").write_text("1000\n", encoding="utf-8")
     before = oc.read(proc=proc, cgroup_root=cg)
     assert before["cgroup"]["version"] == 1 and before["cgroup"]["events"]["oom_kill"] == 2
     after = json.loads(json.dumps(before))
@@ -120,8 +120,8 @@ def test_a_cgroup_v1_reading_counts_oom_kill_and_names_the_counters_it_does_not_
 def test_a_count_is_claimed_only_between_readings_of_one_boot_and_one_cgroup(tmp_path):
     proc, cg = _tree(tmp_path)
     before = oc.read(proc=proc, cgroup_root=cg)
-    (proc / "vmstat").write_text("oom_kill 5\n")
-    (cg / "app.slice" / "oo.service" / "memory.events").write_text("low 0\nhigh 0\nmax 12\noom 3\noom_kill 2\noom_group_kill 0\n")
+    (proc / "vmstat").write_text("oom_kill 5\n", encoding="utf-8")
+    (cg / "app.slice" / "oo.service" / "memory.events").write_text("low 0\nhigh 0\nmax 12\noom 3\noom_kill 2\noom_group_kill 0\n", encoding="utf-8")
     after = oc.read(proc=proc, cgroup_root=cg)
     got = oc.compare(before, after, same_boot=True)
     assert got["machine_oom_kill"] == 2 and got["cgroup"]["oom_kill"] == 1 and got["cgroup"]["oom"] == 1
@@ -165,6 +165,6 @@ def test_the_forensics_report_and_the_session_sentinel_carry_the_counters(tmp_pa
     monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
     monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
     forensics.record_session_start()
-    state = json.loads((tmp_path / "session_state.json").read_text())
+    state = json.loads((tmp_path / "session_state.json").read_text(encoding="utf-8"))
     assert "vmstat" in state["oom_counters"] and "cgroup" in state["oom_counters"]
     assert "oom_counters" in forensics.previous_session_report()

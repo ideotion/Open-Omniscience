@@ -147,13 +147,13 @@ def test_report_before_any_call_reads_previous_file(_data):
 
 
 def test_airplane_wraps_the_native_calls():
-    src = (_ROOT / "src" / "ingest" / "airplane.py").read_text()
+    src = (_ROOT / "src" / "ingest" / "airplane.py").read_text(encoding="utf-8")
     assert src.count('native_call("dns")') == 1
     assert src.count('native_call("connect")') == 2
 
 
 def test_forensics_carries_the_field():
-    src = (_ROOT / "src" / "monitoring" / "forensics.py").read_text()
+    src = (_ROOT / "src" / "monitoring" / "forensics.py").read_text(encoding="utf-8")
     assert 'out["native_in_flight"]' in src
 
 
@@ -173,7 +173,7 @@ def test_start_keeps_the_previous_process_bytes_first(_data):
 
 
 def test_boot_starts_it():
-    src = (_ROOT / "src" / "monitoring" / "session_hwm.py").read_text()
+    src = (_ROOT / "src" / "monitoring" / "session_hwm.py").read_text(encoding="utf-8")
     assert "_native_start()" in src
 
 

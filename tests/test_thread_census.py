@@ -25,7 +25,7 @@ def _fake_proc(tmp_path, comms, monkeypatch):
     for tid, comm in comms.items():
         d = tmp_path / str(tid)
         d.mkdir()
-        (d / "comm").write_text(comm + "\n")
+        (d / "comm").write_text(comm + "\n", encoding="utf-8")
     monkeypatch.setattr(hwm, "_CENSUS_TASKS", str(tmp_path))
 
 

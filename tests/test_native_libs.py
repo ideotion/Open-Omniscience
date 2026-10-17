@@ -13,7 +13,7 @@ from src.monitoring import native_libs as nl
 
 def _maps(tmp_path, paths):
     f = tmp_path / "maps"
-    f.write_text("\n".join(f"7f00-7f01 r-xp 00000000 08:01 1 {p}" for p in paths) + "\n")
+    f.write_text("\n".join(f"7f00-7f01 r-xp 00000000 08:01 1 {p}" for p in paths) + "\n", encoding="utf-8")
     return f
 
 
@@ -62,7 +62,7 @@ def test_the_sentinel_and_the_report_carry_the_libraries(tmp_path, monkeypatch):
     monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
     monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
     forensics.record_session_start()
-    assert "mapped" in json.loads((tmp_path / "session_state.json").read_text())["native_libs"]
+    assert "mapped" in json.loads((tmp_path / "session_state.json").read_text(encoding="utf-8"))["native_libs"]
     assert "previous_session_native_libs" in forensics.previous_session_report()
 
 
