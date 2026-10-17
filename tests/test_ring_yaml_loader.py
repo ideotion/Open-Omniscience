@@ -1,8 +1,8 @@
 """The ring files are read with the catalogue loader's safe class (libyaml when the wheel has it), not ``yaml.safe_load``.
 
-The generated ring file is 566 KB; the pure-Python parse of it was 0.98 s on every boot and libyaml's is 0.11 to 0.14 s
+The generated ring file is 566 KB; the pure-Python parse of it was 0.98 s (read on a first install and a reseed only) and libyaml's is 0.11 to 0.14 s
 (Export, catalogue-parse REPORT item 6). A faster loader is only acceptable while it returns the same object and stays safe,
-so this pins both: the object equals the pure-Python parser's for each shipped ring file, and a payload that asks the loader
+so this pins the route (``_read_yaml`` goes through the catalogue loader, not ``yaml.safe_load``) and both: the object equals the pure-Python parser's for each shipped ring file, and a payload that asks the loader
 to run code is refused (``_read_yaml`` answers ``{}``), nothing executed.
 """
 from __future__ import annotations
@@ -31,3 +31,16 @@ def test_a_missing_or_empty_ring_file_is_an_empty_mapping(tmp_path):
     empty.write_text("", "utf-8")
     assert equivalence._read_yaml(empty) == {}
     assert equivalence._read_yaml(tmp_path / "absent.yml") == {}
+
+
+def test_the_ring_reader_goes_through_the_catalogue_loader(tmp_path, monkeypatch):
+    # The equality test above passes on the old ``yaml.safe_load`` call too; this is the one that fails on it.
+    from src.ingest import seed_sources
+
+    calls = []
+    real = seed_sources._load_safe_yaml
+    monkeypatch.setattr(seed_sources, "_load_safe_yaml", lambda text: calls.append(text) or real(text))
+    ring = tmp_path / "ring.yml"
+    ring.write_text("a: 1\n", "utf-8")
+    assert equivalence._read_yaml(ring) == {"a": 1}
+    assert calls == ["a: 1\n"]
