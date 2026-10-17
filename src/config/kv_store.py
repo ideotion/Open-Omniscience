@@ -121,7 +121,6 @@ def _wait_hold(timeout: float) -> None:
     _wait(_hold, _hold_lock, timeout)
 
 
-
 def _caller_of_the_write() -> str:
     """``file:line in function`` of the nearest frame outside this module (the code that called ``kv_set_json`` / ``kv_delete``)."""
     import sys

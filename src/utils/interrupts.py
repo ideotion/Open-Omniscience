@@ -3,16 +3,19 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-``Condition.wait`` gives the lock up, sleeps, and takes it back in a ``finally``. A KeyboardInterrupt that lands while it is blocked
-re-taking the lock leaves the thread WITHOUT the lock (a blocked C ``acquire`` that is interrupted raises without having taken it). The
-caller's ``with lock:`` then fails on the way out with ``RuntimeError: cannot release un-acquired lock``, which replaces the interrupt, and
-any ``finally`` between the wait and the end of the ``with`` runs on shared state with nobody holding the lock. Measured with real SIGALRM
-interrupts (``scripts/signal_leak_probe.py``): 174 of 65,632 interrupted waits (0.27 %) surfaced as that RuntimeError; nothing was left
-held. :func:`wait` takes the lock back itself in that one case and lets the original exception go on, so the code around it runs under
-the lock it believes it holds and ``with lock:`` releases it once.
+``Condition.wait`` is Python code: it gives the lock up (``_release_save``), and only then opens the ``try`` whose ``finally`` takes it back. An
+exception that lands between the two, or inside that ``finally`` before the lock is back, leaves the thread WITHOUT the lock (and the waiter in
+the Condition's list). The caller's ``with lock:`` then fails on the way out with ``RuntimeError: cannot release un-acquired lock``, which
+replaces the exception, and any ``finally`` between the wait and the end of the ``with`` runs on shared state with nobody holding the lock.
+Measured with real SIGALRM interrupts on CPython 3.13 (``scripts/signal_leak_probe.py`` and a re-run by the reader of this change): 68 of
+66,131 interrupted plain waits surfaced as that RuntimeError (the earlier figure, 174 of 65,632, is the same event). Where it lands was
+measured too: NOT in the lock's own re-take (a blocked ``RLock._acquire_restore`` is not interruptible on 3.13; the interrupt arrived after the
+lock was back) but in the Python code between ``_release_save`` and the ``try``. Either way the state is the same, and :func:`wait` fixes
+it: it takes the lock back itself in that one case, with the same uninterruptible restore the Condition uses, and lets the original exception
+go on. When the lock IS owned at the exception (the common case: the interrupt landed after the re-take) it does nothing.
 
 It assumes the lock is held exactly ONCE by the caller (every use here is one ``with self._lock:`` around the wait), which is the only
-level at which taking it back as a single ``acquire()`` restores what the ``with`` expects.
+level at which restoring ``(1, this thread)`` gives back what the ``with`` expects.
 """
 
 from __future__ import annotations
@@ -27,5 +30,7 @@ def wait(cond: threading.Condition, lock: threading.RLock, timeout: float | None
     except BaseException:
         # `_is_owned` is the question Condition itself asks of its lock (it needs the lock owned to wait at all)
         if not lock._is_owned():  # type: ignore[attr-defined]
-            lock.acquire()
+            # `_acquire_restore` is what Condition.wait itself uses to take the lock back: on the C RLock it is not interruptible, where a
+            # plain `acquire()` blocked on a contended lock is (a second interrupt would escape without the lock again)
+            lock._acquire_restore((1, threading.get_ident()))  # type: ignore[attr-defined]
         raise

@@ -487,21 +487,30 @@ def write_lock(timeout: float | None = None) -> Iterator[None]:
     if not gate_enabled():
         yield
         return
-    # The try opens BEFORE the acquire and the release is decided by what this thread holds, not by what acquire returned: an exception
-    # (a KeyboardInterrupt) that lands after the window was taken and before the caller saw the answer would otherwise leave it held
-    # for ever. The depth makes it exact for a nested call: only the level THIS call took is given back.
+    # An exception (a KeyboardInterrupt) that lands after the window was TAKEN and before the caller saw the answer would leave it held for
+    # ever, so the acquire is wrapped on its own: the depth this thread holds before and after says whether a level was taken. Only the
+    # acquire is judged that way. Once the body runs, the level is this call's to give back whatever the body did with the levels
+    # (a commit of a session that already held the window gives one back, and a depth comparison would then give nothing back).
     before = write_gate.depth_of_current_thread()
+    took = False
     try:
-        if not write_gate.acquire(timeout=timeout):
+        try:
+            got = write_gate.acquire(timeout=timeout)
+        except BaseException:
+            if write_gate.depth_of_current_thread() > before:
+                write_gate.release()
+            raise
+        if not got:
             s = write_gate.stats()
             raise WriteGateBusy(
                 f"write gate busy after {timeout}s "
                 f"(holder={s.get('holder')!r}, held_for_s={s.get('held_for_s')}, "
                 f"queued={s.get('queued')})"
             )
+        took = True
         yield
     finally:
-        if write_gate.depth_of_current_thread() > before:
+        if took:
             write_gate.release()
 
 
@@ -790,6 +799,9 @@ def _take_for_session(session) -> None:
     no flag, so nothing ever released it (``release_if_held`` and the transaction-end event both look at the flag). On an exception
     here the level this call took is given back and the flag is cleared; on success the flag is the session's record that it holds one.
     """
+    # already holds one: nothing to take, and an undo below must not drop that one's flag
+    if session.info.get(_SESSION_FLAG):
+        return
     before = write_gate.depth_of_current_thread()
     try:
         write_gate.acquire()

@@ -46,6 +46,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from src.utils.interrupts import wait as _wait
+
 _LOG = logging.getLogger(__name__)
 
 _KEY = "oo_library_generation"
@@ -133,6 +135,10 @@ class _Lock:
         self._cond = threading.Condition(self._lock)
         self._shared = 0
         self._holder: int | None = None
+        self._mine = threading.local()  # shared levels THIS thread holds: what a caller reads to learn, after an exception, whether it took one
+
+    def shared_held_here(self) -> int:
+        return getattr(self._mine, "n", 0)
 
     def shared(self) -> bool:
         me = threading.get_ident()
@@ -140,13 +146,17 @@ class _Lock:
             if self._holder == me:
                 return False
             while self._holder is not None:
-                self._cond.wait()
+                _wait(self._cond, self._lock)
+            # the count and this thread's record in one step, with no call between them: an exception after the count was raised and before
+            # the caller saw the answer still leaves the record, which is what the caller releases by
             self._shared += 1
+            self._mine.n = getattr(self._mine, "n", 0) + 1
             return True
 
     def release_shared(self) -> None:
         with self._lock:
             self._shared -= 1
+            self._mine.n = getattr(self._mine, "n", 1) - 1
             if not self._shared:
                 self._cond.notify_all()
 
@@ -162,7 +172,7 @@ class _Lock:
                     raise LibraryBusy(
                         f"a connection to the library was still being opened after {timeout:.0f} s, so the file was not switched"
                     )
-                self._cond.wait(left)
+                _wait(self._cond, self._lock, left)
             self._holder = me
 
     def held_here(self) -> bool:
@@ -182,8 +192,10 @@ _local = threading.local()
 def connecting() -> Iterator[None]:
     """Around ONE open of a connection to the library file: the generation is read and the file opened under the shared lock, and the
     stamp is handed to the ``connect`` event of the same thread (the DBAPI connection cannot carry it, the pool's record can)."""
-    took = _LOCK.shared()
+    before = _LOCK.shared_held_here()
+    took = False
     try:
+        took = _LOCK.shared()
         # The thread that holds the window opens its connections BEFORE the replace (the data-version read, a fold of the log): they are
         # on the OLD file, so they carry the window's own stamp, valid inside the window and after it only if the swap did not happen.
         _local.stamp = _GENERATION if took or _WINDOW_STAMP is None else _WINDOW_STAMP
@@ -192,7 +204,8 @@ def connecting() -> Iterator[None]:
         _local.stamp = None  # an open that failed hands nothing to the next ``connect`` event of this thread
         raise
     finally:
-        if took:
+        # what THIS thread holds says whether a level was taken, even if the exception arrived between the take and the answer
+        if _LOCK.shared_held_here() > before:
             _LOCK.release_shared()
 
 

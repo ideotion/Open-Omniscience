@@ -3,16 +3,17 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Two ways a KeyboardInterrupt (or any exception delivered between two bytecodes) broke a gate, both found by the read of the lock work and
-both closed here:
+Two ways a KeyboardInterrupt (or any exception delivered between two bytecodes) broke a gate, both found by the read of the lock work:
 
 * THE ACQUIRE -> TRY GAP. ``if not gate.acquire(): ...`` then ``try: ... finally: release``: an exception after the gate was TAKEN and before the
-  ``try`` opened left it held for ever (``write_lock``, the session events, the collector's pool slot). The tests below make the gate's own
-  ``acquire`` take the gate and then raise, which is the same state seen from the caller.
-* THE INTERRUPTED WAIT. ``Condition.wait`` re-takes the plain lock in a ``finally``; an interrupt while it is blocked there leaves the thread
-  without the lock, so the ``with`` fails on exit with ``RuntimeError: cannot release un-acquired lock`` in place of the interrupt, and the gate's
-  own ``finally`` edits its queue and counters unlocked. ``FlakyRLock`` re-creates that: its ``_acquire_restore`` raises KeyboardInterrupt once
-  WITHOUT having taken the lock (what a blocked C ``acquire`` does when it is interrupted).
+  ``try`` opened left it held for ever (``write_lock``, the session events, the collector's pool slot, the library's shared lock). The tests below
+  make the gate's own ``acquire`` take the gate and then raise, which is the same state seen from the caller.
+* THE INTERRUPTED WAIT. ``Condition.wait`` gives the lock up and takes it back in a ``finally`` that only opens after a Python call returns; an
+  interrupt in that code leaves the thread without the lock, so the ``with`` fails on exit with ``RuntimeError: cannot release un-acquired lock``
+  in place of the interrupt, and the gate's own ``finally`` edits its queue and counters unlocked. (Measured on 3.13: the interrupt does NOT land
+  in the lock's own re-take, which cannot be interrupted, but in the Python code around it.) ``FlakyRLock`` re-creates the two STATES a wait can
+  be left in, not the place the signal lands: ``mode="lost"`` (the re-take raised and the lock is NOT owned) and ``mode="held"`` (the re-take
+  happened and the exception came after; the helper must then do nothing, and a helper that re-takes anyway deadlocks).
 """
 
 from __future__ import annotations
@@ -27,10 +28,13 @@ from src.scheduler.bandwidth import _AdjustableSemaphore
 
 
 class FlakyRLock:
-    """A reentrant lock whose first ``_acquire_restore`` (the re-take at the end of ``Condition.wait``) raises KeyboardInterrupt."""
+    """A reentrant lock whose first ``_acquire_restore`` (the re-take at the end of ``Condition.wait``) raises KeyboardInterrupt.
 
-    def __init__(self) -> None:
+    ``mode="lost"``: raised WITHOUT having taken the lock. ``mode="held"``: the lock is taken back, then the exception is raised."""
+
+    def __init__(self, mode: str = "lost") -> None:
         self._real = threading.RLock()
+        self.mode = mode
         self.interrupts_left = 1
         self.raised = 0
 
@@ -55,8 +59,36 @@ class FlakyRLock:
         if self.interrupts_left:
             self.interrupts_left -= 1
             self.raised += 1
-            raise KeyboardInterrupt  # the lock was NOT taken
+            if self.mode == "held":
+                self._real._acquire_restore(state)
+            raise KeyboardInterrupt
         return self._real._acquire_restore(state)
+
+    def free_for_another_thread(self) -> bool:
+        """Can a DIFFERENT thread take the lock now? A lock left taken (a helper that re-took it twice) says no."""
+        box: list[bool] = []
+
+        def probe():
+            ok = self._real.acquire(timeout=1)
+            if ok:
+                self._real.release()
+            box.append(ok)
+
+        t = threading.Thread(target=probe, daemon=True)
+        t.start()
+        t.join(5)
+        return bool(box and box[0])
+
+
+def _until(predicate, what: str, seconds: float = 5.0) -> None:
+    deadline = time.monotonic() + seconds
+    while not predicate():
+        assert time.monotonic() < deadline, f"never became true: {what}"
+        time.sleep(0.005)
+
+
+def _waiting_on(cond: threading.Condition) -> int:
+    return len(cond._waiters)  # type: ignore[attr-defined]
 
 
 def _in_thread(fn):
@@ -76,47 +108,53 @@ def _in_thread(fn):
     return box
 
 
-def test_the_rlock_private_the_helper_relies_on_exists():
-    assert hasattr(threading.RLock(), "_is_owned"), "src.utils.interrupts asks the lock whether it is owned"
+def test_the_rlock_privates_the_helper_relies_on_exist():
+    lock = threading.RLock()
+    assert hasattr(lock, "_is_owned"), "src.utils.interrupts asks the lock whether it is owned"
+    assert hasattr(lock, "_acquire_restore"), "src.utils.interrupts takes the lock back the way Condition.wait does"
+    lock._acquire_restore((1, threading.get_ident()))  # the form the helper uses
+    assert lock._is_owned()
+    lock.release()
+    assert not lock._is_owned()
 
 
-# --- the interrupted wait ----------------------------------------------------------------------------------------------------------------
+MODES = pytest.mark.parametrize("mode", ["lost", "held"])
 
 
-@pytest.mark.parametrize("timeout", [None, 3], ids=["unbounded wait", "bounded wait"])
-def test_an_interrupted_wait_on_the_write_gate_stays_the_interrupt_and_leaves_the_gate_working(timeout):
-    gate = writer.WriterGate()
-    flaky = FlakyRLock()
-    gate._lock = flaky
-    gate._cond = threading.Condition(flaky)
-    assert gate.acquire()  # the main thread holds it, so the next acquire queues and waits
-    started = threading.Event()
-
-    def waiter():
-        started.set()
-        return gate.acquire(timeout=timeout)
-
-    box_holder: dict = {}
+def _waiter_thread(fn):
+    box: dict = {}
 
     def run():
         try:
-            box_holder["value"] = waiter()
-        except BaseException as exc:  # noqa: BLE001
-            box_holder["exc"] = exc
+            box["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 - the point is what comes out
+            box["exc"] = exc
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    started.wait(2)
-    for _ in range(200):  # until it is queued
-        if gate.waiters():
-            break
-        time.sleep(0.01)
-    assert gate.waiters() == 1
-    gate.release()  # wakes the head: its wait re-takes the lock and is interrupted there
+    return t, box
+
+
+def _finish(t, flaky, box):
     t.join(5)
-    assert not t.is_alive()
+    assert not t.is_alive(), "the waiter never finished"
     assert flaky.raised == 1
-    assert isinstance(box_holder.get("exc"), KeyboardInterrupt), f"the interrupt must come out as itself, got {box_holder!r}"
+    assert isinstance(box.get("exc"), KeyboardInterrupt), f"the interrupt must come out as itself, got {box!r}"
+    assert flaky.free_for_another_thread(), "the lock was left taken (a helper that re-takes a lock it already owns)"
+
+
+@MODES
+@pytest.mark.parametrize("timeout", [None, 3], ids=["unbounded wait", "bounded wait"])
+def test_an_interrupted_wait_on_the_write_gate_stays_the_interrupt_and_leaves_the_gate_working(timeout, mode):
+    gate = writer.WriterGate()
+    flaky = FlakyRLock(mode)
+    gate._lock = flaky
+    gate._cond = threading.Condition(flaky)
+    assert gate.acquire()  # the main thread holds it, so the next acquire queues and waits
+    t, box = _waiter_thread(lambda: gate.acquire(timeout=timeout))
+    _until(lambda: gate.waiters() == 1, "the waiter queued")
+    gate.release()  # wakes the head: its wait is interrupted
+    _finish(t, flaky, box)
     assert gate.waiters() == 0 and not gate._queue, "the interrupted waiter must leave the queue and the count"
     # and the gate still works, for the same thread and another
     assert gate.acquire(timeout=1)
@@ -125,85 +163,125 @@ def test_an_interrupted_wait_on_the_write_gate_stays_the_interrupt_and_leaves_th
     assert other.get("value") == (True, None), other
 
 
-def test_an_interrupted_wait_in_the_pool_slots_and_the_governor_stays_the_interrupt():
+@MODES
+def test_an_interrupted_wait_in_the_pool_slots_stays_the_interrupt(mode):
     from src.database.pool_reserve import _Slots
 
     slots = _Slots(1)
-    flaky = FlakyRLock()
+    flaky = FlakyRLock(mode)
     slots._lock = flaky
     slots._cond = threading.Condition(flaky)
     assert slots.acquire(1, 1.0)
-    box = {}
-
-    def run():
-        try:
-            box["value"] = slots.acquire(2, 3.0)
-        except BaseException as exc:  # noqa: BLE001
-            box["exc"] = exc
-
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    for _ in range(200):
-        if slots.waits:
-            break
-        time.sleep(0.01)
+    t, box = _waiter_thread(lambda: slots.acquire(2, 3.0))
+    _until(lambda: _waiting_on(slots._cond) == 1, "the waiter waits")
     slots.release(1)
-    t.join(5)
-    assert not t.is_alive() and flaky.raised == 1
-    assert isinstance(box.get("exc"), KeyboardInterrupt), box
+    _finish(t, flaky, box)
     assert slots.held == 0 and slots.acquire(3, 1.0), "the slot table must be intact"
 
+
+@MODES
+def test_an_interrupted_wait_in_the_governor_stays_the_interrupt(mode):
     sem = _AdjustableSemaphore(1)
-    flaky2 = FlakyRLock()
-    sem._lock = flaky2
-    sem._cond = threading.Condition(flaky2)
+    flaky = FlakyRLock(mode)
+    sem._lock = flaky
+    sem._cond = threading.Condition(flaky)
     sem.acquire()
-    box2 = {}
-
-    def run2():
-        try:
-            sem.acquire()
-        except BaseException as exc:  # noqa: BLE001
-            box2["exc"] = exc
-
-    t2 = threading.Thread(target=run2, daemon=True)
-    t2.start()
-    time.sleep(0.2)
+    t, box = _waiter_thread(sem.acquire)
+    _until(lambda: _waiting_on(sem._cond) == 1, "the waiter waits")
     sem.release()
-    t2.join(5)
-    assert not t2.is_alive() and flaky2.raised == 1
-    assert isinstance(box2.get("exc"), KeyboardInterrupt), box2
+    _finish(t, flaky, box)
     sem.acquire()  # not stuck
 
 
-def test_an_interrupted_wait_in_the_settings_hold_stays_the_interrupt(monkeypatch):
+@MODES
+def test_an_interrupted_wait_in_the_settings_hold_stays_the_interrupt(monkeypatch, mode):
     from src.config import kv_store
 
-    flaky = FlakyRLock()
+    flaky = FlakyRLock(mode)
+    cond = threading.Condition(flaky)
     monkeypatch.setattr(kv_store, "_hold_lock", flaky)
-    monkeypatch.setattr(kv_store, "_hold", threading.Condition(flaky))
+    monkeypatch.setattr(kv_store, "_hold", cond)
     token = object()
     with kv_store._hold_lock:
         kv_store._inflight.add(token)  # a write in flight: the hold has to wait for it
-    box = {}
 
-    def run():
-        try:
-            with kv_store.hold_writes(3.0):
-                box["held"] = True
-        except BaseException as exc:  # noqa: BLE001
-            box["exc"] = exc
+    def hold():
+        with kv_store.hold_writes(3.0):
+            return True
 
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    time.sleep(0.3)
+    t, box = _waiter_thread(hold)
+    _until(lambda: _waiting_on(cond) == 1, "the hold waits")
     kv_store._inflight.discard(token)
     with kv_store._hold_lock:
-        kv_store._hold.notify_all()
-    t.join(5)
-    assert not t.is_alive() and flaky.raised == 1
-    assert isinstance(box.get("exc"), KeyboardInterrupt), box
+        cond.notify_all()
+    _finish(t, flaky, box)
     assert kv_store._hold_by is None, "an interrupted hold must not stay set"
+
+
+@MODES
+def test_an_interrupted_wait_in_the_library_lock_stays_the_interrupt(mode):
+    from src.database import library_generation as lg
+
+    lock = lg._Lock()
+    flaky = FlakyRLock(mode)
+    lock._lock = flaky
+    lock._cond = threading.Condition(flaky)
+    lock.exclusive(1.0)  # held by this thread: a shared open has to wait for it
+    t, box = _waiter_thread(lock.shared)
+    _until(lambda: _waiting_on(lock._cond) == 1, "the open waits")
+    lock.release_exclusive()
+    _finish(t, flaky, box)
+    assert lock._shared == 0, "an interrupted open must not leave a shared level raised"
+
+
+@MODES
+def test_an_interrupted_bounded_wait_in_the_library_swap_stays_the_interrupt(mode):
+    from src.database import library_generation as lg
+
+    lock = lg._Lock()
+    flaky = FlakyRLock(mode)
+    lock._lock = flaky
+    lock._cond = threading.Condition(flaky)
+    assert lock.shared()  # an open in flight: the swap has to wait for it
+    t, box = _waiter_thread(lambda: lock.exclusive(3.0))
+    _until(lambda: _waiting_on(lock._cond) == 1, "the swap waits")
+    lock.release_shared()
+    _finish(t, flaky, box)
+    assert lock._holder is None and lock._shared == 0, "an interrupted swap must not stay the holder"
+
+
+def test_the_lock_is_taken_back_even_when_another_thread_took_it_in_the_gap():
+    """The re-take blocks until the other holder lets go; a try-once take would skip it and the caller's ``with`` would fail on the way out."""
+    from src.utils import interrupts
+
+    class Contended(FlakyRLock):
+        def _acquire_restore(self, state):
+            if self.interrupts_left:
+                self.interrupts_left -= 1
+                self.raised += 1
+                taken = threading.Event()
+
+                def other():
+                    with self._real:
+                        taken.set()
+                        time.sleep(0.3)
+
+                threading.Thread(target=other, daemon=True).start()
+                assert taken.wait(5)
+                raise KeyboardInterrupt
+            return self._real._acquire_restore(state)
+
+    flaky = Contended("lost")
+    cond = threading.Condition(flaky)
+
+    def waiter():
+        with flaky:
+            interrupts.wait(cond, flaky, 3.0)
+
+    t, box = _waiter_thread(waiter)
+    notifier = threading.Thread(target=lambda: (_until(lambda: _waiting_on(cond) == 1, "waits"), flaky.acquire(), cond.notify_all(), flaky.release()))
+    notifier.start()
+    _finish(t, flaky, box)
 
 
 # --- the acquire -> try gap ---------------------------------------------------------------------------------------------------------------
@@ -282,7 +360,7 @@ def test_a_session_interrupted_just_after_it_was_marked_is_unmarked_and_holds_no
 
 def test_a_session_that_is_interrupted_after_the_window_was_taken_holds_nothing(interrupting_acquire):
     class _Session:
-        info: dict = {}
+        pass
 
     session = _Session()
     session.info = {}
@@ -333,3 +411,117 @@ def test_the_collector_slot_is_given_back_when_the_reservation_raises_after_taki
     with collector_role(), pytest.raises(KeyboardInterrupt):
         engine.connect()
     assert pool._reserve.held == 0, "the slot was leaked"
+
+
+def test_write_lock_still_gives_its_level_back_when_the_body_commits_a_session_that_held_the_window(tmp_path, monkeypatch):
+    """The regression the read found in the first version: the release was decided by comparing depths AFTER the body, so a body that
+    ended a transaction which had taken the window earlier (its commit gives one level back) left the level write_lock took held for ever."""
+    from sqlalchemy import Column, Integer, create_engine, event
+    from sqlalchemy.orm import declarative_base, sessionmaker
+
+    monkeypatch.setattr(writer, "gate_enabled", lambda: True)
+    Base = declarative_base()
+
+    class Row(Base):
+        __tablename__ = "rows"
+        id = Column(Integer, primary_key=True)
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'g.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, autoflush=False, future=True)
+    event.listen(maker, "before_flush", writer._on_before_flush)
+    event.listen(maker, "after_transaction_end", writer._on_after_transaction_end)
+    s = maker()
+    try:
+        s.add(Row())
+        s.flush()  # the session now holds one level, with its flag set
+        assert writer.write_gate.depth_of_current_thread() == 1
+        with writer.write_lock():
+            assert writer.write_gate.depth_of_current_thread() == 2
+            s.add(Row())
+            s.commit()  # ends the transaction: gives back the SESSION's level
+        assert not writer.write_gate.held_by_current_thread(), "write_lock's own level was never given back"
+    finally:
+        s.close()
+        writer.release_if_held(s)
+    assert other_can_take_the_gate()
+
+
+def other_can_take_the_gate() -> bool:
+    box = _in_thread(lambda: (writer.write_gate.acquire(timeout=1), writer.write_gate.release()))
+    return box.get("value", (False,))[0] is True
+
+
+def test_a_session_taking_the_window_does_not_give_back_a_level_of_the_thread_when_the_acquire_raises_before_taking(monkeypatch):
+    monkeypatch.setattr(writer, "gate_enabled", lambda: True)
+
+    class _Session:
+        pass
+
+    outer = _Session()
+    outer.info = {}
+    writer._take_for_session(outer)  # this thread holds one level, through a session
+    try:
+        inner = _Session()
+        inner.info = {}
+
+        def raise_before_taking(timeout=None):
+            raise KeyboardInterrupt
+
+        real = writer.write_gate.acquire
+        monkeypatch.setattr(writer.write_gate, "acquire", raise_before_taking)
+        with pytest.raises(KeyboardInterrupt):
+            writer._take_for_session(inner)
+        monkeypatch.setattr(writer.write_gate, "acquire", real)
+        assert writer.write_gate.depth_of_current_thread() == 1, "the thread's level was given back by a call that never took one"
+        assert writer._SESSION_FLAG not in inner.info
+    finally:
+        writer.release_if_held(outer)
+    assert not writer.write_gate.held_by_current_thread()
+
+
+def test_a_session_that_already_holds_the_window_is_left_alone_by_a_second_take():
+    class _Session:
+        pass
+
+    session = _Session()
+    session.info = {}
+    writer._take_for_session(session)
+    try:
+        writer._take_for_session(session)  # a caller that forgot to check the flag: nothing is taken, nothing undone
+        assert writer.write_gate.depth_of_current_thread() == 1 and session.info[writer._SESSION_FLAG] is True
+    finally:
+        writer.release_if_held(session)
+    assert not writer.write_gate.held_by_current_thread()
+
+
+def test_a_library_open_interrupted_after_the_shared_level_was_raised_leaves_none_raised():
+    from src.database import library_generation as lg
+
+    lock = lg._Lock()
+    real_shared = lock.shared
+
+    def shared_then_raise():
+        real_shared()
+        raise KeyboardInterrupt
+
+    lock.shared = shared_then_raise  # type: ignore[method-assign]
+    old = lg._LOCK
+    lg._LOCK = lock
+    try:
+        with pytest.raises(KeyboardInterrupt), lg.connecting():
+            pytest.fail("the body must not run")
+    finally:
+        lg._LOCK = old
+    assert lock._shared == 0 and lock.shared_held_here() == 0, "a shared level stayed raised: every later library swap would time out"
+
+
+def test_a_nested_library_open_gives_back_exactly_its_own_level():
+    from src.database import library_generation as lg
+
+    with lg.connecting():
+        assert lg._LOCK.shared_held_here() == 1
+        with lg.connecting():
+            assert lg._LOCK.shared_held_here() == 2
+        assert lg._LOCK.shared_held_here() == 1
+    assert lg._LOCK.shared_held_here() == 0 and lg._LOCK._shared == 0
