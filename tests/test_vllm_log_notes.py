@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import app_js
+from tests.js_source_helper import app_js, function_body
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +19,5 @@ def test_the_log_notes_say_what_the_view_leaves_out():
 
 
 def test_the_server_log_panel_renders_the_notes():
-    app = app_js()
-    panel = app.split("async function loadVllmStatusPanel() {", 1)[1]
+    panel = function_body(app_js(), "loadVllmStatusPanel")
     assert "vllmLogNotes(s)" in panel and "notes +" in panel, "the notes must reach the page, not only exist as a function"
