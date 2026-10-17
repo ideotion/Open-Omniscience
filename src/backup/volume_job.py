@@ -271,7 +271,7 @@ class VolumeBackupManager:
         verify_after_write: bool = True,
         _backup_fn: Callable[..., dict] | None = None,
     ) -> dict:
-        with self._lock:
+        with self._lock, storage_events.run_refusals_net("export", via="volume-set", refused_as=storage_events.NOT_A_FOLDER):
             self._reap_or_reject("export")
             if not passphrase:
                 storage_events.run_refused("export", "no-passphrase", via="volume-set")
@@ -284,12 +284,8 @@ class VolumeBackupManager:
                 # the passphrase is in scope: scrubbed where the text is made, and the cause is not carried on
                 reason = exception_text(exc, passphrase, typed=False)
                 raise ValueError(f"Cannot use destination {destp}: {reason}") from None
-            with (
-                storage_events.run_path_checked("export", via="volume-set"),
-                storage_events.run_refused_if_raised("export", "not-a-folder", ValueError, via="volume-set"),
-            ):
-                if not destp.is_dir():
-                    raise ValueError(f"{destp} is not a folder.")
+            if not destp.is_dir():
+                raise ValueError(f"{destp} is not a folder.")
             self._stop.clear()
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "backup", str(destp)
@@ -554,15 +550,11 @@ class VolumeBackupManager:
         artifact queued twice inside one group would be merged twice. The queue knows
         what it has put in the copy and says so.
         """
-        with self._lock:
+        with self._lock, storage_events.run_refusals_net("import", via="volume-set", refused_as=storage_events.NOT_A_FOLDER):
             self._reap_or_reject("import")
             srcp = Path(src)
-            with (
-                storage_events.run_path_checked("import", via="volume-set"),
-                storage_events.run_refused_if_raised("import", "not-a-folder", ValueError, via="volume-set"),
-            ):
-                if not srcp.is_dir():
-                    raise ValueError(f"{srcp} is not a folder to restore from.")
+            if not srcp.is_dir():
+                raise ValueError(f"{srcp} is not a folder to restore from.")
             # Re-merge an artifact this corpus has already merged. Additive and
             # off by default: the skip exists because the redundant work is
             # expensive, not because re-merging is unsafe -- the merge is
@@ -1076,15 +1068,11 @@ class VolumeBackupManager:
         set is a full read — never on the request thread). Without a passphrase:
         signature + every checksum; with it: every volume is also stream-decrypted
         into a hash sink. The report lands in ``summary``."""
-        with self._lock:
+        with self._lock, storage_events.run_refusals_net("verify", via="volume-set", refused_as=storage_events.NOT_A_FOLDER):
             self._reap_or_reject("verify")
             srcp = Path(src)
-            with (
-                storage_events.run_path_checked("verify", via="volume-set"),
-                storage_events.run_refused_if_raised("verify", "not-a-folder", ValueError, via="volume-set"),
-            ):
-                if not srcp.is_dir():
-                    raise ValueError(f"{srcp} is not a folder to verify.")
+            if not srcp.is_dir():
+                raise ValueError(f"{srcp} is not a folder to verify.")
             self._stop.clear()
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "verify", str(srcp)

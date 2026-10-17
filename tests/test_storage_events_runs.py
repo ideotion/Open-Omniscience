@@ -735,19 +735,23 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
         "src/backup/folder_backup.py",
     ):
         for call in _calls(path, {"run_started", "run_facts", "run_ended", "run_refused", "run_free_space", "run_path_checked",
-                                  "run_refused_if_raised", "run_ended_if_raised"}):
+                                  "run_refusals_net", "run_open"}):
             seen[path] = seen.get(path, 0) + 1
             where = f"{path}:{call.lineno}"
             name = call.func.attr  # type: ignore[attr-defined]
-            if name == "run_path_checked":
-                first = call.args[0]  # a kind, or ``what`` in the one helper every folder start passes through
-                assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
-            if name in ("run_ended", "run_refused", "run_ended_if_raised", "run_refused_if_raised"):
-                outcome_arg = call.args[1] if name in ("run_ended", "run_ended_if_raised") else None
+            if name in ("run_path_checked", "run_refusals_net", "run_open"):
+                first = call.args[0]  # a kind, or ``what`` in the one helper every folder start passes through, or the folder's kind of its mode
+                assert (
+                    (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS)
+                    or (isinstance(first, ast.Name) and first.id == "what")
+                    or (isinstance(first, ast.Call) and ast.unparse(first) == "_RUN_OF.get(mode, '')")
+                ), where
+            if name in ("run_ended", "run_refused"):
+                outcome_arg = call.args[1] if name == "run_ended" else None
                 if outcome_arg is not None:
                     outcomes = _constants_of(outcome_arg)
                     assert outcomes is not None and outcomes <= se.RUN_OUTCOMES, where
-                if name in ("run_refused", "run_refused_if_raised"):
+                if name == "run_refused":
                     first = call.args[0]  # a kind, or ``what`` in the one helper every start passes through
                     assert (isinstance(first, ast.Constant) and first.value in se.RUN_KINDS) or (isinstance(first, ast.Name) and first.id == "what"), where
                     keys = _constants_of(call.args[1])  # one key, or a conditional of keys (the no-space / free-space-unreadable pair)
@@ -761,37 +765,92 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
                 elif kw.arg == "via":
                     # a key of the fixed table, written out at the call: no local, no expression
                     assert isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_VIA, f"{where}: via must be a key of the table"
+                elif kw.arg == "refused_as":
+                    # the classes a net may name, written at the header or the one constant of the table; never a name taken from a variable
+                    assert (
+                        ast.unparse(kw.value) in ("storage_events.NOT_A_FOLDER", "((HTTPException, 'not-a-file'),)")
+                        or ast.unparse(kw.value) == "storage_events.NOT_A_FOLDER if mode in ('restore', 'verify') else ()"
+                    ), f"{where}: refused_as must be the one table or the one pair written out"
                 else:
                     assert kw.arg in allowed_facts, f"{where}: {kw.arg} is not a fact a run may carry"
-    # Per file, so a file whose hooks were deleted cannot hide behind the others' count. EXACT at the time of writing (30, 1, 12, 8 and 18):
+    # Per file, so a file whose hooks were deleted cannot hide behind the others' count. EXACT at the time of writing (27, 1, 6, 8 and 17):
     # a hook added or removed here moves the number in the same change, which is the point of a ratchet; a floor with slack let one
     # missing hook through.
-    counts = {"src/backup/volume_job.py": 30, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 12, "src/ingest/import_job.py": 8,
-              "src/backup/folder_backup.py": 18}
+    counts = {"src/backup/volume_job.py": 27, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 6, "src/ingest/import_job.py": 8,
+              "src/backup/folder_backup.py": 17}
     for path, expected in counts.items():
         assert seen.get(path, 0) == expected, f"the scan found {seen.get(path, 0)} hooks in {path}, expected {expected}"
 
 
-def test_the_path_checks_stay_as_written_and_the_record_wraps_them_never_sits_inside_them():
-    """Six statements examine a path a request handed in (three volume starts, the legacy restore's ``is_file`` and read, the folder
-    restore/verify start). Code scanning fingerprints each by its own text and the text that follows it, so a record written inside the
-    branch (or between the check and its raise) turns a finding that was already there into a new one, and the pull request's check goes
-    red for code it did not write. The records wrap the statement from outside; nothing under the wrapper but the check itself."""
-    found = 0
-    for path in ("src/backup/volume_job.py", "src/api/backup_v2.py", "src/backup/folder_backup.py"):
+#: The six statements that examine a path a request handed in, as (file, the statement's source, the column it starts at). The column is
+#: where the statement stood before any record was written: a record that wraps one moves it one level in, and code scanning reports a
+#: finding on a pull request for every line the pull request changes, so a check that was already on the base branch comes back as
+#: a new finding of the pull request (live, 2026-10-16: six alerts on a head whose check lines hashed exactly as the base's).
+_PATH_CHECKS = (
+    ("src/backup/volume_job.py", "if not destp.is_dir():", 12),
+    ("src/backup/volume_job.py", "if not srcp.is_dir():", 12),
+    ("src/api/backup_v2.py", "if not p.is_file():", 4),
+    ("src/api/backup_v2.py", "data = p.read_bytes()", 12),
+    ("src/backup/folder_backup.py", "if not destp.is_dir():", 16),
+)
+
+
+def test_the_path_checks_stay_where_they_were_written_and_nothing_wraps_or_enters_them():
+    """The records are written by a NET round the header of the start (and a decorator on the legacy restore), never round the statement or
+    inside its branch: each check stands at its original column, its branch is the raise and nothing else, and the handler after a read
+    is the raise and nothing else. (An ``if`` that gained a record, or a ``with`` that wrapped it, fails here.)"""
+    seen = 0
+    for path, source, column in _PATH_CHECKS:
         tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.With) and (_refusal_wrapper_type(node) or _ended_wrapper_type(node)):
-                found += 1
-                inside = [
+            if not isinstance(node, (ast.If, ast.Assign)) or ast.unparse(node).split("\n")[0] != source:
+                continue
+            seen += 1
+            assert node.col_offset == column, f"{path}:{node.lineno}: {source} moved from column {column} to {node.col_offset}"
+            if isinstance(node, ast.If):
+                calls = [
                     c.func.attr
                     for stmt in node.body
                     for c in ast.walk(stmt)
                     if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and isinstance(c.func.value, ast.Name)
                     and c.func.value.id == "storage_events"
                 ]
-                assert inside == [], f"{path}:{node.lineno}: a record inside the wrapped check: {inside}"
-    assert found == 6, f"expected the 6 wrapped path checks, found {found}"
+                assert calls == [], f"{path}:{node.lineno}: a record inside the branch of the check: {calls}"
+    assert seen == 6, f"expected the 6 path checks, found {seen}"
+    legacy = ast.parse((ROOT / "src/api/backup_v2.py").read_text(encoding="utf-8"))
+    (read,) = [
+        t for t in ast.walk(legacy) if isinstance(t, ast.Try) and any(ast.unparse(b).startswith("data = p.read_bytes()") for b in t.body)
+    ]
+    assert [type(b).__name__ for b in read.body] == ["Assign"], "nothing but the read itself in the try"
+    assert len(read.handlers) == 1 and [type(b).__name__ for b in read.handlers[0].body] == ["Raise"], "the handler of the read is its raise"
+
+
+def test_the_net_is_on_the_header_of_every_start_and_on_the_legacy_restore():
+    """Where the records of the six path checks come from. A start loses its refusal record when the net leaves its ``with`` header."""
+    tree = ast.parse((ROOT / "src/backup/volume_job.py").read_text(encoding="utf-8"))
+    for name, kind in (("start_backup", "export"), ("start_restore", "import"), ("start_verify", "verify")):
+        fn = next(f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name == name)
+        header = next(n for n in ast.walk(fn) if isinstance(n, ast.With))
+        text = [ast.unparse(item.context_expr) for item in header.items]
+        assert text == [
+            "self._lock",
+            f"storage_events.run_refusals_net('{kind}', via='volume-set', refused_as=storage_events.NOT_A_FOLDER)",
+        ], (name, text)
+    folder = ast.parse((ROOT / "src/backup/folder_backup.py").read_text(encoding="utf-8"))
+    start = next(f for f in ast.walk(folder) if isinstance(f, ast.FunctionDef) and f.name == "start")
+    header = next(n for n in ast.walk(start) if isinstance(n, ast.With))
+    assert [ast.unparse(item.context_expr) for item in header.items] == [
+        "self._lock",
+        "storage_events.run_refusals_net(_RUN_OF.get(mode, ''), via='folder', "
+        "refused_as=storage_events.NOT_A_FOLDER if mode in ('restore', 'verify') else ())",
+    ]
+    legacy = ast.parse((ROOT / "src/api/backup_v2.py").read_text(encoding="utf-8"))
+    fn = next(f for f in ast.walk(legacy) if isinstance(f, ast.FunctionDef) and f.name == "restore_legacy_path")
+    assert [ast.unparse(d) for d in fn.decorator_list] == [
+        "storage_events.run_refusals_net('import', via='single-file', refused_as=((HTTPException, 'not-a-file'),))"
+    ]
+    opened = [n for n in ast.walk(fn) if isinstance(n, ast.With) and any("run_open" in ast.unparse(i.context_expr) for i in n.items)]
+    assert len(opened) == 1, "the legacy restore's run is opened by one `with`, on the header that already converted its errors"
 
 
 def test_no_file_that_carries_a_run_hook_writes_the_journal_by_hand():
@@ -848,53 +907,95 @@ def _raised_type(stmt: ast.Raise) -> str | None:
     return exc.id if isinstance(exc, ast.Name) else None
 
 
-def _refusal_wrapper_type(node: ast.AST) -> str | None:
-    """For a ``with`` that carries ``storage_events.run_refused_if_raised(kind, key, SomeError, ...)``: the name ``SomeError``."""
-    if not isinstance(node, ast.With):
-        return None
-    for item in node.items:
-        call = item.context_expr
-        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "run_refused_if_raised" and len(call.args) >= 3:
-            third = call.args[2]
-            return third.id if isinstance(third, ast.Name) else None
-    return None
-
-
-def _ended_wrapper_type(node: ast.AST) -> str | None:
-    """For a ``with`` that carries ``storage_events.run_ended_if_raised(note, outcome, SomeError)``: the name ``SomeError``."""
-    if not isinstance(node, ast.With):
-        return None
-    for item in node.items:
-        call = item.context_expr
-        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "run_ended_if_raised" and len(call.args) >= 3:
-            third = call.args[2]
-            return third.id if isinstance(third, ast.Name) else None
-    return None
-
-
-def raise_is_recorded_by_a_wrapper(fn: ast.FunctionDef, stmt: ast.Raise) -> bool:
-    """The ``raise`` is recorded by a wrapper, which keeps the statement it belongs to as it was before the record existed: it sits inside a
-    ``with`` whose ``run_refused_if_raised`` names the very exception it raises, or inside the ``except SomeError`` of a ``try`` whose body
-    holds a ``with`` whose ``run_ended_if_raised`` names ``SomeError``. A wrapper that names another exception records nothing for this one."""
-    parent = {child: node for node in ast.walk(fn) for child in ast.iter_child_nodes(node)}
+def _net_call(fn: ast.FunctionDef, stmt: ast.Raise, parent: dict[ast.AST, ast.AST]) -> ast.Call | None:
+    """The ``run_refusals_net(...)`` call that covers ``stmt``: the one on a ``with`` header round it, else the function's decorator."""
     up: ast.AST | None = parent.get(stmt)
     while up is not None and up is not fn:
-        wrapper = _refusal_wrapper_type(up)
-        if wrapper is not None and wrapper == _raised_type(stmt):
-            return True
-        if isinstance(up, ast.ExceptHandler) and isinstance(up.type, ast.Name):
-            try_node = parent.get(up)
-            if isinstance(try_node, ast.Try) and any(
-                _ended_wrapper_type(inner) == up.type.id for top in try_node.body for inner in ast.walk(top)
-            ):
-                return True
+        if isinstance(up, ast.With):
+            for item in up.items:
+                if isinstance(item.context_expr, ast.Call) and "run_refusals_net" in ast.unparse(item.context_expr.func):
+                    return item.context_expr
         up = parent.get(up)
-    return False
+    return next((d for d in fn.decorator_list if isinstance(d, ast.Call) and "run_refusals_net" in ast.unparse(d.func)), None)
+
+
+def _classes_the_net_names(call: ast.Call) -> set[str]:
+    """The exception classes ``refused_as`` of a ``run_refusals_net`` call names: the ones written in it, and those of ``NOT_A_FOLDER``."""
+    kw = next((k.value for k in call.keywords if k.arg == "refused_as"), None)
+    if kw is None:
+        return set()
+    names = {n.id for n in ast.walk(kw) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(kw) if isinstance(n, ast.Attribute)}
+    if "NOT_A_FOLDER" in names:
+        names |= {cls.__name__ for cls, _key in se.NOT_A_FOLDER}
+    return names
+
+
+def _is_a_path_check(test: ast.expr) -> bool:
+    """``not <name>.is_dir()`` or ``not <name>.is_file()``: the one statement of a start that looks at a path."""
+    return (
+        isinstance(test, ast.UnaryOp)
+        and isinstance(test.op, ast.Not)
+        and isinstance(test.operand, ast.Call)
+        and isinstance(test.operand.func, ast.Attribute)
+        and test.operand.func.attr in ("is_dir", "is_file")
+        and isinstance(test.operand.func.value, ast.Name)
+    )
+
+
+def raise_is_recorded_by_the_net(fn: ast.FunctionDef, stmt: ast.Raise) -> bool:
+    """The ``raise`` is a refusal the net round the start records: it is the end of the branch of a path check (``if not x.is_dir():``)
+    AND the class it raises is one the net was handed (``refused_as``). The net reads the CLASS, so a ``raise`` of that class anywhere
+    else under the net would be recorded as a missing folder whatever it was; this is the only place the tests let that be true. A raise
+    the net cannot name is recorded by a call before it or not at all; the net is not a way to leave a refusal unrecorded."""
+    parent = {child: node for node in ast.walk(fn) for child in ast.iter_child_nodes(node)}
+    branch = parent.get(stmt)
+    if not (isinstance(branch, ast.If) and branch.body[-1] is stmt and _is_a_path_check(branch.test)):
+        return False
+    call = _net_call(fn, stmt, parent)
+    return call is not None and _raised_type(stmt) in _classes_the_net_names(call)
+
+
+_NET_CASES = (
+    # (what it is, the source of one function, whether the rule lets the net stand for the ``raise``)
+    ("the check's own raise, the net on a header",
+     "def start(self, p):\n    with self._lock, storage_events.run_refusals_net('export', refused_as=storage_events.NOT_A_FOLDER):\n"
+     "        if not p.is_dir():\n            raise ValueError('x')\n", True),
+    ("the check's own raise, the net a decorator and the class written out",
+     "@storage_events.run_refusals_net('import', refused_as=((HTTPException, 'not-a-file'),))\n"
+     "def start(p):\n    if not p.is_file():\n        raise HTTPException(status_code=400, detail='x')\n", True),
+    ("a raise of the class that is not the check's own",
+     "def start(self, p):\n    with self._lock, storage_events.run_refusals_net('export', refused_as=storage_events.NOT_A_FOLDER):\n"
+     "        if self.busy:\n            raise ValueError('x')\n", False),
+    ("a raise after a check of something that is not a path",
+     "def start(self, p):\n    with self._lock, storage_events.run_refusals_net('export', refused_as=storage_events.NOT_A_FOLDER):\n"
+     "        if not p.exists():\n            raise ValueError('x')\n", False),
+    ("a class the net was not handed",
+     "def start(self, p):\n    with self._lock, storage_events.run_refusals_net('export', refused_as=storage_events.NOT_A_FOLDER):\n"
+     "        if not p.is_dir():\n            raise RuntimeError('x')\n", False),
+    ("a net with nothing handed to it",
+     "def start(self, p):\n    with self._lock, storage_events.run_refusals_net('export'):\n"
+     "        if not p.is_dir():\n            raise ValueError('x')\n", False),
+    ("no net at all",
+     "def start(self, p):\n    with self._lock:\n        if not p.is_dir():\n            raise ValueError('x')\n", False),
+    ("a raise before the check's branch ends",
+     "def start(self, p):\n    with self._lock, storage_events.run_refusals_net('export', refused_as=storage_events.NOT_A_FOLDER):\n"
+     "        if not p.is_dir():\n            raise ValueError('x')\n            self.done = True\n", False),
+)
+
+
+@pytest.mark.parametrize(("what", "source", "expected"), _NET_CASES, ids=[c[0] for c in _NET_CASES])
+def test_the_net_stands_for_a_raise_only_where_it_is_the_path_checks_own(what, source, expected):
+    """The net reads a CLASS, so which ``raise`` of the class it stands for is decided here, by the shape of the code. RED WITHOUT any
+    one of the conditions: the case that breaks it is the line of this table that turns."""
+    fn = next(f for f in ast.walk(ast.parse(source)) if isinstance(f, ast.FunctionDef))
+    raises = [n for n in ast.walk(fn) if isinstance(n, ast.Raise)]
+    assert len(raises) == 1
+    assert raise_is_recorded_by_the_net(fn, raises[0]) is expected, what
 
 
 def _assert_each_raise_follows_a_refusal(fn: ast.FunctionDef) -> None:
     """Every ``raise`` is preceded, in the SAME block, by a ``run_refused`` statement, or is recorded by a wrapper
-    (:func:`raise_is_recorded_by_a_wrapper`): a record moved after its raise is dead code."""
+    (:func:`raise_is_recorded_by_the_net`): a record moved after its raise is dead code."""
     raises = 0
     for node in ast.walk(fn):
         for field in ("body", "orelse", "finalbody"):
@@ -904,7 +1005,7 @@ def _assert_each_raise_follows_a_refusal(fn: ast.FunctionDef) -> None:
             for i, stmt in enumerate(block):
                 if isinstance(stmt, ast.Raise):
                     raises += 1
-                    recorded = any(_is_refusal_statement(earlier) for earlier in block[:i]) or raise_is_recorded_by_a_wrapper(fn, stmt)
+                    recorded = any(_is_refusal_statement(earlier) for earlier in block[:i]) or raise_is_recorded_by_the_net(fn, stmt)
                     assert recorded, f"{fn.name}:{stmt.lineno}: a raise with no refusal record before it"
     assert raises, f"{fn.name} raises nothing: the pin found nothing to guard"
 
@@ -975,3 +1076,151 @@ def test_the_member_names_the_run_journals_own_names_for_the_runs_and_says_where
     assert "the run journal's 'export'" not in method, "the folder backup is not the run journal's 'export'"
     doc = se.__doc__ or ""
     assert "folder-export" in doc and "newsletter-import" in doc and "volume-set verification has no run there" in doc
+
+
+# --------------------------------------------------------------------------- #
+#  5. The net round a start and the scope round a run (the six path checks stay where they were written)
+# --------------------------------------------------------------------------- #
+def test_the_net_records_the_refusal_its_error_class_names_and_raises_the_error_on_unchanged(journal):
+    """Only the CLASS is read: the same ValueError a path check raises leaves one refusal, with the class, and the caller still gets the
+    very exception it got before the record existed. RED WITHOUT the ``refused_as`` pairs: nothing is recorded."""
+    boom = ValueError(f"/home/someone/{MARKER} is not a folder.")
+    with pytest.raises(ValueError) as caught, se.run_refusals_net("export", via="volume-set", refused_as=se.NOT_A_FOLDER):
+        raise boom
+    assert caught.value is boom
+    event = _only("run_export")
+    assert (event["outcome"], event["ran"], event["via"], event["error"]) == ("refused", False, "volume-set", "ValueError")
+    assert event["reason"] == se.RUN_REFUSALS["not-a-folder"]
+    _nothing_secret_anywhere(journal, MARKER, "someone")
+
+
+def test_every_pair_the_callers_hand_over_is_its_refusal_for_its_class_and_a_key_of_the_table(journal):
+    from fastapi import HTTPException
+
+    with pytest.raises(ValueError), se.run_refusals_net("import", via="folder", refused_as=se.NOT_A_FOLDER):
+        raise ValueError("/x anything at all")
+    pairs = ((HTTPException, "not-a-file"),)
+    with pytest.raises(HTTPException), se.run_refusals_net("import", via="single-file", refused_as=pairs):
+        raise HTTPException(status_code=400, detail="/y anything at all")
+    assert {e["reason"] for e in _events("run_import")} == {se.RUN_REFUSALS["not-a-folder"], se.RUN_REFUSALS["not-a-file"]}
+    assert sorted(e["via"] for e in _events("run_import")) == ["folder", "single-file"]
+    assert all(key in se.RUN_REFUSALS for _cls, key in se.NOT_A_FOLDER + pairs), "a pair names a key the journal has a sentence for"
+
+
+def test_no_word_of_the_error_is_read_and_a_class_that_was_not_handed_over_is_not_named(journal):
+    """The words of a refusal can hold anything (a path, a passphrase): they decide nothing and are kept nowhere. A class the net was not
+    given is not a reason it may invent. RED WITHOUT the class test: a RuntimeError is recorded as a missing folder."""
+    secret = "hunter2-" + MARKER
+    with pytest.raises(ValueError), se.run_refusals_net("export", via="volume-set", refused_as=se.NOT_A_FOLDER):
+        raise ValueError(f"Cannot use destination /a/{secret} b: [Errno 13] Permission denied")
+    with pytest.raises(RuntimeError), se.run_refusals_net("export", via="volume-set", refused_as=se.NOT_A_FOLDER):
+        raise RuntimeError("anything else")
+    with pytest.raises(ValueError), se.run_refusals_net("verify", via="volume-set"):  # no pairs handed over: nothing to name
+        raise ValueError("/a is not a folder to verify.")
+    (event,) = _events("run_export")
+    assert event["reason"] == se.RUN_REFUSALS["not-a-folder"] and event["error"] == "ValueError"
+    assert _events("run_verify") == [] and _events("run_import") == []
+    _nothing_secret_anywhere(journal, secret, MARKER, "Permission denied")
+
+
+def test_an_oserror_that_leaves_a_start_is_a_path_that_could_not_be_examined(journal):
+    with pytest.raises(OSError) as caught, se.run_refusals_net("verify", via="volume-set"):
+        raise OSError(36, f"File name too long: /home/someone/{MARKER}")
+    assert caught.value.errno == 36
+    event = _only("run_verify")
+    assert (event["outcome"], event["error"], event["reason"]) == ("refused", "OSError", se.RUN_REFUSALS["path-unreadable"])
+    _nothing_secret_anywhere(journal, MARKER, "someone", "too long")
+
+
+def test_a_start_that_recorded_its_own_refusal_or_opened_a_run_is_not_recorded_twice(journal):
+    """One start, one record. RED WITHOUT the scope's mark: the OSError below leaves two refusals, and a run opened in the body leaves a
+    refusal beside it."""
+    with pytest.raises(OSError), se.run_refusals_net("export", via="volume-set"):
+        se.run_refused("export", "destination-unusable", failure="PermissionError", via="volume-set")
+        raise OSError(13, "denied")
+    (event,) = _events("run_export")
+    assert event["reason"] == se.RUN_REFUSALS["destination-unusable"]
+    with pytest.raises(ValueError), se.run_refusals_net("import", via="single-file", refused_as=se.NOT_A_FOLDER):
+        se.run_started("import", via="single-file")
+        raise ValueError("/z is not a file to restore.")
+    (opened,) = _events("run_import")
+    assert opened["open"] is True and "outcome" not in opened, "the run opened in the body is the only record; the net stood down"
+
+
+def test_a_net_ends_with_its_start_so_a_later_start_is_judged_alone_and_a_kind_the_journal_lacks_records_nothing(journal):
+    assert se._REFUSAL_SCOPE.get() is None
+    with se.run_refusals_net("export", via="volume-set"):
+        assert se._REFUSAL_SCOPE.get() is not None
+        se.run_refused("export", "no-passphrase", via="volume-set")
+    assert se._REFUSAL_SCOPE.get() is None, "the scope ends with the start (a later one starts clean)"
+    with pytest.raises(OSError), se.run_refusals_net("export", via="volume-set"):
+        raise OSError(5, "I/O error")
+    reasons = [e["reason"] for e in _events("run_export")]
+    assert se.RUN_REFUSALS["path-unreadable"] in reasons and len(reasons) == 2, "the first start's record did not hide the second's"
+    with pytest.raises(OSError), se.run_refusals_net("", via="folder"):  # the folder manager's "no such mode"
+        raise OSError(5, "I/O error")
+    assert len(_events("run_export")) == 2 and _events("run_import") == [] and _events("run_verify") == []
+
+
+def test_the_net_is_also_a_decorator_and_hands_the_result_and_the_arguments_through(journal):
+    @se.run_refusals_net("import", via="single-file", refused_as=((ValueError, "not-a-file"),))
+    def restore(path, *, flag=False):
+        if flag:
+            raise ValueError(f"{path} is not a file to restore.")
+        return {"path": path}
+
+    assert restore("/a") == {"path": "/a"}
+    with pytest.raises(ValueError):
+        restore("/b", flag=True)
+    assert _only("run_import")["reason"] == se.RUN_REFUSALS["not-a-file"]
+
+
+def test_a_run_open_is_closed_as_an_error_with_the_class_of_what_leaves_and_the_error_goes_on(journal, monkeypatch):
+    monkeypatch.setattr(se, "free_bytes_of", lambda path=None: 4096)
+    with pytest.raises(ValueError, match="no"), se.run_open("import", via="single-file") as note:
+        assert note is not None
+        (running,) = _events("run_import")
+        assert running["open"] is True and running["data_free_bytes"] == 4096 and running["via"] == "single-file"
+        raise ValueError("no")
+    event = _only("run_import")
+    assert (event["open"], event["outcome"], event["error"]) == (False, "error", "ValueError")
+    assert "no" not in repr(event.get("reason", "")), "the words of the error are not kept"
+
+
+def test_a_run_open_leaves_what_the_block_wrote_and_closes_the_rest_without_an_outcome(journal):
+    with se.run_open("import", via="single-file") as note:
+        se.run_ended(note, "ok", articles_merged=7)
+    ok = _only("run_import")
+    assert (ok["outcome"], ok["articles_merged"]) == ("ok", 7), "the exit must not overwrite an outcome the block wrote"
+    se.reset_for_tests()
+    with se.run_open("import", via="single-file"):
+        pass
+    assert _only("run_import")["outcome"] == "ended-without-a-recorded-outcome"
+    se.reset_for_tests()
+    with pytest.raises(KeyboardInterrupt), se.run_open("import", via="single-file"):
+        raise KeyboardInterrupt
+    event = _only("run_import")
+    assert event["open"] is False and event["outcome"] == "ended-without-a-recorded-outcome", "an exit that is not an Exception still closes the run"
+
+
+def test_an_outcome_the_block_wrote_before_it_raised_stands_over_the_plain_error(journal):
+    """The legacy restore writes ``refused`` (a merge check) or ``stopped-by-operator`` where it knows, then raises an HTTP error the
+    ``run_open`` sees as one more Exception. RED WITHOUT the first-outcome-stands rule of ``end``: the run reads ``error``."""
+    with pytest.raises(RuntimeError), se.run_open("import", via="single-file") as note:
+        se.run_ended(note, "refused", failure="MergeError")
+        raise RuntimeError("converted")
+    event = _only("run_import")
+    assert (event["outcome"], event["error"]) == ("refused", "MergeError")
+
+
+def test_a_net_inside_a_net_records_the_error_once(journal):
+    """A restore run from a queue item may pass two nets; the error is the same error. RED WITHOUT the parent mark: two records."""
+    pairs = se.NOT_A_FOLDER
+    with (
+        pytest.raises(ValueError),
+        se.run_refusals_net("import", via="single-file", refused_as=pairs),
+        se.run_refusals_net("import", via="volume-set", refused_as=pairs),
+    ):
+        raise ValueError("/q is not a folder to restore from.")
+    event = _only("run_import")
+    assert event["via"] == "volume-set" and event["reason"] == se.RUN_REFUSALS["not-a-folder"]

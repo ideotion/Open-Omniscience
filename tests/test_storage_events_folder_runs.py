@@ -34,7 +34,7 @@ from tests.test_storage_events_runs import (
     _events,
     _nothing_secret_anywhere,
     _only,
-    raise_is_recorded_by_a_wrapper,
+    raise_is_recorded_by_the_net,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -374,7 +374,7 @@ def test_every_refusing_raise_of_the_start_follows_its_record_and_only_the_unkno
             for i, stmt in enumerate(block):
                 if not isinstance(stmt, ast.Raise):
                     continue
-                if any(_is_record(earlier) for earlier in block[:i]) or raise_is_recorded_by_a_wrapper(fn, stmt):
+                if any(_is_record(earlier) for earlier in block[:i]) or raise_is_recorded_by_the_net(fn, stmt):
                     with_record += 1
                 else:
                     without += 1
@@ -406,9 +406,9 @@ def test_the_manager_records_into_the_journal_this_module_reads_and_every_run_is
     started = [
         n
         for n in ast.walk(tree)
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in {"run_started", "run_refused", "run_refused_if_raised"}
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in {"run_started", "run_refused"}
     ]
-    assert len(started) == 3 + 4
+    assert len(started) == 3 + 3
     for call in started:
         via = [kw for kw in call.keywords if kw.arg == "via"]
         assert len(via) == 1 and isinstance(via[0].value, ast.Constant) and via[0].value.value == "folder", call.lineno

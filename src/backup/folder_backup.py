@@ -1107,49 +1107,49 @@ class FolderBackupManager:
         """Validate + preflight, then launch the worker. Raises ValueError on a bad
         destination / insufficient free space; RuntimeError if one is already running.
         ``_items``/``_targets`` are test seams (the production path collects them)."""
-        with self._lock:
+        with self._lock, storage_events.run_refusals_net(
+            _RUN_OF.get(mode, ""), via="folder", refused_as=storage_events.NOT_A_FOLDER if mode in ("restore", "verify") else ()
+        ):
             what = _RUN_OF.get(mode, "")  # "" for a mode that is not one: the journal records no refusal for a kind it does not have
             if self._alive():
                 storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
             cats = [c for c in categories if c in _CATEGORIES] or list(_CATEGORIES)
             items: list[BackupItem] = []
-            with storage_events.run_path_checked(what, via="folder"):
-                if mode == "backup":
-                    try:
-                        destp = validate_dest(dest)
-                    except ValueError as exc:
-                        storage_events.run_refused(what, "destination-unusable", failure=type(exc).__name__, via="folder")
-                        raise
-                    items = (
-                        _items
-                        if _items is not None
-                        else collect_items(
-                            include_wiki="wiki_dumps" in cats,
-                            include_osm="osm_regions" in cats,
-                            include_models="models" in cats,
-                            include_hf="hf_models" in cats,
-                        )
+            if mode == "backup":
+                try:
+                    destp = validate_dest(dest)
+                except ValueError as exc:
+                    storage_events.run_refused(what, "destination-unusable", failure=type(exc).__name__, via="folder")
+                    raise
+                items = (
+                    _items
+                    if _items is not None
+                    else collect_items(
+                        include_wiki="wiki_dumps" in cats,
+                        include_osm="osm_regions" in cats,
+                        include_models="models" in cats,
+                        include_hf="hf_models" in cats,
                     )
-                    need = needed_bytes(destp, items)
-                    free = free_bytes(destp)
-                    if need > free:
-                        # ``free_bytes`` answers 0 when the free space cannot be read: that is not a shortage, and the record says which.
-                        storage_events.run_refused(
-                            what, "no-space" if _free_readable(destp) else "free-space-unreadable", via="folder"
-                        )
-                        raise ValueError(
-                            f"Not enough free space at {destp}: needs {human_bytes(need)}, "
-                            f"only {human_bytes(free)} free."
-                        )
-                elif mode in ("restore", "verify"):
-                    destp = Path(dest)
-                    with storage_events.run_refused_if_raised(what, "not-a-folder", ValueError, via="folder"):
-                        if not destp.is_dir():
-                            verb = "verify" if mode == "verify" else "restore from"
-                            raise ValueError(f"{destp} is not a folder to {verb}.")
-                else:
-                    raise ValueError(f"unknown folder-backup mode {mode!r}")
+                )
+                need = needed_bytes(destp, items)
+                free = free_bytes(destp)
+                if need > free:
+                    # ``free_bytes`` answers 0 when the free space cannot be read: that is not a shortage, and the record says which.
+                    storage_events.run_refused(
+                        what, "no-space" if _free_readable(destp) else "free-space-unreadable", via="folder"
+                    )
+                    raise ValueError(
+                        f"Not enough free space at {destp}: needs {human_bytes(need)}, "
+                        f"only {human_bytes(free)} free."
+                    )
+            elif mode in ("restore", "verify"):
+                destp = Path(dest)
+                if not destp.is_dir():
+                    verb = "verify" if mode == "verify" else "restore from"
+                    raise ValueError(f"{destp} is not a folder to {verb}.")
+            else:
+                raise ValueError(f"unknown folder-backup mode {mode!r}")
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
