@@ -50,8 +50,9 @@ _SLOT = struct.Struct("<II")
 SIZE = 128
 assert _HEAD.size + len(SLOTS) * _SLOT.size <= SIZE
 
-#: How much of the session-forensics headroom this report may use, in serialised bytes (a worst case is pinned by a test).
-REPORT_BYTES_BUDGET = 165
+#: How much of the session-forensics headroom this report may use, in serialised bytes WITH its ``"native_in_flight":`` key (a worst case is
+#: pinned by a test): 181 measured with all four slots at their largest, the as-of time and ``boot_unchecked``.
+REPORT_BYTES_BUDGET = 181
 
 _LOCK = threading.Lock()
 _STATE: dict[str, Any] = {"map": None, "file": None, "failed": False, "previous": None, "captured": False}
@@ -80,8 +81,10 @@ def _capture_previous(path: str) -> None:
     try:
         with open(path, "rb") as fh:
             _STATE["previous"] = fh.read(SIZE)
-    except OSError:
+    except FileNotFoundError:
         _STATE["previous"] = None
+    except OSError:
+        _STATE["previous"] = b""  # a file that is there and cannot be read is "unreadable", not "absent"
 
 
 def _open_locked() -> mmap.mmap | None:

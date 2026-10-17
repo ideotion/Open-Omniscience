@@ -714,7 +714,7 @@ def thread_snapshot() -> list[dict[str, Any]]:
 # the record is the LAST census taken, so it is a LOWER-BOUND-IN-TIME view (a pool started after it is not in it).
 _CENSUS_INTERVAL_S = 60.0
 #: Serialised bytes the whole ``last_thread_census`` member (its key included) may take in the marks. Part of WAL's 2,415 B headroom
-#: (150 B; the core-dump stack's 589 is the remainder after it). Comms are added, most numerous first, while the member still fits.
+#: (150 B; the core-dump stack's 570 is the remainder after it). Comms are added, most numerous first, while the member still fits.
 CENSUS_BYTES = 150
 _CENSUS_KEY = "last_thread_census"
 _CENSUS_TASKS = "/proc/self/task"

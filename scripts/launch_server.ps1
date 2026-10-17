@@ -92,7 +92,7 @@ while ($true) {
     $line = $p.StandardError.ReadLine()
     if ($null -eq $line) { break }
     $stderr.WriteLine($line)   # every line reaches the window, as before
-    if ($Messages -contains $line) {
+    if ($Messages -ccontains $line) {
         if ($kept -lt $Keep) {
             if ($writable) {
                 $ok = Add-Row $stderrRecord ([ordered]@{ schema = "oo-launcher-stderr-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; line = $line })

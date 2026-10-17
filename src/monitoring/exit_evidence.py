@@ -111,8 +111,8 @@ _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
 
 #: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included. It is the
 #: REMAINDER of WAL's 2,415 B headroom after this thread's other worst-case members (crashing_thread_kind 440, launcher_stderr about 1,000,
-#: died_into_phase 74, native_in_flight 162, the thread census 150 = 1,826), so the worst case fits by construction. Raising it needs WAL's measurement first.
-COREDUMP_STACK_BYTES = 589
+#: died_into_phase 74, native_in_flight 181 with its key, the thread census 150 = 1,845), so the worst case fits by construction. Raising it needs WAL's measurement first.
+COREDUMP_STACK_BYTES = 570
 _COREDUMP_HEAD = re.compile(r"systemd-coredump\S*:\s+Process\s+(\d+)\s+\(")
 _COREDUMP_KEEP = re.compile(r"^(?:Stack trace of thread \d+:|#\d+\s)")
 _COREDUMP_FRAME = re.compile(r"^#\d+\s")
@@ -190,17 +190,21 @@ def _same_boot(recorded: Any, boot_id: str | None) -> bool:
     return recorded == boot_id
 
 
-def launcher_exit(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
+def launcher_exit(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
     """The launcher's record of how process ``pid`` ended, or None when it holds none.
 
     ``boot_id`` is the machine boot the session ran in (its sentinel records it); a
     record from another boot is skipped. None is the common case and means nothing by
     itself: the app was started some other way (a terminal, a service, the release-run
-    harness), the launcher predates this record, or the launcher asked it to stop."""
+    harness), the launcher predates this record, or the launcher asked it to stop.
+
+    ``session_started`` (the session's start stamp) closes pid reuse where there is no boot id to tell machine boots apart (Windows, macOS):
+    a record written BEFORE the session began is an earlier process that had the same pid, never this one's end. A stamp that does not
+    parse is not compared (nothing is claimed either way)."""
     if not isinstance(pid, int):
         return None
     try:
-        raw = (_diag_dir() / LAUNCHER_EXITS).read_text(encoding="utf-8")
+        raw = _tail_text(_diag_dir() / LAUNCHER_EXITS, _STDERR_READ_BYTES)
     except OSError:
         return None
     for line in reversed(raw.splitlines()):
@@ -209,8 +213,29 @@ def launcher_exit(pid: int | None, boot_id: str | None = None) -> dict[str, Any]
         except ValueError:
             continue
         if isinstance(rec, dict) and rec.get("pid") == pid and _same_boot(rec.get("boot_id"), boot_id):
+            if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
+                continue
             return describe_exit(rec)
     return None
+
+
+def _utc(v: Any) -> Any:
+    """A timezone-aware ISO stamp (``Z`` or ``+00:00`` forms) as a datetime, or None."""
+    from datetime import datetime
+
+    if not isinstance(v, str) or len(v) > 40:
+        return None
+    try:
+        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo is not None else None
+
+
+def _ended_before(at: Any, started: Any, slack_s: float = 0.0) -> bool:
+    """True only when both stamps parse as zone-aware times and ``at`` is earlier than ``started`` by more than ``slack_s``."""
+    a, b = _utc(at), _utc(started)
+    return a is not None and b is not None and (b - a).total_seconds() > slack_s
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +249,11 @@ STDERR_LINES_SHOWN = 2
 #: Earlier unclean ends that carry a ``launcher_stderr`` (the newest 3, beside the previous session's own). WHAT IT PROTECTS: the report's byte
 #: room (R119, measured by WAL): 4 sessions x about 245 B worst case is 1 KB where all 11 would be 2.7 KB.
 STDERR_ROWS_SHOWN = 3
+#: Characters of launcher stderr lines shown per session, all lines together: 120. WHAT IT PROTECTS: the same 245 B per session. The fixed
+#: messages are at most 58 characters, so two of them fit; a macOS template line can be 200, and two of those measured +284 B per session
+#: (+1.1 KB over four rows) past the room WAL measured. A line that does not fit is not cut (half a message reads as another message);
+#: it is counted in ``lines_cut``. ``lines_recorded`` still holds the full count.
+STDERR_SHOWN_CHARS = 120
 #: The fixed messages the launcher's stderr filter admits (scripts/launch.sh ``STDERR_MESSAGES``, which a test pins equal to this set):
 #: glibc 2.41's heap-corruption messages and the interpreter's fatal-error headers. A line is shown only when it IS one of these, whole
 #: (no pattern, no tail), checked AGAIN here because the file is on disk and anything may have written to it; any other line is not
@@ -329,6 +359,9 @@ def accepted_abort_line(text: object) -> bool:
 #: trims the file to 100 lines of at most about 200 bytes, so the real file is a tenth of this; a file grown past it by something else is
 #: read from its end, where the newest launches are).
 _STDERR_READ_BYTES = 256 * 1024
+#: How far before a session's start stamp a launcher stderr row may be dated and still be this session's: 120 s. WHAT IT PROTECTS: an abort
+#: in the seconds before the app stamps its own start (imports, the first allocations) is the evidence most worth keeping.
+_STDERR_START_SLACK_S = 120.0
 
 
 def _count(value: Any) -> int | None:
@@ -346,7 +379,7 @@ def _tail_text(path: Path, limit: int) -> str:
     return text.split("\n", 1)[1] if size > limit and "\n" in text else text  # drop the line the cut fell inside
 
 
-def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
+def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
     """The abort messages the launcher's stderr filter recorded for process ``pid``, or None when it holds no record for it.
 
     None means the launcher left nothing for this pid and boot: the app was started some other way, the launcher predates the filter, awk
@@ -376,6 +409,10 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
         if not isinstance(rec, dict) or type(rec.get("pid")) is not int or rec["pid"] != pid or not _same_boot(rec.get("boot_id"), boot_id):
             continue
         if not isinstance(rec.get("boot_id"), str) or not isinstance(boot_id, str):
+            # pid is all that ties it: a row written well before this session began (the slack covers an abort before the sentinel stamp)
+            # belongs to an earlier process that had the same pid
+            if _ended_before(rec.get("at"), session_started, _STDERR_START_SLACK_S):
+                continue
             pid_only = True
         if rec.get("summary") is True:
             summary = rec
@@ -390,7 +427,18 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
         return None
     kept = _count(summary.get("kept_lines")) if summary else None
     recorded = max(found, kept) if kept is not None else found
-    out: dict[str, Any] = {"lines": shown[-STDERR_LINES_SHOWN:], "lines_recorded": recorded}
+    # newest first; libmalloc's closing "set a breakpoint" line only repeats that malloc stopped the process, so it yields to a line that says what
+    chosen: list[str] = []
+    used = 0
+    pool = [x for x in shown if "set a breakpoint in malloc_error_break" not in x] or shown
+    for x in reversed(pool[-STDERR_LINES_SHOWN:]):
+        if used + len(x) <= STDERR_SHOWN_CHARS:
+            chosen.insert(0, x)
+            used += len(x)
+    out: dict[str, Any] = {"lines": chosen, "lines_recorded": recorded}
+    cut = len(pool[-STDERR_LINES_SHOWN:]) - len(chosen)
+    if cut > 0:
+        out["lines_cut"] = cut
     if recorded > found:
         out["lines_not_found"] = recorded - found
     out["dropped_lines"] = _count(summary.get("dropped_lines")) if summary else None
@@ -410,15 +458,27 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
 _SHELL_SIGNALS = {1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 6: "SIGABRT", 9: "SIGKILL", 11: "SIGSEGV", 13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM"}
 
 
+_SIG_NAME_RE = re.compile(r"SIG[A-Z0-9]{1,10}")
+_STAMP_LOOSE_RE = re.compile(r"[0-9TZ:.+-]{1,32}")
+
+
+def _stamp_or_none(v: Any) -> str | None:
+    return v if isinstance(v, str) and _STAMP_LOOSE_RE.fullmatch(v) else None
+
+
 def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
     """A launcher record put into words. The status is the fact; ``meaning`` is the
     textbook reading of it, stated as such."""
+    # The record is a file on disk; each field is checked at entry and a value of another shape is dropped (null), never copied: a status is a
+    # bounded integer, a signal a name of the form SIGxxx, a stamp only digits and punctuation.
     status = rec.get("status")
+    status = status if isinstance(status, int) and not isinstance(status, bool) and -(2**32) <= status <= 2**32 else None
     sig = rec.get("signal")
+    sig = sig if isinstance(sig, str) and _SIG_NAME_RE.fullmatch(sig) else None
     out: dict[str, Any] = {
         "seen_by": "the launcher (scripts/launch.sh), the process's parent",
-        "at": rec.get("at"),
-        "started_at": rec.get("started_at"),
+        "at": _stamp_or_none(rec.get("at")),
+        "started_at": _stamp_or_none(rec.get("started_at")),
         "status": status,
         "signal": sig,
     }
@@ -1050,6 +1110,13 @@ def _why_no_trace(exit_seen: dict[str, Any] | None, header_found: bool) -> str:
     launcher's record of the end, or None when it holds none."""
     signal_name = (exit_seen or {}).get("signal")
     signal_name = signal_name if isinstance(signal_name, str) and signal_name else None
+    status0 = (exit_seen or {}).get("status")
+    if signal_name is None and isinstance(status0, int) and not isinstance(status0, bool) and (status0 - 128) in _SHELL_SIGNALS:
+        signal_name = _SHELL_SIGNALS[status0 - 128]  # the launcher's shell gave no name; describe_exit reads 128+N the same way
+    nt_fault = (
+        signal_name is None and (exit_seen or {}).get("kind") == "crashed" and isinstance(status0, int) and not isinstance(status0, bool)
+        and (status0 < 0 or status0 > 0xFFFF)
+    )
     held = (
         "the trace log holds this session's header with nothing under it"
         if header_found
@@ -1067,6 +1134,11 @@ def _why_no_trace(exit_seen: dict[str, Any] | None, header_found: bool) -> str:
             f"ended by {signal_name}, which leaves a trace, and the trace log holds no header for this "
             "pid and boot: it was rotated away (one older generation is kept), the run predates the "
             "trace, or OO_CRASH_TRACE=0 was set"
+        )
+    if nt_fault:
+        return (
+            f"ended by Windows status {status0}, a native fault, which faulthandler traces; "
+            f"{held}"
         )
     if signal_name:
         return f"ended by {signal_name}, which is not a fault signal: no trace is expected"
@@ -1172,7 +1244,7 @@ def earlier_unclean_ends(
         exit_seen = end.get("exit") if isinstance(end.get("exit"), dict) else None
         if exit_seen is None and isinstance(pid, int):
             try:
-                exit_seen = launcher_exit(pid, boot if isinstance(boot, str) else None)
+                exit_seen = launcher_exit(pid, boot if isinstance(boot, str) else None, row["started_at"])
             except Exception:  # noqa: BLE001
                 exit_seen = None
         signal_name = (exit_seen or {}).get("signal")
@@ -1200,7 +1272,7 @@ def earlier_unclean_ends(
                 break
         row["trace"] = trace
         if n_end < STDERR_ROWS_SHOWN:
-            row["launcher_stderr"] = launcher_stderr(pid, boot if isinstance(boot, str) else None)
+            row["launcher_stderr"] = launcher_stderr(pid, boot if isinstance(boot, str) else None, row["started_at"])
         if trace is None:
             row["why_no_trace"] = _why_no_trace(exit_seen, found_any)
             row["crashing_thread_kind"] = KIND_NO_TRACE

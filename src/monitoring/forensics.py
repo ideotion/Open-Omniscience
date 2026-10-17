@@ -1068,8 +1068,8 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
     try:
         from src.monitoring.exit_evidence import launcher_exit, launcher_stderr, previous_trace
 
-        out["launcher"] = launcher_exit(pid, boot)
-        out["launcher_stderr"] = launcher_stderr(pid, boot)
+        out["launcher"] = launcher_exit(pid, boot, prev.get("started_at") if isinstance(prev.get("started_at"), str) else None)
+        out["launcher_stderr"] = launcher_stderr(pid, boot, prev.get("started_at") if isinstance(prev.get("started_at"), str) else None)
         out["crash_trace"] = previous_trace(pid, boot, prev.get("started_at"))
         from src.monitoring.native_inflight import report as _native_report
 

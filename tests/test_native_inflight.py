@@ -72,9 +72,10 @@ def test_absent_and_unreadable():
 def test_worst_case_report_fits_budget():
     slots = [(4_000_000_000, 4_000_000_000)] * 4
     r = ni.report(7, "b" * 36, _rec(slots=slots))
-    assert len(json.dumps(r, separators=(",", ":"))) <= ni.REPORT_BYTES_BUDGET
+    member = lambda x: len(json.dumps({"native_in_flight": x}, separators=(",", ":"))) - 2  # noqa: E731 - the key counts, braces do not
+    assert member(r) <= ni.REPORT_BYTES_BUDGET
     r["boot_unchecked"] = True
-    assert len(json.dumps(r, separators=(",", ":"))) <= ni.REPORT_BYTES_BUDGET
+    assert member(r) <= ni.REPORT_BYTES_BUDGET
 
 
 def test_context_manager_counts_and_does_not_swallow(_data):
@@ -174,3 +175,19 @@ def test_start_keeps_the_previous_process_bytes_first(_data):
 def test_boot_starts_it():
     src = (_ROOT / "src" / "monitoring" / "session_hwm.py").read_text()
     assert "_native_start()" in src
+
+
+def test_a_previous_file_that_exists_but_cannot_be_read_is_unreadable_not_absent(_data, monkeypatch):
+    import builtins
+
+    ni._STATE.update({"previous": None, "captured": False})
+    real = builtins.open
+
+    def deny(path, *a, **k):
+        if str(path).endswith(ni.FILE_NAME):
+            raise PermissionError(13, "denied")
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", deny)
+    ni.capture_previous_now()
+    assert ni.report(7, "b")["result"] == "unreadable"
