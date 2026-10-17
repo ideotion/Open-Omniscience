@@ -1166,23 +1166,30 @@ def run_refusals_net(
     changes. A wrapper round ``if not destp.is_dir():`` moves that line (one level in), and a record inside the branch changes the text
     that follows it: either way a check that was already on the base branch comes back as a new finding of the pull request, whatever
     its text hashes to. A net round the header leaves the statement and its neighbours exactly as they were written."""
-    scope = _RefusalScope(_REFUSAL_SCOPE.get())
-    token = _REFUSAL_SCOPE.set(scope)
+    # THE SCOPE IS MADE AND SET INSIDE THE ``try`` (R171), and the ``finally`` puts the PARENT back instead of undoing a token: an interrupt
+    # delivered between the ``set`` and the old ``try`` left this start's scope as the thread's current one for good, so every later net in
+    # the thread nested under a scope nobody would reset. Putting the parent back asks the variable and needs no flag to say whether the
+    # ``set`` happened, so it is right at every point of the block (the value before the ``set`` is the parent too). ``scope`` is None
+    # until it is made, and an error raised before that records nothing: there is no scope to say a refusal was or was not written.
+    parent = _REFUSAL_SCOPE.get()
+    scope: _RefusalScope | None = None
     try:
+        scope = _RefusalScope(parent)
+        _REFUSAL_SCOPE.set(scope)
         yield
     except OSError as exc:
-        if not scope.recorded:
+        if scope is not None and not scope.recorded:
             run_refused(what, "path-unreadable", failure=type(exc).__name__, via=via)
         raise
     except Exception as exc:
-        if not scope.recorded:
+        if scope is not None and not scope.recorded:
             for cls, key in refused_as:
                 if isinstance(exc, cls):
                     run_refused(what, key, failure=type(exc).__name__, via=via)
                     break
         raise
     finally:
-        _REFUSAL_SCOPE.reset(token)
+        _REFUSAL_SCOPE.set(parent)
 
 
 @contextmanager
@@ -1194,9 +1201,15 @@ def run_open(what: str, *, via: str, free: str = "data_free_bytes", **facts: Any
     HTTP error's), unless the block already ended it as
     something it knows better (``refused``, ``stopped-by-operator``: the first outcome written stands), and whatever is still open ends as
     ``ended-without-a-recorded-outcome``, a no-op for a run already closed. The error goes on unchanged. Never raises of its own."""
-    note = run_started(what, via=via, **facts)
-    run_free_space(note, free)
+    # THE RUN IS OPENED INSIDE THE ``try`` (R171): an interrupt delivered between the journal write that opened it and the old ``try`` left a
+    # run "open" for the life of the process, which says it is still going. ``note`` is None until ``run_started`` has returned, and
+    # ``run_ended`` does nothing for None. STATED LIMIT: an interrupt that lands between the journal write inside ``run_started`` and the
+    # store of its return value still leaves the run open; what that leaves is "started, never ended", which is true of a process the
+    # interrupt ends, and the next process reads it as an entry an earlier process left open, closed as "not recorded".
+    note: RunNote | None = None
     try:
+        note = run_started(what, via=via, **facts)
+        run_free_space(note, free)
         yield note
     except Exception as exc:
         run_ended(note, "error", failure=type(exc).__name__)
