@@ -8,6 +8,7 @@ run the real ``merge_corpus``.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -253,7 +254,7 @@ def test_a_disqualified_feed_anywhere_in_the_outlet_decides_not_only_the_oldest_
 
 def test_a_qualified_outlet_hands_nothing_on_the_sibling_keeps_its_own_evidence(tmp_path):
     """R153: verdicts are handed on in the disqualified direction ONLY. Under a qualified outlet an incoming
-    unjudged feed stays unjudged (its own trial), an incoming disqualified one stays disqualified, and an incoming
+    unjudged feed stays unjudged, an incoming disqualified one stays disqualified, and an incoming
     qualified one keeps the qualified another instance measured on that very feed."""
     def local(s):
         _src(s, "dw.com", "https://dw.com/en", status="qualified")
@@ -305,3 +306,25 @@ def test_when_the_outlets_feeds_disagree_the_stricter_verdict_wins_and_the_repor
         "dw.com": "a measured feed of the outlet is disqualified",
         "bbc.com": "no feed of the outlet is disqualified (a qualified verdict is not handed on)",
     }
+
+
+def test_an_incoming_feed_disqualified_on_its_own_evidence_under_a_disqualified_outlet_is_not_reported_as_inherited(tmp_path):
+    """Nothing is handed on to a feed that already reads disqualified: no ``inherited`` attempt row (R149 would read it
+    as a status held by an inherited verdict and R154 would queue a pointless forced re-check), ``verdict_inherited`` is
+    False, and the rule names the feed's own evidence, not the outlet's."""
+    def local(s):  # two local feeds, so the incoming one is a sibling and not the one-to-one correction of a single row
+        _src(s, "dw.com", "https://dw.com/en", status="disqualified")
+        _src(s, "dw.com", "https://dw.com/de", status="unqualified")
+
+    working = _run(tmp_path, local, lambda s: _src(s, "dw.com", "https://dw.com/b", status="disqualified"))
+    con = sqlite3.connect(working)
+    try:
+        inherited = con.execute(
+            "SELECT COUNT(*) FROM source_qualification_attempts WHERE verdict = 'inherited'"
+        ).fetchone()[0]
+    finally:
+        con.close()
+    assert inherited == 0
+    entry = _report_of(tmp_path)["sources"]["siblings"][0]
+    assert entry["verdict_inherited"] is False
+    assert entry["verdict_rule"].startswith("the incoming feed is disqualified on its own evidence")

@@ -2829,7 +2829,8 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult) -> list[int]:
       ``disqualified`` (R150), the sibling's stamp becomes ``disqualified``, so a locally disqualified outlet is never
       laundered back into collection by a sibling another instance judged. A ``qualified`` outlet hands nothing on: the
       sibling keeps what its own incoming evidence says (an incoming ``disqualified`` feed stays disqualified, an
-      unjudged one gets its own trial). The qualification tally reads what actually lands (``temp.sib_verdict``, read
+      unjudged one stays unjudged: on a catalogue domain the boot's curated stamp then applies to it, unless a feed of
+      the outlet is disqualified). The qualification tally reads what actually lands (``temp.sib_verdict``, read
       through ``COALESCE``);
     * the report lists each one with its reason and the rule that decided it (``verdict_rule``), and counts it.
 
@@ -2855,8 +2856,12 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult) -> list[int]:
     inherited: list[int] = []
     for inc_id, domain, feed, status, outlet, strict_src in rows:
         takes = False
-        rule = ("a measured feed of the outlet is disqualified" if strict_src is not None
-                else "no feed of the outlet is disqualified (a qualified verdict is not handed on)")
+        if strict_src is None:
+            rule = "no feed of the outlet is disqualified (a qualified verdict is not handed on)"
+        elif status == "disqualified":
+            rule = "the incoming feed is disqualified on its own evidence (a measured feed of the outlet is disqualified too)"
+        else:
+            rule = "a measured feed of the outlet is disqualified"
         if strict_src is not None and status != "disqualified":
             con.execute(
                 "INSERT INTO temp.sib_verdict (old, status, qualified_at, criteria) VALUES (?, 'disqualified', NULL, NULL)",
