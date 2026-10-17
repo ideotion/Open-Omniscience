@@ -805,6 +805,15 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     # src/ingest/fetch_release.py for what is and is not covered).
     fetcher = wrap_fetcher(fetcher, session)
 
+    # Read the label BEFORE the try: a failure inside ingest_source rolls the session
+    # back, which expires every attribute, and reading ``source.domain`` in the handler
+    # then reloads it through a pooled connection — a second checkout that can time out
+    # (the pool is exactly what is exhausted) and escape the handler, ending the pass.
+    try:
+        domain = source.domain
+    except Exception:  # noqa: BLE001 - a label for the log; never worth a failure
+        domain = "?"
+
     try:
         # Feeds only. The whole-source crawl branch that sat here served the retired
         # ``mode="crawl"`` (Q1020 = a); crawling now happens beside the pass, bounded, in
@@ -813,7 +822,7 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
             return {}, 0, 0
         return ingest_source(session, source, fetcher=fetcher), 0, 1
     except Exception as exc:  # noqa: BLE001 - one bad source must not abort the batch
-        log_failure(_LOG, f"scrape run: source {getattr(source, 'domain', '?')!r} failed", exc, level=logging.WARNING)
+        log_failure(_LOG, f"scrape run: source {domain!r} failed", exc, level=logging.WARNING)
         return {"errors": 1}, 0, 0
 
 
