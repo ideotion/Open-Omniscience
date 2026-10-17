@@ -311,3 +311,18 @@ def test_closing_marks_and_an_agency_tag_do_not_hide_a_sentence():
     for body in ('Er sagte: „Das ist alles nicht wahr.“', "He said the plan was not final.'",
                  "Ordføreren sier saken er avgjort for i år. [NTB]"):
         assert stub_verdict(body + "\n\nAllerede abonnent?") is None
+
+
+def test_a_short_punctuated_line_is_not_a_sentence():
+    head = "Har gitt utsett spreiefrist for husdyrgjødsel - varslar innskjerping"
+    for tail in ("Les mer?\n\nAllerede abonnent?\n\nLogg inn", "Allerede abonnent?\n\nLogg inn.",):
+        assert stub_verdict(f"{head}\n\n{tail}")[0] == "paywall_stub"
+    assert stub_verdict("Brann i natt\n\nAllerede abonnent?\n\nLogg inn her.")[0] == "paywall_stub"
+
+
+def test_a_long_run_of_whitespace_does_not_stall_the_sentence_check():
+    import time
+
+    t = time.monotonic()
+    stub_verdict("Headline here" + " " * 20000 + "x\n\nAllerede abonnent?")
+    assert time.monotonic() - t < 2

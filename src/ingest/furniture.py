@@ -57,9 +57,12 @@ _PROMPT_MAX_WORDS = 8
 # prompt); no corpus has measured it. The quarantine dry-run counts and samples are what should
 # confirm or move it, and stub signals only run when the operator switches them on after those counts.
 _PROMPT_SENTENCE_MIN_WORDS = 6
+# ...and the paragraph that ends in terminal punctuation must itself be this long, so a login line
+# ("Logg inn her.") or a "Les mer?" link does not pass for a sentence. Fitted like the 6 above.
+_SENTENCE_LINE_MIN_WORDS = 4
 _SENTENCE_END = ".!?…"
 # Closing marks and a trailing agency tag ("[NTB]") that may follow a sentence's final punctuation.
-_CLOSERS = re.compile(r"(?:\s*\[[^\]]{1,20}\]|[\s»\"”“’'\)\]\}›])+$")
+_CLOSERS = re.compile(r"(?:\[[^\]]{1,20}\]|[\s»\"”“’'\)\]\}›])+$")
 
 MENU_MIN_PARAGRAPHS = 12
 MENU_SHORT_WORDS = 6       # a menu entry; the page's own headline (9 words) may exceed it
@@ -158,7 +161,8 @@ def _has_prompt(paragraphs: list[str]) -> str | None:
             found = found or hit
         else:
             prose_words += n
-            ends_a_sentence = ends_a_sentence or _CLOSERS.sub("", p).endswith(tuple(_SENTENCE_END))
+            ends_a_sentence = ends_a_sentence or (
+                n >= _SENTENCE_LINE_MIN_WORDS and _CLOSERS.sub("", p).endswith(tuple(_SENTENCE_END)))
     # Judged over the whole non-prompt text, so a brief of short sentences or one wrapped over
     # several lines is spared like a single long paragraph.
     sentence = ends_a_sentence and prose_words >= _PROMPT_SENTENCE_MIN_WORDS
