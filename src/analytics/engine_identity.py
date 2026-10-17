@@ -98,6 +98,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/timemap/locextract.py",
     "src/timemap/whostore.py",
     "src/utils/markup_blocks.py",
+    "src/utils/safe_yaml.py",
 )
 
 #: The data files those modules read. ``cities.yml`` is GENERATED and preferred when
