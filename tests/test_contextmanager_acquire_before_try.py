@@ -37,7 +37,6 @@ _PURE_CALLS = frozenset(
 _THREAD_LOCAL = "the value lives in this thread's own context (thread-local or ContextVar): a leak stays in the interrupted thread, whose Ctrl-C ends it"
 _SESSION = "the object made in the gap is a SQLAlchemy Session nobody can reach; the pool takes its connection back when it is collected"
 _DURABLE = "durable by design: what the gap leaves is the record that makes the boot heal finish the job"
-_PENDING = "OWED: the acquire is moved inside the try in the hunk pair named here; this entry is deleted by the same commit"
 
 # (path under src/, function) -> why a statement before the try is allowed to stay. Every entry was read, not pattern-matched.
 _ALLOWED: dict[tuple[str, str], str] = {
@@ -47,7 +46,6 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("backup/merge.py", "_step_watch"): "two nested function definitions: a def takes nothing",
     ("backup/runlog.py", "run"): "begin() writes a run row; an unfinished row is what the run journal reads as 'did not end', which is the truth after an interrupt",
     ("backup/runlog.py", "stage"): "a journal milestone line; an unfinished stage is what the journal shows after an interrupt",
-    ("backup/stream_backup.py", "active_staging"): _PENDING + " (r163-cm)",
     ("backup/timing.py", "stage"): "emits a 'begin' event to a callback; nothing is held",
     ("backup/timing.py", "sub"): "emits a 'begin' event to a callback; nothing is held",
     ("briefing/registry.py", "_wal_guard"): "drains a list of pending items in the session the caller owns; the session's own scope releases it",
@@ -59,11 +57,19 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("database/session.py", "session_scope"): _SESSION,
     ("ingest/ssrf_guard.py", "connect_scope"): _THREAD_LOCAL + " (the scope stack is per thread)",
     ("monitoring/tasks.py", "track"): "a task row the snapshot ages out (its docstring); no lock or count outlives it",
-    ("scheduler/runner.py", "exclusive_window"): _PENDING + " (r163-cm): the scheduler stays paused",
     ("testing/scale_bench.py", "sample_peak_rss"): "a bench helper; its sampler is a daemon thread",
     ("versioned/store.py", "lane_session"): _SESSION,
     ("wiki/service.py", "wiki_lane_session"): "create_lane is idempotent and takes nothing a gap could leave",
     ("wiki/service.py", "walk_lane_session"): "a once-per-process schema flag set after the lane exists; a gap repeats the schema check",
+}
+
+
+# Owed: the function takes shared state before its try today, and the lane that owns the file converts it in the hunk pair named (r163-cm/<lane>). The
+# entry passes both before and after that commit lands (the stale check skips it), so no bundle edits this file; it is deleted here, by the Q thread, once the
+# owner's commit is in the base. An owed name must still be a real context manager (test_each_owed_entry_names_a_real_context_manager).
+_OWED: dict[tuple[str, str], str] = {
+    ("scheduler/runner.py", "exclusive_window"): "WAL: r163-cm/wal, the scheduler stays held if the interrupt lands inside the pause",
+    ("backup/stream_backup.py", "active_staging"): "RC2: r163-cm/rc2, the path stays marked as a live job's staging",
 }
 
 
@@ -122,7 +128,7 @@ def _scan() -> dict[tuple[str, str], list[str]]:
 
 def test_every_context_manager_that_takes_something_before_its_try_is_named():
     found = _scan()
-    new = sorted(set(found) - set(_ALLOWED))
+    new = sorted(set(found) - set(_ALLOWED) - set(_OWED))
     assert not new, (
         "a @contextmanager takes something before its yield (an interrupt in that gap skips its give-back); read it, then either move the take "
         "inside the try (R161 shape: release by asking the lock, or an idempotent finally) or name it in _ALLOWED with the reason:\n"
@@ -134,6 +140,13 @@ def test_every_allowed_entry_still_has_a_statement_to_allow():
     found = _scan()
     stale = sorted(set(_ALLOWED) - set(found))
     assert not stale, f"allowed, but no statement before the yield takes anything any more (delete the entry): {stale}"
+
+
+def test_each_owed_entry_names_a_real_context_manager():
+    for (rel, name), lane in _OWED.items():
+        tree = ast.parse((_SRC / rel).read_text(encoding="utf-8"))
+        assert any(_is_cm(fn) and fn.name == name for fn in ast.walk(tree)), f"{rel}::{name} ({lane}) is not a @contextmanager any more: delete the owed entry"  # type: ignore[attr-defined]
+    assert not set(_OWED) & set(_ALLOWED), "an entry is both allowed and owed"
 
 
 @pytest.mark.parametrize("key", sorted(_ALLOWED))
