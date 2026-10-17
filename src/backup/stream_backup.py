@@ -144,9 +144,9 @@ _ACTIVE_LOCK = threading.Lock()
 def active_staging(path: Path | str) -> Iterator[None]:
     """Mark ``path`` as belonging to a RUNNING backup/restore job for the duration."""
     key = str(Path(path).resolve())
-    with _ACTIVE_LOCK:
-        _ACTIVE_STAGING.add(key)
     try:
+        with _ACTIVE_LOCK:  # inside the try: an interrupt after the add and before the yield still reaches the discard below (R171)
+            _ACTIVE_STAGING.add(key)
         yield
     finally:
         with _ACTIVE_LOCK:
