@@ -10,7 +10,7 @@ binary operation that makes a new object, an iterator), never between two statem
 puts a MemoryError where none can happen. So the module's frames are traced instruction by instruction, and once the body of the window is over a
 MemoryError is raised BEFORE the Nth instruction that can allocate (the instruction does not run: the allocation it needed failed), for every N.
 Left out on purpose: attribute loads, truth tests, comparisons (they return the two singletons), stores, jumps, pops, loads of locals and
-globals, and the enter and exit of every ``with <lock>:`` (a harness cannot inject there without deadlocking on its own state lock, and nothing can protect them:
+globals, and the enter and exit of every ``with <lock>:`` (a harness cannot inject at the exits of the non-reentrant ``_STATE`` without deadlocking on its own lock, and nothing can protect any of them:
 the enter is a ``BEFORE_WITH`` making the bound ``__enter__`` and ``__exit__``, and the exit calls ``__exit__(None, None, None)``, which builds a 3-tuple on
 CPython 3.13 and so DOES allocate when the tuple free list is empty; a failure there leaves the lock held, measured with the allocator).
 A call into the standard library is ONE instruction at its call site: "the call could not start", not "it failed half way".
