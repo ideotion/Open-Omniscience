@@ -1,0 +1,26 @@
+stopwords:
+  # batch hr-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 24 of 24)
+  - diljem
+  - izvan
+  - kojom
+  - komentara
+  - komentiranje
+  - nedjelju
+  - nečemu
+  - nitko
+  - njezinu
+  - obje
+  - ovakva
+  - ponedjeljak
+  - rujna
+  - srpnja
+  - stoga
+  - subotu
+  - tijekom
+  - tisuća
+  - tisuće
+  - umjesto
+  - unatoč
+  - uslijed
+  - vašu
+  - čije

@@ -33,6 +33,9 @@ from sqlalchemy.orm import Session
 # the 7d/30d trending windows plus a wider lens.
 _WINDOWS = (7, 30, 90, None)
 
+#: "No bound": the live side counts every row (the pre-2026-10-16 behaviour, kept for a caller on a quiet corpus).
+_UNBOUNDED = object()
+
 
 def _median_ms(fn, repeats: int) -> tuple[float, float, int | None]:
     """Run ``fn`` ``repeats`` times; return (cold_ms, warm_median_ms, result_size)."""
@@ -48,11 +51,22 @@ def _median_ms(fn, repeats: int) -> tuple[float, float, int | None]:
     return round(runs[0], 1), round(statistics.median(warm), 1), size
 
 
-def _live_windowed(session: Session, start):
+def _live_windowed(session: Session, start, *, scan_bound=_UNBOUNDED):
     """The live windowed per-keyword aggregation — the freeze source (SUM(count),
-    COUNT(DISTINCT article_id) grouped over the mention scan). Same shape the rollup serves."""
+    COUNT(DISTINCT article_id) grouped over the mention scan). Same shape the rollup serves.
+
+    ``scan_bound``: the boundary the rollup build stopped at (``build_keyword_daily`` returns it). The build
+    leaves out every row committed after it, on purpose, so a live side that keeps counting them on a corpus
+    the scrape is still writing to differs from the rollup by exactly the new rows; bounded, it compares like
+    with like (the 2026-10-16 run: 8,814 "mismatches", every one a row newer than the build)."""
     clause = "observed_on IS NOT NULL"
     params: dict = {}
+    if scan_bound is not _UNBOUNDED:
+        from src.analytics.columnar import live_bound_clause
+
+        bound_sql, bound_params = live_bound_clause(scan_bound)
+        clause += " AND " + bound_sql
+        params.update(bound_params)
     if start is not None:
         clause += " AND observed_on >= :s"
         params["s"] = start
@@ -98,14 +112,19 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
     build_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
     # -- parity: is the rollup faithful on THIS corpus? ---------------------------------- #
-    parity = columnar.keyword_daily_parity(con, session)
+    scan_bound = build.get("scan_bound")
+    parity = columnar.keyword_daily_parity(con, session, scan_bound=scan_bound)
 
     # -- per-window: live mention scan vs rollup sum ------------------------------------- #
     today = date.today()
     windows = []
     for w in _WINDOWS:
         start = (today - timedelta(days=w)) if w else None
-        live_cold, live_med, live_n = _median_ms(lambda s=start: _live_windowed(session, s), repeats)
+        # TIMED on the shape the app serves (no bound predicate: with ix_mention_created_id present the extra clause can
+        # change the plan, and a speedup measured against a different query is not the speedup a user gets) ...
+        live_cold, live_med, _ = _median_ms(lambda s=start: _live_windowed(session, s), repeats)
+        # ... and COUNTED once on the bounded shape, because the parity check compares like with like.
+        live_n = len(_live_windowed(session, start, scan_bound=scan_bound))
         roll_cold, roll_med, roll_n = _median_ms(
             lambda s=start: columnar.windowed_term_counts(con, start_day=s), repeats
         )
@@ -120,6 +139,9 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
             "keywords_live": live_n,
             "keywords_rollup": roll_n,
             "counts_match": live_n == roll_n,
+            # the direction, so a mismatch that remains reads as one: live minus rollup (negative = the rollup
+            # holds keywords the bounded live window no longer does)
+            "keywords_live_minus_rollup": (live_n - roll_n) if live_n is not None and roll_n is not None else None,
         })
 
     try:
@@ -135,6 +157,7 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
             "build_ms": build_ms,
             "keyword_daily_rows": build.get("keyword_daily_rows"),
             "streamed_mentions": build.get("streamed_mentions"),
+            "scan_bound": None if scan_bound is None else str(scan_bound),
             "note": (
                 "One-time cost: streams the mention rows out of the encrypted store once and "
                 "groups them per day in DuckDB. In a running app this is paid once in the "
@@ -149,7 +172,9 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
             "freezes; rollup = summing the maintained keyword_daily rollup for the same "
             "window. Each timed 'repeats' times (run 1 cold, the rest warm-median). "
             "speedup_x = live_median / rollup_median. counts_match confirms both cover the "
-            "same keywords. In-memory DuckDB; the persisted-store durability is a separate "
+            "same keywords. The keyword counts (and the parity) stop at the build's scan_bound (a row a concurrent scrape committed "
+            "after the build began is not counted on either side) and every mismatch records its direction; the live TIMING is "
+            "of the unbounded query the app serves. In-memory DuckDB; the persisted-store durability is a separate "
             "packaging step (D1), but the per-query speedup shown here is real in a "
             "long-running process."
         ),

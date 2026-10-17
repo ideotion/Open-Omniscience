@@ -2593,6 +2593,7 @@ def trending(
     min_recent: int = 3,
     target_lang: str | None = None,
     end: date | None = None,
+    read_deadline: float | None = None,
 ) -> dict:
     """Rising keywords: recent volume vs the prior-period rate (a defined ratio).
 
@@ -2630,6 +2631,10 @@ def trending(
     ``window_days``, and a pair could disagree with it. That disagreement is exactly
     the defect fixed on 2026-07-31 (a window one day wider than its own
     normalisation), so the API is shaped to make it unrepresentable.
+
+    ``read_deadline`` (a ``time.monotonic()`` instant) bounds the LIVE scan only: a read that has not finished by
+    then raises :class:`src.database.query.ReadBudgetExceeded` (the rollup path is a handful of summed rows and
+    needs no bound). ``None`` (the default) is the unbounded read of before.
     """
     # The recent window's EXCLUSIVE upper bound. Default: the end of today, so the
     # window is the N days ending today inclusive -- byte-identical to before ``end``
@@ -2661,6 +2666,7 @@ def trending(
             hi=hi,
             keep=keep,
             where=(KeywordMentionRead.country == country.lower(),) if country else (),
+            deadline=read_deadline,
         )
 
     # Opt-in rollup serve: sum the in-memory keyword_daily rollup for the two windows
@@ -2836,6 +2842,7 @@ def trending_windows(
     target_lang: str | None = None,
     end: date | None = None,
     window_presets: tuple[tuple[str, int, int], ...] | None = None,
+    live_budget_s: float | None = None,
 ) -> dict:
     """Rising keywords across THREE preset windows side by side (24h · 7d · 30d).
 
@@ -2858,22 +2865,50 @@ def trending_windows(
     ooChart per term. The series REUSES :func:`trend` (bucket="day") — the numbers
     match the existing trend chart, counts only. ``series_top == 0`` (the default)
     returns the unchanged response (no ``series`` keys).
+
+    ``live_budget_s`` (additive, 2026-10-16) bounds what the LIVE scan may spend on the whole call: with no rollup
+    serving, the three windows are three whole-corpus reads that took 17 to 177 s each on a 12 M-mention corpus, so
+    the Home poll ran into the 60 s statement deadline 2 times in 3. With a budget the windows are read from the
+    shortest, which is the cheapest: a budget smaller than the longer windows' cost still keeps what it paid for
+    (Home shows the week when it is there and else the first window that finished) instead of spending itself on a
+    window it cannot finish. A window the budget does not reach, or that it stops part-way, is LEFT OUT of
+    ``windows`` (an uncomputed window is not an empty one: the panels would say "no rising keywords") and named in
+    ``skipped_windows``, and the payload says ``partial: true`` with a caveat; with NO window finished ``windows`` is
+    empty and the panels must say "not computed" with that caveat, never their empty state.
+    ``None`` (the default, every caller but the endpoint) is the unbounded read of before.
     """
-    windows = []
+    from src.database.query import ReadBudgetExceeded
+
+    presets = list(window_presets or _TREND_WINDOWS)
+    deadline = (time.monotonic() + float(live_budget_s)) if live_budget_s and live_budget_s > 0 else None
+    order = list(range(len(presets)))  # the presets' own order: shortest (cheapest) window first
+    built: dict[int, dict[str, Any]] = {}
+    skipped: list[dict[str, Any]] = []
     served_basis = None  # the rollup disclosure (D3): stale/rebuilding/as_of, surfaced once
-    for label, wdays, bdays in (window_presets or _TREND_WINDOWS):
-        res = trending(
-            session,
-            window_days=wdays,
-            baseline_days=bdays,
-            country=country,
-            kind=kind,
-            limit=limit,
-            # 24h on a young corpus is thin — don't gate it out; show n + caveat.
-            min_recent=1 if wdays == 1 else 2,
-            target_lang=target_lang,
-            end=end,
-        )
+    for idx in order:
+        label, wdays, bdays = presets[idx]
+        if deadline is not None and time.monotonic() >= deadline:
+            skipped.append({"label": label, "window_days": wdays, "baseline_days": bdays, "reason": "time-budget",
+                            "started": False})
+            continue
+        try:
+            res = trending(
+                session,
+                window_days=wdays,
+                baseline_days=bdays,
+                country=country,
+                kind=kind,
+                limit=limit,
+                # 24h on a young corpus is thin — don't gate it out; show n + caveat.
+                min_recent=1 if wdays == 1 else 2,
+                target_lang=target_lang,
+                end=end,
+                **({"read_deadline": deadline} if deadline is not None else {}),
+            )
+        except ReadBudgetExceeded:
+            skipped.append({"label": label, "window_days": wdays, "baseline_days": bdays, "reason": "time-budget",
+                            "started": True})
+            continue
         if served_basis is None and res.get("basis"):
             served_basis = res["basis"]
         terms = res["terms"]
@@ -2915,7 +2950,8 @@ def trending_windows(
             from src.analytics.supergroup_stats import series_window
 
             window_row["series_window"] = series_window(wdays, today=series_today)
-        windows.append(window_row)
+        built[idx] = window_row
+    windows = [built[i] for i in sorted(built)]  # the presets' own order, whatever order they were read in
     out: dict[str, Any] = {
         "windows": windows,
         "method": (
@@ -2929,6 +2965,17 @@ def trending_windows(
     }
     if served_basis is not None:  # disclose that the windows were served from the (maybe stale) rollup
         out["basis"] = served_basis
+    if skipped:
+        skipped.sort(key=lambda w: next(i for i, p in enumerate(presets) if p[0] == w["label"]))
+        out["partial"] = True
+        out["skipped_windows"] = skipped
+        out["live_budget_s"] = float(live_budget_s or 0)
+        # English only, and it replaces the translated caveat: the panels print `caveat` and look a translation
+        # up by its exact text, so a sentence with a variable would never find one (needs a locale key: open item).
+        out["caveat"] = (
+            "Partial: the keyword rollup is not serving this request, so the live scan was given a time budget and "
+            "only the windows that finished within it are shown. The missing ones were skipped, not empty."
+        )
     return out
 
 
@@ -3544,9 +3591,17 @@ def map_data(
     kind: str | None = None,
     top_per_area: int = 5,
     min_mentions: int = 1,
+    budget_s: float | None = None,
 ) -> dict:
-    """Top keywords per country and per city (from denormalised mention facets)."""
+    """Top keywords per country and per city (from denormalised mention facets).
+
+    ``budget_s`` (additive, 2026-10-16): two whole-slice aggregations, countries then cities, each a scan of the
+    window's mentions with no index on either area column. When the countries aggregation alone has spent the
+    budget, the cities one is NOT started: the payload says ``partial: true`` and ``skipped: ["cities"]`` with an
+    empty ``cities`` (an uncomputed list is not an empty one, and the caller must not read it as "no cities"). It
+    bounds when the SECOND scan may start; the first runs under the caller's hard statement deadline."""
     is_hidden = _hidden_predicate()
+    started = time.monotonic()
 
     def _kind_cols(is_entity, entity_type) -> str:
         # kind_of() over plain columns: the map aggregates thousands of
@@ -3620,12 +3675,27 @@ def map_data(
         return list(out.values())
 
     countries = _agg(KeywordMentionRead.country)
-    return {
+    out: dict[str, Any] = {
         "days": days,
         "kind": kind,
         "countries": [{"code": c, "top": t} for c, t in sorted(countries.items())],
-        "cities": sorted(_agg_cities(), key=lambda c: c["name"] or ""),
     }
+    spent = time.monotonic() - started
+    if budget_s and budget_s > 0 and spent >= budget_s:
+        out.update({
+            "cities": [],
+            "partial": True,
+            "skipped": ["cities"],
+            "live_budget_s": float(budget_s),
+            "caveat": (
+                f"The country list took {spent:.0f} s of the {budget_s:.0f} s this view may spend, so the city list was not "
+                "computed and is left empty here: that is not the same as no city being mentioned. Open the map again "
+                "when the machine is less busy (this view reads the live data, not the rollup)."
+            ),
+        })
+        return out
+    out["cities"] = sorted(_agg_cities(), key=lambda c: c["name"] or "")
+    return out
 
 
 def status(session) -> dict:

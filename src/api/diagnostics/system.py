@@ -183,7 +183,6 @@ def session_forensics_report(download: bool = Query(False)) -> dict | Response:
     cannot sit through a full bundle run can still fetch it alone."""
     from src.monitoring.forensics import render_text as _render
     from src.monitoring.forensics import session_forensics as _sf
-
     from src.monitoring.secret_scrub import scrubbed, scrubbed_value
 
     # the standalone route has no member net of its own: kernel-log lines and journal text enter the facts, so every string passes the scrub

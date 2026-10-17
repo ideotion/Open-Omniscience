@@ -173,7 +173,7 @@ def test_no_batch_handed_to_duckdb_is_larger_than_the_batch_size(session, monkey
 
     monkeypatch.setattr(columnar, "_bulk_insert", spy)
     columnar.build_keyword_daily(_con(), session, batch_size=100)
-    stage = [n for t, n in seen if t == "keyword_daily_stage"]
+    stage = [n for t, n in seen if t.startswith("keyword_daily_stage")]
     meta = [n for t, n in seen if t == "keyword_meta"]
     assert sum(stage) == 120 * 10 and max(stage) <= 100 and len(stage) >= 12
     assert sum(meta) == 119 and max(meta) <= 100 and len(meta) >= 2
@@ -255,7 +255,10 @@ def test_on_batch_is_called_after_every_batch_of_both_streams_and_can_stop_the_b
     columnar.build_keyword_daily(_con(), session, batch_size=50, on_batch=hook)
     assert {s for s, _ in calls} == {"mentions", "aggregate", "keywords"}
     stages = [s for s, _ in calls]
-    assert stages.count("aggregate") == 1, "the final GROUP BY is announced once, before it runs"
+    agg = [d for s, d in calls if s == "aggregate"]
+    assert agg[0] == 0 and agg == sorted(agg) and agg[-1] == 200, \
+        "the aggregate is announced before it runs, then once per shard with the rows aggregated so far"
+    assert len(agg) == 1 + columnar.plan_build_shards(200, 1000)["shards"]
     assert stages.index("aggregate") > max(i for i, s in enumerate(stages) if s == "mentions")
     assert stages.index("aggregate") < min(i for i, s in enumerate(stages) if s == "keywords")
     assert [d for s, d in calls if s == "mentions"] == sorted(d for s, d in calls if s == "mentions")
@@ -338,6 +341,37 @@ def test_a_guard_that_engages_mid_build_stops_it_swaps_nothing_and_leaves_no_mar
     assert stopped["guard_reason"] == "available 90 MB" and stopped["stage"] == "aggregate"
     assert rollup_serve._STATE["con"] is previous, "a stopped build must not replace the serving rollup"
     assert rollup_marker.read() is None, "a build that ended by a path Python saw leaves no marker"
+
+
+def test_a_shard_that_runs_out_of_memory_is_a_duckdb_limit_stop_that_swaps_nothing_in_and_names_the_cut(
+        serve_env, session, monkeypatch):
+    _seed(session, keywords=60, mentions_per=10)
+
+    class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    def always_out_of_memory(*_a, **_k):
+        raise OutOfMemoryException("Out of Memory Error: engine words that must not be kept")
+
+    monkeypatch.setattr(columnar, "_aggregate_stage", always_out_of_memory)
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "aggregate"
+    assert stopped["shards"] >= 1 and stopped["shard"] == 0 and stopped["rows_done"] == 600
+    assert "engine words" not in repr(stopped), "the engine's own text is not carried"
+    assert rollup_serve._STATE["con"] is previous and rollup_marker.read() is None
+
+
+def test_a_finished_build_reports_how_it_was_cut_and_what_it_cost(serve_env, session):
+    _seed(session, keywords=30, mentions_per=4)
+    rollup_serve._STATE["last_build"] = None
+    assert rollup_serve.status()["last_build"] is None
+    assert rollup_serve._build_inmemory_and_swap() is None
+    lb = rollup_serve.status()["last_build"]
+    assert lb["shards"] >= 1 and lb["shard_splits"] == 0 and lb["streamed_mentions"] == 120
+    assert lb["predicted_peak_mib"] > 0 and lb["observed_mib"] >= 0 and lb["duckdb_limit_mb"] > 0
+    assert lb["keyword_daily_rows"] == rollup_serve._STATE["rows"] and lb["build_s"] >= 0
 
 
 def test_a_build_with_a_quiet_guard_swaps_in_and_clears_its_marker(serve_env, session):
@@ -765,25 +799,41 @@ def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pids_leftovers_
     assert os.path.isdir(rollup_serve._spill_setting()) and os.path.isdir(mine), "once made, this pid's are live"
 
 
-def test_a_limit_hold_is_released_when_the_corpus_epoch_changes_but_not_inside_the_rebuild_ttl(serve_env, monkeypatch):
+def test_a_limit_hold_is_released_when_the_corpus_shrank_but_not_inside_the_rebuild_ttl(serve_env, monkeypatch):
     """D2: the limit never grows inside a process, so without this a corpus that shrank (a prune, a
-    restore of a smaller backup, a re-index) would keep the rollup off until the next restart. Not before the
-    TTL: ``/api/insights/reindex-all`` bumps the epoch on every 300-article call."""
+    restore of a smaller backup, a re-index under a longer stoplist) would keep the rollup off until the limit
+    grew. The epoch alone is NOT the signal (``/api/insights/reindex-all`` bumps it on every 300-article call, and
+    a release per bump started the same 15-minute scan again): the mention count is compared when the epoch moved,
+    and not before the rebuild TTL."""
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
     monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 740.0)
     ttl = rollup_serve.rollup_serve_ttl_s()
     old = time.time() - ttl - 60.0
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": old, "duckdb_limit_mb": 740.0, "epoch": 4}
+
+    def hold(at, epoch=4):
+        rollup_serve._keep_stopped({"reason": "duckdb-limit", "at": at, "duckdb_limit_mb": 740.0, "epoch": epoch,
+                                    "mentions_count": 1000})
+
+    hold(old)
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 4)
-    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 500)
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit", "epoch unchanged: no count, no release"
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 5)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 1200)  # the epoch moved, the corpus did not shrink
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 900)
+    rollup_serve._keep_stopped({**rollup_serve._STATE["stopped"], "checked_at": old})
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 6)
     assert rollup_serve._stopped_build_verdict() is None
     assert rollup_serve._STATE["stopped"] is None, "released for good, not just for this check"
     # a stop younger than the TTL stays held through an epoch bump (a reindex-all drain bumps one per call)
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 740.0, "epoch": 4}
+    hold(time.time())
     assert rollup_serve._stopped_build_verdict() is not None
     monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: None)  # unreadable: no release
-    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": old, "duckdb_limit_mb": 740.0, "epoch": 4}
+    hold(old)
+    assert rollup_serve._stopped_build_verdict() is not None
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 9)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: None)  # unreadable count: no release
     assert rollup_serve._stopped_build_verdict() is not None
 
 
@@ -1111,7 +1161,7 @@ def test_a_long_aggregate_statement_is_not_called_stuck_and_a_step_without_a_cha
         threading.Event().wait(0.3)
         other.cancel()
     msgs = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
-    assert any("single aggregate statement" in m and "999 s" in m for m in msgs)
+    assert any("aggregate statement" in m and "999 s" in m for m in msgs)
     assert not any("made no progress" in m for m in msgs), "a statement that cannot report is not a stuck build"
     assert sum("boot step warm-cache" in m for m in msgs) == 1, "no channel, no re-arm: one warning"
 
@@ -1135,3 +1185,623 @@ def test_a_stop_with_no_total_is_held_on_what_was_observed(serve_env, monkeypatc
     assert rollup_serve._build_and_swap() == "declined"
     held = rollup_serve._STATE["stopped"]
     assert held["observed_grew_mb"] == 1000.0 and held["grew_mb"] == 1000.0
+
+
+class _MovingBudget:
+    """A budget that answers the 1,004 MB reading ONCE and a different machine afterwards (R147)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        if self.calls == 1:
+            return {"duckdb_memory_limit_mb": 1004, "duckdb_threads": 2, "total_ram_mb": 6698.5,
+                    "columnar_serve_default": True}
+        return {"duckdb_memory_limit_mb": 9999, "duckdb_threads": 8, "total_ram_mb": 66000.0,
+                "columnar_serve_default": True}
+
+
+def test_a_budget_that_moves_during_a_build_changes_neither_its_shards_nor_its_stop_record(
+        serve_env, session, monkeypatch):
+    """R147: one snapshot per build (limit, threads, total, read_at), used for the connection, the shard size and the
+    stop; the budget is not asked again."""
+    import src.config.memory_budget as mb
+
+    _seed(session, keywords=60, mentions_per=10)
+    moving = _MovingBudget()
+    monkeypatch.setattr(mb, "budget", moving)
+    planned: list[float] = []
+    real_plan = columnar.plan_build_shards
+    monkeypatch.setattr(columnar, "plan_build_shards", lambda rows, limit_mb: (planned.append(limit_mb), real_plan(rows, limit_mb))[1])
+    configs: list[dict] = []
+    real_cfg = columnar._offline_config
+    monkeypatch.setattr(columnar, "_offline_config", lambda spill=None, snapshot=None: (configs.append(real_cfg(spill, snapshot)), configs[-1])[1])
+
+    class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    def always_out_of_memory(*_a, **_k):
+        raise OutOfMemoryException("limit")
+
+    monkeypatch.setattr(columnar, "_aggregate_stage", always_out_of_memory)
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert planned == [1004.0], "the shard size came from the one reading"
+    assert configs[0]["memory_limit"] == "1004MB" and configs[0]["threads"] == 2
+    assert stopped["duckdb_limit_mb"] == 1004.0 and stopped["duckdb_threads"] == 2
+    assert stopped["budget_total_mb"] == 6698.5 and stopped["budget_read_at"].endswith("Z")
+    assert moving.calls == 1, "nothing in the build asked the budget a second time"
+
+
+def test_a_finished_build_names_the_budget_reading_it_ran_under(serve_env, session, monkeypatch):
+    import src.config.memory_budget as mb
+
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(mb, "budget", _MovingBudget())
+    rollup_serve._STATE["last_build"] = None
+    assert rollup_serve._build_inmemory_and_swap() is None
+    lb = rollup_serve.status()["last_build"]
+    assert lb["duckdb_limit_mb"] == 1004.0 and lb["duckdb_threads"] == 2 and lb["budget_total_mb"] == 6698.5
+
+
+# --------------------------------------------------------------------------- #
+# R157: a rollup that fits its limit must also answer the query the serve asks first
+# --------------------------------------------------------------------------- #
+
+def _canary(outcome, **extra):
+    return {"query": columnar.CANARY_QUERY, "outcome": outcome, "rows": 3 if outcome == "ok" else None,
+            "resident_mib": 922.0, "peak_mib": 957.0, "secs": 0.4, **extra}
+
+
+def test_a_rollup_that_cannot_answer_the_serve_check_is_a_stop_that_swaps_nothing_in_and_closes_the_connection(
+        serve_env, session, monkeypatch):
+    """The 20 M-mention finding: built at 922 of 957.5 MiB, then every query ran out of memory and fell back to live."""
+    _seed(session, keywords=30, mentions_per=4)
+    built = []
+    real_connect = columnar.connect
+    monkeypatch.setattr(columnar, "connect", lambda **kw: built.append(real_connect(**kw)) or built[-1])
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("out-of-memory"))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    rollup_serve._STATE["last_build"] = None
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "serve-check"
+    assert stopped["query"] == "top-terms-30d" and stopped["peak_mib"] == 957.0 and stopped["resident_mib"] == 922.0
+    assert stopped["duckdb_limit_mb"] > 0 and "epoch" in stopped and "mentions_count" in stopped, "the release rules' evidence"
+    assert rollup_serve._STATE["con"] is previous, "a rollup that cannot serve replaces nothing"
+    assert rollup_serve._STATE["last_build"] is None
+    assert rollup_marker.read() is None
+    with pytest.raises(Exception):  # noqa: B017 - the engine's own closed-connection error
+        built[0].execute("SELECT 1")
+
+
+def test_a_rollup_that_answers_the_serve_check_is_installed_and_records_what_it_was_asked(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("ok"))
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["con"] is not None
+    check = rollup_serve.status()["last_build"]["serve_check"]
+    assert check["outcome"] == "ok" and check["query"] == "top-terms-30d" and check["peak_mib"] == 957.0
+
+
+def test_an_inconclusive_serve_check_never_blocks_the_rollup(serve_env, session, monkeypatch):
+    """Anything but the engine's own memory error (a time cap, a catalogue error) is no evidence the rollup cannot serve."""
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("inconclusive"))
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["con"] is not None
+    assert rollup_serve.status()["last_build"]["serve_check"]["outcome"] == "inconclusive"
+
+
+def test_the_real_canary_asks_the_finished_rollup_its_first_question_and_reads_ok(serve_env, session):
+    _seed(session, keywords=30, mentions_per=4)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    out = columnar.serve_canary(rollup_serve._STATE["con"])
+    assert out["outcome"] == "ok" and out["rows"] is not None and out["query"] == columnar.CANARY_QUERY
+    assert out["resident_mib"] > 0 and out["peak_mib"] >= out["resident_mib"] and out["secs"] >= 0
+
+
+class _FakeCon:
+    """A connection whose main query raises ``exc`` and whose size reading is a fixed figure."""
+
+    def __init__(self, exc=None, wait=None):
+        self.exc, self.wait, self.interrupted = exc, wait, False
+        self.statements = []
+
+    def execute(self, sql, params=None):
+        self.statements.append((sql, params))
+        if "duckdb_memory" in sql:
+            return _Rows([(500.0,)])
+        if self.wait is not None:
+            self.wait.wait(5.0)
+        if self.exc is not None:
+            raise self.exc
+        return _Rows([("t", "t", "k", "en", 3, 2)])
+
+    def cursor(self):
+        return self
+
+    def close(self):
+        pass
+
+    def interrupt(self):
+        self.interrupted = True
+        if self.wait is not None:
+            self.wait.set()
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchone(self):
+        return self.rows[0]
+
+    def fetchall(self):
+        return self.rows
+
+
+def test_the_canary_names_the_engines_memory_error_by_class_and_every_other_error_as_inconclusive():
+    class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    oom = columnar.serve_canary(_FakeCon(OutOfMemoryException("Out of Memory Error: engine words")))
+    assert oom["outcome"] == "out-of-memory" and "engine words" not in repr(oom) and oom["rows"] is None
+    other = columnar.serve_canary(_FakeCon(RuntimeError("a catalog error")))
+    assert other["outcome"] == "inconclusive"
+
+
+def test_a_canary_that_runs_past_its_cap_is_interrupted_and_inconclusive():
+    import threading
+
+    con = _FakeCon(exc=RuntimeError("INTERRUPT Error"), wait=threading.Event())
+    out = columnar.serve_canary(con, max_s=0.05)
+    assert con.interrupted and out["outcome"] == "inconclusive"
+
+
+def test_the_canary_and_the_serve_run_one_query_text():
+    import datetime
+
+    con = _FakeCon()
+    day = datetime.date.today() - datetime.timedelta(days=columnar.CANARY_DAYS)
+    columnar.windowed_top_terms_raw(con, start_day=day, limit=columnar.CANARY_LIMIT)
+    columnar.serve_canary(con)
+    ran = [s for s in con.statements if "keyword_daily" in s[0]]
+    assert len(ran) == 2 and ran[0] == ran[1]
+
+
+def test_a_served_query_the_engine_refuses_is_counted_by_query_and_error_class_in_the_status():
+    class OutOfMemoryException(Exception):  # noqa: N818
+        pass
+
+    columnar._SERVE_FALLBACKS.clear()
+    con = _FakeCon(OutOfMemoryException("x"))
+    assert columnar.windowed_top_terms_raw(con, limit=5) == []
+    assert columnar.windowed_top_terms_raw(con, limit=5) == []
+    assert columnar.windowed_term_counts(con) == {}
+    got = rollup_serve.status()["serve_fallbacks"]
+    assert got["total"] == 3 and got["since"]
+    assert {(r["query"], r["error"], r["count"]) for r in got["fallbacks"]} == {
+        ("top-terms", "OutOfMemoryException", 2), ("term-counts", "OutOfMemoryException", 1)}
+    columnar._SERVE_FALLBACKS.clear()
+
+
+# --------------------------------------------------------------------------- #
+# R160: DuckDB's FATAL "could not allocate" at the edge of its limit is the memory wall, not a plain failure
+# --------------------------------------------------------------------------- #
+
+_FATAL_WORDS = "FATAL Error: Failed to create checkpoint because of error: could not allocate block of size 256.0 KiB (957.3 MiB/957.4 MiB used)"
+
+
+class FatalException(Exception):  # noqa: N818 - the engine's own class name
+    pass
+
+
+class _FatalAt:
+    """The real connection with one statement family made to fail with DuckDB's FATAL error (after ``after`` earlier ones passed)."""
+
+    def __init__(self, real, prefix, words=_FATAL_WORDS, after=0):
+        self._real, self._prefix, self._words, self._after = real, prefix, words, after
+        self.fired = 0
+
+    def execute(self, sql, *a, **k):
+        if sql.lstrip().startswith(self._prefix):
+            if self._after > 0:
+                self._after -= 1
+            else:
+                self.fired += 1
+                raise FatalException(self._words)
+        return self._real.execute(sql, *a, **k)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+@pytest.fixture()
+def fatal_at(monkeypatch):
+    real_connect = columnar.connect
+    made: list = []
+
+    def arm(prefix, **kw):
+        monkeypatch.setattr(columnar, "connect", lambda **ckw: made.append(_FatalAt(real_connect(**ckw), prefix, **kw)) or made[-1])
+        return made
+
+    return arm
+
+
+def _text_everywhere(stopped):
+    import json
+
+    from src.analytics import rollup_hold
+
+    kept = rollup_hold.read() or {}
+    blob = json.dumps([stopped, rollup_serve.status().get("stopped"), rollup_serve.status().get("last_decline"),
+                       rollup_serve.status().get("last_skip"), kept], default=str)
+    return blob
+
+
+@pytest.mark.parametrize("prefix,stage", [("INSERT INTO keyword_daily_stage", "stage-insert"),
+                                          ("INSERT INTO keyword_daily_building", "aggregate"),
+                                          ("INSERT INTO keyword_meta", "keywords")])
+def test_a_fatal_allocation_error_is_a_duckdb_limit_stop_at_the_stage_it_was_in_with_no_engine_text(
+        serve_env, session, fatal_at, prefix, stage):
+    _seed(session, keywords=30, mentions_per=4)
+    made = fatal_at(prefix)
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert made[0].fired == 1, "the fatal fired once and nothing was retried on the invalid instance"
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == stage
+    assert stopped["engine_error_class"] == "FatalException"
+    assert stopped["duckdb_limit_mb"] > 0 and stopped["rows_done"] >= 0
+    assert stage == "stage-insert" or isinstance(stopped["peak_mib"], float), "the sizes read before the fatal"
+    assert rollup_serve._STATE["con"] is previous, "nothing swapped in"
+    assert rollup_marker.read() is None
+    assert "allocate" not in repr(stopped) and "957" not in repr(stopped)
+
+
+def test_the_stop_is_kept_released_by_the_existing_rules_and_carries_no_engine_text_into_status_or_the_file(
+        serve_env, session, fatal_at, monkeypatch):
+    from src.analytics import rollup_hold
+
+    _seed(session, keywords=30, mentions_per=4)
+    fatal_at("INSERT INTO keyword_daily_building")
+    for name in ("_boot_order_verdict", "_memory_verdict", "_last_build_verdict", "_affordability_verdict"):
+        monkeypatch.setattr(rollup_serve, name, lambda: None)
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", True)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    blob = _text_everywhere(rollup_serve.status()["last_skip"])
+    assert "allocate" not in blob and "957.3" not in blob and "Failed to create checkpoint" not in blob
+    kept = rollup_hold.read()
+    assert kept["stage"] == "aggregate" and kept["engine_error_class"] == "FatalException"
+    assert rollup_serve.status()["stopped"]["engine_error_class"] == "FatalException"
+    assert rollup_serve.decline_detail()["engine_error_class"] == "FatalException"
+    # held: the next serve request does not start the scan again ...
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    # ... and a larger limit releases it, as for any duckdb-limit stop
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 100_000.0)
+    assert rollup_serve._stopped_build_verdict() is None
+
+
+def test_a_fatal_error_without_the_phrase_is_still_a_plain_failure(serve_env, session, fatal_at):
+    _seed(session, keywords=30, mentions_per=4)
+    made = fatal_at("INSERT INTO keyword_daily_building", words="FATAL Error: database has been invalidated")
+    with pytest.raises(FatalException):
+        rollup_serve._build_inmemory_and_swap()
+    assert made[0].fired == 1
+    assert rollup_marker.read() is None
+
+
+def test_the_fatal_allocation_error_never_reaches_the_slow_path_and_leaves_no_chain():
+    class Con:
+        def __init__(self):
+            self.slow = 0
+
+        def execute(self, *a, **k):
+            raise FatalException(_FATAL_WORDS)
+
+        def executemany(self, *a, **k):
+            self.slow += 1
+
+    con = Con()
+    with pytest.raises(columnar._EngineWall) as got:
+        columnar._bulk_insert(con, "t", ("BIGINT",), [(1,)])
+    assert con.slow == 0, "the slow path would only repeat it on an invalid instance"
+    assert got.value.__cause__ is None and got.value.__suppress_context__ is True and not got.value.args
+
+
+def test_a_fatal_error_without_the_phrase_still_takes_the_slow_path():
+    class Con:
+        def __init__(self):
+            self.slow = 0
+
+        def execute(self, *a, **k):
+            raise FatalException("something else")
+
+        def executemany(self, *a, **k):
+            self.slow += 1
+
+    con = Con()
+    assert columnar._bulk_insert(con, "t", ("BIGINT",), [(1,)]) == 1 and con.slow == 1
+
+
+def test_the_stop_names_the_sizes_read_before_the_fatal_batch(session):
+    """The instance is invalid after the fatal, so the sizes are the last readings taken at batch boundaries (a lower bound)."""
+    _seed(session, keywords=30, mentions_per=4)
+    con = _FatalAt(columnar.connect(passphrase=None, spill=""), "INSERT INTO keyword_daily_stage", after=2)
+    with pytest.raises(columnar.BuildDeclined) as got:
+        columnar.build_keyword_daily(con, session, batch_size=30, snapshot=columnar.budget_snapshot())
+    d = got.value.detail
+    assert got.value.reason == "duckdb-limit" and d["stage"] == "stage-insert" and d["engine_error_class"] == "FatalException"
+    assert d["rows_done"] > 0 and d["resident_mib"] > 0 and d["peak_mib"] >= d["resident_mib"]
+    assert got.value.__cause__ is None and "allocate" not in repr(d)
+
+
+# --------------------------------------------------------------------------- #
+# R160 follow-on: a FATAL engine error at SERVE time leaves the instance unusable, so the rollup is dropped (inferred, not
+# observed in the field)
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture()
+def serving(serve_env, session, monkeypatch):
+    """A real rollup built over the seeded corpus and installed as the serving one, with the change gate and the env pinned."""
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    monkeypatch.setattr(rollup_serve, "_maybe_refresh", lambda *a, **k: None)
+    for name in ("_boot_order_verdict", "_memory_verdict", "_last_build_verdict", "_affordability_verdict"):
+        monkeypatch.setattr(rollup_serve, name, lambda: None)
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", True)
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 7)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 120)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    columnar._SERVE_FALLBACKS.clear()
+    columnar._SERVE_FATAL.update(kind=None, con=None)
+    yield session
+    columnar._SERVE_FALLBACKS.clear()
+    columnar._SERVE_FATAL.update(kind=None, con=None)
+
+
+def _break_serving(prefix, words=_FATAL_WORDS, exc_cls=None):
+    real = rollup_serve._STATE["con"]
+    proxy = _FatalAt(real, prefix, words=words)
+    if exc_cls is not None:
+        class _P(_FatalAt):
+            def execute(self, sql, *a, **k):
+                if sql.lstrip().startswith(self._prefix):
+                    self.fired += 1
+                    raise exc_cls(self._words)
+                return self._real.execute(sql, *a, **k)
+
+        proxy = _P(real, prefix, words=words)
+    rollup_serve._STATE["con"] = proxy
+    return proxy
+
+
+@pytest.mark.parametrize("which", ["rows", "counts"])
+def test_a_served_query_that_hits_the_fatal_allocation_error_drops_the_rollup_and_takes_the_serve_fatal_stop(serving, which):
+    from datetime import date, timedelta
+
+    from src.analytics import rollup_hold
+
+    proxy = _break_serving("SELECT m.term" if which == "rows" else "SELECT keyword_id")
+    if which == "rows":
+        assert rollup_serve.windowed_rows(serving, days=30) is None, "the live scan answers"
+    else:
+        assert rollup_serve.windowed_counts(serving, lo=date.today() - timedelta(days=30), hi=date.today()) is None
+    assert proxy.fired == 1
+    assert rollup_serve._STATE["con"] is None and rollup_serve._STATE["built_at"] == 0.0 and rollup_serve.status()["built"] is False
+    stopped = rollup_serve.status()["stopped"]
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "serve-fatal" and stopped["engine_error_class"] == "FatalException"
+    assert rollup_hold.read()["stage"] == "serve-fatal"
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit", "the next request does not rebuild into the wall"
+    blob = _text_everywhere(stopped)
+    assert "allocate" not in blob and "957" not in blob and "checkpoint" not in blob
+    fb = rollup_serve.status()["serve_fallbacks"]["fallbacks"]
+    assert [(r["error"], r["count"]) for r in fb] == [("FatalException", 1)], "counted by class name"
+
+
+def test_any_other_fatal_error_drops_the_rollup_too_but_keeps_no_stop(serving):
+    proxy = _break_serving("SELECT m.term", words="FATAL Error: database has been invalidated")
+    assert rollup_serve.windowed_rows(serving, days=30) is None
+    assert proxy.fired == 1 and rollup_serve._STATE["con"] is None
+    assert rollup_serve.status()["stopped"] is None, "a plain failure: a later request may rebuild as for any failed build"
+    from src.analytics import rollup_hold
+
+    assert rollup_hold.read() is None
+    assert rollup_serve.status()["serve_fallbacks"]["total"] == 1
+
+
+def test_an_ordinary_query_error_still_leaves_the_rollup_serving(serving):
+    proxy = _break_serving("SELECT m.term", words="a plain error", exc_cls=RuntimeError)
+    assert rollup_serve.windowed_rows(serving, days=30) == []
+    assert proxy.fired == 1 and rollup_serve._STATE["con"] is proxy, "only a FATAL error invalidates the instance"
+    assert rollup_serve.status()["stopped"] is None
+
+
+def test_a_fatal_left_by_another_connection_is_not_blamed_on_the_serving_rollup(serving):
+    class Other:
+        def execute(self, *a, **k):
+            raise FatalException(_FATAL_WORDS)
+
+    assert columnar.windowed_term_counts(Other()) == {}  # the benchmark's own connection
+    real = rollup_serve._STATE["con"]
+    assert rollup_serve.windowed_rows(serving, days=30) is not None
+    assert rollup_serve._STATE["con"] is real and rollup_serve.status()["stopped"] is None
+
+
+def test_the_serve_check_reads_a_fatal_allocation_error_as_the_wall_and_any_other_fatal_as_unusable():
+    class Con(_FakeCon):
+        def __init__(self, words):
+            super().__init__(FatalException(words))
+
+    wall = columnar.serve_canary(Con(_FATAL_WORDS))
+    assert wall["outcome"] == "out-of-memory" and wall["error_class"] == "FatalException" and "allocate" not in repr(wall)
+    other = columnar.serve_canary(Con("FATAL Error: database has been invalidated"))
+    assert other["outcome"] == "fatal" and other["error_class"] == "FatalException"
+    assert rollup_serve._serve_check_stop(wall)["engine_error_class"] == "FatalException"
+
+
+def test_a_build_whose_serve_check_found_the_instance_unusable_serves_nothing_and_keeps_no_stop(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("fatal", error_class="FatalException"))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    with pytest.raises(RuntimeError, match="unusable"):
+        rollup_serve._build_inmemory_and_swap()
+    assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["stopped"] is None and rollup_marker.read() is None
+
+
+def test_a_stop_after_the_aggregate_names_the_sizes_read_during_it_not_the_stale_ones_from_the_first_batches(session, monkeypatch):
+    """The first end-to-end 20 M run: a fatal in the keywords stage reported 241 MiB (the first batches' reading) as its peak."""
+    _seed(session, keywords=30, mentions_per=4)
+    calls: list[int] = []
+    monkeypatch.setattr(columnar, "_read_mib", lambda con: float(len(calls.append(1) or calls)))  # 1.0, 2.0, 3.0 ...
+    con = _FatalAt(columnar.connect(passphrase=None, spill=""), "INSERT INTO keyword_meta")
+    with pytest.raises(columnar.BuildDeclined) as got:
+        columnar.build_keyword_daily(con, session, snapshot=columnar.budget_snapshot())
+    d = got.value.detail
+    assert d["stage"] == "keywords"
+    assert d["resident_mib"] == float(len(calls)) == d["peak_mib"], "the last reading taken, which the aggregate's readings advanced"
+    assert d["resident_mib"] > 2.0, "more than the stage inserts' own readings"
+
+
+# --------------------------------------------------------------------------- #
+# R164: the finished in-memory rollup is checkpointed once, before the serve check
+# --------------------------------------------------------------------------- #
+
+def _compacted(**extra):
+    return {"outcome": "ok", "compacted": True, "reason": None, "resident_before_mib": 456.1,
+            "resident_after_mib": 73.2, "secs": 0.7, **extra}
+
+
+class _CheckpointCon(_FakeCon):
+    """A connection that answers the size reading and fails ``CHECKPOINT`` with ``exc`` (or passes it)."""
+
+    def __init__(self, exc=None, readings=(456.1, 73.2)):
+        super().__init__(None)
+        self.ck_exc, self.readings = exc, list(readings)
+
+    def execute(self, sql, params=None):
+        self.statements.append((sql, params))
+        if "duckdb_memory" in sql:
+            return _Rows([(self.readings.pop(0) if self.readings else None,)])
+        if sql.strip().upper() == "CHECKPOINT" and self.ck_exc is not None:
+            raise self.ck_exc
+        return _Rows([])
+
+
+def test_compact_checkpoints_once_and_reads_the_size_before_and_after():
+    con = _CheckpointCon()
+    out = columnar.compact(con)
+    assert out["outcome"] == "ok" and out["compacted"] is True and out["reason"] is None
+    assert out["resident_before_mib"] == 456.1 and out["resident_after_mib"] == 73.2
+    assert [s for s, _ in con.statements if s.strip().upper() == "CHECKPOINT"] == ["CHECKPOINT"]
+
+
+def test_compact_reads_a_fatal_allocation_error_as_the_wall_and_any_other_fatal_as_unusable():
+    wall = columnar.compact(_CheckpointCon(FatalException(_FATAL_WORDS)))
+    assert wall["outcome"] == "out-of-memory" and wall["reason"] == "FatalException" and wall["compacted"] is False
+    assert "allocate" not in repr(wall) and "957" not in repr(wall), "the engine's words are matched and dropped"
+    other = columnar.compact(_CheckpointCon(FatalException("FATAL Error: database has been invalidated")))
+    assert other["outcome"] == "fatal" and other["reason"] == "FatalException" and other["compacted"] is False
+
+
+def test_compact_failing_for_any_other_reason_is_not_silent_and_leaves_the_rollup_intact(caplog):
+    out = columnar.compact(_CheckpointCon(RuntimeError("engine words that must not be kept")))
+    assert out["outcome"] == "failed" and out["compacted"] is False and out["reason"] == "RuntimeError"
+    assert "engine words" not in repr(out) and out["resident_after_mib"] is None
+    assert "serves uncompacted" in caplog.text, "named in the log, by class"
+
+
+def test_a_compacted_build_records_that_it_was_compacted_before_it_was_asked_anything(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    order: list[str] = []
+    real_compact = columnar.compact
+    monkeypatch.setattr(columnar, "compact", lambda con: (order.append("compact"), real_compact(con))[1])
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: (order.append("canary"), _canary("ok"))[1])
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert order == ["compact", "canary"], "the serve check reads the compacted rollup"
+    c = rollup_serve.status()["last_build"]["compact"]
+    assert c["outcome"] == "ok" and c["compacted"] is True and c["reason"] is None
+    assert c["resident_before_mib"] is not None and c["resident_after_mib"] is not None
+
+
+def test_a_rollup_whose_compacting_checkpoint_hits_the_wall_is_a_stop_that_swaps_nothing_in_and_asks_nothing(
+        serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    built = []
+    real_connect = columnar.connect
+    monkeypatch.setattr(columnar, "connect", lambda **kw: built.append(real_connect(**kw)) or built[-1])
+    monkeypatch.setattr(columnar, "compact", lambda con: {
+        "outcome": "out-of-memory", "compacted": False, "reason": "FatalException", "resident_before_mib": 765.5,
+        "resident_after_mib": None, "secs": 0.1})
+    asked: list[int] = []
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: asked.append(1) or _canary("ok"))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    rollup_serve._STATE["last_build"] = None
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "compact"
+    assert stopped["resident_mib"] == 765.5 and stopped["engine_error_class"] == "FatalException"
+    assert stopped["duckdb_limit_mb"] > 0 and "epoch" in stopped and "mentions_count" in stopped, "the release rules' evidence"
+    assert asked == [] and rollup_serve._STATE["con"] is previous and rollup_serve._STATE["last_build"] is None
+    with pytest.raises(Exception):  # noqa: B017 - the engine's own closed-connection error
+        built[0].execute("SELECT 1")
+
+
+def test_a_build_whose_compacting_checkpoint_left_the_instance_unusable_serves_nothing_and_keeps_no_stop(
+        serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "compact", lambda con: {
+        "outcome": "fatal", "compacted": False, "reason": "FatalException", "resident_before_mib": 1.0,
+        "resident_after_mib": None, "secs": 0.1})
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    with pytest.raises(RuntimeError, match="unusable"):
+        rollup_serve._build_inmemory_and_swap()
+    assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["stopped"] is None and rollup_marker.read() is None
+
+
+def test_a_compact_that_failed_otherwise_still_serves_and_the_build_record_says_why_not(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "compact", lambda con: {
+        "outcome": "failed", "compacted": False, "reason": "IOException", "resident_before_mib": 456.1,
+        "resident_after_mib": None, "secs": 0.1})
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("ok"))
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["con"] is not None
+    c = rollup_serve.status()["last_build"]["compact"]
+    assert c["compacted"] is False and c["reason"] == "IOException"
+
+
+def test_compacting_changes_no_answer_in_any_window(serve_env, session):
+    """Counts of every term and the ranked top terms of three windows, on the real rollup, before and after the checkpoint."""
+    import datetime
+
+    _seed(session, keywords=60, mentions_per=9)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    con = rollup_serve._STATE["con"]
+
+    def answers():
+        out = {}
+        for name, start in (("all", None), ("mid", datetime.date(2026, 3, 4)), ("narrow", datetime.date(2026, 3, 8))):
+            counts = columnar.windowed_term_counts(con, start_day=start)
+            top = columnar.windowed_top_terms_raw(con, start_day=start, limit=80)
+            out[name] = (counts, [(r["mentions"], r["articles"]) for r in top])
+            assert counts and top, f"{name}: the window has rows"
+        return out
+
+    before = answers()
+    done = columnar.compact(con)
+    assert done["compacted"] is True
+    after = answers()
+    for name in before:
+        assert before[name][0] == after[name][0], f"{name}: counts"
+        assert before[name][1] == after[name][1], f"{name}: the ranked (mentions, articles) pairs"

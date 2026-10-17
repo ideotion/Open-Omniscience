@@ -2654,7 +2654,15 @@
         $("map-svg").innerHTML = buildMapSvg(d.cities || []);
         MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
         _insMapTables(d);
-      } catch (e) { toast(_failMsg("Map failed: {error}", e), "err"); }
+      } catch (e) {
+        toast(_failMsg("Map failed: {error}", e), "err");
+        // A 503 carries the server's own reason (a scan paused on purpose, the statement deadline): put it in the
+        // tables, not the "No data" an empty table reads as.
+        if (e && e.status === 503 && e.message) {
+          const why = `<tr><td class="muted">${esc(e.message)}</td></tr>`;
+          $("map-countries").innerHTML = why; $("map-cities").innerHTML = why;
+        }
+      }
     }
     function _insMapTables(d) {
       // A COUNTRY row carries `code` (the stored alpha-2 the index keys on) and a CITY
@@ -2667,7 +2675,10 @@
             `</td></tr>`).join("")
         : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
       $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
-      $("map-cities").innerHTML = rowsFor(d.cities || [], "City");
+      // A city list the server did not compute (`partial`, `skipped` names it) is NOT an empty one: say why, not "No data".
+      $("map-cities").innerHTML = (d.partial && (d.skipped || []).includes("cities"))
+        ? `<tr><td class="muted">${esc(d.caveat || "")}</td></tr>`
+        : rowsFor(d.cities || [], "City");
     }
     function repaintInsMapFromCache() {
       const box = $("map-countries");

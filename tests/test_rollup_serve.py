@@ -123,7 +123,11 @@ def test_opted_in_and_built_serves_the_same_values_with_a_basis(session, monkeyp
     # A limit large enough to include EVERY fixture term, so there is no arbitrary tie at
     # the top-N cutoff (where the two engines may order ties differently) — this isolates
     # the value parity that actually matters.
-    live = q.top_terms(session, days=_WIDE, group=False, limit=100)  # default off
+    # The live baseline is taken with the serve explicitly OFF: left on auto (on whenever duckdb is installed) this call kicks a
+    # REAL background build over the process store, whose swap can land after the state below is installed and replace the bind,
+    # so the served read falls back to live (a full-suite flake; see test_a_baseline_read_with_the_serve_on_starts_a_build).
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
+    live = q.top_terms(session, days=_WIDE, group=False, limit=100)  # serve off -> the live numbers
 
     # Build the process singleton from THIS session (bypass the background thread) + opt in.
     con = columnar.connect(passphrase=None)
@@ -145,7 +149,11 @@ def test_trending_served_matches_live_and_discloses_basis(session, monkeypatch):
     # also accelerates trending_windows (Home), which calls trending per window. A wide
     # window covers the whole fixture; mentions are exact so the scored output matches.
     kw = dict(window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=100)
-    live = q.trending(session, **kw)  # default off
+    # The live baseline is taken with the serve explicitly OFF: left on auto (on whenever duckdb is installed) this call kicks a
+    # REAL background build over the process store, whose swap can land after the state below is installed and replace the bind,
+    # so the served read falls back to live (a full-suite flake; see test_a_baseline_read_with_the_serve_on_starts_a_build).
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
+    live = q.trending(session, **kw)  # serve off -> the live numbers
 
     con = columnar.connect(passphrase=None)
     columnar.build_keyword_daily(con, session)
@@ -161,6 +169,20 @@ def test_trending_served_matches_live_and_discloses_basis(session, monkeypatch):
         return sorted((t["normalized"], t["recent"], t["prior"]) for t in res["terms"])
 
     assert canon(served) == canon(live)
+
+
+def test_a_baseline_read_with_the_serve_on_starts_a_build(session, monkeypatch):
+    """The cause of the order-dependent fallback in the tests above: with nothing built, a read while the serve is ON asks for a
+    background build (a daemon thread over the process store, whose swap replaces _STATE under the test); with it OFF it does not."""
+    asked: list[int] = []
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: asked.append(1))
+    kw = dict(window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=100)
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
+    q.trending(session, **kw)
+    assert asked == []
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    q.trending(session, **kw)
+    assert asked, "a read with the serve on and nothing built asks for a build"
 
 
 def test_per_country_never_uses_the_rollup(session, monkeypatch):

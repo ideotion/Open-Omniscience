@@ -99,6 +99,14 @@ _STATE: dict = {
     # What stopped the last build PART-WAY (None once a build has finished): the reason and the numbers
     # the retry rule compares the machine against.
     "stopped": None,
+    # The last decline that SAYS SOMETHING ABOUT THIS MACHINE OR CORPUS, kept until another one replaces it (see
+    # ``_note_decline``). ``last_skip`` is overwritten by every later check, and every windowed serve that finds no
+    # rollup re-runs the verdicts, so a diagnostics run's own ``exclusive-hold`` hid the reason the boot's build
+    # stopped (the 2026-10-16 bundle: declined after 921 s, reason lost). None == no such decline yet.
+    "last_decline": None,
+    # How the last FINISHED in-memory build ran: the shard count it used, what the model predicted for it, DuckDB's own
+    # total read between shards, and how long it took (see ``columnar.plan_build_shards``). None until one finishes.
+    "last_build": None,
     # The offload folder of the connection in "con" (None when it has none): removed when that
     # connection is replaced.
     "spill": None,
@@ -124,6 +132,16 @@ def serve_mode() -> str:
     if env == "0":
         return "forced-off"
     return "auto"
+
+
+def serving_state() -> dict:
+    """Whether the keyword rollup is answering reads RIGHT NOW: ``enabled`` (the serve is on for this install),
+    ``built`` (a rollup is held) and ``serving`` (both). Read once per card-audit pass to decide whether the
+    producers that need it can be run; a read of two fields, no scan, no network."""
+    enabled = bool(serve_enabled())
+    with _LOCK:
+        built = _STATE["con"] is not None
+    return {"enabled": enabled, "built": built, "serving": enabled and built}
 
 
 def serve_enabled() -> bool:
@@ -182,6 +200,8 @@ def _persisted_serve_active() -> bool:
 
 def status() -> dict:
     """Honest state of the served rollup (for diagnostics). No score."""
+    with contextlib.suppress(Exception):  # a diagnostics field must never fail the status
+        _stopped_hold()  # a stop an earlier process kept is part of the state, before any build has looked at it
     with _LOCK:
         con = _STATE["con"]
         built_at = _STATE["built_at"]
@@ -189,6 +209,9 @@ def status() -> dict:
         pending = _STATE["pending"]
         persisted = _STATE["persisted"]
         last_skip = _STATE["last_skip"]
+        stopped = dict(_STATE["stopped"]) if _STATE["stopped"] else None
+        last_decline = dict(_STATE["last_decline"]) if _STATE["last_decline"] else None
+        last_build = dict(_STATE["last_build"]) if _STATE.get("last_build") else None
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
@@ -209,7 +232,102 @@ def status() -> dict:
         # Absent (None) means it has never declined -- never conflated with "declined
         # and everything was fine".
         "last_skip": last_skip,
+        # What stopped the last build PART-WAY, while that hold is in force (the retry rule compares the machine
+        # against it); None when no build was stopped or the hold was released.
+        "stopped": stopped,
+        # The last decline that is a statement about this machine or corpus (a memory verdict, a stopped build,
+        # an unaffordable start, a killed earlier build), NOT an import's exclusive window or the boot's ordering,
+        # and not replaced by the same reason being found again (``repeats`` counts that). Separate from
+        # ``last_skip`` on purpose: that one is whatever declined most recently.
+        "last_decline": last_decline,
+        # How the last build that finished was cut and what it cost, to be read against ``build_budget``.
+        "last_build": last_build,
+        # The numbers a build is held to, so a stop can be read against them: DuckDB's limit for this tier and
+        # whether it may offload to disk (it may not for an encrypted corpus, so the limit is a wall there).
+        "build_budget": _build_budget(),
+        # Served queries the engine refused and the live scan answered instead (since the process started): a serve
+        # that falls back is correct and, without this, invisible. A rollup that fails the build's own check is a
+        # stop, not a count here; this is the wider windows that fail later.
+        "serve_fallbacks": _serve_fallbacks(),
     }
+
+
+def _serve_fallbacks() -> dict:
+    from src.analytics import columnar
+
+    return columnar.serve_fallback_counts()
+
+
+#: The fields of a decline that go into another report's row (the boot step's): codes and numbers a reader compares
+#: against the budget. Free text of the engine is never among them.
+_DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
+                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split",
+                  "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib", "engine_error_class")
+
+
+def decline_detail() -> dict:
+    """Why the last build declined, for the boot step's row. The record of the build that just declined when it
+    declined on the MOMENT (an exclusive window, the boot's ordering: those never reach ``last_decline``, so the
+    sticky one would name an older, different reason). Otherwise the sticky ``last_decline`` when there is one (a
+    machine- or corpus-level reason, with the stage and numbers a bare echo of it lacks), else whatever declined last."""
+    with _LOCK:
+        skip = _STATE["last_skip"]
+        rec = skip if skip and skip.get("source") in _TRANSIENT_VERDICTS else (_STATE["last_decline"] or skip)
+        rec = dict(rec) if rec else None
+        stopped = dict(_STATE["stopped"]) if _STATE["stopped"] else None
+    if rec is None:
+        return {"reason": "unknown", "note": "the build reported a decline but no record of one was kept"}
+    out = {k: rec[k] for k in _DETAIL_FIELDS if isinstance(rec.get(k), (str, int, float, bool))}
+    if stopped and stopped.get("restored"):
+        out["restored"] = True
+    return out
+
+
+def _build_budget() -> dict:
+    try:
+        return {"duckdb_limit_mb": _duckdb_limit_mb(), "offload_allowed": not _corpus_encrypted()}
+    except Exception:  # noqa: BLE001 - a diagnostics field must never fail the status
+        return {"duckdb_limit_mb": None, "offload_allowed": None}
+
+
+#: The verdicts whose decline is about the moment, not about the machine: an exclusive window (a restore, an
+#: import, the diagnostics bundle) and the boot's start-up ordering. They are recorded in ``last_skip`` only.
+_TRANSIENT_VERDICTS = frozenset({"exclusive", "boot-order"})
+
+
+def _note_decline(kind: str, source: str, record: dict) -> None:
+    """Keep ``record`` as ``last_decline``. A verdict that finds the reason of a build that was STOPPED part-way
+    again (every serve request re-runs the verdicts) only counts: the stop's own record, with the stage and the
+    numbers it stopped at, is what a reader needs and must not be replaced by its echo."""
+    with _LOCK:
+        cur = _STATE["last_decline"]
+        # The stop's own record is the "stopped" one in the process that ran the build; in a process that restored
+        # it from disk the first echo IS the record (kind "skipped", source "stopped"), and later echoes fold into it.
+        if (kind == "skipped" and cur is not None and cur.get("reason") == record.get("reason")
+                and (cur.get("kind") == "stopped" or (cur.get("source") == "stopped" and source == "stopped"))):
+            cur["repeats"] = int(cur.get("repeats") or 0) + 1
+            cur["last_seen_at"] = record.get("at")
+            return
+        _STATE["last_decline"] = {"kind": kind, "source": source, **record, "repeats": 0}
+
+
+def _compact_stop(compact: dict) -> dict:
+    """The stop record for a rollup whose compacting checkpoint hit DuckDB's own limit (a FATAL allocation error, R164).
+
+    ``duckdb-limit`` so the release rules of that stop apply unchanged. Sizes read BEFORE it (the instance is invalid
+    afterwards) and the error class, as numbers and codes only."""
+    return {"reason": "duckdb-limit", "at": time.time(), "stage": "compact", "resident_mib": compact.get("resident_before_mib"),
+            "engine_error_class": compact.get("reason")}
+
+
+def _serve_check_stop(canary: dict) -> dict:
+    """The stop record for a rollup that was built and cannot answer: DuckDB's own limit, found at the serve check.
+
+    ``duckdb-limit`` so the release rules of that stop apply unchanged (a larger limit, offload allowed, a corpus 5%
+    smaller, another version). Names the query, its peak and the resident size, as numbers and codes only."""
+    return {"reason": "duckdb-limit", "at": time.time(), "stage": "serve-check", "query": canary.get("query"),
+            "peak_mib": canary.get("peak_mib"), "resident_mib": canary.get("resident_mib"),
+            "engine_error_class": canary.get("error_class")}
 
 
 def _build_inmemory_and_swap() -> dict | None:
@@ -226,8 +344,11 @@ def _build_inmemory_and_swap() -> dict | None:
 
     # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
     spill = _spill_setting()
+    # R147: the budget is read ONCE, here, and this build (its connection, its shard size, its stop record) lives on
+    # this snapshot. Nothing below asks the budget for the limit again.
+    snap = columnar.budget_snapshot()
     try:
-        con = columnar.connect(passphrase=None, spill=spill)
+        con = columnar.connect(passphrase=None, spill=spill, snapshot=snap)
     except BaseException:
         _remove_spill(spill)
         raise
@@ -238,7 +359,7 @@ def _build_inmemory_and_swap() -> dict | None:
     ok = False
     _progress_begin()
     try:
-        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=_duckdb_limit_mb())
+        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"])
         with session_scope() as s:
             # Token BEFORE the build (conservative: rows landing DURING the build make the
             # recorded token compare "changed" next check -> one extra rebuild, never a
@@ -247,8 +368,10 @@ def _build_inmemory_and_swap() -> dict | None:
             # the token's second element IS the newest mention id (read in this same session already)
             total_hint = int(token[1]) if token and len(token) > 1 and token[1] is not None else None
             skip: dict | None
+            tally: dict = {}
+            build_started = time.monotonic()
             try:
-                columnar.build_keyword_daily(con, s, on_batch=_make_on_batch())
+                tally = columnar.build_keyword_daily(con, s, on_batch=_make_on_batch(), snapshot=snap)
             except columnar.BuildDeclined as stop:
                 skip = {"reason": stop.reason, "at": time.time(), **stop.detail}
             except Exception as exc:  # noqa: BLE001
@@ -256,13 +379,32 @@ def _build_inmemory_and_swap() -> dict | None:
                     raise
                 # DuckDB reached its memory limit and may not offload: the bound held, so decline.
                 skip = {"reason": "duckdb-limit", "at": time.time(),
-                        "duckdb_limit_mb": _duckdb_limit_mb(), "error": record_text(exc, limit=200)}
+                        "duckdb_limit_mb": snap["duckdb_limit_mb"], "error": record_text(exc, limit=200)}
             else:
-                skip = None
+                # R157: a rollup that fits its limit can still leave no room for the query that uses it. Ask it the
+                # one question the serve asks first (the 30-day terms), now, on the connection nobody else holds.
+                # R164: first store what was built compressed (the in-memory rollup is otherwise held uncompressed).
+                compact = columnar.compact(con)
+                if compact["outcome"] == "fatal":
+                    raise RuntimeError("compacting the rollup found the DuckDB instance unusable")
+                if compact["outcome"] == "out-of-memory":
+                    skip = _compact_stop(compact)
+                else:
+                    canary = columnar.serve_canary(con)
+                    if canary["outcome"] == "fatal":
+                        # a FATAL engine error leaves the instance unusable: never served, never retried on (a plain failure)
+                        raise RuntimeError("the serve check found the DuckDB instance unusable")
+                    skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
             if skip is not None:
                 skip.update({
+                    # the limit and the machine total this build ran under, whatever stopped it (R147)
+                    "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
+                    "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
                     "begin_rss_mb": r["rss_mb"], "mentions_total": total_hint,
                     "epoch": token[0] if token else None,
+                    # what the wall was measured against, so a corpus that has SHRUNK since is told from one that
+                    # has only changed (the hold's release rule compares it; None when the count is unreadable)
+                    "mentions_count": _count_in(s),
                 })
                 return skip
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
@@ -284,6 +426,18 @@ def _build_inmemory_and_swap() -> dict | None:
         _STATE["bind"] = built_bind
         _STATE["token"] = token
         _STATE["pending"] = False
+        _STATE["last_build"] = {
+            "at": time.time(), "build_s": round(time.monotonic() - build_started, 1),
+            "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
+            "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
+            "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
+            "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
+            "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
+            # what the finished rollup was asked before it was served, and what that cost (R157)
+            "serve_check": canary,
+            # whether the rollup was stored compressed before it was asked, and why not when it was not (R164)
+            "compact": compact,
+        }
         old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
             try:
@@ -442,6 +596,135 @@ def _current_epoch() -> int | None:
         return None
 
 
+def _count_in(session: Session) -> int | None:
+    try:
+        from sqlalchemy import func
+
+        from src.database.derived_views import KeywordMentionRead
+
+        return int(session.query(func.count(KeywordMentionRead.id)).scalar() or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _current_mention_count() -> int | None:
+    """How many keyword mentions the corpus holds now, or None if unreadable (an index-only count, read in the
+    background build thread and only when the stop's hold asks for it)."""
+    try:
+        from sqlalchemy import func
+
+        from src.database.derived_views import KeywordMentionRead
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            return int(s.query(func.count(KeywordMentionRead.id)).scalar() or 0)
+    except Exception:  # noqa: BLE001 - unreadable -> no release (the hold stays as it was)
+        return None
+
+
+#: The version of the BUILD's own memory behaviour, bumped by whoever changes it (the chunked load, the batch size, the
+#: DuckDB settings it opens with). A stop kept on disk says what THAT code could not do on this machine; once the app
+#: version or this number differs the record is released, or a stop recorded before a fix would keep the rollup off
+#: after the upgrade until the limit grew. A kept record from before this field existed has neither, so it is released too.
+#: 2 (2026-10-16): the aggregate is sharded and each stage dropped as it is aggregated (``columnar.plan_build_shards``);
+#: every stop kept by version 1 was the single GROUP BY meeting the limit and is released.
+BUILD_CODE_VERSION = 2
+
+#: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. WHAT IT PROTECTS:
+#: repeated stop/retry cycles near the limit (each a ~15-minute scan that ends at the same wall). The wall is
+#: the limit against the corpus, and a re-index drain under a longer stoplist or one pruned article moves the count by
+#: a handful of mentions while the same ~15-minute scan would stop at the same wall: a release per mention would be the
+#: rescan loop again. What the build needs is not measured at a stop (only that it did not fit), so this is a
+#: judgement, not a measurement: 5% is more than the churn of a drain and small enough that a real prune clears it. If
+#: it is wrong the cost is a held rollup, which a larger limit, offload becoming allowed, or another version releases.
+_SHRINK_TO_RETRY = 0.05
+
+#: The shortest gap between two counts of the whole mention table for this hold (seconds). The rebuild TTL may be set
+#: to 0, and the epoch moves on every 300-article call of a re-index drain; a COUNT is a read of the whole table.
+_COUNT_MIN_INTERVAL_S = 60.0
+
+#: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
+#: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
+_HOLD_LOOKED = False
+
+
+#: Held while the kept record is read, so a second caller waits for the read rather than seeing "looked, found nothing"
+#: in the window between the first caller marking the file looked at and its read finishing.
+_HOLD_READ_LOCK = threading.Lock()
+
+
+def _stopped_hold() -> dict | None:
+    """The stop record in force: this process's own, else (once per process) the one an earlier process kept.
+
+    The earlier one is marked ``restored``. It is read only when this process has stopped no build of its own, so
+    the file can never replace a fresher in-memory record. ``_HOLD_LOOKED`` is set only AFTER the read finished,
+    and a caller that arrives meanwhile waits for it."""
+    with _LOCK:
+        st = _STATE.get("stopped")
+        looked = _HOLD_LOOKED
+    if st or looked:
+        return st
+    with _HOLD_READ_LOCK:
+        with _LOCK:
+            st = _STATE.get("stopped")
+            looked = _HOLD_LOOKED
+        if st or looked:
+            return st
+        try:
+            return _read_kept_stop()
+        finally:
+            _mark_hold_looked()
+
+
+def _mark_hold_looked() -> None:
+    global _HOLD_LOOKED
+    with _LOCK:
+        _HOLD_LOOKED = True
+
+
+def _read_kept_stop() -> dict | None:
+    from src.analytics import rollup_hold
+
+    kept = rollup_hold.read()
+    if kept is None:
+        return None
+    from src import __version__
+
+    if kept.get("app_version") != __version__ or kept.get("build_code") != BUILD_CODE_VERSION:
+        _LOG.info("rollup serve: the kept stop was recorded by another version (%s/%s); released",
+                  kept.get("app_version"), kept.get("build_code"))
+        rollup_hold.clear()
+        return None
+    with _LOCK:
+        if _STATE.get("stopped") is None:
+            _STATE["stopped"] = {**kept, "restored": True}
+        return _STATE["stopped"]
+
+
+def _keep_stopped(record: dict) -> None:
+    """Hold later builds back on ``record`` and keep it for the next process."""
+    global _HOLD_LOOKED
+    from src import __version__
+    from src.analytics import rollup_hold
+
+    record = {**record, "app_version": __version__, "build_code": BUILD_CODE_VERSION}
+    with _LOCK:
+        _STATE["stopped"] = record
+        _HOLD_LOOKED = True
+    rollup_hold.write(record)
+
+
+def _release_stopped() -> None:
+    """The hold is over (the condition changed, or a build finished): forget it here and on disk."""
+    global _HOLD_LOOKED
+    from src.analytics import rollup_hold
+
+    with _LOCK:
+        _STATE["stopped"] = None
+        _HOLD_LOOKED = True
+    rollup_hold.clear()
+
+
 def _last_build_verdict() -> dict | None:
     """Decline while the machine does not have what a KILLED earlier build held (see rollup_marker)."""
     try:
@@ -462,11 +745,55 @@ def _stopped_build_verdict() -> dict | None:
     stops, two measured rules and no timer: a corpus that outgrew DuckDB's limit with no offload allowed
     is retried when the budget's limit is LARGER than the one it stopped at; a build the memory guard
     stopped is retried when the machine has what that build had grown by, plus the guard's floor."""
-    with _LOCK:
-        st = _STATE.get("stopped")
-    if not st or _persisted_serve_active():
+    if _persisted_serve_active():
+        return None
+    st = _stopped_hold()
+    if not st:
         return None
     try:
+        if st.get("reason") == "duckdb-limit":
+            # The wall is DuckDB's limit against the size of the corpus, and the epoch moves for reasons that do not
+            # touch either (``/api/insights/reindex-all`` bumps it on every 300-article call): a release per epoch
+            # would start the same 15-minute scan again for the length of a re-index drain, and again after every
+            # restart. So this stop is released by what changes the wall: a larger limit, or a corpus with FEWER
+            # mentions than it had at the stop (a prune, a restore of a smaller backup, a re-index under a longer
+            # stoplist). The count is taken only when the epoch has moved since the stop (or the last count), and
+            # not before the rebuild TTL, so it is not a read per serve.
+            limit = _duckdb_limit_mb()
+            if limit > float(st.get("duckdb_limit_mb") or 0):
+                _release_stopped()
+                return None
+            if st.get("offload_allowed") is False and _build_budget().get("offload_allowed") is True:
+                # stopped while the corpus was encrypted (no spill, so the limit was a wall); DuckDB may spill now
+                _release_stopped()
+                return None
+            seen = float(st.get("checked_at") or st.get("at") or 0.0)
+            if time.time() - seen >= max(float(rollup_serve_ttl_s()), _COUNT_MIN_INTERVAL_S):
+                now_epoch = _current_epoch()
+                epoch_moved = now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]
+                # The epoch is bumped by the non-append mutators it knows (re-index, prune, restore-merge) and is blind to
+                # the rest: a cascade delete of the mentions of a removed source or article moves neither the epoch nor a
+                # max id (serve_gate's disclosed invisible classes). The same long backstop that bounds a served rollup's
+                # staleness bounds this one: a stop not looked at for that long is counted once, epoch or no epoch.
+                backstop = time.time() - seen >= _BACKSTOP_S
+                if epoch_moved or backstop:
+                    count = _current_mention_count()
+                    base = st.get("mentions_count")
+                    if count is not None and isinstance(base, int) and count < base * (1.0 - _SHRINK_TO_RETRY):
+                        _release_stopped()
+                        return None
+                    if count is not None:
+                        # not smaller by enough: the wall stands; look again when the epoch moves next (or at the
+                        # backstop). The count the stop was measured at stays the base, so small drops add up.
+                        _keep_stopped({**st, "epoch": now_epoch if now_epoch is not None else st.get("epoch"),
+                                       "checked_at": time.time(),
+                                       "mentions_count": base if isinstance(base, int) else count})
+            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
+                    "stopped_at": st.get("at"), "restored": bool(st.get("restored")),
+                    "note": "a build under this limit was already stopped by it; retried when the memory budget's "
+                            "limit grows, offload becomes allowed, or the corpus is smaller than at the stop "
+                            "(counted when the corpus epoch moves, and at the long backstop for a delete the epoch "
+                            "does not see)"}
         # A corpus that has been re-indexed, pruned or restored is a different corpus (the epoch moves for
         # exactly those); what stopped the last build says nothing about it, so the hold is released.
         # Not before the rebuild TTL (``rollup_serve_ttl_s``, the churn bound every rebuild already honours):
@@ -474,15 +801,8 @@ def _stopped_build_verdict() -> dict | None:
         # bring the rescan loop back for the length of that drain.
         now_epoch = _current_epoch() if time.time() - float(st.get("at") or 0.0) >= rollup_serve_ttl_s() else None
         if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
-            with _LOCK:
-                _STATE["stopped"] = None
+            _release_stopped()
             return None
-        if st.get("reason") == "duckdb-limit":
-            limit = _duckdb_limit_mb()
-            if limit > float(st.get("duckdb_limit_mb") or 0):
-                return None
-            return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
-                    "stopped_at": st.get("at"), "note": "retried when the memory budget's limit grows"}
         avail = _readings()["avail_mb"]
         if avail is None:
             return None
@@ -766,13 +1086,22 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip = (
-            exclusive_verdict() or _boot_order_verdict() or _memory_verdict()
-            or _stopped_build_verdict() or _last_build_verdict() or _affordability_verdict()
-        )
-        if skip is not None:
+        skip: dict | None = None
+        source: str | None = None
+        for name, verdict in (
+            ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
+            ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
+            ("affordability", _affordability_verdict),
+        ):
+            skip = verdict()
+            if skip:
+                source = name
+                break
+        if skip:
             with _LOCK:
-                _STATE["last_skip"] = skip
+                _STATE["last_skip"] = {**skip, "source": source}
+            if source is not None and source not in _TRANSIENT_VERDICTS:
+                _note_decline("skipped", source, skip)
             _LOG.info(
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
@@ -799,24 +1128,32 @@ def _build_and_swap() -> str:
                     # projection past that is the linear extrapolation outrunning the build's own ceiling (and
                     # MAX(id) overstates the rows after re-index churn): never ask for more than the start check does.
                     chunk = columnar_batch_mb()
-                    ceiling = round(_duckdb_limit_mb() * _LIMIT_OVERSHOOT + chunk, 1)
+                    ceiling = round(float(stopped.get("duckdb_limit_mb") or _duckdb_limit_mb()) * _LIMIT_OVERSHOOT + chunk, 1)
                     grew = min(grew, max(ceiling, observed))
                 with _LOCK:
                     _STATE["last_skip"] = stopped
-                    _STATE["stopped"] = {
-                        "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
-                        "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
-                        "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
-                    }
+                _keep_stopped({
+                    "reason": stopped.get("reason"), "at": stopped.get("at"), "grew_mb": grew,
+                    "observed_grew_mb": observed, "epoch": stopped.get("epoch"),
+                    "duckdb_limit_mb": stopped.get("duckdb_limit_mb"), "stage": stopped.get("stage"),
+                    "duckdb_threads": stopped.get("duckdb_threads"), "budget_total_mb": stopped.get("budget_total_mb"),
+                    "budget_read_at": stopped.get("budget_read_at"),
+                    "mentions_total": stopped.get("mentions_total"), "rows_done": stopped.get("rows_done"),
+                    "mentions_count": stopped.get("mentions_count"),
+                    "shards": stopped.get("shards"), "shard": stopped.get("shard"), "split": stopped.get("split"),
+                    "query": stopped.get("query"), "peak_mib": stopped.get("peak_mib"),
+                    "resident_mib": stopped.get("resident_mib"), "engine_error_class": stopped.get("engine_error_class"),
+                    "offload_allowed": _build_budget().get("offload_allowed"),
+                })
                 _LOG.warning(
                     "rollup serve: build stopped part-way (%s); nothing was swapped in and it is not "
                     "retried until that condition changes",
                     stopped.get("guard_reason") or stopped.get("reason"),
                 )
+                _note_decline("stopped", "build", {**stopped, "grew_mb": grew, "observed_grew_mb": observed})
                 outcome = "declined"
                 return outcome
-        with _LOCK:
-            _STATE["stopped"] = None
+        _release_stopped()
         outcome = "built"
         return outcome
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
@@ -919,6 +1256,45 @@ def _same_bind(session: Session | None, built_bind) -> bool:
         return False
 
 
+def _drop_if_unusable(con) -> bool:
+    """A served query that hit DuckDB's FATAL error leaves the instance unusable: drop it so nothing is served from it
+    again (the caller answers live), and when the error said it could not allocate (the memory wall) keep the same
+    ``duckdb-limit`` stop a build gets, at stage ``serve-fatal``, so the next request does not rebuild into it.
+    Any other fatal is a plain failure: dropped, counted, and a later request may rebuild as for any failed build.
+    INFERRED, not observed in the field (2026-10-17: the build-time fatal was). Returns True when it dropped ``con``.
+    No engine text is kept: the kind comes from ``columnar`` as a word."""
+    from src.analytics import columnar
+
+    kind = columnar.take_serve_fatal(con)
+    if kind is None:
+        return False
+    with _LOCK:
+        if _STATE["con"] is not con or _STATE["persisted"]:
+            return False  # a newer build already replaced it, or it is the persisted store (not ours to drop)
+        _STATE.update(con=None, built_at=0.0, rows=0, bind=None, token=None, pending=False)
+        spill, _STATE["spill"] = _STATE.get("spill"), None
+        last = _STATE.get("last_build") or {}
+    with contextlib.suppress(Exception):
+        con.close()
+    _remove_spill(spill)
+    _LOG.warning("rollup serve: a served query hit a FATAL engine error (%s); the rollup was dropped and the live scan answers", kind)
+    if kind == "allocation":
+        check = last.get("serve_check") or {}
+        record = {
+            "reason": "duckdb-limit", "at": time.time(), "stage": "serve-fatal", "engine_error_class": "FatalException",
+            "duckdb_limit_mb": last.get("duckdb_limit_mb") or _duckdb_limit_mb(), "duckdb_threads": last.get("duckdb_threads"),
+            "budget_total_mb": last.get("budget_total_mb"), "budget_read_at": last.get("budget_read_at"),
+            # the sizes of the finished build's own serve check: the instance cannot be read now
+            "peak_mib": check.get("peak_mib"), "resident_mib": check.get("resident_mib"),
+            "epoch": _current_epoch(), "mentions_count": _current_mention_count(),
+        }
+        with _LOCK:
+            _STATE["last_skip"] = record
+        _keep_stopped({**record, "offload_allowed": _build_budget().get("offload_allowed")})
+        _note_decline("stopped", "serve", record)
+    return True
+
+
 def windowed_rows(
     _session: Session, *, days: int, kind: str | None = None, limit: int = 80
 ) -> list[dict] | None:
@@ -952,7 +1328,8 @@ def windowed_rows(
             con = _STATE["con"]
             if con is None:
                 return None
-            return columnar.windowed_top_terms_raw(con, start_day=start, kind=kind, limit=limit)
+            rows = columnar.windowed_top_terms_raw(con, start_day=start, kind=kind, limit=limit)
+        return None if _drop_if_unusable(con) else rows
     except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
         log_failure(_LOG, "rollup serve: windowed serve failed; falling back to live", exc, level=logging.WARNING)
         return None
@@ -984,6 +1361,8 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
             if con is None:
                 return None
             counts = columnar.windowed_term_counts(con, start_day=lo, end_day=hi)
+        if _drop_if_unusable(con):
+            return None
         return {kid: mv[0] for kid, mv in counts.items()}  # mentions only (exact)
     except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
         log_failure(_LOG, "rollup serve: windowed counts failed; falling back to live", exc, level=logging.WARNING)

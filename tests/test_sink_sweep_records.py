@@ -54,6 +54,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
+    "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
@@ -799,6 +800,18 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('run_progressive_triage_job', 'f"{outage_detail(_why, exc, recovery=_fix)} — retrying in "'): 1,
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('run_progressive_triage_job', 'if is_context_overflow(exc) and working_batch > 1:'): 1,
+    },
+    'src/analytics/columnar.py': {
+        # R160: read for ONE fixed phrase to CLASSIFY DuckDB's FATAL allocation error as the memory wall; the text goes nowhere
+        # (the class is raised as an empty _EngineWall / BuildDeclined `from None`, and the stop names the class only)
+        ('_bulk_insert', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+        ('build_keyword_daily', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+        # R160 follow-on: the same ONE phrase, read once in each serve handler to tell the memory wall from any other fatal; only a
+        # word ("allocation" / "other") leaves the handler, and the canary keeps only an outcome word and the class name
+        ('windowed_term_counts', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
+        ('windowed_top_terms_raw', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
+        ('serve_canary', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
+        ('compact', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
     },
     'src/analytics/equivalence.py': {
         # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere

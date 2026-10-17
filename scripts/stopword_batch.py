@@ -175,9 +175,11 @@ MULTILINGUAL = "_multilingual"
 FILE_SCRIPTS: dict[str, tuple[str, ...]] = {
     "am": ("ETHIOPIC",),
     "ar": ("ARABIC",),
+    "be": ("CYRILLIC",),
     "bg": ("CYRILLIC",),
     "bn": ("BENGALI",),
     "el": ("GREEK",),
+    "fa": ("ARABIC",),
     "hi": ("DEVANAGARI",),
     "ja": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
     "kk": ("CYRILLIC",),
@@ -186,6 +188,7 @@ FILE_SCRIPTS: dict[str, tuple[str, ...]] = {
     "mr": ("DEVANAGARI",),
     "ru": ("CYRILLIC",),
     "uk": ("CYRILLIC",),
+    "ur": ("ARABIC",),
     "zh": ("CJK",),
 }
 
