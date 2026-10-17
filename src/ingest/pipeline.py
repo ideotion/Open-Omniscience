@@ -82,6 +82,7 @@ from src.ingest import (
 )
 from src.ingest.extract import extract_article
 from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
+from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
 from src.utils.url_utils import canonicalize_url, generate_content_hash
 
@@ -176,6 +177,14 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
     if doc is None:
         return IngestOutcome(
             fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="no article body extracted"
+        )
+
+    # Drop ad-placeholder and app-banner paragraphs before judging and hashing, so the stored
+    # body (and its content hash) is the article, not the page furniture. No-op when none.
+    doc.text, _ = strip_furniture(doc.text)
+    if not doc.text.strip():
+        return IngestOutcome(
+            fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="body was only page furniture"
         )
 
     # Stop non-articles (nav / index / tag / tool / consent-wall pages) at the door — the

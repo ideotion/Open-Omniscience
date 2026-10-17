@@ -48,6 +48,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlparse
 
+from src.ingest.furniture import stub_verdict
 from src.services.prose_gate import prose_gate_verdict
 
 # Utility / tool / listing path segments that are (almost) never an article slug on their own.
@@ -172,6 +173,12 @@ def classify_non_article(
         for phrase in _WALL_PHRASES:
             if phrase in low:
                 return NonArticleVerdict("boilerplate_wall", f"consent/paywall/error wall: '{phrase}'")
+
+    # 1b. Menu / subscriber-prompt STUB -- a thin body that is site chrome or a login prompt in a
+    #     language the English wall phrases above miss (src.ingest.furniture).
+    stub = stub_verdict(text)
+    if stub is not None:
+        return NonArticleVerdict(*stub)
 
     path = urlparse(url).path.strip("/").lower()
     segments = [s for s in path.split("/") if s]
