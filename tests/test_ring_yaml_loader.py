@@ -33,14 +33,35 @@ def test_a_missing_or_empty_ring_file_is_an_empty_mapping(tmp_path):
     assert equivalence._read_yaml(tmp_path / "absent.yml") == {}
 
 
-def test_the_ring_reader_goes_through_the_catalogue_loader(tmp_path, monkeypatch):
+def test_the_ring_reader_goes_through_the_shared_safe_loader(tmp_path, monkeypatch):
     # The equality test above passes on the old ``yaml.safe_load`` call too; this is the one that fails on it.
-    from src.ingest import seed_sources
-
     calls = []
-    real = seed_sources._load_safe_yaml
-    monkeypatch.setattr(seed_sources, "_load_safe_yaml", lambda text: calls.append(text) or real(text))
+    real = equivalence.load_safe_yaml
+    monkeypatch.setattr(equivalence, "load_safe_yaml", lambda text: calls.append(text) or real(text))
     ring = tmp_path / "ring.yml"
     ring.write_text("a: 1\n", "utf-8")
     assert equivalence._read_yaml(ring) == {"a": 1}
     assert calls == ["a: 1\n"]
+
+
+def test_the_seeder_and_the_rings_reader_parse_with_one_loader_class():
+    from src.ingest import seed_sources
+    from src.utils import safe_yaml
+
+    assert seed_sources._YAML_LOADER is safe_yaml.YAML_LOADER
+    assert seed_sources._SAFE_YAML_LOADERS is safe_yaml.SAFE_YAML_LOADERS
+    assert {c.__name__ for c in safe_yaml.SAFE_YAML_LOADERS} <= {"CSafeLoader", "SafeLoader"}
+
+
+def test_the_shared_module_imports_nothing_of_the_project():
+    # It is hashed into the engine identity and imported by an index pass: a project import here is the seed chain again.
+    import ast
+    from pathlib import Path
+
+    from src.utils import safe_yaml
+
+    tree = ast.parse(Path(safe_yaml.__file__).read_text("utf-8"))
+    imported = {n.module if isinstance(n, ast.ImportFrom) else a.name
+                for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
+                for a in (n.names if isinstance(n, ast.Import) else [None])}
+    assert {m for m in imported if m} <= {"__future__", "yaml"}, imported

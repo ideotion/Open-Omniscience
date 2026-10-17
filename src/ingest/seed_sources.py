@@ -42,6 +42,7 @@ from src.ingest.seed_plan import (
     plan_registration,
     split_tags,
 )
+from src.utils.safe_yaml import SAFE_YAML_LOADERS, YAML_LOADER
 
 #: What a seed run reports. Mostly counts, plus a short list of examples for the
 #: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.
@@ -99,10 +100,9 @@ _PASSTHROUGH_FIELDS = (
 # way -- this is a speed choice, never a safety one. Measured 2026-09-11 on
 # configs/sources.yml (5,580 entries): 3,148 ms pure-Python vs 411 ms with libyaml, and
 # boot parses seven catalogues, so it is seconds off every start.
-_SAFE_YAML_LOADERS = tuple(
-    c for c in (getattr(yaml, "CSafeLoader", None), yaml.SafeLoader) if c is not None
-)
-_YAML_LOADER = _SAFE_YAML_LOADERS[0]
+# The class is chosen in src.utils.safe_yaml (the keyword rings reader parses with the same one, and it must not import this module).
+_SAFE_YAML_LOADERS = SAFE_YAML_LOADERS
+_YAML_LOADER = YAML_LOADER
 
 
 def _load_safe_yaml(text: str):
