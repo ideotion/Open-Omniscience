@@ -69,6 +69,7 @@ if ($env:OO_EPHEMERAL -ne "1") {
 }
 $stderrRecord = if ($diag) { Join-Path $diag "launcher_stderr.jsonl" } else { $null }
 $exitRecord = if ($diag) { Join-Path $diag "launcher_exits.jsonl" } else { $null }
+$stopRecord = if ($diag) { Join-Path $diag "launcher_stops.jsonl" } else { $null }
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $App
@@ -114,6 +115,16 @@ if ($stderrRecord -and $writable) {
 }
 
 # 0 is a normal stop; 0xC000013A (-1073741510) is Ctrl-C in this window, a stop somebody asked for. Anything else is an end to record.
+# A Ctrl-C leaves the stop-asked row the bash launcher writes (R168): the next boot reads an unclean end WITH that row as "stop requested,
+# teardown incomplete", never a crash. It is written AFTER the server ended (this script has no console handler: not written on Windows, untested),
+# carries no signal name (Windows has none) and the status instead, and is trimmed the way launcher_exits.jsonl is.
+if ($stopRecord -and $code -eq -1073741510) {
+    [void](Add-Row $stopRecord ([ordered]@{ schema = "oo-launcher-stop-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; signal = $null; status = $code }))
+    try {
+        $rows = [System.IO.File]::ReadAllLines($stopRecord, $Utf8)
+        if ($rows.Length -gt 40) { [System.IO.File]::WriteAllLines($stopRecord, ($rows | Select-Object -Last 20), $Utf8) }
+    } catch { }
+}
 if ($exitRecord -and $code -ne 0 -and $code -ne -1073741510) {
     [void](Add-Row $exitRecord ([ordered]@{ schema = "oo-launcher-exit-1"; at = (Get-Stamp); started_at = $startedAt; pid = $p.Id; boot_id = $null; status = $code; signal = $null }))
     try {

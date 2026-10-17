@@ -58,6 +58,8 @@ LAUNCHER_EXITS = "launcher_exits.jsonl"
 #: Written before the launcher forwards anything or starts waiting, so a teardown that never finishes still leaves it. Never an exit row: the launcher
 #: writes ``launcher_exits.jsonl`` only for an end nobody asked for, so for one pid at most one of the two exists.
 LAUNCHER_STOPS = "launcher_stops.jsonl"
+#: The status a Windows process ends with on Ctrl-C (STATUS_CONTROL_C_EXIT, 0xC000013A as a signed 32-bit number): launch_server.ps1 writes it in a stop row.
+_WINDOWS_CTRL_C = -1073741510
 #: The only signals a stop row may name (a row naming another is not read as a stop): the three the launcher traps.
 STOP_SIGNALS = frozenset({"SIGINT", "SIGTERM", "SIGHUP"})
 #: The abort messages the launcher's stderr filter recorded (scripts/launch.sh ``stderr_filter``), one JSON line each plus a summary per launch.
@@ -243,17 +245,19 @@ def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: 
             rec = json.loads(line)
         except ValueError:
             continue
-        if isinstance(rec, dict) and rec.get("pid") == pid and rec.get("signal") in STOP_SIGNALS and _same_boot(rec.get("boot_id"), boot_id):
+        # a signal the launcher trapped (bash), or Windows' Ctrl-C: no signal name, the NTSTATUS the server ended with (launch_server.ps1)
+        asked = rec.get("signal") if rec.get("signal") in STOP_SIGNALS else ("Ctrl-C" if rec.get("signal") is None and rec.get("status") == _WINDOWS_CTRL_C else None)
+        if isinstance(rec, dict) and rec.get("pid") == pid and asked and _same_boot(rec.get("boot_id"), boot_id):
             if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
                 continue
             return {
-                "seen_by": "the launcher (scripts/launch.sh), the process's parent",
+                "seen_by": "the launcher (scripts/launch.sh), the process's parent" if rec.get("signal") else "the launcher (scripts/launch_server.ps1), the process's parent",
                 "at": _stamp_or_none(rec.get("at")),
                 "started_at": None,
                 "status": None,
-                "signal": rec["signal"],
+                "signal": rec.get("signal") or "Ctrl-C",
                 "kind": "stop asked",
-                "meaning": f"a stop was asked of the launcher ({rec['signal']}) and the session's end was not clean: its shutdown did not complete. Not a crash",
+                "meaning": f"a stop was asked of the launcher ({asked}) and the session's end was not clean: its shutdown did not complete. Not a crash",
             }
     return None
 

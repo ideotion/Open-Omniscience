@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -158,3 +159,71 @@ def test_the_stop_block_is_no_wider_than_the_exit_block_it_takes_the_place_of(dd
     got = len(json.dumps(stop, separators=(",", ":")))
     assert got <= widest_exit, f"the stop block is {got} B, the exit block's widest is {widest_exit} B"
     print(f"stop block {got} B, widest exit block {widest_exit} B")
+
+
+# --- Windows: scripts/launch_server.ps1 writes the same row on Ctrl-C (R168 parity). TESTED ONLY ON POWERSHELL 7 ON LINUX WITH A FAKE SERVER: the real
+# --- exit status of a Ctrl-C in a Windows console, PowerShell 5.1 and cmd.exe are untested (docs/ledger/OPEN_QUEUE.md).
+
+_PWSH = os.environ.get("OO_PWSH") or shutil.which("pwsh")
+_needs_pwsh = pytest.mark.skipif(not _PWSH or os.name == "nt", reason="no PowerShell 7 here (OO_PWSH)")
+_WIN_CTRL_C = -1073741510
+
+
+def _run_wrapper(tmp_path, body, ctrl_c_as=58):
+    """Run a COPY of the wrapper whose Ctrl-C status is replaced by one a Linux process can exit with (a Linux exit code is 0-255, never an NTSTATUS)."""
+    ps1 = Path(__file__).resolve().parents[1] / "scripts" / "launch_server.ps1"
+    text = ps1.read_text(encoding="utf-8")
+    assert text.count("-1073741510") == 3, "the Ctrl-C status is named in three places in the wrapper (a comment, the stop row, the exit row); this test substitutes all of them"
+    copy = tmp_path / "launch_server_copy.ps1"
+    copy.write_text(text.replace("-1073741510", str(ctrl_c_as)), encoding="utf-8")
+    exe = tmp_path / "server"
+    exe.write_text("#!/usr/bin/env bash\n" + body, encoding="utf-8")
+    exe.chmod(0o755)
+    data = tmp_path / "data"
+    marker = tmp_path / "started.marker"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("OO_")}
+    proc = subprocess.run([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(exe), "-Marker", str(marker), "-DataDir", str(data)],
+                           capture_output=True, text=True, timeout=90, env=env, stdin=subprocess.DEVNULL)
+    return proc, int(marker.read_text(encoding="utf-8")), data
+
+
+@_needs_pwsh
+def test_a_windows_ctrl_c_leaves_a_stop_row_and_no_exit_row_and_other_ends_leave_none(tmp_path, monkeypatch):
+    proc, pid, data = _run_wrapper(tmp_path, "exit 58\n")
+    assert proc.returncode == 58
+    rows = [json.loads(x) for x in (data / "diagnostics" / "launcher_stops.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1 and rows[0]["pid"] == pid and rows[0]["signal"] is None and rows[0]["boot_id"] is None
+    assert set(rows[0]) == {"schema", "at", "pid", "boot_id", "signal", "status"} and rows[0]["schema"] == "oo-launcher-stop-1"
+    assert rows[0]["status"] == 58, "the copy's substituted status; the shipped script writes -1073741510"
+    assert not (data / "diagnostics" / "launcher_exits.jsonl").exists()
+    for n, (body, code) in enumerate((("exit 0\n", 0), ("exit 5\n", 5))):
+        sub = tmp_path / f"other{n}"
+        sub.mkdir()
+        _, _, d2 = _run_wrapper(sub, body)
+        assert not (d2 / "diagnostics" / "launcher_stops.jsonl").exists(), f"exit {code} is not a Ctrl-C"
+
+
+def test_the_reader_names_a_windows_ctrl_c_row_and_refuses_a_null_signal_with_any_other_status(dd):
+    _write(dd, ee.LAUNCHER_STOPS,
+           {"schema": "oo-launcher-stop-1", "at": "2026-10-17T10:00:00Z", "pid": 31, "boot_id": None, "signal": None, "status": _WIN_CTRL_C},
+           {"schema": "oo-launcher-stop-1", "at": "2026-10-17T10:00:00Z", "pid": 32, "boot_id": None, "signal": None, "status": 5},
+           {"schema": "oo-launcher-stop-1", "at": "2026-10-17T10:00:00Z", "pid": 33, "boot_id": None, "signal": None})
+    got = ee.launcher_exit(31, None, "2026-10-17T09:00:00Z")
+    assert got["kind"] == "stop asked" and got["signal"] == "Ctrl-C" and "(Ctrl-C)" in got["meaning"] and "Not a crash" in got["meaning"]
+    assert "launch_server.ps1" in got["seen_by"]
+    assert ee.launcher_exit(32) is None and ee.launcher_exit(33) is None
+    assert ee.launcher_exit(31, None, "2026-10-17T11:00:00Z") is None, "a row older than the session is another process's (no boot id on Windows)"
+    said = ee.how_it_ended(launcher=got, killers=None, kernel=None, trace=None)
+    assert "Ctrl-C" in said["summary"] and "not a crash" in said["summary"]
+
+
+def test_the_windows_stop_block_is_no_wider_than_the_exit_block_it_takes_the_place_of(dd):
+    _write(dd, ee.LAUNCHER_STOPS, {"schema": "oo-launcher-stop-1", "at": "2026-10-17T10:00:00+00:00", "pid": 4294967295, "boot_id": None, "signal": None, "status": _WIN_CTRL_C})
+    block = ee.launcher_exit(4294967295, None)
+    assert block is not None and block["kind"] == "stop asked"
+    wide = ee.describe_exit({"at": "2026-10-17T10:00:00+00:00", "started_at": "2026-10-17T09:00:00+00:00", "status": 2**32, "signal": "SIGXXXXXXXXXX"})
+    widest_signal = max((ee.describe_exit({"at": "2026-10-17T10:00:00+00:00", "started_at": "2026-10-17T09:00:00+00:00", "status": 137, "signal": sg}) for sg in ee._SIGNAL_MEANING), key=lambda d: len(json.dumps(d)))  # noqa: SLF001
+    got = len(json.dumps(block, separators=(",", ":")))
+    widest = max(len(json.dumps(wide, separators=(",", ":"))), len(json.dumps(widest_signal, separators=(",", ":"))))
+    assert got <= widest, f"the Windows stop block is {got} B, the exit block's widest is {widest} B"
+    print(f"windows stop block {got} B, widest exit block {widest} B")
