@@ -1,4 +1,4 @@
-## 2026-10-17 — Test "the cleanup survives an allocation failure" by failing every instruction that can allocate, not every line (PR #1429)
+## 2026-10-17 — Test "the cleanup survives an allocation failure" by failing every instruction that can allocate, not every line (PR #1435)
 
 **What was found.** The question was whether ``swap_window``'s cleanup gives the exclusive library lock back when a MemoryError lands inside it. Read, it looked fine (a ``finally`` that releases); forced, it was not: with a MemoryError raised before each allocating instruction of the cleanup in turn, the lock stayed held at 5 of 10 instructions on main and on the build the 10-16 instances run, and at 2 of 13 on ``#1426`` plus one lost wake-up. A held lock blocks every later ``connecting()`` (every new pooled connection) in ``shared()``, which had no timeout, until the process restarts. The write gate was never at risk: the caller's ``with write_lock():`` unwinds on the error (0 of 34 forced failures left it held).
 
