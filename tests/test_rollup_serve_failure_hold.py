@@ -224,3 +224,13 @@ def test_the_stage_a_real_build_had_reached_is_the_failure_holds_stage(monkeypat
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     assert rollup_serve._build_and_swap() == "failed"
     assert rollup_serve._STATE["stopped"]["stage"] == "aggregate"
+
+
+def test_last_outcome_keeps_saying_failed_while_the_hold_refuses_the_requests_that_follow(monkeypatch):
+    builds: list[int] = []
+    _run(monkeypatch, builds, raises=KeyError("k"))
+    assert rollup_serve.status()["last_outcome"] == "failed"
+    assert [_run(monkeypatch, builds) for _ in range(3)] == ["declined"] * 3
+    assert len(builds) == 1, "the hold refused the later requests: no build ran"
+    st = rollup_serve.status()
+    assert st["last_outcome"] == "failed" and st["consecutive_failures"] == 1

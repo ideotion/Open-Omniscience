@@ -1162,6 +1162,7 @@ def _build_and_swap() -> str:
 
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
     outcome = "failed"
+    ran = False  # a build was started (not refused by a verdict): only then does ``last_outcome`` change
     _LAST_STAGE["value"] = None  # a decline of an earlier build left its stage here: this build reports its own or none
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
@@ -1193,6 +1194,7 @@ def _build_and_swap() -> str:
             )
             outcome = "declined"
             return outcome
+        ran = True
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:
@@ -1255,8 +1257,9 @@ def _build_and_swap() -> str:
         return outcome
     finally:
         _LAST_OUTCOME["value"] = outcome
-        with _LOCK:
-            _STATE["last_outcome"] = outcome
+        if ran or outcome == "failed":  # a request the hold refuses ran no build: the field says how the last build that ENDED ended
+            with _LOCK:
+                _STATE["last_outcome"] = outcome
         _BUILD_LOCK.release()
 
 
