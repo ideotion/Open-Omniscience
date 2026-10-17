@@ -229,3 +229,24 @@ def test_two_looks_that_find_different_owners_are_not_a_stuck_lock(monkeypatch):
     looks = iter([(11, ("settings save", 1.0)), None])
     monkeypatch.setattr(kv_store, "_stuck_owner", lambda: next(looks))
     kv_store._refuse_if_stuck()  # noqa: SLF001 - gone on the second look
+
+
+def test_the_api_answers_a_stuck_lock_as_a_503_with_the_fixed_words_and_no_retry_after():
+    """The handler of ``KvWriteRefused`` serves ``KvLockStuck`` too. ``Retry-After: 30`` is the restore-switch answer ("try again soon");
+    a lock left held clears only with a restart, so the same header on it would promise a retry that cannot succeed."""
+    import asyncio
+
+    from starlette.requests import Request
+
+    from src.api.main import app, settings_write_refused_handler
+
+    request = Request({"type": "http", "method": "PUT", "path": "/api/settings", "headers": []})
+    stuck = kv_store.KvLockStuck("settings save", "worker thread", "2026-10-17 06:00:00 UTC")
+    response = asyncio.run(settings_write_refused_handler(request, stuck))
+    assert kv_store.KvWriteRefused in app.exception_handlers
+    assert response.status_code == 503
+    assert "Restart Open Omniscience" in response.body.decode("utf-8")
+    assert "retry-after" not in response.headers, "a stuck lock never clears by waiting, so no retry time is promised"
+    # The restore-switch refusal keeps its header: the stuck case must not have changed it.
+    refused = asyncio.run(settings_write_refused_handler(request, kv_store.KvWriteRefused(kv_store._REFUSED_TEXT)))
+    assert refused.status_code == 503 and refused.headers["retry-after"] == "30"
