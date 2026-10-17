@@ -168,7 +168,7 @@ def test_a_serving_rollup_runs_them_and_so_does_a_serve_that_is_off_by_design(sp
     for kwargs in ({"enabled": True, "built": True}, {"enabled": False, "built": False}):
         _no_rollup(monkeypatch, **kwargs)
         ran = []
-        registry.register("rising_now", lambda _s: (ran.append(1), [])[1])
+        registry.register("rising_now", lambda _s, ran=ran: (ran.append(1), [])[1])
         card_audit.observe_producers(object())
         assert ran == [1], kwargs
 
