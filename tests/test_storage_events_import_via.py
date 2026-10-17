@@ -43,7 +43,7 @@ from tests.test_storage_events_runs import (
     _finish,
     _nothing_secret_anywhere,
     _only,
-    raise_is_recorded_by_a_wrapper,
+    raise_is_recorded_by_the_net,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -201,7 +201,8 @@ def test_a_file_that_cannot_be_read_is_an_error_with_the_class(journal, legacy, 
     with pytest.raises(HTTPException):
         backup_v2.restore_legacy_path(str(legacy), PASS)
     event = _only("run_import")
-    assert (event["outcome"], event["error"]) == ("error", "PermissionError")
+    # the class of what leaves the block: the response the handler of the read builds, which a guard test keeps the record from looking behind
+    assert (event["outcome"], event["error"]) == ("error", "HTTPException")
     _nothing_secret_anywhere(journal, PASS, MARKER, str(legacy))
 
 
@@ -216,6 +217,7 @@ def test_a_file_that_cannot_be_opened_as_a_backup_is_an_error_not_a_run_left_ope
         backup_v2.restore_legacy_path(str(legacy), PASS)
     assert caught.value.status_code == 400
     event = _only("run_import")
+    # the class of the response (what leaves the block); the engine's own class would need a read of the error's chain, which the records guard refuses
     assert (event["outcome"], event["error"], event["open"]) == ("error", "HTTPException", False)
     _nothing_secret_anywhere(journal, PASS, MARKER)
 
@@ -427,7 +429,7 @@ def _each_raise_follows_a_record(fn: ast.FunctionDef, names: set[str]) -> int:
             for i, stmt in enumerate(block):
                 if isinstance(stmt, ast.Raise):
                     raises += 1
-                    recorded = any(_is_record(earlier, names) for earlier in block[:i]) or raise_is_recorded_by_a_wrapper(fn, stmt)
+                    recorded = any(_is_record(earlier, names) for earlier in block[:i]) or raise_is_recorded_by_the_net(fn, stmt)
                     assert recorded, f"{fn.name}:{stmt.lineno}: a raise with no record before it"
     return raises
 
@@ -448,13 +450,36 @@ def _has_the_finally_net(fn: ast.FunctionDef) -> bool:
 
 
 def test_the_legacy_restore_and_the_import_worker_close_their_run_in_a_finally_net():
-    assert _has_the_finally_net(_function("src/api/backup_v2.py", "restore_legacy_path"))
+    """The worker has its ``try``/``finally``; the legacy restore's is ``run_open``'s (a ``with`` on the header that already converted its
+    errors, so no line of the body moves: see ``test_the_path_checks_stay_where_they_were_written_and_nothing_wraps_or_enters_them``)."""
     assert _has_the_finally_net(_function("src/ingest/import_job.py", "_run"))
+    legacy = _function("src/api/backup_v2.py", "restore_legacy_path")
+    assert sum(isinstance(n, ast.With) and any("run_open" in ast.unparse(i.context_expr) for i in n.items) for n in ast.walk(legacy)) == 1
 
 
 def test_every_raise_of_the_two_starts_follows_a_record():
     assert _each_raise_follows_a_record(_function("src/ingest/import_job.py", "start"), {"run_refused"}) == 2
-    assert _each_raise_follows_a_record(_function("src/api/backup_v2.py", "restore_legacy_path"), {"run_refused", "run_ended"}) >= 6
+
+
+def test_every_raise_of_the_legacy_restore_ends_in_a_record():
+    """The refusal of a path that is no file is the net's (its message ends as the net reads it); every other raise is made inside the
+    ``with`` that holds the run open, whose exit ends it as the mapping of what escaped says. A raise outside both is a start or an exit
+    that leaves nothing behind."""
+    fn = _function("src/api/backup_v2.py", "restore_legacy_path")
+    parent = {child: node for node in ast.walk(fn) for child in ast.iter_child_nodes(node)}
+    raises = [n for n in ast.walk(fn) if isinstance(n, ast.Raise)]
+    assert len(raises) >= 6
+
+    def inside_the_run(node: ast.AST) -> bool:
+        up = parent.get(node)
+        while up is not None and up is not fn:
+            if isinstance(up, ast.With) and any("run_open" in ast.unparse(i.context_expr) for i in up.items):
+                return True
+            up = parent.get(up)
+        return False
+
+    for stmt in raises:
+        assert inside_the_run(stmt) or raise_is_recorded_by_the_net(fn, stmt), f"restore_legacy_path:{stmt.lineno}: a raise nothing records"
 
 
 def test_the_new_hooks_are_called_through_the_modules_journal_and_hand_over_no_text():

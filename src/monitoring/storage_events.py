@@ -992,6 +992,32 @@ def _run_fields(facts: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+class _RefusalScope:
+    """What one start has written so far, so that the net round it (:func:`run_refusals_net`) never records the same start twice. A net
+    inside another one (a restore run from a queue item) marks the ones round it as well: the error it re-raises is the same error."""
+
+    __slots__ = ("recorded", "parent")
+
+    def __init__(self, parent: _RefusalScope | None = None) -> None:
+        self.recorded = False
+        self.parent = parent
+
+    def mark(self) -> None:
+        scope: _RefusalScope | None = self
+        while scope is not None:
+            scope.recorded = True
+            scope = scope.parent
+
+
+_REFUSAL_SCOPE: contextvars.ContextVar[_RefusalScope | None] = contextvars.ContextVar("storage_events_refusal_scope", default=None)
+
+
+def _scope_has_written() -> None:
+    scope = _REFUSAL_SCOPE.get()
+    if scope is not None:
+        scope.mark()
+
+
 class RunNote:
     """A run opened in the journal: which kind, the key it is addressable by while this process runs, and when it began (monotonic)."""
 
@@ -1007,6 +1033,7 @@ def run_started(what: str, **facts: Any) -> RunNote | None:
     """Open a run of ``what`` (``export``, ``import`` or ``verify``): written OPEN, so a process killed in the middle of it leaves
     "started, never ended". Returns the note the later calls take, or None (an unknown ``what``, or the journal could not record it:
     every later call then does nothing). Never raises, never touches the disk."""
+    _scope_has_written()  # a run began: the net round the start has nothing left to say
     try:
         kind = RUN_KINDS.get(what)
         if kind is None:
@@ -1083,6 +1110,7 @@ def run_refused(what: str, reason: str, *, failure: str | None = None, via: str 
     """Record a start that was refused before any run existed (the run journal opens nothing for it), closed in one write: the outcome,
     ``ran`` False, the fixed sentence of ``reason`` (a key of :data:`RUN_REFUSALS`), the way in (``via``, a key of :data:`RUN_VIA`) and,
     if given, the class name. Never raises."""
+    _scope_has_written()  # one start, one refusal: the net round it records nothing after this
     try:
         kind = RUN_KINDS.get(what)
         if kind is None:
@@ -1112,33 +1140,69 @@ def run_path_checked(what: str, *, via: str | None = None) -> Iterator[None]:
         raise
 
 
-@contextmanager
-def run_refused_if_raised(
-    what: str, reason: str, exc_type: type[BaseException] | tuple[type[BaseException], ...], *, via: str | None = None
-) -> Iterator[None]:
-    """Around the ONE statement that refuses a start by raising ``exc_type`` (the ``if not path.is_dir(): raise ...`` of a start): the
-    refusal is recorded (``reason``, a key of :data:`RUN_REFUSALS`, and the way in) and the exception goes on unchanged. The checking
-    statement stays as it was written, byte for byte, which is why this is a wrapper and not a call inside its branch: code scanning
-    fingerprints a path check by its own text and the text that follows it, so a line added there makes an old finding a new one."""
-    try:
-        yield
-    except exc_type:
-        run_refused(what, reason, via=via)
-        raise
+#: What a start that checks a folder before it runs reads as, when the one statement that looks at the path answers "no": the error it
+#: raises is a ``ValueError``, and the journal's key is ``not-a-folder``. Handed to :func:`run_refusals_net` as ``refused_as``.
+NOT_A_FOLDER: tuple[tuple[type[Exception], str], ...] = ((ValueError, "not-a-folder"),)
 
 
 @contextmanager
-def run_ended_if_raised(
-    note: RunNote | None, outcome: str, exc_type: type[BaseException] | tuple[type[BaseException], ...], *, reason: str | None = None
+def run_refusals_net(
+    what: str, *, via: str | None = None, refused_as: tuple[tuple[type[Exception], str], ...] = ()
 ) -> Iterator[None]:
-    """Around the ONE statement whose ``exc_type`` failure ends the run under ``note`` (the read of the file being restored): the run is
-    closed with ``outcome``, the CLASS NAME of the failure (never its message) and, if given, a key of :data:`RUN_REFUSALS`, and the
-    exception goes on unchanged for the caller's own handler. A wrapper for the same reason as :func:`run_refused_if_raised`."""
+    """Round a whole start (a ``with self._lock:`` header, or the decorator of a function): the start that is refused by the one
+    statement that looks at a path leaves a refusal record, and the error goes on unchanged for the caller.
+
+    What it records, and only when nothing else was recorded inside it (a refusal written by a hook in the body, or a run opened there,
+    stands in for it): an ``OSError`` is ``path-unreadable`` (Python 3.13's ``Path.is_dir``, ``exists`` and ``is_file`` re-raise every
+    error but a missing path, so a dropped mount or a too-long name reaches here); an error of a class in ``refused_as`` (pairs of a class
+    and a key of :data:`RUN_REFUSALS`) is that refusal; any other error is not named, and so not recorded here.
+
+    THE CLASS IS ALL THAT IS READ. No word of the error is looked at, so nothing a request chose (a path, a passphrase) can reach the
+    record. The price is that a class stands for a place: ``refused_as`` is only given where the one error of that class a start can
+    leave unrecorded is the path check's own (the tests read every ``raise`` of the guarded functions, and a ``raise`` of that class
+    written anywhere else in them must be recorded where it is raised).
+
+    WHY A NET AND NOT A WRAPPER ROUND THE STATEMENT. Code scanning reports a finding on a pull request for a line the pull request
+    changes. A wrapper round ``if not destp.is_dir():`` moves that line (one level in), and a record inside the branch changes the text
+    that follows it: either way a check that was already on the base branch comes back as a new finding of the pull request, whatever
+    its text hashes to. A net round the header leaves the statement and its neighbours exactly as they were written."""
+    scope = _RefusalScope(_REFUSAL_SCOPE.get())
+    token = _REFUSAL_SCOPE.set(scope)
     try:
         yield
-    except exc_type as exc:
-        run_ended(note, outcome, failure=type(exc).__name__, reason=reason)
+    except OSError as exc:
+        if not scope.recorded:
+            run_refused(what, "path-unreadable", failure=type(exc).__name__, via=via)
         raise
+    except Exception as exc:
+        if not scope.recorded:
+            for cls, key in refused_as:
+                if isinstance(exc, cls):
+                    run_refused(what, key, failure=type(exc).__name__, via=via)
+                    break
+        raise
+    finally:
+        _REFUSAL_SCOPE.reset(token)
+
+
+@contextmanager
+def run_open(what: str, *, via: str, free: str = "data_free_bytes", **facts: Any) -> Iterator[RunNote | None]:
+    """A run in the journal for the length of a ``with`` block, in place of a ``try``/``finally`` that would move the block's lines.
+
+    Opens the run (:func:`run_started`, then the free bytes under ``free``), hands the note to the block and closes the run on the way
+    out: an error that leaves the block ends it as ``error`` with the CLASS NAME of the failure (of what leaves the block: for an HTTP error built from another, the
+    HTTP error's), unless the block already ended it as
+    something it knows better (``refused``, ``stopped-by-operator``: the first outcome written stands), and whatever is still open ends as
+    ``ended-without-a-recorded-outcome``, a no-op for a run already closed. The error goes on unchanged. Never raises of its own."""
+    note = run_started(what, via=via, **facts)
+    run_free_space(note, free)
+    try:
+        yield note
+    except Exception as exc:
+        run_ended(note, "error", failure=type(exc).__name__)
+        raise
+    finally:
+        run_ended(note, "ended-without-a-recorded-outcome")
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------
