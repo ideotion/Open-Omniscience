@@ -321,9 +321,10 @@ def test_a_short_punctuated_line_is_not_a_sentence():
 
 
 def test_closer_stripping_cost_grows_linearly_with_whitespace():
-    """The closers regex once backtracked cubically (and its simple replacement was quadratic) (4x the input = ~64x the time). Compare 10k with
-    40k whitespace on the same run, best of 3 each: linear is ~4x, cubic ~64x, so a 20x bound holds
-    on a loaded runner (measured here: ~4x) without a wall-clock limit."""
+    """The closers regex once backtracked cubically, and its first replacement was quadratic. Compare
+    10k with 160k whitespace on the same run, best of 3 each: linear is ~16x, quadratic ~256x, cubic
+    ~4096x, so a 64x bound separates them with margin and needs no wall-clock limit (measured: 160k
+    takes ~1.3 ms)."""
     import time
 
     from src.ingest.furniture import _without_closers
@@ -337,4 +338,4 @@ def test_closer_stripping_cost_grows_linearly_with_whitespace():
             runs.append(time.perf_counter() - t)
         return max(min(runs), 1e-7)
 
-    assert best(40_000) / best(10_000) < 20
+    assert best(160_000) / best(10_000) < 64
