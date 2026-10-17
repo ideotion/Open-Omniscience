@@ -299,7 +299,8 @@
     // lands, or "not counted" with the reason, never a silent dash. The long form rides the hover bubble (layered, not hidden).
     function _kwPerArticleTile(fig, t, num, tile) {
       const label = t("Avg keywords / article");
-      const clock = iso => { try { return new Date(iso).toLocaleTimeString(); } catch (e) { return iso || "—"; } };
+      // null is not a time: new Date(null) is the epoch, so an unknown start would print as "12:00:00 AM".
+      const clock = iso => { if (!iso) return "—"; try { return new Date(iso).toLocaleTimeString(); } catch (e) { return iso; } };
       if (fig.keyword_mentions_state === "computing") {
         return tile(t("counting…"), label,
           t("Counting every keyword mention in the background since {t}; the other figures are exact now.")
