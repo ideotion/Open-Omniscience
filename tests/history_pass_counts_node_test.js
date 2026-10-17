@@ -47,7 +47,8 @@ function load(win) {
 }
 
 const NNBSP = " ";
-const text = (html) => html.replace(/<[^>]*>/g, "");
+// Tags become a space (never nothing), so the text that was either side of a tag cannot join into new markup; runs of ASCII white space collapse (the narrow no-break space of a thousands group is kept).
+const text = (html) => html.replace(/<[^>]*>/g, " ").replace(/[ \t\r\n]+/g, " ").replace(/^ | $/g, "");
 const basisSpan = (html) => (html.match(/<span class="basis"[^>]*>([^<]*)<\/span>/) || [])[1];
 
 // 1. a pass that raised, with counts: the basis word is on the row; the numbers are the record's.
