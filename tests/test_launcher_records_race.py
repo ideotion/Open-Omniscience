@@ -76,7 +76,7 @@ def _rows(path: Path) -> tuple[list[dict], int]:
 class _Bash:
     """Launchers over ONE data folder. Each gets a bin folder of its own: a stub rewritten under a running bash script changes what it runs."""
 
-    def __init__(self, tmp: Path, *, no_flock: bool = False):
+    def __init__(self, tmp: Path, *, no_flock: bool = False, awk: str | None = None):
         self.tmp = tmp
         self.data = tmp / "data"
         self.root = tmp / "oo"
@@ -86,6 +86,11 @@ class _Bash:
         (self.root / ".venv" / "bin").mkdir(parents=True)
         (self.root / ".venv" / "bin" / "activate").write_text("", encoding="utf-8")
         self.base_path = os.environ["PATH"]
+        if awk:  # an awk of the named implementation first on the PATH, as the all-awk test of the filter does
+            d = tmp / "awkbin"
+            d.mkdir()
+            _exe(d / "awk", f'#!/bin/sh\nexec "{awk}" "$@"\n')
+            self.base_path = f"{d}{os.pathsep}{self.base_path}"
         if no_flock:  # every tool but flock, so the launcher takes the mkdir-lock path
             tools = tmp / "tools"
             tools.mkdir()
@@ -288,3 +293,121 @@ def test_the_ps1_text_has_the_mutex_the_replace_and_a_row_per_attempt():
     assert "System.Threading.Mutex" in t and "[System.IO.File]::Replace(" in t and "[NullString]::Value" in t
     assert "$writable = $false" not in t, "a failed append no longer switches the later rows off"
     assert "WriteAllLines($exitRecord" not in t and "WriteAllLines($stopRecord" not in t and "WriteAllLines($stderrRecord" not in t
+
+
+# --- what the change leaves behind, and what keeps it from going back (R173 confirmations) -------------------------------------------------
+
+@posix_only
+def test_the_rows_are_the_bytes_they_were_before_the_lock(tmp_path):
+    """No new field and no new byte: the exact shape of every row, with the time and the pids blanked."""
+    b = _Bash(tmp_path)
+    p, _ = b.start("a", "slowerr")
+    p.wait(timeout=60)
+    q, qpf = b.start("w", "wait")
+    end = time.monotonic() + 20
+    while not Path(str(qpf) + ".up").exists() and time.monotonic() < end:
+        time.sleep(0.05)
+    time.sleep(0.8)
+    os.kill(q.pid, signal.SIGTERM)
+    q.wait(timeout=60)
+
+    def shape(name):
+        return re.sub(r'"(at|started_at)":"[^"]*"|"pid":\d+|"boot_id":"[^"]*"', lambda m: m.group(0).split(":")[0] + ":X", (b.data / "diagnostics" / name).read_text(encoding="utf-8"))
+
+    assert shape("launcher_exits.jsonl") == '{"schema":"oo-launcher-exit-1","at":X,"started_at":X,"pid":X,"boot_id":X,"status":3,"signal":null}\n'
+    assert shape("launcher_stops.jsonl") == '{"schema":"oo-launcher-stop-1","at":X,"pid":X,"boot_id":X,"signal":"SIGTERM"}\n'
+    line = '{"schema":"oo-launcher-stderr-1","at":X,"pid":X,"boot_id":X,"line":"' + MSG + '"}\n'
+    assert shape("launcher_stderr.jsonl") == line + line + ('{"schema":"oo-launcher-stderr-1","at":X,"pid":X,"boot_id":X,"summary":true,"kept_lines":2,"dropped_lines":0,"over_cap_lines":0}\n'
+                                                      + '{"schema":"oo-launcher-stderr-1","at":X,"pid":X,"boot_id":X,"summary":true,"kept_lines":0,"dropped_lines":0,"over_cap_lines":0}\n')
+
+
+@posix_only
+def test_after_a_normal_exit_only_the_empty_flock_files_are_left(tmp_path):
+    pids, f = _exits_round(tmp_path, 3)
+    left = sorted(x.name for x in f.parent.iterdir())
+    assert left == ["launcher_exits.jsonl", "launcher_exits.jsonl.lock", "launcher_stderr.jsonl", "launcher_stderr.jsonl.lock"], left
+    assert all(x.stat().st_size == 0 for x in f.parent.glob("*.lock")), "the lock files hold no bytes"
+
+
+@posix_only
+def test_the_mkdir_lock_leaves_nothing_after_a_normal_exit(tmp_path):
+    pids, f = _exits_round(tmp_path, 3, no_flock=True)
+    assert sorted(x.name for x in f.parent.iterdir()) == ["launcher_exits.jsonl", "launcher_stderr.jsonl"], "the rows' files and nothing of the lock"
+
+
+@posix_only
+def test_a_killed_holder_leaves_its_lock_directory_and_the_next_append_takes_it_over_and_removes_it(tmp_path):
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    f.write_text("", encoding="utf-8")
+    # the holder is killed with SIGKILL while it holds the lock (it kills the shell that took the lock)
+    subprocess.run(["bash", "-c", f'. "{h}"; oo_rec_locked "{f}" bash -c \'kill -9 $PPID\''], env=env, timeout=30)
+    d = tmp_path / "x.jsonl.lock.d"
+    assert d.is_dir() and [x.name for x in d.iterdir()] == ["pid"], "the stale lock stays until the next launcher"
+    assert (d / "pid").stat().st_size <= 8, "a pid and a newline: the only bytes a killed holder can leave"
+    subprocess.run(["bash", "-c", f'. "{h}"; oo_rec_append "{f}" \'{{"pid":3}}\' 40 20'], env=env, check=True, timeout=30)
+    assert not d.exists() and sorted(x.name for x in tmp_path.iterdir() if x.name.startswith("x.")) == ["x.jsonl"]
+    assert _rows(f)[0] == [{"pid": 3}]
+
+
+@posix_only
+def test_a_temp_file_left_by_a_killed_trim_is_removed_by_the_next_trim_and_a_live_ones_is_not(tmp_path):
+    h, env = _helpers(tmp_path, no_flock=False)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 60)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    live = subprocess.Popen(["sleep", "30"])
+    try:
+        (tmp_path / f"x.jsonl.tmp.{dead.pid}").write_text("x" * 100, encoding="utf-8")
+        (tmp_path / f"x.jsonl.tmp.{live.pid}").write_text("y", encoding="utf-8")
+        subprocess.run(["bash", "-c", f'. "{h}"; oo_rec_append "{f}" \'{{"pid":4}}\' 40 20'], env=env, check=True, timeout=30)
+        names = sorted(x.name for x in tmp_path.iterdir() if x.name.startswith("x.jsonl.tmp"))
+    finally:
+        live.kill()
+        live.wait()
+    assert names == [f"x.jsonl.tmp.{live.pid}"], names
+
+
+@posix_only
+def test_the_filter_is_handed_the_helper_source_not_exported_functions():
+    """Pin for the eval path: an exported bash function did not reach the shell the one-true-awk starts, and every row was lost with a close status of 0."""
+    src = LAUNCH_SH.read_text(encoding="utf-8")
+    assert "export -f" not in src, "a function in the environment is also copied into the server's environment"
+    assert 'eval \\"$OO_REC_LIB\\"' in src and 'OO_REC_LIB="$(oo_rec_lib)"' in src
+
+
+@posix_only
+@pytest.mark.skipif(not shutil.which("original-awk"), reason="no one-true-awk here")
+def test_the_filter_records_under_the_one_true_awk(tmp_path):
+    b = _Bash(tmp_path, awk=shutil.which("original-awk"))
+    f = b.data / "diagnostics" / "launcher_stderr.jsonl"
+    p, pf = b.start("A", "slowerr")
+    p.wait(timeout=60)
+    mine = _rows(f)[0]
+    assert sum(1 for r in mine if "line" in r) == 2 and sum(1 for r in mine if r.get("summary")) == 1, mine
+
+
+@_needs_pwsh
+def test_a_powershell_trim_removes_the_temp_file_of_a_dead_launcher_and_keeps_a_live_ones(tmp_path):
+    copy = tmp_path / "w.ps1"
+    copy.write_text(LAUNCH_PS1.read_text(encoding="utf-8"), encoding="utf-8")
+    data = tmp_path / "data"
+    f = data / "diagnostics" / "launcher_exits.jsonl"
+    _seed(f, 45)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    live = subprocess.Popen(["sleep", "30"])
+    try:
+        (f.parent / f"launcher_exits.jsonl.tmp.{dead.pid}").write_text("x" * 50, encoding="utf-8")
+        (f.parent / f"launcher_exits.jsonl.tmp.{live.pid}").write_text("y", encoding="utf-8")
+        server = tmp_path / "server"
+        _exe(server, "#!/usr/bin/env bash\nexit 3\n")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("OO_")}
+        subprocess.run([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(server), "-DataDir", str(data)], env=env, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        names = sorted(x.name for x in f.parent.glob("launcher_exits.jsonl.tmp.*"))
+    finally:
+        live.kill()
+        live.wait()
+    assert names == [f"launcher_exits.jsonl.tmp.{live.pid}"], names

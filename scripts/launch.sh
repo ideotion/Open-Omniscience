@@ -159,6 +159,13 @@ _oo_rec_trim() {
     local f="$1" max="$2" keep="$3"
     [ "$max" -gt 0 ] || return 0
     if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt "$max" ]; then
+        # a temp file left by a launcher that was killed between its tail and its mv is removed here: its name carries that launcher pid
+        for _t in "$f".tmp.*; do
+            [ -e "$_t" ] || continue
+            _tp="${_t##*.tmp.}"
+            case "$_tp" in ''|*[!0-9]*) continue ;; esac
+            [ "$_tp" = "$$" ] || oo_pid_alive "$_tp" || rm -f "$_t" 2>/dev/null
+        done
         tail -n "$keep" "$f" > "$f.tmp.$$" 2>/dev/null && mv -f "$f.tmp.$$" "$f" 2>/dev/null || rm -f "$f.tmp.$$"
     fi
     return 0

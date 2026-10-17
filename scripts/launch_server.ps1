@@ -78,6 +78,15 @@ function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep) {
 }
 function Limit-Rows([string]$Path, [int]$Max, [int]$Keep) {
     $tmp = "$Path.tmp.$PID"
+    # a temp file left by a launcher that was killed mid-trim is removed: its name carries that launcher process id
+    try {
+        foreach ($old in [System.IO.Directory]::GetFiles((Split-Path -Parent $Path), ((Split-Path -Leaf $Path) + ".tmp.*"))) {
+            $oldPid = 0
+            if ([int]::TryParse(($old -replace '^.*\.tmp\.', ''), [ref]$oldPid) -and $oldPid -ne $PID -and -not (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {
+                Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch { }
     try {
         $rows = [System.IO.File]::ReadAllLines($Path, $Utf8)
         if ($rows.Length -gt $Max) {
