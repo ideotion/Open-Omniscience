@@ -318,6 +318,9 @@ def test_a_failed_count_is_tried_again_after_its_window_even_when_nothing_was_wr
     try:
         dbmod.library_figures(s)
         assert _wait(lambda: (_entry("db:figures") or {}).get("payload", {}).get("keyword_mentions_state") == "failed")
+        # the entry is stored inside the background thread's session; the build lock is released after that session closes. A poll
+        # that lands in the gap finds the lock taken and starts nothing, which is correct and would make this wait time out.
+        assert _wait(lambda: not served_cache._build_lock("db:figures").locked())
         with served_cache._LOCK:
             served_cache._CACHE["db:figures"]["checked_at"] -= dbmod._FIGURES_FAILURE_WINDOW_S + 5  # the window has ended
         dbmod.library_figures(s)
@@ -346,4 +349,6 @@ def test_a_memory_stop_is_named_as_a_memory_stop_not_as_a_deadline(monkeypatch):
     finally:
         s.close()
     assert out["keyword_mentions_failure"]["kind"] == "memory-short"
-    assert "120" not in str(out), "the guard's own numbers are not copied into the figure's failure"
+    assert "floor" not in str(out["keyword_mentions_failure"]) and "MB" not in str(out["keyword_mentions_failure"]), (
+        "the guard's own words and numbers are not copied into the figure's failure"
+    )
