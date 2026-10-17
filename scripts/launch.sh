@@ -96,6 +96,97 @@ oo_data_dir() {
     fi
 }
 
+# --- the evidence files and the launchers that share them (R173, 17 Oct) ---------------------------------------------------------------------
+# launcher_exits.jsonl, launcher_stops.jsonl and launcher_stderr.jsonl are written and trimmed by every launcher that runs, and a launcher keeps
+# writing for as long as its server lives. A trim is "newest N lines to a temp file, rename over the file": an append between the two steps went
+# to the replaced file, two trims shared one temp name, and the stderr filter held the file open for the whole life of the server, so a trim by
+# launcher's trim sent every later row of a live one to a file nobody could read (measured: 8 of 96 exit rows, 69 of 96 stop rows, and all 3 stderr
+# rows of the launcher whose server was alive, in tests/test_launcher_records_race.py). Now every append and every trim of one file happens under
+# ONE lock for that file (flock where there is one, else a directory made with mkdir that holds its owner's pid, so a lock whose owner died is taken
+# over and never waited on), a trim writes to a temp name of its own, and the filter appends one row at a time.
+# WHAT THE WAIT PROTECTS: a row is never lost to wait for a lock. When the wait runs out the row is still appended and only the trim is skipped
+# (the file grows until the next trim that gets the lock). The launcher never blocks its own start or stop on this lock longer than the wait.
+# OO_REC_LOCK_WAIT_MS is the longest append-plus-trim hold measured under 8 launchers at once (27.3 ms, 17 Oct), rounded up to 30 (tests/test_launcher_records_race.py
+# pins that the constant is not below that measurement).
+OO_REC_LOCK_WAIT_MS=30
+
+oo_pid_alive() {
+    if [ -d /proc/self ]; then [ -d "/proc/$1" ]; else kill -0 "$1" 2>/dev/null; fi
+}
+
+# oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run),
+# else CMD's own status.
+oo_rec_locked() {
+    local f="$1" rc=0 d tries owner
+    shift
+    if command -v flock >/dev/null 2>&1; then
+        { : >> "$f.lock"; } 2>/dev/null || return 99
+        (
+            flock -w "$(awk -v ms="$OO_REC_LOCK_WAIT_MS" 'BEGIN { printf "%.3f", ms / 1000 }')" 9 || exit 99
+            "$@"
+        ) 9>>"$f.lock" 2>/dev/null || rc=$?
+        return "$rc"
+    fi
+    d="$f.lock.d"
+    tries=$(( OO_REC_LOCK_WAIT_MS / 10 + 1 ))
+    while :; do
+        if mkdir "$d" 2>/dev/null; then
+            printf '%s\n' "$$" > "$d/pid" 2>/dev/null || true
+            "$@" || rc=$?
+            rm -rf "$d" 2>/dev/null || true
+            return "$rc"
+        fi
+        owner="$(cat "$d/pid" 2>/dev/null || true)"
+        case "$owner" in ''|*[!0-9]*) owner="" ;; esac
+        # the owner is gone: the lock is taken over. mv is atomic, so of two launchers taking it over only one moves it.
+        if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
+            mv "$d" "$d.dead.$$" 2>/dev/null && rm -rf "$d.dead.$$" 2>/dev/null
+        fi
+        tries=$((tries - 1))
+        [ "$tries" -gt 0 ] || return 99
+        sleep 0.01 2>/dev/null || sleep 1
+    done
+}
+
+# append ROW to FILE and, when FILE then has more than MAX lines (MAX 0: never), keep its newest KEEP lines
+_oo_rec_append_trim() {
+    local f="$1" row="$2" max="$3" keep="$4"
+    printf '%s\n' "$row" >> "$f" 2>/dev/null || return 1
+    _oo_rec_trim "$f" "$max" "$keep"
+    return 0
+}
+_oo_rec_trim() {
+    local f="$1" max="$2" keep="$3"
+    [ "$max" -gt 0 ] || return 0
+    if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt "$max" ]; then
+        tail -n "$keep" "$f" > "$f.tmp.$$" 2>/dev/null && mv -f "$f.tmp.$$" "$f" 2>/dev/null || rm -f "$f.tmp.$$"
+    fi
+    return 0
+}
+# oo_rec_append FILE ROW MAX KEEP: 0 appended, 1 the append failed
+oo_rec_append() {
+    local rc=0
+    oo_rec_locked "$1" _oo_rec_append_trim "$1" "$2" "$3" "$4" || rc=$?
+    if [ "$rc" -eq 99 ]; then
+        printf '%s\n' "$2" >> "$1" 2>/dev/null || return 1
+        return 0
+    fi
+    return "$rc"
+}
+oo_rec_trim() {
+    oo_rec_locked "$1" _oo_rec_trim "$1" "$2" "$3" || true
+}
+# the stderr filter hands each row to this, on stdin
+oo_rec_append_stdin() {
+    local row=""
+    IFS= read -r row || true
+    oo_rec_append "$1" "$row" 0 0
+}
+# The text of the helpers, for the filter: awk starts the appending shell itself, and a function exported through the environment does not reach it under
+# every awk and sh (measured: the one-true-awk lost every row, silently, with a close status of 0), so the shell is handed the definitions to eval.
+oo_rec_lib() { declare -f oo_pid_alive oo_rec_locked _oo_rec_append_trim _oo_rec_trim oo_rec_append oo_rec_append_stdin; }
+# --- end of the evidence file helpers ------------------------------------------------------------------------------------------------------
+
 # How the server ended when this launcher did not stop it (2026-09-26, the daily-crash
 # field reports). A process killed with SIGKILL -- the kernel's OOM killer,
 # systemd-oomd, earlyoom, a `kill -9` -- runs no code of its own, so its exit status
@@ -118,15 +209,11 @@ record_exit() {
     dd="$(oo_data_dir)"
     f="$dd/diagnostics/launcher_exits.jsonl"
     mkdir -p "$dd/diagnostics" 2>/dev/null || return 1
-    printf '{"schema":"oo-launcher-exit-1","at":"%s","started_at":"%s","pid":%s,"boot_id":%s,"status":%s,"signal":%s}\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER_STARTED_AT" "$SERVER" "$boot_json" "$status" "$sig_json" \
-        >> "$f" 2>/dev/null || return 1
-    EXIT_RECORD="$f"
     # Bounded: the newest 20 exits are plenty to see a pattern, and a crash loop must
     # never grow this file without limit.
-    if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt 40 ]; then
-        tail -n 20 "$f" > "$f.tmp" 2>/dev/null && mv -f "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp"
-    fi
+    oo_rec_append "$f" "$(printf '{"schema":"oo-launcher-exit-1","at":"%s","started_at":"%s","pid":%s,"boot_id":%s,"status":%s,"signal":%s}' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER_STARTED_AT" "$SERVER" "$boot_json" "$status" "$sig_json")" 40 20 || return 1
+    EXIT_RECORD="$f"
 }
 
 # A STOP SOMEBODY ASKED FOR (R168, 17 Oct). record_exit writes nothing for a stop the window itself saw (STOP_REQUESTED), so an end whose
@@ -144,11 +231,8 @@ record_stop() {
     dd="$(oo_data_dir)" || return 0
     f="$dd/diagnostics/launcher_stops.jsonl"
     mkdir -p "$dd/diagnostics" 2>/dev/null || return 0
-    printf '{"schema":"oo-launcher-stop-1","at":"%s","pid":%s,"boot_id":%s,"signal":"SIG%s"}\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER" "$boot_json" "$name" >> "$f" 2>/dev/null || return 0
-    if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt 40 ]; then
-        tail -n 20 "$f" > "$f.tmp" 2>/dev/null && mv -f "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp"
-    fi
+    oo_rec_append "$f" "$(printf '{"schema":"oo-launcher-stop-1","at":"%s","pid":%s,"boot_id":%s,"signal":"SIG%s"}' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER" "$boot_json" "$name")" 40 20 || true
     return 0
 }
 
@@ -226,12 +310,13 @@ STDERR_MAC_MAX=200
 stderr_filter() {
     # (INT, HUP, TERM and PIPE are already ignored here: the caller sets them, and an ignored signal stays ignored in children)
     OO_SF_OUT="$STDERR_RECORD" OO_SF_PIDFILE="$STDERR_PIDFILE" OO_SF_BOOT="$1" OO_SF_KEEP="$STDERR_KEEP" \
-    OO_SF_MSGS="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" OO_SF_MRE="$STDERR_MAC_RE" OO_SF_MRE_MAX="$STDERR_MAC_MAX" awk '
+    OO_REC_LIB="$(oo_rec_lib)" OO_REC_LOCK_WAIT_MS="$OO_REC_LOCK_WAIT_MS" OO_SF_MSGS="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" OO_SF_MRE="$STDERR_MAC_RE" OO_SF_MRE_MAX="$STDERR_MAC_MAX" awk '
     BEGIN {
         out = ENVIRON["OO_SF_OUT"]; pidfile = ENVIRON["OO_SF_PIDFILE"]; boot = ENVIRON["OO_SF_BOOT"]; keep = ENVIRON["OO_SF_KEEP"] + 0
         n = split(ENVIRON["OO_SF_MSGS"], list, "|")
         for (i = 1; i <= n; i++) ok[list[i]] = 1
         mre = ENVIRON["OO_SF_MRE"]; mmax = ENVIRON["OO_SF_MRE_MAX"] + 0
+        cmd = "bash -c \047eval \"$OO_REC_LIB\"; oo_rec_append_stdin \"$OO_SF_OUT\"\047"
         kept = 0; dropped = 0; over = 0; thepid = ""
     }
     function stamp(   t) { t = ""; "date -u +%Y-%m-%dT%H:%M:%SZ" | getline t; close("date -u +%Y-%m-%dT%H:%M:%SZ"); return t }
@@ -242,16 +327,22 @@ stderr_filter() {
         return (thepid != "") ? thepid : "null"
     }
     function bootj() { return (boot ~ /^[0-9a-f-]+$/) ? "\"" boot "\"" : "null" }
+    # one row at a time, through the locked append of the launcher (R173): the file is NOT held open for the life of the server, so a trim by
+    # another launcher cannot send these rows to a file nobody reads. If that append cannot run at all, the row is appended directly, as before.
+    function emit(row) {
+        print row | cmd
+        if (close(cmd) != 0) { print row >> out; close(out) }
+    }
     {
         if (($0 in ok) || (mre != "" && length($0) <= mmax && $0 ~ mre)) {
             if (kept < keep) {
-                printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"line\":\"%s\"}\n", stamp(), pid(), bootj(), $0 >> out
+                emit(sprintf("{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"line\":\"%s\"}", stamp(), pid(), bootj(), $0))
                 kept++
             } else over++
         } else dropped++
     }
     END {
-        printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"summary\":true,\"kept_lines\":%d,\"dropped_lines\":%d,\"over_cap_lines\":%d}\n", stamp(), pid(), bootj(), kept, dropped, over >> out
+        emit(sprintf("{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"summary\":true,\"kept_lines\":%d,\"dropped_lines\":%d,\"over_cap_lines\":%d}", stamp(), pid(), bootj(), kept, dropped, over))
         q = pidfile; gsub(/\047/, "\047\\\047\047", q)
         system("rm -f -- \047" q "\047")
     }'
@@ -317,7 +408,7 @@ if [ "${OO_EPHEMERAL:-}" != "1" ] && command -v awk >/dev/null 2>&1 && command -
     find "$_dd/diagnostics" -maxdepth 1 -name '.launcher_stderr.*.pid' -mtime +1 -exec rm -f {} + 2>/dev/null || true
     # Bounded: the newest 100 lines are five full launches of a crash loop.
     if [ -n "$STDERR_RECORD" ] && [ "$({ wc -l < "$STDERR_RECORD"; } 2>/dev/null || echo 0)" -gt 100 ]; then
-        { tail -n 100 "$STDERR_RECORD" > "$STDERR_RECORD.tmp" && mv -f "$STDERR_RECORD.tmp" "$STDERR_RECORD"; } 2>/dev/null || rm -f "$STDERR_RECORD.tmp"
+        oo_rec_trim "$STDERR_RECORD" 100 100
     fi
     [ -n "$STDERR_RECORD" ] || STDERR_PIDFILE=""
 fi

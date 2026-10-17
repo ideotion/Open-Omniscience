@@ -551,7 +551,7 @@ def _as_if_no_proc(root: Path) -> None:
     boot id cannot be read. Only these two paths are edited; everything else is the script as shipped."""
     f = root / "scripts" / "launch.sh"
     text = f.read_text(encoding="utf-8")
-    assert text.count("[ -d /proc/self ]") == 1 and text.count("/proc/sys/kernel/random/boot_id") == 3
+    assert text.count("[ -d /proc/self ]") == 2 and text.count("/proc/sys/kernel/random/boot_id") == 3
     f.write_text(text.replace("[ -d /proc/self ]", "false").replace("/proc/sys/kernel/random/boot_id", "/nonexistent-oo-test/boot_id"), encoding="utf-8")
 
 
