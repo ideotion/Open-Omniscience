@@ -291,8 +291,9 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
     if snapshot is not None:
         age = now - snapshot["checked_at"]
         verified = probe is not None and probe == snapshot["probe"]
-        if age >= (snapshot.get("ttl_s") or ttl_s):
-            if verified:
+        own_ttl = snapshot.get("ttl_s")
+        if age >= (own_ttl or ttl_s):
+            if verified and not own_ttl:
                 # Nothing was written since this value was computed, so it is not
                 # merely fresh enough -- it is still exactly right. Re-stamp the
                 # CHECK time and leave built_at alone, so `as_of` keeps telling the
@@ -302,6 +303,9 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
                     if live is not None and live["built_at"] == snapshot["built_at"]:
                         live["checked_at"] = now
             else:
+                # An unverified value, OR a recorded failure whose window has ended: a failure is not a value that "is still
+                # exactly right" because nothing was written (the load that caused it ends exactly when the writes stop), so
+                # the window ending starts the compute again, as the failure's own text promises.
                 _kick_background_refresh(key, compute)
         return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=now, verified=verified,
                          recount_started=_recount_started(key))

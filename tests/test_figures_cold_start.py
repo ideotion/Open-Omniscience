@@ -297,3 +297,32 @@ def test_a_count_made_over_another_database_is_not_carried(monkeypatch):
     finally:
         s.close()
     assert len(calls) == 2
+
+
+def test_a_failed_count_is_tried_again_after_its_window_even_when_nothing_was_written(monkeypatch):
+    """The tile says "tried again after N min". A deadline failure is most likely caused by load, and when the load ends the writes
+    stop: a verified-by-no-write entry may re-stamp a VALUE that is still right, but a recorded FAILURE is not a value, so its window
+    ending starts the count again whatever the write probe says."""
+    _seed_article()
+    calls: list[int] = []
+    monkeypatch.setattr(served_cache, "change_probe", lambda: 7)  # no write ever lands
+
+    def counts(_db):
+        calls.append(1)
+        if len(calls) == 1:
+            raise StatementTimeout("the statement ran past its deadline")
+        return 5
+
+    monkeypatch.setattr(dbmod, "_mentions_count", counts)
+    s = SessionLocal()
+    try:
+        dbmod.library_figures(s)
+        assert _wait(lambda: (_entry("db:figures") or {}).get("payload", {}).get("keyword_mentions_state") == "failed")
+        with served_cache._LOCK:
+            served_cache._CACHE["db:figures"]["checked_at"] -= dbmod._FIGURES_FAILURE_WINDOW_S + 5  # the window has ended
+        dbmod.library_figures(s)
+        assert _wait(lambda: len(calls) == 2), "the failed count was never tried again: the quiet app kept 'tried again after N min' forever"
+        assert _wait(lambda: (_entry("db:figures") or {}).get("payload", {}).get("keyword_mentions_state") == "counted")
+    finally:
+        s.close()
+
