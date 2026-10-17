@@ -42,15 +42,27 @@ def _client_for(engine):
 
 
 @pytest.fixture()
-def small(tmp_path):
-    """A hand-built corpus where every filter has a row on each side of it."""
+def small(tmp_path, monkeypatch):
+    """A hand-built corpus where every filter has a row on each side of it.
+
+    The file is the test's LIVE store, so it starts the way the app starts a new one: tables, then the country-form
+    marker, then rows (``init_db``'s own order, src/database/session.py). ``DATABASE_URL`` points the settings store at
+    it, so the form a row is written in and the form a query binds are both read off this file. Without that, the rows
+    were written in whatever form the shared default store held when the fixture ran (alpha-2 in a fresh process, until
+    the first TestClient boot stamped it alpha-3), and the case passed or failed on which test had booted the app first.
+    """
+    from src.config import kv_store
+    from src.database.country_form import stamp_new_store
     from src.database.fts import ensure_fts
     from src.database.fts_norm import install_pool_hook
 
     install_pool_hook()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 's.db'}")
+    kv_store.kv_invalidate()
     engine = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
+    stamp_new_store(engine, had_tables=False)
     ensure_fts(engine)
     TS = _client_for(engine)
     now = datetime(2026, 9, 1, 12, 0)
@@ -85,6 +97,7 @@ def small(tmp_path):
         yield c
     app.dependency_overrides.clear()
     limiter.reset()
+    kv_store.kv_invalidate()
 
 
 def _t(client, **params) -> list[str]:
