@@ -79,6 +79,7 @@ def default_quarantine_candidates_batch(
     after_id: int = 0,
     limit: int = _BATCH,
     include_prose_gate: bool = True,
+    include_stubs: bool = False,
     write: bool = False,
     criteria_version: str | None = None,
     article_ids: list[int] | None = None,
@@ -88,6 +89,12 @@ def default_quarantine_candidates_batch(
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
     ``>= _ARTICLE_MIN_WORDS`` bodies) ordered by id after ``after_id`` -- a resumable, chunked
     version of :func:`src.analytics.non_article_scan.scan_non_article_candidates`.
+
+    ``include_stubs`` (default OFF, so the automatic ``article_ids=`` + ``write=True`` callers --
+    restore-merge and the newsletter import -- mark nothing new): also reads thin bodies
+    (``< _ARTICLE_MIN_WORDS``) for the menu-line / subscriber-prompt stub signals of
+    :mod:`src.ingest.furniture`. Only a caller that asks (the dry run that produces the
+    operator's counts) turns it on; ``store_fetched`` applies the same signals to NEW ingest.
 
     ``write=False`` (the default): DRY-RUN, no database mutation -- "quarantining" here means
     reporting a candidate's id in ``quarantined_ids``, exactly the original scaffold's behaviour.
@@ -118,6 +125,7 @@ def default_quarantine_candidates_batch(
     reversible -- separately from the ingest gate's own signals."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
+    from src.ingest.furniture import stub_verdict
     from src.ingest.non_article import (
         _ARTICLE_MIN_WORDS,
         classify_index_page,
@@ -148,6 +156,11 @@ def default_quarantine_candidates_batch(
             if signal is None and include_prose_gate and wc is not None and wc >= _ARTICLE_MIN_WORDS:
                 prose_verdict = prose_gate_verdict(content or "", language=lang or detected)
                 signal = prose_verdict.signal if prose_verdict is not None else None
+            if signal is None and include_stubs and wc is not None and wc < _ARTICLE_MIN_WORDS:
+                # THIN bodies only: a menu-line body or a subscriber prompt (src.ingest.furniture).
+                # Needs the text, so it cannot ride the URL-shape call above.
+                stub = stub_verdict(content or "")
+                signal = stub[0] if stub is not None else None
             if signal is not None:
                 quarantined_ids.append(int(aid))
                 by_reason[signal] = by_reason.get(signal, 0) + 1
@@ -230,6 +243,7 @@ class QuarantineJobManager:
         self._tally: dict[str, int] = {}  # quarantined / by-reason / write counts
         self._index_page_tiers: frozenset[int] = frozenset()
         self._include_prose_gate = True  # the nav-soup gate over >= _ARTICLE_MIN_WORDS bodies
+        self._include_stubs = False  # thin-body menu / subscriber-prompt stubs (opt-in)
         self._write = False  # dry-run by default; fixed for a run's lifetime, persisted across resumes
         self._error: str | None = None
         self._pool_timeout = False  # classified where it happens: a driver error keeps no words for a reader to find
@@ -261,6 +275,7 @@ class QuarantineJobManager:
                     # restored only some of them would resume the same run under
                     # different criteria and report both halves under one run's name.
                     "include_prose_gate": self._include_prose_gate,
+                    "include_stubs": self._include_stubs,
                     "index_page_tiers": sorted(self._index_page_tiers),
                 }),
                 encoding="utf-8",
@@ -291,6 +306,7 @@ class QuarantineJobManager:
         # Absent in a state file written before these were persisted: fall back to the
         # value that start() itself defaults to, so an older file resumes as it would have.
         self._include_prose_gate = bool(d.get("include_prose_gate", True))
+        self._include_stubs = bool(d.get("include_stubs", False))
         self._index_page_tiers = frozenset(int(x) for x in (d.get("index_page_tiers") or ()))
         self._state = "paused"
 
@@ -315,6 +331,7 @@ class QuarantineJobManager:
         _done: int = 0, write: bool = False,
         index_page_tiers: frozenset[int] | set[int] | None = None,
         include_prose_gate: bool = True,
+        include_stubs: bool = False,
     ) -> dict:
         """Launch the worker. RuntimeError if already running. ``_work_fn`` overrides the default
         batch function (a test seam). ``write`` (default False, dry-run detection only) is fixed
@@ -347,6 +364,7 @@ class QuarantineJobManager:
             self._write = bool(write)
             self._index_page_tiers = frozenset(index_page_tiers or ())
             self._include_prose_gate = bool(include_prose_gate)
+            self._include_stubs = bool(include_stubs)
             self._error = None
             self._pool_timeout = False
             self._started_at = time.monotonic()
@@ -369,6 +387,7 @@ class QuarantineJobManager:
                     write = self._write
                     tiers = self._index_page_tiers
                     prose_gate = self._include_prose_gate
+                    stubs = self._include_stubs
                     self._save()
                 while True:
                     if self._stop.is_set():
@@ -382,9 +401,10 @@ class QuarantineJobManager:
                     if self._stop.is_set():
                         break
                     with corpus_lease("quarantine"):
+                        extra = {"include_stubs": True} if stubs else {}
                         r = work(session, after_id=after, limit=_BATCH, write=write,
                                  index_page_tiers=tiers or None,
-                                 include_prose_gate=prose_gate)
+                                 include_prose_gate=prose_gate, **extra)
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["scanned"] = self._tally.get("scanned", 0) + int(r.get("scanned", 0))
@@ -437,8 +457,10 @@ class QuarantineJobManager:
             w = self._write  # ALWAYS preserve the mode the paused run was in
             tiers = self._index_page_tiers  # ...and every other part of that mode
             gate = self._include_prose_gate
+            stubs = self._include_stubs
         out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done,
-                         write=w, index_page_tiers=tiers, include_prose_gate=gate)
+                         write=w, index_page_tiers=tiers, include_prose_gate=gate,
+                         include_stubs=stubs)
         with self._lock:
             self._tally = tally
             self._save()
@@ -480,6 +502,7 @@ class QuarantineJobManager:
                 # manager, so a tally could never be read back against the scope it was
                 # agreed under.
                 "include_prose_gate": self._include_prose_gate,
+                "include_stubs": self._include_stubs,
                 "index_page_tiers": sorted(self._index_page_tiers),
             }
 
