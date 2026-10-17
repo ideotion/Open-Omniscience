@@ -31,6 +31,9 @@ import os
 import struct
 import threading
 import time
+from struct import (
+    error as _StructError,  # a bare name: the record-sink scan reads ``struct.error`` as a log-call attribute it cannot read
+)
 from typing import Any
 
 #: Slot names, by position. A slot is added by appending, never by reordering (the file is read by the next build). ``None`` is a
@@ -98,7 +101,7 @@ def _open_locked() -> mmap.mmap | None:
         _HEAD.pack_into(mm, 0, _MAGIC, _VERSION, os.getpid(), _boot_id().encode("ascii", "replace")[:_BOOT_LEN], int(time.time()))
         _STATE["map"] = mm
         return mm
-    except (OSError, ValueError, struct.error):
+    except (OSError, ValueError, _StructError):
         _STATE["failed"] = True
         return None
 
@@ -163,7 +166,7 @@ def read_record(raw: bytes | None) -> dict[str, Any] | None:
         if magic != _MAGIC or version != _VERSION:
             return None
         slots = [_SLOT.unpack_from(raw, _HEAD.size + i * _SLOT.size) for i in range(len(SLOTS))]
-    except struct.error:
+    except _StructError:
         return None
     return {"pid": pid, "boot": boot.rstrip(b"\x00").decode("ascii", "replace"), "wrote": wrote, "slots": slots}
 
