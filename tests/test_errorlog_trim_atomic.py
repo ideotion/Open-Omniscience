@@ -173,13 +173,16 @@ def test_an_interrupt_leaving_the_locked_append_still_writes_the_records_held_me
     _big(journal, 6000)
     fired = []
 
-    def interrupted(path):
+    real = errorlog.locked_append
+
+    def interrupted(path, text, **kw):
         if not fired:
             fired.append(1)
             errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "held-record"})
             raise KeyboardInterrupt
+        return real(path, text, **kw)
 
-    monkeypatch.setattr(errorlog, "_sweep_dead_temps", interrupted)
+    monkeypatch.setattr(errorlog, "locked_append", interrupted)
     with pytest.raises(KeyboardInterrupt):
         errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "outer-record"})
     assert '"held-record"' in journal.read_text(encoding="utf-8")
