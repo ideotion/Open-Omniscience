@@ -464,6 +464,7 @@ class ArticleBatch:
                     precomputed_terms=terms,
                     precomputed_sentiment=sentiment,
                     precomputed_www=www,
+                    inserted_in_this_transaction=True,  # the flush above gave this article its id: no stored rows to read
                 )
         except Exception as exc:  # noqa: BLE001 - indexing is auxiliary per article
             if is_locked_error(exc):

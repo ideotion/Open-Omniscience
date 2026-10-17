@@ -513,6 +513,7 @@ def index_article(
     precomputed_www: dict | None = None,
     maintain_counters: bool = True,
     timings: dict | None = None,
+    inserted_in_this_transaction: bool = False,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -523,6 +524,23 @@ def index_article(
     tally gains ``mentions_kept`` / ``mentions_updated`` / ``mentions_removed`` /
     ``mentions_added`` (see ``_write_mention_diff``); ``mentions`` keeps meaning "rows
     the article now has".
+
+    ``inserted_in_this_transaction`` (default ``False``: the article's mention rows are read, as for every
+    caller before): the caller INSERTED this article in the transaction it is still inside (its flush gave
+    the article its id, nothing has committed since) and says so, which turns the read of the article's
+    stored mention rows into the empty answer without asking the database. A batched collect flush is the
+    one such caller (``ArticleBatch._index_one``). The read was a statement per article inside the
+    gate hold that returned nothing, and the hold is what every other writer waits behind.
+    WHY THE ANSWER IS EMPTY: an id is new to the table, or it is the highest id handed out again after a
+    delete (SQLite keeps no counter without AUTOINCREMENT, ``src/database/query.py``), and in that
+    case the delete removed the old article's mention rows with it, because every pooled connection
+    runs ``PRAGMA foreign_keys=ON`` (``src/database/session.py``) and the mention model's ``article_id``
+    is ``ON DELETE CASCADE``. Nothing writes an article's mention rows before this call (this function
+    is the one writer). A caller that cannot say all of that, or that is RE-indexing an article, leaves
+    the flag off. If the claim were ever false the insert meets the unique index
+    ``(keyword_id, article_id)`` and fails loudly (the batch's savepoint reports it as an article kept
+    unindexed); it cannot store a wrong row silently. Pinned by
+    ``tests/test_index_article_inserted_in_transaction.py``.
 
     ``scope`` (keyword-engine Phase 1.2): ``"full"`` (default) recomputes keywords +
     when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword
@@ -621,7 +639,8 @@ def index_article(
 
     hold_write_window(session)  # its wait for the window is not read time
     _t_read = time.monotonic() if timings is not None else 0.0
-    old_rows = _read_mention_rows(session, article.id)
+    # ``{}`` and not ``None``: ``None`` is "two rows share a keyword", the legacy delete-then-insert shape.
+    old_rows = {} if inserted_in_this_transaction else _read_mention_rows(session, article.id)
     old_contrib: dict[int, int] = {}
     if maintain_counters:
         if old_rows is None:  # two rows for one keyword: sum them, as the old read did
