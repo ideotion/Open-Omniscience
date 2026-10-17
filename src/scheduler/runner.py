@@ -787,6 +787,17 @@ def _source_label(source) -> str:
         return "?"
 
 
+def _source_key(source) -> int:
+    """The source's primary key WITHOUT loading it. The deferred sources are objects of the caller's session, expired by any
+    commit or rollback since they were selected, and ``source.id`` on an expired instance reloads the row through a pooled
+    connection: with the pool exhausted that timed out inside the pass's ``finally`` and the deferrals were never recorded.
+    The session already holds the identity."""
+    from sqlalchemy import inspect
+
+    identity = inspect(source).identity
+    return identity[0] if identity else source.id
+
+
 def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     """Scrape ONE source into ``session``; returns (tally, pages_fetched, processed).
 
@@ -1229,7 +1240,7 @@ def run_scrape_once(
         # claim on the next pass (the exactness invariant: every selected
         # source was either processed or is recorded here, in order).
         if deferred_sources:
-            _record_deferred([s.id for s in deferred_sources])
+            _record_deferred([_source_key(s) for s in deferred_sources])
 
     recycled: str | None = None
     if wind_reasons:

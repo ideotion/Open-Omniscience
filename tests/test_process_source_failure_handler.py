@@ -190,3 +190,55 @@ def test_a_pool_timeout_reading_the_next_sources_label_does_not_end_the_sequenti
     assert faulty_loop_read["timeouts"] == 1 and len(faulty_loop_read["failed"]) == 1
     assert faulty_loop_read["stored"] == 3, "the other three sources carried on"
     assert result["sources_processed"] == 3 and result["articles_stored"] == 3
+
+
+def test_recording_the_deferred_sources_reads_no_expired_row(monkeypatch):
+    """A pass that winds down (here: a stop is asked after the first source) records the sources it deferred in a ``finally``.
+    They are objects of the caller's session, and the first source's commit expired them; reading ``.id`` of an expired instance
+    reloads the row through a pooled connection, so with the pool exhausted that read timed out INSIDE the ``finally``: the pass
+    ended as a failure although its body had finished, and nothing was recorded, so the deferred sources lost their run-first
+    claim. The ids are taken from the identity the session already holds."""
+    import sys
+
+    from src.database.session import engine
+
+    runner._consume_deferred()
+    state = {"armed": False, "stored": 0, "timeouts": 0}
+    real_connect = engine.pool.connect
+
+    def connect(*a, **kw):
+        if state["armed"]:
+            frame = sys._getframe(1)
+            names = []
+            while frame is not None:
+                names.append(frame.f_code.co_name)
+                frame = frame.f_back
+            if "run_scrape_once" in names and "_process_source" not in names:
+                state["timeouts"] += 1
+                raise PoolTimeout("QueuePool limit reached for the collector; connection timed out, timeout 30.00")
+        return real_connect(*a, **kw)
+
+    def ingest(session, source, *, fetcher=None, **kw):
+        state["stored"] += 1
+        session.commit()  # what a stored article does: every Source object the caller's session holds is now expired
+        state["armed"] = True
+        state["stop"] = True
+        return {"stored": 1}
+
+    state["stop"] = False
+    monkeypatch.setattr(engine.pool, "connect", connect)
+    monkeypatch.setattr("src.ingest.pipeline.ingest_source", ingest)
+    tag, _first = _seed(4)
+    from src.database.session import SessionLocal
+
+    fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=_EmptyFeedSession())  # type: ignore[arg-type]
+    sel = SessionLocal()
+    try:
+        result = runner.run_scrape_once(sel, fetcher, SchedulerSettings(collect_parallelism=1, select_tags=[tag]),
+                                        should_stop=lambda: state["stop"])  # red without the fix: TimeoutError out of the finally
+    finally:
+        sel.close()
+        state["armed"] = False
+    assert state["stored"] == 1 and result["deferred_next_pass"] == 3
+    assert runner.deferred_carryover_count() == 3, "the deferred sources kept their run-first claim"
+    runner._consume_deferred()
