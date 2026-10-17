@@ -88,12 +88,6 @@ def test_launcher_stderr_rows_from_before_the_session_are_skipped_by_pid_alone_b
     assert got and got["lines"] == ["Fatal Python error: Aborted"] and got["pid_only_match"] is True
 
 
-def test_the_worst_case_member_sums_stay_inside_the_headroom_with_the_key_counted():
-    from src.monitoring import native_inflight as ni
-
-    assert 440 + 1000 + 74 + ni.REPORT_BYTES_BUDGET + 150 + ee.COREDUMP_STACK_BYTES <= 2415
-
-
 def test_the_reason_for_no_trace_follows_the_status_when_there_is_no_signal_name():
     kill = ee._why_no_trace(ee.describe_exit({"status": 137, "signal": None}), False)
     assert "SIGKILL" in kill and "no trace" in kill

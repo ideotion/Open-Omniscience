@@ -725,11 +725,11 @@ def test_died_into_phase_is_the_seconds_from_phase_start_to_last_record():
 
 
 @pytest.mark.parametrize("peaks, reason", [
-    (None, "no high-water record"),
-    ({"available": False, "reason": "x"}, "no high-water record"),
-    ({"last_ts": "2026-10-16T10:04:30+00:00"}, "no phase was recorded"),
-    ({"phase": "import", "last_ts": "2026-10-16T10:04:30+00:00"}, "older build"),
-    ({"phase": "import", "phase_since": "not a time", "last_ts": "2026-10-16T10:04:30+00:00"}, "older build"),
+    (None, "no peaks"),
+    ({"available": False, "reason": "x"}, "no peaks"),
+    ({"last_ts": "2026-10-16T10:04:30+00:00"}, "no phase"),
+    ({"phase": "import", "last_ts": "2026-10-16T10:04:30+00:00"}, "no phase start"),
+    ({"phase": "import", "phase_since": "not a time", "last_ts": "2026-10-16T10:04:30+00:00"}, "no phase start"),
     ({"phase": "import", "phase_since": "2026-10-16T10:05:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00"}, "clock moved"),
 ])
 def test_died_into_phase_is_null_with_a_reason_never_zero(peaks, reason):

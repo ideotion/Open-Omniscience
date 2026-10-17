@@ -848,20 +848,21 @@ def _died_into_phase(peaks: dict[str, Any] | None) -> dict[str, Any]:
     WHICH phase is not repeated here: it is ``previous_session_peaks.phase`` in the same report, and the seconds are only ever
     given when that field is present (the byte room is the reason it is not copied). The last record is the last ``observe``
     call, not the moment of death, so the figure is a lower bound. Where the phase or its start was not recorded the seconds are
-    ``None`` with a reason, never ``0`` (a 0 would read as "died the instant it began")."""
+    ``None`` with a reason, never ``0`` (a 0 would read as "died the instant it began"). The reasons are short codes (no peaks · no phase ·
+    no phase start · clock moved): the longest the member can be is measured in tests/test_session_forensics_budget.py."""
     out: dict[str, Any] = {"seconds_in_peaks_phase": None}
     if not isinstance(peaks, dict) or peaks.get("available") is False:
-        out["reason"] = "no high-water record"
+        out["reason"] = "no peaks"
         return out
     if not isinstance(peaks.get("phase"), str) or not peaks["phase"]:
-        out["reason"] = "no phase was recorded"
+        out["reason"] = "no phase"
         return out
     try:
         began = datetime.fromisoformat(str(peaks["phase_since"]))
         last = datetime.fromisoformat(str(peaks["last_ts"]))
         secs = (last - began).total_seconds()
     except (KeyError, ValueError, TypeError):
-        out["reason"] = "phase start not recorded (older build)"
+        out["reason"] = "no phase start"
         return out
     if secs < 0:
         out["reason"] = "clock moved"
