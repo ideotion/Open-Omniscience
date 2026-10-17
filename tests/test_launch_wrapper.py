@@ -64,6 +64,15 @@ def test_every_line_reaches_the_window_and_only_the_fixed_headers_are_recorded(t
 
 
 @needs_pwsh
+def test_a_header_in_another_case_is_not_recorded(tmp_path):
+    proc, marker, diag = _run(tmp_path, "echo 'FATAL PYTHON ERROR: ABORTED' >&2\necho 'fatal python error: aborted' >&2\nexit 3\n")
+    rows = _rows(diag / ee.LAUNCHER_STDERR)
+    assert [r for r in rows if not r.get("summary")] == []
+    [summary] = [r for r in rows if r.get("summary")]
+    assert summary["kept_lines"] == 0 and summary["dropped_lines"] == 2
+
+
+@needs_pwsh
 def test_the_record_is_capped_per_launch_and_the_overflow_counted(tmp_path):
     body = "for i in $(seq 1 30); do echo 'Fatal Python error: Bus error' >&2; done\nexit 0\n"
     proc, _, diag = _run(tmp_path, body)
