@@ -31,6 +31,7 @@ router = APIRouter(prefix="/api/quarantine", tags=["quarantine"])
 def quarantine_start(
     write: bool = Query(False),
     include_prose_gate: bool = Query(True),
+    include_stubs: bool = Query(False),
 ) -> dict:
     """Start the retroactive quarantine job. ``write=False`` (default): pure detection,
     no database mutation. ``write=True``: additionally stamps each detected candidate,
@@ -43,12 +44,17 @@ def quarantine_start(
     the URL rules do. ``include_prose_gate=false`` runs the URL-shape rules ALONE -- which is
     what an operator wants when the corpus's long-body prose has not been measured and the
     agreed scope is the drop path only. It is part of the run-lifetime mode: a pause/resume
-    or an app restart continues under the SAME criteria, never a silently different set."""
+    or an app restart continues under the SAME criteria, never a silently different set.
+
+    ``include_stubs`` (default False) adds the thin-body menu / subscriber-prompt signals. Run it
+    with ``write=False`` first: that is the per-signal count the operator reviews before a write."""
     from src.analytics.quarantine_job import get_quarantine_manager
 
     try:
+        # Forwarded only when asked for, so the manager is called exactly as before otherwise.
+        extra = {"include_stubs": True} if include_stubs else {}
         return get_quarantine_manager().start(
-            write=write, include_prose_gate=include_prose_gate
+            write=write, include_prose_gate=include_prose_gate, **extra
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
