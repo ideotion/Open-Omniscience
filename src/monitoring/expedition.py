@@ -43,12 +43,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger(__name__)
 
@@ -97,9 +97,7 @@ def _write(state: dict[str, Any]) -> None:
     write path added for resilience must itself degrade, never raise)."""
     try:
         p = _path()
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-        os.replace(tmp, p)
+        atomic_replace(p, json.dumps(state, indent=1), fsync=False)
     except OSError as err:
         log_failure(_LOG, "could not persist expedition.json", err, level=logging.WARNING)
 

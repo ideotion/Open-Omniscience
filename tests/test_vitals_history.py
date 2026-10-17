@@ -561,8 +561,9 @@ def test_the_flush_is_atomic_and_throttled_to_the_interval(hist, monkeypatch):
     real_replace = v.os.replace
     monkeypatch.setattr(v.os, "replace", lambda a, b: replaced.append((str(a), str(b))) or real_replace(a, b))
     v.tick(now=float(HOUR0))  # the first tick writes the file: a new session is on disk at once
-    assert replaced == [(str(path.with_suffix(".json.tmp")), str(path))]  # written aside, then swapped in
-    assert path.exists() and not path.with_suffix(".json.tmp").exists()
+    assert len(replaced) == 1 and replaced[0][1] == str(path)  # written aside, then swapped in
+    assert replaced[0][0].startswith(f"{path}.tmp.{v.os.getpid()}."), "the temp is named for the process and the thread (R176)"
+    assert path.exists() and not list(path.parent.glob(path.name + ".tmp.*"))
     first = path.stat().st_mtime_ns
     writes: list[int] = []
     real = v.flush
