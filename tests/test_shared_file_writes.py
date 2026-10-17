@@ -16,14 +16,14 @@ SRC = ROOT / "src"
 OWNER = "src/safety/file_lock.py"
 REASON = "awaiting owner conversion"
 
-#: ``module path -> (number of unconverted sites, the lane that converts them; "unassigned" waits for the coordinator)``. Every entry's reason is REASON. A conversion lowers its count; a module at zero is removed.
+#: ``module path -> (number of unconverted sites, the lane that converts them;)``. Every entry's reason is REASON. A conversion lowers its count; a module at zero is removed.
 _ALLOWED: dict[str, tuple[int, str]] = {
-    "src/ai_layer/activity.py": (1, "unassigned"),
-    "src/ai_layer/bench_batch.py": (2, "unassigned"),
-    "src/ai_layer/model_bench.py": (3, "unassigned"),
-    "src/ai_layer/perception_job.py": (1, "unassigned"),
+    "src/ai_layer/activity.py": (1, "rc2"),
+    "src/ai_layer/bench_batch.py": (2, "rc2"),
+    "src/ai_layer/model_bench.py": (3, "rc2"),
+    "src/ai_layer/perception_job.py": (1, "rc2"),
     "src/ai_layer/qualification_assist.py": (1, "qual"),
-    "src/ai_layer/triage.py": (1, "unassigned"),
+    "src/ai_layer/triage.py": (1, "rc2"),
     "src/analytics/columnar.py": (1, "keyword"),
     "src/analytics/criteria_calibration.py": (2, "keyword"),
     "src/analytics/filters.py": (1, "keyword"),
@@ -40,11 +40,11 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/analytics/upload_parts.py": (1, "keyword"),
     "src/analytics/weather_signals.py": (1, "keyword"),
     "src/annotations/store.py": (4, "rc2"),
-    "src/api/ai.py": (1, "unassigned"),
+    "src/api/ai.py": (1, "rc2"),
     "src/api/diagnostics/bundle.py": (1, "rc2"),
     "src/api/diagnostics/keywords.py": (1, "keyword"),
     "src/api/diagnostics_volumes.py": (4, "export"),
-    "src/api/markets.py": (1, "unassigned"),
+    "src/api/markets.py": (1, "Plan J"),
     "src/backup/artifact.py": (5, "export"),
     "src/backup/country_migration.py": (2, "export"),
     "src/backup/export_folder.py": (2, "export"),
@@ -66,7 +66,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/bulletin/store.py": (6, "Plan J"),
     "src/catalog/build.py": (1, "qual"),
     "src/catalog/discover_job.py": (2, "qual"),
-    "src/config/app_settings.py": (1, "unassigned"),
+    "src/config/app_settings.py": (1, "rc2"),
     "src/custody/pending.py": (3, "Q"),
     "src/custody/settings.py": (1, "Q"),
     "src/custody/signing.py": (2, "Q"),
