@@ -950,11 +950,17 @@ class _EngineWall(Exception):
     it was raised, and never kept, logged or chained (``raise ... from None``)."""
 
 
+class _PlainEngineWall(_EngineWall):
+    """The same wall in its plain form (``OutOfMemoryException``). A subclass, so the class is told by the type caught and
+    nothing the engine said is ever read back off the exception."""
+
+
 #: At the very edge of its limit DuckDB can fail a checkpoint with ``FatalException`` ("could not allocate block ...")
 #: instead of ``OutOfMemoryException`` (2026-10-17: two of three 20 M builds at 1,004 MB). It is the same wall, and a fatal
 #: invalidates the instance, so nothing can be retried or halved: the build is declined as the limit. Matched on the class
 #: name plus this ONE fixed phrase; any other ``FatalException`` stays a plain failure.
 _ALLOCATION_FATAL_CLASS = "FatalException"
+_PLAIN_OOM_CLASS = "OutOfMemoryException"
 _ALLOCATION_FATAL_PHRASE = "could not allocate"
 
 
@@ -984,8 +990,10 @@ def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> 
     except Exception as exc:  # noqa: BLE001 - a JSON-path refusal -> the slow path for this batch only
         if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):
             raise _EngineWall from None  # the instance is invalid: no slow path, and the engine's text goes no further
+        if type(exc).__name__ == _PLAIN_OOM_CLASS:
+            raise _PlainEngineWall from None  # the plain limit, at the stage it was in; no slow path, no engine text
         if type(exc).__name__ in _NEVER_RETRIED:
-            raise  # the engine's own limit or an interrupt: the slow path would only reach it hours later
+            raise  # an interrupt: the slow path would only reach it hours later
         marks = ", ".join("?" for _ in types)
         con.executemany(f"INSERT INTO {table} VALUES ({marks})", rows)  # nosec B608 - constants, as above
     return len(rows)
@@ -1292,11 +1300,11 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                 seen_mib["peak"] = now_mib if seen_mib["peak"] is None else max(seen_mib["peak"], now_mib)
             return now_mib
 
-        def _wall_stop(stage: str, **extra) -> BuildDeclined:
-            """The limit stop for a FATAL allocation error: the stage it was in and the sizes read before it. Class name only."""
+        def _wall_stop(stage: str, error_class: str = _ALLOCATION_FATAL_CLASS, **extra) -> BuildDeclined:
+            """The limit stop for the engine's memory wall: the stage it was in and the sizes read before it. Class name only."""
             return BuildDeclined("duckdb-limit", {
                 "stage": stage, "rows_done": streamed, "duckdb_limit_mb": limit_mb, "shards": shards,
-                "engine_error_class": _ALLOCATION_FATAL_CLASS,
+                "engine_error_class": error_class,
                 "peak_mib": None if seen_mib["peak"] is None else round(seen_mib["peak"], 1),
                 "resident_mib": None if seen_mib["last"] is None else round(seen_mib["last"], 1), **extra})
 
@@ -1316,6 +1324,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                         parts[row[0] % shards].append(row)
                     for name, part in zip(stage_names, parts, strict=True):
                         _bulk_insert(con, name, stage_types, part)
+            except _PlainEngineWall:
+                raise _wall_stop("stage-insert", _PLAIN_OOM_CLASS) from None
             except _EngineWall:
                 raise _wall_stop("stage-insert") from None
             _note_mib()
@@ -1415,12 +1425,9 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             except Exception as exc:  # noqa: BLE001 - only the engine's limit becomes a decline
                 if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):
                     raise _wall_stop("aggregate", shard=j) from None
-                if type(exc).__name__ != "OutOfMemoryException":
+                if type(exc).__name__ != _PLAIN_OOM_CLASS:
                     raise
-                raise BuildDeclined("duckdb-limit", {
-                    "stage": "aggregate", "rows_done": streamed, "duckdb_limit_mb": limit_mb,
-                    "shards": shards, "shard": j, "split": _BUILD_MAX_SPLIT,
-                }) from None
+                raise _wall_stop("aggregate", _PLAIN_OOM_CLASS, shard=j, split=_BUILD_MAX_SPLIT) from None
             con.execute(f"DROP TABLE {name}")  # nosec B608
             aggregated += in_stage
             observed_mib = max(observed_mib, _observe_mib())
@@ -1471,6 +1478,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                     for r in chunk
                 ],
             )
+        except _PlainEngineWall:
+            raise _wall_stop("keywords", _PLAIN_OOM_CLASS) from None
         except _EngineWall:
             raise _wall_stop("keywords") from None
         cursor_id = int(chunk[-1][0])
