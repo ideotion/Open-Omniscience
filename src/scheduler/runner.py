@@ -913,6 +913,8 @@ def run_scrape_once(
     # What the process-wide extraction lock cost this pass (``src.ingest.lock_stats``): set where the pass's monitor
     # writes its summary, so the run report carries the same block as ``collect_perf.jsonl``.
     extraction_lock: dict | None = None
+    # The same for the encrypted opens (``src.database.open_stats``).
+    encrypted_opens: dict | None = None
     if use_pool:
         try:
             from src.database.session import engine as _global_engine
@@ -1033,6 +1035,9 @@ def run_scrape_once(
                 extraction_lock = summary.get("extraction_lock") if summary else None
                 if extraction_lock is None:
                     extraction_lock = monitor.extraction_lock_block()
+                encrypted_opens = summary.get("encrypted_opens") if summary else None
+                if encrypted_opens is None:
+                    encrypted_opens = monitor.encrypted_opens_block()
                 if summary:
                     _LOG.info(
                         "collect perf: bottleneck=%s",
@@ -1127,6 +1132,8 @@ def run_scrape_once(
         out["deferred_next_pass"] = len(deferred_sources)
     if extraction_lock is not None:
         out["extraction_lock"] = extraction_lock
+    if encrypted_opens is not None:
+        out["encrypted_opens"] = encrypted_opens
     return out
 
 

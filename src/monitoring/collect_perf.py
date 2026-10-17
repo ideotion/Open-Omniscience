@@ -434,6 +434,13 @@ class CollectionMonitor:
             lock_stats.reset()
         except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
             log_failure(_LOG, "extraction lock window could not be reset", exc, level=logging.DEBUG)
+        # So is the window of the encrypted opens (see ``encrypted_opens_block``).
+        try:
+            from src.database import open_stats
+
+            open_stats.reset()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            log_failure(_LOG, "encrypted opens window could not be reset", exc, level=logging.DEBUG)
         self._prev_bytes = self._bytes_total()
         self._prev_mono = time.monotonic()
         try:  # prime psutil's since-last-call counters so the first reading is real
@@ -1073,6 +1080,17 @@ class CollectionMonitor:
             return {"unavailable": type(exc).__name__}
         return lock_stats.safe_snapshot()
 
+    @staticmethod
+    def encrypted_opens_block() -> dict:
+        """How often an encrypted file was opened with its key this pass, by file and thread family, and what the opens cost
+        (``src.database.open_stats``), or the class of the failure that kept it from being read."""
+        try:
+            from src.database import open_stats
+        except Exception as exc:  # noqa: BLE001 - the summary is written without it, saying so
+            log_failure(_LOG, "encrypted opens statistics unavailable", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+        return open_stats.safe_snapshot()
+
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:
             return None
@@ -1102,6 +1120,9 @@ class CollectionMonitor:
             # One page that takes long holds every other extraction (no timeout), and from outside that
             # looks like a stalled collector; this is the line that tells the two apart.
             "extraction_lock": self.extraction_lock_block(),
+            # Every open of an encrypted file re-derives its key (160-170 ms of CPU each on one measured core) and nothing
+            # keeps the result: this is the count, by file and thread family, of what this pass paid.
+            "encrypted_opens": self.encrypted_opens_block(),
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")

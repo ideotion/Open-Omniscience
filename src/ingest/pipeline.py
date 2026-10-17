@@ -12,10 +12,12 @@ no raw-requests bypass, and no silently-stored junk.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import feedparser
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +26,9 @@ from sqlalchemy.orm import Session
 from src.database.models import Article, FeedFetchState, Source
 from src.ingest.dedup_front import mark_stored, seen_canonical_url, seen_content_hash
 from src.monitoring.secret_scrub import log_failure, record_text
+
+if TYPE_CHECKING:
+    from src.custody.log import CustodyLog
 
 
 # --------------------------------------------------------------------------- #
@@ -367,8 +372,50 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
         log_failure(logging.getLogger(__name__), "link indexing on ingest failed", exc, level=logging.WARNING)
 
 
-def _maybe_record_custody(article: Article) -> None:
+class _CustodyBatch:
+    """The custody log of ONE flush: opened when the first entry is written, closed when the ``with`` block ends.
+
+    A custody log is a keyed connection to ``custody_log.db``, and opening one costs a key derivation (160-170 ms of CPU
+    measured on one core, ``src/database/open_stats.py``); a flush stores up to ``collect_batch_size()`` articles one after
+    another on one thread, and before this each of them opened its own. THE LIFETIME IS THE BLOCK: nothing is cached (no
+    module state, no attribute of another object), so a lock, a passphrase change or a restore has nothing to invalidate,
+    and the signing key the log's signer holds lives for one flush instead of one article. A write that failed leaves the
+    connection in an unknown state, so :meth:`drop` closes it and the next entry opens a fresh one, which is what every
+    entry did before. A batch belongs to the thread that made it.
+    """
+
+    def __init__(self) -> None:
+        self._log: CustodyLog | None = None
+        self.opened = 0  # logs this batch has opened (a reading, for the tests)
+
+    def log(self) -> CustodyLog:
+        """The batch's log, opened now if it is not open. Raises what opening it raises; the caller owns the failure."""
+        if self._log is None:
+            from src.custody.log import CustodyLog
+
+            self._log = CustodyLog()
+            self.opened += 1
+        return self._log
+
+    def drop(self) -> None:
+        """Close the log and forget it; the next :meth:`log` opens another. Never raises."""
+        log, self._log = self._log, None
+        if log is not None:
+            with contextlib.suppress(Exception):  # a close that fails leaves nothing to keep
+                log.close()
+
+    def __enter__(self) -> _CustodyBatch:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.drop()
+
+
+def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = None) -> None:
     """Opt-in: append a signed custody entry for a freshly stored article.
+
+    ``batch`` is the flush's :class:`_CustodyBatch`: the entry is written through the log it holds, and a failure drops that
+    log so the next article opens a fresh one. Without it the entry gets a log of its own, closed when it is written.
 
     Best-effort and fail-open: custody logging must never break ingestion, so any
     error here is swallowed (and logged). Controlled by the GUI-editable custody
@@ -378,6 +425,7 @@ def _maybe_record_custody(article: Article) -> None:
     were stored.
     """
     article_id: int | None = None
+    log_touched = False
     try:
         from src.custody.settings import load_settings
 
@@ -398,20 +446,28 @@ def _maybe_record_custody(article: Article) -> None:
             article_id = None
         from src.custody.log import CustodyAction, CustodyLog
 
-        with CustodyLog() as log:
-            log.record(
-                f"article:{article.id}",
-                article.hash,
-                CustodyAction.INGEST,
-                actor=prefs.default_actor or "ingest-pipeline",
-                metadata={
-                    "url": article.url,
-                    "canonical_url": article.canonical_url,
-                    "source_id": article.source_id,
-                },
-            )
+        # Everything the entry carries is read BEFORE the log is touched: a read that fails (the pool is exhausted and the
+        # article's expired columns cannot be reloaded) is not the log's failure, and must neither cost a batch its healthy
+        # log nor open one for nothing.
+        item_id = f"article:{article.id}"
+        item_hash = article.hash
+        actor = prefs.default_actor or "ingest-pipeline"
+        metadata = {
+            "url": article.url,
+            "canonical_url": article.canonical_url,
+            "source_id": article.source_id,
+        }
+        log_touched = True
+        if batch is None:
+            with CustodyLog() as log:
+                log.record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
+        else:
+            batch.log().record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
         import logging
+
+        if batch is not None and log_touched:
+            batch.drop()  # the next article opens a fresh log, as every article did before batches
 
         log_failure(logging.getLogger(__name__), "custody logging on ingest failed", exc, level=logging.WARNING)
         # ...but the entry is OWED, not forgotten: queued in a file (no database), and
