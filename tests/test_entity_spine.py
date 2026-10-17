@@ -245,11 +245,15 @@ def test_one_failed_batch_is_counted_and_never_aborts_the_run(db):
     assert out["fetched"] + out["missing_on_wikidata"] + out["refused"] == out["requested"]
 
 
-def test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_resolutions(monkeypatch, db):
+def test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_resolutions(db):
+    import socket
+
     from src.ingest import airplane
 
     lookups: list[object] = []
-    monkeypatch.setattr(airplane, "_orig_getaddrinfo", lambda host, *a, **k: lookups.append(host) or [])
+    real_getaddrinfo = socket.getaddrinfo
+    saved = airplane._orig_getaddrinfo
+    airplane._orig_getaddrinfo = lambda host, *a, **k: lookups.append(host) or []  # type: ignore[assignment]
     airplane.install_airplane_socket_guard()
     activate_kill_switch()
     try:
@@ -264,7 +268,11 @@ def test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_reso
             IT._default_getter(entities_url(["Q1"]))
     finally:
         clear_kill_switch()
+        # The spy goes back FIRST: uninstall copies ``_orig_getaddrinfo`` onto ``socket.getaddrinfo``, so with the spy still in place the
+        # whole process kept a resolver that answers an empty list for every name (it made a later test's loopback connect fail).
+        airplane._orig_getaddrinfo = saved  # type: ignore[assignment]
         airplane.uninstall_airplane_socket_guard()
+    assert socket.getaddrinfo is real_getaddrinfo, "the test left a stand-in resolver on socket.getaddrinfo for the rest of the process"
     assert lookups == []
     assert db.query(WikidataItem).count() == 0
 
