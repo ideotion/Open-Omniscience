@@ -61,22 +61,24 @@ from src.ingest.seed_sources import (
 #: sibling that survives -- the loss that is genuinely a lost language, as opposed to
 #: a field one side simply left blank. This is the number the "do not delete" argument
 #: rests on; see the test for why the looser 108 does not.
-_LANGUAGE_LOSSES = 75
+_LANGUAGE_FLOOR = 70  # measured 75 on 2026-09-07; a floor since row J, so adding a language service cannot redden it
 
 #: Shadowed entries carrying a `lean-*` tag their surviving sibling lacks. The tag
 #: never reaches Source.tags for these outlets, so the political-lean vocabulary is
 #: mostly absent from the database it was written for.
-_LEAN_TAGS_LOST_BUDGET = 192
+_LEAN_TAGS_LOST_BUDGET = 192  # measured 2026-09-07; the recovery ratchet below compares with it
+_LEAN_TAGS_FLOOR = 150
 
 #: Row J (S05-10 J3): a source is (domain, feed), so what a catalogue can NOT register is a feed-less duplicate of a
 #: feed-less domain or a second legal entry for a host (the same feed named by a second catalogue merges its tags). The per-file figure is
 #: ``configs/sources.yml`` alone; the boot figure is what ``seed_default_sources`` hands the seeder. Measured
 #: 2026-10-16: 475 shadowed became 19 (216 more rows, 240 entries merged as tags, 189 of the 192 lean tags
-#: recovered). Lower it when an entry is fixed; never raise it to admit one.
+#: recovered). The boot figures below count the default seed's own list, which since R152 carries the generated legal catalogue
+#: too (the legal seed registered those rows a moment later anyway): +205 rows, +5 merged, +14 designed legal_collapse. Lower it when an entry is fixed; never raise it to admit one.
 _UNREGISTERED_BUDGET = 16
-_BOOT_UNREGISTERED_BUDGET = 19
-_BOOT_ROWS = 6411
-_BOOT_MERGED = 240
+_BOOT_UNREGISTERED_BUDGET = 33  # 19 + the 14 legal_collapse entries of the generated legal catalogue (ruled 2026-07-17, designed)
+_BOOT_ROWS = 6616  # 6,411 + the 205 generated legal rows seed_default_sources now builds as seed_legal_sources does (R152)
+_BOOT_MERGED = 245  # 240 + 5 generated legal entries that describe a host that already has a feed row
 _BOOT_LEAN_RECOVERED = 189
 
 
@@ -146,11 +148,11 @@ def test_the_political_lean_vocabulary_is_the_half_with_a_live_consumer(boot_cat
         for e in shadowed_entries:
             if {t for t in (e.get("tags") or []) if t.startswith("lean-")} - kept:
                 lost += 1
-    assert lost == _LEAN_TAGS_LOST_BUDGET, (
-        f"{lost} shadowed entries carry a lean-* tag the surviving sibling lacks "
-        f"(recorded {_LEAN_TAGS_LOST_BUDGET})."
+    # A FLOOR, not a pin (Opus read of the J3 fold, F2): after row J a contributor who adds a catalogue entry is doing the right
+    # thing, and the recovery is pinned where it is measured (``_BOOT_LEAN_RECOVERED``). This only keeps the claim true.
+    assert lost >= _LEAN_TAGS_FLOOR, (
+        f"{lost} entries share a domain with an earlier one and carry a lean-* tag it lacks (floor {_LEAN_TAGS_FLOOR})."
     )
-    assert lost > 0
 
 
 def test_the_shadowed_entries_include_real_language_losses(catalog):
@@ -177,16 +179,17 @@ def test_the_shadowed_entries_include_real_language_losses(catalog):
         and winner[dom].get("language")
         and e["language"] != winner[dom]["language"]
     ]
-    assert len(both_declared_and_differ) == _LANGUAGE_LOSSES, (
-        f"{len(both_declared_and_differ)} shadowed entries declare a language their "
-        f"surviving sibling does not (recorded {_LANGUAGE_LOSSES}). Re-measure and "
-        "update deliberately -- this number is the argument against deletion."
+    # A FLOOR, not a pin: adding a language service is the right thing to do and must not redden this (the Opus read of the
+    # J3 fold, F2). The claim is "there are real language services behind a shared domain", which a floor keeps true.
+    assert len(both_declared_and_differ) >= _LANGUAGE_FLOOR, (
+        f"{len(both_declared_and_differ)} entries declare a language their domain's first entry does not "
+        f"(floor {_LANGUAGE_FLOOR})."
     )
     # The specific case the ruling is about, named so a future reader can check it.
     assert any(e.get("name") == "BBC Arabic" for e in collisions.get("bbc.com", []))
     # ... and it is not one stray entry: every bbc.com loser is a non-English service.
     bbc_losers = collisions.get("bbc.com", [])
-    assert len(bbc_losers) == 30
+    assert len(bbc_losers) >= 30
     assert all((e.get("language") or "en") != "en" for e in bbc_losers)
 
 

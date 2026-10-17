@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from src.catalog.cctld import infer_country, infer_language
 from src.catalog.countries import normalize_country
 from src.catalog.normalize import country_from_title
+from src.database.feed_key import feed_key
 from src.database.models import Source
 from src.database.source_identity import composite_key_active
 from src.ingest.seed_plan import (
@@ -189,6 +190,20 @@ def _db_rows_by_domain(session: Session) -> dict[str, list[Source]]:
     return out
 
 
+def _row_catalogue(row: Source) -> str | None:
+    """The catalogue a row was made from: its ``via:`` provenance tag, or None for a row that carries none."""
+    return next((t[4:] for t in split_tags(row.tags) if t.startswith("via:")), None)
+
+
+def _same_catalogue(row: Source, entry: dict) -> bool:
+    """False only when BOTH name a catalogue and they differ. A seed call sees part of the catalogue (the legal seed hands
+    over only the legal entries), so every row another catalogue made is a "leftover" in it: a name match with such a row is
+    two catalogues describing one outlet, never a corrected feed, and pairing them made the two seeds take one row back and
+    forth on every boot (Opus read of the J3 fold, F1). No tag or no provenance behaves as before."""
+    owner, prov = _row_catalogue(row), entry.get("_provenance")
+    return not (owner and prov and owner != prov)
+
+
 def paired_rows(session: Session, sources: list[dict], *, plan=None, rows_by_domain=None):
     """Which registered row each catalogue ROW entry is, and which entries have none yet.
 
@@ -228,7 +243,10 @@ def paired_rows(session: Session, sources: list[dict], *, plan=None, rows_by_dom
         paired_ids = {id(r) for r, _ in pairs}
         leftover = [r for r in rows if id(r) not in paired_ids and r.feed_key]
         for e in unmatched:
-            named = [r for r in leftover if (_baseline_of(r) or {}).get("name") == e.get("name")]
+            named = [
+                r for r in leftover
+                if (_baseline_of(r) or {}).get("name") == e.get("name") and _same_catalogue(r, e)
+            ]
             if len(named) == 1 and sum(1 for x in unmatched if x.get("name") == e.get("name")) == 1:
                 pairs.append((named[0], e))
                 leftover.remove(named[0])
@@ -464,14 +482,22 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
     correction the catalogue made BEFORE this shipped will not reach an existing row.
     """
     pairs = pairs if pairs is not None else paired_rows(session, sources)[0]
-    empty = {"checked": 0, "applied": 0, "kept": 0, "adopted": 0, "conflicts": []}
+    empty = {"checked": 0, "applied": 0, "kept": 0, "adopted": 0, "foreign_catalogue": 0, "conflicts": []}
     if not pairs:
         return empty
 
-    applied = adopted = 0
+    applied = adopted = foreign = 0
     conflicts: list[dict] = []
     dirty = False
     for row, entry in pairs:
+        # A row is corrected by the catalogue it was MADE from. Another catalogue's entry for the same domain describes the
+        # outlet differently (the legal catalogue's feed-less "African Union" against the news row "African Union News"):
+        # taking its values as corrections, and the baseline from it, made the default seed and the legal seed undo each
+        # other on every boot and erased the feed of seven news rows for good. A row with no ``via:`` marker, and an entry
+        # with no provenance (the explicit-path form), behave as before.
+        if not _same_catalogue(row, entry):
+            foreign += 1
+            continue
         computed = _to_source_kwargs(entry)
         shipped = {f: _norm(computed.get(f)) for f in CATALOGUE_OWNED_FIELDS}
         base = _baseline_of(row)
@@ -507,7 +533,7 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
         )
     return {
         "checked": len(pairs), "applied": applied, "kept": len(conflicts),
-        "adopted": adopted, "conflicts": conflicts[:_CONFLICT_EXAMPLES],
+        "adopted": adopted, "foreign_catalogue": foreign, "conflicts": conflicts[:_CONFLICT_EXAMPLES],
     }
 
 
@@ -565,6 +591,118 @@ def reconcile_source_metadata(session: Session, sources: list[dict], *, pairs: l
     }
 
 
+#: How many rows a feed repair names in each of its lists. The COUNTS beside them are exact; this bounds what the seed
+#: result (logged and returned on every boot) can grow to if a catalogue change ever makes many rows unprovable.
+_REPAIR_LIST_MAX = 50
+
+
+def repair_erased_feeds(session: Session, sources: list[dict]) -> dict:
+    """Give back the feed and region the seed flip-flop erased (R152) -- a targeted, provable repair, not a null-fill.
+
+    THE DAMAGE. Until the legal catalogue was built one way by both seeds, the legal seed's feed-less entry for a host
+    the news catalogue also lists (au.int, oas.org, gov.uk ...) was taken as a CORRECTION of the news row: its empty
+    ``rss_url`` and ``region`` were written over the row's, and the row's baseline was rewritten to match. An empty live
+    value is then read as a gap (``sync_catalogue_corrections``) and ``reconcile_source_metadata`` fills neither field,
+    so the seven feeds never came back and those sources stopped being collected.
+
+    WHEN A ROW IS GIVEN BACK ITS VALUE -- all of these, field by field (``rss_url``, ``region``):
+      * the row's own ``via:`` catalogue carries a value for it (exactly one entry of that catalogue for the domain);
+      * the live value is EMPTY;
+      * the row's baseline holds no value either AND is what a feed-less entry of ANOTHER catalogue ships for this
+        domain (its name, or all of name/country/language/region when both catalogues use the same name). That is the
+        fingerprint of the erasure: nothing an operator does writes a baseline.
+    A feed an operator cleared on purpose is never refilled: the baseline still names the feed, which the operator's edit
+    cannot change. A row that fails a condition is counted (``operator_cleared``) or listed as not restored with its
+    reason, so nothing is guessed. A restored value also moves the baseline, so the next three-way sync reads it as
+    unedited rather than as an operator's change; the name, country and language the flip-flop swapped then return
+    through that same sync, which only ever moves a value the operator has not touched.
+
+    Idempotent: a restored row is no longer a candidate. Needs the full catalogue list, so the legal seed (which hands
+    over only its own entries) repairs nothing and the default seed, which runs first at boot, does the work.
+    """
+    by_domain: dict[str, list[dict]] = {}
+    for e in _usable(sources):
+        if e.get("_provenance"):
+            by_domain.setdefault(entry_key(e)[0], []).append(e)
+    empty_value = (Source.rss_url.is_(None)) | (Source.rss_url == "") | (Source.region.is_(None)) | (Source.region == "")
+    candidates = [
+        r for r in session.query(Source).filter(Source.catalog_baseline.isnot(None)).filter(empty_value).order_by(Source.id)
+        if (r.domain or "").strip().lower() in by_domain
+    ]
+    restored: list[dict] = []
+    not_restored: list[dict] = []
+    operator_cleared = 0
+    for row in candidates:
+        domain = (row.domain or "").strip().lower()
+        base = _baseline_of(row)
+        owner = _row_catalogue(row)
+        if base is None or not owner:
+            continue
+        entries = by_domain[domain]
+        mine = [e for e in entries if e.get("_provenance") == owner]
+        want = {}
+        if len(mine) == 1:
+            computed = _to_source_kwargs(mine[0])
+            for field in ("rss_url", "region"):
+                value = _norm(computed.get(field))
+                if value is not None and _norm(getattr(row, field, None)) is None:
+                    want[field] = (value, computed.get(field))
+        elif len(mine) > 1 and any(_norm(e.get("rss_url")) for e in mine):
+            if any(_norm(getattr(row, f, None)) is None for f in ("rss_url", "region")):
+                not_restored.append({
+                    "domain": row.domain, "reason": f"the {owner} catalogue holds {len(mine)} entries for this domain",
+                })
+            continue
+        if not want:
+            continue
+        if any(_norm(base.get(f)) is not None for f in want):
+            operator_cleared += 1                # the baseline still names the value: cleared since, by the operator
+            continue
+        own_name = _norm(mine[0].get("name"))
+        explained_by = None
+        for e in entries:
+            if e.get("_provenance") == owner or _norm(e.get("rss_url")):
+                continue
+            theirs = {f: _norm(v) for f, v in _to_source_kwargs(e).items() if f in ("name", "country", "language", "region")}
+            if _norm(base.get("name")) != theirs.get("name"):
+                continue
+            if theirs.get("name") == own_name and any(
+                _norm(base.get(f)) != theirs.get(f) for f in ("country", "language", "region")
+            ):
+                continue                          # the same name in both catalogues proves nothing alone
+            explained_by = e
+            break
+        if explained_by is None:
+            not_restored.append({
+                "domain": row.domain, "reason": "no feed-less entry of another catalogue explains the empty value",
+            })
+            continue
+        mates = session.query(Source).filter(Source.domain == row.domain).all()
+        new_key = feed_key(want["rss_url"][1]) if "rss_url" in want else None
+        if new_key and any(r is not row and r.feed_key == new_key for r in mates):
+            not_restored.append({"domain": row.domain, "reason": "another row of this domain already carries that feed"})
+            continue
+        for field, (norm_value, raw) in want.items():
+            setattr(row, field, raw)
+            base[field] = norm_value
+        row.catalog_baseline = json.dumps(base, sort_keys=True)
+        restored.append({
+            "domain": row.domain, "fields": sorted(want), "catalogue": owner,
+            "explained_by": f"{explained_by.get('_provenance')}: {explained_by.get('name')}",
+        })
+    if restored:
+        session.commit()
+        _LOGGER.warning(
+            "feed repair: %d source(s) had their erased feed or region restored from their own catalogue: %s",
+            len(restored), ", ".join(r["domain"] for r in restored[:_REPAIR_LIST_MAX]),
+        )
+    return {
+        "restored": len(restored), "restored_rows": restored[:_REPAIR_LIST_MAX],
+        "not_restored": len(not_restored), "not_restored_rows": not_restored[:_REPAIR_LIST_MAX],
+        "operator_cleared": operator_cleared,
+    }
+
+
 def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     """Create Source rows for any ``(domain, feed)`` not already present. Idempotent.
 
@@ -580,6 +718,8 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     ``skipped`` keeps its old meaning (every reason an entry did not become a row).
     """
     skipped_malformed = sum(1 for s in sources if not (s.get("domain") or ""))
+    # First: a row the seed flip-flop emptied must carry its feed again before entries are matched to rows by feed key.
+    feed_repair = repair_erased_feeds(session, sources)
     pairs, todo, plan, rows_by_domain = paired_rows(session, sources)
     extra_merges: list[tuple[dict, Source]] = []
     to_create: list[dict] = []
@@ -622,8 +762,8 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     # Feed-less entries describe an outlet that already has a feed row: their tags go there, after the baseline exists.
     merges = [(e, row_of[id(t)]) for e, t in plan.merges if id(t) in row_of] + extra_merges
     tag_merge = merge_feedless_tags(session, merges)
-    if tag_merge["tags_merged"]:
-        session.commit()
+    if merges:
+        session.commit()                 # also the baselines a merge only RECORDED: get_db callers never commit for us
     from src.catalog.sibling_verdicts import inherit_sibling_verdicts
 
     inherited = inherit_sibling_verdicts(session, new_rows)
@@ -633,6 +773,7 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         by_reason[reason] = by_reason.get(reason, 0) + 1
     return {
         "created": len(new_rows),
+        "feed_repair": feed_repair,
         "reconciled": reconciled,
         "corrections": corrections,
         "tag_merge": tag_merge,
@@ -678,10 +819,11 @@ def seed_default_sources(session: Session, path: Path | None = None) -> SeedResu
         # Worldwide law & IP official portals (the §5 vertical), seeded by default so a
         # fresh install can ingest and search legal primary sources globally.
         if LEGAL_SOURCES_PATH.exists():
-            legal = load_sources_from_yaml(LEGAL_SOURCES_PATH)
-            for s in legal:
-                s["_provenance"] = "legal"
-            sources = sources + legal
+            # The rows ``seed_legal_sources`` registers, built by the SAME function: a second spelling of one entry
+            # (raw ``source_type``, no gazette feed) made the two seeds correct each other on every boot.
+            from src.law.catalog import load_legal_catalog, registration_source_rows
+
+            sources = sources + registration_source_rows(load_legal_catalog(LEGAL_SOURCES_PATH))
         # Scholarly journals and official/primary-source bodies (2026-09-11 ruling), each in its
         # own catalogue with its own provenance so every surface can lens them apart from news.
         for extra, prov in ((ACADEMIC_SOURCES_PATH, "academic"), (OFFICIAL_SOURCES_PATH, "official")):
