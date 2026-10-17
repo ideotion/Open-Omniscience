@@ -2913,7 +2913,7 @@ def _merge_sources(con, batch_id, results) -> None:
     # Local wins entirely: differing incoming fields are REPORTED, never applied.
     for row in _q(
         con,
-        "SELECT i.domain, i.name, m.name FROM inc.sources i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT i.domain, i.name, m.name FROM inc.sources i"  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases and {_SAMPLE_LIMIT} is a module integer, never input
         f" JOIN sources m ON {_SAME}"
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')"
         f" LIMIT {_SAMPLE_LIMIT}",
