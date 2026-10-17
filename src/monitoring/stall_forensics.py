@@ -201,7 +201,7 @@ def _pool_evidence() -> dict[str, Any]:
                     "thread": r["thread"],
                     "endpoint": r.get("endpoint"),
                     "collector": bool(r.get("collector")),
-                    "age_s": r["age_s"],
+                    "age_s": round(r["age_s"], 1),
                 }
                 for r in rows[:_POOL_ROWS]
             ],
@@ -250,6 +250,20 @@ def classify(evidence: dict[str, Any]) -> list[str]:
     return classes
 
 
+def _before_dispatch_ms() -> int | None:
+    """Milliseconds this request spent before routing handed it to its endpoint (``latency.before_dispatch_ms``), or ``None`` when it
+    was not stamped. What is left of ``duration_ms`` is the endpoint's thread wait, its run and the response, not split further."""
+    try:
+        from src.monitoring import latency
+
+        # looked up by name: this file can land before the change that adds the reader, and then the split is simply unknown
+        reader = getattr(latency, "current_split", None)
+        ms = reader() if reader is not None else None
+        return None if ms is None else int(round(ms))
+    except Exception:  # noqa: BLE001 - an instrument that cannot answer says so
+        return None
+
+
 def note_stall(route: str, status: int, duration_ms: float) -> dict[str, Any] | None:
     """File a stall record if ``duration_ms`` crosses the threshold. Never raises.
 
@@ -270,10 +284,10 @@ def note_stall(route: str, status: int, duration_ms: float) -> dict[str, Any] | 
             "at": datetime.now(UTC).isoformat(timespec="seconds"),
             "route": route,
             "status": status,
-            "duration_ms": round(duration_ms, 1),
+            "duration_ms": int(round(duration_ms)),
+            "before_dispatch_ms": _before_dispatch_ms(),
             # "consistent with", never "caused by": these are correlated readings.
             "consistent_with": classes or ["undetermined"],
-            "undetermined": not classes,
             "evidence": evidence,
         }
         with _LOCK:
