@@ -58,7 +58,19 @@ register_default_producers()
 # refreshing flag + determinate progress so the UI shows a real progress bar.
 # --------------------------------------------------------------------------- #
 _refresh_lock = threading.Lock()
-_refresh_state: dict[str, int | bool] = {"refreshing": False, "done": 0, "total": 0}
+_refresh_state: dict[str, int | bool | str] = {"refreshing": False, "done": 0, "total": 0, "paused": ""}
+
+
+def _log_pinned() -> bool:
+    """Whether a rebuild should stand aside now: the write-ahead log is pinned and the guard that ends the pin is running (the same
+    question every pause asks, ``storage_guard.log_pause_in_force``). A non-blocking read that never raises into a view."""
+    try:
+        from src.scheduler.storage_guard import log_pause_in_force
+
+        return bool(log_pause_in_force())
+    except Exception as exc:  # noqa: BLE001 - a view must never break on the guard
+        log_failure(_LOG, "briefing: the storage guard could not be read; not pausing", exc, level=logging.WARNING)
+        return False
 
 
 def _bg_refresh() -> None:
@@ -72,6 +84,16 @@ def _bg_refresh() -> None:
             _refresh_state["total"] = total
 
     try:
+        # A rebuild is a run of whole-corpus scans, the readers that hold the write-ahead log's checkpoint back (the 16 Oct 2026 pin
+        # reports named them). While the LOG latch is engaged it does not start: the thread ends at once and the view says ``paused``,
+        # with ``refreshing`` false, so the stale cards stay on screen, the Refresh button works and Home does not poll at its fast
+        # cadence for as long as the pin lasts. It is not parked: a thread that waited would hold ``refreshing`` true for a pin that has
+        # lasted hours. The next poll after the pin drains finds the cache stale again and starts the rebuild. The drive latch is not
+        # asked: a full drive does not hurt a read.
+        if _log_pinned():
+            with _refresh_lock:
+                _refresh_state["paused"] = "wal"
+            return
         with session_scope() as session:
             refresh_briefing(session, on_progress=_progress)
     except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the app
@@ -95,8 +117,13 @@ def _ensure_background_refresh() -> None:
 
 def _refresh_status() -> dict:
     """The current background-refresh state for the API view: a ``refreshing`` bool and,
-    while refreshing, a ``progress`` {done, total} for a determinate bar."""
+    while refreshing, a ``progress`` {done, total} for a determinate bar. ``paused`` (``"wal"``)
+    is present only while the last rebuild was held back by the write-ahead log's pin AND the pin
+    still stands; it is read against the guard each time, so it never outlives its cause."""
+    pinned = _log_pinned()
     with _refresh_lock:
+        if not pinned:
+            _refresh_state["paused"] = ""
         refreshing = bool(_refresh_state["refreshing"])
         status: dict = {"refreshing": refreshing}
         if refreshing:
@@ -104,6 +131,8 @@ def _refresh_status() -> dict:
                 "done": int(_refresh_state["done"]),
                 "total": int(_refresh_state["total"]),
             }
+        if _refresh_state["paused"]:
+            status["paused"] = str(_refresh_state["paused"])
     return status
 
 

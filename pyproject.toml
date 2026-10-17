@@ -48,7 +48,9 @@ dependencies = [
     # No upper cap: the 2026-09-24 cap below 2.1 (2.1.0 tightened its ORM row typing
     # and the blocking mypy lane reported 19 new errors) was lifted once those were
     # fixed. The code type-checks on both 2.0.x (the lock) and 2.1.
-    "sqlalchemy>=2.0.30",
+    # FLOOR 2.0.31: 2.0.30 does not import on Python 3.13 (TypeError "Can't replace canonical symbol for '__firstlineno__'" in
+    # sqlalchemy/util/langhelpers.py), which requires-python >=3.13 makes the interpreter. Registry: sqlalchemy-phase-names.
+    "sqlalchemy>=2.0.31",
     "alembic>=1.13",
     # At-rest encryption (maintainer-ruled default): SQLCipher 4 via self-
     # contained wheels on Linux/Windows/macOS (verified: gate zero + the 3-OS

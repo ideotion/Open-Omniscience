@@ -35,6 +35,7 @@ import threading
 import time
 from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 # Module level, not lazy inside checkpoint_wal: an ``except WriteGateBusy``
 # clause is evaluated when an exception propagates, so a name bound by an import
@@ -226,6 +227,25 @@ def _reader_snapshot() -> dict:
         return {"instrument": "unreadable"}
 
 
+def _passive_step(cur) -> tuple[int | None, Any]:
+    """``(page_size, row)``: the page size (it turns the pin's frame count into bytes, a frame being a page plus a 24-byte header; a failed
+    read leaves it absent, never a guessed 4096) and the answer of ``PRAGMA wal_checkpoint(PASSIVE)`` -- ``(busy, log frames, copied
+    frames)``. PASSIVE never waits and copies every frame up to the oldest reader's mark."""
+    page_size: int | None = None
+    with suppress(Exception):
+        size_row = cur.execute("PRAGMA page_size").fetchone()
+        page_size = int(size_row[0]) if size_row else None
+    return page_size, cur.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+
+
+def _passive_dict(row: Any) -> dict[str, int | None]:
+    """The passive step's row as the record keeps it; a row that cannot be read is three absent figures, never zeros."""
+    try:
+        return {"busy": int(row[0]), "log_frames": int(row[1]), "checkpointed_frames": int(row[2])}
+    except (TypeError, ValueError, IndexError):
+        return {"busy": None, "log_frames": None, "checkpointed_frames": None}
+
+
 def checkpoint_wal(
     *,
     engine=None,
@@ -233,6 +253,7 @@ def checkpoint_wal(
     busy_timeout_ms: int | None = None,
     gate_timeout_s: float | None = None,
     errors: list[str] | None = None,
+    passive_without_gate: bool = False,
 ) -> dict | None:
     """Run ``PRAGMA wal_checkpoint(TRUNCATE)`` at a pass boundary, measured.
 
@@ -255,6 +276,14 @@ def checkpoint_wal(
     to be an unbounded wait, and ``record_run`` sits BELOW this call in the pass
     tail — so a long writer did not merely delay the checkpoint, it meant a
     stalled pass left no run record of itself at all.
+    ``passive_without_gate`` (the storage guard's drain passes it, nothing else does) runs the PASSIVE step first and WITHOUT the
+    gate: it never blocks a writer or a reader (busy timeout as set, no write lock) and backfills every frame up to the oldest
+    reader's mark, so a gate that a long writer holds no longer costs the drain that step too. TRUNCATE then asks for the gate
+    exactly as before, bounded the same way. When the gate stays busy the record says ``skipped`` AND carries the passive step
+    (``passive``, ``page_size``), and the journal gets ``passive-only``. It does not shrink the file (only TRUNCATE does), does
+    not free a log a reader pins, and leaves the frames of a transaction still open where they are. The pass-boundary caller keeps
+    both steps inside the gate.
+
     Rate-limited by ``OO_WAL_CHECKPOINT_MIN_S`` (default 300 s) so fast
     recycled passes don't churn; ``force=True`` bypasses the cadence (tests /
     explicit maintenance). Returns the measured record — busy flag, frames,
@@ -273,6 +302,8 @@ def checkpoint_wal(
     gate_timeout = _ckpt_gate_timeout_s() if gate_timeout_s is None else gate_timeout_s
     if not wal_checkpoint_enabled():
         return None
+    page_size: int | None = None
+    passive_row: Any = None
     try:
         if engine is None:
             from src.database.session import engine as _global_engine
@@ -306,6 +337,12 @@ def checkpoint_wal(
                 # The checkpoint runs on the driver's own cursor, which the engine's damage observer never
                 # sees: the guard discards a poisoned connection before it goes back to the pool and names
                 # the file for a damaged log or page.
+                if passive_without_gate:
+                    # The passive step needs no write lock, so a gate a long writer holds does not cost this step too (and it
+                    # never calls the busy handler, so the busy timeout below is not needed for it). The connection is already
+                    # out of the pool: the pool first, then the gate, as everywhere.
+                    with guard_raw_driver(raw, engine=engine):
+                        page_size, passive_row = _passive_step(cur)
                 with write_lock(timeout=gate_timeout or None), guard_raw_driver(raw, engine=engine):
                     # PRAGMAs are not DML, so pysqlite opens no implicit
                     # transaction here — the checkpoint runs outside any BEGIN.
@@ -323,9 +360,8 @@ def checkpoint_wal(
                     # reader whose snapshot is at the current end of the WAL
                     # satisfies it exactly (423 == 423) while still pinning the
                     # file. There is nothing to predict: not waiting is the fix.
-                    passive_row = cur.execute(
-                        "PRAGMA wal_checkpoint(PASSIVE)"
-                    ).fetchone()
+                    if not passive_without_gate:
+                        page_size, passive_row = _passive_step(cur)
                     row = cur.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
             finally:
                 # ALWAYS restore before the connection returns to the pool
@@ -354,6 +390,7 @@ def checkpoint_wal(
             "checkpointed_frames": ckpt_frames,
             "wal_bytes_before": bytes_before,
             "wal_bytes_after": bytes_after,
+            "page_size": page_size,
             "duration_ms": duration_ms,
             # S4.1: the passive step's own result. Separate keys, because a
             # busy TRUNCATE over a successful backfill and a busy TRUNCATE that
@@ -387,12 +424,23 @@ def checkpoint_wal(
         # "disabled / not due"): a checkpoint that could not run and one that was
         # never asked to run are opposite facts.
         log_failure(_LOG, "wal checkpoint skipped", exc, level=logging.WARNING)
-        storage_events.note_checkpoint(trigger, outcome="skipped", seconds=gate_timeout, error=type(exc).__name__)
-        return {
+        skipped = {
             "skipped": "gate busy",
             "detail": type(exc).__name__,
             "waited_s": gate_timeout,
         }
+        if passive_row:
+            # The passive step ran without the gate before the wait: its result is a measurement, and the pin report reads it.
+            skipped["passive"] = _passive_dict(passive_row)
+            skipped["page_size"] = page_size
+        storage_events.note_checkpoint(
+            trigger,
+            passive=passive_row if passive_row else None,
+            outcome="passive-only" if passive_row else "skipped",
+            seconds=gate_timeout,
+            error=type(exc).__name__,
+        )
+        return skipped
     except Exception as exc:  # noqa: BLE001 - hygiene must never break the run loop
         log_failure(_LOG, "wal checkpoint failed; run loop continues", exc, level=logging.WARNING)
         storage_events.note_checkpoint(trigger, outcome="failed", error=type(exc).__name__)

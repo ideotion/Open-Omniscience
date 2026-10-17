@@ -34,7 +34,7 @@ from src.database.models import (
     WikiPage,
     WikiRevision,
 )
-from src.database.outlet import OutletMap
+from src.database.outlet import OutletMap, outlet_key
 from src.database.stand_in import not_a_stand_in_article_id
 from src.monitoring.secret_scrub import log_failure
 
@@ -261,6 +261,9 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
                 "title": article.title,
                 "url": article.url,
                 "source": source_name,
+                # The OUTLET the article's source belongs to (row J, R146): a lead's independent-source count reads this,
+                # never the feed label above, so two feeds of one site are one voice.
+                "outlet": outlet_key(article.source_id, article.source.domain if article.source is not None else None),
                 "published_at": article.published_at.isoformat() if article.published_at else None,
                 "article_id": article.id,
             }
@@ -949,7 +952,7 @@ def _articles_by_id(session, ids: list[str]) -> dict[str, dict]:
         return {}
     int_ids = [int(i) for i in ids if str(i).isdigit()]
     rows = (
-        session.query(Article, Source.name)
+        session.query(Article, Source.name, Source.domain)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(Article.id.in_(int_ids))
         .all()
@@ -959,9 +962,10 @@ def _articles_by_id(session, ids: list[str]) -> dict[str, dict]:
             "title": a.title,
             "url": a.url,
             "source": name,
+            "outlet": outlet_key(a.source_id, domain),   # the site, so two feeds of one outlet count once
             "published_at": a.published_at.isoformat() if a.published_at else None,
         }
-        for a, name in rows
+        for a, name, domain in rows
     }
 
 
@@ -1499,7 +1503,7 @@ def ownership_change(session) -> list[Card]:
     """
     cutoff = datetime.now(UTC) - timedelta(days=_IP_DAYS)
     rows = (
-        session.query(Article, Source.name)
+        session.query(Article, Source.name, Source.domain)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(
             func.coalesce(Article.published_at, Article.created_at) >= cutoff,
@@ -1510,10 +1514,10 @@ def ownership_change(session) -> list[Card]:
         .all()
     )
     matches = []
-    for article, source_name in rows:
+    for article, source_name, source_domain in rows:
         text = (article.title or "") + " " + (article.get_content() or "")[:1200]
         if _DEAL_RE.search(text):
-            matches.append((article, source_name))
+            matches.append((article, source_name, source_domain))
         if len(matches) >= _MAX_DEAL:
             break
     if not matches:
@@ -1523,9 +1527,10 @@ def ownership_change(session) -> list[Card]:
             "title": a.title,
             "url": a.url,
             "source": name,
+            "outlet": outlet_key(a.source_id, domain),
             "published_at": a.published_at.isoformat() if a.published_at else None,
         }
-        for a, name in matches
+        for a, name, domain in matches
     ]
     lead = matches[0][0].title or "(untitled)"
     math_rows = [
@@ -1537,7 +1542,7 @@ def ownership_change(session) -> list[Card]:
     return [
         Card(
             type="ownership_change",
-            article_ids=[a.id for a, _ in matches],  # F1: carry the deal-report articles so the click opens them
+            article_ids=[m[0].id for m in matches],  # F1: carry the deal-report articles so the click opens them
             trigger=_trigger(
                 "Some recent articles use the language of corporate deals — acquired, "
                 "merged, divested. This flags the wording for you to verify against the "
@@ -1743,7 +1748,8 @@ def story_lineage(session) -> list[Card]:
 
     cutoff = datetime.now(UTC) - timedelta(days=_LINEAGE_DAYS)
     rows = (
-        session.query(Article.id, Source.name, Article.title, Article.content, Article.published_at)
+        session.query(Article.id, Source.name, Article.title, Article.content, Article.published_at,
+                      Article.source_id, Source.domain)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
         .order_by(Article.id.desc())
@@ -1752,19 +1758,21 @@ def story_lineage(session) -> list[Card]:
     )
     by_id = {}
     texts = {}
-    for aid, name, title, content, pub in rows:
+    for aid, name, title, content, pub, source_id, domain in rows:
         text = content or title or ""
         if len(text) < 200:
             continue
         sid = str(aid)
         texts[sid] = text
-        by_id[sid] = {"id": sid, "source": name, "text": text, "published_at": pub}
+        by_id[sid] = {"id": sid, "source": name, "outlet": outlet_key(source_id, domain), "text": text,
+                      "published_at": pub}
     if len(texts) < _LINEAGE_MIN_SOURCES:
         return []
     nd = near_duplicate_clusters(texts, threshold=0.6)
     for cluster in nd.clusters:
         docs = [by_id[m] for m in cluster.members]
-        sources = {d["source"] for d in docs if d["source"]}
+        # OUTLETS, not feed labels: three feeds of one site are one voice, and the card says "N sources".
+        sources = {d["outlet"] for d in docs if d["source"]}
         if len(sources) < _LINEAGE_MIN_SOURCES:
             continue
         lin = trace_lineage(docs)
@@ -2110,18 +2118,20 @@ def space_time_convergence(session) -> list[Card]:
             .all()
         )
         # Map article -> source name for honest per-evidence attribution.
-        src_lookup = dict(
-            session.query(Article.id, Source.name)
+        src_lookup = {
+            aid: (name, outlet_key(sid, domain))
+            for aid, name, sid, domain in session.query(Article.id, Source.name, Article.source_id, Source.domain)
             .outerjoin(Source, Source.id == Article.source_id)
             .filter(Article.id.in_(c["article_ids"][:4]))
             .all()
-        )
+        }
         evidence = [
             {
                 "article_id": aid,
                 "title": title or url,
                 "url": url,
-                "source": src_lookup.get(aid),
+                "source": src_lookup.get(aid, (None, None))[0],
+                "outlet": src_lookup.get(aid, (None, None))[1],
                 "published_at": pub.isoformat() if pub else None,
             }
             for aid, title, url, pub in ev_rows

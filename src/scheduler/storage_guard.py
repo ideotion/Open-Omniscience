@@ -248,6 +248,25 @@ DRAIN_GATE_TIMEOUT_S = 30.0
 #: slot, and twelve frames reach from a worker's entry point to the statement that holds it.
 PIN_HOLDERS_MAX = 8
 PIN_STACK_DEPTH = 12
+#: A frame in the log is its page plus a header of this many bytes (SQLite's WAL format, fixed by the file format and not a setting):
+#: the figure that turns the pin's count of frames into the bytes the log cannot give back.
+WAL_FRAME_HEADER_BYTES = 24
+#: The write-gate phases (``writer.thread_phase``) in which a legacy-mode checkout is running a statement or ending a transaction:
+#: the only moments such a checkout pins the log, so a holder in one of them is listed before an older one that is idle.
+_PIN_STATEMENT_PHASES = frozenset({"execute", "commit"})
+#: Why a pin figure is absent, one fixed sentence each (a key in the report's ``pin_note``, never a message built from the driver).
+_PIN_NOTES = {
+    "no-passive": "The passive pass did not run or gave no figures, so no reader's position was read.",
+    "unreadable": "The passive pass gave figures that are not those of a log in WAL mode.",
+    "checkpoint-busy": (
+        "Another checkpoint held the checkpoint lock, so the passive pass answered busy with no frame counts. That is not a "
+        "reader's pin, and it says nothing about one."
+    ),
+    "all-copied": (
+        "The passive pass copied every frame of the log, so there is no position to read from it. That does not prove "
+        "nothing pins the file: a reader whose snapshot is at the end of the log leaves the same figures."
+    ),
+}
 #: The log line names fewer than the report holds: one line per drain must stay readable in a
 #: log that rotates at 60 MB on a drive that may be nearly full. The report has the rest.
 PIN_LOG_HOLDERS = 4
@@ -624,7 +643,8 @@ def read_storage() -> dict[str, Any]:
 
 
 def _default_drain() -> dict | None:
-    """The same call the pass boundary makes: PASSIVE then TRUNCATE through the write gate,
+    """The pass boundary's call with one difference: PASSIVE runs first and WITHOUT the write gate (``passive_without_gate``: it never
+    blocks a writer or a reader, so a gate a long writer holds does not cost the drain the copy too), then TRUNCATE through the gate,
     busy timeout zero. ``force`` skips only its cadence. The gate wait is the operator's
     ``OO_CKPT_GATE_TIMEOUT_S`` but never longer than :data:`DRAIN_GATE_TIMEOUT_S`, and ``0`` (for
     ever) becomes that bound here. A checkpoint that FAILED (a pooled-connection wait that timed
@@ -639,6 +659,7 @@ def _default_drain() -> dict | None:
             force=True,
             gate_timeout_s=min(t, DRAIN_GATE_TIMEOUT_S) if t > 0 else DRAIN_GATE_TIMEOUT_S,
             errors=errors,
+            passive_without_gate=True,
         )
     if rec is None and errors:
         return {"error": errors[0]}
@@ -651,12 +672,42 @@ def _checkpoint_enabled() -> bool:
     return wal_checkpoint_enabled()
 
 
+def _pin_figures(drain: dict | None) -> tuple[dict[str, int] | None, str | None]:
+    """How far behind the end of the log the oldest reader holds it, from the passive pass of the drain, or why that is not known.
+
+    PASSIVE copies every frame up to the oldest reader's mark and stops there, so ``checkpointed_frames`` IS that mark and
+    ``log_frames - checkpointed_frames`` is what the reader keeps the file from giving back. SQLite records the position and not
+    which connection holds it, so this narrows the search and names no one. Returns ``(pin, None)`` or ``(None, note_key)``;
+    ``bytes_behind`` is absent when the page size was not read, never a guessed 4096.
+    """
+    passive = drain.get("passive") if isinstance(drain, dict) else None
+    if not isinstance(passive, dict):
+        return None, "no-passive"
+    log, done = passive.get("log_frames"), passive.get("checkpointed_frames")
+    if not (
+        isinstance(log, int) and not isinstance(log, bool) and isinstance(done, int) and not isinstance(done, bool)
+    ):
+        return None, "no-passive"
+    if log < 0 and passive.get("busy") == 1:
+        return None, "checkpoint-busy"  # SQLite's answer when ANOTHER connection holds the checkpoint lock: (1, -1, -1)
+    if log < 0 or done < 0 or done > log:
+        return None, "unreadable"
+    if done == log:
+        return None, "all-copied"
+    pin: dict[str, int] = {"mark_frame": done, "frames_behind": log - done}
+    size = drain.get("page_size") if isinstance(drain, dict) else None
+    if isinstance(size, int) and not isinstance(size, bool) and size > 0:
+        pin["bytes_behind"] = (log - done) * (size + WAL_FRAME_HEADER_BYTES)
+    return pin, None
+
+
 def _pin_report(drain: dict | None) -> dict[str, Any]:
     """Who holds the WAL, named, with a stack each: the data no bundle has had.
 
     ``pool_watch`` sees checkouts of the pooled engines; a read that is not a pooled
     checkout cannot be seen from here, and the report says so rather than implying it would.
-    Never raises.
+    ``pin`` is the measured side (how far behind the end of the log the oldest reader holds it); ``holders`` are candidates, each with
+    the phase its thread is in NOW, a thread inside a statement or a commit listed before an older idle one. Never raises.
     """
     out: dict[str, Any] = {
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -665,13 +716,36 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
         "instrument": "unattached",
     }
     try:
+        pin, why = _pin_figures(drain)
+        if pin is not None:
+            out["pin"] = pin
+        else:
+            out["pin"] = None
+            out["pin_note"] = _PIN_NOTES.get(why or "", _PIN_NOTES["no-passive"])
+    except Exception:  # noqa: BLE001 - a report must never raise
+        out["pin"] = None
+    try:
         from src.database import pool_watch
 
         if pool_watch.is_registered():
             out["instrument"] = "attached"
-            rows = pool_watch.checked_out()
+            rows = pool_watch.checked_out()  # oldest first
             out["checkouts"] = len(rows)
-            top = rows[:PIN_HOLDERS_MAX]
+            if rows:
+                out["oldest_thread"] = rows[0]["thread"]
+            phases: dict[int, str | None] = {}
+            try:
+                from src.database.writer import thread_phases
+
+                phases = thread_phases([r["ident"] for r in rows if r.get("ident")])
+            except Exception:  # noqa: BLE001 - the phase is an extra; the holders stay without one
+                phases = {}
+            # Every row is ranked, THEN the list is cut: the cap shrinks what is printed, and a thread in a statement behind eight
+            # idle older ones must not be the one that is cut. ``sorted`` is stable, so age order holds inside each group.
+            ranked = sorted(
+                rows, key=lambda r: 0 if phases.get(r.get("ident") or -1) in _PIN_STATEMENT_PHASES else 1
+            )
+            top = ranked[:PIN_HOLDERS_MAX]
             stacks = pool_watch.stacks_for(
                 [r["ident"] for r in top if r.get("ident")], depth=PIN_STACK_DEPTH
             )
@@ -681,10 +755,16 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
                     "endpoint": r.get("endpoint"),
                     "pool": r.get("pool"),
                     "age_s": r["age_s"],
+                    "phase": phases.get(r.get("ident") or -1),
                     "stack": stacks.get(r["ident"], []) if r.get("ident") else [],
                 }
                 for r in top
             ]
+            out["ranked_by"] = (
+                "Threads inside a statement or a commit when this was taken come first, then the others by how long their "
+                "connection has been out. A phase is one instant, read from the stack at the moment of the report, not the "
+                "thread's history; none means the thread was already gone."
+            )
     except Exception:  # noqa: BLE001
         out["instrument"] = "unreadable"
     try:
@@ -702,9 +782,10 @@ def _pin_report(drain: dict | None) -> dict[str, Any]:
         "driver runs its legacy transaction mode, where a plain SELECT starts no transaction, so "
         "a checkout there pins the log only while a statement or an open cursor of it is running, "
         "or after a write it has not committed; a read_snapshot checkout holds its snapshot "
-        "from its first read until it ends. The pool field says which. The oldest checkout is "
-        "the likeliest holder, never a measured one, and an age says how long the connection "
-        "has been out, not how long a statement ran."
+        "from its first read until it ends. The pool field says which. SQLite records how far "
+        "behind the end of the log the oldest reader holds it (pin) but not which connection that "
+        "is, so the holders narrow the search and none is proof. An age says how long the "
+        "connection has been out, not how long a statement ran."
     )
     return out
 
@@ -818,6 +899,19 @@ class StorageGuard:
     def engaged(self) -> bool:
         with self._lock:
             return self._wal or self._disk
+
+    def wal_engaged(self) -> bool:
+        """True while the LOG latch is engaged and the guard is on, whether or not the drive latch is too.
+
+        ``kind()`` names the drive first when both hold, so a caller that must pause for the log (the reads
+        that keep a reader open, ``api/heavy.py``) asks this instead of comparing ``kind()`` to ``"wal"``.
+        Like :meth:`wait_if_engaged` it follows the LATCH and not the operator's "Resume anyway": that forces
+        COLLECTION on, and a scan is not collection. A non-blocking read; it samples nothing and never raises.
+        """
+        if not self.enabled():
+            return False
+        with self._lock:
+            return bool(self._wal)
 
     def kind(self) -> str | None:
         """``"disk"`` (the more severe, wins), ``"wal"``, ``"damage"`` (the corpus file was reported
@@ -1515,9 +1609,11 @@ class StorageGuard:
         TRUNCATE is busy.
 
         Returns the drain record when one ran (``{"error": <type>}`` for one that failed). Never while an exclusive operation owns the
-        machine (an import, a restore's swap: the drain opens connections to the live corpus
-        and must not do so between a restore's dispose and its replace), and under a corpus
-        lease, so a restore that starts during a drain waits for it. At most one drain runs at a
+        machine (an import, a restore's swap, an encryption in place: the drain opens connections to the live corpus
+        and must not do so between a dispose and a replace), and under a corpus
+        lease, so a restore that starts during a drain waits for it. The machine is asked about twice: here, cheaply, and again
+        once the lease is held (:meth:`_run_drain`), so an exclusive operation that opens its window and then waits for the
+        leases is always seen by one of the two. At most one drain runs at a
         time (an in-flight flag taken under the guard's lock, so two callers cannot both pass the
         cadence check). A busy write gate (bounded at 30 s by the guard's own drain,
         :func:`_default_drain`) delays only the caller: the supervisor calls this on a thread of its
@@ -1553,9 +1649,17 @@ class StorageGuard:
         """The drain a caller has claimed (:meth:`drain_if_due`): lease, checkpoint, the stamp
         when it ends, record and the pin report. ``_drain_inflight`` is the caller's to release."""
         from src.database.corpus_lease import corpus_lease
+        from src.scheduler.runner import owns_the_machine
 
+        owned = False
         try:
             with corpus_lease("storage-guard-drain"):
+                # Asked AGAIN, now the lease is held: the first answer (in :meth:`drain_if_due`) is older than this lease. An
+                # exclusive operation that opens its window and then waits for the leases (an encryption in place, a restore's
+                # swap) either finds this one and waits for it, or this read finds its window: lease first, then ask.
+                if owns_the_machine():
+                    owned = True
+                    return None
                 rec = self._drain()
             self.clear_failure("the drain")  # a failure after this success is news again
         except Exception as exc:  # noqa: BLE001 - the drain's own thread must not die of it
@@ -1565,12 +1669,19 @@ class StorageGuard:
             # Paced from when the drain ENDED, however it ended: one that queued 30 s on the write
             # gate must not be followed five seconds later by the next (the permanent waiter this
             # cadence exists to prevent), and one that raised past the ``except`` (a
-            # ``BaseException``) must not leave the cadence unstamped either.
-            with self._lock:
-                self._last_drain_mono = self._clock()
+            # ``BaseException``) must not leave the cadence unstamped either. A drain that never
+            # ran (the machine was owned) is not a drain, and stamps nothing.
+            if not owned:
+                with self._lock:
+                    self._last_drain_mono = self._clock()
         # TRUNCATE came back busy: a reader holds the log. The gate was busy: a WRITER held the
-        # write gate for the whole bounded wait and TRUNCATE never ran. Different facts.
-        pinned = isinstance(rec, dict) and rec.get("busy") == 1
+        # write gate for the whole bounded wait and TRUNCATE never ran. Different facts. A third: TRUNCATE answered busy WITHOUT frame
+        # counts ((1, -1, -1)), which is what SQLite says when ANOTHER connection holds the checkpoint lock (a commit's own
+        # autocheckpoint, a second checkpointer): no reader is known to hold anything, so it is neither of the above.
+        busy = isinstance(rec, dict) and rec.get("busy") == 1
+        log_frames = rec.get("log_frames") if isinstance(rec, dict) else None
+        another_checkpoint = busy and isinstance(log_frames, int) and not isinstance(log_frames, bool) and log_frames < 0
+        pinned = busy and not another_checkpoint
         gate_busy = isinstance(rec, dict) and "skipped" in rec
         report = None
         if (pinned or gate_busy) and (
@@ -1583,6 +1694,9 @@ class StorageGuard:
                 "at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "busy": rec.get("busy") if isinstance(rec, dict) else None,
                 "skipped": rec.get("skipped") if isinstance(rec, dict) else None,
+                # TRUNCATE answered busy with no frame counts: another checkpoint held the checkpoint lock (``busy`` above is that
+                # answer as SQLite gave it, and is not a reader's pin when this is True).
+                "another_checkpoint": another_checkpoint,
                 # A checkpoint that failed (its own outcome, never "disabled / not due"): the
                 # exception's type, e.g. the pool's TimeoutError after OO_DB_POOL_TIMEOUT.
                 "error": rec.get("error") if isinstance(rec, dict) else None,
@@ -1597,12 +1711,20 @@ class StorageGuard:
             if report is not None:
                 self._last_pin_report = report
                 self._last_pin_mono = now_mono
+        if another_checkpoint:
+            _LOG.info(
+                "storage guard: the WAL was not reset -- another checkpoint held the checkpoint lock (no reader is known to hold the "
+                "log); the next drain asks again"
+            )
         if report is not None:
             # The oldest checkout is the likeliest candidate: the younger ones churn with the workers (and
             # more so under an override, when collection runs), so keying on all of them would
             # bring back the one-warning-a-minute flood this key exists to stop.
             holders = report.get("holders", [])
-            key = ("pinned" if pinned else "gate-busy", str(holders[0].get("thread")) if holders else None)
+            # The key follows the OLDEST checkout, not the first listed: the listing is ranked by what each thread is doing
+            # now, which changes between reports, and a change of rank is not news.
+            first = report.get("oldest_thread") or (holders[0].get("thread") if holders else None)
+            key = ("pinned" if pinned else "gate-busy", str(first) if first else None)
             with self._lock:
                 fresh = key != self._report_key
                 self._report_key = key
@@ -1610,19 +1732,30 @@ class StorageGuard:
             tops = "; ".join(
                 f"{h['thread']} ({h['age_s']:.0f} s)"
                 + (f" [{h['pool']} pool]" if h.get("pool") else "")
+                + (f" in {h['phase']}" if h.get("phase") else "")
                 + (f" at {h['stack'][-1]}" if h.get("stack") else "")
                 for h in report.get("holders", [])[:PIN_LOG_HOLDERS]
+            )
+            pin = report.get("pin")
+            behind = (
+                f"; the oldest reader holds the log {pin['frames_behind']} frames"
+                + (f" ({pin['bytes_behind']} bytes)" if "bytes_behind" in pin else "")
+                + " behind its end"
+                if isinstance(pin, dict) and "frames_behind" in pin
+                else ""
             )
             if pinned:
                 log(
                     "storage guard: the WAL cannot be reset -- TRUNCATE is busy, a reader holds "
-                    "it; checkouts (candidates, not proof of a snapshot): %s",
+                    "it%s; checkouts (candidates, not proof of a snapshot): %s",
+                    behind,
                     tops or "none listed (the holder is not a pooled checkout)",
                 )
             else:
                 log(
                     "storage guard: the WAL was not reset -- the write gate stayed busy (a writer "
-                    "is running), so TRUNCATE never ran; checkouts: %s",
+                    "is running), so TRUNCATE never ran%s; checkouts: %s",
+                    behind,
                     tops or "none listed",
                 )
         return rec
@@ -2013,6 +2146,15 @@ def stop() -> None:
         # ``ident`` is None for a thread that was created but never started (a failed start()).
         if t is not None and t is not threading.current_thread() and t.ident is not None:
             t.join(timeout=max(0.0, deadline - time.monotonic()))
+
+
+def log_pause_in_force() -> bool:
+    """Whether work that would add a reader to the write-ahead log should stand aside now: the guard's LOG latch is engaged AND its
+    supervisor runs. The one place the two meet, so every pause asks the same question. WHAT THE SUPERVISOR CONDITION PROTECTS: the
+    supervisor takes the readings and the drain that end the latch, so without it (it failed to start, which is logged) the latch could
+    stand for ever with nobody sampling, and a pause must never outlive its cause. The drive latch and the operator's "Resume anyway"
+    are not asked: a full drive does not hurt a read, and the override is about collection. A non-blocking read; never raises."""
+    return storage_guard.wal_engaged() and supervisor_running()
 
 
 def supervisor_running() -> bool:

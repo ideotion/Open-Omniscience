@@ -112,8 +112,9 @@ def require_mentions_view(session: Session) -> None:
         return
     from src.database.writer import write_lock
 
+    conn = session.connection()  # the connection first, then the gate (the read above holds one already; this keeps the order in the text)
     with write_lock():
-        if ensure_derived_views(session.connection()) == "skipped":
+        if ensure_derived_views(conn) == "skipped":
             raise RuntimeError(f"{MENTIONS_VIEW} could not be created")
         session.commit()
 

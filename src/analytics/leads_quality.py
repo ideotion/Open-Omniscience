@@ -44,7 +44,7 @@ def leads_quality_report(session, *, budget_s: float | None = None) -> dict:
     """
     import time
 
-    from src.briefing.leads import _distinct_sources, is_major
+    from src.briefing.leads import _distinct_outlets, is_major
     from src.briefing.registry import run_all_bounded
 
     cards, stats = run_all_bounded(
@@ -60,7 +60,7 @@ def leads_quality_report(session, *, budget_s: float | None = None) -> dict:
                 "bucket": c.bucket,
                 "title": c.title,
                 "n": c.n,
-                "distinct_sources": _distinct_sources(c),
+                "distinct_outlets": _distinct_outlets(c),
                 "article_ids_count": len(c.article_ids or []),
                 "signal": c.signal,
                 "major": is_major(c),

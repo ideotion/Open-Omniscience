@@ -60,6 +60,10 @@ _FIELDS: dict[str, tuple[type, ...]] = {
     "resident_mib": (int, float),
     # the class NAME of the engine error that stopped it (never its text)
     "engine_error_class": (str,),
+    # a build that ended in an error of its own (R172): the run of consecutive failures, and why the stage is missing when it is.
+    # For that record ``stage`` is the LAST REPORTED stage, not the raising statement. A restart reads the count and holds nothing.
+    "consecutive_failures": (int,),
+    "stage_why": (str,),
     # whether DuckDB could spill when it stopped (False: the limit was a wall); a later process where it may releases
     "offload_allowed": (bool,),
     # which code stopped it: a record is evidence about THAT build only (see ``rollup_serve.BUILD_CODE_VERSION``)

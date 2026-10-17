@@ -2309,7 +2309,8 @@ def vacuum_database(engine: Engine) -> dict:
     # of racing them on the SQLite lock (it bypasses the ORM-flush hook).
     from src.database.writer import write_lock
 
-    with write_lock(), engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    # The connection first, then the gate (writer.connection_first): the other order made this wait for the pool while holding the gate.
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, write_lock():
         freelist_before = conn.execute(text("PRAGMA freelist_count")).scalar() or 0
         conn.execute(text("VACUUM"))
         conn.execute(text("PRAGMA analysis_limit=1000"))
@@ -2400,7 +2401,7 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
     from src.database.writer import write_lock
 
     try:
-        with write_lock(), engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, write_lock():
             av = int(conn.execute(text("PRAGMA auto_vacuum")).scalar() or 0)
             if av != 2:
                 return {"skipped": "not-incremental-mode", "auto_vacuum": av}

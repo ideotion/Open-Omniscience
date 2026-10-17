@@ -643,9 +643,8 @@ def test_the_engines_own_memory_limit_is_never_retried_row_by_row():
     con.execute("SET memory_limit='1MB'")
     con.execute("CREATE TABLE s (k BIGINT, d VARCHAR, c BIGINT, a BIGINT)")
     rows = [(i, "2026-03-01", 1, i) for i in range(20_000)]
-    with pytest.raises(Exception) as caught:
+    with pytest.raises(columnar._PlainEngineWall):  # the REAL engine's plain limit, now named by its caller as the wall
         columnar._bulk_insert(con, "s", columnar._STAGE_TYPES, rows)
-    assert type(caught.value).__name__ == "OutOfMemoryException"
     assert con.execute("SELECT COUNT(*) FROM s").fetchone()[0] == 0, "nothing was half-inserted"
 
 
@@ -1539,6 +1538,90 @@ def test_the_stop_names_the_sizes_read_before_the_fatal_batch(session):
     assert got.value.reason == "duckdb-limit" and d["stage"] == "stage-insert" and d["engine_error_class"] == "FatalException"
     assert d["rows_done"] > 0 and d["resident_mib"] > 0 and d["peak_mib"] >= d["resident_mib"]
     assert got.value.__cause__ is None and "allocate" not in repr(d)
+
+
+# --------------------------------------------------------------------------- #
+# The plain OutOfMemoryException is the same wall, named at the stage it hit (24 M base build: a raw, stage-less skip before)
+# --------------------------------------------------------------------------- #
+
+_PLAIN_WORDS = "Out of Memory Error: failed to allocate data of size 256.0 KiB (957.3 MiB/957.4 MiB used) engine words that must not be kept"
+
+
+class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+    pass
+
+
+class _OomAt(_FatalAt):
+    def execute(self, sql, *a, **k):
+        if sql.lstrip().startswith(self._prefix):
+            if self._after > 0:
+                self._after -= 1
+            else:
+                self.fired += 1
+                raise OutOfMemoryException(self._words)
+        return self._real.execute(sql, *a, **k)
+
+
+def test_a_plain_out_of_memory_batch_never_reaches_the_slow_path_and_leaves_no_chain():
+    class Con:
+        def __init__(self):
+            self.slow = 0
+
+        def execute(self, *a, **k):
+            raise OutOfMemoryException(_PLAIN_WORDS)
+
+        def executemany(self, *a, **k):
+            self.slow += 1
+
+    con = Con()
+    with pytest.raises(columnar._PlainEngineWall) as got:
+        columnar._bulk_insert(con, "t", ("BIGINT",), [(1,)])
+    assert con.slow == 0
+    assert got.value.__cause__ is None and got.value.__suppress_context__ is True and not got.value.args
+
+
+def test_an_interrupt_in_a_batch_still_propagates_raw():
+    class InterruptException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    class Con:
+        def execute(self, *a, **k):
+            raise InterruptException("interrupted")
+
+    with pytest.raises(InterruptException):
+        columnar._bulk_insert(Con(), "t", ("BIGINT",), [(1,)])
+
+
+@pytest.mark.parametrize(("prefix", "after", "stage"), [
+    ("INSERT INTO keyword_daily_stage", 2, "stage-insert"),
+    ("INSERT INTO keyword_meta", 0, "keywords"),
+])
+def test_a_plain_out_of_memory_in_an_insert_names_its_stage_and_class(session, prefix, after, stage):
+    _seed(session, keywords=30, mentions_per=4)
+    con = _OomAt(columnar.connect(passphrase=None, spill=""), prefix, words=_PLAIN_WORDS, after=after)
+    with pytest.raises(columnar.BuildDeclined) as got:
+        columnar.build_keyword_daily(con, session, batch_size=30, snapshot=columnar.budget_snapshot())
+    d = got.value.detail
+    assert got.value.reason == "duckdb-limit" and d["stage"] == stage and d["engine_error_class"] == "OutOfMemoryException"
+    assert d["resident_mib"] is not None or d["peak_mib"] is None
+    assert got.value.__cause__ is None and "allocate" not in repr(d) and "engine words" not in repr(d)
+
+
+def test_a_plain_out_of_memory_in_an_aggregate_carries_the_class_and_sizes_with_the_cut(session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+
+    def always(*_a, **_k):
+        raise OutOfMemoryException(_PLAIN_WORDS)
+
+    monkeypatch.setattr(columnar, "_aggregate_stage", always)
+    con = columnar.connect(passphrase=None, spill="")
+    with pytest.raises(columnar.BuildDeclined) as got:
+        columnar.build_keyword_daily(con, session, batch_size=30, snapshot=columnar.budget_snapshot())
+    d = got.value.detail
+    assert d["stage"] == "aggregate" and d["engine_error_class"] == "OutOfMemoryException"
+    assert d["shard"] == 0 and d["split"] == columnar._BUILD_MAX_SPLIT and d["rows_done"] > 0
+    assert d["resident_mib"] is not None and d["peak_mib"] >= d["resident_mib"]
+    assert "engine words" not in repr(d) and got.value.__cause__ is None
 
 
 # --------------------------------------------------------------------------- #

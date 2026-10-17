@@ -48,7 +48,7 @@ def test_encrypt_all_holds_the_single_writer_gate_across_EVERY_file(monkeypatch)
 
     seen_held: list[bool] = []
 
-    def _fake_encrypt_database(path, key):
+    def _fake_encrypt_database(path, key, *, library=False):
         # The whole point of the fix: while each file is being processed, the
         # gate must be HELD, so any other writer (a scraper's ORM flush/commit)
         # queues behind it instead of racing the read-export-swap.
@@ -83,7 +83,7 @@ def test_encrypt_all_releases_the_gate_even_if_a_file_fails(monkeypatch):
     monkeypatch.setattr(unlock_mod, "main_db_path", lambda: Path("/fake/corpus.db"))
     monkeypatch.setattr("src.paths.data_dir", lambda: Path("/fake"))
 
-    def _boom(path, key):
+    def _boom(path, key, *, library=False):
         raise tool.EncryptToolError("simulated failure")
 
     monkeypatch.setattr(tool, "encrypt_database", _boom)
@@ -112,7 +112,7 @@ def test_a_concurrent_writer_actually_queues_behind_encrypt_all(monkeypatch):
     release_encrypt = threading.Event()
     other_writer_ran_at: list[float] = []
 
-    def _slow_encrypt_database(path, key):
+    def _slow_encrypt_database(path, key, *, library=False):
         # Block until the test tells us to finish -- long enough for the other
         # thread below to attempt (and be forced to queue behind) the gate.
         release_encrypt.wait(timeout=5)

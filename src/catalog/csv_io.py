@@ -20,7 +20,8 @@ import io
 from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
-from src.database.source_lookup import source_for_domain
+from src.database.feed_key import feed_key
+from src.database.source_lookup import domain_keyed, match_import
 from src.monitoring.secret_scrub import record_text
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -274,17 +275,36 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     created = updated = 0
     kept_stored: list[str] = []
     errors: list[str] = []
-    existing = {d: sid for sid, d in session.query(Source.id, Source.domain).all()}
+    # A source is its domain AND its feed: a sheet row is an EDIT of the row it matches (``match_import``) and a new
+    # feed of a registered domain is a new sibling row. Matching on the domain alone made every row of a sheet that
+    # exports thirty feeds of one outlet overwrite the first.
+    by_domain: dict[str, list[tuple[int, str]]] = {}
+    for sid, d, fk in session.query(Source.id, Source.domain, Source.feed_key).order_by(Source.id).all():
+        by_domain.setdefault(d, []).append((sid, fk or ""))
+
+    legacy = domain_keyed(session)
+    # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling. A record WITHOUT a
+    # feed is not a feed: it edits the oldest row whatever else the sheet holds, so counting it made a feed-less line
+    # beside one corrected feed read as two feeds and turned the correction into a sibling (the seeder reads it as a
+    # correction).
+    feeds_of: dict[str, set[str]] = {}
+    for row in rows:
+        keys = feeds_of.setdefault(row["domain"], set())
+        if feed_key(row.get("rss_url")):
+            keys.add(feed_key(row.get("rss_url")))
+    records_of = {d: len(k) for d, k in feeds_of.items()}
 
     for row in rows:
         domain = row["domain"]
-        is_update = domain in existing
+        match = match_import(by_domain.get(domain, []), feed_key(row.get("rss_url")), records_of[domain], legacy)
+        is_update = match is not None
+        landed = None
         try:
             # begin_nested() issues a SAVEPOINT and flushes at block exit; an error
             # there auto-rolls-back to the savepoint (this row only) and re-raises.
             with session.begin_nested():
                 if is_update:
-                    src = source_for_domain(session, domain)
+                    src = session.get(Source, match)
                     if src is None:   # the scan above saw it; a row removed since is this row's error, not a crash
                         raise LookupError(f"no source row for {domain!r}")
                     for k, v in row.items():
@@ -296,6 +316,7 @@ def upsert_sources(session, rows: list[dict]) -> dict:
                             kept_stored.append(domain)
                             continue
                         setattr(src, k, v)
+                    landed = src
                 else:
                     # Language gating (maintainer 2026-06-18): a NEW source in a
                     # language the keyword engine cannot manage seeds DISABLED by
@@ -306,13 +327,18 @@ def upsert_sources(session, rows: list[dict]) -> dict:
                     # untouched — re-seeding never flips the operator's choice.
                     if "enabled" not in row and is_unmanaged(row.get("language")):
                         row = {**row, "enabled": False}
-                    session.add(Source(**row))
+                    landed = Source(**row)
+                    session.add(landed)
             # The savepoint committed cleanly -> count it only now (so a row that
             # failed at flush is never miscounted as created/updated).
+            # The map carries the REAL id and the row's current feed key, so a later sheet row of the same domain pairs with
+            # this one (a placeholder id made it a lookup that returned nothing), and an edited feed is seen as edited.
+            entry = (landed.id, landed.feed_key or "")
             if is_update:
                 updated += 1
+                by_domain[domain] = [entry if sid == landed.id else (sid, fk) for sid, fk in by_domain.get(domain, [])]
             else:
-                existing[domain] = -1
+                by_domain.setdefault(domain, []).append(entry)
                 created += 1
         except Exception as exc:  # noqa: BLE001 - one bad row must not abort the batch
             errors.append(f"{domain}: {record_text(exc)}")

@@ -96,7 +96,7 @@ def discover_sources(
         raise RuntimeError("network refused: airplane mode is engaged")
 
     from src.database.models import Source
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
     from src.ingest.seed_sources import _to_source_kwargs
 
     codes = [c.strip().lower() for c in country_codes if c and c.strip()]
@@ -110,6 +110,7 @@ def discover_sources(
     result = generate_catalog(runq, codes, cfg["specs"], existing_domains=existing)
 
     added = 0
+    connection_first(session)  # the connection, then the gate (writer.connection_first)
     with write_lock():
         seen = set(existing)
         for entry in result["sources"]:

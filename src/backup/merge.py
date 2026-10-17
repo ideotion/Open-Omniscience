@@ -2025,11 +2025,14 @@ def merge_corpus(
                 # journal's counter could not move. See _step_watch.
                 with _step_watch(con, i, total, name, should_stop, step_cb, stmt_cb):
                     fn(con, batch_id, results)
-                if progress_cb is not None:
-                    try:
-                        progress_cb(i, total, name)
-                    except Exception:  # noqa: BLE001 - progress reporting must never break a merge
-                        pass
+                # the guard-clause form: a loop whose body ends in a bare ``if`` has its back-edge outside the exception table of the ``try``
+                # around it on CPython 3.13, so an interrupt delivered there would skip the ``except`` that rolls the merge back (R163)
+                if progress_cb is None:
+                    continue
+                try:
+                    progress_cb(i, total, name)
+                except Exception:  # noqa: BLE001 - progress reporting must never break a merge
+                    pass
 
             # INSIDE the suspend: the bulk load must not fire the trigger it
             # replaces. Reported as its own step so the operator sees indexing
@@ -6311,8 +6314,10 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
         chains: list[tuple[str, str, tuple, bool, list[str], int]] = []
         for chain_id, sql, params in sources:
             ok, problems, n = _verify_chain_rows(_custody_rows(src, sql, params))
-            if n:
-                chains.append((chain_id, sql, params, ok, problems, n))
+            # the guard-clause form, as in merge_corpus below (R163): the loop's back-edge stays inside the ``try`` that closes ``src``
+            if not n:
+                continue
+            chains.append((chain_id, sql, params, ok, problems, n))
         if not chains:
             return {"entries": 0, "imported": 0, "duplicate": 0, "chains": []}
 
@@ -6361,7 +6366,12 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
                 verified = 1 if ok else 0
                 before = dest.total_changes
                 rows = _custody_rows(src, sql, params)
-                while batch := list(islice(rows, _CUSTODY_FETCH_ROWS)):
+                # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of the
+                # ``try`` on CPython 3.13, so an interrupt delivered there would skip the ``finally`` that closes ``dest`` (R161/R163)
+                while True:
+                    batch = list(islice(rows, _CUSTODY_FETCH_ROWS))
+                    if not batch:
+                        break
                     dest.executemany(
                         insert, [(chain_id, *r, verified, note, now) for r in batch]
                     )

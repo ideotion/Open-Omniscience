@@ -413,11 +413,13 @@ def _refresh_stats(engine: Engine, names: list[str]) -> None:
     from src.database.writer import write_lock
 
     try:
-        with write_lock(), engine.begin() as conn:
+        # The connection first, then the gate; the commit is inside the gate, as ``engine.begin()`` under ``write_lock()`` had it.
+        with engine.connect() as conn, write_lock():
             conn.execute(text("PRAGMA analysis_limit=1000"))
             for name in names:
                 if name in NAMES:  # a module constant, never input
                     conn.execute(text(f"ANALYZE main.{name}"))  # noqa: S608  # nosec B608
+            conn.commit()
     except Exception as exc:  # noqa: BLE001 - statistics are an optimisation, never a reason to fail the build
         # The TYPE only, never the text or a traceback: an engine's or a driver's message (and the error it was raised from)
         # can carry a statement, and a keyed connection's can carry the passphrase; a record's ``exc_info`` rides the bundle.
@@ -514,11 +516,12 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
                         index=i + 1, total=total,
                     ),
                 )
-            asked = time.monotonic()
-            with write_lock():
-                got = time.monotonic()
-                with engine.begin() as conn:
+            with engine.connect() as conn:  # the connection first, then the gate; "asked" below is the gate's wait alone
+                asked = time.monotonic()
+                with write_lock():
+                    got = time.monotonic()
                     conn.execute(text(HOT_INDEXES[name]))
+                    conn.commit()
             done = time.monotonic()
             built[name] = round(done - got, 2)
             report["gate_wait_s"] = round(report.get("gate_wait_s", 0.0) + (got - asked), 2)

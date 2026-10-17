@@ -67,7 +67,7 @@ def test_exports_real_registered_cards_with_disclosed_facts():
         assert len(rows) == 1
         row = rows[0]
         assert row["key"] == "lq-1" and row["bucket"] == "context" and row["n"] == 42
-        assert row["distinct_sources"] == 2
+        assert row["distinct_outlets"] == 2
         assert row["signal"] == {"metric": "value", "value": 42}
         assert "major" in row and "fact" in row["major"]
         _no_score_keys(out)

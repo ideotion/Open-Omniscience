@@ -66,7 +66,7 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
 
     from src.database.models import Source
     from src.database.stand_in import not_a_stand_in_source
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
     from src.safety.fetcher import RedirectRefused
 
     getter = get or _default_getter
@@ -98,6 +98,7 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
         except Exception:  # noqa: BLE001 - one source's failure never aborts the batch
             continue
 
+    connection_first(session)  # the connection, then the gate (writer.connection_first): the network phase above may have been long
     with write_lock():
         for s, new_type in pending:
             s.source_type = new_type
