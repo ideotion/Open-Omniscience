@@ -406,6 +406,10 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
     return out
 
 
+#: Signal numbers with one meaning on Linux and macOS. SIGBUS (7 on Linux, 10 on macOS), SIGUSR and the rest are left out: the number alone would name the wrong one.
+_SHELL_SIGNALS = {1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 6: "SIGABRT", 9: "SIGKILL", 11: "SIGSEGV", 13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM"}
+
+
 def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
     """A launcher record put into words. The status is the fact; ``meaning`` is the
     textbook reading of it, stated as such."""
@@ -430,6 +434,10 @@ def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
             f"the process exited on its own with status {status}: the app stopped with "
             "an error, and its last messages went to the launcher window"
         )
+    elif isinstance(status, int) and not isinstance(status, bool) and (status - 128) in _SHELL_SIGNALS:
+        # The launcher's own shell gave no name (its ``kill -l`` is not the same everywhere); a shell reports death by signal N as 128+N.
+        # Inferred, so the ``signal`` field stays null and the words say so. Only the numbers that mean the same on Linux and macOS.
+        out["kind"], out["meaning"] = "signalled", f"status {status} is 128+{status - 128}: {_SHELL_SIGNALS[status - 128]}"
     else:
         out["kind"] = "unknown"
         out["meaning"] = f"an exit status the launcher could not name ({status!r})"

@@ -1515,3 +1515,19 @@ def test_a_kept_snapshot_with_no_time_says_so_rather_than_printing_none():
     txt = _prev_peaks_text({"avail_min_mb": 50.0, "pressure": [{"avail_mb": 60.0, "why": "memory short"}]})
     assert "lowest available memory inside the kept snapshots below: 60.0 MB at a time that was not recorded" in txt
     assert "at None" not in txt
+
+
+def test_a_launcher_status_over_128_with_no_signal_name_is_read_as_128_plus_n_in_fewer_bytes():
+    """The launcher's shell may not name the signal; the reader infers it from 128+N, says so, leaves ``signal`` null, and never grows the record."""
+    import json as _json
+
+    from src.monitoring import exit_evidence as ee
+
+    for status, name in ((134, "SIGABRT"), (137, "SIGKILL"), (139, "SIGSEGV")):
+        got = ee.describe_exit({"status": status, "signal": None, "at": "t", "started_at": "t"})
+        assert got["kind"] == "signalled" and got["signal"] is None and name in got["meaning"] and f"128+{status - 128}" in got["meaning"]
+        old = dict(got, kind="unknown", meaning=f"an exit status the launcher could not name ({status!r})")
+        assert len(_json.dumps(got)) < len(_json.dumps(old))
+    for status in (135, 138, 140, 200):  # SIGBUS differs between Linux and macOS; the rest are unnamed here
+        assert ee.describe_exit({"status": status, "signal": None})["kind"] == "unknown"
+    assert ee.describe_exit({"status": 137, "signal": "SIGKILL"})["kind"] == "killed"  # a name from the launcher still wins
