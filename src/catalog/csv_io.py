@@ -285,6 +285,8 @@ def upsert_sources(session, rows: list[dict]) -> dict:
             with session.begin_nested():
                 if is_update:
                     src = source_for_domain(session, domain)
+                    if src is None:   # the scan above saw it; a row removed since is this row's error, not a crash
+                        raise LookupError(f"no source row for {domain!r}")
                     for k, v in row.items():
                         if k == "domain":
                             continue

@@ -22,9 +22,9 @@ the same path.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import MetaData
+from sqlalchemy import MetaData, Table
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 
@@ -35,6 +35,7 @@ from src.monitoring.secret_scrub import log_failure
 _LOG = logging.getLogger(__name__)
 
 _NEW = "sources_composite_new"
+_SOURCES = cast(Table, Source.__table__)  # the declarative ``__table__`` is typed as a bare FromClause; it is this Table
 _OLD_DOMAIN_INDEX = "idx_source_domain"
 
 
@@ -101,12 +102,14 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
     if state == "absent":
         return {"state": "absent", "rows_before": 0, "rows_after": 0}
     if state == "composite":
-        n = conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
+        n: int = conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
         return {"state": "composite", "rows_before": n, "rows_after": n}
     if state != "legacy":
         raise SourceIdentityRefused("the unique key of sources is neither the old nor the new shape; not touching it")
 
     dbapi = conn.connection.dbapi_connection
+    if dbapi is None:
+        raise SourceIdentityRefused("the connection holds no driver connection; not rebuilding sources")
     if getattr(dbapi, "in_transaction", False) and commit_open_transaction:
         dbapi.commit()
     if getattr(dbapi, "in_transaction", False):
@@ -129,7 +132,7 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         add_feed_key_column(conn)
         backfill_feed_keys(conn)
         old_cols = _columns(conn, "sources")
-        new_table = Source.__table__.to_metadata(MetaData(), name=_NEW)
+        new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
         new_cols = [c.name for c in new_table.columns]
         unknown = [c for c in old_cols if c not in new_cols]
         if unknown:
@@ -144,7 +147,7 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
             (n, s) for n, s in conn.exec_driver_sql(
                 "SELECT name, sql FROM sqlite_master WHERE tbl_name='sources' AND sql IS NOT NULL"
                 " AND type IN ('index','trigger')").fetchall()
-            if n not in {ix.name for ix in Source.__table__.indexes}
+            if n not in {ix.name for ix in _SOURCES.indexes}
         ]
         conn.exec_driver_sql("BEGIN IMMEDIATE")
         began = True
@@ -152,16 +155,16 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         conn.exec_driver_sql(str(CreateTable(new_table).compile(dialect=conn.dialect)))
         cols = ", ".join(f'"{c}"' for c in copy)
         conn.exec_driver_sql(f'INSERT INTO {_NEW} ({cols}) SELECT {cols} FROM sources ORDER BY id')  # nosec B608 - column names come from the ORM table
-        before = conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
-        after = conn.exec_driver_sql(f"SELECT COUNT(*) FROM {_NEW}").scalar_one()  # nosec B608 - a fixed name
-        lost = conn.exec_driver_sql(
+        before: int = conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
+        after: int = conn.exec_driver_sql(f"SELECT COUNT(*) FROM {_NEW}").scalar_one()  # nosec B608 - a fixed name
+        lost: int = conn.exec_driver_sql(
             f"SELECT COUNT(*) FROM sources o WHERE NOT EXISTS (SELECT 1 FROM {_NEW} n WHERE n.id = o.id)"  # nosec B608 - a fixed name
         ).scalar_one()
         if before != after or lost:
             raise SourceIdentityRefused(f"the copy did not carry every row ({after} of {before}, {lost} ids missing)")
         conn.exec_driver_sql("DROP TABLE sources")
         conn.exec_driver_sql(f"ALTER TABLE {_NEW} RENAME TO sources")
-        for ix in Source.__table__.indexes:
+        for ix in _SOURCES.indexes:
             conn.exec_driver_sql(str(CreateIndex(ix).compile(dialect=conn.dialect)))
         for _name, sql in extra:
             conn.exec_driver_sql(sql)
