@@ -18,6 +18,12 @@ from src.ingest import seed_sources
 from src.law import catalog as law_catalog
 
 
+@pytest.fixture(autouse=True)
+def _parse_every_time(monkeypatch):
+    """These tests count and replace the parser, so a parse another test (or the start-up) left in the memo would hide the call."""
+    monkeypatch.setattr(seed_sources, "_PARSED", {})
+
+
 def _signature(root: object) -> str:
     """A type-aware, alias-aware digest: a container met a second time contributes its first index, not its content."""
     seen: dict[int, int] = {}

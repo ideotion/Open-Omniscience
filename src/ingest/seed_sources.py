@@ -16,8 +16,13 @@ fetcher.
 
 from __future__ import annotations
 
+import contextlib
+import gc
+import hashlib
 import json
 import logging
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -115,20 +120,87 @@ def _load_safe_yaml(text: str):
     """
     loader = _YAML_LOADER(text)
     try:
-        return loader.get_single_data()
+        with _gc_paused():
+            return loader.get_single_data()
     finally:
         loader.dispose()
 
 
+# The collector is process-global and the web server's threads allocate while a parse runs, so the pause is counted:
+# the first parse to enter switches it off (only if it was on), the last to leave switches it back on, and a process
+# that had it off before keeps it off. A parse builds a few hundred thousand small objects; collecting dozens of times
+# during it is 54 % of what a boot spends "parsing" (measured by the Export lane, 1,557 of 2,866 ms), and what the
+# parse leaves behind is freed by reference counting, so the one collection that waits until it ends loses nothing.
+_GC_LOCK = threading.Lock()
+_GC_HOLDERS: set[object] = set()
+_GC_STATE = {"was_on": False}
+
+
+@contextlib.contextmanager
+def _gc_paused() -> Iterator[None]:
+    token = object()
+    try:
+        with _GC_LOCK:
+            if not _GC_HOLDERS:
+                _GC_STATE["was_on"] = gc.isenabled()
+            _GC_HOLDERS.add(token)  # registered BEFORE the switch, so a finally that runs in between still releases it
+            if _GC_STATE["was_on"]:
+                gc.disable()
+        yield
+    finally:
+        with _GC_LOCK:
+            if token in _GC_HOLDERS:  # idempotent: only an entry that registered releases (R171)
+                _GC_HOLDERS.discard(token)
+                if not _GC_HOLDERS and _GC_STATE["was_on"]:
+                    gc.enable()
+
+
+# One parse per catalogue per start-up. A boot reads seven catalogue files and parsed 18 documents of them in one lifespan
+# call (29 on a plaintext launch, whose ``_serve`` block seeds once more before the lifespan does): the seeder, the law
+# seed, and the curated-domain set the qualification stamp builds each parsed the same text. The key is the sha256 of the
+# TEXT, never a path or an mtime: the file is still read each time (1 % of the cost), so an edit, or a same-sized rewrite
+# inside one filesystem tick, is parsed afresh. The held tree is the parse's own and is NEVER handed out: every reader
+# copies what it takes (``load_sources_from_yaml`` per entry, the law catalogue deeply).
+# ``None`` once start-up is over (``forget_parsed_catalogues``): the later reads (a scrape-time channel lookup, a law
+# coverage page) parse as they always did and do not re-grow an 11 MB tree that lives as long as the server.
+_PARSE_LOCK = threading.Lock()
+_PARSED: dict[str, Any] | None = {}
+
+
+def _parsed_catalogue(text: str, load=None) -> Any:
+    """The parse tree of ``text`` (shared: the caller must copy anything it keeps or changes). ``load`` is the parser, the
+    shared safe loader unless a caller names its own. A parse that raises is never held."""
+    key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    with _PARSE_LOCK:
+        held = _PARSED
+        if held is not None and key in held:
+            return held[key]
+    data = (load or _load_safe_yaml)(text)
+    with _PARSE_LOCK:
+        if _PARSED is not None:
+            return _PARSED.setdefault(key, data)
+    return data
+
+
+def forget_parsed_catalogues() -> None:
+    """End of start-up: drop every held parse and stop holding new ones (see ``_PARSED``)."""
+    global _PARSED
+    with _PARSE_LOCK:
+        _PARSED = None
+
+
 def load_sources_from_yaml(path: Path | None = None) -> list[dict]:
-    """Read and validate source definitions from a YAML catalog."""
+    """Read and validate source definitions from a YAML catalog. Each entry is the caller's own dict (a copy of the held
+    parse's): its top-level keys may be set, as the seeder sets ``_provenance``. NESTED values (a ``tags`` list) are
+    shared with the held parse and must be treated as read-only, which ``tests/test_catalogue_parse_memo.py`` pins for
+    every present reader."""
     path = path or DEFAULT_SOURCES_PATH
-    data = _load_safe_yaml(path.read_text(encoding="utf-8")) or {}
+    data = _parsed_catalogue(path.read_text(encoding="utf-8")) or {}
     sources = data.get("sources", [])
     valid = []
     for s in sources:
         if isinstance(s, dict) and s.get("name") and s.get("domain"):
-            valid.append(s)
+            valid.append(dict(s))
     return valid
 
 

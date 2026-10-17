@@ -548,6 +548,11 @@ def _run_startup_upkeep() -> None:
         except Exception as exc:  # noqa: BLE001 - a guard must never block startup
             log_failure(logger, "could not start the storage guard", exc, level=logging.WARNING)
 
+    # The seeding above parsed each catalogue once and kept the parse for the second seed of a plaintext launch; it is not
+    # kept for the life of the server (later reads parse as they always did).
+    from src.ingest.seed_sources import forget_parsed_catalogues
+
+    forget_parsed_catalogues()
     logger.info(f"Open Omniscience API {APP_VERSION} started")
 
 
