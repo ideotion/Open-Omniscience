@@ -138,8 +138,8 @@ def _release_frames(exc: BaseException) -> None:
     alive WITH its locals: ``bare_extraction``'s parsed trees among them. Left alone they are
     freed when the caller drops the exception, which is after the lock is given up (a worker's
     ``except`` clause in ``runner.py``), while another worker may be inside a parse. Clearing the
-    frames drops the locals and keeps the traceback's lines (a ``NameError``'s "Did you mean" hint, which Python computes from the
-    frame's locals, is not offered once they are cleared).
+    frames drops the locals and keeps the traceback's lines (a ``NameError``'s "Did you mean" hint loses the candidates that came
+    from the frame's locals; those from globals and builtins remain).
     The chain is walked because the fallback's exception carries the primary's as ``__context__``.
     An ``AttributeError`` also holds the object it failed on (``obj``, set by the interpreter), so that is dropped too;
     the message is unchanged, but Python's "Did you mean" hint, which it computes from that object, is no longer computed from the real
