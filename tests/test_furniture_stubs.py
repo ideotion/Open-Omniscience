@@ -114,3 +114,41 @@ def test_list_of_full_sentences_is_not_a_menu():
     text = "\n\n".join(f"Dette er setning nummer {i} i en vanlig sak." for i in range(15))
     assert not is_menu_like(text)
 
+
+
+def test_quarantine_batch_marks_stubs_but_only_by_stamp_and_only_when_writing():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from src.analytics.quarantine_job import default_quarantine_candidates_batch
+    from src.database.models import Article, Base, Source
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True, autoflush=False)
+    with Session() as s:
+        src = Source(name="S", domain="fjordabladet.no")
+        s.add(src)
+        s.commit()
+        for i, (url, text) in enumerate([
+            (FJORD_URL, FJORD),
+            ("https://www.bbl.fi/sport/olivia-kindstedt-har-siktet-installt-pa-vm-guld/", BBL),
+        ]):
+            s.add(Article(url=url, canonical_url=url, source_id=src.id, content=text, hash=f"h{i}",
+                          word_count=len(text.split()), language="no", title=f"t{i}"))
+        s.commit()
+    with Session() as s:
+        dry = default_quarantine_candidates_batch(s)
+        assert dry["by_reason"] == {"menu_stub": 1} and dry["newly_written"] == 0
+        assert s.query(Article).filter(Article.quarantined.is_(True)).count() == 0
+        off = default_quarantine_candidates_batch(s, include_stubs=False)
+        assert off["quarantined"] == 0
+        done = default_quarantine_candidates_batch(s, write=True, criteria_version="v-test")
+        assert done["newly_written"] == 1
+        row = s.query(Article).filter(Article.quarantined.is_(True)).one()
+        assert row.quarantine_reason == "menu_stub" and row.quarantine_criteria_version == "v-test"
+        # Idempotent: a second write stamps nothing new and the teaser prose row is untouched.
+        assert default_quarantine_candidates_batch(s, write=True)["newly_written"] == 0

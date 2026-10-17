@@ -79,6 +79,7 @@ def default_quarantine_candidates_batch(
     after_id: int = 0,
     limit: int = _BATCH,
     include_prose_gate: bool = True,
+    include_stubs: bool = True,
     write: bool = False,
     criteria_version: str | None = None,
     article_ids: list[int] | None = None,
@@ -88,6 +89,10 @@ def default_quarantine_candidates_batch(
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
     ``>= _ARTICLE_MIN_WORDS`` bodies) ordered by id after ``after_id`` -- a resumable, chunked
     version of :func:`src.analytics.non_article_scan.scan_non_article_candidates`.
+
+    ``include_stubs`` (default ON): also reads thin bodies (``< _ARTICLE_MIN_WORDS``) for the
+    menu-line / subscriber-prompt stub signals of :mod:`src.ingest.furniture`. Import-time
+    screening (``article_ids=``, ``write=True``) therefore stamps such rows as they come in.
 
     ``write=False`` (the default): DRY-RUN, no database mutation -- "quarantining" here means
     reporting a candidate's id in ``quarantined_ids``, exactly the original scaffold's behaviour.
@@ -118,6 +123,7 @@ def default_quarantine_candidates_batch(
     reversible -- separately from the ingest gate's own signals."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
+    from src.ingest.furniture import stub_verdict
     from src.ingest.non_article import (
         _ARTICLE_MIN_WORDS,
         classify_index_page,
@@ -148,6 +154,11 @@ def default_quarantine_candidates_batch(
             if signal is None and include_prose_gate and wc is not None and wc >= _ARTICLE_MIN_WORDS:
                 prose_verdict = prose_gate_verdict(content or "", language=lang or detected)
                 signal = prose_verdict.signal if prose_verdict is not None else None
+            if signal is None and include_stubs and wc is not None and wc < _ARTICLE_MIN_WORDS:
+                # THIN bodies only: a menu-line body or a subscriber prompt (src.ingest.furniture).
+                # Needs the text, so it cannot ride the URL-shape call above.
+                stub = stub_verdict(content or "")
+                signal = stub[0] if stub is not None else None
             if signal is not None:
                 quarantined_ids.append(int(aid))
                 by_reason[signal] = by_reason.get(signal, 0) + 1
