@@ -115,9 +115,11 @@ def _open_window() -> None:
 def _close_window(*, swapped: bool) -> None:
     global _VALID, _WINDOW_STAMP
     with _STATE:
-        if not swapped and _WINDOW_STAMP is not None:
-            _VALID = frozenset(_VALID | {_WINDOW_STAMP})
-        _WINDOW_STAMP = None
+        # the stamp is taken and cleared in ONE step (no call between), so an interrupt in what follows leaves no stamp set; the cost of that
+        # interrupt is a window connection that stays refused, which is the safe side
+        stamp, _WINDOW_STAMP = _WINDOW_STAMP, None
+        if not swapped and stamp is not None:
+            _VALID = frozenset(_VALID | {stamp})
 
 
 # --- the lock --------------------------------------------------------------------------------------------------------------
@@ -189,6 +191,15 @@ class _Lock:
             self._holder = None
             self._cond.notify_all()
 
+    def release_if_held_here(self) -> None:
+        """Release the window only if THIS thread holds it, checked and released under the lock in one call: a caller whose ``exclusive``
+        may have been interrupted after the holder was set and before it saw the answer cannot tell from outside, and two calls
+        (``held_here`` then ``release_exclusive``) leave a gap between them."""
+        with self._lock:
+            if self._holder == threading.get_ident():
+                self._holder = None
+                self._cond.notify_all()
+
 
 _LOCK = _Lock()
 _local = threading.local()
@@ -257,28 +268,38 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     exists) and without :func:`disk_changing` having been called (a refusal before anything was touched) the earlier connections are valid
     again. Raises :class:`LibraryBusy` if it cannot be had."""
     global _DISK_CHANGED
-    _LOCK.exclusive(timeout)
+    # Everything after the first line is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
+    # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
+    # answer" still finds the lock held by this thread and releases it (src/utils/interrupts.py).
+    before = _LOCK.held_here()  # already held: ``exclusive`` raises, and what this thread holds is not ours to release
     earlier = _VALID
     swapped = True  # until the window ends with the source still there
-    with _STATE:
-        _DISK_CHANGED = False
     try:
-        bump()
-        _open_window()
-        yield
+        _LOCK.exclusive(timeout)
+        earlier = _VALID
+        with _STATE:
+            _DISK_CHANGED = False
+        try:
+            bump()
+            _open_window()
+            yield
+        finally:
+            try:
+                swapped = not source.exists()
+                with _STATE:
+                    changed = _DISK_CHANGED
+                if not swapped and not changed:
+                    _revive(earlier)
+                swapped = swapped or changed  # a file whose log names were removed is not the file the old connections opened, replaced or not
+            except OSError:  # cannot tell whether the file moved: stale is the safe answer
+                _LOG.debug("library generation: could not tell whether the swap happened; the old connections stay refused")
     finally:
         try:
-            swapped = not source.exists()
-            with _STATE:
-                changed = _DISK_CHANGED
-            if not swapped and not changed:
-                _revive(earlier)
-            swapped = swapped or changed  # a file whose log names were removed is not the file the old connections opened, replaced or not
-        except OSError:  # cannot tell whether the file moved: stale is the safe answer
-            _LOG.debug("library generation: could not tell whether the swap happened; the old connections stay refused")
+            if not before and _LOCK.held_here():  # a window that was never had (LibraryBusy) has no stamp to clear
+                _close_window(swapped=swapped)
         finally:
-            _close_window(swapped=swapped)
-            _LOCK.release_exclusive()
+            if not before:
+                _LOCK.release_if_held_here()
 
 
 def disk_changing() -> None:

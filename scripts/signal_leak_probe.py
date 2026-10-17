@@ -4,7 +4,7 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Usage: ``python scripts/signal_leak_probe.py {condition|raw|raw_notify|wait} [seconds]``
-       ``python scripts/signal_leak_probe.py {gate_writer|gate_writer_bounded|gate_pool|gate_governor|gate_hold|gate_library|gate_library_swap} [seconds] [--plain]``
+       ``python scripts/signal_leak_probe.py {gate_writer|gate_writer_bounded|gate_pool|gate_governor|gate_hold|gate_library|gate_library_swap|gate_swap_window} [seconds] [--plain]``
 
 A SIGALRM handler raises KeyboardInterrupt at 0.3 ms intervals while the main thread loops ``with <lock>: <body>``; after each interrupt it
 asks whether the lock is still owned (a leak) and releases it so the loop can go on. Variants:
@@ -36,7 +36,7 @@ import time
 _INTERVAL_S = 0.0003
 
 
-GATES = ("gate_writer", "gate_writer_bounded", "gate_pool", "gate_governor", "gate_hold", "gate_library", "gate_library_swap")
+GATES = ("gate_writer", "gate_writer_bounded", "gate_pool", "gate_governor", "gate_hold", "gate_library", "gate_library_swap", "gate_swap_window")
 
 
 def _plain_wait(cond, lock, timeout=None):  # noqa: ARG001 - the signature of src.utils.interrupts.wait
@@ -212,8 +212,47 @@ class _Scenario:
     def _gate_library_swap(self) -> None:
         self._gate_library_common("exclusive")
 
+    def _gate_swap_window(self) -> None:
+        """The whole ``swap_window`` context manager, free to be had: the interrupt lands anywhere from the acquire to the release, including the
+        statements between the acquire and its ``try``."""
+        import tempfile
+        from pathlib import Path
+
+        from src.database import library_generation as lg
+
+        lock = lg._Lock()  # noqa: SLF001
+        saved = lg._LOCK  # noqa: SLF001
+        lg._LOCK = lock  # noqa: SLF001
+        self._restore = lambda: setattr(lg, "_LOCK", saved)
+        self.patch_modules = [lg]
+        self.lock, self.cond = lock._lock, None  # noqa: SLF001
+        source = Path(tempfile.mkdtemp(prefix="oo-swap-probe-")) / "library.db"
+        source.write_bytes(b"x")  # it still exists when the window ends: the swap did not happen
+
+        def call() -> None:
+            with lg.swap_window(source, timeout=30.0):
+                pass
+
+        def damage() -> list[str]:
+            bad = []
+            if lock._holder is not None:  # noqa: SLF001
+                bad.append("swap holder left set")
+                lock._holder = None  # noqa: SLF001
+            if lg._WINDOW_STAMP is not None:  # noqa: SLF001
+                bad.append("window stamp left set")
+                lg._WINDOW_STAMP = None  # noqa: SLF001
+            if lg._STATE.locked():  # noqa: SLF001
+                bad.append("state lock left taken")
+                lg._STATE.release()  # noqa: SLF001
+            return bad
+
+        self.call = call
+        self.damage = damage
+        self.stale = lambda: 0
+
     def close(self) -> None:
         self.stop.set()
+        getattr(self, "_restore", lambda: None)()
 
 
 def _run_gate(name: str, seconds: float, plain: bool) -> int:

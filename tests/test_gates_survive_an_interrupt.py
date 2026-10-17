@@ -757,3 +757,85 @@ def test_a_nested_library_open_gives_back_exactly_its_own_level():
             assert lg._LOCK.shared_held_here() == 2
         assert lg._LOCK.shared_held_here() == 1
     assert lg._LOCK.shared_held_here() == 0 and lg._LOCK._shared == 0
+
+
+def _swap_window_with(monkeypatch, tmp_path, lock):
+    from src.database import library_generation as lg
+
+    source = tmp_path / "library.db"
+    source.write_bytes(b"x")  # still there when the window ends: the swap did not happen
+    monkeypatch.setattr(lg, "_LOCK", lock)
+    return lg, source
+
+
+def test_a_swap_window_interrupted_right_after_the_exclusive_lock_was_set_releases_it(monkeypatch, tmp_path):
+    from src.database import library_generation as lg
+
+    lock = lg._Lock()
+    real_exclusive = lock.exclusive
+
+    def exclusive_then_raise(timeout):
+        real_exclusive(timeout)
+        raise KeyboardInterrupt  # the holder is set, and the caller never saw the answer
+
+    lock.exclusive = exclusive_then_raise  # type: ignore[method-assign]
+    lg, source = _swap_window_with(monkeypatch, tmp_path, lock)
+    with pytest.raises(KeyboardInterrupt), lg.swap_window(source, timeout=5.0):
+        pytest.fail("the body must not run")
+    assert lock._holder is None, "the swap window stayed held: every later connection to the library would wait for ever"
+    assert lg._WINDOW_STAMP is None
+
+
+def test_a_swap_window_interrupted_before_its_try_begins_releases_the_lock(monkeypatch, tmp_path):
+    """The statements between the acquire and the ``try`` are where the old form lost the lock: the first one that calls anything."""
+    from src.database import library_generation as lg
+
+    lock = lg._Lock()
+    lg, source = _swap_window_with(monkeypatch, tmp_path, lock)
+
+    class _Raises:
+        def __init__(self):
+            self.raised = False
+
+        def __enter__(self):
+            if not self.raised:
+                self.raised = True
+                raise KeyboardInterrupt
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(lg, "_STATE", _Raises())
+    with pytest.raises(KeyboardInterrupt), lg.swap_window(source, timeout=5.0):
+        pytest.fail("the body must not run")
+    assert lock._holder is None, "the swap window stayed held: every later connection to the library would wait for ever"
+
+
+def test_a_swap_window_that_could_not_be_had_leaves_a_holders_window_alone(monkeypatch, tmp_path):
+    """The cleanup releases only what this call took: a window another thread holds, and its stamp, are not ours to clear."""
+    from src.database import library_generation as lg
+
+    lock = lg._Lock()
+    lg, source = _swap_window_with(monkeypatch, tmp_path, lock)
+    taken = threading.Event()
+    done = threading.Event()
+
+    def other_holds() -> None:
+        lock.exclusive(5.0)
+        lg._open_window()
+        taken.set()
+        done.wait(10.0)
+
+    t = threading.Thread(target=other_holds, daemon=True)
+    t.start()
+    assert taken.wait(5.0)
+    try:
+        stamp = lg._WINDOW_STAMP
+        with pytest.raises(lg.LibraryBusy), lg.swap_window(source, timeout=0.05):
+            pytest.fail("the body must not run")
+        assert lock._holder == t.ident and stamp == lg._WINDOW_STAMP
+    finally:
+        done.set()
+        t.join(5.0)
+        lg._close_window(swapped=True)
