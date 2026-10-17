@@ -1747,6 +1747,17 @@ def render_text(d: dict[str, Any] | None = None) -> str:
             f"  - the last phase seen (previous_session_peaks.phase: {which}): "
             + (f"{secs} s from its start to the last record" if secs is not None else f"duration unmeasured ({dip.get('reason')})")
         )
+    cen = (prev.get("previous_session_peaks") or {}).get("last_thread_census")
+    if isinstance(cen, dict):
+        if cen.get("unavailable"):
+            lines.append(f"  - native thread census: unavailable ({cen['unavailable']})")
+        else:
+            made = ", ".join(f"{k} x{v}" for k, v in (cen.get("non_python") or {}).items()) or "none"
+            lines.append(
+                f"  - native threads at the LAST census (a lower bound in time: a pool started after it is not here): "
+                f"{cen.get('os_threads')} OS threads, {cen.get('python_threads')} started by Python; not by Python: {made}"
+                + (f" (+{cen['other_comms']} more names)" if cen.get("other_comms") else "")
+            )
     kern = prev.get("kernel_evidence") or {}
     if kern:
         lines.append(f"- host kernel evidence: {kern.get('verdict', 'unknown')}")

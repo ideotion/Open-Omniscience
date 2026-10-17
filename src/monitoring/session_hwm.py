@@ -202,6 +202,7 @@ _MARKS: dict[str, Any] = {}
 _NEVER = float("-inf")
 _LAST_WRITE = _NEVER
 _LAST_COMPOSITION = _NEVER
+_LAST_CENSUS = _NEVER
 _LAST_PRESSURE = _NEVER
 _PRESSURE: list[dict[str, Any]] = []
 _PRESSURE_TAKEN = 0
@@ -705,6 +706,61 @@ def thread_snapshot() -> list[dict[str, Any]]:
             e["cpu_s"] = cpu[e["tid"]]
     out.sort(key=lambda e: -(e.get("cpu_s") or 0.0))
     return out
+
+
+# THE NATIVE THREAD CENSUS: which kernel threads the process had that Python did not create (an OpenMP, Arrow, DuckDB or allocator pool),
+# by the name the kernel keeps for them. Three of the four SIGABRT traces open with a thread Python never started, and nothing said
+# what such threads existed. Taken at most this often by the liveness thread (a listdir and one small read per thread, no GIL wait):
+# the record is the LAST census taken, so it is a LOWER-BOUND-IN-TIME view (a pool started after it is not in it).
+_CENSUS_INTERVAL_S = 60.0
+#: Serialised bytes the whole ``last_thread_census`` member (its key included) may take in the marks. Part of WAL's 2,415 B headroom
+#: (150 B; the core-dump stack's 589 is the remainder after it). Comms are added, most numerous first, while the member still fits.
+CENSUS_BYTES = 150
+_CENSUS_KEY = "last_thread_census"
+_CENSUS_TASKS = "/proc/self/task"
+
+
+def _census_fits(record: dict[str, Any]) -> bool:
+    return len(json.dumps({_CENSUS_KEY: record}, separators=(",", ":"))) <= CENSUS_BYTES
+
+
+def thread_census() -> dict[str, Any]:
+    """The kernel threads Python did not start, counted by kernel thread name. Linux only: elsewhere ``{"unavailable": reason}``, never 0.
+
+    ``os_threads`` is every thread of the process, ``python_threads`` the ones ``threading`` knows, ``non_python`` the rest by name (the
+    most numerous first, as many as fit :data:`CENSUS_BYTES`), ``other_comms`` how many distinct names did not fit. Python threads are
+    left out by their kernel id, so a name a request chose (``oo-osm-<code>``) is never read; the names kept are passed through the
+    passphrase scrub anyway. A thread that ended between the listing and the read is skipped."""
+    try:
+        tids = os.listdir(_CENSUS_TASKS)
+    except OSError:
+        return {"unavailable": "no /proc/self/task on this system"}
+    known = {t.native_id for t in threading.enumerate() if t.native_id is not None}
+    names: dict[str, int] = {}
+    total = 0
+    for tid in tids:
+        if not tid.isdigit():
+            continue
+        total += 1
+        if int(tid) in known:
+            continue
+        try:
+            with open(f"{_CENSUS_TASKS}/{tid}/comm", encoding="utf-8", errors="replace") as fh:
+                comm = fh.read(32).strip()[:15]
+        except OSError:
+            continue
+        key = scrubbed_name(comm) or "?"
+        names[key] = names.get(key, 0) + 1
+    record: dict[str, Any] = {"os_threads": total, "python_threads": len(known), "non_python": {}, "other_comms": 0}
+    ranked = sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))
+    for i, (name, count) in enumerate(ranked):
+        trial = {**record, "non_python": {**record["non_python"], name: count}, "other_comms": len(ranked) - i - 1}
+        if not _census_fits(trial):
+            record["other_comms"] = len(ranked) - i
+            break
+        record = trial
+    return record
+
 
 
 def _pressure_line_mb(total_mb: float) -> float:
@@ -1262,7 +1318,7 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
 
     ``force_why`` (with ``may_snapshot_threads``) takes a heavy snapshot NOW with that reason, whatever the throttles say: the clean
     stop (``scheduler.memstop``) keeps the evidence before it releases anything."""
-    global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
+    global _LAST_WRITE, _LAST_COMPOSITION, _LAST_CENSUS, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
     try:
         readings = _readings()
         # THE TIME OF THE READING, taken the moment it was read: the thread walk and the heap walk
@@ -1301,6 +1357,10 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                     said = record_text(exc, typed=False)  # through the one scrub, THEN cut to its first line
                     first = said.splitlines()[0][:160] if said else ""
                     light_failure = f"{type(exc).__name__}: {first}"
+        census = None
+        if may_snapshot_threads and (now - _LAST_CENSUS) >= _CENSUS_INTERVAL_S:
+            _LAST_CENSUS = now
+            census = thread_census()
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
         at_peak = None
@@ -1406,6 +1466,8 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                 if prev_s is None or swap > prev_s:
                     _MARKS["swap_used_max_mb"] = swap
                     _MARKS["swap_used_max_at"] = stamp
+            if census is not None:
+                _MARKS[_CENSUS_KEY] = census
             if phase:
                 if phase != _MARKS.get("phase"):
                     _MARKS["phase_since"] = _now()  # when this phase was first seen, so a death can be placed inside it
@@ -1582,7 +1644,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
 
 def reset_for_tests() -> None:
     """Clear the module state. Test-only; the suite shares one process."""
-    global _PREV, _PREV_WHY, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION
+    global _PREV, _PREV_WHY, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION, _LAST_CENSUS
     with _LOCK:
         _PREV = None
         _PREV_WHY = None
@@ -1590,4 +1652,5 @@ def reset_for_tests() -> None:
         _MARKS = {}
         _LAST_WRITE = _NEVER
         _LAST_COMPOSITION = _NEVER
+        _LAST_CENSUS = _NEVER
         _reset_snapshots()
