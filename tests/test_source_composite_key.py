@@ -400,3 +400,37 @@ def test_a_failed_backfill_in_its_own_transaction_changes_no_key(legacy):
             backfill_feed_keys(conn)
         assert not conn.connection.dbapi_connection.in_transaction
         assert conn.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> ''").scalar_one() == 0   # all or nothing
+
+
+def test_a_sqlalchemy_transaction_that_has_only_read_owns_the_backfill_and_its_rollback_takes_the_keys_back(legacy):
+    """The independent read's L2: pysqlite sets ``in_transaction`` at the first DML only, so a caller inside ``engine.begin()``
+    that had only read looked idle, the backfill ran its own BEGIN IMMEDIATE...COMMIT, and the caller's rollback no longer
+    undid the keys. Red when the decision goes back to the driver's flag alone."""
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    conn = legacy.connect()
+    trans = conn.begin()
+    conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
+    assert not conn.connection.dbapi_connection.in_transaction        # SQLAlchemy says open, the driver says idle
+    seen = _trace(conn)
+    assert backfill_feed_keys(conn) >= 40
+    conn.connection.dbapi_connection.set_trace_callback(None)
+    # the implicit BEGIN of the first UPDATE is pysqlite's own and belongs to the caller; the backfill adds none of its own
+    assert "COMMIT" not in [q.strip().upper() for q in seen] and "BEGIN IMMEDIATE" not in [q.strip().upper() for q in seen]
+    trans.rollback()
+    conn.close()
+    with legacy.connect() as c:
+        assert c.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> '' AND id >= 100").scalar_one() == 0
+
+
+def test_the_same_transaction_commits_the_keys_when_the_caller_commits(legacy):
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    with legacy.begin() as conn:
+        conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
+        assert backfill_feed_keys(conn) >= 40
+    with legacy.connect() as c:
+        assert c.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> '' AND id >= 100").scalar_one() >= 40
+

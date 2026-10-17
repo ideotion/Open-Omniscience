@@ -88,10 +88,16 @@ def backfill_feed_keys(conn: Connection) -> int:
     changed = [(feed_key(r[1]), r[0]) for r in rows if (r[2] or "") != feed_key(r[1])]
     if not changed:
         return 0
-    # One transaction when the connection is in none (the boot path runs in autocommit, where every UPDATE would be
-    # its own commit: 10.5 s encrypted for the 6,400 sources of the shipped catalogue, 0.47 s in one). A caller that
-    # already has a transaction open owns its commit, so nothing is begun or committed on its behalf.
-    own = not getattr(conn.connection.dbapi_connection, "in_transaction", False)
+    # One transaction when the DRIVER is in true autocommit with none open (the boot path: every UPDATE would be its own
+    # commit, 10.5 s encrypted for the 6,400 sources of the shipped catalogue, 0.47 s in one). In any other mode the
+    # caller owns the commit: pysqlite opens its implicit transaction at the first UPDATE, which is the caller's, so
+    # nothing is begun or committed here. The driver's ``in_transaction`` alone is not the test: pysqlite sets it only at
+    # the first DML, so a caller inside a SQLAlchemy ``engine.begin()`` that has only read would be taken for idle and
+    # have its keys committed under it (the independent read's L2); a caller in that state is not in autocommit.
+    dbapi = conn.connection.dbapi_connection
+    own = not getattr(dbapi, "in_transaction", False) and (
+        getattr(dbapi, "isolation_level", "") is None or getattr(dbapi, "autocommit", None) is True
+    )
     if own:
         conn.exec_driver_sql("BEGIN IMMEDIATE")
     try:
