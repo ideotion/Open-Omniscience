@@ -511,7 +511,13 @@ while kill -0 "$SERVER" 2>/dev/null; do
     status=0
     wait "$SERVER" || status=$?
 done
-if [ "$STOP_REQUESTED" = 0 ] && [ "$status" -ne 0 ]; then
+# A requested stop that ENDED IN A CRASH (a SIGABRT or SIGSEGV during the teardown: 134, 139) is an exit row too: with only the stop row the next boot read
+# it as "a stop was asked ... Not a crash". The statuses a stop ends in when it works (0, 129, 130, 143) stay stop-row only.
+crashed_in_stop=0
+if [ "$STOP_REQUESTED" = 1 ]; then
+    case "$status" in 0|129|130|143) ;; *) crashed_in_stop=1 ;; esac
+fi
+if { [ "$STOP_REQUESTED" = 0 ] || [ "$crashed_in_stop" = 1 ]; } && [ "$status" -ne 0 ]; then
     record_exit "$status" || true
     case "$status" in
         # SIGHUP/SIGINT/SIGTERM: a stop somebody ASKED for, just not through this
