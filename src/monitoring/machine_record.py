@@ -145,16 +145,22 @@ def _versions() -> dict[str, Any]:
 
 #: The module feedparser's SAX parser list names first, and the only name whose presence this record reads.
 _FEED_DRIVER = "drv_libxml2"
+#: The three things ``_feed_xml`` says about that module, named once so the bytes pin measures these strings.
+_DRIVER_LOADED, _DRIVER_ABSENT, _DRIVER_FOUND_NOT_LOADED = "loaded", "absent", "found_not_loaded"
+_DRIVER_STATES = (_DRIVER_LOADED, _DRIVER_ABSENT, _DRIVER_FOUND_NOT_LOADED)
 
 
 def _feed_xml() -> dict[str, Any]:
     """Which XML driver feedparser uses in this process: ``preferred`` (feedparser's own list) and
     ``drv_libxml2`` as ``loaded`` / ``absent`` / ``found_not_loaded``.
 
-    READ WITHOUT TOUCHING THE DRIVER. ``xml.sax.make_parser`` (called by feedparser) is the only thing that
-    imports ``drv_libxml2`` and a failed import is not kept, so the module being in ``sys.modules`` means
-    a feed parse of this process used libxml2's driver (INFERRED from that, not a count of parses).
-    ``absent`` means no module of that name is on the import path, so feedparser parses with expat.
+    READ WITHOUT TOUCHING THE DRIVER. ``xml.sax.make_parser`` imports ``drv_libxml2`` and feedparser's call
+    is the only one in this app's own code (a library that calls ``make_parser`` would load it too), and a
+    failed import is not kept, so the module being in ``sys.modules`` means a feed parse of this process
+    used libxml2's driver (INFERRED from that, not a count of parses).
+    ``absent`` means no module of that name is on the import path, so feedparser parses with expat
+    (a ``None`` placed in ``sys.modules`` for that name also reads ``absent``, but ``make_parser`` re-raises
+    for it and the parse fails: nothing in this app writes that entry, and a reader of this record should know).
     ``found_not_loaded`` means a file of that name is on the path but no parse has reached it yet,
     or its import failed: the value does not say which. NOTHING here imports the driver or calls
     ``make_parser``: on a machine with the bindings that would load libxml2 from the diagnostics thread,
@@ -168,11 +174,11 @@ def _feed_xml() -> dict[str, Any]:
         return {"unavailable": f"feedparser could not be read ({type(exc).__name__})"}
     try:
         if sys.modules.get(_FEED_DRIVER) is not None:
-            out[_FEED_DRIVER] = "loaded"
+            out[_FEED_DRIVER] = _DRIVER_LOADED
         elif importlib.util.find_spec(_FEED_DRIVER) is None:
-            out[_FEED_DRIVER] = "absent"
+            out[_FEED_DRIVER] = _DRIVER_ABSENT
         else:
-            out[_FEED_DRIVER] = "found_not_loaded"
+            out[_FEED_DRIVER] = _DRIVER_FOUND_NOT_LOADED
     except Exception as exc:  # noqa: BLE001
         out[_FEED_DRIVER] = {"unavailable": type(exc).__name__}
     return out

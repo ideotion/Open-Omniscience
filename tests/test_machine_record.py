@@ -21,6 +21,7 @@ WHAT MUST NOT REGRESS, one test each:
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import sys
@@ -242,13 +243,14 @@ def test_a_feedparser_that_cannot_be_read_is_a_reason_by_class_and_the_others_st
 
 def test_the_section_is_in_the_manifest_of_every_build():
     manifest, _ = _build([("a.json", lambda: {"x": 1})])
-    assert set(manifest["machine"]["feed_xml"]) >= {"preferred", "drv_libxml2"} or "unavailable" in manifest["machine"]["feed_xml"]
+    assert set(manifest["machine"]["feed_xml"]) == {"preferred", "drv_libxml2"}  # feedparser is a hard dependency
     assert manifest["machine"]["version"] == MR.MACHINE_RECORD_VERSION == 2
 
 
 #: The bytes of the two sentences this section's neighbours carried on main before it, in the manifest's own
-#: encoding: ``not_here`` (166) and ``environment.method`` (92). The section is paid for out of them, so an
-#: archive does not grow (the diagnostics part has no room to give).
+#: encoding: ``not_here`` (166) and ``environment.method`` (92). The section is paid for out of them, so the
+#: UNCOMPRESSED manifest does not grow (the diagnostics part has no room to give). The compressed archive was
+#: measured separately (DEFLATE level 9 of the block against main's: smaller in every shape listed below).
 _FREED_BY_THE_SHORTENED_SENTENCES = 166 + 92
 
 
@@ -256,16 +258,45 @@ def _manifest_bytes(machine: dict) -> int:
     return len(json.dumps({"machine": machine}, ensure_ascii=False, indent=2).encode())
 
 
-def test_the_driver_section_costs_the_archive_no_bytes():
+def test_the_driver_section_costs_the_uncompressed_manifest_no_bytes(monkeypatch):
+    """The shapes are built from the code's OWN strings (the module's state names and feedparser's live list),
+    so a longer value or a longer list breaks this, which a hand-typed literal could not.
+
+    Outside the pin by design: the shape where ``find_spec`` itself fails (a reason by class, 128 B with
+    ``ValueError``), which cannot arise while ``sys.modules`` is read first except in a race."""
     empty = _manifest_bytes({})
-    widest_states = [
-        {"preferred": "drv_libxml2", "drv_libxml2": "found_not_loaded"},  # the longest of the three values
-        {"unavailable": "feedparser could not be read (ModuleNotFoundError)"},  # the longest class feedparser's import gives
-    ]
-    widest = max(_manifest_bytes({"feed_xml": s}) - empty for s in widest_states)
+    preferred = ",".join(feedparser.api.PREFERRED_XML_PARSERS)
+    shapes = [{"preferred": preferred, MR._FEED_DRIVER: state} for state in MR._DRIVER_STATES]
+    with monkeypatch.context() as unreadable:
+        unreadable.setitem(sys.modules, "feedparser", None)
+        shapes.append(MR._feed_xml())  # the real output when feedparser cannot be imported
+    assert len(shapes) == len(MR._DRIVER_STATES) + 1
+    widest = max(_manifest_bytes({"feed_xml": shape}) - empty for shape in shapes)
     block = MR.machine_block()
     now = widest + len(block["not_here"].encode()) + len(block["environment"]["method"].encode())
     assert now <= _FREED_BY_THE_SHORTENED_SENTENCES, (
         f"the driver section (widest {widest} B) and the two sentences it was paid out of now take {now} B, "
         f"more than the {_FREED_BY_THE_SHORTENED_SENTENCES} B they took before it"
     )
+
+
+def test_a_find_spec_that_fails_is_a_reason_by_class_never_a_message(monkeypatch):
+    def broken(name):
+        raise OSError("/home/x/secret-path must not be named")
+
+    monkeypatch.delitem(sys.modules, "drv_libxml2", raising=False)
+    monkeypatch.setattr(importlib.util, "find_spec", broken)
+    got = MR._feed_xml()
+    assert got["drv_libxml2"] == {"unavailable": "OSError"}
+    assert "/home/x" not in json.dumps(got)
+
+
+def test_a_none_entry_in_sys_modules_reads_absent_as_the_docstring_says(monkeypatch):
+    """The known wrong reading, pinned so the docstring that admits it stays true: ``make_parser`` re-raises for
+    a name it finds in ``sys.modules`` as ``None`` (the parse fails, it does not fall through to expat), while
+    the record, which reads ``find_spec`` there, says ``absent``. Nothing in the app writes that entry."""
+    monkeypatch.setitem(sys.modules, "drv_libxml2", None)
+    assert MR._feed_xml()["drv_libxml2"] == "absent"
+    with pytest.raises(ImportError):
+        xml.sax.make_parser(["drv_libxml2"])
+    assert "absent" in (MR._feed_xml.__doc__ or "") and "``None``" in (MR._feed_xml.__doc__ or "")
