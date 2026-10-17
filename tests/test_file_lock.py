@@ -229,3 +229,74 @@ def test_holding_runs_the_function_inside_the_lock_and_follows_a_redirected_path
     target["p"] = tmp_path / "b"
     assert work(2) == 3
     assert (tmp_path / "b.lock").exists(), "the decorator did not follow the redirected path"
+
+
+def test_a_finalizer_that_reaches_file_lock_while_a_lock_object_is_built_leaves_one_object_for_the_key(tmp_path, monkeypatch):
+    """The first section to meet a lock file builds its in-process object, and a finalizer's log record can reach ``file_lock`` for the same file at the
+    allocation: a check-then-set would register two objects for one lock file, and two threads would hold it at once."""
+    import threading
+
+    from src.safety import file_lock as fl
+
+    key = str(tmp_path / "j.jsonl.lock")
+    real = fl._Local
+    fired = []
+    inner = []
+
+    def building(*args, **kwargs):
+        if not fired:
+            fired.append(1)
+            inner.append(fl._local(key))  # the re-entry: registers its own object first
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(fl, "_Local", building)
+    out = []
+    t = threading.Thread(target=lambda: out.append(fl._local(key)), daemon=True)
+    t.start()
+    t.join(20)
+    assert out, "the registry waited on a lock its own thread holds"
+    assert out[0] is fl._LOCALS[key] and inner[0] is out[0], "the re-entry and the outer section were given different objects for one lock file"
+
+
+def test_a_statistic_noted_inside_a_registry_section_is_applied_after_it_and_a_walk_is_never_changed_under_its_feet(monkeypatch):
+    """``stats`` walks ``_STATS`` and a finalizer's record can note a NEW file name in the middle (a walk over a dict that gains a key raises). The re-entrant
+    note is held and applied once the section ends."""
+    import threading
+
+    from src.safety import file_lock as fl
+
+    class _Row(dict):
+        def __iter__(self):  # overriding it makes ``dict(row)`` ask for ``keys()`` instead of copying in C
+            return super().__iter__()
+
+        def keys(self):
+            fl._note("new.jsonl", "max_wait_s", 2.0)
+            return super().keys()
+
+    table: dict = {"old.jsonl": _Row({"max_wait_s": 0.0, "max_hold_s": 0.0})}
+    monkeypatch.setattr(fl, "_STATS", table)
+    out: list = []
+
+    def run():
+        try:
+            out.append(fl.stats())
+        except RuntimeError as fault:  # "dictionary changed size during iteration" is the failure this pins
+            out.append(fault)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(20)
+    assert out and isinstance(out[0], dict), out
+    assert "old.jsonl" in out[0] and "new.jsonl" not in out[0]
+    assert fl.stats()["new.jsonl"]["max_wait_s"] == 2.0
+
+
+def test_the_registry_section_is_reentrant_for_the_same_thread():
+    from src.safety import file_lock as fl
+
+    with fl._registry():
+        fl._note("held.jsonl", "max_wait_s", 1.5)
+        assert "held.jsonl" not in fl._STATS
+        with fl._registry():
+            assert fl._local("x.lock") is fl._local("x.lock")
+    assert fl._STATS["held.jsonl"]["max_wait_s"] == 1.5

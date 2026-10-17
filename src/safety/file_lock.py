@@ -32,6 +32,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO, Any
 
 #: How long a waiter sleeps between two non-blocking attempts at the operating-system lock, in seconds. It is a poll interval, not a limit: a wait has no end
 #: but the holder letting go. 50 ms keeps a waiter's cost under a thousandth of a core.
@@ -40,7 +41,10 @@ _SIDECAR = ".lock"
 
 _UNLOCKED_WARNED: set[str] = set()
 _STATS: dict[str, dict[str, float]] = {}
-_REGISTRY_LOCK = threading.Lock()
+#: Re-entrant (R144): the garbage collector can run a finalizer at any allocation, the finalizer may log, and the journal's write takes :func:`file_lock` on
+#: the thread that already holds this lock. What that re-entry may do is limited by :func:`_registry` (see there).
+_REGISTRY_LOCK = threading.RLock()
+_IN_REGISTRY = threading.local()
 
 
 @dataclass
@@ -64,12 +68,32 @@ class Held:
     reason: str | None = None
 
 
+@contextlib.contextmanager
+def _registry() -> Iterator[None]:
+    """Hold the registry lock for the body. A statistic noted by the SAME thread while the body runs (a finalizer's log record reaching :func:`file_lock`) is held
+    and applied once the lock is let go, so no walk over ``_STATS`` is ever changed under its feet; the other sections stay correct under re-entry on their own
+    (``_local`` registers with ``setdefault``, ``_warn_unlocked`` and ``_sweep_due`` can at worst do their harmless thing twice)."""
+    outermost = False
+    try:
+        with _REGISTRY_LOCK:
+            outermost = not getattr(_IN_REGISTRY, "busy", False)
+            if outermost:
+                _IN_REGISTRY.busy, _IN_REGISTRY.pending = True, []
+            yield
+    finally:
+        if outermost:
+            held, _IN_REGISTRY.pending, _IN_REGISTRY.busy = _IN_REGISTRY.pending, [], False
+            for name, field, seconds in held:
+                _note(name, field, seconds)
+
+
 def _local(key: str) -> _Local:
-    with _REGISTRY_LOCK:
+    with _registry():
         got = _LOCALS.get(key)
         if got is None:
-            got = _Local(cond=threading.Condition(threading.RLock()), reader_threads=set())
-            _LOCALS[key] = got
+            # ``setdefault`` and not a check then a set: a finalizer's re-entry may have registered this key while the object above was being built, and two
+            # objects for one lock file would let two threads hold it at once.
+            got = _LOCALS.setdefault(key, _Local(cond=threading.Condition(threading.RLock()), reader_threads=set()))
         return got
 
 
@@ -105,7 +129,7 @@ def _release_os_lock(fd: int) -> None:
 def _warn_unlocked(path: Path, why: str) -> None:
     """One warning per file NAME. The name only, never the folder: a path can carry a user name, and the warning must carry nothing else."""
     name = path.name
-    with _REGISTRY_LOCK:
+    with _registry():
         if name in _UNLOCKED_WARNED:
             return
         _UNLOCKED_WARNED.add(name)
@@ -116,7 +140,10 @@ def _warn_unlocked(path: Path, why: str) -> None:
 
 
 def _note(name: str, field: str, seconds: float) -> None:
-    with _REGISTRY_LOCK:
+    if getattr(_IN_REGISTRY, "busy", False):
+        _IN_REGISTRY.pending.append((name, field, seconds))
+        return
+    with _registry():
         row = _STATS.setdefault(name, {"max_wait_s": 0.0, "max_hold_s": 0.0})
         if seconds > row[field]:
             row[field] = seconds
@@ -124,7 +151,7 @@ def _note(name: str, field: str, seconds: float) -> None:
 
 def stats() -> dict[str, dict[str, float]]:
     """The longest wait and the longest hold seen per file name since the process began (seconds). Absent until a lock on that file was taken."""
-    with _REGISTRY_LOCK:
+    with _registry():
         return {k: dict(v) for k, v in _STATS.items()}
 
 
@@ -224,7 +251,7 @@ _SWEPT_AT: dict[str, float] = {}
 def _sweep_due(path: Path, every_s: float) -> bool:
     now = time.perf_counter()
     key = str(path)
-    with _REGISTRY_LOCK:
+    with _registry():
         last = _SWEPT_AT.get(key)
         if last is not None and now - last < every_s:
             return False
@@ -247,7 +274,7 @@ def atomic_replace(
     path = Path(path)
     tmp = temp_name(path)
     try:
-        fh = tmp.open("wb") if isinstance(data, bytes) else tmp.open("w", encoding=encoding, newline=newline)
+        fh: IO[Any] = tmp.open("wb") if isinstance(data, bytes) else tmp.open("w", encoding=encoding, newline=newline)
         with fh as f:
             f.write(data)
             f.flush()
