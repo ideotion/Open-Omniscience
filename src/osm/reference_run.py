@@ -1198,9 +1198,12 @@ def _run(
                     "refused" if res.status == "refused" else "failed")
                 report["reason"] = f"phase {spec.name}: {res.reason or res.status}"
                 break
-            if spec.name == "ingest" and res.app_report:
-                report["outputs"] = {"osm_db_bytes": res.app_report.get("osm_db_bytes"),
-                                     "extract_bytes": res.app_report.get("extract_bytes")}
+            # the guard-clause form: a loop whose body ends in a bare ``if`` has its back-edge outside the exception table of the ``try``
+            # around it on CPython 3.13, so an interrupt delivered there would skip the ``finally`` that deletes the store (R163)
+            if spec.name != "ingest" or not res.app_report:
+                continue
+            report["outputs"] = {"osm_db_bytes": res.app_report.get("osm_db_bytes"),
+                                 "extract_bytes": res.app_report.get("extract_bytes")}
         # What the app's own header read says about the lane file: the encrypted path really ran.
         try:
             from src.database.connect import is_encrypted_file

@@ -314,8 +314,11 @@ def ingest_country(
                 _row(obj, kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=alpha3,
                      lat=lat, lon=lon, geom=geom, node_count=n, members=members)
             )
-            if len(batch) >= BATCH:
-                flush()
+            # the guard-clause form: a loop whose body ends in a bare ``if`` has its back-edge outside the exception table of the ``try`` around
+            # it on CPython 3.13, so an interrupt delivered there would skip the ``finally`` that closes the location store (R163)
+            if len(batch) < BATCH:
+                continue
+            flush()
         flush()
         kept = sum(counts[k] for k in T.KINDS)
         report.counts = counts
