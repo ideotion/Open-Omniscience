@@ -176,6 +176,24 @@ def test_trafilatura_floor_in_pyproject_matches_the_registry_and_the_lock_is_not
     assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins trafilatura {pins[0]}, below the floor"
 
 
+def test_starlette_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
+    """The API is gzip-compressed and the AI token streams are ``application/x-ndjson``: a Starlette that does not flush the deflate stream
+    per chunk (anything below 1.5.0) holds a streamed reply back until several kilobytes pile up. ``fastapi`` itself only asks for
+    ``starlette>=0.46.0``, and ``requirements.lock`` pinned 1.3.1. The floor is written in three places (pyproject, the registry, the lock
+    file) and nothing else ties them."""
+    entry = next(a for a in R.load_registry() if a["id"] == "starlette-gzip-flush")
+    pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^\s*"starlette>=([0-9][0-9.]*)[",]', pyproject, flags=re.MULTILINE)
+    assert m, "pyproject.toml's starlette requirement lost its floor (see the comment above it)"
+    assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the starlette floor"
+    assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified release is below the floor"
+    assert entry["upstream_check"]["current"] == str(entry["pin"]["verified"]), "the release the watch compares with is the newest one run"
+    lock = (R.repo_root() / "requirements.lock").read_text(encoding="utf-8")
+    pins = re.findall(r"^starlette==([0-9][0-9.]*)\b", lock, flags=re.MULTILINE)
+    assert len(pins) == 1, f"requirements.lock must pin starlette exactly once, found {pins}"
+    assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins starlette {pins[0]}, below the floor"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

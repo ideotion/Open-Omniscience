@@ -598,6 +598,39 @@ artifacts:
       - "src/ingest/extract.py _LXML_LOCK is meant to be the only way the app reaches libxml2 (tests/test_extract_lock.py walks src/ for imports and calls, and its docstring names what the walks do not see)"
     last_verified: "2026-10-16"
 
+  - id: starlette-gzip-flush
+    title: starlette (the web layer under fastapi), floor 1.5.0
+    kind: runtime-coupling
+    description: >
+      src/api/main.py puts GZipMiddleware outermost, and the AI token streams (src/api/llm.py, src/api/ai.py) are application/x-ndjson, which
+      Starlette's default exclusions do not cover, so they are gzip-compressed. A release whose GZipResponder does not flush the deflate stream
+      per chunk keeps a streamed reply in zlib's window until several kilobytes have piled up: the chat appears to hang and the whole answer
+      then arrives at once, with no error anywhere. pyproject.toml had no starlette floor (fastapi asks for starlette>=0.46.0), so an install
+      that resolved below 1.5.0 had that stall. READ in the wheels (1.0.0 to 1.8.0, each unpacked): GZipResponder._compress_body calls
+      flush(zlib.Z_SYNC_FLUSH) on every chunk with more_body from 1.5.0 on, and in none of 1.0.0 to 1.4.1. WHAT WAS RUN, said exactly:
+      tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response, with the release's unpacked wheel
+      first on PYTHONPATH, failed on 1.3.1, 1.4.0 and 1.4.1 and passed on 1.5.0, 1.5.1, 1.6.0, 1.7.0 and 1.8.0 on 2026-10-17; the API route and
+      security test files (tests/test_api*.py, test_route_smoke.py, test_security*.py, test_loopback_rate_limit.py, test_llm_api.py,
+      test_llm_http_wiring.py, test_stream_backup.py, test_sources_route_and_compression.py: 276 tests) passed on 1.8.0, the release that
+      requirements.lock now pins (it pinned 1.3.1, below the floor). Starlette 1.8.0 warns that TestClient with httpx is deprecated in favour
+      of httpx2; nothing here fails on it. In CI the test and core-only jobs run the gzip test on whatever release pip resolves that day; no
+      CI job runs it on the floor (lockfile-install only imports the app), so the floor is verified by that hand run on the 1.5.0 wheel.
+    upstream: https://pypi.org/project/starlette/ (https://github.com/encode/starlette)
+    check_upstream: "pypi.org/pypi/starlette/json - compare info.version; 1.8.0 was the newest on 2026-10-17 and is the release the tests were run on"
+    license: BSD-3-Clause
+    pin: {floor: "1.5.0", verified: "1.8.0"}
+    upstream_check: {github: "encode/starlette", type: release, current: "1.8.0"}
+    refresh: >
+      on a new starlette release run the gzip test and the route test files named above on it (its unpacked wheel first on PYTHONPATH),
+      then move verified and upstream_check.current together; the floor moves only when a release is found to carry a defect this app
+      meets. A release that changes GZipResponder, or makes application/x-ndjson an excluded content type, is read first: the second
+      would turn the stall off, and the test would then pass for a reason the comment above it does not state.
+    couplings:
+      - "pyproject.toml dependencies starlette carries the same floor (test-enforced)"
+      - "requirements.lock pins exactly one release at or above the floor (1.8.0 today; test-enforced)"
+      - "src/api/main.py GZipMiddleware stays the last add_middleware call (tests/test_sources_route_and_compression.py)"
+    last_verified: "2026-10-17"
+
   - id: vader-linear-reproduction
     title: vaderSentiment 3.3.2 internals, reproduced in linear time
     kind: runtime-coupling

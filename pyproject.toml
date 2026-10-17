@@ -34,6 +34,15 @@ classifiers = [
 dependencies = [
     # Web / API
     "fastapi>=0.110",
+    # starlette is fastapi's own dependency; the floor is written here because THIS app depends on one behaviour of it. The whole API
+    # sits behind GZipMiddleware (src/api/main.py), and the AI token streams are application/x-ndjson, which gzip compresses. A
+    # release that does not flush the deflate stream per chunk holds a streamed reply back until several kilobytes have piled up
+    # (the chat appears to hang, then the whole answer arrives at once, with no error anywhere). The first release that flushes per
+    # chunk (flush(Z_SYNC_FLUSH) on every chunk with more_body) is 1.5.0; 1.0.0 to 1.4.1 do not (read in the wheels, and
+    # tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response fails on 1.4.1 and passes
+    # on 1.5.0 and every later release run). Registry entry starlette-gzip-flush; tests/test_external_freshness.py keeps the three
+    # places (this line, the registry, requirements.lock) from drifting apart.
+    "starlette>=1.5.0",
     "uvicorn[standard]>=0.27",
     "python-multipart>=0.0.9",
     # jinja2 REMOVED 2026-09-08 (audit 10, P2-14, same shape as the structlog removal
