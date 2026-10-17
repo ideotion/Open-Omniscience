@@ -496,7 +496,6 @@ class QuarantineJobManager:
                 raise RuntimeError("Nothing paused to resume.")
             sf, wf = self._session_factory, self._work_fn
             cur, tot, done = self._cursor, self._total, self._done
-            tally = dict(self._tally)
             w = self._write  # ALWAYS preserve the mode the paused run was in
             tiers = self._index_page_tiers  # ...and every other part of that mode
             gate = self._include_prose_gate
@@ -504,9 +503,8 @@ class QuarantineJobManager:
         out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done,
                          write=w, index_page_tiers=tiers, include_prose_gate=gate,
                          include_stubs=stubs)
-        with self._lock:
-            self._tally = tally
-            self._save()
+        # No copy-back of the tally (or the sample): start() keeps both when the cursor is past 0, and
+        # a write-back of what was read before start() erased any chunk the worker merged meanwhile.
         return out
 
     def sample_ids(self) -> dict[str, list[int]]:

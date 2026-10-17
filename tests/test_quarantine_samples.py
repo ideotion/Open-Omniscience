@@ -159,6 +159,33 @@ def test_a_chunk_merged_while_resume_is_still_returning_is_not_overwritten(world
     assert sorted(mgr.sample_ids()["x"]) == [3, 6]
 
 
+def test_a_chunk_counted_while_resume_is_still_returning_is_not_overwritten_in_the_tally(world, tmp_path):
+    """The same race as the sample's, in the counts: resume() wrote back the tally it copied BEFORE
+    start(), erasing the counts of any chunk the worker finished in between (the final status then
+    under-counted by a timing-dependent amount)."""
+    import time
+
+    class Slow(qj.QuarantineJobManager):
+        def start(self, **kw):
+            out = super().start(**kw)
+            time.sleep(0.5)  # the worker finishes its chunk before start() returns to resume()
+            return out
+
+    def work(session, **kw):
+        return {"scanned": 7, "quarantined": 1, "already_quarantined": 0, "newly_written": 0,
+                "by_reason": {"x": 1}, "last_id": 6, "done": True, "write": False}
+
+    mgr = Slow(state_path=tmp_path / "q.json")
+    mgr._state, mgr._cursor, mgr._total, mgr._done = "paused", 5, 10, 5
+    mgr._tally = {"scanned": 5, "quarantined": 2, "reason:x": 2}
+    mgr._work_fn = work
+    mgr._session_factory = world
+    mgr.resume()
+    mgr._thread.join(30)
+    assert mgr.status()["tally"] == {"scanned": 12, "quarantined": 3, "reason:x": 3,
+                                     "already_quarantined": 0, "newly_written": 0}
+
+
 def test_a_fresh_run_starts_with_an_empty_sample(world, tmp_path):
     mgr = _run_dry(world, tmp_path)
     mgr.start(_session_factory=world, include_stubs=False, write=False)
