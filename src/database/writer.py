@@ -143,6 +143,15 @@ class WriterGate:
         # of a LONG hold can say what the thread did over the whole of it: worked (CPU close to the seconds) or waited. Written and read
         # only by the owner thread, under the lock it already holds.
         self._hold_usage: thread_usage.Sample | None = None
+        # WHERE THE HOLD'S SECONDS WENT (``hold_breakdown``): the seconds the holder thread spent inside INSERT statements, savepoint
+        # statements, any other statement and commits, in the order of ``_SPENT_KINDS``. Written ONLY by the owner thread, by the engine and
+        # session listeners below (each checks ``_owner`` first, so a statement of any other thread is never counted), without the lock: a
+        # float added to a list slot by the one thread that owns it. ``_spent_for`` is the grant (``_grants``) the figures belong to, so a new
+        # hold starts from zero at its first statement and a hold with none costs nothing; ``_running`` is the statement or commit in
+        # progress, (kind, start), so the watchdog can count a statement that has not ended yet.
+        self._spent = [0.0] * len(_SPENT_KINDS)
+        self._spent_for = 0
+        self._running: tuple[int, float] | None = None
         self._max_hold_s = 0.0
         self._max_hold_holder: str | None = None
         # Cumulative HELD time, so a soak can ask "what share of the run was the single
@@ -264,7 +273,7 @@ class WriterGate:
     def release(self) -> None:
         me = threading.get_ident()
         # (holder name, seconds, start, usage at the grant) of the hold that ended on THIS call, for the line written after the lock is dropped.
-        released: tuple[str | None, float, float | None, thread_usage.Sample | None] | None = None
+        released: tuple[str | None, float, float | None, thread_usage.Sample | None, dict[str, float] | None] | None = None
         with self._lock:
             if self._owner != me:
                 # Defensive: only the owner releases. A non-owner call is a
@@ -277,8 +286,11 @@ class WriterGate:
                 started = self._held_since
                 usage0 = self._hold_usage
                 self._hold_usage = None
+                breakdown: dict[str, float] | None = None
                 if self._held_since is not None:
                     held = time.monotonic() - self._held_since
+                    if held >= HOLD_RECORD_S:  # a hold the journal keeps: where its seconds went, while the ledger is still this hold's
+                        breakdown = self._breakdown_locked(held)
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
                     # is counted once rather than once per level.
                     self._total_held_s += held
@@ -295,7 +307,7 @@ class WriterGate:
                 # AFTER the gate is free and the next waiter woken: this bookkeeping can never
                 # leave the gate held, whatever it does.
                 if held is not None:
-                    released = (holder, held, started, usage0)
+                    released = (holder, held, started, usage0, breakdown)
                     watched = self._watched.get(me)
                     if watched is not None:
                         watched["held_s"] += held
@@ -339,6 +351,49 @@ class WriterGate:
     def held_by_current_thread(self) -> bool:
         with self._lock:
             return self._owner == threading.get_ident()
+
+    def _work_begins(self, kind: int) -> None:
+        """The owner thread starts a statement (``kind`` indexes ``_SPENT_KINDS``) or a commit. Called by the listeners, which have checked
+        that the calling thread owns the gate. A commit still open (a raw connection's commit has no end event) is closed here, at the
+        start of the next work, which makes it an upper bound; a session's commit is closed exactly by :meth:`_work_ends`."""
+        now = time.monotonic()
+        if self._spent_for != self._grants:
+            self._spent[:] = _NO_SPENT
+            self._spent_for = self._grants
+        else:
+            running = self._running
+            if running is not None:
+                self._spent[running[0]] += now - running[1]
+        self._running = (kind, now)
+
+    def _work_ends(self) -> None:
+        """The statement or commit the owner thread was in has ended (after the cursor, after a failed statement, after the session's commit)."""
+        running = self._running
+        if running is not None and self._spent_for == self._grants:
+            self._running = None
+            self._spent[running[0]] += time.monotonic() - running[1]
+
+    def _breakdown_locked(self, held: float) -> dict[str, float]:
+        """The hold's ``held`` seconds split by where they went, in seconds to a tenth. Caller holds the lock. Work still running is counted up
+        to now; what no measured statement or commit covers is ``between_statements``: Python work, the driver calls the listeners cannot see
+        (a raw connection's), and waits. """
+        spent = list(self._spent) if self._spent_for == self._grants else [0.0] * len(_SPENT_KINDS)
+        running = self._running if self._spent_for == self._grants else None
+        if running is not None and self._held_since is not None:
+            spent[running[0]] += max(0.0, self._held_since + held - running[1])
+        return {
+            **{name: round(spent[i], 1) for i, name in enumerate(_SPENT_KINDS)},
+            "between_statements": round(max(0.0, held - sum(spent)), 1),
+        }
+
+    def hold_breakdown(self, started: float) -> dict[str, float] | None:
+        """Where the seconds of the hold that began at ``started`` (the gate's own ``_held_since``) have gone so far, or ``None`` when that hold is
+        over or another has begun. A sample for the watchdog's journal entry: a statement that ends while it is taken can be missed or counted
+        twice (one statement), the figure written when the hold ends is exact."""
+        with self._lock:
+            if self._held_since is None or self._held_since != started:
+                return None
+            return self._breakdown_locked(time.monotonic() - started)
 
     def waiters(self) -> int:
         """Threads blocked RIGHT NOW waiting to write: the one number a long holder needs to know whether to let go.
@@ -454,6 +509,15 @@ class WriterGate:
 
 
 # Process-wide singleton: there is exactly one write window for the one store.
+#: What a hold's statements are sorted into, in the order of the gate's ``_spent`` list: ``insert`` (any INSERT, an executemany is one statement),
+#: ``savepoint`` (SAVEPOINT, RELEASE and ROLLBACK TO), ``other_statement`` (every other statement: reads, UPDATE, DELETE, PRAGMA) and ``commit``
+#: (the engine's commit event to the session's after-commit, or to the next work or the release for a raw connection's). The journal's
+#: ``seconds_by`` carries these and ``between_statements``. WHAT THE FIVE ANSWER: the 16 Oct bundles' holds were INSERT INTO articles 58.6 %,
+#: SAVEPOINT 11.5 % and a read of mention rows inside the hold about 16 %, from the slow-query ring; this puts the split on the hold itself.
+_SPENT_KINDS = ("insert", "savepoint", "other_statement", "commit")
+_INSERT, _SAVEPOINT, _OTHER, _COMMIT = range(4)
+_NO_SPENT = (0.0,) * len(_SPENT_KINDS)
+
 write_gate = WriterGate()
 
 
@@ -746,6 +810,9 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
             "waiters": s.get("waiters"),
             "queued": s.get("queued"),
         }
+        spent = gate.hold_breakdown(started)
+        if spent is not None:  # None: the hold ended while this sample was being taken, and its end writes the exact figures
+            fields["seconds_by"] = spent
         phase = thread_phase(ident)
         if started != _JOURNALED_HOLD:
             _PHASE_SAMPLES.clear()  # a new hold: its samples start from none
@@ -766,7 +833,11 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
 
 
 def _note_hold_end(
-    holder: str | None, held: float, started: float | None, usage0: thread_usage.Sample | None = None
+    holder: str | None,
+    held: float,
+    started: float | None,
+    usage0: thread_usage.Sample | None = None,
+    breakdown: dict[str, float] | None = None,
 ) -> None:
     """A hold of :data:`HOLD_RECORD_S` or more ended, on the holder's own thread: close its journal entry with the final length and
     the route (read from the request's context, which this thread still has), or write it whole when the watchdog never sampled it
@@ -781,6 +852,8 @@ def _note_hold_end(
             # below it is waiting (``thread_usage`` says what each counter means and what it cannot tell apart).
             fields.update(thread_usage.since(usage0))
         fields.update(_memory_numbers())
+        if breakdown is not None:
+            fields["seconds_by"] = breakdown  # exact: taken by the gate at the release, over the whole hold
         route = pool_watch.endpoint_template()
         if route is not None:  # no template found: the label the watchdog sampled stays, it is not overwritten with nothing
             fields["route"] = route
@@ -918,6 +991,57 @@ def hold_write_window(session) -> bool:
 _REGISTERED = False
 
 
+def _statement_kind(statement: object) -> int:
+    """Which of the gate's buckets a statement's seconds go to: INSERT, a savepoint statement, or any other (``_SPENT_KINDS``). The first
+    word only, so a ``WITH ... INSERT`` counts as other; never raises."""
+    head = statement[:24].lstrip().upper() if isinstance(statement, str) else ""
+    if head.startswith("INSERT"):
+        return _INSERT
+    if head.startswith(("SAVEPOINT", "RELEASE", "ROLLBACK TO")):
+        return _SAVEPOINT
+    return _OTHER
+
+
+def _on_statement_start(conn, cursor, statement, parameters, context, executemany) -> None:  # pragma: no cover - event, exercised through the engine
+    """``before_cursor_execute`` on every engine: the gate's holder starts a statement. Any other thread, and the holder outside a hold,
+    return at once (one attribute read and one comparison). Never raises: it runs on every statement of the process."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_begins(_statement_kind(statement))
+
+
+def _on_statement_end(conn, cursor, statement, parameters, context, executemany) -> None:  # pragma: no cover - event
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_ends()
+
+
+def _on_statement_error(exception_context) -> None:  # pragma: no cover - event
+    """A statement that raised has no ``after_cursor_execute``; its seconds end here. Returns None so no exception is replaced."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_ends()
+
+
+def _on_commit_start(conn) -> None:  # pragma: no cover - event
+    """The engine's ``commit`` event, before the driver commits: the holder's commit begins."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_begins(_COMMIT)
+
+
+def _on_session_commit(session) -> None:  # pragma: no cover - event
+    """The session's ``after_commit``: the commit that began at the engine's event has ended."""
+    if write_gate._owner != threading.get_ident():
+        return
+    with suppress(Exception):
+        write_gate._work_ends()
+
+
 def register_write_gate(session_factory) -> None:
     """Attach the gate to a SQLAlchemy ``sessionmaker`` (or ``Session`` class).
 
@@ -946,6 +1070,16 @@ def register_write_gate(session_factory) -> None:
     # after_rollback in SQLAlchemy 2.0, but its outermost transaction ending on
     # close DOES emit after_transaction_end — so this is the leak-proof hook.
     event.listen(session_factory, "after_transaction_end", _on_after_transaction_end)
+    # Where a hold's seconds go (``hold_breakdown``): the holder thread's statements and commits, on every engine. The class, not one engine,
+    # so a second engine (a test's, the keyed copy a restore opens) is measured the same way; a statement of any thread that does not own
+    # the gate costs one comparison.
+    from sqlalchemy.engine import Engine
+
+    event.listen(Engine, "before_cursor_execute", _on_statement_start)
+    event.listen(Engine, "after_cursor_execute", _on_statement_end)
+    event.listen(Engine, "handle_error", _on_statement_error)
+    event.listen(Engine, "commit", _on_commit_start)
+    event.listen(session_factory, "after_commit", _on_session_commit)
     # S2.6: a long hold names itself in the log. The watchdog is NOT started
     # here -- this function runs at import (session.py calls it at module level),
     # and importing must not spawn a monitoring thread. It arms on the first

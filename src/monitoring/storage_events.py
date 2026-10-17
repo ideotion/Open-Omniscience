@@ -1088,6 +1088,39 @@ def run_ended_if_raised(
 # ---------------------------------------------------------------------------------------------------------------------------------
 #  The Diagnostics member (the slot contract: ``(max_bytes) -> dict``, never raises, counts and names the cut)
 # ---------------------------------------------------------------------------------------------------------------------------------
+#: Why a gate hold carries no ``seconds_by`` (where its seconds went, written by the gate): the member cut it to fit the zip's budget, or the
+#: event has none (a journal written by a build without the field, or a sample the hold's end overtook). A hold never shows a missing split
+#: as zeros.
+OMITTED_TO_FIT = "zip-budget"
+OMITTED_UNKNOWN = "not-recorded"
+
+
+def _name_missing_breakdowns(events: list[dict[str, Any]]) -> None:
+    """Every gate hold without a ``seconds_by`` says why (``OMITTED_UNKNOWN``). Works on the member's copies, never the journal."""
+    for event in events:
+        if not isinstance(event.get("seconds_by"), dict):
+            event["seconds_by"] = {"omitted": OMITTED_UNKNOWN}
+
+
+def _cut_breakdowns_to_fit(out: dict[str, Any], kinds: dict[str, Any], budget: int) -> None:
+    """While the member is over ``budget``, take the ``seconds_by`` off the SHORTEST gate hold that still has one and put the reason in its
+    place; the longest holds keep it, so the count of holds that carry the split is whatever the free bytes allow, computed here and never
+    fixed. An event is never dropped for this: a hold without the split is still a hold, and what is dropped to fit afterwards is the
+    existing cut's. ``seconds_by_omitted_to_fit`` on the kind counts them."""
+    holds = kinds.get("gate_hold")
+    if not holds:
+        return
+    cut = 0
+    while _size(out) > budget:
+        carrying = [e for e in holds["events"] if "omitted" not in e.get("seconds_by", {})]
+        if not carrying:
+            break
+        shortest = min(carrying, key=lambda e: float(e.get("seconds") or 0.0))
+        shortest["seconds_by"] = {"omitted": OMITTED_TO_FIT}
+        cut += 1
+        holds["seconds_by_omitted_to_fit"] = cut
+
+
 _METHOD = (
     "Events recorded at the sites that already measure them (the write gate's release and its 15-second watchdog, the storage "
     "guard's transitions, the checkpoint sites, the unlock and the boot, the pool's timeout) and kept in a small file written by a "
@@ -1096,7 +1129,9 @@ _METHOD = (
     "longest by the named field AND the newest, each event saying why it is there in 'picked_by': 'longest', 'newest' or 'both', so a "
     "long hold is not pushed out by a stream of shorter, newer ones); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
     "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
-    "shown. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
+    "shown. A hold's 'seconds_by' splits its seconds into insert, savepoint, other_statement, commit and between_statements (Python work, "
+    "raw-driver calls and waits); an open hold shows them so far. 'omitted' names why a hold has none: 'zip-budget' (the shortest holds are "
+    "cut first to fit; 'seconds_by_omitted_to_fit' counts them) or 'not-recorded'. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
     "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
     "'run_export' (the volume backup and the folder backup of the large data), 'run_import' (the volume restore, the single-file "
     "restore of a legacy backup, the folder restore of the large data and the folder import of newsletter files) and 'run_verify' (the "
@@ -1154,6 +1189,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                 if kind in LONGEST:
                     field, n_long = LONGEST[kind]
                     kinds[kind]["keep_rule"] = {"longest": n_long, "by": field, "newest": cap - n_long}
+            _name_missing_breakdowns(kinds["gate_hold"]["events"])
             file_state = {
                 "read_at_first_use": _READ_STATE,
                 "history_loaded": _LOADED,
@@ -1176,6 +1212,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             "kinds": kinds,
             "dropped_to_fit": {},
         }
+        _cut_breakdowns_to_fit(out, kinds, budget)
         while _size(out) > budget:
             biggest = max(kinds, key=lambda k: _size(kinds[k]["events"]))
             if not kinds[biggest]["events"]:

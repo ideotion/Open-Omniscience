@@ -20,6 +20,7 @@ test's own (``tmp_path``); nothing here writes the suite's shared data directory
 
 from __future__ import annotations
 
+import copy
 import errno
 import json
 import sqlite3
@@ -377,6 +378,9 @@ _PAGES_AT_THE_WIDEST = {
 }
 
 
+#: What the gate writes as a hold's ``seconds_by`` (``writer._SPENT_KINDS`` and ``between_statements``), each at the widest a day-long hold gives.
+_SECONDS_BY_KEYS = ("insert", "savepoint", "other_statement", "commit", "between_statements")
+
 _WIDEST_CLASS = "Module." + "E" * (se._CLASS_NAME_MAX - len("Module."))  # 80 characters, the most the journal lets through
 
 
@@ -425,7 +429,8 @@ def _fill_like_the_hooks(long_names: bool) -> None:
         se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760}})
         se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume"),
                                            "cpu_ms": 86_400_000.0, "nvcsw": 9_999_999_999, "nivcsw": 9_999_999_999, "majflt": 9_999_999_999,
-                                           "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999})
+                                           "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999,
+                                           "seconds_by": dict.fromkeys(_SECONDS_BY_KEYS, 86_400.0)})
     for _ in range(se.KEEP["guard"] + 4):
         se.record("guard", {"kind": "wal", "since": "2026-10-13T12:00:00+00:00", "wal_bytes_at_trip": 12_345_678_901,
                             "disk_free_bytes_at_trip": 9_876_543_210, "corpus_bytes_at_trip": 98_765_432_101,
@@ -461,7 +466,9 @@ def _fill_like_the_hooks(long_names: bool) -> None:
 def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
     every kind, with the events the hooks write. Measured 78,634 bytes with ordinary names and 123,344 with every name at the cut, 1,494 of which are the keep rule's (``picked_by`` on the 50 events of the four split kinds, and the method sentence and ``keep_rule`` lines) (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
-    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip."""
+    the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip.
+
+    THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,453 bytes with ordinary names and 126,163 with every name at the cut, over the row by 1,163; the member built at the row's budget (124,990 bytes) takes the split off the shortest holds until it fits and keeps it on the other 6, counting the 14 it cut. Ordinary names keep all twenty."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
@@ -471,11 +478,70 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
         assert m["kinds"][kind]["kept"] == min(cap, m["kinds"][kind]["total"]), kind
     assert m["kinds"]["gate_hold"]["kept"] == 20 and m["kinds"]["checkpoint_notable"]["kept"] == 10, "full retention"
     size = len(json.dumps(m, separators=(",", ":")))
-    assert size <= slot.budget_bytes, f"{size} bytes at full retention, the row says {slot.budget_bytes}"
     assert size >= 20_000, "the fixture still resembles the real events"
-    assert not m["dropped_to_fit"], "nothing is cut to fit at the budget"
-    assert se.diagnostics_member(slot.budget_bytes)["dropped_to_fit"] == {}
+    # The split of a hold's seconds (``seconds_by``) is the part that gives way: at the widest names the journal with all twenty splits is
+    # over the row, so the member built at the row's budget cuts the splits from the shortest holds (never an event) until it fits.
+    at_budget = se.diagnostics_member(slot.budget_bytes)
+    assert len(json.dumps(at_budget, separators=(",", ":"))) <= slot.budget_bytes, f"{size} bytes with every split, the row says {slot.budget_bytes}"
+    assert at_budget["dropped_to_fit"] == {}, "no event is dropped to fit: only splits are"
+    assert at_budget["kinds"]["gate_hold"]["kept"] == 20
+    if not long_names:
+        assert size <= slot.budget_bytes and "seconds_by_omitted_to_fit" not in at_budget["kinds"]["gate_hold"], "ordinary names: every hold keeps its split"
     assert len(json.dumps(m["kinds"]["gate_hold"]["events"][0])) < se.MAX_EVENT_BYTES
+
+
+def _carrying(member: dict) -> list[dict]:
+    return [e for e in member["kinds"]["gate_hold"]["events"] if "omitted" not in e["seconds_by"]]
+
+
+def test_the_split_stays_on_as_many_of_the_longest_holds_as_the_free_bytes_allow(journal):
+    """The count is computed from the budget, never fixed: with every name at the cut the member is over the row by the splits, and
+    the shortest holds give theirs up first. Four properties, each one a way the rule is wrong: it fits; the holds that keep it are the
+    longest; it is MAXIMAL (putting one more back overflows); and each hold without one says why, counted."""
+    from src.api import diagnostics_slots as slots
+
+    (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
+    _fill_like_the_hooks(True)
+    m = se.diagnostics_member(slot.budget_bytes)
+    holds = m["kinds"]["gate_hold"]["events"]
+    cut = [e for e in holds if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT]
+    kept = _carrying(m)
+    assert kept and cut, "the widest journal is over the row by the splits: some are kept and some are cut"
+    assert len(kept) + len(cut) == 20 == len(holds), "every hold is still there; the others carry a reason"
+    assert m["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] == len(cut)
+    assert min(e["seconds"] for e in kept) >= max(e["seconds"] for e in cut), "the longest holds keep the split"
+    # Maximal: give the longest cut hold its split back (and take the counter down by one) and the member no longer fits.
+    back = copy.deepcopy(m)
+    longest_cut = max((e for e in back["kinds"]["gate_hold"]["events"] if e["seconds_by"].get("omitted")), key=lambda e: e["seconds"])
+    longest_cut["seconds_by"] = dict.fromkeys(_SECONDS_BY_KEYS, 86_400.0)
+    back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] -= 1
+    if not back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"]:
+        del back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"]
+    assert len(json.dumps(back, separators=(",", ":"), ensure_ascii=False).encode()) > slot.budget_bytes, "one more split would have fitted: the count is not the most the free bytes allow"
+    # The count follows the budget: a bigger budget keeps more, an unlimited one keeps all twenty.
+    assert len(_carrying(se.diagnostics_member(slot.budget_bytes + 1_000))) > len(kept)
+    assert len(_carrying(se.diagnostics_member(10**9))) == 20
+
+
+def test_a_hold_without_a_split_says_why_and_never_shows_zeros(journal):
+    se.record("gate_hold", {"holder": "old", "seconds": 40.0}, key=("hold", 1))  # written by a build without the field
+    se.record("gate_hold", {"holder": "new", "seconds": 50.0, "seconds_by": dict.fromkeys(_SECONDS_BY_KEYS, 1.5)}, key=("hold", 2))
+    holds = {e["holder"]: e for e in _events("gate_hold")}
+    assert holds["old"]["seconds_by"] == {"omitted": se.OMITTED_UNKNOWN}
+    assert holds["new"]["seconds_by"] == dict.fromkeys(_SECONDS_BY_KEYS, 1.5)
+    assert "insert" not in holds["old"]["seconds_by"], "an unmeasured split is a reason, not zeros"
+
+
+def test_a_cut_split_is_the_members_only_the_file_keeps_it(journal):
+    from src.api import diagnostics_slots as slots
+
+    (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
+    _fill_like_the_hooks(True)
+    se.diagnostics_member(slot.budget_bytes)
+    se.flush()
+    on_disk = json.loads(journal.read_text(encoding="utf-8"))["kinds"]["gate_hold"]["events"]
+    assert len(on_disk) == 20 and all(isinstance(e["seconds_by"], dict) and "omitted" not in e["seconds_by"] for e in on_disk), "building the member cut nothing in the journal"
+    assert len(_carrying(se.diagnostics_member(10**9))) == 20
 
 
 def test_the_hard_ceiling_is_the_event_cap_times_the_largest_event_and_still_fits_one_part():
