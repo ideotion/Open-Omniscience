@@ -342,12 +342,13 @@ def _compute_figures(db: Session, now: datetime) -> dict:
     return out
 
 
-def _failure_kind(exc: BaseException, memory_short: type, statement_timeout: type) -> str:
+def _failure_kind(exc_type: type, memory_short: type, statement_timeout: type) -> str:
     """The NAMED reason a count stopped: a memory stop (a subclass of the deadline abort, so every caller handles it) is not a
-    time limit, and the guard's own numbers stay out of the figure."""
-    if isinstance(exc, memory_short):
+    time limit, and the guard's own numbers stay out of the figure. It is handed the exception's CLASS, never the exception: the
+    kind is a name, and the exception's words stay where they were caught."""
+    if issubclass(exc_type, memory_short):
         return "memory-short"
-    return "statement-deadline" if isinstance(exc, statement_timeout) else type(exc).__name__
+    return "statement-deadline" if issubclass(exc_type, statement_timeout) else exc_type.__name__
 
 
 def _compute_figures_counted(db: Session, now: datetime) -> dict:
@@ -383,7 +384,7 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
                 "avg_keywords_per_article": None,
                 "keyword_mentions_state": "failed",
                 "keyword_mentions_failure": {
-                    "kind": _failure_kind(exc, MemoryShort, StatementTimeout),
+                    "kind": _failure_kind(type(exc), MemoryShort, StatementTimeout),
                     "deadline_s": deadline,
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
                     "retry_after_s": _FIGURES_FAILURE_WINDOW_S,
