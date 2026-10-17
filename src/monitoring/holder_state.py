@@ -17,11 +17,19 @@ a thread's counters say HOW MUCH it waited, not WHAT it waited for. This module 
   gives the GIL up, and when the holder is the only thread waiting for it the look hands it over and reads the holder running; with
   several waiters (the case this exists for: fetch workers and collectors on a few cores) the holder usually still reads futex.
 * ``nap``: asleep in the kernel's ``nanosleep``. SQLite's busy handler sleeps there while another connection holds the file's write lock,
-  and ``time.sleep`` is the same call, so ``nap`` means a busy-handler wait ONLY because the holder of the gate does not call
-  ``time.sleep`` (true of the collector's flush path; the method says so).
+  and ``time.sleep`` is the same call, so ``nap`` is a busy-handler wait only where the holder of the gate does not call ``time.sleep``:
+  true of the collector's flush path, NOT of the streaming backup, which sleeps half a second between its WAL checkpoint tries while it
+  holds the gate (``src/backup/stream_backup.py``, ``_drain_wal``). The method says both.
 * ``disk``: uninterruptible sleep (state ``D``): the thread is waiting on the disk or on swap, or on a kernel lock a disk wait holds.
-* ``other``: anything else asleep (a poll, a pipe), a state that is not one of these, a sleep whose ``wchan`` cannot be read, and a
-  running-or-runnable look whose scheduler figures cannot be read. It is counted, never folded into a class it was not seen to be.
+* ``other``: anything else asleep (a poll, a socket, a pipe: a collector doing network I/O while it holds the gate), a state that is not
+  one of these, a sleep whose ``wchan`` cannot be read, and a running-or-runnable look whose scheduler figures cannot be read. It is
+  counted, never folded into a class it was not seen to be.
+
+THE ORDER OF THE READS IS PART OF THE ANSWER. Every file the look reads gives the GIL up while the kernel answers, and a holder that is
+waiting for the GIL is woken by that: read ``stat`` first and ``wchan`` second and a holder asleep at the first read is awake at the second
+(measured, a pure-Python holder beside three spinners: 29 per cent of its looks read ``S`` then ``0`` and fell in ``other``). So the
+``wchan`` is read FIRST: the kernel prints a symbol only for a thread blocked in the kernel at that moment, so a symbol that names a futex
+or a nanosleep is the wait itself, whatever the next read finds. The state is read second and decides only what the symbol did not.
 
 ``gap`` is the longest time between two looks that could be READ. The look runs on the gate's watchdog thread, which needs the GIL: a
 process that is starved as a whole (swap, too many threads for the cores) shows as a gap well over a second, and a thread that is
@@ -85,18 +93,18 @@ class _Look:
 
 def classify(state: str, wchan: str, cpu_ns: int | None, wait_ns: int | None) -> str:
     """The class of one look. ``cpu_ns`` and ``wait_ns`` are what the thread ran and what it waited on a run queue SINCE THE PREVIOUS LOOK
-    (None when the scheduler's figures could not be read)."""
+    (None when the scheduler's figures could not be read). A ``wchan`` that names a futex or a nanosleep is the wait, whatever ``state``
+    (read after it) says: the symbol is printed only for a thread blocked there, and the state read can be the one the look woke."""
+    if "futex" in wchan:
+        return "futex"
+    if "nanosleep" in wchan:
+        return "nap"
     if state == "R":
         if cpu_ns is None or wait_ns is None:
             return "other"
         return "runnable" if wait_ns > cpu_ns else "running"
     if state == "D":
         return "disk"
-    if state == "S":
-        if "futex" in wchan:
-            return "futex"
-        if "nanosleep" in wchan:
-            return "nap"
     return "other"
 
 
@@ -118,6 +126,10 @@ def _read(path: str) -> bytes:
 def _look_at(tid: int) -> tuple[_Look | None, str | None]:
     """(the look, None) or (None, the reason there is none). Never raises."""
     base = f"{_TASK_DIR}/{tid}"
+    try:  # first: the read the look disturbs least (module docstring); a kernel without the file, or a refusal, leaves a sleep as "other"
+        wchan = _read(f"{base}/wchan").decode("ascii", "replace").strip()
+    except Exception:  # noqa: BLE001 - counted, not guessed; the error's text is not kept
+        wchan = ""
     try:
         state = _state_of(_read(f"{base}/stat"))
     except (FileNotFoundError, ProcessLookupError):
@@ -126,10 +138,6 @@ def _look_at(tid: int) -> tuple[_Look | None, str | None]:
         return None, UNREADABLE
     if state is None:
         return None, UNREADABLE
-    try:
-        wchan = _read(f"{base}/wchan").decode("ascii", "replace").strip()
-    except Exception:  # noqa: BLE001 - a sleep is then "other": counted, not guessed
-        wchan = ""
     cpu_ns: int | None = None
     wait_ns: int | None = None
     try:
@@ -243,8 +251,11 @@ def fields_for(started: float | None) -> dict[str, Any]:
         return hold.fields()
 
 
-def forget() -> None:
-    """Drop the looks of the hold that ended (the gate is free)."""
+def forget(started: float | None = None) -> None:
+    """Drop the looks of the hold that began at ``started`` (the thread that released the gate calls this after it has read them), or, with
+    no argument, whatever hold is kept. Never called by the watchdog: it sees a free gate before the releasing thread has read the counts,
+    and a hold it dropped would end with the last 15-second sample's counts, or none (the 17 Oct read)."""
     global _CURRENT
     with _LOCK:
-        _CURRENT = None
+        if started is None or (_CURRENT is not None and _CURRENT.started == started):
+            _CURRENT = None

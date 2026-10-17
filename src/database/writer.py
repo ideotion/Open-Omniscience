@@ -879,6 +879,9 @@ def _note_hold_end(
             storage_events.record("gate_hold", {**fields, "sampled_while_held": False})
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "write gate hold could not be journaled", exc, level=logging.DEBUG)
+    finally:
+        if started is not None:
+            holder_state.forget(started)  # read above, on this thread; the watchdog never drops a hold's looks (holder_state.forget)
 
 
 def _watchdog_interval_s() -> float:
@@ -945,8 +948,7 @@ def sample_holder_state(gate: WriterGate, now: float | None = None) -> bool:
     try:
         holder, started, ident = gate._holder_snapshot()
         if started is None or holder is None:
-            holder_state.forget()  # the gate is free: the next hold starts its counts from none
-            return False
+            return False  # the gate is free: the looks stop; the thread that released it reads and forgets them (_note_hold_end)
         if started != _JOURNALED_HOLD:
             return False  # not a hold the journal keeps (yet): the full tick opens the entry first, at HOLD_RECORD_S or more
         return holder_state.look(started, ident, time.monotonic() if now is None else now)
@@ -971,11 +973,15 @@ def _watchdog_loop(stop: threading.Event) -> None:
         try:
             now = time.monotonic()
             if now >= due:
+                due = now + interval  # set BEFORE the tick: a tick that raises still waits its interval, it does not spin
                 warned_since = watchdog_tick(write_gate, warned_since)
                 due = time.monotonic() + interval
-            looking = sample_holder_state(write_gate)
         except Exception as exc:  # noqa: BLE001 - the watchdog must never take the app down
             log_failure(_LOG, "write gate watchdog tick failed", exc, level=logging.DEBUG)
+        try:
+            looking = sample_holder_state(write_gate)  # its own try: a failing tick does not stop the looks
+        except Exception as exc:  # noqa: BLE001 - sample_holder_state does not raise; the loop does not rely on it
+            log_failure(_LOG, "write gate holder state could not be sampled", exc, level=logging.DEBUG)
         wait = _next_wait_s(interval, due, time.monotonic(), looking)
 
 

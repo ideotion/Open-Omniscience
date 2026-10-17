@@ -422,7 +422,7 @@ def _fill_like_the_hooks(long_names: bool) -> None:
     def frame(text: str) -> str:
         # The widest a frame the gate's watchdog writes can be: ``writer.FRAME_CHARS``, a measured maximum that tests/test_holder_state.py pins
         # against every function under src/. The journal's own 160-character cut is NOT the width of a frame: no frame reaches it.
-        return (text + _NAME)[: writer.FRAME_CHARS] if long_names else text
+        return (text + _NAME)[: writer.FRAME_CHARS - 1] + "…" if long_names else text  # the cut form the watchdog writes: FRAME_CHARS, the last one the ellipsis
 
     frames = [frame(f) for f in ("src.analytics.keyword_rollup:rebuild_segment_batches:412", "src.database.maintenance:run_in_write_window:1893", "src.database.writer:write_lock:540")]
     for i in range(se.KEEP["gate_hold"] + 5):
@@ -436,7 +436,8 @@ def _fill_like_the_hooks(long_names: bool) -> None:
         # holder thread did over the hold and the machine's memory at its end, each at ten digits.
         se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760},
                                               # the holder's kernel state: six counts of five digits (a day of one-second looks, 14,400 in each class) and the longest gap
-                                              "ws": [14_400] * len(holder_state.CLASSES), "gap": 86_400.0})
+                                              # and a reason that was cleared by the counts (the journal merges: the key stays, null)
+                                              "ws": [14_400] * len(holder_state.CLASSES), "gap": 86_400.0, "ws_why": None})
         se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume"),
                                            "cpu_ms": 86_400_000.0, "nvcsw": 9_999_999_999, "nivcsw": 9_999_999_999, "majflt": 9_999_999_999,
                                            "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999,
@@ -509,10 +510,13 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, lo
     bigger row. The model above wrote each of a hold's three frames at the journal's 160-character cut; a frame is ``module:function:line``,
     the longest any function under ``src/`` can produce is 79 characters (pinned in ``tests/test_holder_state.py``), and ``writer.FRAME_CHARS`` (90) is
     now both what the watchdog writes at most and what this model uses: 3 frames x 70 characters x 20 holds = 4,200 bytes that no real
-    event could reach. The new fields cost 58 bytes a hold at their widest (six five-digit counts and a five-digit gap: 1,160 over the 20)
-    and their sentence in the method 655 (the fixed part, defined above, 5,176 to 5,831). Measured with the real fixtures, written: ordinary names 83,327 bytes (41,673 free), every
-    name at the cut 123,837, 1,163 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
-    the row with 5 splits kept)."""
+    event could reach (4,080 once a cut frame's ellipsis is counted: the model writes the frame in the cut form, 89 characters and the
+    ellipsis). The new fields cost 57 bytes a hold at their widest (six five-digit counts and a five-digit gap: 1,140 over the 20), 14 more for
+    the ``ws_why`` null that stays when counts follow a reason (the journal merges: 280 over the 20), and their sentence in the method 827
+    (the fixed part, defined above, 5,176 to 6,003). Measured with the real fixtures, written: ordinary names 83,779 bytes (41,221 free), every
+    name at the cut 124,409, 591 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
+    the row with 5 splits kept; 126,242 - 4,080 + 1,140 + 280 + 827 = 124,409). A count reaches six digits only after about 28 hours of
+    looks at one hold and all six pass the five modelled digits together after about 67: the free bytes absorb that."""
     from src.api import diagnostics_slots as slots
     from src.database import writer
 
@@ -2185,7 +2189,7 @@ def test_the_zip_budget_cuts_events_and_splits_but_never_the_onset(journal, monk
         se.record("pool_timeout", {"waited_s": 20.0 + n, "n": n})
         se.record("gate_hold", {"seconds": 40.0 + n, "holder": "writer"})
     full = _member()
-    squeezed = se.diagnostics_member(6_000)
+    squeezed = se.diagnostics_member(7_000)  # a little over the fixed part (6,003 bytes written), so some events fit and the rest are cut
     assert squeezed["dropped_to_fit"], "ANTI-VACUITY: the budget did cut events"
     for kind in se.ONSET_KINDS:
         assert squeezed["kinds"][kind]["first_seen_at"] == full["kinds"][kind]["first_seen_at"] is not None, kind

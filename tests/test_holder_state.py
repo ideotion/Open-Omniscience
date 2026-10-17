@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
+import re
 import sys
 import threading
 import time
@@ -116,10 +118,34 @@ def test_each_kernel_state_is_counted_in_its_own_class_and_no_other(state, wchan
     assert hs.classify(state, wchan, cpu, wait) == expected
 
 
-def test_a_futex_wchan_is_a_futex_only_while_asleep():
-    """A thread in state R whose wchan still names a futex (the symbol is stale for a thread the scheduler just woke) is running or runnable."""
-    assert hs.classify("R", "futex_do_wait", 10, 1) == "running"
-    assert hs.classify("D", "futex_do_wait", None, None) == "disk"
+def test_a_wchan_that_names_a_wait_is_that_wait_whatever_the_state_read_after_it_says():
+    """The kernel prints a symbol only for a thread blocked in the kernel when it is read, and the look reads the wchan FIRST: a state letter
+    read after it (R, because the look's own reads gave the GIL up and woke the thread) does not undo the wait that was seen."""
+    assert hs.classify("R", "futex_do_wait", 10, 1) == "futex"
+    assert hs.classify("R", "hrtimer_nanosleep", 10, 1) == "nap"
+    assert hs.classify("R", "0", 10, 1) == "running", "the same R with no symbol is what it says"
+    assert hs.classify("D", "io_schedule", None, None) == "disk", "a symbol that is not one of the two waits leaves the state to decide"
+
+
+def test_the_wait_is_read_before_the_state_so_a_holder_the_look_wakes_is_still_read_asleep(proc, monkeypatch):
+    """Every file the look reads gives the GIL up, and a holder waiting for the GIL is woken by that: asleep at the first read, awake at the
+    second. Scripted here exactly so: the first file of each look is read with the thread asleep on a futex, every later one with it running.
+    Read ``stat`` first and the look is S then 0 and lands in ``other`` (29 per cent of the looks of a holder beside three spinners)."""
+    asleep = {"wchan": b"futex_do_wait", "stat": b"4242 (python) S 1 1 1 0\n"}
+    awake = {"wchan": b"0", "stat": b"4242 (python) R 1 1 1 0\n", "schedstat": b"9000000 0 7\n"}
+    order: list[str] = []
+
+    def read(path):
+        name = Path(path).name
+        order.append(name)
+        return asleep[name] if len(order) == 1 else awake[name]
+
+    monkeypatch.setattr(hs, "_read", read)
+    for at in (100.0, 101.0, 102.0):
+        order.clear()
+        _look(10.0, at)
+        assert order[0] == "wchan", order
+    assert hs.fields_for(10.0)["ws"] == [0, 0, 2, 0, 0, 0], "the two looks that count are futex waits: the thread was asleep when the look began"
 
 
 def test_the_classes_are_six_and_in_the_order_the_journal_writes_them():
@@ -235,6 +261,17 @@ def test_forget_drops_the_counts_of_a_hold_that_ended(proc):
     proc.put("S", "futex_do_wait")
     _look(10.0, 101.0)
     hs.forget()
+    assert hs.fields_for(10.0) == {}
+
+
+def test_forgetting_one_hold_leaves_another_alone(proc):
+    """The thread that released a gate forgets ITS hold after it read the counts; a newer hold the watchdog has begun to look at is not its to drop."""
+    _look(10.0, 100.0)
+    proc.put("S", "futex_do_wait")
+    _look(10.0, 101.0)
+    hs.forget(55.0)
+    assert hs.fields_for(10.0)["ws"] == [0, 0, 1, 0, 0, 0], "another hold's forget"
+    hs.forget(10.0)
     assert hs.fields_for(10.0) == {}
 
 
@@ -468,7 +505,69 @@ def test_a_long_hold_carries_the_holders_counts_in_the_journal_and_the_looks_up_
 
 
 @pytest.mark.usefixtures("journal")
-def test_the_gate_going_free_drops_the_counts_so_the_next_hold_starts_from_none(proc, monkeypatch):
+def test_a_watchdog_look_on_the_free_gate_leaves_the_counts_for_the_release_to_read_and_the_release_forgets_them(proc, monkeypatch):
+    """The release frees the gate and THEN reads the holder's counts (after the long-release log, the thread numbers and the memory read). A
+    watchdog look that lands in that window sees a free gate; it used to drop the counts, so the end carried the last 15-second sample's
+    (up to 15 s of looks missing, or none: 'not-recorded') on about one look in eight under four busy threads. Forced here: the watchdog's look
+    is run on the releasing thread in that window."""
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
+    gate = writer.WriterGate()
+    let_go, t = _hold_the_gate(gate)
+    time.sleep(0.1)
+    writer.watchdog_tick(gate, None)
+    _h, started, _i = gate._holder_snapshot()
+    writer.sample_holder_state(gate, now=started + 1.0)
+    for i in range(1, 4):
+        proc.put("S", "futex_do_wait")
+        writer.sample_holder_state(gate, now=started + 1.0 + i)
+    writer.watchdog_tick(gate, started)  # the tick carries three looks
+    for i in range(4, 6):
+        proc.put("S", "hrtimer_nanosleep")
+        writer.sample_holder_state(gate, now=started + 1.0 + i)
+    window: list[bool] = []
+    real_memory = writer._memory_numbers
+
+    def memory_and_a_look_on_the_free_gate():
+        window.append(gate._holder_snapshot()[1] is None)  # the gate is free here
+        window.append(writer.sample_holder_state(gate) is False)  # the watchdog's look finds it free
+        return real_memory()
+
+    monkeypatch.setattr(writer, "_memory_numbers", memory_and_a_look_on_the_free_gate)
+    let_go.set()
+    t.join(5)
+    assert window == [True, True], "anti-vacuity: the look did land in the window, on a free gate"
+    (event,) = _events("gate_hold")
+    assert event["open"] is False
+    assert event["ws"] == [0, 0, 3, 2, 0, 0], "all five looks, not the tick's three"
+    assert hs.fields_for(started) == {}, "the releasing thread forgot its hold after it had read it"
+
+
+@pytest.mark.usefixtures("journal")
+def test_the_release_forgets_only_its_own_hold(proc, monkeypatch):
+    """A newer hold the watchdog is already looking at is not the releasing thread's to drop, and an end with no start time forgets nothing."""
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
+    gate = writer.WriterGate()
+    let_go, t = _hold_the_gate(gate)
+    time.sleep(0.1)
+    writer.watchdog_tick(gate, None)
+    _h, started, _i = gate._holder_snapshot()
+    real_memory = writer._memory_numbers
+
+    def memory_while_a_newer_hold_is_looked_at():
+        _look(started + 500.0, 100.0)  # another hold, taken up by the watchdog between the release and this read
+        return real_memory()
+
+    monkeypatch.setattr(writer, "_memory_numbers", memory_while_a_newer_hold_is_looked_at)
+    let_go.set()
+    t.join(5)
+    assert hs._CURRENT is not None and hs._CURRENT.started == started + 500.0
+    writer._note_hold_end("oo-collect_3", 40.0, None)  # an end that never knew its start
+    assert hs._CURRENT is not None and hs._CURRENT.started == started + 500.0, "forget(None) would have dropped whatever is kept"
+
+
+@pytest.mark.usefixtures("journal")
+def test_a_hold_that_ended_before_the_next_tick_still_carries_the_looks_it_was_given(proc, monkeypatch):
+    """The other outcome of the same race: the tick had not yet written any counts, and the end said 'not-recorded' for a hold that had been looked at."""
     monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
     gate = writer.WriterGate()
     let_go, t = _hold_the_gate(gate)
@@ -478,12 +577,29 @@ def test_the_gate_going_free_drops_the_counts_so_the_next_hold_starts_from_none(
     writer.sample_holder_state(gate, now=started + 1.0)
     proc.put("S", "futex_do_wait")
     writer.sample_holder_state(gate, now=started + 2.0)
-    assert hs.fields_for(started)["ws"] == [0, 0, 1, 0, 0, 0], "anti-vacuity: there are counts to forget"
+    real_memory = writer._memory_numbers
+    monkeypatch.setattr(writer, "_memory_numbers", lambda: (writer.sample_holder_state(gate), real_memory())[1])
     let_go.set()
     t.join(5)
-    assert hs.fields_for(started) != {}, "the release does not drop them: the watchdog does, at its next look"
+    (event,) = _events("gate_hold")
+    assert event["ws"] == [0, 0, 1, 0, 0, 0] and event.get("ws_why") is None
+
+
+@pytest.mark.usefixtures("journal")
+def test_the_looks_stop_when_the_gate_is_free_and_touch_nothing(proc, monkeypatch):
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
+    gate = writer.WriterGate()
+    let_go, t = _hold_the_gate(gate)
+    time.sleep(0.1)
+    writer.watchdog_tick(gate, None)
+    _h, started, _i = gate._holder_snapshot()
+    writer.sample_holder_state(gate, now=started + 1.0)
+    proc.put("S", "futex_do_wait")
+    writer.sample_holder_state(gate, now=started + 2.0)
+    let_go.set()
+    t.join(5)
     assert writer.sample_holder_state(gate) is False
-    assert hs.fields_for(started) == {}, "free gate: forgotten"
+    assert hs._CURRENT is None, "the releasing thread forgot; a look on the free gate neither made nor kept anything"
 
 
 @pytest.mark.usefixtures("journal")
@@ -515,20 +631,23 @@ def test_a_hold_on_a_platform_without_proc_is_journaled_with_the_reason_and_not_
 
 
 @pytest.mark.usefixtures("journal")
-def test_a_failing_sampler_never_raises_into_the_watchdog(proc, monkeypatch):
+def test_a_failing_sampler_never_raises_into_the_watchdog_and_says_so_once_in_the_log(proc, monkeypatch, caplog):
     monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
 
     def boom(*_a):
-        raise RuntimeError(f"cannot look {MARKER}")
+        raise RuntimeError("cannot look")
 
     monkeypatch.setattr(hs, "look", boom)
     gate = writer.WriterGate()
     let_go, t = _hold_the_gate(gate)
     time.sleep(0.1)
     writer.watchdog_tick(gate, None)
-    assert writer.sample_holder_state(gate) is False
+    with caplog.at_level(logging.DEBUG, logger=writer._LOG.name):
+        assert writer.sample_holder_state(gate) is False
     let_go.set()
     t.join(5)
+    lines = [r.getMessage() for r in caplog.records if "holder state could not be sampled" in r.getMessage()]
+    assert len(lines) == 1 and "RuntimeError" in lines[0], lines
 
 
 @pytest.mark.usefixtures("journal")
@@ -585,6 +704,71 @@ def test_the_watchdog_loop_looks_every_second_of_a_long_hold_and_ticks_at_its_ow
     assert 2 <= len(ticks) <= 5, f"the full tick stayed at its 0.5 s pace: {len(ticks)} ticks"
 
 
+def _run_the_loop_over_a_long_hold(monkeypatch, order: list[str], seconds: float = 1.7) -> None:
+    """The watchdog's own loop on a gate held for ``seconds``: a 0.5 s full tick, a look every 0.02 s; ``order`` is what the loop called."""
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
+    monkeypatch.setattr(writer, "HOLD_LOOK_S", 0.02)
+    monkeypatch.setenv("OO_WRITE_GATE_WATCH_INTERVAL_S", "0.5")
+    gate = writer.WriterGate()
+    monkeypatch.setattr(writer, "write_gate", gate)
+    let_go, t = _hold_the_gate(gate)
+    stop = threading.Event()
+    loop = threading.Thread(target=writer._watchdog_loop, args=(stop,), daemon=True)
+    loop.start()
+    time.sleep(seconds)
+    stop.set()
+    loop.join(3)
+    let_go.set()
+    t.join(5)
+
+
+@pytest.mark.usefixtures("journal")
+def test_a_watchdog_tick_that_raises_waits_its_interval_and_does_not_stop_the_looks(proc, monkeypatch):
+    """The loop moved ``due`` only after the tick returned, so a tick that raised was due again at once: the loop ran it at full speed (290,307
+    times in a second) and, with the look in the same ``try``, took no look. The first tick is real (it journals the hold); every later one raises."""
+    order: list[str] = []
+    real_tick, real_look = writer.watchdog_tick, writer.sample_holder_state
+    proc.put("S", "futex_do_wait")
+
+    def tick(g, w):
+        order.append("tick")
+        if order.count("tick") == 1:
+            return real_tick(g, w)
+        raise RuntimeError("the tick failed")
+
+    def look(g, now=None):
+        order.append("look")
+        return real_look(g, now)
+
+    monkeypatch.setattr(writer, "watchdog_tick", tick)
+    monkeypatch.setattr(writer, "sample_holder_state", look)
+    _run_the_loop_over_a_long_hold(monkeypatch, order)
+    assert 2 <= order.count("tick") <= 6, f"a raising tick waits its 0.5 s: {order.count('tick')} ticks in 1.7 s"
+    after_the_first_raise = order[order.index("tick", order.index("tick") + 1) + 1 :]
+    between = after_the_first_raise[: after_the_first_raise.index("tick")] if "tick" in after_the_first_raise else after_the_first_raise
+    assert between.count("look") >= 3, "the looks go on between the raising ticks"
+
+
+@pytest.mark.usefixtures("journal")
+def test_a_sampler_that_raises_does_not_spin_the_loop_or_stop_the_ticks(proc, monkeypatch):
+    order: list[str] = []
+    real_tick = writer.watchdog_tick
+
+    def tick(g, w):
+        order.append("tick")
+        return real_tick(g, w)
+
+    def look(g, now=None):
+        order.append("look")
+        raise RuntimeError("the look failed")
+
+    monkeypatch.setattr(writer, "watchdog_tick", tick)
+    monkeypatch.setattr(writer, "sample_holder_state", look)
+    _run_the_loop_over_a_long_hold(monkeypatch, order)
+    assert 2 <= order.count("tick") <= 6, order.count("tick")
+    assert 2 <= order.count("look") <= 8, f"one failed look per wake, each wake at the full tick's own pace: the loop did not spin ({order.count('look')} looks)"
+
+
 # --------------------------------------------------------------------------- #
 #  The width of a frame: a measured maximum, pinned against every function under src/
 # --------------------------------------------------------------------------- #
@@ -604,6 +788,10 @@ def _longest_frames() -> list[tuple[int, str]]:
         for node in ast.walk(ast.parse(text)):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 names.add(node.name)
+                if getattr(node, "type_params", None):  # PEP 695: ``def f[T](...)`` runs its annotations in a scope of its own
+                    names.add(f"<generic parameters of {node.name}>")
+            elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
+                names.add(f"<generic parameters of {node.name.id}>")
         for name in names:
             frame = f"{module}:{name}:{'9' * digits}"
             found.append((len(frame), frame))
@@ -619,6 +807,8 @@ def test_no_function_under_src_can_produce_a_frame_wider_than_the_width_the_budg
     assert len(found) > 5_000, f"the walk saw only {len(found)} names: it is not looking at src/"
     widest, name = found[0]
     assert widest >= 60, f"the walk found nothing longer than {widest} ({name}): it is not measuring the names"
+    assert all(n.isascii() for _w, n in found), "the budget counts a character as a byte: a frame with a non-ASCII name is wider than it looks"
+    assert any("<generic parameters of " in n for _w, n in found), "the walk lists PEP 695 scopes (src/database/write.py has one)"
     too_wide = [f"{n} ({w})" for w, n in found if w > writer.FRAME_CHARS]
     assert not too_wide, f"frames wider than FRAME_CHARS={writer.FRAME_CHARS}, which the storage-events budget counts: {too_wide[:5]}"
 
@@ -634,3 +824,12 @@ def test_a_frame_exactly_as_wide_as_the_budget_is_whole_and_one_character_wider_
         assert len(frame) == writer.FRAME_CHARS
         assert frame.endswith(":2") == whole, frame
         assert frame.endswith("…") == (not whole), "a cut frame ends in the journal's own ellipsis, so it is never mistaken for a whole name"
+
+
+def test_the_method_defines_every_class_the_journal_counts_and_the_two_ways_a_nap_and_a_gap_arise():
+    sentence = se._METHOD.split("A hold's 'ws'")[1].split("Else 'ws' is null")[0]
+    for name in hs.CLASSES:
+        assert re.search(rf"\b{name}\b", sentence), name
+    assert re.search(r"\bother any other wait\b", sentence) and "socket" in sentence, "'other' is defined, not only listed"
+    assert "streaming backup" in sentence, "a nap is not only SQLite's busy handler: the backup sleeps between its WAL tries while it holds the gate"
+    assert "could not be read" in sentence and "tick" in sentence, "a gap over a second is not only a starved process"
