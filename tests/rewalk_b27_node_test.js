@@ -118,7 +118,7 @@ const NET_VALUES = {
   "/api/system/network": { online: false },
   "/api/scheduler/config": { continuous: true },
   "/api/safety/settings": { dns_mode: "system" },
-  "/api/custody/settings": { anchoring_mode: "local" },
+  "/api/custody/settings?late=0": { anchoring_mode: "local" },
   "/api/system/interfaces": { interfaces: [{ interface: "eth0", addresses: ["10.0.0.2"] }] },
 };
 
@@ -130,7 +130,7 @@ async function m14() {
 
   await check("M-14 a slow lane read: consent waits for the disclosure, then the late answer replaces it", async () => {
     const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 5, "/api/safety/settings": 5,
-      "/api/custody/settings": 5700, "/api/system/interfaces": 5 }, NET_VALUES);
+      "/api/custody/settings?late=0": 5700, "/api/system/interfaces": 5 }, NET_VALUES);
     const done = H.ensureOnline("Collect now", { enabling: "collection" });
     await H.clock.advanceTo(1);
     assert.ok(H.dlg.open, "the consent popup did not open");
@@ -147,7 +147,7 @@ async function m14() {
     assert.strictEqual(H.nodes["net-consent-ok"].disabled, false, "\"Go online\" stayed disabled after the disclosure was complete");
     await H.clock.advanceTo(6000);
     assert.strictEqual(H.renders.length, 2, "the late custody answer did not re-render the open popup");
-    assert.deepStrictEqual(H.renders[1].custody, NET_VALUES["/api/custody/settings"], "the re-render lost the late answer");
+    assert.deepStrictEqual(H.renders[1].custody, NET_VALUES["/api/custody/settings?late=0"], "the re-render lost the late answer");
     assert.strictEqual(H.nodes["net-consent-ok"].disabled, false);
     H.nodes["net-consent-cancel"].onclick();
     assert.strictEqual(await done, false, "Stay offline must resolve false");
@@ -155,7 +155,7 @@ async function m14() {
 
   await check("M-14 fast reads: rendered once, consent enabled without waiting out the budget", async () => {
     const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 3, "/api/safety/settings": 4,
-      "/api/custody/settings": 6, "/api/system/interfaces": 5 }, NET_VALUES);
+      "/api/custody/settings?late=0": 6, "/api/system/interfaces": 5 }, NET_VALUES);
     H.ensureOnline("Collect now", {});
     await H.clock.advanceTo(20);
     assert.strictEqual(H.renders.length, 1);
@@ -166,7 +166,7 @@ async function m14() {
 
   await check("M-14 interfaces that never answer are SAID to be unread, and consent is not held hostage", async () => {
     const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 3, "/api/safety/settings": 3,
-      "/api/custody/settings": 3, "/api/system/interfaces": Infinity }, NET_VALUES);
+      "/api/custody/settings?late=0": 3, "/api/system/interfaces": Infinity }, NET_VALUES);
     H.ensureOnline("Collect now", {});
     await H.clock.advanceTo(50);
     assert.strictEqual(H.nodes["net-consent-ok"].disabled, true, "consent enabled beside an interface list reading \"…\"");
@@ -179,7 +179,7 @@ async function m14() {
   const NONE = "No non-loopback network interfaces were found.";
   await check("M-14 an interface read that FAILS is said to be unread, never 'none were found'", async () => {
     const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 3, "/api/safety/settings": 3,
-      "/api/custody/settings": 3, "/api/system/interfaces": -3 }, NET_VALUES);
+      "/api/custody/settings?late=0": 3, "/api/system/interfaces": -3 }, NET_VALUES);
     H.ensureOnline("Collect now", {});
     await H.clock.advanceTo(20);
     assert.notStrictEqual(H.nodes["net-consent-ifaces"].textContent, NONE,
@@ -204,7 +204,7 @@ async function m14() {
 
   await check("M-14 a lane read that FAILS renders as unreadable at once, not after the budget", async () => {
     const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 3, "/api/safety/settings": -3,
-      "/api/custody/settings": 3, "/api/system/interfaces": 3 }, NET_VALUES);
+      "/api/custody/settings?late=0": 3, "/api/system/interfaces": 3 }, NET_VALUES);
     H.ensureOnline("Collect now", {});
     await H.clock.advanceTo(20);
     assert.strictEqual(H.renders.length, 1);
@@ -214,7 +214,7 @@ async function m14() {
 
   await check("M-14 a late answer after the popup closed does not repaint it", async () => {
     const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 3, "/api/safety/settings": 3,
-      "/api/custody/settings": 5700, "/api/system/interfaces": 3 }, NET_VALUES);
+      "/api/custody/settings?late=0": 5700, "/api/system/interfaces": 3 }, NET_VALUES);
     const done = H.ensureOnline("Collect now", {});
     await H.clock.advanceTo(BUDGET + 1);
     H.nodes["net-consent-cancel"].onclick();

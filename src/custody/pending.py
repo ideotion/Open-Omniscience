@@ -168,17 +168,26 @@ def late_reading() -> dict[str, Any]:
     which a settings read queued behind: measured 3.5-6 s of a 9-12 s read with 50 workers on 2 cores), no table creation. It
     never writes, so a log that does not exist yet reads 0 and is NOT created by being asked about. ``count`` is ``None`` when
     the log could not be read, and ``reason`` then names the CLASS of the failure (never the driver's words); a count carries the
-    moment it was taken, because nothing here caches it.
+    moment its read ENDED, because nothing here caches it.
+
+    The wait for a writer is bounded at :data:`_LATE_READ_BUSY_MS` on the OPEN too, not only on the statement: an encrypted log is
+    read once per page-size candidate while it is opened, under the connection's own timeout, so a bound set only afterwards
+    did not hold (measured: an exclusive writer held for 10 s made an encrypted read wait 10.2 s, not 3 s).
+
+    A log that a crashed write left a hot rollback journal beside cannot be recovered by a read-only open, and the driver reports that
+    as a failed open (``WrongPassphraseError`` on an encrypted file); ``reason`` then says a journal is present, instead of leaving the
+    class name to blame the passphrase.
     """
-    computed_at = datetime.now(UTC).isoformat(timespec="seconds")
-    out: dict[str, Any] = {"count": None, "reason": None, "computed_at": computed_at}
+    out: dict[str, Any] = {"count": None, "reason": None, "computed_at": None}
     conn = None
+    path = None
     try:
         from src.database.connect import connect
         from src.paths import data_dir
 
+        path = data_dir() / "custody_log.db"
         try:
-            conn = connect(data_dir() / "custody_log.db", read_only=True)
+            conn = connect(path, read_only=True, timeout=_LATE_READ_BUSY_MS / 1000.0)
         except FileNotFoundError:
             out["count"] = 0  # no log yet: nothing was recorded late
             return out
@@ -190,10 +199,17 @@ def late_reading() -> dict[str, Any]:
             out["count"] = _late_count_on(conn)
     except Exception as exc:  # noqa: BLE001 - a count is a disclosure, never a failure
         out["reason"] = type(exc).__name__
+        try:
+            journal = path.with_name(path.name + "-journal") if path is not None else None
+            if journal is not None and journal.exists() and journal.stat().st_size > 0:
+                out["reason"] += "; a rollback journal is present beside the log (an interrupted write, recovered by the next ingest)"
+        except OSError:
+            pass
     finally:
         if conn is not None:
             with contextlib.suppress(Exception):
                 conn.close()
+        out["computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     return out
 
 

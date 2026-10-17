@@ -206,8 +206,6 @@ def _classify(sql: str) -> list[str]:
             raw = m.group(2)
             if raw.lower().startswith(_EXEMPT):
                 continue
-            if re.match(r"\s*(CREATE\s+(?:TEMP|TEMPORARY)\b)", stmt, re.I):
-                continue
             problems.append(f"{' '.join(m.group(1).split()).upper()} {raw.strip(chr(34))}")
             continue
         head = re.match(r"\s*(\w+)", stmt)
@@ -949,6 +947,13 @@ def test_the_scan_passes_a_positional_only_parameter_before_the_statement_and_a_
         # .format keeps the template (its pieces are run-time); .join is run-time through and through
         'def f(con, t):\n    con.execute("DELETE FROM {}".format(t))',
         'def f(con, parts):\n    con.execute(", ".join(parts))',
+        # the pieces of a .join are run-time even when the separator reads as a harmless statement
+        'def f(con, parts):\n    con.execute("SELECT 1".join(parts))',
+        # a PARAMETER as the separator or receiver of .join is still run-time text (the receiver is not a string the scan can read)
+        'def f(con, t):\n    con.execute(t.join(["DEL", "ETE FROM u"]))',
+        'def f(con, t):\n    con.execute(t.join(["DELETE", " FROM main.u"]))',
+        # a bound execute method handed on as a value is a way to run SQL the scan never reads
+        'def f(con, rows):\n    ex = con.execute\n    list(map(ex, rows))',
     ],
 )
 def test_the_scan_fails_on_the_shapes_the_wider_sweep_found_unpinned(snippet):
@@ -964,6 +969,9 @@ def test_the_scan_fails_on_the_shapes_the_wider_sweep_found_unpinned(snippet):
         'SQL = "DELETE FROM main.t"\ncon.execute(SQL)',
         # .format on a template that names its schema is that template
         'def f(con, v):\n    con.execute("DELETE FROM main.t WHERE a = {}".format(v))',
+        # a read that opens with WITH, and a script that is one read ending in the statement terminator
+        'def f(con):\n    con.execute("WITH x AS (SELECT 1) SELECT * FROM x")',
+        'def f(con):\n    con.executescript("SELECT 1;")',
     ],
 )
 def test_the_scan_passes_the_shapes_the_wider_sweep_found_unpinned(snippet):

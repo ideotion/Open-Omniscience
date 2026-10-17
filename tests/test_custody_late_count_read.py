@@ -141,3 +141,71 @@ def test_the_route_carries_the_moment_and_can_leave_the_count_out(data, monkeypa
 def test_the_network_consent_popup_reads_the_route_without_the_count():
     src = read_static("app-core.js")
     assert '["custody", "/api/custody/settings?late=0"]' in src
+
+
+def test_an_encrypted_log_held_by_a_writer_is_also_unread_within_the_bound_not_waited_out(tmp_path, monkeypatch):
+    """The open of an encrypted file reads it once per page-size candidate under the connection's own timeout: a bound set after the
+    open did not hold (an exclusive writer held for 10 s made the encrypted read wait 10.2 s, where the plaintext one waited 3)."""
+    import src.database.connect as dbc
+    from src.database.connect import connect
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    previous = dbc.get_passphrase()
+    dbc.set_passphrase("late-count-test-passphrase")
+    monkeypatch.setattr(pending, "_LATE_READ_BUSY_MS", 300)
+    _record(1, late=True)
+    from src.database.connect import is_encrypted_file
+
+    assert is_encrypted_file(tmp_path / "custody_log.db") is True, "the fixture must be an encrypted log"
+    writer = connect(tmp_path / "custody_log.db", check_same_thread=False)
+    writer.isolation_level = None
+    writer.execute("BEGIN EXCLUSIVE")
+    release = threading.Timer(4.0, lambda: writer.execute("ROLLBACK"))
+    release.start()
+    try:
+        t0 = time.monotonic()
+        got = pending.late_reading()
+        waited = time.monotonic() - t0
+    finally:
+        release.join(10)
+        writer.close()
+        dbc.set_passphrase(previous)
+    assert waited < 3.0, f"the encrypted read waited {waited:.1f} s for a writer with a 0.3 s bound"
+    assert got["count"] is None and got["reason"], got
+
+
+def test_a_failed_open_beside_a_rollback_journal_says_so_and_does_not_blame_the_passphrase(data, monkeypatch):
+    import src.database.connect as dbc
+
+    _record(1, late=True)
+    (data / "custody_log.db-journal").write_bytes(b"\x00" * 64)
+
+    class WrongPassphraseError(Exception):
+        pass
+
+    def refuse(*a, **k):
+        raise WrongPassphraseError("driver words that must not be copied")
+
+    monkeypatch.setattr(dbc, "connect", refuse)
+    got = pending.late_reading()
+    assert got["count"] is None
+    assert got["reason"].startswith("WrongPassphraseError; a rollback journal is present"), got
+    assert "driver words" not in got["reason"]
+
+
+def test_the_moment_is_taken_when_the_read_ends_not_before_the_open_and_the_wait(data, monkeypatch):
+    import src.database.connect as dbc
+
+    _record(1, late=True)
+    real = dbc.connect
+
+    def slow(*a, **k):
+        time.sleep(2.2)
+        return real(*a, **k)
+
+    monkeypatch.setattr(dbc, "connect", slow)
+    started = datetime.now().astimezone()
+    got = pending.late_reading()
+    taken = datetime.fromisoformat(got["computed_at"])
+    assert (taken - started).total_seconds() >= 1.0, "computed_at was stamped before the read it describes"

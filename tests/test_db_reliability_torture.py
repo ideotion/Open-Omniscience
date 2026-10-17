@@ -150,15 +150,20 @@ def test_t6_divergent_merge_full(corpora):
 
 def test_t2_duplicate_flood_is_idempotent(corpora):
     a, art = corpora["A"], corpora["artifact"]
-    # Flooding repeats a merge that already happened (test_t6 makes the first); alone, the first run here would create the
-    # rows and read as growth, so the first is done here too.
-    _run(a, "merge", str(art), "--passphrase", "pw-torture", "--commit")
-    before = _run(a, "dump")["dump"]
-    for _ in range(3):
+    # Flooding repeats a merge that already happened (test_t6 makes the first). Alone, nothing has merged yet, so the first run here
+    # legitimately creates rows and is not held to "creates nothing"; after t6 (CI's order) B's rows are already in A and EVERY
+    # application here, the first included, must create nothing -- a duplicate written by the second application of a merge is
+    # exactly the defect this test exists for. The marker for "already merged" is the one test_t6 uses for
+    # the same fact: the token unique to B's corpus is findable twice (A's own row and B's).
+    already = _run(a, "fts-find", "unique")["matches"] >= 2
+    for i in range(4):
         rep = _run(a, "merge", str(art), "--passphrase", "pw-torture", "--commit")["report"]
         news = {k: v["new"] for k, v in rep["plan"].items()
                 if isinstance(v, dict) and v.get("new")}
-        assert news == {}, f"re-merge created rows: {news}"
+        if already or i > 0:
+            assert news == {}, f"re-merge {i} created rows: {news}"
+        if i == 0:
+            before = _run(a, "dump")["dump"]
     assert _run(a, "dump")["dump"] == before
 
 
