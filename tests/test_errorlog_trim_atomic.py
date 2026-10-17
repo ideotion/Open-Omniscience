@@ -99,3 +99,24 @@ def test_a_failed_swap_removes_its_own_temp_and_the_journal_stays(journal, monke
         errorlog._trim(journal)
     assert journal.read_bytes() == data
     assert not list(journal.parent.glob("app_errors.jsonl.tmp.*"))
+
+
+def test_a_record_raised_while_the_journal_is_locked_by_the_same_thread_is_written_after_it_not_waited_for(journal, monkeypatch):
+    """The garbage collector runs a finalizer (SQLAlchemy's reports a collected connection) inside the trim; the finalizer logs; the record came back into the
+    locked ``_append`` on the same thread and waited for its own lock for ever (a full-suite run of 17 Oct, 20 minutes)."""
+    import threading
+
+    _big(journal, 6000)
+    fired = []
+
+    def a_finalizer_that_logs(path):
+        if not fired:
+            fired.append(1)
+            errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "nested-record"})
+
+    monkeypatch.setattr(errorlog, "_sweep_dead_temps", a_finalizer_that_logs)
+    done = threading.Event()
+    threading.Thread(target=lambda: (errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "outer-record"}), done.set()), daemon=True).start()
+    assert done.wait(20), "the journal waited on a lock its own thread holds"
+    text = journal.read_text(encoding="utf-8")
+    assert '"outer-record"' in text and '"nested-record"' in text
