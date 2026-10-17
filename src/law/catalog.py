@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.catalog.countries import config_country
 from src.database.models import LawDocument
-from src.ingest.seed_sources import SeedResult
+from src.ingest.seed_sources import SeedResult, _load_safe_yaml
 
 LEGAL_CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
 # The parallel-internet-session enrichment file (maintainer-ruled 2026-07-17; contract +
@@ -74,7 +74,10 @@ def _read_catalog_yaml(path: Path) -> dict:
         raise _unreadable(path, failed)
     data: object = None
     try:
-        data = yaml.safe_load(raw)
+        # The seed catalogue's loader (libyaml where the wheel has it): the generated file is 297 KB and the pure-Python
+        # parse cost 0.43 s, twice per boot; libyaml's is 0.044 s and its parsed objects are identical (pinned in
+        # tests/test_law_catalog_loader.py on both real files).
+        data = _load_safe_yaml(raw)
     except yaml.YAMLError as exc:
         failed = type(exc).__name__
     if failed:
