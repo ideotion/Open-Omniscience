@@ -58,6 +58,16 @@ def _settings(continuous: bool, interval_minutes: int = 1):
     return lambda: _FakeSettings(continuous, interval_minutes)
 
 
+def _no_off_peak_maintenance(sch):
+    """The loop runs REAL off-peak maintenance right after its first pass (``_last_maint`` starts unset, so the throttle
+    does not hold it back): 1.5 s on an empty database, seconds on a busy one, against the 5 s these tests wait for two
+    passes. Throttled as if it had just run, the loop measures only what the test is about."""
+    import time
+
+    sch._maint_interval_s = 1e9
+    sch._last_maint = time.monotonic()
+
+
 def test_continuous_loop_runs_passes_back_to_back():
     calls = []
     two = threading.Event()
@@ -70,6 +80,7 @@ def test_continuous_loop_runs_passes_back_to_back():
 
     sch = BackgroundScheduler(run_once_fn=run_once, settings_provider=_settings(True))
     sch._continuous_gap_s = 0.0  # back-to-back, no real waiting
+    _no_off_peak_maintenance(sch)
     assert sch.start() is True
     try:
         assert two.wait(_WAIT), "continuous mode should run repeated passes"

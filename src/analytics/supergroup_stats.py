@@ -184,12 +184,16 @@ def _per_id_mentions(
 
 def _distinct_source_count(db, keyword_ids) -> int:
     from src.database.derived_views import KeywordMentionRead
+    from src.database.outlet import OutletMap
     from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
     if not ids:
         return 0
-    seen: set[int] = set()
+    # OUTLETS, not feeds: two feeds of one site are one voice (row J, R146), and this is the breadth every galaxy and
+    # group is ranked by -- the Observatory's radius reads it.
+    outlets = OutletMap(db)
+    seen: set[str] = set()
     for chunk in _chunks(ids):
         for (sid,) in (
             db.query(KeywordMentionRead.source_id)
@@ -201,7 +205,7 @@ def _distinct_source_count(db, keyword_ids) -> int:
             )
             .distinct()
         ):
-            seen.add(int(sid))
+            seen.add(outlets.key(int(sid)))
     return len(seen)
 
 

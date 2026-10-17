@@ -106,7 +106,7 @@ def promote_source_candidate(
         raise HTTPException(status_code=404, detail="Candidate not found")
     if cand.status != "candidate":
         raise HTTPException(status_code=409, detail=f"Candidate is already {cand.status}")
-    existing = db.query(Source).filter(Source.domain == cand.domain).first()
+    existing = source_for_domain(db, cand.domain)
     if existing is None:
         db.add(
             Source(
@@ -542,6 +542,7 @@ async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, l
 # is stopped/paused (airplane / memory guard / cancel). See src/catalog/qualify_job.py.
 
 from src.catalog.countries import country_query_forms
+from src.database.source_lookup import source_for_domain
 from src.jobs.background import BackgroundJob, register_job
 
 

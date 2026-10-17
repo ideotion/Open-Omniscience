@@ -39,6 +39,7 @@ from urllib.parse import quote, unquote
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source, WikiPage, WikiRevision
+from src.database.source_lookup import source_for_domain
 from src.monitoring.secret_scrub import log_failure
 from src.utils.markup_blocks import (
     Resync,
@@ -278,7 +279,7 @@ def ensure_wiki_source(session: Session, wiki: str) -> Source:
     """ONE catalog source per edition — wiki-derived rows stay filterable."""
     w = (wiki or "en").strip().lower()
     domain = f"{w}.wikipedia.org"
-    src = session.query(Source).filter_by(domain=domain).first()
+    src = source_for_domain(session, domain)
     if src is None:
         src = Source(
             name=f"Wikipedia ({w})",

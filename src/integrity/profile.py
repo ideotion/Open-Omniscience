@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func
 
 from src.database.models import Article, Source
+from src.database.source_lookup import source_for_domain
 from src.integrity.actors import corpus_actors
 from src.signals.novelty import novelty_scores
 
@@ -38,7 +39,7 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
     source = session.query(Source).filter(Source.name == source_name).first()
     if source is None:
         # Fall back to matching by domain so the profile works from either handle.
-        source = session.query(Source).filter(Source.domain == source_name).first()
+        source = source_for_domain(session, source_name)
     if source is None:
         return {"source": source_name, "found": False}
 

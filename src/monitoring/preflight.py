@@ -195,11 +195,19 @@ def preflight_sources(
     )
     records = []
     complete = True
+    # robots.txt and the homepage are the OUTLET's: its feeds share the verdict, so the host is asked once per
+    # sweep (row J, D1) and every feed row still gets its own record and its own metadata.
+    by_outlet: dict[str, dict] = {}
     for i, src in enumerate(sources):
         if should_stop is not None and should_stop():
             complete = False
             break
-        rec = _check_one(fetcher, src)
+        first = by_outlet.get(src.domain)
+        if first is None:
+            rec = _check_one(fetcher, src)
+            by_outlet[src.domain] = rec
+        else:
+            rec = {**first, "source_id": src.id}
         _apply_to_metadata(session, src, rec)
         records.append(rec)
         if progress is not None:

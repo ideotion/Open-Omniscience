@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
+from src.database.outlet import OutletMap, outlet_expr
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_article_id, stand_in_article_ids
 
@@ -172,7 +173,8 @@ def corpus_links(
         # five outlets is five paths that merely happen to share this origin. The join
         # is many-to-one (a link row belongs to exactly one article), so it adds no
         # fan-out to the article count grouped beside it.
-        srcs = func.count(func.distinct(Article.source_id))
+        # OUTLETS, not feeds: two feeds of one site are one voice (row J, R146).
+        srcs = func.count(func.distinct(outlet_expr(Article.source_id, Source.domain)))
         rows = (
             db.query(
                 ArticleLink.normalized_url.label("nu"),
@@ -182,6 +184,7 @@ def corpus_links(
                 func.max(ArticleLink.link_text).label("sample_text"),
             )
             .join(Article, Article.id == ArticleLink.article_id)
+            .outerjoin(Source, Source.id == Article.source_id)
             .filter(ArticleLink.article_id.in_(ids))
             .group_by(ArticleLink.normalized_url)
             .having(cit >= min_citations)
@@ -494,6 +497,7 @@ def shared_links(
         .all()
     )
     shared = []
+    outlets = OutletMap(db)
     for url, n in rows:
         citers = (
             db.query(Article.id, Article.title, Article.source_id)
@@ -502,7 +506,7 @@ def shared_links(
             .limit(12)
             .all()
         )
-        distinct_sources = len({c[2] for c in citers})
+        distinct_sources = len({outlets.key(c[2]) for c in citers})  # one outlet however many of its feeds cite it
         shared.append(
             {
                 "url": url,

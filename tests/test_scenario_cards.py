@@ -496,3 +496,22 @@ def test_scenario_endpoints_are_wired(client):
     ):
         out = client.get(path).json()
         assert "items" in out and "method" in out and "caveat" in out
+
+
+def test_disputed_chronology_two_feeds_of_one_outlet_cannot_dispute_each_other(session):
+    """Row J, R146 (Opus read, finding 3): the card says "one source disagreeing with itself never fires this", and
+    two feeds of one site -- different names, one domain -- are one source."""
+    from src.analytics.disputed_chronology import find_disputed_chronology
+
+    s = session
+    s.add(Source(id=1, name="Alpha News", domain="alpha.test", rss_url="https://alpha.test/en", country="fr"))
+    s.add(Source(id=2, name="Alpha Mundo", domain="alpha.test", rss_url="https://alpha.test/es", country="fr"))
+    s.commit()
+    _add_article(s, aid=1, source_id=1)
+    _add_article(s, aid=2, source_id=2)
+    s.add(ArticleMentionedDate(article_id=1, mentioned_on=date(2026, 6, 1), precision="day",
+                               extractor="dateextract", status="candidate"))
+    s.add(ArticleMentionedDate(article_id=2, mentioned_on=date(2026, 7, 1), precision="day",
+                               extractor="dateextract", status="candidate"))
+    s.commit()
+    assert find_disputed_chronology(s, lookback_days=36500, min_sources=2, tolerance_days=2)["count"] == 0

@@ -198,13 +198,16 @@ def build_stories(
             kw_names[int(kid)] = term
             kw_rows[int(kid)] = {"term": term, "normalized": norm, "language": lang}
 
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # one scan of sources for every shown story, not one each
     stories: list[dict[str, Any]] = []
     for cluster in shown:
         shared: set[int] | None = None
         for a in cluster:
             shared = compared[a] if shared is None else (shared & compared[a])
         shared = shared or set()
-        srcs = _sources_of(session, cluster)
+        srcs = _sources_of(session, cluster, outlets)
         stories.append(
             {
                 "article_ids": cluster,
@@ -253,15 +256,19 @@ def build_stories(
     }
 
 
-def _sources_of(session, article_ids: list[int]) -> dict[int, str]:
+def _sources_of(session, article_ids: list[int], outlets=None) -> dict[int, str]:
     """The distinct sources behind a cluster, as {source_id: display name}."""
+    from src.database.outlet import OutletMap
+
     rows = (
         session.query(Article.source_id, Source.name, Source.domain)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(Article.id.in_(article_ids[:900]))
         .all()
     )
-    return {int(sid): (name or domain or f"source {sid}") for sid, name, domain in rows}
+    outlets = outlets or OutletMap(session)
+    # keyed by the OUTLET's oldest source id so two feeds of one site are one entry in the story's source list
+    return {outlets.primary_id(int(sid)): outlets.label(sid, name, domain) for sid, name, domain in rows}
 
 
 def story_evidence(session, article_ids: list[int], *, budget_chars: int) -> dict:

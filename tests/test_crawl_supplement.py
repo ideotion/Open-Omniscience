@@ -391,3 +391,26 @@ def test_migration_exists_for_last_crawled_at():
         if "last_crawled_at" in p.read_text("utf-8") and "add_column" in p.read_text("utf-8")
     ]
     assert hits, "expected an alembic migration adding sources.last_crawled_at"
+
+
+def test_one_feed_per_outlet_stands_for_the_outlet_and_the_siblings_follow_its_stamp(monkeypatch):
+    """Row J, D1: a sitemap and a crawl belong to the site. Three feeds of one domain are crawled once per pass, and
+    the other two feeds' stamp moves with it so they do not crowd the rotation."""
+    session = _engine_session()
+    a = _qualified_source(session, domain="bbc.example", rss_url="https://bbc.example/en.xml")
+    b = _qualified_source(session, domain="bbc.example", rss_url="https://bbc.example/ar.xml")
+    c = _qualified_source(session, domain="bbc.example", rss_url="https://bbc.example/fa.xml")
+    d = _qualified_source(session, domain="dw.example")
+    picked = _select_crawl_candidates(session, SchedulerSettings(crawl_per_pass=3), 3)
+    assert sorted(s.domain for s in picked) == ["bbc.example", "dw.example"]  # not four, not three of one site
+
+    class _R:
+        pages_fetched = 1
+
+    calls = []
+    monkeypatch.setattr("src.ingest.crawl.crawl_source",
+                        lambda session_, source, **kw: (calls.append(source.domain), _R())[1])
+    _lane_step_crawl(session, _no_sitemap_fetcher(), SchedulerSettings(crawl_per_pass=3))
+    assert sorted(calls) == ["bbc.example", "dw.example"]
+    assert a.last_crawled_at is not None and b.last_crawled_at is not None and c.last_crawled_at is not None
+    assert d.last_crawled_at is not None

@@ -20,6 +20,7 @@ import io
 from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
+from src.database.source_lookup import source_for_domain
 from src.monitoring.secret_scrub import record_text
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -283,7 +284,9 @@ def upsert_sources(session, rows: list[dict]) -> dict:
             # there auto-rolls-back to the savepoint (this row only) and re-raises.
             with session.begin_nested():
                 if is_update:
-                    src = session.query(Source).filter_by(domain=domain).first()
+                    src = source_for_domain(session, domain)
+                    if src is None:   # the scan above saw it; a row removed since is this row's error, not a crash
+                        raise LookupError(f"no source row for {domain!r}")
                     for k, v in row.items():
                         if k == "domain":
                             continue

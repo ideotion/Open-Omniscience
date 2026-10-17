@@ -353,18 +353,23 @@ def find_convergences(
 
     # 4) Resolve source identity for the independence measure (small columns).
     need_ids = sorted({a for _, steps in candidate_spans for _, _, ids in steps for a in ids})
+    # The independence unit is the OUTLET (row J, R146): a source is keyed on (domain, feed), and two feeds of one site
+    # are one voice. ``src_of`` carries the outlet's oldest source id, ``src_name`` its oldest source's name.
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)
     src_of: dict[int, int | None] = {}
     src_name: dict[int, str | None] = {}
     src_country: dict[int, str | None] = {}
     for chunk in _chunks(need_ids):
-        for aid, sid, sname, scountry in (
-            session.query(Article.id, Article.source_id, Source.name, Source.country)
+        for aid, sid, sname, sdomain, scountry in (
+            session.query(Article.id, Article.source_id, Source.name, Source.domain, Source.country)
             .outerjoin(Source, Source.id == Article.source_id)
             .filter(Article.id.in_(chunk))
             .all()
         ):
-            src_of[aid] = sid
-            src_name[aid] = sname
+            src_of[aid] = outlets.primary_id(sid) if sid is not None else None
+            src_name[aid] = outlets.label(sid, sname, sdomain) if sname else None
             src_country[aid] = (scountry or "").lower() or None
 
     clusters: list[ConvergenceCluster] = []
