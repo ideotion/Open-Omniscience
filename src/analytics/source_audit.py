@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics import source_quality as sq
 from src.database.models import Source
+from src.database.outlet import OutletMap
 
 SCHEMA = "oo-source-audit-1"
 
@@ -406,8 +407,9 @@ def frozen_cohort(
                 )
             ck = sq.q.corpus_keywords(session, article_ids=ids, limit=sq.TOP_KEYWORDS)
             per_top[sid] = [term["normalized"] for term in ck.get("terms", [])]
-        furn_df = sq.compute_cross_source_df(per_top)
-        furn_n = len(per_top)
+        outlet_of = OutletMap(session).key       # the DF and its denominator count outlets, as the report does
+        furn_df = sq.compute_cross_source_df(per_top, outlet_of)
+        furn_n = sq.count_outlets(per_top, outlet_of)
         _flag, shares = sq.flag_furniture_sources(per_top, furn_df, n_sources=furn_n)
         for sid, m in per.items():
             m["furniture_share"] = shares.get(sid, 0.0)
@@ -494,8 +496,9 @@ def _furniture_share_by_source(
             ids = sorted(random.Random(sq.DEFAULT_SEED + sid).sample(ids, sq.FINGERPRINT_SAMPLE_CAP))
         ck = sq.q.corpus_keywords(session, article_ids=ids, limit=sq.TOP_KEYWORDS)
         per_top[sid] = [t["normalized"] for t in ck.get("terms", [])]
-    df = cross_df if cross_df is not None else sq.compute_cross_source_df(per_top)
-    n = n_sources if n_sources is not None else len(per_top)
+    outlet_of = OutletMap(session).key if cross_df is None or n_sources is None else None
+    df = cross_df if cross_df is not None else sq.compute_cross_source_df(per_top, outlet_of)
+    n = n_sources if n_sources is not None else sq.count_outlets(per_top, outlet_of)
     _flagged, shares = sq.flag_furniture_sources(per_top, df, n_sources=n)
     return shares
 

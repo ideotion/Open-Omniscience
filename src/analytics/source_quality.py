@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 import random
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -47,6 +47,7 @@ from src.analytics.managed import UNSEGMENTED
 from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Article, ArticleLink, Source
+from src.database.outlet import OutletMap
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
 from src.ingest.non_article import classify_index_page as _classify_index_page
 
@@ -419,7 +420,7 @@ def pathology_rate_by_source(
 
 def build_observed(
     *, cross_df: dict[str, int], furniture_ubiquity_cut: int, outliers: Sequence[dict],
-    source_to_articles: dict[int, list[int]], n_sources_with_fingerprint: int = 0,
+    source_to_articles: dict[int, list[int]], n_sources_with_fingerprint: int = 0, unit: str = "sources",
 ) -> dict:
     """The range each threshold was meant to cut, printed beside the threshold.
 
@@ -441,6 +442,7 @@ def build_observed(
         "cross_source_df": {
             "max": df_max, "p90": df_stats["p90"], "p99": df_stats["p99"],
             "n_terms": df_stats["n"],
+            "unit": unit,  # what df, the threshold and n_sources_with_fingerprint count: "outlets" or source rows
             "threshold": furniture_ubiquity_cut,
             "reachable": bool(df_values) and df_max >= furniture_ubiquity_cut,
             # WHY it was unreachable, which `reachable: false` alone cannot say. DF counts the
@@ -928,16 +930,36 @@ def build_sample_records(
 # Layer C — per-source keyword analytics (the per-source verdict view)
 # --------------------------------------------------------------------------- #
 
-def compute_cross_source_df(per_source_top: dict[int, list[str]]) -> dict[str, int]:
+def compute_cross_source_df(
+    per_source_top: dict[int, list[str]], outlet_of: Callable[[int], str] | None = None,
+) -> dict[str, int]:
     """Cross-source document frequency of each top keyword = in how many DISTINCT sources it is a
     top keyword. This is the ``generic_terms`` DF-ubiquity method applied at SOURCE granularity: a
     topical keyword tops a FEW related sources (low DF), furniture ("share now"/"read more") tops
-    MANY unrelated sources (high DF) — no hand-denylist, self-normalising."""
-    df: dict[str, int] = {}
-    for terms in per_source_top.values():
+    MANY unrelated sources (high DF) — no hand-denylist, self-normalising.
+
+    With ``outlet_of`` (``source_id -> outlet key``) a term counts once per OUTLET: the feeds of one site
+    share its template, so counting them separately made one publisher's furniture look ubiquitous across
+    "unrelated sources" (row J, R146). Without it the count is per source row, as before."""
+    if outlet_of is None:
+        df: dict[str, int] = {}
+        for terms in per_source_top.values():
+            for term in set(terms):
+                df[term] = df.get(term, 0) + 1
+        return df
+    holders: dict[str, set[str]] = {}
+    for sid, terms in per_source_top.items():
+        outlet = outlet_of(sid)
         for term in set(terms):
-            df[term] = df.get(term, 0) + 1
-    return df
+            holders.setdefault(term, set()).add(outlet)
+    return {term: len(outlets) for term, outlets in holders.items()}
+
+
+def count_outlets(source_ids: Iterable[int], outlet_of: Callable[[int], str] | None = None) -> int:
+    """How many distinct outlets the given source rows belong to (the row count when ``outlet_of`` is None):
+    the denominator that goes with a ``compute_cross_source_df`` taken per outlet."""
+    ids = list(source_ids)
+    return len(ids) if outlet_of is None else len({outlet_of(i) for i in ids})
 
 
 def flag_furniture_sources(
@@ -1172,12 +1194,16 @@ def build_quality_report_files(
     # session had loaded: the report below reads the sources' fields, one refresh SELECT each and a raise if one
     # was deleted meanwhile. They are loaded AGAIN here, once; a source deleted since reads as unknown (``src is None``).
     sources = {int(s.id): s for s in session.query(Source)}
-    cross_df = compute_cross_source_df(per_source_top)
+    # The cross-source document frequency and the cut that goes with it count OUTLETS: two feeds of one site are one
+    # voice (R146), and a per-feed count made one publisher's template read as furniture across "unrelated sources".
+    outlet_of = OutletMap(session).key
+    cross_df = compute_cross_source_df(per_source_top, outlet_of)
+    n_audited_outlets = count_outlets(per_source_top, outlet_of)
     furniture_ubiquity_cut = max(
-        FURNITURE_MIN_SOURCES, int(round(FURNITURE_UBIQUITY_FRAC * len(per_source_top)))
+        FURNITURE_MIN_SOURCES, int(round(FURNITURE_UBIQUITY_FRAC * n_audited_outlets))
     )
     flagged_sources, furniture_shares = flag_furniture_sources(
-        per_source_top, cross_df, n_sources=len(per_source_top)
+        per_source_top, cross_df, n_sources=n_audited_outlets
     )
     src_metric_dists = source_metric_distributions(stats_by_source)
 
@@ -1208,7 +1234,8 @@ def build_quality_report_files(
         # The rate distribution is over AUDITED sources: an exempt source's 0.0 would pad the
         # distribution with sources that were never eligible to score anything else.
         source_to_articles=audited_to_articles,
-        n_sources_with_fingerprint=sum(1 for t in per_source_top.values() if t),
+        n_sources_with_fingerprint=count_outlets((sid for sid, t in per_source_top.items() if t), outlet_of),
+        unit="outlets",
     )
 
     # Per-source tallies over the stats pass that ALREADY ran -- no extra query, no decrypt.
@@ -1426,7 +1453,8 @@ def build_quality_report_files(
             "include_newsletter_text": include_newsletter_text,
             "furniture_ubiquity_frac": FURNITURE_UBIQUITY_FRAC,
             "furniture_min_sources": FURNITURE_MIN_SOURCES,
-            "furniture_ubiquity_cut": furniture_ubiquity_cut,  # a term topping >= this many sources
+            "furniture_unit": "outlets",  # the cut and the DF count distinct outlets, not feed rows
+            "furniture_ubiquity_cut": furniture_ubiquity_cut,  # a term topping >= this many outlets
             "furniture_share_threshold": FURNITURE_SHARE_THRESHOLD,
             "fingerprint_sample_cap": FINGERPRINT_SAMPLE_CAP,
         },
