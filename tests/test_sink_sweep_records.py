@@ -54,6 +54,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
+    "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
@@ -223,7 +224,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('statement_deadline', ') from exc'): 2,
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = deadline_at'): 1,
         ('statement_deadline', 'prev_deadline = session.info.get(_DEADLINE_KEY)'): 1,
-        ('deadline_left_s', 'at = session.info.get(_DEADLINE_KEY)'): 1,
+        ('deadline_expired', 'at = session.info.get(_DEADLINE_KEY)'): 1,
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = prev_deadline'): 1,
         ('statement_deadline', 'session.info.pop(_DEADLINE_KEY, None)'): 1,
     },
