@@ -27,6 +27,11 @@ def spent(monkeypatch):
     """A statement budget that a producer can spend: ``spent["yes"] = True`` makes the next check read 'expired'."""
     state = {"yes": False}
     monkeypatch.setattr(registry, "_deadline_expired", lambda _session: state["yes"])
+    # These tests use ``rising_now`` as a stand-in for a slow producer. Whether the rollup serves depends on what an earlier test in the
+    # process left in ``rollup_serve``, so pin it: the skipped-no-rollup rule has its own tests below.
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr(rollup_serve, "serving_state", lambda: {"enabled": False, "built": False, "serving": False})
     saved = list(registry._REGISTRY)
     registry._REGISTRY = []
     try:
