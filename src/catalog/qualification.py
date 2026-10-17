@@ -53,7 +53,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func
+from sqlalchemy import func, update
 
 from src.config.machine_floor import scan_budget
 from src.database.models import Article
@@ -922,19 +922,30 @@ def log_inherited_stamps(
     return len(sources)
 
 
-def log_curated_stamps(session: Session, sources: list[Source], *, now: datetime) -> int:
+def log_curated_stamps(session: Session, source_ids: list[int], *, now: datetime) -> int:
     """Record that each source's stamp comes from the CURATED CATALOGUE (2026-09-10 ruling),
     not from a measurement. Append-only like every other attempt row; ``Source.status`` is
     the caller's to set. The attempt carries ``CURATED_CRITERIA_VERSION`` because no judging
-    criteria were applied, and a history that named one would be a lie about what happened."""
+    criteria were applied, and a history that named one would be a lie about what happened.
+
+    ONE executemany INSERT for all the rows (a first install writes about 6,600 of them; one
+    ORM ``add`` each was one statement apiece). The columns written are the four the ORM
+    would have written: ``id`` is the autoincrement key, never carried."""
+    from sqlalchemy import insert
+
     from src.database.models import SourceQualificationAttempt
 
-    for source in sources:
-        session.add(SourceQualificationAttempt(
-            source_id=source.id, attempted_at=now, verdict=VERDICT_CURATED,
-            criteria_version=CURATED_CRITERIA_VERSION,
-        ))
-    return len(sources)
+    if not source_ids:
+        return 0
+    session.execute(
+        insert(SourceQualificationAttempt),
+        [
+            {"source_id": sid, "attempted_at": now, "verdict": VERDICT_CURATED,
+             "criteria_version": CURATED_CRITERIA_VERSION}
+            for sid in source_ids
+        ],
+    )
+    return len(source_ids)
 
 
 # SQLite caps host parameters at 999 before 3.32, and the SQLCipher builds this app ships
@@ -1000,10 +1011,13 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
     domains = curated_catalogue_domains()
     counts = {"curated": 0, "stamped": 0, "already_qualified": 0, "disqualified": 0,
               "kept_local": 0, "outlet_disqualified": 0}
+    from src.database.feed_key import feed_key as _feed_key
+
     pending: list[tuple[int, str]] = []
     refused_outlets: set[str] = set()
-    for sid, domain, tags, status in session.query(
-        Source.id, Source.domain, Source.tags, Source.status
+    heal: dict[int, str] = {}                    # id -> the key its own rss_url derives, only where the stored one differs
+    for sid, domain, tags, status, rss_url, stored_key in session.query(
+        Source.id, Source.domain, Source.tags, Source.status, Source.rss_url, Source.feed_key
     ):
         outlet = str(domain or "").strip().lower()
         if status == STATUS_DISQUALIFIED:
@@ -1017,6 +1031,8 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
             counts["disqualified"] += 1
         elif status == STATUS_UNQUALIFIED:
             pending.append((int(sid), outlet))
+            if (stored_key or "") != _feed_key(rss_url):
+                heal[int(sid)] = _feed_key(rss_url)
     pending_ids = [sid for sid, outlet in pending if outlet not in refused_outlets]
     counts["outlet_disqualified"] = len(pending) - len(pending_ids)
     if not pending_ids:
@@ -1029,16 +1045,38 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
     }
     to_stamp = [sid for sid in pending_ids if sid not in judged]
     counts["kept_local"] = len(pending_ids) - len(to_stamp)
-    stamped: list[Source] = []
-    for chunk in _id_chunks(to_stamp):          # chunked for the same 999-parameter reason
-        for source in session.query(Source).filter(Source.id.in_(chunk)):
-            source.status = STATUS_QUALIFIED
-            source.qualified_at = now
-            source.qualification_criteria_version = CURATED_CRITERIA_VERSION
-            stamped.append(source)
-    if stamped:
+    stamped: list[int] = []
+    if to_stamp:
+        for chunk in _id_chunks(to_stamp):          # chunked for the same 999-parameter reason
+            # THE WRITE IS ONE UPDATE PER CHUNK, not one row at a time through the ORM, and only the three columns the stamp owns.
+            # ``status`` is in the WHERE as well: a row another writer moved off ``unqualified`` after the scan above is not
+            # overwritten by this statement (and gets no attempt row below). ``synchronize_session=False`` because nothing in this
+            # session reads a Source instance between here and the commit, which expires them all.
+            done = session.execute(
+                update(Source)
+                .where(Source.id.in_(chunk), Source.status == STATUS_UNQUALIFIED)
+                .values(status=STATUS_QUALIFIED, qualified_at=now, qualification_criteria_version=CURATED_CRITERIA_VERSION)
+                .execution_options(synchronize_session=False)
+            )
+            if done.rowcount == len(chunk):
+                stamped.extend(chunk)
+            else:
+                # a row changed under us: the attempt rows go only to the rows THIS statement stamped
+                stamped.extend(
+                    int(sid) for (sid,) in session.query(Source.id).filter(
+                        Source.id.in_(chunk), Source.status == STATUS_QUALIFIED, Source.qualified_at == now,
+                        Source.qualification_criteria_version == CURATED_CRITERIA_VERSION,
+                    )
+                )
+        # THE HEAL THE ORM FORM DID AS A SIDE EFFECT, kept explicit. The J1 ``before_update`` mapper event rewrites ``feed_key`` from
+        # ``rss_url`` on every ORM update, so the old per-row stamp also repaired a row whose stored key disagreed with its own feed
+        # (a raw INSERT that bypassed the event); a bulk UPDATE fires no mapper event and would leave it. Same function the event
+        # uses, same rows (the ones this call stamped), one executemany by primary key, and nothing is issued on a healthy store.
+        fixes = [{"id": sid, "feed_key": heal[sid]} for sid in stamped if sid in heal]
+        if fixes:
+            session.execute(update(Source), fixes)
         log_curated_stamps(session, stamped, now=now)
-        session.commit()
+        session.commit()                            # also ends the write window the UPDATE opened when it stamped nothing
     counts["stamped"] = len(stamped)
     return counts
 
