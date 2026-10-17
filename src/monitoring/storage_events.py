@@ -1114,23 +1114,53 @@ def _name_missing_breakdowns(events: list[dict[str, Any]]) -> None:
             event["seconds_by"] = {"omitted": OMITTED_UNKNOWN}
 
 
-def _cut_breakdowns_to_fit(out: dict[str, Any], kinds: dict[str, Any], budget: int) -> None:
+def _cut_breakdowns_to_fit(out: dict[str, Any], kinds: dict[str, Any], budget: int) -> dict[int, dict[str, Any]]:
     """While the member is over ``budget``, take the ``seconds_by`` off the SHORTEST gate hold that still has one and put the reason in its
     place; the longest holds keep it, so the count of holds that carry the split is whatever the free bytes allow, computed here and never
     fixed. An event is never dropped for this: a hold without the split is still a hold, and what is dropped to fit afterwards is the
-    existing cut's. ``seconds_by_omitted_to_fit`` on the kind counts them."""
+    existing cut's. Returns what was taken off (by the event's ``id``), for :func:`_restore_breakdowns_that_fit`."""
+    taken: dict[int, dict[str, Any]] = {}
     holds = kinds.get("gate_hold")
     if not holds:
-        return
-    cut = 0
+        return taken
     while _size(out) > budget:
         carrying = [e for e in holds["events"] if "omitted" not in e.get("seconds_by", {})]
         if not carrying:
             break
-        shortest = min(carrying, key=lambda e: float(e.get("seconds") or 0.0))
+        shortest = min(carrying, key=lambda e: _length(e, "seconds") or 0.0)
+        taken[id(shortest)] = shortest["seconds_by"]
         shortest["seconds_by"] = {"omitted": OMITTED_TO_FIT}
-        cut += 1
-        holds["seconds_by_omitted_to_fit"] = cut
+        holds["seconds_by_omitted_to_fit"] = len(taken)  # inside the loop: the count is part of what the budget measures
+    return taken
+
+
+def _restore_breakdowns_that_fit(out: dict[str, Any], kinds: dict[str, Any], budget: int, taken: dict[int, dict[str, Any]]) -> None:
+    """After the existing cut has dropped what it had to, give the splits back to the LONGEST holds that still fit (the bytes the dropped
+    events freed are real). ``seconds_by_omitted_to_fit`` ends as the number of KEPT holds still without one: a hold that was dropped
+    afterwards is not in it (it is in ``dropped_to_fit``)."""
+    holds = kinds.get("gate_hold")
+    if not holds:
+        return
+
+    def without_split() -> list[dict[str, Any]]:
+        return [e for e in holds["events"] if e.get("seconds_by", {}).get("omitted") == OMITTED_TO_FIT]
+
+    def count(n: int) -> None:
+        if n:
+            holds["seconds_by_omitted_to_fit"] = n
+        else:
+            holds.pop("seconds_by_omitted_to_fit", None)
+
+    candidates = sorted((e for e in without_split() if id(e) in taken), key=lambda e: _length(e, "seconds") or 0.0, reverse=True)
+    count(len(without_split()))
+    for event in candidates:
+        left = len(without_split())
+        event["seconds_by"] = taken[id(event)]
+        count(left - 1)
+        if _size(out) > budget:
+            event["seconds_by"] = {"omitted": OMITTED_TO_FIT}
+            count(left)
+            break
 
 
 _METHOD = (
@@ -1142,7 +1172,7 @@ _METHOD = (
     "long hold is not pushed out by a stream of shorter, newer ones); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
     "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
     "shown. A hold's 'seconds_by' splits its seconds into insert, savepoint, other_statement, commit and between_statements (Python work, "
-    "raw-driver calls and waits); an open hold shows them so far. 'omitted' names why a hold has none: 'zip-budget' (the shortest holds are "
+    "waits, raw-driver calls, a SELECT's rows after the first); an open hold shows them so far. 'omitted' names why a hold has none: 'zip-budget' (the shortest holds are "
     "cut first to fit; 'seconds_by_omitted_to_fit' counts them) or 'not-recorded'. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
     "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
     "'run_export' (the volume backup and the folder backup of the large data), 'run_import' (the volume restore, the single-file "
@@ -1224,7 +1254,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             "kinds": kinds,
             "dropped_to_fit": {},
         }
-        _cut_breakdowns_to_fit(out, kinds, budget)
+        taken = _cut_breakdowns_to_fit(out, kinds, budget)
         while _size(out) > budget:
             biggest = max(kinds, key=lambda k: _size(kinds[k]["events"]))
             if not kinds[biggest]["events"]:
@@ -1234,6 +1264,8 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             events.pop(next((i for i, e in enumerate(events) if e.get("picked_by") not in ("longest", "both")), 0))
             kinds[biggest]["kept"] -= 1
             out["dropped_to_fit"][biggest] = out["dropped_to_fit"].get(biggest, 0) + 1
+        if taken:
+            _restore_breakdowns_that_fit(out, kinds, budget, taken)
         return out
     except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
         return {"error": _label(exc)}

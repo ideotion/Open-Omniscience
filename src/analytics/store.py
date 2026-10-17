@@ -216,6 +216,21 @@ def _read_mention_rows(session: Session, article_id: int) -> dict[int, tuple[int
     return out
 
 
+def articles_with_stored_mentions(session: Session, article_ids: list[int]) -> set[int]:
+    """Which of ``article_ids`` have at least one stored mention row: ONE statement per ``_MENTION_ID_CHUNK`` ids, for the whole list.
+
+    What ``ArticleBatch`` asks ONCE per flush instead of reading each new article's rows (``index_article(inserted_in_this_transaction=True)``
+    takes the empty answer on the caller's word, and this is how the caller knows it is true). A just-inserted article has rows only when its
+    id was handed out AGAIN while rows still carried it: something that ran with foreign keys off (a database tool; salvage's
+    ``id_reuse_possible``) deleted the old article and left them. Those articles are indexed the old way, where the read and the diff replace
+    the rows."""
+    out: set[int] = set()
+    for i in range(0, len(article_ids), _MENTION_ID_CHUNK):
+        chunk = article_ids[i : i + _MENTION_ID_CHUNK]
+        out.update(session.execute(select(_MT.c.article_id).where(_MT.c.article_id.in_(chunk)).distinct()).scalars())
+    return out
+
+
 def _write_mention_diff(
     session: Session,
     article_id: int,
@@ -527,20 +542,23 @@ def index_article(
 
     ``inserted_in_this_transaction`` (default ``False``: the article's mention rows are read, as for every
     caller before): the caller INSERTED this article in the transaction it is still inside (its flush gave
-    the article its id, nothing has committed since) and says so, which turns the read of the article's
-    stored mention rows into the empty answer without asking the database. A batched collect flush is the
-    one such caller (``ArticleBatch._index_one``). The read was a statement per article inside the
-    gate hold that returned nothing, and the hold is what every other writer waits behind.
+    the article its id, nothing has committed since) and KNOWS it has no mention rows, which turns the read of
+    the article's stored mention rows into the empty answer without asking the database. A batched collect
+    flush is the one such caller (``ArticleBatch``). The read was a statement per article inside the gate hold
+    that returned nothing, and the hold is what every other writer waits behind.
     WHY THE ANSWER IS EMPTY: an id is new to the table, or it is the highest id handed out again after a
     delete (SQLite keeps no counter without AUTOINCREMENT, ``src/database/query.py``), and in that
     case the delete removed the old article's mention rows with it, because every pooled connection
     runs ``PRAGMA foreign_keys=ON`` (``src/database/session.py``) and the mention model's ``article_id``
     is ``ON DELETE CASCADE``. Nothing writes an article's mention rows before this call (this function
-    is the one writer). A caller that cannot say all of that, or that is RE-indexing an article, leaves
-    the flag off. If the claim were ever false the insert meets the unique index
-    ``(keyword_id, article_id)`` and fails loudly (the batch's savepoint reports it as an article kept
-    unindexed); it cannot store a wrong row silently. Pinned by
-    ``tests/test_index_article_inserted_in_transaction.py``.
+    is the one writer). THE ONE EXCEPTION is a row left behind by something that ran with foreign keys off
+    (a database tool, salvage's ``id_reuse_possible``): the flag does NOT see it. Keywords that overlap
+    meet the unique index ``(keyword_id, article_id)`` and fail loudly; keywords that do not would stay
+    attached to the new article, silently. So the flag is the CALLER's claim and the caller checks it:
+    ``ArticleBatch`` asks :func:`articles_with_stored_mentions` once per flush and leaves the flag off for
+    an article it names, which is read and healed as before. A caller that cannot say all of that, or that
+    is RE-indexing an article, leaves the flag off. Pinned by
+    ``tests/test_index_article_inserted_in_transaction.py`` and ``tests/test_batch_inserted_in_transaction.py``.
 
     ``scope`` (keyword-engine Phase 1.2): ``"full"`` (default) recomputes keywords +
     when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword

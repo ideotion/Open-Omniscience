@@ -1,4 +1,4 @@
-"""The batched collect flush indexes the articles it has just inserted WITHOUT reading their mention rows (night list 17 Oct, build (b)).
+"""The batched collect flush indexes the articles it has just inserted WITHOUT reading their mention rows, after ONE check for the flush (night list 17 Oct, build (b)).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -7,14 +7,16 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 id inside the transaction it is still in, so the article has no stored mention rows and the read of them (one statement per article, inside
 the write-gate hold every other writer waits behind) can only return nothing. The flag itself, the re-index that still reads, the claim that
 fails loudly when it is false and THE PROOF the skipped read would have been empty (including an id handed out again after a delete) are in
-``tests/test_index_article_inserted_in_transaction.py``; this file pins the one thing that needs the batch: that it passes the flag. The
+``tests/test_index_article_inserted_in_transaction.py``; this file pins the one thing that needs the batch: that it passes the flag, AFTER asking
+once for the whole flush which of its articles' ids already carry mention rows (an id handed out again over rows a tool with foreign keys off left
+behind: the read of the delta found that the flag alone would attach such a row to the new article silently when the keywords are disjoint). The
 ``src/ingest/batch.py`` line and ``index_article``'s parameter are in ONE commit: a batch that passes a keyword ``index_article`` does not
 take fails every article's indexing, which ``_index_one`` reports as "kept unindexed".
 """
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 import src.analytics.store as store
 from src.database.models import KeywordMention
@@ -55,3 +57,68 @@ def test_a_batched_flush_reads_no_mention_rows(monkeypatch):
     with session_scope() as s:
         stored = s.execute(select(func.count()).select_from(_MT).where(_MT.c.article_id.in_(indexed))).scalar()
     assert stored and stored >= 4, "the articles were indexed (each has mention rows)"
+
+
+def test_the_batch_asks_once_for_the_whole_flush_which_articles_already_carry_rows(monkeypatch):
+    asked: list[list[int]] = []
+    real = store.articles_with_stored_mentions
+
+    def spy(session, article_ids):
+        asked.append(list(article_ids))
+        return real(session, article_ids)
+
+    monkeypatch.setattr(store, "articles_with_stored_mentions", spy)
+    _dom, _src, tally = _ingest(monkeypatch, n=4)
+    assert tally["stored"] == 4
+    assert len(asked) == 1 and len(asked[0]) == 4, f"one statement for the flush's four articles, not one per article: {asked}"
+
+
+def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heals(monkeypatch):
+    """THE CASE THE FLAG ALONE GOT WRONG (the Opus read of d8deefaa8, M1). The highest article is deleted by something that ran with foreign keys
+    off, so its mention rows stay; the next flush's first article gets the id again. With the keywords DISJOINT from the new article's, the flag
+    would have kept the orphan rows attached to it without a word. The batch asks first, reads that one article's rows and the diff replaces
+    them; every other article of the flush still skips the read."""
+    from datetime import UTC, datetime
+
+    from src.analytics.store import index_article
+    from src.database.models import Article, Keyword
+    from src.database.session import session_scope
+    from tests.test_mention_diff_write import _Ex, _t
+
+    _dom, src_id, first = _ingest(monkeypatch, n=3)
+    assert first["stored"] == 3
+    with session_scope() as s:
+        orphan = Article(url="https://o.test/orphan", canonical_url="https://o.test/orphan", source_id=src_id, title="T", content="body",
+                         hash="orphan-hash", language="en", country=None, created_at=datetime.now(UTC))
+        s.add(orphan)
+        s.flush()
+        orphan_id = orphan.id
+        index_article(s, orphan, extractor=_Ex([_t("zzorphankeyword", 5)]), country=None, city=None, commit=False)
+        s.commit()
+        kid = s.execute(select(Keyword.id).where(Keyword.normalized_term == "zzorphankeyword")).scalar_one()
+        try:
+            s.execute(text("PRAGMA foreign_keys=OFF"))  # as a database tool leaves it: the article goes, its mention rows stay
+            s.execute(text("DELETE FROM articles WHERE id = :i"), {"i": orphan_id})
+            s.commit()
+        finally:
+            s.execute(text("PRAGMA foreign_keys=ON"))  # this connection goes back to the pool: never leave it off
+            s.commit()
+        assert s.execute(select(func.count()).select_from(_MT).where(_MT.c.article_id == orphan_id)).scalar() == 1, "ANTI-VACUITY: no orphan row"
+
+    reads = _count_reads(monkeypatch)
+    indexed: list[int] = []
+    real = store.index_article
+
+    def spy(session, article, **kw):
+        indexed.append(article.id)
+        return real(session, article, **kw)
+
+    monkeypatch.setattr(store, "index_article", spy)
+    _dom2, _src2, second = _ingest(monkeypatch, n=3)
+
+    assert second["stored"] == 3
+    assert orphan_id in indexed, f"ANTI-VACUITY: no article of the second flush took the id {orphan_id} again (got {indexed})"
+    assert reads == [orphan_id], f"only the article whose id carries rows is read; got {reads}"
+    with session_scope() as s:
+        left = s.execute(select(func.count()).select_from(_MT).where(_MT.c.article_id == orphan_id, _MT.c.keyword_id == kid)).scalar()
+    assert left == 0, "the orphan row is still attached to the new article"

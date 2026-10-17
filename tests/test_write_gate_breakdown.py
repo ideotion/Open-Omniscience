@@ -184,9 +184,10 @@ def test_a_sample_counts_the_statement_that_is_still_running(world):
     t = threading.Thread(target=holder)
     t.start()
     deadline = time.monotonic() + 5
-    while GATE._running is None and time.monotonic() < deadline:
+    # THIS hold's INSERT, not whatever an earlier hold left (a raw connection's commit is never closed): a new hold starts with nothing running
+    while (GATE._running is None or GATE._running[0] != writer._INSERT) and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert GATE._running is not None, "the insert never started"
+    assert GATE._running is not None and GATE._running[0] == writer._INSERT, "the insert never started"
     time.sleep(0.3)
     sample.append(GATE.hold_breakdown(GATE._held_since))
     release.set()
@@ -311,3 +312,35 @@ def test_the_real_ingest_path_is_measured_end_to_end(tmp_path, monkeypatch):
         assert GATE.held_by_current_thread()
         assert GATE._spent_for == GATE._grants and GATE._spent[writer._INSERT] > 0.0, "the real INSERT was not counted"
         s.commit()
+
+
+# --------------------------------------------------------------------------- #
+#  the read of the delta (17 Oct): a new hold inherits nothing, and what between_statements holds
+# --------------------------------------------------------------------------- #
+def test_a_new_hold_starts_with_nothing_running_whatever_the_last_hold_left_unclosed(world):
+    """A raw connection's commit has no end event, so the hold it ended on leaves ``_running`` set. The next hold must not see it: a sample taken
+    between the new hold publishing its number and its first statement starting would book everything since that old commit as this hold's."""
+    eng, _factory = world
+    with eng.connect() as conn, writer.write_lock():
+        conn.exec_driver_sql("SELECT 1")
+        conn.commit()
+    assert GATE._running is not None and GATE._running[0] == writer._COMMIT, "ANTI-VACUITY: the raw commit stays running after its hold"
+    with writer.write_lock():
+        assert GATE._running is None, "the new hold inherited the last hold's unclosed commit"
+        assert GATE.hold_breakdown(GATE._held_since)["commit"] == 0.0
+
+
+def test_the_rows_a_select_hands_back_after_its_first_are_between_statements_and_the_text_says_so(world):
+    """SQLite steps the rows after the first while the caller reads them, after the statement's end event: a read's seconds are booked as
+    ``between_statements`` and ``other_statement`` holds only the work up to the first row. Pinned so nobody reads ``other_statement`` as 'the
+    reads' (the member's method sentence names it)."""
+    eng, factory = world
+    s = factory()
+    s.connection()
+    with writer.write_lock():
+        s.execute(text("SELECT slow(0.2) AS x FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4)")).fetchall()
+        got = GATE.hold_breakdown(GATE._held_since)
+    s.close()
+    assert got["between_statements"] >= 0.5, f"the rows after the first were not left to between_statements: {got}"
+    assert got["other_statement"] <= 0.4, f"only the first row's work belongs to the statement: {got}"
+    assert "rows after the first" in se._METHOD, "the member must say what between_statements holds"

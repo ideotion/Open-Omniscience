@@ -468,7 +468,7 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     every kind, with the events the hooks write. Measured 78,634 bytes with ordinary names and 123,344 with every name at the cut, 1,494 of which are the keep rule's (``picked_by`` on the 50 events of the four split kinds, and the method sentence and ``keep_rule`` lines) (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip.
 
-    THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,453 bytes with ordinary names and 126,163 with every name at the cut, over the row by 1,163; the member built at the row's budget (124,990 bytes) takes the split off the shortest holds until it fits and keeps it on the other 6, counting the 14 it cut. Ordinary names keep all twenty."""
+    THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,483 bytes with ordinary names and 126,193 with every name at the cut, over the row by 1,193; the member built at the row's budget (124,934 bytes) takes the split off the shortest holds until it fits and keeps it on the other 5, counting the 15 it cut. Ordinary names keep all twenty."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
@@ -482,7 +482,9 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     # The split of a hold's seconds (``seconds_by``) is the part that gives way: at the widest names the journal with all twenty splits is
     # over the row, so the member built at the row's budget cuts the splits from the shortest holds (never an event) until it fits.
     at_budget = se.diagnostics_member(slot.budget_bytes)
-    assert len(json.dumps(at_budget, separators=(",", ":"))) <= slot.budget_bytes, f"{size} bytes with every split, the row says {slot.budget_bytes}"
+    # counted as the bundle writes a member (compact, UTF-8, not ASCII-escaped): the member's own ``_size``
+    written = se._size(at_budget)
+    assert written <= slot.budget_bytes, f"{written} bytes written (the member with every split is {size}), the row says {slot.budget_bytes}"
     assert at_budget["dropped_to_fit"] == {}, "no event is dropped to fit: only splits are"
     assert at_budget["kinds"]["gate_hold"]["kept"] == 20
     if not long_names:
@@ -1945,3 +1947,56 @@ def test_wait_until_dirty_returns_when_a_change_is_waiting_and_leaves_the_condit
     assert box == [se._GENERATION]
     assert se._COND.acquire(timeout=1.0)
     se._COND.release()
+
+
+# --------------------------------------------------------------------------- #
+#  The split of a hold's seconds when the member must lose events anyway (the read of 17 Oct)
+# --------------------------------------------------------------------------- #
+def _holds_with_a_split(m):
+    return [e for e in m["kinds"]["gate_hold"]["events"] if "omitted" not in e["seconds_by"]]
+
+
+def test_when_events_must_go_anyway_the_bytes_they_free_go_back_to_the_longest_splits(journal):
+    """Cutting every split first and then dropping events left the member with room and no split at all. The splits are given back, longest hold
+    first, for as long as they fit; ``seconds_by_omitted_to_fit`` counts the KEPT holds still without one."""
+    _fill_like_the_hooks(True)
+    budget = 110_000  # a journal whose events are wider than the fixture's: the drop loop's reason to exist
+    m = se.diagnostics_member(budget)
+    assert m["dropped_to_fit"], "ANTI-VACUITY: events had to go, or this tests nothing"
+    assert se._size(m) <= budget
+    carrying = _holds_with_a_split(m)
+    assert carrying, "events were dropped and the bytes they freed fit a split, yet no hold has one"
+    without = [e for e in m["kinds"]["gate_hold"]["events"] if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT]
+    assert m["kinds"]["gate_hold"].get("seconds_by_omitted_to_fit", 0) == len(without), "the count is of the kept holds without a split"
+    # the longest holds are the ones that kept it
+    assert min(e["seconds"] for e in carrying) >= max((e["seconds"] for e in without), default=0.0)
+    # and no more would fit: the longest hold still without one, given a split at its widest, is over the budget
+    if without:
+        longest = max(without, key=lambda e: e["seconds"])
+        longest["seconds_by"] = dict.fromkeys(_SECONDS_BY_KEYS, 86_400.0)
+        m["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] -= 1
+        assert se._size(m) > budget, "a split would still have fitted: the member left room unspent"
+
+
+def test_a_member_that_loses_events_does_not_count_a_dropped_hold_as_cut_for_its_split(journal):
+    _fill_like_the_hooks(True)
+    m = se.diagnostics_member(110_000)
+    kept_without = sum(1 for e in m["kinds"]["gate_hold"]["events"] if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT)
+    assert m["kinds"]["gate_hold"].get("seconds_by_omitted_to_fit", 0) == kept_without
+    assert kept_without + len(_holds_with_a_split(m)) == m["kinds"]["gate_hold"]["kept"]
+
+
+def test_a_non_numeric_seconds_in_the_file_does_not_turn_the_member_into_an_error(journal):
+    """An earlier process's file is only checked for ``at``: an event whose ``seconds`` is not a number is ranked as no length (the same as
+    ``_length`` ranks it for the keep rule) and loses its split first, instead of the cut raising and the whole member becoming an error."""
+    _fill_like_the_hooks(True)
+    se.flush()
+    data = json.loads(journal.read_text(encoding="utf-8"))
+    data["kinds"]["gate_hold"]["events"][0]["seconds"] = "62.0s"
+    journal.write_text(json.dumps(data), encoding="utf-8")
+    se.reset_for_tests(keep_file=True)  # a restart: memory gone, file kept
+    m = se.diagnostics_member(125_000)
+    assert "error" not in m, m
+    assert m["kinds"]["gate_hold"]["events"], "the member carries the holds"
+    odd = [e for e in m["kinds"]["gate_hold"]["events"] if e.get("seconds") == "62.0s"]
+    assert odd and odd[0]["seconds_by"].get("omitted") in (se.OMITTED_TO_FIT, se.OMITTED_UNKNOWN), "the odd event is the first to lose its split"

@@ -16,8 +16,10 @@ commit as the parameter; ``tests/test_batch_inserted_in_transaction.py`` pins th
 * THE PROOF the skipped read would have been empty, including the case that could have made it wrong: an article id that is
   handed out AGAIN after a delete (SQLite keeps no counter without AUTOINCREMENT). The old article's mention rows went with it
   (``ON DELETE CASCADE`` under ``PRAGMA foreign_keys=ON`` on every pooled connection), so the reused id meets none;
-* the claim is not trusted blindly: the flag on an article that DOES have rows fails loudly on the unique index rather than
-  storing a wrong row.
+* the flag is the CALLER'S claim, and this file says exactly how far the function backs it: on an article that DOES have rows, keywords that
+  overlap fail loudly on the unique index, and keywords that are DISJOINT stay attached to the article without a word (the Opus read of
+  d8deefaa8, M1). That is why the batch asks :func:`articles_with_stored_mentions` once per flush and leaves the flag off for an article it
+  names (``tests/test_batch_inserted_in_transaction.py`` pins that), and why the function that asks is pinned here.
 """
 
 from __future__ import annotations
@@ -124,8 +126,8 @@ def test_a_reindex_reads_and_keeps_its_rows_by_the_diff(monkeypatch):
     assert _rows(s, a.id) == before
 
 
-def test_the_flag_on_an_article_that_has_rows_fails_on_the_unique_index_and_stores_nothing_wrong():
-    """The docstring's promise: if the caller's claim were false, the failure is loud and no second row is stored."""
+def test_the_flag_on_an_article_that_has_overlapping_rows_fails_on_the_unique_index():
+    """If the caller's claim is false and the keywords OVERLAP, the failure is loud and no second row is stored."""
     s = _session()
     a = _flushed_article(s, "liar")
     ex = _Ex([_t("x", 2)])
@@ -173,3 +175,62 @@ def test_the_read_the_batch_skips_would_have_returned_nothing_even_for_a_reused_
     assert top in answers, f"ANTI-VACUITY: no article of the second batch got the id {top} again (got {sorted(answers)}), so the reuse case was not exercised"
     assert len(answers) == 3
     assert all(v == {} for v in answers.values()), f"a read the batch skipped would have returned rows: { {k: v for k, v in answers.items() if v} }"
+
+
+def test_the_flag_does_not_see_orphan_rows_of_a_disjoint_keyword__it_is_the_callers_claim():
+    """DOCUMENTED LIMIT (the Opus read of d8deefaa8, M1): rows left on an id by something that ran with foreign keys off, for a keyword the new
+    article does not have, are not met by the unique index, so the flag keeps them. The call without the flag replaces them. The batch asks
+    :func:`articles_with_stored_mentions` first so it never passes the flag for such an article."""
+    for flagged in (True, False):
+        s = _session()
+        a = _flushed_article(s, "lost")
+        index_article(s, a, extractor=_Ex([_t("old", 5)]), country=None, city=None)
+        lost_id = a.id
+        s.execute(text("PRAGMA foreign_keys=OFF"))
+        s.execute(text("DELETE FROM articles WHERE id = :i"), {"i": lost_id})
+        s.commit()
+        s.expunge_all()
+        b = _flushed_article(s, "new")
+        assert b.id == lost_id, "ANTI-VACUITY: SQLite did not hand the id out again"
+        index_article(s, b, extractor=_Ex([_t("fresh", 2)]), country=None, city=None, commit=False, inserted_in_this_transaction=flagged)
+        s.commit()
+        assert len(_rows(s, b.id)) == (2 if flagged else 1), f"flagged={flagged}"
+
+
+def test_articles_with_stored_mentions_names_the_articles_that_have_rows_in_one_statement(monkeypatch):
+    s = _session()
+    with_rows = []
+    for h in ("a", "b", "c"):
+        art = _flushed_article(s, h)
+        if h != "b":
+            index_article(s, art, extractor=_Ex([_t("x")]), country=None, city=None, commit=False, inserted_in_this_transaction=True)
+            with_rows.append(art.id)
+        else:
+            without = art.id
+    s.commit()
+    seen: list[str] = []
+    from sqlalchemy import event as sa_event
+
+    sa_event.listen(s.get_bind(), "before_cursor_execute", lambda *a: seen.append(a[2]))
+    assert store.articles_with_stored_mentions(s, [*with_rows, without]) == set(with_rows)
+    assert len(seen) == 1, f"one statement for the whole list, not one per article: {seen}"
+    assert store.articles_with_stored_mentions(s, []) == set()
+    assert len(seen) == 1, "an empty list asks nothing"
+
+
+def test_articles_with_stored_mentions_chunks_a_long_list(monkeypatch):
+    s = _session()
+    ids = []
+    for h in ("p", "q", "r", "t", "u"):
+        art = _flushed_article(s, h)
+        ids.append(art.id)
+        if h in ("p", "u"):
+            index_article(s, art, extractor=_Ex([_t("x")]), country=None, city=None, commit=False, inserted_in_this_transaction=True)
+    s.commit()
+    monkeypatch.setattr(store, "_MENTION_ID_CHUNK", 2)
+    seen: list[str] = []
+    from sqlalchemy import event as sa_event
+
+    sa_event.listen(s.get_bind(), "before_cursor_execute", lambda *a: seen.append(a[2]))
+    assert store.articles_with_stored_mentions(s, ids) == {ids[0], ids[4]}
+    assert len(seen) == 3, "five ids in chunks of two are three statements"

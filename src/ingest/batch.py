@@ -310,10 +310,14 @@ class ArticleBatch:
             self._session.flush()
             if os.getenv("OO_NO_INDEX") != "1":
                 from src.analytics.extract import get_extractor
+                from src.analytics.store import articles_with_stored_mentions
 
                 extractor = get_extractor("baseline")
+                # ONE statement for the batch, not one per article: an article the flush just inserted has no mention rows unless its id was handed
+                # out AGAIN over rows a tool with foreign keys off left behind (index_article's docstring); those are indexed the old way.
+                with_rows = articles_with_stored_mentions(self._session, [a.id for _, a in to_store])
                 for i, (e, a) in enumerate(to_store):
-                    self._index_one(a, extractor, content=e.text, deriv=derivs.get(_pk(i)))
+                    self._index_one(a, extractor, content=e.text, deriv=derivs.get(_pk(i)), has_stored_rows=a.id in with_rows)
                     self._links_one(a.id, e.links)
             self._session.commit()
         # Tally ONLY after the commit succeeded (skeptic finding D1): a failed
@@ -430,7 +434,7 @@ class ArticleBatch:
             ip_observed_at=staged.fetched_at,
         )
 
-    def _index_one(self, article, extractor, *, content=None, deriv=None) -> None:
+    def _index_one(self, article, extractor, *, content=None, deriv=None, has_stored_rows: bool = True) -> None:
         """Keyword/WWW indexing inside the batch transaction, isolated by a
         SAVEPOINT: an extractor bug costs THAT article its indexing (as the
         legacy best-effort path does), never the batch. A transient lock is
@@ -442,7 +446,10 @@ class ArticleBatch:
         -- or a derivative whose own precompute FAILED -- means "not
         precomputed", which index_article reads as "compute it inline": correct
         and slower for that one article, never silently empty. This is the same
-        three-way read ``reindex_articles._derived_args`` performs."""
+        three-way read ``reindex_articles._derived_args`` performs.
+
+        ``has_stored_rows`` (default True: the article's mention rows are read, as before): False only when the caller asked, for the whole flush,
+        which of these articles' ids already carry mention rows (``articles_with_stored_mentions``) and this one does not."""
         from src.analytics.store import index_article
         from src.database.write import is_locked_error
 
@@ -464,7 +471,7 @@ class ArticleBatch:
                     precomputed_terms=terms,
                     precomputed_sentiment=sentiment,
                     precomputed_www=www,
-                    inserted_in_this_transaction=True,  # the flush above gave this article its id: no stored rows to read
+                    inserted_in_this_transaction=not has_stored_rows,  # the flush gave it its id and nothing stored carries that id: no rows to read
                 )
         except Exception as exc:  # noqa: BLE001 - indexing is auxiliary per article
             if is_locked_error(exc):

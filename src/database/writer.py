@@ -187,6 +187,7 @@ class WriterGate:
         """Grant the window to ``me``. Caller holds ``self._lock``."""
         self._owner = me
         self._depth = 1
+        self._running = None  # a raw connection's commit has no end event: the last hold's statement is not this hold's (read by the sampler under this lock)
         self._grants += 1
         self._holder = threading.current_thread().name
         self._held_since = time.monotonic()
@@ -376,7 +377,8 @@ class WriterGate:
     def _breakdown_locked(self, held: float) -> dict[str, float]:
         """The hold's ``held`` seconds split by where they went, in seconds to a tenth. Caller holds the lock. Work still running is counted up
         to now; what no measured statement or commit covers is ``between_statements``: Python work, the driver calls the listeners cannot see
-        (a raw connection's), and waits. """
+        (a raw connection's), waits, and the SQLite work of the rows a SELECT hands back AFTER its first (they are stepped while the caller
+        reads them, after the statement's end event)."""
         spent = list(self._spent) if self._spent_for == self._grants else [0.0] * len(_SPENT_KINDS)
         running = self._running if self._spent_for == self._grants else None
         if running is not None and self._held_since is not None:
@@ -512,7 +514,8 @@ class WriterGate:
 #: What a hold's statements are sorted into, in the order of the gate's ``_spent`` list: ``insert`` (any INSERT, an executemany is one statement),
 #: ``savepoint`` (SAVEPOINT, RELEASE and ROLLBACK TO), ``other_statement`` (every other statement: reads, UPDATE, DELETE, PRAGMA) and ``commit``
 #: (the engine's commit event to the session's after-commit, or to the next work or the release for a raw connection's). The journal's
-#: ``seconds_by`` carries these and ``between_statements``. WHAT THE FIVE ANSWER: the 16 Oct bundles' holds were INSERT INTO articles 58.6 %,
+#: ``seconds_by`` carries these and ``between_statements`` (what no measured statement covers: Python, waits, a raw connection's driver calls and the SQLite work of a
+#: SELECT's rows after its first, which runs as the caller reads them, so a read's seconds land THERE and not in ``other_statement``). WHAT THE FIVE ANSWER: the 16 Oct bundles' holds were INSERT INTO articles 58.6 %,
 #: SAVEPOINT 11.5 % and a read of mention rows inside the hold about 16 %, from the slow-query ring; this puts the split on the hold itself.
 _SPENT_KINDS = ("insert", "savepoint", "other_statement", "commit")
 _INSERT, _SAVEPOINT, _OTHER, _COMMIT = range(4)
