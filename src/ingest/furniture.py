@@ -76,7 +76,8 @@ def is_furniture(paragraph: str) -> bool:
 def strip_furniture(text: str) -> tuple[str, int]:
     """``(text without furniture lines, how many were removed)``. Only the matched lines go (plus
     one blank separator line after each); every other byte is kept, so text without furniture
-    comes back identical and text with some is not reformatted."""
+    comes back identical; when a line goes, the one blank line after it goes too, so two paragraphs
+    that were split by it become adjacent lines."""
     lines = (text or "").splitlines(keepends=True)
     kept: list[str] = []
     removed = 0
@@ -106,6 +107,10 @@ def is_menu_like(text: str) -> bool:
     # A digit means data (a result table, a listing), not a menu entry: such a page is not judged.
     if any(ch.isdigit() for p in paragraphs for ch in p):
         return False
+    # A body that OPENS on a colon line introduces a list ("The nominees are:"): a short list article,
+    # not a menu. A colon line mid-page is a widget label ("Choose a theme:") and does not count.
+    if paragraphs[0].endswith(":"):
+        return False
     menu = sum(
         1 for p, n in zip(paragraphs, counts, strict=True)
         if n <= MENU_SHORT_WORDS and not p.endswith(tuple(_END_PUNCT))
@@ -114,14 +119,25 @@ def is_menu_like(text: str) -> bool:
 
 
 def _has_prompt(paragraphs: list[str]) -> str | None:
+    """The first prompt phrase found, unless the body also carries more prose than a prompt line
+    could: a complete short brief that ends on "subscribe?" is an article, not a stub (a teaser
+    lead of that length is spared too, which is the safe error for a precision-first signal)."""
+    found = None
+    other_words = 0
     for p in paragraphs:
-        if len(p.split()) > _PROMPT_MAX_WORDS:
-            continue
-        low = p.casefold()
-        for phrase in PAYWALL_PHRASES:
-            if re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", low):
-                return phrase
-    return None
+        n = len(p.split())
+        hit = None
+        if n <= _PROMPT_MAX_WORDS:
+            low = p.casefold()
+            for phrase in PAYWALL_PHRASES:
+                if re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", low):
+                    hit = phrase
+                    break
+        if hit:
+            found = found or hit
+        else:
+            other_words += n
+    return found if found and other_words <= _PROMPT_MAX_WORDS else None
 
 
 def stub_verdict(text: str | None) -> tuple[str, str] | None:

@@ -1012,7 +1012,8 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
             else:
                 raise RuntimeError(
                     f"a different quarantine run is paused at {prior.get('articles_done')} articles "
-                    f"(dry_run={prior.get('dry_run')}, include_prose_gate={prior.get('include_prose_gate')}); "
+                    f"(dry_run={prior.get('dry_run')}, include_prose_gate={prior.get('include_prose_gate')}, "
+                    f"index_page_tiers={prior.get('index_page_tiers')}, include_stubs={prior.get('include_stubs')}); "
                     "resume or cancel it from the task manager first")
         else:
             out["quarantine_started"] = qm.start(write=True, include_prose_gate=False)  # RuntimeError -> refused

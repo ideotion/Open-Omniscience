@@ -232,7 +232,7 @@ def test_the_job_carries_include_stubs_through_start(tmp_path):
 def test_a_release_run_never_resumes_a_paused_stub_run_as_its_own():
     from pathlib import Path
 
-    src = Path("src/monitoring/release_run.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parents[1] / "src/monitoring/release_run.py").read_text(encoding="utf-8")
     assert 'not prior.get("include_stubs")' in src and 'not st.get("include_stubs")' in src
 
 
@@ -243,3 +243,32 @@ def test_the_manager_status_reports_include_stubs(tmp_path):
     assert mgr.status()["include_stubs"] is False
     mgr._include_stubs = True
     assert mgr.status()["include_stubs"] is True
+
+
+def test_a_short_list_article_with_a_colon_lead_is_not_a_menu():
+    from src.ingest.furniture import stub_verdict
+
+    text = "Disse er nominert til årets kulturpris:\n" + "\n".join(f"Navn Navnesen{'abcdefghijkl'[i]}" for i in range(12))
+    assert stub_verdict(text) is None
+
+
+def test_a_complete_short_brief_ending_on_a_subscribe_prompt_is_not_a_paywall_stub():
+    from src.ingest.furniture import stub_verdict
+
+    text = "Kort nyhet om brannen i natt. Ingen ble skadd, opplyser politiet.\n\nVil du bli abonnent?"
+    assert stub_verdict(text) is None
+    assert stub_verdict("Vil du bli abonnent?") is not None
+
+
+def test_stripping_a_line_joins_the_neighbours_and_says_so():
+    from src.ingest.furniture import strip_furniture
+
+    assert strip_furniture("A first para.\nAnnons\n\nB second para.") == ("A first para.\nB second para.", 1)
+
+
+def test_store_fetched_strip_is_off_with_the_non_article_switch_off(monkeypatch):
+    import inspect
+    from src.ingest import pipeline
+
+    src = inspect.getsource(pipeline.store_fetched)
+    assert "if skip_non_articles_enabled():" in src and "strip_furniture(doc.text)" in src

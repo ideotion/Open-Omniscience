@@ -94,7 +94,7 @@ def default_quarantine_candidates_batch(
     restore-merge and the newsletter import -- mark nothing new): also reads thin bodies
     (``< _ARTICLE_MIN_WORDS``) for the menu-line / subscriber-prompt stub signals of
     :mod:`src.ingest.furniture`. Only a caller that asks (the dry run that produces the
-    operator's counts) turns it on; ``store_fetched`` applies the same signals to NEW ingest.
+    operator's counts) turns it on. ``store_fetched`` does NOT apply these signals to new ingest.
 
     ``write=False`` (the default): DRY-RUN, no database mutation -- "quarantining" here means
     reporting a candidate's id in ``quarantined_ids``, exactly the original scaffold's behaviour.
