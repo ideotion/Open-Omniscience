@@ -467,7 +467,7 @@ def note_stop_signal(name: str) -> None:
     _STOP_SIGNAL = name
 
 
-def record_shutdown_phase(phase: str, *, reason: str | None = None) -> None:
+def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[str, Any] | None = None) -> None:
     """Advance the sentinel through the teardown (S0.2).
 
     Before this, the sentinel had two states -- 'running' and 'clean' -- so a death
@@ -479,15 +479,73 @@ def record_shutdown_phase(phase: str, *, reason: str | None = None) -> None:
     'it was killed mid-collection'.
 
     ``reason`` names WHY the stop began (a signal, the in-app power button); it is
-    recorded once, on the first phase, and carried forward."""
+    recorded once, on the first phase, and carried forward. ``shutdown_began_at`` is stamped the same way, once, on the first phase:
+    ``shutdown_phase_at`` moves with every phase and ``ended_at`` is the last, so without it the teardown's duration was not readable
+    (the 10-10 session's last step and its end were the same second). ``facts`` are the few named values a phase learned
+    (:func:`dispose_facts`), merged in as they are; only the keys in :data:`_DISPOSE_FACT_KEYS` are kept."""
     state = _read_state() or {}
     state["state"] = phase
     state["shutdown_phase_at"] = _now()
+    if not state.get("shutdown_began_at"):
+        state["shutdown_began_at"] = state["shutdown_phase_at"]
     if reason and not state.get("shutdown_reason"):
         state["shutdown_reason"] = reason
     if _STOP_SIGNAL and not state.get("stop_signal"):
         state["stop_signal"] = _STOP_SIGNAL
+    if facts:
+        state.update({k: v for k, v in facts.items() if k in _DISPOSE_FACT_KEYS})
     _write_state(state)
+
+
+#: What the disposal step leaves in the sentinel, and ``previous_session_report`` reads back. ``wal_bytes_after_dispose`` is the log
+#: the engine's disposal left on disk (``0`` when there is no such file), ``connections_checked_out_at_dispose`` the pool's own count
+#: just before it, ``shutdown_checkpoint`` the write-back's outcome (``done``, ``busy``, ``failed``, ``skipped``); a value that could not
+#: be read is ``None`` with the matching ``*_why``.
+_DISPOSE_FACT_KEYS = (
+    "wal_bytes_after_dispose",
+    "wal_after_dispose_why",
+    "connections_checked_out_at_dispose",
+    "checked_out_why",
+    "shutdown_checkpoint",
+    "shutdown_checkpoint_why",
+)
+
+
+def dispose_facts(disposed: dict[str, Any] | None, checkpoint: dict[str, Any] | None) -> dict[str, Any]:
+    """The facts the disposal step records: the log still on disk (read NOW, after the engine was disposed), what the pool held, and
+    what the write-back before it did. ``disposed`` is :func:`~src.database.session.dispose_engine`'s return and ``checkpoint`` is
+    :func:`~src.database.shutdown_checkpoint.checkpoint_before_dispose`'s; either may be ``None`` (the step did not run). Never raises;
+    an unreadable value is ``None`` with its reason, never ``0``."""
+    out: dict[str, Any] = {}
+    try:
+        wal = wal_state_before_open()
+        if wal.get("state") == "present" and isinstance(wal.get("bytes"), int):
+            out["wal_bytes_after_dispose"] = wal["bytes"]
+        elif wal.get("state") == "absent":
+            out["wal_bytes_after_dispose"] = 0
+        else:
+            out["wal_bytes_after_dispose"] = None
+            out["wal_after_dispose_why"] = "the -wal's size could not be read"
+    except Exception as exc:  # noqa: BLE001 - forensics never blocks a shutdown
+        out["wal_bytes_after_dispose"] = None
+        out["wal_after_dispose_why"] = f"the -wal's size could not be read ({type(exc).__name__})"
+    if isinstance(disposed, dict):
+        n = disposed.get("checked_out")
+        out["connections_checked_out_at_dispose"] = n if isinstance(n, int) else None
+        if not isinstance(n, int):
+            out["checked_out_why"] = str(disposed.get("checked_out_why") or "the pool did not say")[:120]
+    else:
+        out["connections_checked_out_at_dispose"] = None
+        out["checked_out_why"] = "the pool was not asked"
+    if isinstance(checkpoint, dict) and checkpoint.get("outcome"):
+        out["shutdown_checkpoint"] = str(checkpoint["outcome"])
+        why = checkpoint.get("error") or checkpoint.get("why")
+        if why:
+            out["shutdown_checkpoint_why"] = str(why)[:120]
+    else:
+        out["shutdown_checkpoint"] = None
+        out["shutdown_checkpoint_why"] = "the write-back step did not run"
+    return out
 
 
 def record_clean_shutdown() -> None:
@@ -812,8 +870,13 @@ def previous_session_report() -> dict[str, Any]:
     out["started_at"] = prev.get("started_at")
     out["ended_at"] = prev.get("ended_at")
     out["last_unlock"] = prev.get("last_unlock")
-    for key in ("shutdown_reason", "stop_signal", "shutdown_phase_at"):
+    for key in ("shutdown_reason", "stop_signal", "shutdown_phase_at", "shutdown_began_at"):
         if prev.get(key):
+            out[key] = prev[key]
+    # What that session's disposal left behind. A ``0`` is a fact (no log), so these are carried when PRESENT, not when truthy; a
+    # sentinel written by a build before this one has none of them, and the report then says nothing rather than "empty".
+    for key in _DISPOSE_FACT_KEYS:
+        if key in prev:
             out[key] = prev[key]
     if out["previous_session"] != "clean":
         # How it ENDED, from the witnesses outside the process (2026-09-26): the
@@ -1717,6 +1780,46 @@ def _render_earlier_ends(ev: Any) -> list[str]:
     return out
 
 
+def _seconds_between(begin: Any, end: Any) -> int | None:
+    """Whole seconds from one ISO timestamp to another, or ``None`` when either is missing, unparseable or the order is reversed
+    (a clock set back mid-teardown is not a negative duration)."""
+    try:
+        seconds = (datetime.fromisoformat(str(end)) - datetime.fromisoformat(str(begin))).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return int(seconds) if seconds >= 0 else None
+
+
+def _render_log_left(prev: dict[str, Any]) -> list[str]:
+    """The line that keeps a ``clean`` end from reading as a clean log: ``clean`` says the teardown ran to its last step, not that the
+    ``-wal`` was written back into the database, and the next open pays that write-back. Said whenever the disposal left a log (its size,
+    what the pool held, what the write-back before it did), and also when it left none or could not be read; silent only for a session
+    that did not record the value (a build before this one)."""
+    if "wal_bytes_after_dispose" not in prev:
+        return []
+    left = prev.get("wal_bytes_after_dispose")
+    held = prev.get("connections_checked_out_at_dispose")
+    held_text = (
+        f"{held} connection(s) still checked out when the pool was disposed"
+        if isinstance(held, int)
+        else f"checked-out connections not counted ({prev.get('checked_out_why') or 'no reason recorded'})"
+    )
+    wrote = prev.get("shutdown_checkpoint")
+    wrote_text = (
+        f"the write-back before it: {wrote}" + (f" ({prev['shutdown_checkpoint_why']})" if prev.get("shutdown_checkpoint_why") else "")
+        if wrote
+        else f"no write-back recorded ({prev.get('shutdown_checkpoint_why') or 'no reason recorded'})"
+    )
+    if isinstance(left, int) and left > 0:
+        return [
+            f"- the -wal was LEFT by that session's end: {left:,} bytes were still on disk after the pool was disposed ({held_text}; {wrote_text})",
+            "  - 'clean' above means the teardown ran to its end, not that this log was written back; the open that follows pays for it",
+        ]
+    if left == 0:
+        return [f"- the -wal was empty after that session's pool was disposed ({held_text}; {wrote_text})"]
+    return [f"- the -wal after that session's disposal was not measured ({prev.get('wal_after_dispose_why') or 'no reason recorded'}; {held_text})"]
+
+
 def render_text(d: dict[str, Any] | None = None) -> str:
     """A plain-text rendering of the session forensics, built to be READABLE WHEN
     PASTED INTO A CHAT — the channel this file exists for. Mirrors
@@ -1745,6 +1848,13 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- shutdown reason: {prev['shutdown_reason']}")
     if prev.get("shutdown_phase_at"):
         lines.append(f"- last teardown step at: {prev['shutdown_phase_at']}")
+    if prev.get("shutdown_began_at"):
+        took = _seconds_between(prev["shutdown_began_at"], prev.get("ended_at"))
+        lines.append(
+            f"- teardown began at: {prev['shutdown_began_at']}"
+            + (f" and took {took} s to the end" if took is not None else " (its end was not recorded)")
+        )
+    lines += _render_log_left(prev)
     if prev.get("last_rss_mb") is not None:
         lines.append(f"- collector's last RSS sample: {prev['last_rss_mb']} MB")
     wal_boot = prev.get("wal_at_boot") or {}

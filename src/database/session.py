@@ -983,6 +983,26 @@ def _release_write_gate(session: SASession) -> None:
         log_failure(_LOG, "write-gate safety release failed", exc, level=logging.DEBUG)
 
 
-def dispose_engine() -> None:
-    """Dispose the engine's connection pool (call on app shutdown)."""
+def pool_checkouts(eng: Engine | None = None) -> dict[str, Any]:
+    """How many connections a thread has checked out of the pool right now, from the pool's own count: ``{"checked_out": n}``, or
+    ``{"checked_out": None, "checked_out_why": ...}`` when the pool cannot say (another pool class has no ``checkedout()``; a
+    count that fails to read is reported by its exception class, never as 0). Never raises."""
+    pool = (eng if eng is not None else engine).pool
+    try:
+        return {"checked_out": int(pool.checkedout())}  # type: ignore[attr-defined]
+    except AttributeError:
+        return {"checked_out": None, "checked_out_why": f"{type(pool).__name__} has no checkedout()"}
+    except Exception as exc:  # noqa: BLE001 - a count that cannot be read is said so, never turned into zero
+        return {"checked_out": None, "checked_out_why": f"the pool's count could not be read ({type(exc).__name__})"}
+
+
+def dispose_engine() -> dict[str, Any]:
+    """Dispose the engine's connection pool (call on app shutdown), and say what the pool held when it did.
+
+    ``Engine.dispose()`` closes the connections that are IN the pool. One a thread still has checked out stays open, and SQLite writes
+    the log back into the database and removes it only when the LAST connection on the file closes, so with one straggler the disposal
+    leaves the whole log where it was (measured: a 300 MiB log, 100 % left, plain and encrypted). The return value is
+    :func:`pool_checkouts` read just BEFORE the disposal, so a caller that wants to say so can; callers that ignore it are unchanged."""
+    seen = pool_checkouts()
     engine.dispose()
+    return seen
