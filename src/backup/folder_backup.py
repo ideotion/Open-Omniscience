@@ -985,6 +985,56 @@ import threading  # noqa: E402  (kept local to the job section)
 import time  # noqa: E402  (same)
 
 from src.backup import runlog  # noqa: E402  (same, beside the manager it serves)
+from src.monitoring import storage_events  # noqa: E402  (same)
+
+#: The storage-events journal's kind for each mode: a folder ``backup`` is an ``export`` there, a ``restore`` an ``import``. (The run
+#: journal calls them ``folder-export`` and ``folder-import``; the records here carry ``via: folder`` to be matched by.)
+_RUN_OF = {"backup": "export", "restore": "import", "verify": "verify"}
+
+
+def _free_readable(path: Path) -> bool:
+    """Whether the free space of ``path``'s volume can be read at all (``free_bytes`` answers 0 when it cannot, which would make a
+    backup look refused for want of space that was never measured)."""
+    p = path
+    try:
+        while not p.exists() and p != p.parent:
+            p = p.parent
+        shutil.disk_usage(p)
+    except OSError:
+        return False
+    return True
+
+
+def _volume_probe(destp: Path) -> Path | None:
+    """The path whose volume a backup to ``destp`` will write to: ``destp`` itself, or its nearest existing parent when the copy has yet
+    to make it (``validate_dest`` refused a destination with none). ``None`` when the operating system refuses to look (a mount that
+    dropped, a permission): the free-bytes figure is then absent, and the walk never raises into a run that has begun."""
+    probe = destp
+    try:
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+    except OSError:
+        return None
+    return probe
+
+
+def _verify_counts(res: dict) -> tuple[int | None, int | None]:
+    """``(checked, mismatches)`` of a verify's report, or ``(None, None)`` when it holds no counts (no manifest, a damaged one).
+    ``verify_folder_backup`` names them ``files_checked`` and ``summary`` and has never had a ``checked`` or a ``mismatches`` key, so the
+    run journal's closing line read ``None`` for both until now. A mismatch is a file the manifest lists that is missing, of another
+    size, of another checksum or outside the folder, a manifest entry that was not one, or a manifest whose signature is bad (the
+    failures the verdict counts); a file that is only ``size_only`` is not one. ``mismatches`` can therefore exceed ``checked`` (a
+    bad signature checks no file, and a malformed category counts as one entry and checks none)."""
+    summary = res.get("summary")
+    if not isinstance(summary, dict):
+        return None, None
+    bad = sum(
+        int(summary.get(key) or 0)
+        for key in ("missing", "size_mismatch", "checksum_mismatch", "traversal_refused", "malformed_entries")
+    )
+    if res.get("signature_state") == "bad-signature":
+        bad += 1
+    return res.get("files_checked"), bad
 
 
 def _write_export_summary(destp: Path) -> None:
@@ -1057,13 +1107,21 @@ class FolderBackupManager:
         """Validate + preflight, then launch the worker. Raises ValueError on a bad
         destination / insufficient free space; RuntimeError if one is already running.
         ``_items``/``_targets`` are test seams (the production path collects them)."""
-        with self._lock:
+        with self._lock, storage_events.run_refusals_net(
+            _RUN_OF.get(mode, ""), via="folder", refused_as=storage_events.NOT_A_FOLDER if mode in ("restore", "verify") else ()
+        ):
+            what = _RUN_OF.get(mode, "")  # "" for a mode that is not one: the journal records no refusal for a kind it does not have
             if self._alive():
+                storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
             cats = [c for c in categories if c in _CATEGORIES] or list(_CATEGORIES)
             items: list[BackupItem] = []
             if mode == "backup":
-                destp = validate_dest(dest)
+                try:
+                    destp = validate_dest(dest)
+                except ValueError as exc:
+                    storage_events.run_refused(what, "destination-unusable", failure=type(exc).__name__, via="folder")
+                    raise
                 items = (
                     _items
                     if _items is not None
@@ -1077,6 +1135,10 @@ class FolderBackupManager:
                 need = needed_bytes(destp, items)
                 free = free_bytes(destp)
                 if need > free:
+                    # ``free_bytes`` answers 0 when the free space cannot be read: that is not a shortage, and the record says which.
+                    storage_events.run_refused(
+                        what, "no-space" if _free_readable(destp) else "free-space-unreadable", via="folder"
+                    )
                     raise ValueError(
                         f"Not enough free space at {destp}: needs {human_bytes(need)}, "
                         f"only {human_bytes(free)} free."
@@ -1116,6 +1178,14 @@ class FolderBackupManager:
         # tens of GB across a drive, so "it seems to be stuck" is exactly as
         # askable here, and until now it left nothing behind either.
         with runlog.run("folder-export", label=destp.name, dest=str(destp), items=len(items)):
+            # Also kept in the storage-events journal, written OPEN (a process killed in the middle leaves "started, never ended"),
+            # with the free bytes of the destination it writes to: numbers and the keys of fixed tables only, never a path.
+            note = storage_events.run_started("export", via="folder", files=len(items))
+            # A destination that does not exist yet is made by the copy: the volume it will be made on is the one of its nearest
+            # existing parent (``validate_dest`` refused a destination with none), so that is stat-ed, never a path that is not there.
+            probe = _volume_probe(destp)
+            if probe is not None:
+                storage_events.run_free_space(note, "dest_free_bytes", probe)
             try:
                 res = write_folder_backup(
                     destp, items, progress_cb=self._on_prog, should_stop=self._stop.is_set
@@ -1125,24 +1195,36 @@ class FolderBackupManager:
                     # before "done" is published (J2) -- see _write_export_summary.
                     _write_export_summary(destp)
                 with self._lock:
+                    cancelled = self._cancelled  # read ONCE: the state, the run journal and the storage record must agree
                     if res["stopped"]:
-                        self._state = "cancelled" if self._cancelled else "paused"
+                        self._state = "cancelled" if cancelled else "paused"
                     else:
                         self._state = "done"
                     self._progress = {**self._progress, **res}
                 runlog.end(
-                    ("cancelled" if self._cancelled else "paused") if res["stopped"] else "ok",
+                    ("cancelled" if cancelled else "paused") if res["stopped"] else "ok",
                     copied=res.get("copied"), skipped=res.get("skipped"),
                     bytes=res.get("bytes_copied"),
+                )
+                storage_events.run_ended(
+                    note,
+                    ("cancelled" if cancelled else "paused") if res["stopped"] else "ok",
+                    copied=res.get("copied"), skipped=res.get("skipped"), bytes=res.get("bytes_copied"),
                 )
             except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
                 with self._lock:
                     self._state = "error"
                     self._error = record_text(exc)
+                storage_events.run_ended(note, "error", failure=type(exc).__name__)
                 raise
+            finally:
+                storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
     def _run_restore(self, srcp: Path, _items: list[BackupItem], cats: list[str]) -> None:
         with runlog.run("folder-import", label=srcp.name, dest=str(srcp), categories=cats):
+            # No free-space figure: the files go to the live folders of each category, which can be on several volumes, and one number
+            # for the data folder would read as the volume this restore writes to.
+            note = storage_events.run_started("import", via="folder")
             try:
                 res = restore_folder_backup(
                     srcp,
@@ -1152,13 +1234,14 @@ class FolderBackupManager:
                     should_stop=self._stop.is_set,
                 )
                 with self._lock:
+                    cancelled = self._cancelled  # read ONCE: the state, the run journal and the storage record must agree
                     if res["stopped"]:
-                        self._state = "cancelled" if self._cancelled else "paused"
+                        self._state = "cancelled" if cancelled else "paused"
                     else:
                         self._state = "done"
                     self._progress = {**self._progress, **res}
                 runlog.end(
-                    ("cancelled" if self._cancelled else "paused") if res["stopped"] else "ok",
+                    ("cancelled" if cancelled else "paused") if res["stopped"] else "ok",
                     # A restore RESTORES; it does not "copy". The field was `copied`
                     # here, which restore_folder_backup has never returned, so every
                     # restore journal carried `copied: null` -- a field that reads as
@@ -1171,38 +1254,60 @@ class FolderBackupManager:
                     corrupt_refused=res.get("corrupt_refused"),
                     restored_unverified=res.get("restored_unverified"),
                 )
+                storage_events.run_ended(
+                    note,
+                    ("cancelled" if cancelled else "paused") if res["stopped"] else "ok",
+                    restored=res.get("restored"), skipped=res.get("skipped"),
+                )
             except Exception as exc:  # noqa: BLE001
                 with self._lock:
                     self._state = "error"
                     self._error = record_text(exc)
+                storage_events.run_ended(note, "error", failure=type(exc).__name__)
                 raise
+            finally:
+                storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
     def _run_verify(self, srcp: Path, _items: list[BackupItem], _cats: list[str]) -> None:
         # A verify is a full read of the whole set -- 1521 s of one field import
         # was verification alone -- so it belongs in the journal for the same
         # reason the copy does.
         with runlog.run("verify", label=srcp.name, dest=str(srcp)):
+            note = storage_events.run_started("verify", via="folder")
             try:
                 res = verify_folder_backup(
                     srcp, progress_cb=self._on_prog, should_stop=self._stop.is_set
                 )
                 with self._lock:
+                    cancelled = self._cancelled  # read ONCE: the state, the run journal and the storage record must agree
                     if res.get("stopped"):
-                        self._state = "cancelled" if self._cancelled else "paused"
+                        self._state = "cancelled" if cancelled else "paused"
                     else:
                         self._state = "done"
                     self._verify = res
                     self._progress = {**self._progress, "verify": res}
+                checked, mismatches = _verify_counts(res)
                 runlog.end(
-                    ("cancelled" if self._cancelled else "paused")
-                    if res.get("stopped") else "ok",
-                    checked=res.get("checked"), mismatches=res.get("mismatches"),
+                    ("cancelled" if cancelled else "paused") if res.get("stopped") else "ok",
+                    checked=checked, mismatches=mismatches,
+                )
+                # The set's own verdict only for a verify that ran to its end: a stopped one has no verdict, and ``ok`` False there
+                # would read as a bad set.
+                storage_events.run_ended(
+                    note,
+                    ("cancelled" if cancelled else "paused") if res.get("stopped") else "ok",
+                    checked=checked,
+                    mismatches=mismatches,
+                    set_ok=None if res.get("stopped") else bool(res.get("ok")),
                 )
             except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
                 with self._lock:
                     self._state = "error"
                     self._error = record_text(exc)
+                storage_events.run_ended(note, "error", failure=type(exc).__name__)
                 raise
+            finally:
+                storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
     def pause(self) -> None:
         self._stop.set()  # the worker stops between/within files; state -> paused
