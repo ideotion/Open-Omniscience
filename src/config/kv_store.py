@@ -44,12 +44,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import sys
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import FrameType
+from typing import Any
 
 from src.utils.interrupts import wait as _wait
 
@@ -91,6 +94,26 @@ class KvWriteRefused(RuntimeError):
     and carry nothing from the engine; the API answers them as a 503 with this text as the detail, which the UI shows."""
 
 
+class KvLockStuck(KvWriteRefused):
+    """A settings save or a restore's hold was refused, with nothing written, because ``_hold_lock`` is owned by a thread that is in none of the
+    code that takes it (R144, the stuck-lock detector): the lock was left held, and every later save would wait for it for ever. The words
+    are fixed; they name the operation, the kind of thread and the UTC time, never a thread name (a request can choose one). Restart is the
+    repair: the lock is never replaced here (a replaced lock lets a thread that is stuck and one that is not share a section under two locks).
+    A :class:`KvWriteRefused`, so the API answers it as the same 503 with this text as the detail."""
+
+    def __init__(self, operation: str | None, thread_kind: str, since_utc: str | None) -> None:
+        self.lock = "kv_store._hold"
+        self.operation = operation
+        self.thread_kind = thread_kind
+        self.since_utc = since_utc
+        what = operation if operation else "operation not recorded"
+        when = f"since {since_utc}" if since_utc else "time not recorded"
+        super().__init__(
+            f"The settings lock ({self.lock}) was left held by an operation that ended without letting it go ({what}, {thread_kind}, {when}), "
+            "so settings cannot be saved or restored in this session. Nothing was written. Restart Open Omniscience."
+        )
+
+
 class KvWriteBusy(RuntimeError):
     """:func:`hold_writes` could not start within its budget: a settings save was still in flight (it may be waiting for the
     single-writer gate behind a long writer). Nothing was held."""
@@ -114,6 +137,75 @@ _hold_by: int | None = None  # ident of the thread holding settings writes (a re
 #: the same hazard for the lock itself. The residual that stayed (an interrupt inside ``Condition.wait``'s Python code surfacing as a
 #: ``RuntimeError`` ("cannot release un-acquired lock") in place of the KeyboardInterrupt, 0.27 % of interrupted waits) is closed by ``_wait_hold``.
 _inflight: set[object] = set()
+
+
+#: Who last entered a section that takes ``_hold_lock``: thread ident -> (operation, wall time). One store BEFORE each first take (the release takes record
+#: it inside the lock, after their state change, because a call in a ``finally`` can be interrupted before the release), never
+#: removed (a lock that was left held is named from the entry of the thread that owns it); at most one entry per thread ident that ever saved
+#: a setting or held writes, and the operating system recycles idents. Written only to NAME a stuck lock; whether it is stuck is decided from the
+#: stacks (:func:`_stuck_owner`), not from this.
+_sections: dict[int, tuple[str, float]] = {}
+
+#: ``owner=<ident> count=<n>`` of ``repr(RLock)``: the one way to read who owns an RLock without taking it (taking it to look is the very
+#: thing that could leave it held). Pinned by ``tests/test_kv_lock_stuck.py`` on this Python; a repr it cannot read makes the detector silent,
+#: never wrong (a lock that is not a plain RLock, as a test's wrapper, is not examined).
+_OWNER_OF_REPR = re.compile(r"owner=(\d+) count=\d+")
+
+
+def _section_codes() -> frozenset[Any]:
+    """The code objects of the two functions whose bodies take ``_hold_lock``: a thread owns the lock only while one of them is on its stack."""
+    return frozenset({_write_slot.__wrapped__.__code__, hold_writes.__wrapped__.__code__})  # type: ignore[attr-defined]
+
+
+def _stuck_owner() -> tuple[int, tuple[str, float] | None] | None:
+    """``(ident, last section entry)`` of the thread that owns ``_hold_lock`` while none of its frames is in the code that takes it, or None.
+
+    A legitimate owner is always inside ``_write_slot`` or ``hold_writes`` (it holds the lock for bookkeeping, never across I/O or a wait, and
+    ``Condition.wait`` gives it up), so an owner with no such frame, or a thread that no longer exists, left the section without letting go.
+    The lock itself is never touched here."""
+    m = _OWNER_OF_REPR.search(repr(_hold_lock))
+    owner = int(m.group(1)) if m else 0
+    if not owner or owner == threading.get_ident():
+        return None
+    frame: FrameType | None = sys._current_frames().get(owner)
+    codes = _section_codes()
+    while frame is not None:
+        if frame.f_code in codes:
+            return None
+        frame = frame.f_back
+    return owner, _sections.get(owner)
+
+
+def _refuse_if_stuck() -> None:
+    """Before a section's blocking take of ``_hold_lock``: raise :class:`KvLockStuck` when :func:`_stuck_owner` finds the same owner, with the same
+    last section entry, on two looks one scheduling turn apart. NO TIMEOUT AND NO NUMBER: what makes a holder stuck is where it is (outside the
+    code that takes the lock), not for how long, so no figure has to be chosen or measured. RESIDUAL, stated: an owner that left the section and
+    a new one that entered it in the gap between the looks, by the same thread ident with the entry rewritten identically to the microsecond,
+    would be read as one stuck owner. NOT COVERED, by design: only the FIRST take of each section is checked. A save that passed the check and then
+    queues for the single-writer gate (the length of a write) takes ``_hold_lock`` again in its release, and a restore takes it for the drain and
+    the release; if the lock was left held meanwhile, those takes block without a name. A check at the release is not added: it would be a call
+    inside a ``finally``, and a KeyboardInterrupt arriving at that call skips the release itself (measured: with a note there, 8,213 of 218,166
+    interrupts left the restore hold set for good). Later saves are still refused and named by their first take."""
+    first = _stuck_owner()
+    if first is None:
+        return
+    time.sleep(0)
+    second = _stuck_owner()
+    if second is None or second != first:
+        return
+    owner, entry = second
+    if owner == threading.main_thread().ident:
+        kind = "main thread"
+    elif owner in sys._current_frames():
+        kind = "worker thread"
+    else:
+        kind = "a thread that no longer exists"
+    since = datetime.fromtimestamp(entry[1], UTC).strftime("%Y-%m-%d %H:%M:%S UTC") if entry else None
+    raise KvLockStuck(entry[0] if entry else None, kind, since)
+
+
+def _note_section(operation: str) -> None:
+    _sections[threading.get_ident()] = (operation, time.time())
 
 
 def _wait_hold(timeout: float) -> None:
@@ -157,6 +249,8 @@ def _write_slot() -> Iterator[int]:
     passthrough = False
     token = object()
     try:
+        _note_section("settings save")
+        _refuse_if_stuck()
         with _hold_lock:
             if _hold_by == me:
                 passthrough = True
@@ -186,6 +280,7 @@ def _write_slot() -> Iterator[int]:
             pass
         else:
             with _hold_lock:  # only to wake a hold waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
+                _note_section("settings save release")
                 _hold.notify_all()
 
 
@@ -207,11 +302,14 @@ def hold_writes(timeout: float) -> Iterator[None]:
     deadline = time.monotonic() + max(0.0, timeout)
     held = False
     try:  # the hold is set INSIDE the try: an interrupt that lands as the first block ends must not leave it set
+        _note_section("restore hold")
+        _refuse_if_stuck()
         with _hold_lock:
             if _hold_by is not None:
                 raise RuntimeError("settings writes are already held")
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
+        _note_section("restore hold drain")
         with _hold_lock:
             # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
             while True:
@@ -224,9 +322,10 @@ def hold_writes(timeout: float) -> Iterator[None]:
         yield
     finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         if held:  # never clears another thread's hold (the "already held" refusal above)
-            with _hold_lock:
+            with _hold_lock:  # no call before this take: a KeyboardInterrupt arriving at a call in this finally would leave the hold set for good
                 if _hold_by == me:  # held is set one statement before the hold: another thread may own it by now
                     _hold_by = None
+                _note_section("restore hold release")  # after the clear, for the same reason; names a leak of THIS lock by its last entry
                 _hold.notify_all()
 
 
