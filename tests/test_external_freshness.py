@@ -159,6 +159,23 @@ def test_the_lockfile_pins_urllib3_inside_the_range_the_filter_was_read_for():
     assert not R._ver_ge(pins[0], str(entry["pin"]["ceiling"])), f"the lock pins urllib3 {pins[0]}, at or above the ceiling (the first release not read)"
 
 
+def test_trafilatura_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
+    """``src/ingest/extract.py`` runs every parse of the app's HTML under one lock because libxml2 aborted the collector (2026-10-14).
+    ``trafilatura>=1.12`` admitted 2.0.x, whose ``Document`` shared one mutable lxml ``Element`` between threads (issue #840, fixed in
+    2.1.0). The floor is written in three places (pyproject, the registry, the lock file) and nothing else ties them."""
+    entry = next(a for a in R.load_registry() if a["id"] == "trafilatura-floor")
+    pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^\s*"trafilatura>=([0-9][0-9.]*)"', pyproject, flags=re.MULTILINE)
+    assert m, "pyproject.toml's trafilatura requirement lost its floor (see the comment above it)"
+    assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the trafilatura floor"
+    assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified release is below the floor"
+    assert entry["upstream_check"]["current"] == str(entry["pin"]["verified"]), "the release the watch compares with is the newest one run"
+    lock = (R.repo_root() / "requirements.lock").read_text(encoding="utf-8")
+    pins = re.findall(r"^trafilatura==([0-9][0-9.]*)\b", lock, flags=re.MULTILINE)
+    assert len(pins) == 1, f"requirements.lock must pin trafilatura exactly once, found {pins}"
+    assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins trafilatura {pins[0]}, below the floor"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

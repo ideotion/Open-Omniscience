@@ -71,7 +71,11 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "lxml>=5.2",
     "feedparser>=6.0.11",
-    "trafilatura>=1.12",          # robust article extraction (title/body/date/lang)
+    # trafilatura: robust article extraction (title/body/date/lang). The floor is 2.1.0, the first release with a body Element per Document
+    # (trafilatura issue #840 / PR #856: a mutable Element("body") default shared by every Document across threads; 2.0.x aborted or crashed with
+    # 50-100+ threads). It does NOT explain the 2026-10-14 abort, which ran a newer release (docs/ledger/OPEN_QUEUE.md, "THE lxml SIGABRT").
+    # Registry entry trafilatura-floor (configs/external_artifacts.yml) carries the same floor; src/ingest/extract.py runs it under one lock.
+    "trafilatura>=2.1.0",
     # Config / validation
     "pydantic>=2.7",
     # pydantic-settings REMOVED 2026-09-08 (audit 10, P2-14): ZERO call sites --
