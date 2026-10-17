@@ -160,12 +160,12 @@ def test_the_lockfile_pins_urllib3_inside_the_range_the_filter_was_read_for():
 
 
 def test_trafilatura_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
-    """``src/ingest/extract.py`` runs every parse of the app's HTML under one lock because libxml2 aborted the collector (2026-10-14).
+    """``src/ingest/extract.py`` runs every libxml2 parse the app makes under one lock because libxml2 aborted the collector (2026-10-14).
     ``trafilatura>=1.12`` admitted 2.0.x, whose ``Document`` shared one mutable lxml ``Element`` between threads (issue #840, fixed in
     2.1.0). The floor is written in three places (pyproject, the registry, the lock file) and nothing else ties them."""
     entry = next(a for a in R.load_registry() if a["id"] == "trafilatura-floor")
     pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
-    m = re.search(r'^\s*"trafilatura>=([0-9][0-9.]*)"', pyproject, flags=re.MULTILINE)
+    m = re.search(r'^\s*"trafilatura>=([0-9][0-9.]*)[",]', pyproject, flags=re.MULTILINE)
     assert m, "pyproject.toml's trafilatura requirement lost its floor (see the comment above it)"
     assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the trafilatura floor"
     assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified release is below the floor"

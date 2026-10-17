@@ -12,9 +12,10 @@ change breaks without any test failing, so this file pins three things:
 
   1. the lock actually serialises -- the primary path AND the two-call fallback, and it is released
      when the extraction raises (a leaked lock would stop every collect worker, silently);
-  2. the trees are released INSIDE the lock, not after it (the result holds text only, so the trees die
-     with the call's last local -- a refactor that returned the ``Document`` and converted it outside
-     the lock would free libxml2 memory concurrently again);
+  2. the trees are released INSIDE the lock, not after it: on a return (the result holds text only, so
+     the trees die with the call's last local -- a refactor that returned the ``Document`` and converted
+     it outside the lock would free libxml2 memory concurrently again) and on a raise (an exception's
+     traceback keeps the frames, and their locals, alive until the caller drops it);
   3. nothing else in ``src/`` can reach libxml2 -- no other module imports lxml or trafilatura, no
      ``BeautifulSoup`` is built without the explicit pure-Python ``html.parser``, no ``read_html`` --
      and inside ``extract.py`` only the two locked functions call trafilatura, only under the lock.
@@ -22,6 +23,13 @@ change breaks without any test failing, so this file pins three things:
 Each test fails when the thing it guards goes: a lock removed, a lock leaked, a tree released late, a new
 import, a new helper that calls trafilatura on its own. The walks run on fixture sources as well as on the
 tree, so the guard itself is checked to see what it claims to see.
+
+WHAT THE WALKS DO NOT SEE, said so: a dynamic import whose module name is computed, a call deferred out
+of the ``with`` block (a lambda or a thread target created under the lock and run after it), and a
+rebinding of the lock name to something that does not lock (the runtime tests catch that one).
+
+A regression must FAIL here, not hang the run: the autouse fixture below turns a lock a previous test
+left held (a deadlocked or leaked holder) into a failure of the next test within a second.
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ from __future__ import annotations
 import ast
 import threading
 import time
+import traceback
 from pathlib import Path
 
 import pytest
@@ -94,6 +103,21 @@ def _run_threads(count: int, target) -> list:
     if errors:
         raise errors[0]
     return out
+
+
+@pytest.fixture(autouse=True)
+def _the_lock_is_free_at_the_start_of_every_test():
+    """Fail fast when a previous test left the lock held.
+
+    A plain ``Lock`` regression deadlocks the nesting test's thread INSIDE the lock; the next test that
+    extracts on the main thread would then wait for ever (no pytest-timeout here, and the CI job has no
+    time limit short of GitHub's). Asking for the lock with a short timeout turns that into a failure
+    that names the cause. Any thread other than the holder may take a free lock, so this thread asks.
+    """
+    got = extract_mod._LXML_LOCK.acquire(timeout=1)
+    assert got, "the extraction lock is still held by a thread an earlier test left behind (a deadlock or a leak)"
+    extract_mod._LXML_LOCK.release()
+    yield
 
 
 # --------------------------------------------------------------------------- #
@@ -168,6 +192,10 @@ def test_the_lock_is_released_when_an_extraction_raises(monkeypatch):
 
 def test_the_lock_can_be_taken_again_by_the_thread_that_holds_it(monkeypatch):
     """RLock, not Lock: a caller that nests extraction must not deadlock itself (it would hang the pass, not fail)."""
+    # Checked BEFORE nesting: with a plain Lock the nested call below would deadlock its thread inside the lock for good.
+    assert type(extract_mod._LXML_LOCK) is type(threading.RLock()), (
+        f"_LXML_LOCK is a {type(extract_mod._LXML_LOCK).__name__}, not an RLock: a nested extraction would deadlock"
+    )
     seen: list[ExtractedDoc | None] = []
     depth = {"n": 0}
 
@@ -203,10 +231,12 @@ def test_a_blank_page_is_refused_before_the_lock_is_asked_for(monkeypatch):
     answers: list[ExtractedDoc | None] = []
     asker = threading.Thread(target=lambda: answers.extend([extract_article(""), extract_article("   \n ")]), daemon=True)
     asker.start()
-    asker.join(timeout=5)
+    asker.join(timeout=2)
+    waited_for_the_lock = asker.is_alive()  # read BEFORE the slow extraction is let go: afterwards the asker could finish
     release.set()
     worker.join(timeout=10)
-    assert not asker.is_alive(), "a blank page waited for the lock"
+    asker.join(timeout=10)
+    assert not waited_for_the_lock, "a blank page waited for the lock"
     assert answers == [None, None]
 
 
@@ -221,7 +251,9 @@ class _Tree:
     owned_at_release: list[bool] = []
 
     def __del__(self) -> None:
-        _Tree.owned_at_release.append(extract_mod._LXML_LOCK._is_owned())  # type: ignore[attr-defined]
+        # ``_is_owned`` exists on an RLock; a lock of another type records None, which the assertion below names.
+        is_owned = getattr(extract_mod._LXML_LOCK, "_is_owned", None)
+        _Tree.owned_at_release.append(is_owned() if is_owned else None)
 
 
 def test_the_trees_are_freed_inside_the_lock_and_the_result_holds_no_tree(monkeypatch):
@@ -241,7 +273,40 @@ def test_the_trees_are_freed_inside_the_lock_and_the_result_holds_no_tree(monkey
         f"concurrently again -- saw {_Tree.owned_at_release}"
     )
     for name in ("title", "text", "language", "author", "canonical_url"):
-        assert isinstance(getattr(result, name), (str, type(None))), f"ExtractedDoc.{name} holds a non-text value"
+        # ``type(...) is str``: an lxml smart string IS a str, and keeps its tree alive through ``getparent()``.
+        assert type(getattr(result, name)) in (str, type(None)), f"ExtractedDoc.{name} is not plain text"
+
+
+def test_the_trees_of_a_raising_extraction_are_freed_inside_the_lock_and_the_traceback_still_names_the_frames(monkeypatch):
+    """The exception carries its traceback, the traceback keeps each frame's locals (``bare_extraction``'s trees) alive.
+
+    Without ``_release_frames`` they are freed when the CALLER drops the exception, after the lock was given up -- a worker's
+    ``except`` clause in runner.py -- while another worker may be inside a parse. Both calls raise here (the primary, then the
+    fallback), which is the only way an exception escapes ``extract_article``; the fallback's exception carries the primary's
+    as ``__context__``.
+    """
+    _Tree.owned_at_release = []
+
+    def primary(*_a, **_kw):
+        tree = _Tree()  # noqa: F841 - a frame local, the way ``bare_extraction`` holds its tree
+        raise RuntimeError("primary")
+
+    def fallback(*_a, **_kw):
+        tree = _Tree()  # noqa: F841
+        raise ValueError("fallback")
+
+    monkeypatch.setattr(trafilatura, "bare_extraction", primary)
+    monkeypatch.setattr(trafilatura, "extract", fallback)
+    with pytest.raises(ValueError, match="fallback") as caught:
+        extract_article(_HTML, url="https://example.org/a")
+    # still inside ``pytest.raises``' hold of the exception: only the clearing can have freed the trees by now
+    assert _Tree.owned_at_release == [True, True], (
+        f"the trees of a raising extraction were not freed while the lock was held -- saw {_Tree.owned_at_release}"
+    )
+    frames = [f.name for f in traceback.extract_tb(caught.value.__traceback__)]
+    assert "fallback" in frames and "extract_article" in frames, f"the traceback lost its frames: {frames}"
+    context = caught.value.__context__
+    assert isinstance(context, RuntimeError) and "primary" in [f.name for f in traceback.extract_tb(context.__traceback__)]
 
 
 # --------------------------------------------------------------------------- #
@@ -256,10 +321,17 @@ _LIBXML_ROOTS = frozenset({"lxml", "trafilatura", "htmldate", "justext", "readab
 _ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
     # THE module: every parse of the app's HTML happens in its call tree, under the lock.
     "src/ingest/extract.py": frozenset({"trafilatura", "trafilatura.settings"}),
-    # reset_caches() clears LRU caches and calls gc.collect(); it parses nothing. It can run beside a pool (the memory guard
-    # fires during a pass), which is why docs/ledger/OPEN_QUEUE.md "THE lxml SIGABRT" lists the collector as a limit, not as covered.
+    # reset_caches() clears LRU caches and calls gc.collect(); it parses nothing. It runs at the pass boundary and in the
+    # low-memory pause loop (runner.py), which can overlap a run-now pass, the housekeeping lane or the API; the memory guard's
+    # in-pass release is release_residents (gc.collect, malloc_trim), not reset_caches. OPEN_QUEUE "THE lxml SIGABRT" lists both.
     "src/scheduler/hygiene.py": frozenset({"trafilatura.meta"}),
 }
+
+
+#: What the rest of ``src/`` may take from ``src/ingest/extract.py``: the entry point and its result, never the locked helpers or the
+#: ``trafilatura`` name the module holds (a call to those from another module would be an extraction outside the lock).
+_EXTRACT_PATH = "src/ingest/extract.py"
+_EXTRACT_PUBLIC = frozenset({"extract_article", "ExtractedDoc", "extensive_date_search_enabled"})
 
 
 def _dotted(node: ast.expr) -> str | None:
@@ -286,9 +358,22 @@ def _libxml_reach(source: str, path: str) -> list[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 check(alias.name, node.lineno, "imports")
+                if alias.name == "src.ingest.extract" and path != _EXTRACT_PATH:
+                    found.append(f"{path}:{node.lineno} imports src.ingest.extract whole (its locked helpers become reachable)")
         elif isinstance(node, ast.ImportFrom):
             # ``from . import x`` has module None and level > 0: relative, never one of ours.
             check(node.module or "", node.lineno, "imports from")
+            if node.module == "bs4" and any(a.name == "BeautifulSoup" and a.asname for a in node.names):
+                found.append(f"{path}:{node.lineno} imports BeautifulSoup under another name (the walk reads calls by name)")
+            if path != _EXTRACT_PATH:
+                names = {a.name for a in node.names}
+                inside_ingest = node.level > 0 and path.startswith("src/ingest/")
+                if node.module == "src.ingest.extract" or (inside_ingest and node.module == "extract"):
+                    private = sorted(names - _EXTRACT_PUBLIC)
+                    if private:
+                        found.append(f"{path}:{node.lineno} takes {', '.join(private)} from src.ingest.extract (only {sorted(_EXTRACT_PUBLIC)} are public)")
+                elif "extract" in names and (node.module == "src.ingest" or (inside_ingest and node.module is None)):
+                    found.append(f"{path}:{node.lineno} imports the src.ingest.extract module whole (its locked helpers become reachable)")
         elif isinstance(node, ast.Call):
             name = _dotted(node.func) or ""
             tail = name.rsplit(".", 1)[-1]
@@ -296,9 +381,9 @@ def _libxml_reach(source: str, path: str) -> list[str]:
                 first = node.args[0]
                 if isinstance(first, ast.Constant) and isinstance(first.value, str):
                     check(first.value, node.lineno, "imports dynamically")
-            elif tail == "read_html":
-                # pandas.read_html defaults to the lxml flavor.
-                found.append(f"{path}:{node.lineno} calls read_html (lxml flavor by default)")
+            elif tail in {"read_html", "read_xml", "to_xml"}:
+                # pandas reads and writes HTML and XML with lxml unless told otherwise.
+                found.append(f"{path}:{node.lineno} calls {tail} (pandas: lxml by default)")
             elif tail == "BeautifulSoup":
                 # With no explicit parser, bs4 uses the best one installed -- lxml, when it is there.
                 features = node.args[1] if len(node.args) > 1 else next(
@@ -306,6 +391,8 @@ def _libxml_reach(source: str, path: str) -> list[str]:
                 )
                 if not (isinstance(features, ast.Constant) and features.value == "html.parser"):
                     found.append(f"{path}:{node.lineno} builds BeautifulSoup without the explicit html.parser")
+                elif any(kw.arg == "builder" for kw in node.keywords):
+                    found.append(f"{path}:{node.lineno} builds BeautifulSoup with its own builder")
     return found
 
 
@@ -335,6 +422,16 @@ def test_no_module_other_than_extract_reaches_libxml2():
         ("import importlib\nimportlib.import_module('lxml.html')\n", "src/a.py", "imports dynamically lxml.html"),
         ("__import__('justext')\n", "src/a.py", "imports dynamically justext"),
         ("import pandas as pd\npd.read_html(x)\n", "src/a.py", "calls read_html"),
+        ("import pandas as pd\npd.read_xml(x)\n", "src/a.py", "calls read_xml"),
+        ("df.to_xml()\n", "src/a.py", "calls to_xml"),
+        ("from bs4 import BeautifulSoup as Soup\n", "src/a.py", "under another name"),
+        ("from bs4 import BeautifulSoup\nBeautifulSoup(x, 'html.parser', builder=b)\n", "src/a.py", "with its own builder"),
+        ("from src.ingest.extract import _extract_resiliently\n", "src/a.py", "takes _extract_resiliently"),
+        ("from src.ingest.extract import extract_article, _LXML_LOCK\n", "src/a.py", "takes _LXML_LOCK"),
+        ("from .extract import trafilatura\n", "src/ingest/b.py", "takes trafilatura"),
+        ("import src.ingest.extract as e\n", "src/a.py", "imports src.ingest.extract whole"),
+        ("from src.ingest import extract\n", "src/a.py", "imports the src.ingest.extract module whole"),
+        ("from . import extract\n", "src/ingest/b.py", "imports the src.ingest.extract module whole"),
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x)\n", "src/a.py", "without the explicit html.parser"),
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x, 'lxml')\n", "src/a.py", "without the explicit html.parser"),
         ("import bs4\nbs4.BeautifulSoup(x, features='lxml-xml')\n", "src/a.py", "without the explicit html.parser"),
@@ -357,6 +454,11 @@ def test_the_walk_sees_each_way_in(source, path, expect):
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x, features='html.parser')\n", "src/a.py"),
         ("import xml.etree.ElementTree as ET\n", "src/a.py"),
         ("from . import lxml_helpers\nfrom .trafilatura_x import y\n", "src/a.py"),
+        ("from src.ingest.extract import extract_article, ExtractedDoc\n", "src/ingest/pipeline.py"),
+        ("from .extract import extract_article\n", "src/ingest/b.py"),
+        # another package's own module named extract is not ours
+        ("from .extract import _private_thing\nfrom . import extract\n", "src/markets/run.py"),
+        ("from src.ingest import extract_article\n", "src/a.py"),
     ],
 )
 def test_the_walk_accepts_what_is_allowed(source, path):
@@ -405,11 +507,18 @@ def _lock_coverage(source: str) -> list[str]:
             names = {a.name for a in node.names}
             if node.module != "trafilatura.settings" or not names <= {"Document", "set_date_params"}:
                 problems.append(f"line {node.lineno}: `from {node.module} import ...` hides which calls reach libxml2")
+        elif isinstance(node, ast.Name) and node.id == "trafilatura" and isinstance(node.ctx, ast.Load):
+            # Any use of the name, not only a call: an alias (``_BARE = trafilatura.bare_extraction``), ``getattr(trafilatura, ...)``
+            # and ``partial(trafilatura.extract)`` all reach the library without a ``trafilatura.x(...)`` call to see.
+            where = _function_of(node, parents)
+            if where not in _LOCKED_FUNCTIONS:
+                problems.append(f"line {node.lineno}: trafilatura is used in {where}, outside the locked functions")
         elif isinstance(node, ast.Call):
             name = _dotted(node.func) or ""
             where = _function_of(node, parents)
-            if name.startswith("trafilatura.") and where not in _LOCKED_FUNCTIONS:
-                problems.append(f"line {node.lineno}: {name}() is called from {where}, outside the locked functions")
+            if name == "Document":
+                # Since trafilatura 2.1.0 every Document() builds two lxml documents (the very code of issue #840).
+                problems.append(f"line {node.lineno}: Document() is built in {where}: it creates lxml trees; only trafilatura builds them")
             if name in _LOCKED_FUNCTIONS:
                 if name == "_extract_locked" and not (where == "extract_article" and _under_lock(node, parents)):
                     problems.append(f"line {node.lineno}: _extract_locked() is called without `with _LXML_LOCK:`")
@@ -451,9 +560,16 @@ def _extract_resiliently(html, *, url=None):
          "_extract_locked() is called without"),
         # a new helper that calls trafilatura on its own
         (lambda s: s + "def metadata_only(html):\n    return trafilatura.extract_metadata(html)\n",
-         "called from metadata_only"),
+         "trafilatura is used in metadata_only"),
         # a module-level call
-        (lambda s: s + "WARM = trafilatura.extract('<p>x</p>')\n", "called from <module>"),
+        (lambda s: s + "WARM = trafilatura.extract('<p>x</p>')\n", "trafilatura is used in <module>"),
+        # an alias, getattr and partial reach the library without a ``trafilatura.x(...)`` call
+        (lambda s: s + "_BARE = trafilatura.bare_extraction\n", "trafilatura is used in <module>"),
+        (lambda s: s + "def other2(h):\n    return getattr(trafilatura, 'extract')(h)\n", "trafilatura is used in other2"),
+        (lambda s: s + "import functools\ndef other3():\n    return functools.partial(trafilatura.extract, favor_recall=True)\n", "trafilatura is used in other3"),
+        # a Document built anywhere makes lxml trees
+        (lambda s: s + "def blank():\n    return Document()\n", "Document() is built in blank"),
+        (lambda s: s + "_EMPTY = Document()\n", "Document() is built in <module>"),
         # the fallback reached from somewhere else
         (lambda s: s + "def other(html):\n    return _extract_resiliently(html)\n", "_extract_resiliently() is called from other"),
         # an alias that would hide the calls from the walk

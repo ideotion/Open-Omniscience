@@ -570,16 +570,19 @@ artifacts:
     title: trafilatura (article extraction), floor 2.1.0
     kind: runtime-coupling
     description: >
-      src/ingest/extract.py runs every parse of the app's HTML through trafilatura (and, inside it, lxml/libxml2, htmldate and justext)
-      under one process-wide lock. trafilatura 2.0.x shares a mutable lxml Element("body") default between every Document() (issue #840:
+      src/ingest/extract.py runs every libxml2 parse the app makes (the article extractor: trafilatura, and inside it lxml, htmldate and
+      justext) under one process-wide lock. trafilatura 2.0.x shares a mutable lxml Element("body") default between every Document() (issue #840:
       intermittent SEGV or SIGABRT in concurrent extraction with 50 to 100+ threads, fixed by PR #856, released in 2.1.0 on 2026-06-07),
       so the floor is the first release without it. The floor is NOT what the 2026-10-14 abort is attributed to: the machine that aborted
       ran a newer release than requirements.lock (its frames match trafilatura 2.3.1, inferred from line numbers), so the floor changes
       nothing for that crash. No ceiling is set; nothing is known to break above it. WHAT WAS RUN, said exactly: tests/test_extract_lock.py,
       tests/test_extract_single_parse.py, tests/test_extract_date_bound.py and tests/test_collect_extraction_outside_gate.py passed by hand
       on 2.1.0 (the floor and the pin of requirements.lock, with the lock's courlan, htmldate and justext), 2.2.0 and 2.3.1 (the newest,
-      with htmldate 1.11.0) on 2026-10-16. In CI only the test job exercises them, on whatever release pip resolves that day (2.3.1 on
-      2026-10-16); no CI job runs them on the floor (lockfile-install only imports the app), so the floor is verified by that hand run.
+      with htmldate 1.11.0) on 2026-10-16, every run with lxml 6.1.3 (the lock's lxml 6.1.1 was not exercised). tests/test_extract_lock.py
+      uses fakes for the extractor; the real-release coverage comes from tests/test_extract_single_parse.py and
+      tests/test_extract_date_bound.py. In CI the test, core-only and portability jobs run the tests on whatever release pip resolves that
+      day (2.3.1 on 2026-10-16); no CI job runs them on the floor (lockfile-install only imports the app), so the floor is verified by
+      that hand run.
     upstream: https://pypi.org/project/trafilatura/ (https://github.com/adbar/trafilatura)
     check_upstream: "pypi.org/pypi/trafilatura/json - compare info.version; 2.3.1 (2026-10-06) was the newest on 2026-10-16 and is the release the tests were run on"
     license: Apache-2.0
@@ -589,11 +592,10 @@ artifacts:
       on a new trafilatura release run the four test files named above on it, then move verified and upstream_check.current together;
       the floor moves only when a release is found to carry a defect this app meets. A release that changes how it builds or frees trees
       (Document, load_html) is read first: the lock in src/ingest/extract.py is only as good as its coverage of that call tree.
-    freshness: {max_age_months: 6}
     couplings:
       - "pyproject.toml dependencies trafilatura carries the same floor (test-enforced)"
       - "requirements.lock pins a release at or above the floor (2.1.0 today, the floor; test-enforced)"
-      - "src/ingest/extract.py _LXML_LOCK is the only way the app reaches libxml2 (tests/test_extract_lock.py walks src/)"
+      - "src/ingest/extract.py _LXML_LOCK is meant to be the only way the app reaches libxml2 (tests/test_extract_lock.py walks src/ for imports and calls, and its docstring names what the walks do not see)"
     last_verified: "2026-10-16"
 
   - id: vader-linear-reproduction

@@ -137,9 +137,9 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   must not keep; never loosen a test to pass. Then move the pyproject range, the registry `{floor, verified, ceiling, current}`,
   the `urllib3-floor` job in `.github/workflows/ci.yml` if the floor moved, and, if it moved, `requirements.lock` together. The
   weekly freshness run opens the issue when upstream publishes a release past `current`.
-- **trafilatura** (`trafilatura-floor`) — the article extractor. `src/ingest/extract.py` runs every parse of the app's HTML through it
-  (lxml/libxml2, htmldate and justext inside it) under one process-wide lock, and `tests/test_extract_lock.py` walks `src/` to keep it the
-  only way in. `pyproject.toml` carries `trafilatura>=2.1.0`: 2.1.0 is the first release with a body `Element` per `Document` (issue #840,
+- **trafilatura** (`trafilatura-floor`) — the article extractor. `src/ingest/extract.py` runs every libxml2 parse the app makes
+  through it (lxml, htmldate and justext inside it) under one process-wide lock, and `tests/test_extract_lock.py` walks `src/` to keep it
+  the only way in (its docstring names what the walks do not see). `pyproject.toml` carries `trafilatura>=2.1.0`: 2.1.0 is the first release with a body `Element` per `Document` (issue #840,
   PR #856); there is no ceiling. A new release is run through `tests/test_extract_lock.py`, `tests/test_extract_single_parse.py`,
   `tests/test_extract_date_bound.py` and `tests/test_collect_extraction_outside_gate.py` (for a release that is not the newest on hand, put its
   unpacked wheel, and the `htmldate` it needs, first on `PYTHONPATH`); a release that changes how it builds or frees trees is read first.
