@@ -441,7 +441,7 @@ class QuarantineJobManager:
                     if self._stop.is_set():
                         break
                     with corpus_lease("quarantine"):
-                        extra = {"include_stubs": True} if stubs else {}
+                        extra: dict[str, Any] = {"include_stubs": True} if stubs else {}
                         if work is default_quarantine_candidates_batch:
                             extra["collect_ids"] = True  # the sample; a test seam keeps its own signature
                         r = work(session, after_id=after, limit=_BATCH, write=write,
