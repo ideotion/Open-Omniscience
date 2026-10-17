@@ -1617,7 +1617,7 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
 #: Marker files the bundle writes IN PLACE of a member it could not collect. Each is a
 #: few dozen bytes, so a "zero-byte member" check never sees the member was missing.
 _MARKER_SUFFIXES = {".skipped-deadline.txt": "skipped-deadline", ".error.txt": "error",
-                    ".declined.txt": "declined", ".skipped-budget.txt": "skipped-budget"}
+                    ".declined.txt": "declined", ".skipped-budget.txt": "skipped-budget", ".skipped-paused.txt": "skipped-paused"}
 
 
 def _read_bundle_archive(path: str) -> dict[str, Any]:
@@ -1666,6 +1666,9 @@ def _read_bundle_archive(path: str) -> dict[str, Any]:
         out["members_by_outcome"] = {k: sorted(v) for k, v in sorted(by_outcome.items())}
         out["skipped_deadline_members"] = sorted(by_outcome.get("skipped-deadline", []))
         out["error_members"] = sorted(by_outcome.get("error", []))
+        # A member the write-ahead-log guard stood aside from (HeavyPaused): ABSENT like a skipped or failed one, and named apart, because the cause is the guard
+        # working and not the member failing (the Opus read of #1444: it was in neither list, so row C read satisfied with the member missing).
+        out["skipped_paused_members"] = sorted(by_outcome.get("skipped-paused", []))
         out["partial_members"] = sorted(by_outcome.get("partial-deadline", []))
         # The scans a Quick build did not reach (R124): ABSENT from the archive, named here so the
         # row cannot read a Quick bundle as a whole one. `mode` is None for an archive that predates it.
@@ -1879,6 +1882,7 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         by_machine = bundle.get("declined_by_machine") or []
         skipped = bundle.get("skipped_deadline_members") or []
         errored = bundle.get("error_members") or []
+        paused = bundle.get("skipped_paused_members") or []
         partial = bundle.get("partial_members") or []
         light = bundle.get("complete_profile") is False
         # "Every member non-zero": a member skipped at its deadline or failed is ABSENT
@@ -1886,7 +1890,7 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         # one would (RR-1b). A member cut short at its deadline is non-zero and is
         # counted as such, and named so the reader decides what "partial" is worth.
         ok = (bool(bundle.get("coverage_complete")) and not zero and not light
-              and not skipped and not errored)
+              and not skipped and not errored and not paused)
         notes = ["the bar names the ~1M instance"
                  + ("" if million else "; on the release-scale profile this bundle is evidence at this scale only")]
         if bundle.get("coverage_complete") is None:
@@ -1895,6 +1899,8 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
             notes.append(f"{len(skipped)} member(s) hit their deadline and are ABSENT: " + ", ".join(skipped))
         if errored:
             notes.append(f"{len(errored)} member(s) FAILED and are absent: " + ", ".join(errored))
+        if paused:
+            notes.append(f"{len(paused)} member(s) were stood aside from by the write-ahead-log guard (paused) and are ABSENT: " + ", ".join(paused))
         if partial:
             notes.append(f"{len(partial)} member(s) stopped at their deadline and are PARTIAL (non-zero): " + ", ".join(partial))
         if light and by_machine and len(by_machine) == len(declined):
@@ -1909,7 +1915,8 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
             {"path": bundle.get("path"), "bytes": bundle.get("bytes"), "members_total": bundle.get("members_total"),
              "coverage_complete": bundle.get("coverage_complete"), "coverage_from": bundle.get("runtime_coverage_from"),
              "zero_byte_members": zero, "members_by_outcome": bundle.get("members_by_outcome"),
-             "skipped_deadline_members": skipped, "error_members": errored, "partial_members": partial,
+             "skipped_deadline_members": skipped, "error_members": errored, "skipped_paused_members": paused,
+             "partial_members": partial,
              "bundle_profile": bundle.get("profile"), "complete_profile": bundle.get("complete_profile"),
              "declined_members": declined, "declined_by_machine": by_machine,
              "statement_deadline_fix_present": (_phase(run, "preflight").get("result") or {}).get("statement_deadline_fix_present"),

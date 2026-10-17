@@ -437,6 +437,18 @@ def test_a_deadline_skipped_member_is_reported_the_same_way(tmp_path):
     assert "300s" in str(e.value)
 
 
+def test_a_paused_member_is_reported_the_same_way(tmp_path):
+    """A member the write-ahead-log guard stood aside from leaves ``.skipped-paused.txt``: the merge says the member did not complete, not that it is missing."""
+    m = _merge_script()
+    b = _bundle(
+        tmp_path / "paused.zip",
+        {m.BUNDLE_MEMBER + ".skipped-paused.txt": "the write-ahead-log guard paused this member"},
+    )
+    with pytest.raises(SystemExit) as e:
+        m._load_bundle(b)
+    assert "guard paused" in str(e.value)
+
+
 def test_a_bundle_handed_in_as_a_positional_says_which_flag_to_use(tmp_path):
     """It does NOT quietly treat it as a bundle: guessing is convenient right up to the
     archive that is not one."""
