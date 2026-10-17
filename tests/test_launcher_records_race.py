@@ -354,6 +354,15 @@ def test_the_rows_are_the_bytes_they_were_before_the_lock(tmp_path):
     time.sleep(0.8)
     os.kill(q.pid, signal.SIGTERM)
     q.wait(timeout=60)
+    # The stderr filter is a process substitution: it writes its summary row when the pipe CLOSES, after the launcher itself has exited (scripts/launch.sh
+    # says so at the filter). The loaded full-suite run of 17 Oct read the file before the last launch's summary row (kept_lines 0) was written and saw
+    # every other row; so the read waits for the two summary rows this test starts, up to the same 20 s the test gives the server to come up.
+    stderr_rows = b.data / "diagnostics" / "launcher_stderr.jsonl"
+    end = time.monotonic() + 20
+    while time.monotonic() < end:
+        if stderr_rows.exists() and stderr_rows.read_text(encoding="utf-8").count('"summary":true') >= 2:
+            break
+        time.sleep(0.05)
 
     def shape(name):
         return re.sub(r'"(at|started_at)":"[^"]*"|"pid":\d+|"boot_id":"[^"]*"', lambda m: m.group(0).split(":")[0] + ":X", (b.data / "diagnostics" / name).read_text(encoding="utf-8"))

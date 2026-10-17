@@ -121,3 +121,48 @@ def test_a_trim_never_loses_a_line_appended_by_another_process(journal):
     got = [ln for ln in journal.read_text(encoding="utf-8").splitlines() if ln.startswith('{"appended"')]
     assert got == [f'{{"appended":{i}}}' for i in range(300 - len(got), 300)], "an appended line was lost or reordered by a trim"
     assert len(got) > 0
+
+
+def test_a_record_raised_while_the_journal_is_locked_by_the_same_thread_is_written_after_it_not_waited_for(journal, monkeypatch):
+    """The garbage collector runs a finalizer (SQLAlchemy's reports a collected connection) inside the trim; the finalizer logs; the record came back into the
+    locked ``_append`` on the same thread and waited for its own lock for ever (a full-suite run of 17 Oct, 20 minutes)."""
+    import threading
+
+    _big(journal, 6000)
+    fired = []
+
+    def a_finalizer_that_logs(path):
+        if not fired:
+            fired.append(1)
+            errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "nested-record"})
+
+    monkeypatch.setattr("src.safety.file_lock.sweep_dead_temps", a_finalizer_that_logs)
+    done = threading.Event()
+    threading.Thread(target=lambda: (errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "outer-record"}), done.set()), daemon=True).start()
+    assert done.wait(20), "the journal waited on a lock its own thread holds"
+    text = journal.read_text(encoding="utf-8")
+    assert '"outer-record"' in text and '"nested-record"' in text
+
+
+class _FinalizerDict(dict):
+    """A dict whose first ``get`` does what a garbage-collector finalizer does at an allocation: it logs a record on the thread that holds the journal lock."""
+
+    def get(self, *args, **kwargs):
+        if not getattr(self, "fired", False):
+            self.fired = True
+            errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "nested-record"})
+        return super().get(*args, **kwargs)
+
+
+@pytest.mark.parametrize("which", ["http", "frontend"])
+def test_a_record_raised_while_a_throttle_holds_the_journal_lock_is_written_after_it_not_waited_for(journal, monkeypatch, which):
+    """``note_http_error`` and ``note_frontend_error`` hold the same plain lock while they touch their throttle dict; a finalizer that logs there waited for the
+    lock its own thread held. The record is held and written once the lock is let go (not through an RLock: a record written mid-change would see half a state)."""
+    import threading
+
+    monkeypatch.setattr(errorlog, "_http_last" if which == "http" else "_frontend_last", _FinalizerDict())
+    call = (lambda: errorlog.note_http_error("GET", "/x", 500)) if which == "http" else (lambda: errorlog.note_frontend_error("js", "boom"))
+    done = threading.Event()
+    threading.Thread(target=lambda: (call(), done.set()), daemon=True).start()
+    assert done.wait(20), "the journal waited on a lock its own thread holds"
+    assert '"nested-record"' in journal.read_text(encoding="utf-8")
