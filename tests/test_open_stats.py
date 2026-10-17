@@ -20,7 +20,6 @@ the summary line or the run report.
 from __future__ import annotations
 
 import json
-import re
 import secrets
 import threading
 from pathlib import Path
@@ -224,12 +223,16 @@ def test_a_path_that_cannot_be_read_is_other():
         ("oo-dump-enwiki", "oo-dump"),
         ("oo-scheduler", "oo-scheduler"),
         ("MainThread", "MainThread"),
-        ("anyio-worker-3", "anyio"),
+        ("AnyIO worker thread", "AnyIO worker thread"),
+        ("asyncio_0", "asyncio"),
+        ("bgjob-all-diagnostics", "bgjob"),
         ("ThreadPoolExecutor-0_1", "ThreadPoolExecutor"),
         ("rollup-build", "rollup-build"),
         ("served-cache-planted-key", "served-cache"),
         ("Thread-7 (run)", open_stats.OTHER),
         ("planted-request-text", open_stats.OTHER),
+        ("oo-aaaaaaaaaaaaaaaa-x", "oo-aaaaaaaaaaaaaaaa"),  # 16 letters: the longest word kept
+        ("oo-aaaaaaaaaaaaaaaaa-x", open_stats.OTHER),  # 17: a word that long is not one of the app's
         ("oo-Capital", open_stats.OTHER),
         ("oo-", open_stats.OTHER),
         ("", open_stats.OTHER),
@@ -247,14 +250,74 @@ def test_a_thread_name_that_cannot_be_read_is_other():
     assert open_stats.thread_family(Hostile()) == open_stats.OTHER
 
 
-def test_no_thread_of_the_app_is_named_straight_from_a_request():
-    """A name that is ``oo-`` and then a variable keeps that variable's letters as the family. Every app thread starts
-    with a fixed word (``oo-osm-{key}``, never ``oo-{key}``)."""
-    bad = []
-    for path in (_ROOT / "src").rglob("*.py"):
+def test_the_framework_s_real_worker_threads_have_a_family():
+    """The names are what the libraries really give their workers, read from live threads (a made-up name would pass
+    whatever the list says)."""
+    import asyncio
+
+    import anyio
+    from starlette.concurrency import run_in_threadpool
+
+    names: dict[str, str] = {}
+
+    def name_of():
+        return threading.current_thread().name
+
+    async def main():
+        names["anyio"] = await anyio.to_thread.run_sync(name_of)
+        names["starlette"] = await run_in_threadpool(name_of)
+        names["asyncio executor"] = await asyncio.get_running_loop().run_in_executor(None, name_of)
+
+    asyncio.run(main())
+    for who, name in names.items():
+        assert open_stats.thread_family(name) != open_stats.OTHER, (who, name)
+
+
+def _thread_name_arguments():
+    """Every ``name=`` / ``thread_name_prefix=`` argument of a ``Thread(...)`` or ``ThreadPoolExecutor(...)`` call in src."""
+    import ast
+
+    out = []
+    for path in sorted((_ROOT / "src").rglob("*.py")):
         text = path.read_text(encoding="utf-8")
-        for m in re.finditer(r"(?:name|thread_name_prefix)\s*=\s*f?[\"']oo-\{", text):
-            bad.append(f"{path.relative_to(_ROOT)}: {m.group(0)}")
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            callee = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+            if callee not in ("Thread", "ThreadPoolExecutor", "Timer"):
+                continue
+            for kw in node.keywords:
+                if kw.arg in ("name", "thread_name_prefix"):
+                    out.append((path.relative_to(_ROOT).as_posix(), kw.value, ast.get_source_segment(text, kw.value) or ""))
+    return out
+
+
+def test_no_thread_of_the_app_is_named_from_a_request_right_after_oo():
+    """``thread`` keeps the word after ``oo-``. A name built as ``oo-`` plus a variable (an f-string, a ``+``, ``.format``,
+    ``%``) would put that variable's letters into the record, so every ``oo-`` thread name in src starts with a LITERAL
+    word (``oo-osm-{key}``, never ``oo-{key}``)."""
+    import ast
+
+    bad = []
+    seen = 0
+    for where, node, source in _thread_name_arguments():
+        if "oo-" not in source:
+            continue
+        seen += 1
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            literal = node.value
+        elif isinstance(node, ast.JoinedStr) and node.values and isinstance(node.values[0], ast.Constant):
+            literal = str(node.values[0].value)
+        else:
+            bad.append(f"{where}: {source}")
+            continue
+        if open_stats.thread_family(literal) == open_stats.OTHER:
+            bad.append(f"{where}: {source}")
+    assert seen > 20, "the scan found almost no oo- thread names: it has stopped looking"
     assert not bad, bad
 
 
@@ -323,13 +386,109 @@ def test_few_rows_have_no_others_row(clocks):
     assert all(r["file"] != open_stats.OTHERS for r in open_stats.snapshot()["by"])
 
 
-def test_a_worst_case_block_is_small(clocks, monkeypatch):
+def test_a_pair_already_kept_keeps_its_own_row_after_the_table_is_full(clocks, monkeypatch):
     families = iter(f"oo-f{chr(97 + i // 26)}{chr(97 + i % 26)}" for i in range(10_000))
     monkeypatch.setattr(open_stats, "thread_family", lambda _name: next(families))
-    for i in range(open_stats._STATE_ROWS * 2):
-        _open(clocks, f"/data/{open_stats.KNOWN_FILES[i % len(open_stats.KNOWN_FILES)]}", cpu=123.456, wall=1234.5678)
-    size = len(json.dumps(open_stats.snapshot()))
-    assert size < 2500, size  # measured 2.1 KB; the 30 run reports of a debug bundle add under 75 KB
+    for _ in range(open_stats._STATE_ROWS):
+        _open(clocks, "/data/wiki.db")
+    kept = next(iter(open_stats._rows))
+    monkeypatch.setattr(open_stats, "thread_family", lambda _name: kept[1])
+    _open(clocks, "/data/wiki.db")
+    assert open_stats._rows[kept]["opens"] == 2, "an open of a pair the window already keeps is added to that pair"
+    assert (open_stats.OTHERS, open_stats.OTHERS) not in open_stats._rows
+
+
+def test_threads_opening_at_once_leave_exact_totals(clocks, monkeypatch):
+    """Every thread starts at the same time and none is joined before the others begin; the interpreter is asked to
+    switch threads as often as it can, so an update made outside the private lock loses counts."""
+    import sys
+
+    monkeypatch.setattr(open_stats, "now", lambda: 0.0)
+    monkeypatch.setattr(open_stats, "cpu_now", lambda: 0.0)
+    threads_n, per_thread = 8, 400
+    go = threading.Barrier(threads_n)
+
+    def work(i: int) -> None:
+        go.wait()
+        for k in range(per_thread):
+            started = open_stats.begin()
+            open_stats.end(started, "/data/custody_log.db", ok=bool(k % 2))
+
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=work, args=(i,), name=f"oo-collect_{i}") for i in range(threads_n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        sys.setswitchinterval(old)
+    snap = open_stats.snapshot()
+    assert snap["opens"] == threads_n * per_thread
+    assert snap["failed"] == threads_n * per_thread // 2
+    assert [(r["file"], r["thread"], r["opens"]) for r in snap["by"]] == [("custody_log.db", "oo-collect", threads_n * per_thread)]
+
+
+def test_every_read_and_write_of_the_counters_holds_the_private_lock(clocks, monkeypatch):
+    """The 8-thread test above cannot see a missing lock on CPython (a dict item's ``+=`` is not interrupted between its
+    read and its write), so the lock is checked directly: each function that touches the shared counters is wrapped to
+    record whether ``_STATS_LOCK`` is held at the moment it runs. This test is single-threaded, so a held lock is this
+    thread's."""
+    held: dict[str, list[bool]] = {"add": [], "fresh": [], "printed": []}
+
+    def watch(kind: str, real):
+        def inner(*args, **kwargs):
+            held[kind].append(bool(getattr(open_stats._STATS_LOCK, "locked", lambda: False)()))
+            return real(*args, **kwargs)
+
+        return inner
+
+    monkeypatch.setattr(open_stats, "_add", watch("add", open_stats._add))
+    monkeypatch.setattr(open_stats, "_fresh_total", watch("fresh", open_stats._fresh_total))
+    monkeypatch.setattr(open_stats, "_printed", watch("printed", open_stats._printed))
+    me = threading.current_thread()
+    kept_name = me.name
+    try:
+        for i in range(open_stats._STATE_ROWS + 3):  # 35 distinct (file, family) pairs: the (others) row is built and merged
+            me.name = f"oo-w{chr(97 + i % 26)}"
+            started = open_stats.begin()
+            open_stats.end(started, f"/data/{'custody_log.db' if i >= 26 else 'wiki.db'}", ok=True)
+    finally:
+        me.name = kept_name
+    open_stats.snapshot()
+    open_stats.reset()
+    assert held["add"] and held["fresh"] and held["printed"]
+    assert all(held["add"]), "a counter was added to outside the lock"
+    assert all(held["fresh"]), "a counter row was built or the window reset outside the lock"
+    assert all(held["printed"]), "the window was read outside the lock"
+
+
+def test_the_largest_possible_block_is_what_the_comments_say(clocks):
+    """The size comments in ``open_stats`` (a row at most 209 bytes, a block at most 3.2 KB, 30 reports at most 97 KB) are
+    COMPUTED here from the real ``snapshot()`` over the longest vocabulary strings, 32 kept pairs, 10-digit counts, 7-digit
+    seconds and ``cpu_unmeasured`` present."""
+    longest_file = max(open_stats.KNOWN_FILES, key=len)
+    longest_family = max([*open_stats._NAMED_FAMILIES, "oo-" + "a" * 16], key=len)
+    big = {
+        "opens": 9_999_999_999,
+        "failed": 9_999_999_999,
+        "cpu_s": 1_234_567.891,
+        "wall_s": 1_234_567.891,
+        "wall_max_s": 1_234_567.891,
+        "cpu_unmeasured": 1,
+    }
+    open_stats._totals.update(big)
+    for i in range(open_stats._STATE_ROWS):
+        open_stats._rows[(longest_file, f"{longest_family[:-2]}{i:02d}")] = dict(big)
+    open_stats._rows[(open_stats.OTHERS, open_stats.OTHERS)] = dict(big)
+    snap = open_stats.snapshot()
+    row = max(len(json.dumps(r)) for r in snap["by"])
+    block = len(json.dumps(snap))
+    assert row <= 215, row
+    assert len(snap["by"]) == open_stats._PRINT_ROWS + 1
+    assert block <= 3300, block
+    assert 30 * block <= 100_000
 
 
 # --------------------------------------------------------------------------- #

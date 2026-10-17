@@ -17,7 +17,12 @@ What each test fails on:
 * a failed entry that is not queued as owed any more (``pending.note_failed``), or a chain that stops verifying;
 * the per-call shape (no batch) changing: still one log opened and closed per entry;
 * ``auto_log_on_ingest`` off costing a log;
-* ``_flush_batched`` going back to a per-article call.
+* ``_flush_batched`` going back to a per-article call;
+* a log kept after the settings it was opened under changed (OpenTimestamps consent withdrawn mid-flush still stamping the
+  rest of the flush) or after the process lost its passphrase (a crypto-erase mid-flush still writing through a key the
+  process no longer holds);
+* a failed write whose connection is NOT really closed (a failed INSERT leaves a transaction and a write lock open until
+  the connection is closed: tested with a real failing INSERT and a second writer).
 
 Plaintext stores throughout: the point is how many logs a flush opens, which the tests count at ``CustodyLog``.
 """
@@ -185,6 +190,132 @@ def test_a_log_that_cannot_be_opened_fails_each_article_as_it_did_before(db, ope
     assert sorted(q["article_id"] for q in pending.read_pending()) == sorted(a.id for a in arts)
 
 
+def test_a_real_failed_insert_leaves_no_lock_behind_and_the_chain_stays_valid(db, opens, custody, monkeypatch):
+    """A failed INSERT leaves a transaction and a write lock open on its connection until it is closed. Fail a real one (a
+    duplicate entry hash), then try to take the write lock from a second connection straight away."""
+    import sqlite3
+
+    import src.custody.log as custody_log
+
+    a1, a2, a3 = _stored(db, 3)
+    ids = [a.id for a in (a1, a2, a3)]
+    db.commit()
+    with _CustodyBatch() as batch:
+        _maybe_record_custody(a1, batch=batch)
+        first_hash = _entries(f"article:{ids[0]}")[0].entry_hash
+        real_digest = custody_log._entry_digest
+        monkeypatch.setattr(custody_log, "_entry_digest", lambda core: first_hash)
+        _maybe_record_custody(a2, batch=batch)  # the INSERT fails on UNIQUE(entry_hash), after the lock was taken
+        monkeypatch.setattr(custody_log, "_entry_digest", real_digest)
+        other = sqlite3.connect(str(custody / "custody_log.db"), timeout=0.2)
+        try:
+            other.execute("BEGIN IMMEDIATE")  # raises "database is locked" if the failed connection still holds the lock
+            other.rollback()
+        finally:
+            other.close()
+        _maybe_record_custody(a3, batch=batch)
+        assert batch.opened == 2, "the failed write dropped the log; the next article opened a fresh one"
+    assert [q["article_id"] for q in pending.read_pending()] == [ids[1]]
+    assert _entries(f"article:{ids[1]}") == []
+    with CustodyLog() as log:
+        ok, issues = log.verify()
+        assert ok, issues
+        assert [e.item_id for e in log.all_entries()] == [f"article:{ids[0]}", f"article:{ids[2]}"]
+
+
+def test_withdrawing_opentimestamps_mid_flush_takes_effect_at_the_next_entry(db, opens, monkeypatch):
+    """The log fixes its anchoring mode when it is opened. An operator who sets anchoring back to local while a flush is
+    running must not see the rest of that flush still sent to the public calendars (invariant #14f)."""
+    import src.custody.log as custody_log
+    from src.custody.timestamp import local_timestamp
+
+    stamped: list[int] = []
+
+    def fake_ots(digest):
+        stamped.append(1)
+        return local_timestamp(digest)
+
+    monkeypatch.setattr(custody_log, "ots_stamp", fake_ots)
+    current = {"prefs": CustodySettings(auto_log_on_ingest=True, anchoring_mode="opentimestamps")}
+    monkeypatch.setattr("src.custody.settings.load_settings", lambda: current["prefs"])
+    arts = _stored(db, 4)
+    opens.opened = opens.closed = 0
+    with _CustodyBatch() as batch:
+        _maybe_record_custody(arts[0], batch=batch)
+        assert len(stamped) == 1
+        current["prefs"] = CustodySettings(auto_log_on_ingest=True, anchoring_mode="local")
+        _maybe_record_custody(arts[1], batch=batch)
+        _maybe_record_custody(arts[2], batch=batch)
+        assert len(stamped) == 1, "consent withdrawn: nothing more is stamped"
+        assert batch.opened == 2 and opens.opened == 2, "one re-open for the new setting, then the new log is reused"
+        current["prefs"] = CustodySettings(auto_log_on_ingest=True, anchoring_mode="opentimestamps")
+        _maybe_record_custody(arts[3], batch=batch)
+        assert len(stamped) == 2, "and turning it back on is honoured as well"
+    assert batch.opened == 3
+
+
+class _DummyLog:
+    """Stands in for CustodyLog where the test is about when a log is reopened, not about what it writes."""
+
+    made = 0
+
+    def __init__(self) -> None:
+        type(self).made += 1
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize(
+    ("changed", "reopens"),
+    [
+        ({}, False),
+        ({"default_actor": "someone-else"}, False),  # the actor is an argument of every entry, not part of the log
+        ({"anchoring_mode": "opentimestamps"}, True),
+        ({"pqc_enabled": True}, True),
+    ],
+)
+def test_only_the_settings_a_log_is_opened_under_reopen_it(monkeypatch, changed, reopens):
+    import src.custody.log as custody_log
+
+    _DummyLog.made = 0
+    monkeypatch.setattr(custody_log, "CustodyLog", _DummyLog)
+    with _CustodyBatch() as batch:
+        batch.log(CustodySettings())
+        batch.log(CustodySettings(**changed))
+        assert batch.opened == (2 if reopens else 1)
+    assert _DummyLog.made == batch.opened
+
+
+def test_a_cleared_passphrase_mid_flush_stops_the_writes_through_the_old_key(db, tmp_path, monkeypatch):
+    """crypto-erase and a lock clear the process passphrase, and this connection is one they cannot reach. The next entry
+    must not be written through it: it opens afresh, fails for want of a key, and is queued as owed."""
+    import secrets
+
+    pytest.importorskip("sqlcipher3")
+    from src.database import connect
+
+    data = tmp_path / "enc-data"
+    data.mkdir()
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    monkeypatch.setattr("src.custody.settings.load_settings", lambda: CustodySettings(auto_log_on_ingest=True))
+    connect.set_passphrase(secrets.token_hex(16))  # a throwaway key for a throwaway store
+    try:
+        a1, a2 = _stored(db, 2)
+        ids = [a1.id, a2.id]
+        db.commit()
+        with _CustodyBatch() as batch:
+            _maybe_record_custody(a1, batch=batch)
+            assert batch.opened == 1
+            connect.set_passphrase(None)
+            _maybe_record_custody(a2, batch=batch)
+            assert batch._log is None, "the log opened under the old key is gone"
+    finally:
+        connect.set_passphrase(None)
+    assert [q["article_id"] for q in pending.read_pending()] == [ids[1]]
+
+
 def test_a_read_that_fails_before_the_log_is_touched_costs_the_batch_nothing(db, opens, monkeypatch):
     """The field failure of CUST-1: the pool is exhausted and the expired article cannot be reloaded. That is not the
     log's failure: the healthy log stays, the article is owed, the next article uses the same log."""
@@ -255,7 +386,7 @@ def test_the_log_is_closed_when_the_block_is_left_by_a_raise(db, opens):
 def test_dropping_never_raises_and_forgets_the_log(opens, monkeypatch):
     custody = _CustodyBatch()
     custody.drop()  # nothing open: nothing to do
-    custody.log()
+    custody.log(CustodySettings())
 
     held = custody._log
     real_close = CustodyLog.close
@@ -268,7 +399,7 @@ def test_dropping_never_raises_and_forgets_the_log(opens, monkeypatch):
     assert custody._log is None
     monkeypatch.setattr(CustodyLog, "close", real_close)
     real_close(held)
-    custody.log()
+    custody.log(CustodySettings())
     assert custody.opened == 2, "a dropped log is opened afresh, not reused"
     custody.drop()
 
@@ -364,10 +495,10 @@ def test_the_flush_uses_the_batch_and_never_the_per_article_call():
 
 def test_the_entry_is_read_before_the_log_is_touched():
     """The ordering the read-failure tests rely on, pinned at the source: nothing of the article is read after
-    ``batch.log()`` or ``CustodyLog()`` is called."""
+    ``batch.log(...)`` or ``CustodyLog()`` is called."""
     src = inspect.getsource(_maybe_record_custody)
     body = src[src.index('item_id = f"article:'):]
-    first_log_call = min(body.index("batch.log()"), body.index("CustodyLog()"))
+    first_log_call = min(body.index("batch.log("), body.index("CustodyLog()"))
     before = body[:first_log_call]
     assert "article.id" in before and "article.hash" in before and "article.url" in before
     assert "article." not in body[first_log_call : body.index("except Exception")]

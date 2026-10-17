@@ -4,8 +4,8 @@ How often an encrypted file was opened with its key, from which thread, and what
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Opening an encrypted file derives its key again (SQLCipher: PBKDF2-HMAC-SHA512 x 256,000, 160-170 ms of CPU
-measured on one core), and nothing in the app keeps the result: it lives inside the connection that
+Opening an encrypted file derives its key again (SQLCipher: PBKDF2-HMAC-SHA512 x 256,000: 163 ms of thread CPU, median
+of 20 on one pinned core, range 158-208 ms), and nothing in the app keeps the result: it lives inside the connection that
 was opened. So every new connection to an encrypted file costs that, whoever asked for it (the pool growing, the
 custody log, a lane's store). Until this module nothing counted them, which is why "one collector thread spends 41 CPU
 seconds a minute where the sampled frame is the key derivation" could be neither confirmed nor refuted from a bundle:
@@ -24,7 +24,9 @@ What is counted, and what is not:
 * NOT plaintext opens (no derivation), and NOT the creation of a new encrypted file (once per store);
 * the window is process-wide between :func:`reset` and :func:`snapshot`, so the opens of every thread during a pass
   are in it, the collector's and everyone else's; an open that begins before the reset and ends after it is counted
-  when it ENDS. Opens while no pass runs are in no pass's window;
+  when it ENDS. Opens while no pass runs are in no pass's window, and neither are those of the step the scheduler runs
+  after the monitor stops (the repayment of owed custody entries). A pass without a monitor (the sequential path, used
+  only on a caller's own session) opens no window and writes no block;
 * NUMBERS AND TWO CLOSED VOCABULARIES ONLY. ``file`` is one of the app's own database file names (:data:`KNOWN_FILES`),
   else ``(other)``: a path is never printed, and a restore or merge opens files whose names a person chose. ``thread`` is
   the FAMILY of the opening thread's name (``oo-collect`` for ``oo-collect_22``, ``oo-osm`` for ``oo-osm-fr``, or one of
@@ -64,16 +66,15 @@ OTHERS = "(others)"
 
 #: Thread names written by this app begin ``oo-<word>``; what follows the word may be a request's text (``oo-osm-{key}``),
 #: which is why only the word is kept (letters up to the first ``-``, ``_`` or digit).
-_APP_FAMILY = re.compile(r"oo-[a-z]+")
+_APP_FAMILY = re.compile(r"oo-[a-z]{1,16}(?![a-z])")
 #: The other families that open the store, by the start of their names: the framework's threads, and the app's own threads
 #: whose names are fixed words (a tail after the family, where there is one, is a cache key or a code, and is not kept).
 _NAMED_FAMILIES = (
     "MainThread",
-    "anyio",
+    "AnyIO worker thread",  # what anyio and starlette's run_in_threadpool name their workers (a sync FastAPI endpoint)
     "ThreadPoolExecutor",
-    "asyncio",
-    "uvicorn",
-    "bgjob",
+    "asyncio",  # the event loop's default executor: asyncio_0, asyncio_1, ...
+    "bgjob",  # src/jobs/background.py: bgjob-<kind>
     "rollup-build",
     "map-rollup-build",
     "search-reindex-job",
@@ -92,14 +93,18 @@ _NAMED_FAMILIES = (
     "ref-run-sampler",
 )
 
-#: Rows the window keeps, one per (file, thread family) pair. WHAT IT PROTECTS: the memory of a window that a long pass
-#: leaves open and the size of the record it is printed from. The number is a bound, not a measurement: a pass has a
-#: handful of app files opened by a handful of thread families, and 32 leaves room; a pair that does not fit is added to
-#: the ``(others)`` row. It shrinks what is KEPT per pair, never what is COUNTED: the totals are exact.
+#: Rows the window keeps, one per (file, thread family) pair, THE FIRST ones seen in the window (not the heaviest: which
+#: pair is heaviest is not known until the pass ends). WHAT IT PROTECTS: the memory of a window that a long pass leaves
+#: open and the size of the record it is printed from. The number is a bound, not a measurement: a pass has a handful of
+#: app files opened by a handful of thread families, and 32 leaves room; a later pair is added to the ``(others)`` row, and
+#: an open of a pair already kept always goes to its own row. It shrinks what is KEPT per pair, never what is COUNTED:
+#: the totals are exact.
 _STATE_ROWS = 32
-#: Rows printed in the block (the most CPU first), the rest summed into one ``(others)`` row. WHAT IT PROTECTS: the size of
-#: one run report: a printed row is 120-150 bytes and the method text 550, so a full block measured 2.1 KB, and the 30
-#: reports of a debug bundle add under 70 KB. It shrinks what is PRINTED, never what is COUNTED.
+#: Rows printed in the block, the most CPU first among those kept; the rest are summed into one ``(others)`` row. WHAT IT
+#: PROTECTS: the size of one run report. A printed row is 128 bytes in a typical block and at most 209 (the longest file
+#: and family strings, 10-digit counts, 7-digit seconds: computed, ``tests/test_open_stats.py``), and the method text is
+#: 551, so a block is about 2 KB typically and at most 3.2 KB (computed), and the 30 reports of a debug bundle add at most
+#: 97 KB (computed). It shrinks what is PRINTED, never what is COUNTED.
 _PRINT_ROWS = 11
 
 

@@ -1120,8 +1120,8 @@ class CollectionMonitor:
             # One page that takes long holds every other extraction (no timeout), and from outside that
             # looks like a stalled collector; this is the line that tells the two apart.
             "extraction_lock": self.extraction_lock_block(),
-            # Every open of an encrypted file re-derives its key (160-170 ms of CPU each on one measured core) and nothing
-            # keeps the result: this is the count, by file and thread family, of what this pass paid.
+            # Every open of an encrypted file re-derives its key (163 ms of thread CPU, median of 20 on one pinned core) and
+            # nothing keeps the result: this is the count, by file and thread family, of what this pass paid.
             "encrypted_opens": self.encrypted_opens_block(),
         }
         if result:

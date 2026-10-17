@@ -321,7 +321,7 @@ class ArticleBatch:
         # recounted by the redo — 3 dispositions for 2 staged articles.
         self.tally["duplicate"] += dups
         self.tally["stored"] += len(to_store)
-        # One custody log for the whole flush (opening one costs a key derivation, ~165 ms of CPU); it lives for this
+        # One custody log for the whole flush (opening one costs a key derivation, 163 ms of thread CPU); it lives for this
         # loop and is closed when the block ends, however it ends.
         with _CustodyBatch() as custody:
             for e, a in to_store:

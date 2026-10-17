@@ -375,31 +375,46 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
 class _CustodyBatch:
     """The custody log of ONE flush: opened when the first entry is written, closed when the ``with`` block ends.
 
-    A custody log is a keyed connection to ``custody_log.db``, and opening one costs a key derivation (160-170 ms of CPU
-    measured on one core, ``src/database/open_stats.py``); a flush stores up to ``collect_batch_size()`` articles one after
-    another on one thread, and before this each of them opened its own. THE LIFETIME IS THE BLOCK: nothing is cached (no
-    module state, no attribute of another object), so a lock, a passphrase change or a restore has nothing to invalidate,
-    and the signing key the log's signer holds lives for one flush instead of one article. A write that failed leaves the
-    connection in an unknown state, so :meth:`drop` closes it and the next entry opens a fresh one, which is what every
-    entry did before. A batch belongs to the thread that made it.
+    A custody log is a keyed connection to ``custody_log.db``, and opening one costs a key derivation (163 ms of thread CPU,
+    median of 20 on one pinned core, range 158-208 ms, measured with a script that is in the project files and not in the repo); a flush stores up to
+    ``collect_batch_size()`` articles one after another on one thread, and before this each of them opened its own. THE
+    LIFETIME IS THE BLOCK: no module state, no attribute of another object, and the key and the signer die with the block
+    instead of living for a thread. A log fixes three things when it is opened, so each entry compares them with what it is
+    about to be written under (the custody settings it was just read with: the anchoring mode and the PQC flag, and
+    whether the process still has a passphrase) and a log opened under different ones is dropped first: an operator who
+    withdraws OpenTimestamps consent, or a crypto-erase that clears the passphrase, mid-flush takes effect at the next
+    entry, as it did when every entry opened its own. A write that failed leaves the connection in an unknown state, so
+    :meth:`drop` closes it and the next entry opens a fresh one. A batch belongs to the thread that made it.
     """
 
     def __init__(self) -> None:
         self._log: CustodyLog | None = None
+        self._opened_under: tuple | None = None
         self.opened = 0  # logs this batch has opened (a reading, for the tests)
 
-    def log(self) -> CustodyLog:
-        """The batch's log, opened now if it is not open. Raises what opening it raises; the caller owns the failure."""
+    @staticmethod
+    def _under(prefs) -> tuple:
+        from src.database.connect import get_passphrase
+
+        return (prefs.anchoring_mode, bool(prefs.pqc_enabled), get_passphrase() is not None)
+
+    def log(self, prefs) -> CustodyLog:
+        """The batch's log for an entry written under ``prefs`` (the custody settings read for it): opened now if it is not
+        open, or if it was opened under other settings. Raises what opening it raises; the caller owns the failure."""
+        under = self._under(prefs)
+        if self._log is not None and under != self._opened_under:
+            self.drop()
         if self._log is None:
             from src.custody.log import CustodyLog
 
             self._log = CustodyLog()
+            self._opened_under = under
             self.opened += 1
         return self._log
 
     def drop(self) -> None:
         """Close the log and forget it; the next :meth:`log` opens another. Never raises."""
-        log, self._log = self._log, None
+        log, self._log, self._opened_under = self._log, None, None
         if log is not None:
             with contextlib.suppress(Exception):  # a close that fails leaves nothing to keep
                 log.close()
@@ -414,8 +429,9 @@ class _CustodyBatch:
 def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = None) -> None:
     """Opt-in: append a signed custody entry for a freshly stored article.
 
-    ``batch`` is the flush's :class:`_CustodyBatch`: the entry is written through the log it holds, and a failure drops that
-    log so the next article opens a fresh one. Without it the entry gets a log of its own, closed when it is written.
+    ``batch`` is the flush's :class:`_CustodyBatch`: the entry is written through the log it holds (re-opened if the
+    settings or the passphrase changed since it was opened), and a failure drops that log so the next article opens a
+    fresh one. Without it the entry gets a log of its own, closed when it is written.
 
     Best-effort and fail-open: custody logging must never break ingestion, so any
     error here is swallowed (and logged). Controlled by the GUI-editable custody
@@ -462,7 +478,7 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             with CustodyLog() as log:
                 log.record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
         else:
-            batch.log().record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
+            batch.log(prefs).record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
         import logging
 
