@@ -27,6 +27,14 @@ FEEDS_NOT_OUTLETS = (
 sources list is a true count of feeds, and reads as a count of independent voices unless it says what it counts."""
 
 
+def outlet_key(source_id: int | None, domain: str | None) -> str:
+    """The outlet of ONE source, from its own row values: its domain, or ``source-<id>`` when the row is gone.
+
+    The single definition: ``OutletMap.key`` and ``outlet_expr`` agree with it, and a record that has to carry its outlet
+    with it (a briefing card's evidence, stored long before anything reads it) writes this value."""
+    return domain or f"source-{source_id}"
+
+
 def outlet_expr(source_id_col: Any, domain_col: Any) -> Any:
     """SQL: the outlet an article's source belongs to -- its domain, or the bare INTEGER source id when the source row is gone.
 
@@ -61,7 +69,7 @@ class OutletMap:
         in the map (an article whose source row is gone keeps the stable ``source-<id>`` it always had)."""
         if source_id is not None and int(source_id) in self._domain:
             return self._domain[int(source_id)]
-        return domain or f"source-{source_id}"
+        return outlet_key(source_id, domain)
 
     def primary_id(self, source_id: int) -> int:
         """The id of the outlet's OLDEST source -- a stable per-outlet integer for callers keyed on source ids."""

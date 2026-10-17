@@ -383,7 +383,7 @@ def _run_startup_upkeep() -> None:
                 # every verdict from scratch. Idempotent and near-free after the first
                 # boot -- it only touches rows still reading 'unqualified'. A local
                 # verdict always wins, in both directions.
-                from src.catalog.qualification_overlay import apply_overlay
+                from src.catalog.qualification_overlay import apply_overlay, log_outlet_holds
 
                 adopted = apply_overlay(session)
                 # THE CURATED CATALOGUE IS QUALIFIED BY RULING (2026-09-10): after the
@@ -410,6 +410,7 @@ def _run_startup_upkeep() -> None:
                     adopted["adopted"], adopted.get("qualified", 0),
                     adopted.get("disqualified", 0), adopted.get("kept_local", 0),
                 )
+            log_outlet_holds(logger, curated, adopted)
         except Exception as exc:  # noqa: BLE001 - seeding must never block startup
             log_failure(logger, "could not seed the source catalog at startup", exc, level=logging.WARNING)
     # WITHDRAW, NEVER RE-ADMIT, what the history already refused (2026-09-30, diagnostics
@@ -547,6 +548,11 @@ def _run_startup_upkeep() -> None:
         except Exception as exc:  # noqa: BLE001 - a guard must never block startup
             log_failure(logger, "could not start the storage guard", exc, level=logging.WARNING)
 
+    # The seeding above parsed each catalogue once and kept the parse for the second seed of a plaintext launch; it is not
+    # kept for the life of the server (later reads parse as they always did).
+    from src.ingest.seed_sources import forget_parsed_catalogues
+
+    forget_parsed_catalogues()
     logger.info(f"Open Omniscience API {APP_VERSION} started")
 
 
@@ -1316,10 +1322,12 @@ def _structured_filters(
         filters.append(Article.source_id.in_(st_ids) if st_ids else false())
 
     if source:
-        source_obj = session.query(Source).filter_by(name=source).first()
-        if not source_obj:
+        # EVERY source of that name: names are not unique once a source is (domain, feed), and ``.first()`` answered with
+        # an arbitrary one of them and silently dropped the others' articles. A typo still 404s.
+        named_ids = [sid for (sid,) in session.query(Source.id).filter(Source.name == source)]
+        if not named_ids:
             raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
-        filters.append(Article.source_id == source_obj.id)
+        filters.append(Article.source_id.in_(named_ids))
 
     if start_date:
         filters.append(Article.published_at >= datetime.fromisoformat(start_date))

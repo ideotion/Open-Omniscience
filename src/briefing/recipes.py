@@ -31,6 +31,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.briefing.card import Card, frame, frames_text
+from src.database.outlet import outlet_key
 
 _LOG = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ def promises_due(session) -> list[Card]:
                         "title": article.title,
                         "url": article.url,
                         "source": getattr(article.source, "name", None),
+                        "outlet": outlet_key(article.source_id, getattr(article.source, "domain", None)),
                         "snippet": tag.snippet,
                     }
                 ],

@@ -179,8 +179,16 @@ def apply_overlay(
         .all()
     )
 
+    # A DISQUALIFICATION THIS INSTALL REACHED IS THE OUTLET'S (R100, R153): a shipped ``qualified`` verdict is never adopted
+    # onto a feed whose outlet has another feed disqualified here. The stamp does the same for the catalogue's own
+    # stamp (``stamp_curated_catalog``); without it an import or POST /sources sibling of a refused outlet was admitted
+    # here, before the stamp ran, on a verdict nobody measured for that feed.
+    refused_outlets = {
+        (s.domain or "").strip().lower() for s in rows if (s.status or STATUS_UNQUALIFIED) == STATUS_DISQUALIFIED
+    }
     adopted: list[Source] = []
     kept_local = 0
+    held_by_outlet = 0
     replaced_curated = 0
     admitted = 0
     counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
@@ -201,6 +209,9 @@ def apply_overlay(
             # This instance reached its own verdict. Local wins -- the same rule the restore
             # merge applies to the same kind of evidence.
             kept_local += 1
+            continue
+        if record["status"] == STATUS_QUALIFIED and (source.domain or "").strip().lower() in refused_outlets:
+            held_by_outlet += 1
             continue
         if curated_stamp:
             replaced_curated += 1
@@ -249,6 +260,9 @@ def apply_overlay(
         "qualified": counts[STATUS_QUALIFIED],
         "disqualified": counts[STATUS_DISQUALIFIED],
         "kept_local": kept_local,
+        # Feeds left alone because ANOTHER feed of their outlet is disqualified here (a shipped ``qualified`` is not
+        # adopted onto them); a different fact from ``kept_local``, which is the feed's OWN local verdict.
+        "held_by_outlet_disqualified": held_by_outlet,
         # Curated stamps a measured shipped verdict replaced -- reported apart from
         # `adopted` onto never-judged rows, because "we had no verdict" and "we had a
         # ruling's stamp and a measurement outranked it" are different facts.
@@ -558,3 +572,20 @@ def revert_overlay(
         # not leave behind is a source still being scraped on a verdict it gave back.
         "still_collecting": int(still_collecting),
     }
+
+
+def log_outlet_holds(logger: logging.Logger, curated: dict, adopted: dict) -> None:
+    """Say at boot how many feeds were left unqualified because another feed of their outlet is disqualified HERE (R100,
+    R153): never admitted on the catalogue's stamp or on a shipped verdict, each stays for its own trial.
+
+    The two figures are printed SEPARATELY and never summed: the overlay holds a sibling unqualified and the stamp, which
+    runs after it, meets the same unqualified row of the same refused outlet and counts it too, so a sum reads one held feed
+    as two (the independent read of the J3 head, L3)."""
+    by_stamp = int(curated.get("outlet_disqualified", 0))
+    by_verdict = int(adopted.get("held_by_outlet_disqualified", 0))
+    if by_stamp or by_verdict:
+        logger.info(
+            "feeds left unqualified because another feed of their outlet is disqualified: %d counted by the curated stamp, "
+            "%d counted by the shipped verdicts (one feed can be counted by both).",
+            by_stamp, by_verdict,
+        )

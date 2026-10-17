@@ -25,6 +25,11 @@ from typing import Any
 from src.briefing.card import Card, frame, frames_text
 from src.signals.near_dup import _connected_components
 
+OUTLETS_NOTE = (
+    "Independent sources are counted as outlets: one site is one voice however many of its feeds appear. Evidence "
+    "recorded before outlets were kept, or naming only a feed, counts by that label; evidence_without_outlet says how many."
+)
+
 # Default floors for a "major" lead (OPERATOR-GATED: tune on real field data before shipping).
 DEFAULT_MAJOR_FLOORS: dict[str, int] = {"min_n": 50, "min_sources": 5}
 # Magnitude tiers for the ordering (coarse buckets so trivial n differences don't reorder leads).
@@ -47,10 +52,43 @@ def _parse_iso(raw: Any) -> datetime | None:
         return None
 
 
-def _distinct_sources(card: Card) -> int:
-    """Distinct non-empty source names in the card's evidence — the independence measure the app
-    uses everywhere (three articles from one outlet is one voice, not three)."""
-    return len({e.get("source") for e in (card.evidence or []) if e.get("source")})
+def _outlet_of(evidence: dict) -> str | None:
+    """The outlet one evidence entry belongs to, or None when it carries nothing to name one with.
+
+    ``outlet`` is written at production (``src.database.outlet.outlet_key``: the source's domain). An entry from a card
+    cached before that, or one that only names a feed LABEL (``source``), has no outlet: it counts by that label, and
+    :func:`_distinct_outlets` says how many entries did (``evidence_without_outlet``), never silently."""
+    outlet = evidence.get("outlet")
+    return str(outlet) if outlet else None
+
+
+def _evidence_keys(card: Card) -> list[str]:
+    """One key per evidence entry: its outlet, else a ``label:`` key from the feed label, else nothing (no source named)."""
+    keys: list[str] = []
+    for e in card.evidence or []:
+        outlet = _outlet_of(e)
+        if outlet is not None:
+            keys.append(outlet)
+        elif e.get("source"):
+            keys.append(f"label:{e['source']}")
+    return keys
+
+
+def _distinct_outlets(card: Card) -> int:
+    """Distinct OUTLETS in the card's evidence -- the independence measure the app uses everywhere (three articles from one
+    outlet is one voice, not three, and neither are two feeds of one site). An entry with no outlet counts by its feed
+    label (see :func:`_evidence_without_outlet`)."""
+    return len(set(_evidence_keys(card)))
+
+
+# The name ``card_audit`` (and the quality export) import: the same count, now of outlets. Kept as an alias so a file other
+# work is editing is not touched; callers read it as "distinct independent sources".
+_distinct_sources = _distinct_outlets
+
+
+def _evidence_without_outlet(card: Card) -> int:
+    """How many evidence entries named a source but carried no outlet, so were counted by feed label."""
+    return sum(1 for e in (card.evidence or []) if e.get("source") and _outlet_of(e) is None)
 
 
 def newest_evidence_age(card: Card, *, now: datetime) -> float | None:
@@ -85,7 +123,7 @@ def order_key(card: Card, *, now: datetime) -> tuple[int, int, float]:
     blending; the components stay individually visible via ``explain_order``."""
     age = newest_evidence_age(card, now=now)
     recency = -age if age is not None else float("-inf")
-    return (_distinct_sources(card), _magnitude_bucket(card.n), recency)
+    return (_distinct_outlets(card), _magnitude_bucket(card.n), recency)
 
 
 def sort_leads(cards: list[Card], *, now: datetime) -> list[Card]:
@@ -98,7 +136,7 @@ def explain_order_frames(card: Card, *, now: datetime) -> list[dict]:
     sentence, the facts a second whose numbers are data -- so the line reads in the UI
     language instead of English under every card. The age keeps its one decimal as
     text, exactly as the English line prints it."""
-    sources = _distinct_sources(card)
+    sources = _distinct_outlets(card)
     tier = _magnitude_bucket(card.n)
     age = newest_evidence_age(card, now=now)
     facts = {"sources": sources, "n": card.n or 0, "tier": tier, "tiers": len(_MAGNITUDE_THRESHOLDS)}
@@ -131,7 +169,7 @@ def is_major(card: Card, *, floors: dict[str, int] | None = None) -> dict:
     the reader sees exactly why — e.g. ``n=120 ≥ 50 AND 6 sources ≥ 5``."""
     f = {**DEFAULT_MAJOR_FLOORS, **(floors or {})}
     n = card.n or 0
-    sources = _distinct_sources(card)
+    sources = _distinct_outlets(card)
     n_ok = n >= f["min_n"]
     s_ok = sources >= f["min_sources"]
     return {
@@ -213,7 +251,7 @@ def card_deltas(prev_cards: list[Card], new_cards: list[Card]) -> dict:
             continue
         p = prev[ident]
         n_d = (c.n or 0) - (p.n or 0)
-        s_d = _distinct_sources(c) - _distinct_sources(p)
+        s_d = _distinct_outlets(c) - _distinct_outlets(p)
         if n_d == 0 and s_d == 0:
             status = "unchanged"
         elif n_d >= 0 and s_d >= 0:
@@ -268,8 +306,6 @@ def assemble_leads_view(
     ``sort`` (fail loud)."""
     if sort not in ("default", "prominence"):
         raise ValueError("sort must be 'default' or 'prominence'")
-    from src.database.outlet import FEEDS_NOT_OUTLETS
-
     eff_floors = {**DEFAULT_MAJOR_FLOORS, **(floors or {})}
     pairs = [(d, _wrap_dict(d)) for d in card_dicts]
     if sort == "prominence":
@@ -285,7 +321,8 @@ def assemble_leads_view(
                 "title": d.get("title"),
                 "evidence_chips": {
                     "n": w.n or 0,
-                    "distinct_sources": _distinct_sources(w),
+                    "distinct_outlets": _distinct_outlets(w),
+                    "evidence_without_outlet": _evidence_without_outlet(w),
                     "newest_age_days": round(age, 2) if age is not None else None,
                 },
                 "order_explain": explain_order(w, now=now),
@@ -294,8 +331,8 @@ def assemble_leads_view(
         )
     out: dict = {
         "schema": "oo-leads-view-1",
-        # the chips count the distinct source LABELS a card's evidence carries, which are feeds (row J, R146)
-        "sources_note": FEEDS_NOT_OUTLETS,
+        # the chips count OUTLETS (a domain, however many of its feeds), and say how many entries could only be counted by label
+        "outlets_note": OUTLETS_NOTE,
         "sort": sort,
         "floors": eff_floors,
         "count": len(leads),

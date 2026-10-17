@@ -230,6 +230,12 @@ class _UnionFind:
             self.parent[rb] = ra
 
 
+def _outlet_name(article: dict) -> str:
+    """The name a path's source COUNT is made of: the outlet's label when the caller gives one (one site's several feeds are
+    one voice, the same unit the same-source join uses), else the feed label."""
+    return article.get("outlet_label") or article.get("source") or "?"
+
+
 def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
                 near_dup_groups: list[list[int]]) -> dict:
     """Step ② -- join the trail's articles into PATHS, and say what joined each one.
@@ -283,7 +289,7 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
     for members in members_of.values():
         mset = set(members)
         path_joins = [j for j in joins if mset.issuperset(j["article_ids"])]
-        sources = sorted({by_id[m].get("source") or "?" for m in members})
+        sources = sorted({_outlet_name(by_id[m]) for m in members})
         dates = sorted(by_id[m]["published_at"] for m in members if by_id[m].get("published_at"))
         paths.append({
             "article_ids": sorted(members),
@@ -301,7 +307,7 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
     for n, p in enumerate(paths, start=1):
         p["path"] = n
 
-    all_sources = {by_id[i].get("source") or "?" for i in ids}
+    all_sources = {_outlet_name(by_id[i]) for i in ids}
     return {
         "paths": paths,
         "n_articles": len(ids),

@@ -174,16 +174,28 @@ class TestSourceOperations:
         assert source.tags == "test,example"
 
     def test_create_duplicate_source(self, source_manager, sample_sources):
-        """Test creating a duplicate source (should return existing)."""
+        """The same domain AND the same feed is the same source: the existing row comes back (row J)."""
         existing = source_manager.get_source_by_domain("bbc.com")
         assert existing is not None
 
         new_source = source_manager.create_source(
-            name="BBC News Duplicate", domain="bbc.com", rss_url="http://different-rss.com"
+            name="BBC News Duplicate", domain="bbc.com", rss_url=existing.rss_url
         )
 
         assert new_source.id == existing.id
         assert new_source.name == "BBC News"  # Should keep original name
+
+    def test_create_a_second_feed_of_a_domain_is_a_sibling(self, source_manager, sample_sources):
+        """A different feed of a registered domain is a new source of that outlet, never 'already there' (R145)."""
+        existing = source_manager.get_source_by_domain("bbc.com")
+        sibling = source_manager.create_source(
+            name="BBC Other Service", domain="bbc.com", rss_url="http://different-rss.com/feed"
+        )
+
+        assert sibling.id != existing.id
+        assert sibling.domain == "bbc.com"
+        # the domain lookup still answers with the OLDEST row, so every existing caller keeps its answer
+        assert source_manager.get_source_by_domain("bbc.com").id == existing.id
 
     def test_get_source_by_id(self, source_manager, sample_sources):
         """Test getting a source by ID."""

@@ -334,3 +334,103 @@ def test_the_rebuild_refuses_a_column_it_would_otherwise_drop(legacy):
     ):
         upgrade_sources_to_composite_key(conn)
     assert source_identity_state(legacy.connect()) == "legacy"  # nothing was changed
+
+
+def _trace(conn):
+    seen: list[str] = []
+    conn.connection.dbapi_connection.set_trace_callback(seen.append)
+    return seen
+
+
+def _unkeyed(engine, n=40):
+    """Legacy rows that DO need a backfill: the column added, every row holding a feed, no key yet."""
+    from src.database.source_identity import add_feed_key_column
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        add_feed_key_column(conn)
+        for i in range(100, 100 + n):
+            conn.exec_driver_sql("INSERT INTO sources (id, name, domain, rss_url, status) VALUES (?,?,?,?, 'unqualified')",
+                                 (i, f"S{i}", f"s{i}.example", f"https://s{i}.example/rss"))
+
+
+def test_the_backfill_is_one_commit_on_an_autocommit_connection_not_one_per_source(legacy):
+    """Measured: 6,400 UPDATEs in autocommit are 6,400 commits, 10.5 s on an encrypted store (0.47 s in one transaction)."""
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    with legacy.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        seen = _trace(conn)
+        changed = backfill_feed_keys(conn)
+        conn.connection.dbapi_connection.set_trace_callback(None)
+        assert changed >= 40
+        updates = [i for i, q in enumerate(seen) if q.startswith("UPDATE sources SET feed_key")]
+        begins = [i for i, q in enumerate(seen) if q.startswith("BEGIN")]
+        commits = [i for i, q in enumerate(seen) if q == "COMMIT"]
+        assert len(updates) == changed and len(begins) == 1 and len(commits) == 1
+        assert begins[0] < updates[0] and updates[-1] < commits[0]            # every update inside the one transaction
+        assert not conn.connection.dbapi_connection.in_transaction
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key = ''").scalar_one() == 1  # b.com has no feed
+
+
+def test_the_backfill_inside_a_callers_transaction_begins_and_commits_nothing(legacy):
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    with legacy.connect() as conn:
+        conn.exec_driver_sql("UPDATE sources SET name = name")                # the caller's transaction, open
+        dbapi = conn.connection.dbapi_connection
+        assert dbapi.in_transaction
+        seen = _trace(conn)
+        backfill_feed_keys(conn)
+        dbapi.set_trace_callback(None)
+        assert not [q for q in seen if q.startswith("BEGIN") or q == "COMMIT" or q == "ROLLBACK"]
+        assert dbapi.in_transaction                                            # still the caller's, still open
+        conn.rollback()                                                        # and the caller can still take it all back
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> ''").scalar_one() == 0
+
+
+def test_a_failed_backfill_in_its_own_transaction_changes_no_key(legacy):
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    with legacy.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.exec_driver_sql("CREATE TRIGGER no_key_for_130 BEFORE UPDATE OF feed_key ON sources WHEN NEW.id = 130 "
+                             "BEGIN SELECT RAISE(ABORT, 'refused'); END")
+        with pytest.raises(Exception, match="refused"):
+            backfill_feed_keys(conn)
+        assert not conn.connection.dbapi_connection.in_transaction
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> ''").scalar_one() == 0   # all or nothing
+
+
+def test_a_sqlalchemy_transaction_that_has_only_read_owns_the_backfill_and_its_rollback_takes_the_keys_back(legacy):
+    """The independent read's L2: pysqlite sets ``in_transaction`` at the first DML only, so a caller inside ``engine.begin()``
+    that had only read looked idle, the backfill ran its own BEGIN IMMEDIATE...COMMIT, and the caller's rollback no longer
+    undid the keys. Red when the decision goes back to the driver's flag alone."""
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    conn = legacy.connect()
+    trans = conn.begin()
+    conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
+    assert not conn.connection.dbapi_connection.in_transaction        # SQLAlchemy says open, the driver says idle
+    seen = _trace(conn)
+    assert backfill_feed_keys(conn) >= 40
+    conn.connection.dbapi_connection.set_trace_callback(None)
+    # the implicit BEGIN of the first UPDATE is pysqlite's own and belongs to the caller; the backfill adds none of its own
+    assert "COMMIT" not in [q.strip().upper() for q in seen] and "BEGIN IMMEDIATE" not in [q.strip().upper() for q in seen]
+    trans.rollback()
+    conn.close()
+    with legacy.connect() as c:
+        assert c.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> '' AND id >= 100").scalar_one() == 0
+
+
+def test_the_same_transaction_commits_the_keys_when_the_caller_commits(legacy):
+    from src.database.source_identity import backfill_feed_keys
+
+    _unkeyed(legacy)
+    with legacy.begin() as conn:
+        conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
+        assert backfill_feed_keys(conn) >= 40
+    with legacy.connect() as c:
+        assert c.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE feed_key <> '' AND id >= 100").scalar_one() >= 40
+

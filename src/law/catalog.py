@@ -14,6 +14,7 @@ appears only for a real official URL, and text is only ever stored from a real f
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import yaml
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.catalog.countries import config_country
 from src.database.models import LawDocument
-from src.ingest.seed_sources import SeedResult
+from src.ingest.seed_sources import SeedResult, _load_safe_yaml, _parsed_catalogue
 
 LEGAL_CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
 # The parallel-internet-session enrichment file (maintainer-ruled 2026-07-17; contract +
@@ -74,8 +75,13 @@ def _read_catalog_yaml(path: Path) -> dict:
         raise _unreadable(path, failed)
     data: object = None
     try:
-        data = yaml.safe_load(raw)
-    except yaml.YAMLError as exc:
+        # The seed catalogue's loader (libyaml where the wheel has it): the generated file is 297 KB and the pure-Python
+        # parse cost 0.43 s, twice per boot; libyaml's is 0.044 s and its parsed objects are identical (pinned in
+        # tests/test_law_catalog_loader.py on both real files).
+        data = _parsed_catalogue(raw, _load_safe_yaml)
+    except (yaml.YAMLError, ValueError) as exc:
+        # ValueError: PyYAML's constructor, not its parser, rejects an impossible date (``2026-13-45``), and that error is not a
+        # YAMLError; under both loaders it would have left this function as a bare ValueError carrying the file's text.
         failed = type(exc).__name__
     if failed:
         raise _unreadable(path, failed)
@@ -83,13 +89,16 @@ def _read_catalog_yaml(path: Path) -> dict:
         data = {}
     if not isinstance(data, dict) or any(not isinstance(data.get(key, []), list) for key in ("sources", "documents")):
         raise _unreadable(path, "it is not shaped like a catalogue")
+    # ``data`` may be the parse the process holds for every reader (``_parsed_catalogue``): what is returned is the caller's
+    # own, deeply copied (the entries are written below, ``load_legal_catalog`` marks and merges them, and the adapters and
+    # the coverage page read their nested ``verification`` blocks).
     sources = [
-        s
+        copy.deepcopy(s)
         for s in data.get("sources", [])
         if isinstance(s, dict) and s.get("name") and s.get("domain")
     ]
     documents = [
-        d
+        copy.deepcopy(d)
         for d in data.get("documents", [])
         if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
     ]
