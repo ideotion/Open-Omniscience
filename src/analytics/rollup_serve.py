@@ -245,14 +245,24 @@ def status() -> dict:
         # The numbers a build is held to, so a stop can be read against them: DuckDB's limit for this tier and
         # whether it may offload to disk (it may not for an encrypted corpus, so the limit is a wall there).
         "build_budget": _build_budget(),
+        # Served queries the engine refused and the live scan answered instead (since the process started): a serve
+        # that falls back is correct and, without this, invisible. A rollup that fails the build's own check is a
+        # stop, not a count here; this is the wider windows that fail later.
+        "serve_fallbacks": _serve_fallbacks(),
     }
+
+
+def _serve_fallbacks() -> dict:
+    from src.analytics import columnar
+
+    return columnar.serve_fallback_counts()
 
 
 #: The fields of a decline that go into another report's row (the boot step's): codes and numbers a reader compares
 #: against the budget. Free text of the engine is never among them.
 _DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
                   "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split",
-                  "duckdb_threads", "budget_total_mb", "budget_read_at")
+                  "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib")
 
 
 def decline_detail() -> dict:
@@ -299,6 +309,15 @@ def _note_decline(kind: str, source: str, record: dict) -> None:
             cur["last_seen_at"] = record.get("at")
             return
         _STATE["last_decline"] = {"kind": kind, "source": source, **record, "repeats": 0}
+
+
+def _serve_check_stop(canary: dict) -> dict:
+    """The stop record for a rollup that was built and cannot answer: DuckDB's own limit, found at the serve check.
+
+    ``duckdb-limit`` so the release rules of that stop apply unchanged (a larger limit, offload allowed, a corpus 5%
+    smaller, another version). Names the query, its peak and the resident size, as numbers and codes only."""
+    return {"reason": "duckdb-limit", "at": time.time(), "stage": "serve-check", "query": canary.get("query"),
+            "peak_mib": canary.get("peak_mib"), "resident_mib": canary.get("resident_mib")}
 
 
 def _build_inmemory_and_swap() -> dict | None:
@@ -352,7 +371,10 @@ def _build_inmemory_and_swap() -> dict | None:
                 skip = {"reason": "duckdb-limit", "at": time.time(),
                         "duckdb_limit_mb": snap["duckdb_limit_mb"], "error": record_text(exc, limit=200)}
             else:
-                skip = None
+                # R157: a rollup that fits its limit can still leave no room for the query that uses it. Ask it the
+                # one question the serve asks first (the 30-day terms), now, on the connection nobody else holds.
+                canary = columnar.serve_canary(con)
+                skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
             if skip is not None:
                 skip.update({
                     # the limit and the machine total this build ran under, whatever stopped it (R147)
@@ -391,6 +413,8 @@ def _build_inmemory_and_swap() -> dict | None:
             "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
             "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
             "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
+            # what the finished rollup was asked before it was served, and what that cost (R157)
+            "serve_check": canary,
         }
         old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
         if old is not None:
@@ -1095,6 +1119,8 @@ def _build_and_swap() -> str:
                     "mentions_total": stopped.get("mentions_total"), "rows_done": stopped.get("rows_done"),
                     "mentions_count": stopped.get("mentions_count"),
                     "shards": stopped.get("shards"), "shard": stopped.get("shard"), "split": stopped.get("split"),
+                    "query": stopped.get("query"), "peak_mib": stopped.get("peak_mib"),
+                    "resident_mib": stopped.get("resident_mib"),
                     "offload_allowed": _build_budget().get("offload_allowed"),
                 })
                 _LOG.warning(

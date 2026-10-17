@@ -94,6 +94,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure, passphrase_bytes, record_text
@@ -1470,9 +1471,54 @@ def windowed_term_counts(
             "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "  # nosec B608 - only the constant WHERE fragments (d.day >= ?/<= ?) are concatenated; every value is a bound ? param
             "FROM keyword_daily d" + kw + " GROUP BY keyword_id", params
         ).fetchall()
-    except Exception:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+    except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+        _note_serve_fallback("term-counts", type(exc).__name__)
         return {}
     return {int(r[0]): (int(r[1]), int(r[2])) for r in rows}
+
+
+def _top_terms_query(start_day, end_day, kind, limit: int) -> tuple[str, list]:
+    """The windowed most-mentioned query and its bound parameters: the ONE text the serve and the canary run."""
+    params: list = []
+    where = ["d.day >= ?"] if start_day is not None else []
+    if start_day is not None:
+        params.append(start_day)
+    if end_day is not None:
+        where.append("d.day <= ?")
+        params.append(end_day)
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    kind_sql = _kind_where(kind, params)
+    params.append(int(limit))
+    sql = (
+        "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 - only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
+        "SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
+        "FROM keyword_daily d JOIN keyword_meta m ON m.keyword_id = d.keyword_id"
+        + where_sql + kind_sql
+        + " GROUP BY m.term, m.normalized_term, m.kind, m.language "
+        "ORDER BY mentions DESC LIMIT ?"
+    )
+    return sql, params
+
+
+#: Serve queries that failed and were answered by the live scan instead, by query and by the engine's error CLASS, since
+#: this process started. A serve that swallows an error and falls back is correct, and invisible without this.
+_SERVE_FALLBACKS: dict[tuple[str, str], int] = {}
+_SERVE_FALLBACKS_LOCK = threading.Lock()
+_SERVE_FALLBACKS_SINCE = time.time()
+
+
+def _note_serve_fallback(query: str, error_class: str) -> None:
+    key = (query, error_class)
+    with _SERVE_FALLBACKS_LOCK:
+        _SERVE_FALLBACKS[key] = _SERVE_FALLBACKS.get(key, 0) + 1
+
+
+def serve_fallback_counts() -> dict:
+    """How many served queries fell back to the live scan because the engine raised, by query and error class, and since when."""
+    with _SERVE_FALLBACKS_LOCK:
+        rows = [{"query": q, "error": e, "count": n} for (q, e), n in sorted(_SERVE_FALLBACKS.items())]
+    return {"since": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_SERVE_FALLBACKS_SINCE)), "fallbacks": rows,
+            "total": sum(r["count"] for r in rows)}
 
 
 def windowed_top_terms_raw(
@@ -1485,33 +1531,84 @@ def windowed_top_terms_raw(
     Ordered by ``mentions`` DESC (the live order). ``mentions`` EXACT; ``articles`` the
     upper bound. Returns ``[]`` if the rollup / metadata are absent. Counts only, no score.
     """
-    params: list = []
-    where = ["d.day >= ?"] if start_day is not None else []
-    if start_day is not None:
-        params.append(start_day)
-    if end_day is not None:
-        where.append("d.day <= ?")
-        params.append(end_day)
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-    kind_sql = _kind_where(kind, params)
-    params.append(int(limit))
+    sql, params = _top_terms_query(start_day, end_day, kind, limit)
     try:
-        rows = con.execute(
-            "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 - only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
-            "SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
-            "FROM keyword_daily d JOIN keyword_meta m ON m.keyword_id = d.keyword_id"
-            + where_sql + kind_sql
-            + " GROUP BY m.term, m.normalized_term, m.kind, m.language "
-            "ORDER BY mentions DESC LIMIT ?",
-            params,
-        ).fetchall()
-    except Exception:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+        rows = con.execute(sql, params).fetchall()
+    except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+        _note_serve_fallback("top-terms", type(exc).__name__)
         return []
     return [
         {"term": r[0], "normalized": r[1], "kind": r[2], "language": r[3],
          "mentions": int(r[4]), "articles": int(r[5])}
         for r in rows
     ]
+
+
+#: The one query a finished build is asked before it is served: the 30-day most-mentioned terms, the widest window the
+#: Home and Insights polls ask for first. Measured at the 1,004 MB tier: it needs about 190 MiB over the resident rollup
+#: at 12 M mentions, and it is the first query to fail as the corpus grows (16 M), before the cheaper 7-day one.
+CANARY_QUERY = "top-terms-30d"
+CANARY_DAYS = 30
+CANARY_LIMIT = 80
+#: The longest the canary may run before it is interrupted and reported inconclusive (it takes under a second when it fits).
+CANARY_MAX_S = 60.0
+
+
+def serve_canary(con, *, today=None, max_s: float = CANARY_MAX_S) -> dict:
+    """Ask the finished rollup the question the serve will ask it, once, and say what it cost.
+
+    Returns ``{"query", "outcome", "rows", "resident_mib", "peak_mib", "secs"}``. ``outcome`` is ``"ok"``,
+    ``"out-of-memory"`` (the engine's own limit: the rollup cannot answer at this size) or ``"inconclusive"`` (any
+    other error, or the time cap: nothing is concluded from it). Measured, not modelled: a build that fits its limit
+    can leave too little room for the query that uses it (2026-10-17: 922 MiB resident of 957.5 at 20 M mentions
+    answered nothing). Counts and sizes only."""
+    import datetime
+
+    today = today or datetime.date.today()
+    sql, params = _top_terms_query(today - datetime.timedelta(days=CANARY_DAYS), None, None, CANARY_LIMIT)
+    mem_sql = "SELECT COALESCE(sum(memory_usage_bytes), 0) / 1048576.0 FROM duckdb_memory()"
+    out: dict = {"query": CANARY_QUERY, "outcome": "inconclusive", "rows": None, "resident_mib": None,
+                 "peak_mib": None, "secs": None}
+    peak = [0.0]
+    stop = threading.Event()
+    try:
+        out["resident_mib"] = round(float(con.execute(mem_sql).fetchone()[0]), 1)
+        peak[0] = out["resident_mib"]
+        watcher = con.cursor()
+    except Exception as exc:  # noqa: BLE001 - a diagnostics reading, never a reason to fail the build
+        log_failure(_LOG, "rollup serve canary: could not read the resident size", exc, level=logging.DEBUG)
+        return out
+
+    def _poll() -> None:
+        while not stop.is_set():
+            try:
+                peak[0] = max(peak[0], float(watcher.execute(mem_sql).fetchone()[0]))
+            except Exception:  # noqa: BLE001 - a missed sample is a lower peak, said as such
+                pass
+            stop.wait(0.02)
+
+    poller = threading.Thread(target=_poll, name="rollup-canary-peak", daemon=True)
+    timer = threading.Timer(max_s, lambda: con.interrupt())
+    timer.daemon = True
+    started = time.monotonic()
+    poller.start()
+    timer.start()
+    try:
+        out["rows"] = len(con.execute(sql, params).fetchall())
+        out["outcome"] = "ok"
+    except Exception as exc:  # noqa: BLE001 - classified by name, as the build's own limit is
+        out["outcome"] = "out-of-memory" if type(exc).__name__ == "OutOfMemoryException" else "inconclusive"
+        if out["outcome"] == "inconclusive":
+            log_failure(_LOG, "rollup serve canary: the query failed for another reason", exc, level=logging.WARNING)
+    finally:
+        timer.cancel()
+        stop.set()
+        poller.join(timeout=2.0)
+        with contextlib.suppress(Exception):
+            watcher.close()
+        out["secs"] = round(time.monotonic() - started, 2)
+        out["peak_mib"] = round(peak[0], 1)
+    return out
 
 
 #: ``keyword_daily_parity(scan_bound=...)`` default: the live side is NOT bounded (the old behaviour, right

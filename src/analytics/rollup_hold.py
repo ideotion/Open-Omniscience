@@ -54,6 +54,10 @@ _FIELDS: dict[str, tuple[type, ...]] = {
     "shards": (int,),
     "shard": (int,),
     "split": (int,),
+    # the serve check that stopped it (R157): the query's code and what it cost, against the resident rollup
+    "query": (str,),
+    "peak_mib": (int, float),
+    "resident_mib": (int, float),
     # whether DuckDB could spill when it stopped (False: the limit was a wall); a later process where it may releases
     "offload_allowed": (bool,),
     # which code stopped it: a record is evidence about THAT build only (see ``rollup_serve.BUILD_CODE_VERSION``)

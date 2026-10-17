@@ -373,3 +373,45 @@ def test_the_backstop_count_is_still_not_a_read_per_serve_with_a_zero_ttl(monkey
     for _ in range(3):
         rollup_serve._stopped_build_verdict()
     assert counted == [], "the stop is seconds old: the one-a-minute floor holds even with a zero backstop"
+
+
+# --------------------------------------------------------------------------- #
+# R157: the serve-check stop is a duckdb-limit stop, kept and released by the same rules
+# --------------------------------------------------------------------------- #
+
+def _serve_check_stop(monkeypatch, **extra):
+    _stop(monkeypatch, stage="serve-check", query="top-terms-30d", peak_mib=957.0, resident_mib=922.0, **extra)
+
+
+def test_a_serve_check_stop_is_kept_with_the_query_and_its_sizes_and_nothing_else(monkeypatch, _env):
+    _serve_check_stop(monkeypatch, canary_text="engine words that must not be kept")
+    rec = json.loads(_env.read_text(encoding="utf-8"))
+    assert rec["stage"] == "serve-check" and rec["query"] == "top-terms-30d"
+    assert rec["peak_mib"] == 957.0 and rec["resident_mib"] == 922.0
+    assert "canary_text" not in rec and "engine words" not in _env.read_text(encoding="utf-8")
+    assert rollup_serve.decline_detail()["query"] == "top-terms-30d"
+
+
+def test_a_new_process_does_not_rebuild_a_rollup_the_serve_check_refused(monkeypatch):
+    _serve_check_stop(monkeypatch)
+    _restart()
+    calls, outcome = _build_attempts(monkeypatch)
+    assert outcome == "declined" and calls == []
+    assert rollup_serve.status()["stopped"]["stage"] == "serve-check"
+
+
+def test_a_larger_limit_releases_a_serve_check_stop(monkeypatch, _env):
+    _serve_check_stop(monkeypatch)
+    _restart()
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 2048.0)
+    calls, outcome = _build_attempts(monkeypatch)
+    assert outcome == "built" and calls == [1] and not _env.exists()
+
+
+def test_a_corpus_five_percent_smaller_releases_a_serve_check_stop(monkeypatch, _env):
+    _serve_check_stop(monkeypatch, at=time.time() - rollup_serve.rollup_serve_ttl_s() - 60.0)
+    _restart()
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 8)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 11_000_000)
+    calls, outcome = _build_attempts(monkeypatch)
+    assert outcome == "built" and calls == [1]

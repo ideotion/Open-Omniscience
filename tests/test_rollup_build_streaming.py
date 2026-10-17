@@ -1242,3 +1242,145 @@ def test_a_finished_build_names_the_budget_reading_it_ran_under(serve_env, sessi
     assert rollup_serve._build_inmemory_and_swap() is None
     lb = rollup_serve.status()["last_build"]
     assert lb["duckdb_limit_mb"] == 1004.0 and lb["duckdb_threads"] == 2 and lb["budget_total_mb"] == 6698.5
+
+
+# --------------------------------------------------------------------------- #
+# R157: a rollup that fits its limit must also answer the query the serve asks first
+# --------------------------------------------------------------------------- #
+
+def _canary(outcome, **extra):
+    return {"query": columnar.CANARY_QUERY, "outcome": outcome, "rows": 3 if outcome == "ok" else None,
+            "resident_mib": 922.0, "peak_mib": 957.0, "secs": 0.4, **extra}
+
+
+def test_a_rollup_that_cannot_answer_the_serve_check_is_a_stop_that_swaps_nothing_in_and_closes_the_connection(
+        serve_env, session, monkeypatch):
+    """The 20 M-mention finding: built at 922 of 957.5 MiB, then every query ran out of memory and fell back to live."""
+    _seed(session, keywords=30, mentions_per=4)
+    built = []
+    real_connect = columnar.connect
+    monkeypatch.setattr(columnar, "connect", lambda **kw: built.append(real_connect(**kw)) or built[-1])
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("out-of-memory"))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    rollup_serve._STATE["last_build"] = None
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "serve-check"
+    assert stopped["query"] == "top-terms-30d" and stopped["peak_mib"] == 957.0 and stopped["resident_mib"] == 922.0
+    assert stopped["duckdb_limit_mb"] > 0 and "epoch" in stopped and "mentions_count" in stopped, "the release rules' evidence"
+    assert rollup_serve._STATE["con"] is previous, "a rollup that cannot serve replaces nothing"
+    assert rollup_serve._STATE["last_build"] is None
+    assert rollup_marker.read() is None
+    with pytest.raises(Exception):  # noqa: B017 - the engine's own closed-connection error
+        built[0].execute("SELECT 1")
+
+
+def test_a_rollup_that_answers_the_serve_check_is_installed_and_records_what_it_was_asked(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("ok"))
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["con"] is not None
+    check = rollup_serve.status()["last_build"]["serve_check"]
+    assert check["outcome"] == "ok" and check["query"] == "top-terms-30d" and check["peak_mib"] == 957.0
+
+
+def test_an_inconclusive_serve_check_never_blocks_the_rollup(serve_env, session, monkeypatch):
+    """Anything but the engine's own memory error (a time cap, a catalogue error) is no evidence the rollup cannot serve."""
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("inconclusive"))
+    assert rollup_serve._build_inmemory_and_swap() is None
+    assert rollup_serve._STATE["con"] is not None
+    assert rollup_serve.status()["last_build"]["serve_check"]["outcome"] == "inconclusive"
+
+
+def test_the_real_canary_asks_the_finished_rollup_its_first_question_and_reads_ok(serve_env, session):
+    _seed(session, keywords=30, mentions_per=4)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    out = columnar.serve_canary(rollup_serve._STATE["con"])
+    assert out["outcome"] == "ok" and out["rows"] is not None and out["query"] == columnar.CANARY_QUERY
+    assert out["resident_mib"] > 0 and out["peak_mib"] >= out["resident_mib"] and out["secs"] >= 0
+
+
+class _FakeCon:
+    """A connection whose main query raises ``exc`` and whose size reading is a fixed figure."""
+
+    def __init__(self, exc=None, wait=None):
+        self.exc, self.wait, self.interrupted = exc, wait, False
+        self.statements = []
+
+    def execute(self, sql, params=None):
+        self.statements.append((sql, params))
+        if "duckdb_memory" in sql:
+            return _Rows([(500.0,)])
+        if self.wait is not None:
+            self.wait.wait(5.0)
+        if self.exc is not None:
+            raise self.exc
+        return _Rows([("t", "t", "k", "en", 3, 2)])
+
+    def cursor(self):
+        return self
+
+    def close(self):
+        pass
+
+    def interrupt(self):
+        self.interrupted = True
+        if self.wait is not None:
+            self.wait.set()
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchone(self):
+        return self.rows[0]
+
+    def fetchall(self):
+        return self.rows
+
+
+def test_the_canary_names_the_engines_memory_error_by_class_and_every_other_error_as_inconclusive():
+    class OutOfMemoryException(Exception):  # noqa: N818 - the engine's own class name
+        pass
+
+    oom = columnar.serve_canary(_FakeCon(OutOfMemoryException("Out of Memory Error: engine words")))
+    assert oom["outcome"] == "out-of-memory" and "engine words" not in repr(oom) and oom["rows"] is None
+    other = columnar.serve_canary(_FakeCon(RuntimeError("a catalog error")))
+    assert other["outcome"] == "inconclusive"
+
+
+def test_a_canary_that_runs_past_its_cap_is_interrupted_and_inconclusive():
+    import threading
+
+    con = _FakeCon(exc=RuntimeError("INTERRUPT Error"), wait=threading.Event())
+    out = columnar.serve_canary(con, max_s=0.05)
+    assert con.interrupted and out["outcome"] == "inconclusive"
+
+
+def test_the_canary_and_the_serve_run_one_query_text():
+    import datetime
+
+    con = _FakeCon()
+    day = datetime.date.today() - datetime.timedelta(days=columnar.CANARY_DAYS)
+    columnar.windowed_top_terms_raw(con, start_day=day, limit=columnar.CANARY_LIMIT)
+    columnar.serve_canary(con)
+    ran = [s for s in con.statements if "keyword_daily" in s[0]]
+    assert len(ran) == 2 and ran[0] == ran[1]
+
+
+def test_a_served_query_the_engine_refuses_is_counted_by_query_and_error_class_in_the_status():
+    class OutOfMemoryException(Exception):  # noqa: N818
+        pass
+
+    columnar._SERVE_FALLBACKS.clear()
+    con = _FakeCon(OutOfMemoryException("x"))
+    assert columnar.windowed_top_terms_raw(con, limit=5) == []
+    assert columnar.windowed_top_terms_raw(con, limit=5) == []
+    assert columnar.windowed_term_counts(con) == {}
+    got = rollup_serve.status()["serve_fallbacks"]
+    assert got["total"] == 3 and got["since"]
+    assert {(r["query"], r["error"], r["count"]) for r in got["fallbacks"]} == {
+        ("top-terms", "OutOfMemoryException", 2), ("term-counts", "OutOfMemoryException", 1)}
+    columnar._SERVE_FALLBACKS.clear()
