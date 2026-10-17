@@ -88,23 +88,33 @@ function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep) {
         $mutex.Dispose()
     }
 }
-# The row of a launcher that could not get the mutex in time: a detached child process waits for it with no bound, then appends and trims. Returns $true
-# when the child was started, $false when it could not be (the row is then not written: it is never written without the mutex).
+# The row of a launcher that could not get the mutex in time: a detached child process waits for it with no bound, then appends and trims. THE ROW IS NOT
+# IN THE CHILD'S COMMAND LINE (R174): a command line is visible to every local user in a process listing, and under script block logging the decoded command
+# reaches the event log, and a stderr row carries whatever the server printed. The child's command line is one fixed script; the path, the limits and the row
+# go to it through its standard input. Returns $true when the child was started and given the row, $false when not (the row is then not written: it is never
+# written without the mutex).
 function Start-DeferredRow([string]$Path, [string]$Text, [int]$Max, [int]$Keep) {
     try {
         $fns = (@("Add-RowText", "Get-RecMutex", "Limit-Rows") | ForEach-Object { "function $_ {" + (Get-Command $_ -CommandType Function).ScriptBlock.ToString() + "}" }) -join "`n"
-        $b64 = { param([string]$s) [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($s)) }
         $child = "`$Utf8 = New-Object System.Text.UTF8Encoding(`$false)`n" + $fns + "`n" +
-            "`$dec = { param(`$s) [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(`$s)) }`n" +
-            "`$path = & `$dec '" + (& $b64 $Path) + "'; `$text = & `$dec '" + (& $b64 $Text) + "'`n" +
+            "`$ms = New-Object System.IO.MemoryStream; [Console]::OpenStandardInput().CopyTo(`$ms)`n" +
+            "`$in = `$Utf8.GetString(`$ms.ToArray()); `$parts = `$in.Split([char]10, 4)`n" +
+            "`$path = `$parts[0]; `$max = [int]`$parts[1]; `$keep = [int]`$parts[2]; `$text = `$parts[3]`n" +
             "`$m = Get-RecMutex `$path`n" +
             "if (`$m) { `$held = `$false; try { `$m.WaitOne() | Out-Null; `$held = `$true } catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { }`n" +
-            "  if (`$held) { try { [void](Add-RowText `$path `$text); if ($Max -gt 0) { Limit-Rows `$path $Max $Keep } } finally { try { `$m.ReleaseMutex() } catch { } } } }"
+            "  if (`$held) { try { [void](Add-RowText `$path `$text); if (`$max -gt 0) { Limit-Rows `$path `$max `$keep } } finally { try { `$m.ReleaseMutex() } catch { } } } }"
         $enc = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($child))
-        $exe = (Get-Process -Id $PID).Path
-        $argv = @("-NoProfile", "-NonInteractive", "-EncodedCommand", $enc)
-        try { Start-Process -FilePath $exe -ArgumentList $argv -WindowStyle Hidden | Out-Null }
-        catch { Start-Process -FilePath $exe -ArgumentList $argv | Out-Null }
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = (Get-Process -Id $PID).Path
+        $psi.Arguments = "-NoProfile -NonInteractive -EncodedCommand $enc"
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.CreateNoWindow = $true
+        $cp = [System.Diagnostics.Process]::Start($psi)
+        $bytes = $Utf8.GetBytes("$Path`n$Max`n$Keep`n$Text")
+        $cp.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $cp.StandardInput.BaseStream.Flush()
+        $cp.StandardInput.Close()
         return $true
     } catch { return $false }
 }

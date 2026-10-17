@@ -505,3 +505,95 @@ def test_a_powershell_row_that_times_out_is_written_by_a_detached_child_under_th
     time.sleep(1.0)
     assert sum(1 for r in _rows(f)[0] if r.get("pid") == pid) == 1
     assert sorted(x.name for x in f.parent.iterdir()) == ["launcher_exits.jsonl", "launcher_stderr.jsonl"], "the child left no file behind"
+
+
+def pid_in_rows(f: Path, pid: str) -> bool:
+    return int(pid) in {r.get("pid") for r in _rows(f)[0]}
+
+
+def _all_cmdlines() -> list[str]:
+    out = []
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit():
+            try:
+                out.append((d / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", errors="replace"))
+            except OSError:
+                continue
+    return out
+
+
+@posix_only
+@pytest.mark.parametrize("no_flock", [False, True], ids=["flock", "mkdir-lock"])
+def test_a_deferred_bash_row_is_never_in_any_command_line(tmp_path, no_flock):
+    """R174 / the passphrase rule: a command line is visible to every local user. The row of a launcher that deferred it stays in the memory of the
+    detached subshell. The marker is assembled at run time so it is not in the text of the caller's own script either."""
+    if not Path("/proc/self/cmdline").exists():
+        pytest.skip("no /proc")
+    h, env = _helpers(tmp_path, no_flock=no_flock)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 5)
+    marker = "SECRET-ROW-MARKER-31415"
+    holder = subprocess.Popen(["bash", "-c", f'. "{h}"; oo_rec_locked "{f}" sleep 8'], env=env, start_new_session=True)
+    try:
+        time.sleep(0.5)
+        subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; m="$(printf %s {marker[::-1]} | rev)"; oo_rec_append "{f}" "{{\\"m\\":\\"$m\\"}}" 40 20'],
+                       env=env, check=True, timeout=30)
+        time.sleep(0.5)  # the detached subshell is waiting for the lock now
+        seen = [c for c in _all_cmdlines() if marker in c and "shell-snapshots" not in c and "pytest" not in c]  # not the shell that runs this very test
+        assert seen == [], f"the row is in a command line: {seen[:1]}"
+        os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()
+        assert _wait_for(lambda: any(r.get("m") == marker for r in _rows(f)[0]), 30), "and it still lands"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()
+
+
+@_needs_pwsh
+def test_a_deferred_powershell_row_is_never_in_the_childs_command_line(tmp_path):
+    """The child's command line is ONE fixed script: two rows with different pids, times and folders give the identical decoded script, and it holds none of
+    the row's fields or the folder. The row travels through the child's standard input."""
+    import base64
+    import hashlib
+
+    if not Path("/proc/self/cmdline").exists():
+        pytest.skip("no /proc")
+    scripts = []
+    for n in range(2):
+        sub = tmp_path / f"run{n}"
+        sub.mkdir()
+        data = sub / "data"
+        f = data / "diagnostics" / "launcher_exits.jsonl"
+        _seed(f, 5)
+        name = "OOLauncherRecords-" + hashlib.sha1(str(f).lower().encode("utf-8")).hexdigest().upper()
+        holder = sub / "hold.ps1"
+        holder.write_text(f'$m = New-Object System.Threading.Mutex($false, "{name}"); [void]$m.WaitOne(); Set-Content "{sub}/held" 1; Start-Sleep 12; $m.ReleaseMutex()',
+                          encoding="utf-8")
+        copy = sub / "w.ps1"
+        copy.write_text(LAUNCH_PS1.read_text(encoding="utf-8").replace("$RecLockWaitMs = 520", "$RecLockWaitMs = 100"), encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("OO_")}
+        h = subprocess.Popen([_PWSH, "-NoProfile", "-File", str(holder)], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            assert _wait_for(lambda sub=sub: (sub / "held").exists(), 30)
+            server = sub / "server"
+            _exe(server, f"#!/usr/bin/env bash\nsleep 0.{n + 2}\nexit 3\n")
+            marker = sub / "m"
+            subprocess.run([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(server), "-Marker", str(marker), "-DataDir", str(data)], env=env,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+            pid = marker.read_text(encoding="utf-8").strip()
+            time.sleep(0.5)
+            enc = [c for c in _all_cmdlines() if "-EncodedCommand " in c and "hold.ps1" not in c]
+            assert enc, "the deferred child is not running"
+            for c in enc:
+                script = base64.b64decode(c.split("-EncodedCommand ", 1)[1].split()[0]).decode("utf-16-le")
+                assert "oo-launcher" not in script and str(sub) not in script and f'"pid":{pid}' not in script and "exits.jsonl" not in script, "a field of the row or the path is in the command line"
+                scripts.append(script)
+        finally:
+            h.kill()
+            h.wait()
+        # let the deferred child finish before the next run: the mutex is gone with the holder
+        _wait_for(lambda f=f, pid=pid: pid_in_rows(f, pid), 60)
+    assert len(set(scripts)) == 1, "the command line is the same fixed script whatever the row is"
+
+
