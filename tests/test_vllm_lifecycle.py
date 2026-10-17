@@ -2505,3 +2505,36 @@ def test_start_notes_an_unpolled_exit_and_waits_for_its_copy_before_it_truncates
     V.start("my/model", popen=lambda argv, **kw: _Live())
     assert seen["log_at_copy"] == "the old server's reason\n"
     assert 31337 in V._exits_noted
+
+
+def test_two_processes_appending_to_the_start_journal_lose_no_attempt_to_a_trim(tmp_path, monkeypatch):
+    """R176: the append, the read and the trim are one section under the journal's lock, so a second server's attempt cannot fall between a trim's read and its swap."""
+    import subprocess
+    import sys
+    import textwrap
+
+    (tmp_path / "data").mkdir(exist_ok=True)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))  # the fixture above points data_dir() here too
+    root = str(Path(V.__file__).parents[2])
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {root!r})
+        os.environ["OO_DATA_DIR"] = {str(tmp_path / "data")!r}
+        from src.llm import vllm_lifecycle as V
+        V._ATTEMPTS_CAP = 20
+        for i in range(150):
+            V._record_start_attempt({{"probe": "child", "n": i}})
+        """
+    )
+    monkeypatch.setattr(V, "_ATTEMPTS_CAP", 20)
+    child = subprocess.Popen([sys.executable, "-c", script])
+    n = 0
+    while child.poll() is None:
+        V._record_start_attempt({"probe": "parent", "n": n})
+        n += 1
+    child.wait()
+    rows = [json.loads(ln) for ln in V._start_history_path().read_text().splitlines() if ln.strip()]
+    kids = [r["n"] for r in rows if r.get("probe") == "child"]
+    assert kids == list(range(150 - len(kids), 150)), "an attempt written by the other process was lost by a trim"
+    assert kids and len(rows) <= 20

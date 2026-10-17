@@ -87,7 +87,8 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/jobs/progress_state.py": (2, "Q"),
     "src/legal/consent.py": (1, "Q"),
     "src/llm/installer.py": (1, "rc2"),
-    "src/llm/vllm_lifecycle.py": (4, "rc2"),
+    # the one left: the preserved failed-start log copy; its name carries the second, the pid and the exit code, so no two servers share its temp
+    "src/llm/vllm_lifecycle.py": (1, "rc2"),
     "src/monitoring/ai_check.py": (1, "rc2"),
     "src/monitoring/collect_perf.py": (2, "export"),
     "src/monitoring/exit_evidence.py": (3, "rc2"),
