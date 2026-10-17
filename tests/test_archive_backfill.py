@@ -401,4 +401,4 @@ def test_a_failed_enumeration_on_one_feed_leaves_its_sibling_its_own_attempt(db,
         advance_backfill(db, fetcher=object(), per_pass=5, state_path=sp,
                          ingest_fn=_ingest_always(IngestResult.STORED), discover_fn=discover)
     assert seen == [source.id, twin.id]  # the sibling got its attempt
-    assert "example.com" in load_state(sp)["completed_outlets"]  # and its run to the end is what marks the outlet
+    assert load_state(sp)["completed_outlets"] == ["example.com"]  # and its run to the end is what marks the outlet
