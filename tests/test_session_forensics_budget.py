@@ -141,3 +141,40 @@ def test_every_died_into_phase_code_has_its_words():
     assert codes == set(forensics.DIED_REASON_WORDS)
     got = forensics.render_text({"previous_session": {"previous_session": {"summary": "x"}, "how_it_ended": {"summary": "s", "died_into_phase": {"seconds_in_peaks_phase": None, "reason": "no phase start"}}}})
     assert "phase start not recorded (older build)" in got
+
+
+# ---- the scan: a member cannot be added without its worst case being measured here ----
+
+_BUILDERS = {  # member -> a function returning the worst-case serialised bytes of that member
+    "launcher_stderr": lambda dd, tmp, mp: _stderr_worst(dd),
+    "died_into_phase": lambda dd, tmp, mp: _died_worst(),
+    "native_in_flight": lambda dd, tmp, mp: _native_worst(),
+    "last_thread_census": lambda dd, tmp, mp: _census_worst(tmp, mp),
+    "stack": lambda dd, tmp, mp: _stack_worst(),
+}
+_EXTERNAL = {"crashing_thread_kind": CRASHING_THREAD_KIND}  # written by the crash-trace code; WAL's measurement
+_CAP_OF = {"COREDUMP_STACK_BYTES": "stack", "CENSUS_BYTES": "last_thread_census", "REPORT_BYTES_BUDGET": "native_in_flight"}
+_NOT_A_MEMBER = {  # byte constants that are not a share of the headroom, each with why
+    "_TRACE_MAX_BYTES": "how much of the trace log is read",
+    "_TRACE_LINE_BYTES": "the width of one trace line",
+    "_STDERR_READ_BYTES": "how much of the launcher stderr file is read",
+    "RECOVERY_RATE_MIN_BYTES": "a rate threshold",
+}
+
+
+def test_every_headroom_member_has_a_worst_case_builder_here_and_nothing_else_does():
+    assert set(forensics.HEADROOM_MEMBERS) == set(_BUILDERS) | set(_EXTERNAL), "a member was added or removed without its worst case being measured here"
+
+
+def test_every_byte_cap_in_the_monitoring_modules_is_claimed_by_a_member_or_named_as_not_one():
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "src" / "monitoring"
+    found: set[str] = set()
+    for name in ("exit_evidence.py", "forensics.py", "session_hwm.py", "native_inflight.py"):
+        found |= set(re.findall(r"^(_?[A-Z][A-Z_]*BYTES[A-Z_]*) *=", (root / name).read_text(encoding="utf-8"), re.M))
+    unclaimed = found - set(_CAP_OF) - set(_NOT_A_MEMBER)
+    assert not unclaimed, f"byte constants no headroom member claims and no reason names: {sorted(unclaimed)}"
+    assert set(_CAP_OF.values()) <= set(_BUILDERS)
+    assert found >= set(_CAP_OF), "a cap this test maps no longer exists in the source"

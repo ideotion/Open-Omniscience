@@ -842,6 +842,11 @@ def previous_session_report() -> dict[str, Any]:
     return _with_answers(out)
 
 
+#: The members of the session-forensics report that spend the 2,415 B headroom above the diagnostics floor. A member joins this tuple in the
+#: commit that adds it, together with a worst-case builder in tests/test_session_forensics_budget.py (that test is red while the two differ,
+#: and while a ``*_BYTES`` cap exists in the monitoring modules that no member claims).
+HEADROOM_MEMBERS = ("crashing_thread_kind", "launcher_stderr", "died_into_phase", "native_in_flight", "last_thread_census", "stack")
+
 #: What each ``died_into_phase`` reason code says in words (the stored record carries the short code; every reader maps it back, so the report
 #: reads as it did before the codes). tools/diag_reader.py carries the same table for the triage.
 DIED_REASON_WORDS = {
