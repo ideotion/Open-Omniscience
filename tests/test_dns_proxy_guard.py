@@ -23,6 +23,17 @@ from src.ingest import BlockedTarget, EthicalFetcher, FetchFailed
 from src.ingest import _is_remote_resolving_proxy as is_remote_resolving_proxy
 
 
+@pytest.fixture(autouse=True)
+def _connect_guard_installed_before_any_patch():
+    """Install the connect guard BEFORE a test's ``monkeypatch`` records ``socket.getaddrinfo``. The first fetch of a process installs it, and
+    when that happens after the record the undo writes the REAL call back over the guard: ``airplane._installed`` stays True with DNS unguarded
+    for every later test of the worker (``tests/test_egress_window.py`` reached the real resolver after this file). A production fetch has
+    installed it long before any resolver is swapped, which is the order this reproduces."""
+    from src.ingest import airplane
+
+    airplane.ensure_connect_guard_installed()
+
+
 class _Resp:
     def __init__(self, status_code=200, text="", content_type="text/html", location=None, url=None):
         self.status_code = status_code

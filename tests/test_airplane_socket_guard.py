@@ -239,3 +239,72 @@ def test_socks_proxy_transparent_when_online(guard):
     with pytest.raises(_Reached):
         s.connect(("example.com", 80))
     assert "socks_connect" in guard
+
+
+def test_a_real_call_written_back_over_the_guard_is_patched_again(guard):
+    """``_installed`` True with the stdlib's own ``getaddrinfo`` standing in ``socket`` is a guard that is gone while its flag says it is
+    there: a ``monkeypatch`` undo that recorded the real call BEFORE the install writes it back over our wrapper (tests/test_dns_proxy_guard.py
+    did, and DNS was unguarded for every later test of the worker; production code that ever wrote the real call back would do the same).
+    The next install patches it again, for each of the calls, and airplane mode refuses by name once more."""
+    real_gai, real_cc, real_conn = socket.getaddrinfo, socket.create_connection, socket.socket.connect
+    socket.getaddrinfo = ap._REAL_AT_IMPORT[0]  # type: ignore[assignment]
+    socket.create_connection = ap._REAL_AT_IMPORT[1]  # type: ignore[assignment]
+    socket.socket.connect = ap._REAL_AT_IMPORT[2]  # type: ignore[assignment]
+    try:
+        assert ap.is_installed()
+        ap.ensure_connect_guard_installed()
+        assert socket.getaddrinfo is ap._guarded_getaddrinfo
+        assert socket.create_connection is ap._guarded_create_connection
+        assert socket.socket.connect is ap._guarded_connect
+        activate_kill_switch()
+        with pytest.raises(AirplaneModeError):
+            socket.getaddrinfo("example.com", 443)
+        assert guard == [], "the real getaddrinfo must never be reached under airplane mode"
+    finally:
+        socket.getaddrinfo, socket.create_connection, socket.socket.connect = real_gai, real_cc, real_conn  # type: ignore[method-assign,assignment]
+
+
+def test_a_stand_in_standing_where_the_guard_was_is_not_overwritten(guard):
+    """Only the REAL call is replaced: a test's deliberate stand-in (the dns-proxy tests resolve through one) keeps its place."""
+    real_gai = socket.getaddrinfo
+
+    def stand_in(host, *a, **k):
+        return []
+
+    socket.getaddrinfo = stand_in  # type: ignore[assignment]
+    try:
+        ap.ensure_connect_guard_installed()
+        assert socket.getaddrinfo is stand_in
+    finally:
+        socket.getaddrinfo = real_gai  # type: ignore[assignment]
+
+
+def test_the_monkeypatch_order_that_left_dns_unguarded_is_healed_by_the_next_install(monkeypatch):
+    """The leak exactly as found (tests/test_dns_proxy_guard.py): ``monkeypatch.setattr`` records the REAL ``getaddrinfo``, the first fetch of the
+    process then installs the guard OVER the stand-in, and the undo writes the recorded real call back over the guard. ``_installed`` stays
+    True; before the heal in ``_install_patches`` the next ``install_airplane_socket_guard`` was a no-op and ``test_egress_window`` reached the
+    real resolver."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    uninstall_airplane_socket_guard()
+    real = socket.getaddrinfo
+    try:
+        with monkeypatch.context() as mp:
+            mp.setattr(socket, "getaddrinfo", lambda *a, **k: [])
+            ap.ensure_connect_guard_installed()
+        assert ap.is_installed() and socket.getaddrinfo is real  # the state the leak left behind
+        install_airplane_socket_guard()
+        assert socket.getaddrinfo is ap._guarded_getaddrinfo
+    finally:
+        uninstall_airplane_socket_guard()
+        if was_installed:
+            ap.ensure_connect_guard_installed()
+        ap._airplane_armed = was_armed
+
+
+def test_a_patch_point_that_cannot_be_read_is_left_alone_not_healed(guard, monkeypatch):
+    """A private attribute a newer Python renamed (``HTTPConnection._tunnel``) reads as absent. That point is neither the real call nor a
+    stand-in, so the check names nothing for it and the install does not raise or write a wrapper over a name that is not there."""
+    monkeypatch.delattr(http.client.HTTPConnection, "_tunnel")
+    assert ap.removed_while_installed() == []
+    ap._install_patches()
+    assert not hasattr(http.client.HTTPConnection, "_tunnel")
