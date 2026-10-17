@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,diagnostics,A withheld journal line and a journal that is not UTF-8 are named where they happen,shipped,PR #1444,src/api/diagnostics/bundle.py;src/backup/runlog.py;tests/test_sink_sweep_writer_gaps.py,The folded left-over journals count lines the passphrase check could not walk as withheld_lines (separate from unparsed_lines) and list_runs flags a journal that is not valid UTF-8 even when it is bad only near its end.

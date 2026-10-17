@@ -138,16 +138,59 @@ def _top_term(session: Session) -> tuple[str | None, int]:
     return (str(row[0]), int(row[1])) if row else (None, 0)
 
 
-def _time_case(case: _Case, repeats: int) -> dict:
+#: The cases that can take a minute each run LAST: a member whose time runs out should lose the cases that were never going to be quick,
+#: not the cheap ones behind them (a run of 304 s lost four cases to two 60 s trending cases ahead of them).
+_RUN_LAST = ("trending", "trending_windows")
+#: ... and the case that opens a statement deadline of its own runs after even those: leaving such a block switches the connection's interrupt
+#: handler off, and the outer deadline is not switched back on until the next transaction, so every case after it would run without one.
+_RUN_VERY_LAST = ("framing",)
+
+
+def _run_rank(case: _Case) -> int:
+    return 2 if case.key in _RUN_VERY_LAST else 1 if case.key in _RUN_LAST else 0
+
+
+def _deadline_left_ms(session: Session) -> float | None:
+    """Milliseconds left on the enclosing statement deadline (negative once it has passed), or ``None`` when there is none."""
+    from src.database.maintenance import deadline_left_s
+
+    left = deadline_left_s(session)
+    return None if left is None else round(left * 1000.0, 1)
+
+
+def _not_run_row(case: _Case, left_ms: float | None) -> dict:
+    """A case the member's deadline passed before: not run, which says nothing about how slow it is."""
+    return {
+        "case": case.key, "label": case.label,
+        "optimized_this_session": case.optimized, "heavy": case.heavy,
+        "ok": False, "not_run": True,
+        "error": "not run: the member's deadline had passed before this case started",
+        "deadline_left_ms": left_ms,
+    }
+
+
+def _time_case(case: _Case, repeats: int, session: Session | None = None) -> dict:
     """Run one case ``repeats`` times, capturing per-run ms + cold/warm aggregates.
     Wrapped: a failing or unavailable case reports its error and never aborts the run."""
     runs: list[float] = []
     size: int | None = None
+    stopped = False
     for i in range(repeats):
+        left = _deadline_left_ms(session) if session is not None else None
+        if runs and left is not None and left <= 0:
+            stopped = True  # the deadline passed between two runs: the runs taken stand, the rest are not started
+            break
         t0 = time.perf_counter()
         try:
             out = case.fn()
         except Exception as exc:  # noqa: BLE001 - report failures honestly, per case
+            left = _deadline_left_ms(session) if session is not None else None
+            # Only an interrupt that arrives after the deadline is the deadline's doing; any other exception keeps its own text.
+            said = record_text(exc, typed=False).lower()
+            by_deadline = left is not None and left <= 0 and ("interrupted" in said or "deadline" in said)
+            if runs and by_deadline:
+                stopped = True  # at least one run finished: report what was measured
+                break
             err_row: dict = {
                 "case": case.key, "label": case.label,
                 "optimized_this_session": case.optimized, "heavy": case.heavy,
@@ -157,6 +200,10 @@ def _time_case(case: _Case, repeats: int) -> dict:
                 err_row["note"] = case.note
             if runs:  # we got at least one timing before it failed — keep it
                 err_row["runs_ms"] = [round(r, 1) for r in runs]
+            if by_deadline:
+                # the deadline stopped this statement: say so, not "interrupted", which reads as a fault of the case
+                err_row["error"] = "stopped by the member's deadline while running"
+                err_row["stopped_by_deadline"] = True
             return err_row
         runs.append((time.perf_counter() - t0) * 1000.0)
         if i == 0:
@@ -178,6 +225,10 @@ def _time_case(case: _Case, repeats: int) -> dict:
         row["warm_min_ms"] = round(min(warm), 1)
         row["warm_median_ms"] = round(statistics.median(warm), 1)
         row["warm_max_ms"] = round(max(warm), 1)
+    if stopped:
+        row["stopped_by_deadline"] = True
+        row["runs_completed"] = len(runs)
+        row["runs_asked"] = repeats
     if case.note:
         row["note"] = case.note
     return row
@@ -412,17 +463,37 @@ def run_benchmark(session: Session, *, repeats: int = _DEFAULT_REPEATS) -> dict:
         store, corpus = {"error": record_text(exc, limit=160, typed=False)}, {"error": record_text(exc, limit=160, typed=False)}
     scaling = _scaling_context(session)
 
-    results = [_time_case(c, repeats) for c in _build_cases(session)]
+    cases = sorted(_build_cases(session), key=_run_rank)  # stable: the rest keep their order
+    left_at_start = _deadline_left_ms(session)
+    results: list[dict] = []
+    reached_after_ms: float | None = None
+    for c in cases:
+        left = _deadline_left_ms(session)
+        if left is not None and left <= 0:
+            if reached_after_ms is None:
+                reached_after_ms = round((time.perf_counter() - wall0) * 1000, 1)
+            results.append(_not_run_row(c, left))
+            continue
+        row = _time_case(c, repeats, session)
+        results.append(row)
+        if row.get("stopped_by_deadline") and reached_after_ms is None:
+            reached_after_ms = round((time.perf_counter() - wall0) * 1000, 1)
     total_wall_ms = round((time.perf_counter() - wall0) * 1000, 1)
 
     ok = [r for r in results if r.get("ok")]
     slowest = max(
         ok, key=lambda r: r.get("median_ms", 0.0), default=None
     )
+    not_run = [r["case"] for r in results if r.get("not_run")]
     summary = {
-        "cases_run": len(results),
+        "cases_run": len(results) - len(not_run),
         "cases_ok": len(ok),
-        "cases_failed": len(results) - len(ok),
+        "cases_failed": len(results) - len(ok) - len(not_run),
+        "cases_not_run": len(not_run),
+        "deadline": {
+            "active": left_at_start is not None, "left_ms_at_start": left_at_start,
+            "reached_after_ms": reached_after_ms, "not_run": not_run,
+        },
         "total_wall_ms": total_wall_ms,
         "slowest_case": (slowest or {}).get("case"),
         "slowest_median_ms": (slowest or {}).get("median_ms"),

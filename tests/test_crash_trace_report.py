@@ -254,11 +254,11 @@ def test_no_line_of_a_trace_runs_on(dd):
 
 @pytest.mark.parametrize("letter", ["y", "\u00e9", "\u6f22", "\U0001d518"], ids=["ascii", "accented", "cjk", "astral"])
 def test_the_member_of_a_crash_loop_with_long_lines_stays_small_in_any_script(dd, letter):
-    """Ten earlier ends of sixty lines of a thousand characters each would be about 600 KB. Cut at
+    """Ten earlier ends of lines of a thousand characters each would be about 1.2 MB. Cut at
     ``_TRACE_LINE_CHARS`` characters AND ``_TRACE_LINE_BYTES`` bytes the worst case is 10 x 60 x 202 =
     121,200 bytes, about 125 KB as the member is WRITTEN (UTF-8, not escaped): at 200 characters alone
     the same ends measured 233 KB in accented text, 346 KB in CJK and 458 KB in astral characters.
-    150,000 is the figure the diagnostics zip's slot for this member is sized from."""
+    The newest end keeps 400 lines and the others 120, so the worst case is (400 + 9 x 120) x 202 = about 300 KB; 400,000 is the pin (it was 150,000 at 60 lines each)."""
     recs, text = [], ""
     for n in range(1, 40):
         pid = 100 + n
@@ -268,7 +268,7 @@ def test_the_member_of_a_crash_loop_with_long_lines_stays_small_in_any_script(dd
     _log(dd, text)
     out = ee.earlier_unclean_ends(None, records=recs)
     written = json.dumps(out, ensure_ascii=False).encode("utf-8")
-    assert out["shown"] == 10 and len(written) < 150_000, len(written)
+    assert out["shown"] == 10 and len(written) < 400_000, len(written)
     lines = [ln for row in out["sessions"] if row.get("trace") for ln in row["trace"]["lines"]]
     assert lines and all(len(ln) <= ee._TRACE_LINE_CHARS and len(ln.encode("utf-8")) <= ee._TRACE_LINE_BYTES for ln in lines)
     assert all(len(row["trace"]["summary"].encode("utf-8")) <= ee._TRACE_LINE_BYTES for row in out["sessions"] if row.get("trace"))

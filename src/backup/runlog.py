@@ -109,7 +109,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import exception_text, log_failure, record_text, record_traceback
+from src.monitoring.secret_scrub import (
+    exception_text,
+    log_failure,
+    record_text,
+    record_traceback,
+    scrubbed_value,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -543,7 +549,7 @@ class RunLog:
         # draw and the reason step 3 of a 19-step merge stayed unexplained.
         stmt = self._stmt
         if stmt is not None:
-            rec["sql"] = stmt[0]
+            rec["sql"] = scrubbed_value(stmt[0])  # written at the beat (15 s), not per statement; the label was cut by the merge before this saw it
             rec["sql_s"] = round(time.monotonic() - stmt[1], 1)
 
         src_name, done, total = _counter_of(prog)
@@ -1029,8 +1035,8 @@ def _has_terminal_event(p: Path, *, tail_bytes: int = 64 * 1024) -> bool:
     return any(r.get("ev") in ("run_end", "promoted") for r in recs)
 
 
-def _iter_jsonl(p: Path) -> Iterator[dict]:
-    """Stream one journal, a record at a time.
+def _iter_jsonl(p: Path, *, raw: bool = False, stats: dict | None = None) -> Iterator[dict]:
+    """Stream one journal, a record at a time, each record with the held passphrase taken out of every string in it.
 
     THE STREAMING FORM IS THE DEFAULT because of where these files are read from.
     ``promote_incomplete_runs`` runs in the LIFESPAN STARTUP, before unlock, on
@@ -1042,7 +1048,14 @@ def _iter_jsonl(p: Path) -> Iterator[dict]:
     line becomes a dict and they are all held at once.
 
     A torn final line is exactly what a hard kill leaves, so it is skipped rather
-    than treated as corruption -- unchanged from the list version this replaces."""
+    than treated as corruption -- unchanged from the list version this replaces.
+
+    THE READER IS WHERE AN OLDER FILE IS CHECKED (while a passphrase is held -- before unlock there is nothing to compare against): a journal written before the sweep may hold a passphrase an engine quoted, and these
+    records leave the machine in the diagnostics bundle and the API. Each record is parsed first and then every string in it is checked
+    (the file holds the JSON-escaped form; the parsed string is the form the passphrase has). A line that does not parse is not
+    passed on in any form; ``stats['lines_not_read']`` counts those, and ``stats['withheld']`` the records that could not be checked.
+    ``raw=True`` is for the callers that stream a whole journal and keep a few records (they check the ones they keep) or only look at a
+    record's ``ev`` (is the journal finished, is it empty) and publish nothing."""
     try:
         with open(p, encoding="utf-8") as fh:
             for line in fh:
@@ -1052,18 +1065,38 @@ def _iter_jsonl(p: Path) -> Iterator[dict]:
                 try:
                     rec = json.loads(line)
                 except ValueError:
+                    if stats is not None:
+                        stats["lines_not_read"] = stats.get("lines_not_read", 0) + 1
                     continue
-                if isinstance(rec, dict):
-                    yield rec
+                if not isinstance(rec, dict):
+                    continue
+                if not raw:
+                    rec = scrubbed_value(rec)
+                    if not isinstance(rec, dict):  # the record could not be walked: nothing of it is kept
+                        if stats is not None:
+                            stats["withheld"] = stats.get("withheld", 0) + 1
+                        continue
+                yield rec
     except OSError:
+        return
+    except UnicodeDecodeError:
+        # a journal that is not valid UTF-8 cannot be checked line by line: the rest of it is withheld, and counted
+        if stats is not None:
+            stats["file_not_utf8"] = True
         return
 
 
-def _read_jsonl(p: Path) -> list[dict]:
+def _checked(rec: dict) -> dict:
+    """``rec`` with the held passphrase taken out of every string in it (a record that cannot be walked is a withheld marker)."""
+    out = scrubbed_value(rec)
+    return out if isinstance(out, dict) else {"withheld": "a record that could not be checked for the passphrase"}
+
+
+def _read_jsonl(p: Path, stats: dict | None = None) -> list[dict]:
     """Every record at once. Kept for the callers that genuinely need the whole
     file; prefer :func:`_iter_jsonl` or :func:`_tail_jsonl` anywhere the size is
     not known to be small."""
-    return list(_iter_jsonl(p))
+    return list(_iter_jsonl(p, stats=stats))
 
 
 def _tail_jsonl(p: Path, n: int) -> tuple[int, list[dict]]:
@@ -1075,10 +1108,14 @@ def _tail_jsonl(p: Path, n: int) -> tuple[int, list[dict]]:
     per-child CPU array."""
     window: deque[dict] = deque(maxlen=max(0, n))
     total = 0
-    for rec in _iter_jsonl(p):
+    for rec in _iter_jsonl(p, raw=True):  # every record is counted; only the ones KEPT are checked, below
         total += 1
         window.append(rec)
-    return total, list(window)
+    kept = []
+    for rec in window:
+        checked = scrubbed_value(rec)
+        kept.append(checked if isinstance(checked, dict) else {"withheld": "a record that could not be checked for the passphrase"})
+    return total, kept
 
 
 def list_runs() -> list[dict]:
@@ -1098,7 +1135,8 @@ def list_runs() -> list[dict]:
         begin_rec: dict = {}
         end_rec: dict | None = None
         promoted: dict | None = None
-        for r in _iter_jsonl(p):
+        why: dict = {}
+        for r in _iter_jsonl(p, raw=True, stats=why):  # every record is looked at, only the three KEPT are checked for the passphrase
             seen = True
             ev = r.get("ev")
             if ev == "run_begin":
@@ -1108,18 +1146,24 @@ def list_runs() -> list[dict]:
                 end_rec = r
             elif ev == "promoted":
                 promoted = r
-        if not seen:
+        if not seen and not why.get("file_not_utf8"):
             continue
+        begin_rec = _checked(begin_rec)
+        end_rec = _checked(end_rec) if end_rec is not None else None
+        promoted = _checked(promoted) if promoted is not None else None
         outcome = (
             (end_rec or {}).get("outcome")
             if end_rec is not None
             else (promoted or {}).get("outcome", "incomplete")
         )
+        if not seen:  # a file that is not valid UTF-8 is listed, as what it is, rather than missing from the list
+            outcome = "unreadable: not valid UTF-8"
         try:
             size = p.stat().st_size
         except OSError:
             size = 0
         out.append({
+            **({"milestones_not_read": dict(why)} if why else {}),  # lines that did not parse, or the rest of a file that is not UTF-8
             "run_id": p.stem,
             "kind": begin_rec.get("kind"),
             "label": begin_rec.get("label"),
@@ -1161,22 +1205,31 @@ def summarise(run_id: str) -> dict:
     open_stages: list[str] = []
     stages: dict = {}
     last_stage_end: str | None = None
-    for r in _iter_jsonl(d / f"{run_id}.jsonl"):
+    # READ RAW, CHECK WHAT IS KEPT: this runs at boot over a journal that may be tens of MB, and a check of every string of every
+    # record (up to ~500 shapes each while a passphrase is held) is the cost the boot path cannot pay. The records the answer is made
+    # of are checked as they are kept, and a stage name is checked BEFORE it becomes a key (keys are not walked by a value check).
+    # While the corpus passphrase is not yet held (the boot pass runs before unlock) the check has nothing to compare against; a
+    # reader serving the answer later checks again.
+    def _name(x):
+        return scrubbed_value(x) if isinstance(x, str) else x
+
+    read_stats: dict = {}
+    for r in _iter_jsonl(d / f"{run_id}.jsonl", raw=True, stats=read_stats):
         milestones_seen += 1
         ev = r.get("ev")
         if ev == "run_begin":
             if not begin_rec:
-                begin_rec = r
+                begin_rec = _checked(r)
         elif ev == "run_end":
-            end_rec = r  # the LAST one wins, as reversed() gave before
+            end_rec = _checked(r)  # the LAST one wins, as reversed() gave before
         elif ev == "error":
-            errors.append(r)
+            errors.append(_checked(r))
         elif ev == "milestones_capped":
-            capped = r
+            capped = _checked(r)
         elif ev == "stage_begin":
-            open_stages.append(r.get("name", "?"))
+            open_stages.append(_name(r.get("name", "?")))
         elif ev == "stage_end":
-            nm = r.get("name")
+            nm = _name(r.get("name"))
             if nm in open_stages:
                 open_stages.remove(nm)
             # A lone stage_end is normal, not corruption: StageTimings.record()
@@ -1203,6 +1256,8 @@ def summarise(run_id: str) -> dict:
         "beats": beats_total,
         "errors": [{"t": e.get("t"), "cls": e.get("cls"), "msg": e.get("msg")} for e in errors],
     }
+    if read_stats:
+        out["milestones_not_read"] = dict(read_stats)  # lines that did not parse, or the rest of a file that is not UTF-8
     if end_rec is not None:
         out["wall_s"] = end_rec.get("wall_s")
         if end_rec.get("journal_truncated"):
@@ -1295,10 +1350,17 @@ def raw_runs(*, max_runs: int = 4, max_beats: int = 4000) -> dict:
         # then kept the last `max_beats`, so the bound it advertises never applied
         # to the peak. The retained window and the omission count are unchanged.
         total, beats = _tail_jsonl(run_logs_dir() / f"{rid}.beat.jsonl", max_beats)
+        stats: dict = {}
         entry: dict = {
-            "milestones": _read_jsonl(run_logs_dir() / f"{rid}.jsonl"),
+            "milestones": _read_jsonl(run_logs_dir() / f"{rid}.jsonl", stats),
             "beats": beats,
         }
+        if stats:
+            entry["milestones_not_read"] = dict(stats)
+            entry["milestones_not_read_note"] = (
+                "lines of this journal that were not read and are not included: ones that did not parse (a torn last line), "
+                "records that could not be checked for the passphrase, or the rest of a file that is not valid UTF-8 (from the block of the file that holds the bad bytes: the records just before them are lost with it)"
+            )
         if total > max_beats:
             entry["beats_omitted"] = total - max_beats
             entry["beats_note"] = (
@@ -1336,7 +1398,7 @@ def promote_incomplete_runs(*, max_runs: int = 50) -> list[dict]:
             continue
         # Only that the file holds at least one parseable record: `next` stops
         # at the first one, so an empty or unreadable journal costs nothing.
-        if next(_iter_jsonl(p), None) is None:
+        if next(_iter_jsonl(p, raw=True), None) is None:
             continue
         run_id = p.stem
         try:

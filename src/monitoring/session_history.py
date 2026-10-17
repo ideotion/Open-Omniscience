@@ -629,7 +629,8 @@ def _launcher_exit(prev_state: dict[str, Any] | None) -> dict[str, Any] | None:
     try:
         from src.monitoring.exit_evidence import launcher_exit
 
-        got = launcher_exit(pid, boot if isinstance(boot, str) else None)
+        started = (prev_state or {}).get("started_at")
+        got = launcher_exit(pid, boot if isinstance(boot, str) else None, started if isinstance(started, str) else None)
     except Exception:  # noqa: BLE001 - the ledger never breaks a boot
         return None
     if not got:

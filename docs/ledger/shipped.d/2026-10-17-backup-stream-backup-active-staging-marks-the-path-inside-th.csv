@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,backup/stream-backup,"active_staging marks the path inside the try, so an interrupt after the mark still unmarks it (R171)",shipped,PR #1444,"src/backup/stream_backup.py,tests/test_active_staging_interrupt_safe.py","The add to the live-staging set ran before the try, so an interrupt between the add and the try left the path marked for the life of the process and its leftovers were never cleaned. The add is now inside the try; the finally discards. The new test interrupts deterministically at the add lock's exit."

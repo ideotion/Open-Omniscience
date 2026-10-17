@@ -81,6 +81,7 @@ from src.ingest.ssrf_guard import (
     check_resolution,
 )
 from src.ingest.ssrf_guard import guard_enabled as ssrf_guard_enabled
+from src.monitoring.native_inflight import native_call
 
 try:
     import socks as _pysocks  # type: ignore[import-untyped]
@@ -196,7 +197,8 @@ def _addr_host(address: object) -> object:
 
 def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     _guard(host)
-    infos = _orig_getaddrinfo(host, *args, **kwargs)
+    with native_call("dns"):
+        infos = _orig_getaddrinfo(host, *args, **kwargs)
     # The SSRF half checks the ANSWER, not the question: inside a guarded fetch a
     # name that resolves to an internal address is refused here, which is the
     # only place a destination lookup performed by a library that then hands the
@@ -216,14 +218,16 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
         _guard(_addr_host(address))
         check_connect_target(address)
-    return _orig_connect(self, address)
+    with native_call("connect"):
+        return _orig_connect(self, address)
 
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
         _guard(_addr_host(address))
         check_connect_target(address)
-    return _orig_connect_ex(self, address)
+    with native_call("connect"):
+        return _orig_connect_ex(self, address)
 
 
 def _guarded_tunnel(self):  # type: ignore[no-untyped-def]

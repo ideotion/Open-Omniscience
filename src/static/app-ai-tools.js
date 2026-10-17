@@ -2055,6 +2055,24 @@
       loadLlmHealth();
     }
 
+    /** The plain-language notes under the vLLM server-log view: what the shown text leaves out and where a complete copy is.
+     *  Pure (status payload in, strings out) so a node test drives the real function. */
+    function vllmLogNotes(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const lg = (s && s.server_log) || {};
+      const o = (s && s.start_outcome) || {};
+      const out = [];
+      if (lg.available && lg.scanned_whole === false) {
+        out.push(t("The middle of this log was not read, because the log is large and this view refreshes often."));
+      }
+      if (lg.tail_note) out.push(String(lg.tail_note));
+      if (lg.held_back_note) out.push(String(lg.held_back_note));
+      if (o.preserved_log_path) out.push(t("A complete copy of this failed start, with the passphrase taken out:") + " " + o.preserved_log_path);
+      else if (o.preserved_log_pending) out.push(String(o.preserved_log_reason));
+      else if (o.preserved_log_reason) out.push(t("No complete copy of this failed start:") + " " + o.preserved_log_reason);
+      return out;
+    }
+
     async function loadVllmStatusPanel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("vllm-status-box");
@@ -2082,6 +2100,9 @@
         // ~20 KB ending in "See root cause above". The operator's log was 29,855 bytes
         // and the reason sat in the 21,855 that were not shown.
         const lg = s.server_log || {};
+        // What the log view does NOT show, said where it is read (the server states each one; the three that are
+        // plain facts about the view are translated here).
+        const notes = vllmLogNotes(s).map((n) => `<p class="muted">${esc(n)}</p>`).join("");
         const gap = lg.elided_bytes > 0
           ? `<p class="muted">${esc(OOI18N && OOI18N.tf
               ? OOI18N.tf("… {n} bytes not shown …", {n: fmtNum(lg.elided_bytes, 0)})
@@ -2093,6 +2114,7 @@
             (lg.head ? pre(lg.head) + gap : "") +
             pre(lg.tail || "") +
             (lg.truncated ? `<p class="muted">${esc(t("Truncated — full log:"))} ${esc(lg.path || "")}</p>` : "") +
+            notes +
             `</details>`
           : "";
         box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + logBlock;

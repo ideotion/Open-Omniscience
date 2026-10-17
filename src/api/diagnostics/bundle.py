@@ -36,12 +36,18 @@ from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.api.country_wire import to_wire
 from src.database.country_form import order_key
 from src.database.derived_views import KeywordMentionRead
-from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
+from src.database.maintenance import (
+    MemoryShort,
+    StatementTimeout,
+    deadline_expired,
+    statement_deadline,
+)
 from src.database.models import Article, Keyword, Source
 from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring import diagnostics_runs as _diag_runs
+from src.monitoring.secret_scrub import UNREADABLE_TEXT as _UNREADABLE_TEXT
 from src.monitoring.secret_scrub import http_detail, log_failure
 from src.monitoring.secret_scrub import record_text as _record_text
 from src.monitoring.secret_scrub import scrubbed_value as _scrubbed_value
@@ -304,7 +310,13 @@ def debug_bundle(
             try:
                 return thunk()
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
-                return {"error": _err_str(exc)}
+                out: dict[str, Any] = {"error": _err_str(exc)}
+                # A member the statement deadline ended says so: the engine's own word ("interrupted") names no limit and reads as a fault
+                # of the member. The typed error's message carries the deadline's seconds (each member arms its own), so none is repeated
+                # here. A memory stop (``MemoryShort``, a subclass) is a different stop and keeps its own words.
+                if isinstance(exc, StatementTimeout) and not isinstance(exc, MemoryShort):
+                    out["stopped_by"] = "statement deadline"
+                return out
         box: dict = {}
 
         def _run() -> None:
@@ -403,12 +415,19 @@ def debug_bundle(
     def _import_results() -> list:
         imports_path = _data_dir() / "import_results.jsonl"
         out: list = []
+        not_read = 0
         if imports_path.exists():
             for ln in imports_path.read_text(encoding="utf-8").splitlines()[-50:]:
                 try:
-                    out.append(_json.loads(ln))
+                    rec = _json.loads(ln)
                 except ValueError:
+                    not_read += 1
                     continue
+                # The file is append-only and never rotated, so it can hold lines an older build wrote with the passphrase in an
+                # error's words: each record is checked as it is read (the parsed string is the form a passphrase has).
+                out.append(_scrubbed_value(rec))
+        if not_read:
+            out.append({"lines_not_read": not_read, "reason": "lines of import_results.jsonl that did not parse (a torn write); none is included"})
         return out
 
     # The error window drives the envelope count; guarded like every other member, and the
@@ -1429,7 +1448,7 @@ class _RssProbe:
 _ALL_DIAG_TRIM_AFTER_KB = 64 * 1024  # 64 MiB
 
 
-def _trim_after_heavy_member(probe: "_RssProbe", rss_after: int | None) -> dict | None:
+def _trim_after_heavy_member(probe: _RssProbe, rss_after: int | None) -> dict | None:
     """Return the allocator's arena memory to the OS between heavy members, and report what
     that actually freed (S6.2). Reuses ``hygiene._malloc_trim`` rather than writing a second
     one. ``None`` when nothing was attempted; ``freed_kb: None`` -- never 0 -- when the
@@ -2910,6 +2929,12 @@ def _write_all_diagnostics_zip(
                 if isinstance(cause, StatementTimeout):
                     outcome = "skipped-deadline"
                     zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(cause) + _budget_marker_note(budget_cut, deadline_used))
+                elif any(klass.__name__ == "HeavyPaused" for klass in type(exc).__mro__):
+                    # A scan the write-ahead-log guard stood aside from on purpose (matched by class name through the MRO, as
+                    # insights._raise_if_heavy_paused does, so this file does not import heavy.py). Nothing failed: a pin is
+                    # exactly when an operator takes a bundle, and counting the guard working as an error would misread it.
+                    outcome = "skipped-paused"
+                    zf.writestr(name + ".skipped-paused.txt", _all_diag_err_str(exc))
                 else:
                     outcome = "error"
                     err = _all_diag_err_str(exc)
@@ -3298,8 +3323,9 @@ def _read_previous_run_journals(out_dir, own) -> dict[str, Any]:
         if over:
             kept = kept[-_PREVIOUS_JOURNAL_MAX_LINES:]
         entry["lines_dropped"] = ((head.count(b"\n") + 1) if head.strip() else 0) + over
+        # Each line is checked for the passphrase BEFORE it is cut: a cut through a key leaves its start, which no later check can know.
         entry["lines"] = [
-            b.decode("utf-8", errors="replace")[:_PREVIOUS_JOURNAL_MAX_LINE_CHARS] for b in kept
+            _scrubbed_value(b.decode("utf-8", errors="replace"))[:_PREVIOUS_JOURNAL_MAX_LINE_CHARS] for b in kept
         ]
         cost = sum(len(ln) + 80 for ln in entry["lines"])  # 80: the `previous_run` marker per line
         if spent + cost > _PREVIOUS_JOURNAL_MAX_TOTAL_CHARS:
@@ -3343,19 +3369,31 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
     for item in previous.get("carried", []):
         name = item["journal"]
         began: dict[str, str | None] = {}
-        begun = ended = unparsed = unrecognised = 0
+        begun = ended = unparsed = unrecognised = unchecked = 0
         outcomes: dict[str, int] = {}
         started_at: str | None = None
         for line in item.get("lines", []):
+            if line == _UNREADABLE_TEXT:
+                # the reader's own check withheld this line before it reached here: it is withheld, not torn
+                unchecked += 1
+                out_lines.append(json.dumps({"event": "withheld", "chars": 0, "reason": "could not be checked for the passphrase", "previous_run": name}))
+                continue
             try:
                 rec = json.loads(line, parse_constant=_reject_json_constant)
                 if not isinstance(rec, dict):
                     raise ValueError("not an object")
+                rec = _scrubbed_value(rec)  # a journal an older build left may hold a passphrase an error quoted
+                if not isinstance(rec, dict):  # the record could not be walked: nothing of it is kept, and it is counted as such
+                    unchecked += 1
+                    rec = {"event": "withheld", "chars": len(line), "reason": "could not be checked for the passphrase", "previous_run": name}
+                    text = json.dumps(rec, ensure_ascii=True)
+                    out_lines.append(text)
+                    continue
                 rec["previous_run"] = name
                 text = json.dumps(rec, ensure_ascii=True, allow_nan=False)
             except (ValueError, RecursionError):
                 unparsed += 1
-                rec = {"event": "unparsed", "chars": len(line), "raw": line[:200], "previous_run": name}
+                rec = {"event": "unparsed", "chars": len(line), "raw": _scrubbed_value(line)[:200], "previous_run": name}
                 text = json.dumps(rec, ensure_ascii=True)
             else:
                 ev = rec.get("event")
@@ -3389,9 +3427,13 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
             # the run finished -- it means the journal shows no member in flight (a kill BETWEEN
             # two members, or before the first begin, leaves nothing to name).
             "unfinished": unfinished[:20],
+            # A line that was torn or withheld may have been the `end` of a member listed above as unfinished: the list is then a
+            # superset of the truth, and says so.
+            **({"unfinished_may_include_ended": True} if (unparsed or unchecked) and unfinished else {}),
             **({"unfinished_total": len(unfinished)} if len(unfinished) > 20 else {}),
             "outcomes": dict(sorted(outcomes.items())[:20]),
             "unparsed_lines": unparsed,
+            "withheld_lines": unchecked,
             "unrecognised_lines": unrecognised,
             **({"read_error": item["read_error"]} if item.get("read_error") else {}),
         })

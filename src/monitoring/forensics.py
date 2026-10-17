@@ -261,6 +261,8 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
 
 _PREV_AT_BOOT: dict[str, Any] | None = None
 _PREV_LOADED = False
+_OOM_AT_BOOT: dict[str, Any] | None = None  # the kill counters read at this boot
+_BOOT_ID_AT_BOOT: str | None = None
 # This boot's -wal reading, taken before any connection can exist (S0.1).
 _WAL_AT_BOOT: dict[str, Any] | None = None
 # A reading taken by ``take_boot_wal_reading`` before the lifespan runs, for the start (``serve``) that opens the store itself
@@ -324,7 +326,7 @@ def record_session_start() -> dict[str, Any] | None:
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
     global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL, _PAGES_AT_BOOT, _EARLY_PAGES
-    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO
+    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO, _OOM_AT_BOOT, _BOOT_ID_AT_BOOT
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
     boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
@@ -364,12 +366,28 @@ def record_session_start() -> dict[str, Any] | None:
         from src.monitoring.session_history import machine_boot_id
 
         boot_id, cgroup = machine_boot_id(), own_cgroup()
+        _BOOT_ID_AT_BOOT = boot_id
         if boot_id:
             state["boot_id"] = boot_id
         if cgroup:
             state["cgroup"] = cgroup
     except Exception as exc:  # noqa: BLE001 - a missing handle never breaks a boot
         log_failure(_LOG, "session sentinel: boot id / cgroup unavailable", exc, level=logging.DEBUG)
+    # The kernel's kill counters at this start (question 22). The NEXT start compares its reading with this one, so a kill between two
+    # starts is counted even where no log can be read. Integers and named absences only (``oom_counters.py``).
+    try:
+        from src.monitoring.native_libs import read as _read_native_libs
+
+        state["native_libs"] = _read_native_libs()
+    except Exception as exc:  # noqa: BLE001 - a missing reading never breaks a boot
+        log_failure(_LOG, "session sentinel: native libraries unavailable", exc, level=logging.DEBUG)
+    try:
+        from src.monitoring.oom_counters import read as _read_oom_counters
+
+        _OOM_AT_BOOT = _read_oom_counters()
+        state["oom_counters"] = _OOM_AT_BOOT
+    except Exception as exc:  # noqa: BLE001 - a missing reading never breaks a boot
+        log_failure(_LOG, "session sentinel: kill counters unavailable", exc, level=logging.DEBUG)
     _write_state(state)
     # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
     # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
@@ -774,10 +792,13 @@ def previous_session_report() -> dict[str, Any]:
     # The clean stop (B2): a session the app ended itself because memory stayed exhausted says so, whatever the sentinel's verdict
     # (a stop that finished reads "clean", one the kernel cut short reads "during shutdown"). Numbers and step names only.
     out["memory_stop"] = previous_memory_stop()
+    out["oom_counters"] = _oom_counters_between(prev)
+    # The libraries the previous session ran on, for reading a crash trace that names only Python frames (``native_libs.py``).
+    out["previous_session_native_libs"] = (prev or {}).get("native_libs") or {"unreadable": "the previous session's sentinel holds no reading"}
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
-        return out
+        return _with_answers(out)
     state = str(prev.get("state"))
     out["previous_session"] = {
         "running": "unclean-end",  # died without reaching the shutdown hook
@@ -807,6 +828,8 @@ def previous_session_report() -> dict[str, Any]:
         # is how an OOM was once "inferred" from the wrong process. The sidecar is
         # scoped to one session and is snapshotted at boot, so it cannot drift.
         out["previous_session_peaks"] = _previous_peaks()
+        if isinstance(out.get("how_it_ended"), dict):
+            out["how_it_ended"]["died_into_phase"] = _died_into_phase(out["previous_session_peaks"])
         sample = _last_collect_perf_sample()
         if sample is not None:
             sample = dict(sample)
@@ -816,7 +839,84 @@ def previous_session_report() -> dict[str, Any]:
                 "previous one's. Use previous_session_peaks for the crashed run."
             )
         out["last_collector_sample"] = sample
+    return _with_answers(out)
+
+
+#: The members of the session-forensics report that spend the 2,415 B headroom above the diagnostics floor. A member joins this tuple in the
+#: commit that adds it, together with a worst-case builder in tests/test_session_forensics_budget.py (that test is red while the two differ,
+#: and while a ``*_BYTES`` cap exists in the monitoring modules that no member claims).
+HEADROOM_MEMBERS = ("crashing_thread_kind", "launcher_stderr", "died_into_phase", "native_in_flight", "last_thread_census", "stack")
+
+#: What each ``died_into_phase`` reason code says in words (the stored record carries the short code; every reader maps it back, so the report
+#: reads as it did before the codes). tools/diag_reader.py carries the same table for the triage.
+DIED_REASON_WORDS = {
+    "no peaks": "no high-water record",
+    "no phase": "no phase was recorded",
+    "no phase start": "phase start not recorded (older build)",
+    "clock moved": "clock moved",
+}
+
+
+def _died_into_phase(peaks: dict[str, Any] | None) -> dict[str, Any]:
+    """Seconds from the first sighting of the previous session's last phase to its last record.
+
+    WHICH phase is not repeated here: it is ``previous_session_peaks.phase`` in the same report, and the seconds are only ever
+    given when that field is present (the byte room is the reason it is not copied). The last record is the last ``observe``
+    call, not the moment of death, so the figure is a lower bound. Where the phase or its start was not recorded the seconds are
+    ``None`` with a reason, never ``0`` (a 0 would read as "died the instant it began"). The reasons are short codes (no peaks · no phase ·
+    no phase start · clock moved): the longest the member can be is measured in tests/test_session_forensics_budget.py."""
+    out: dict[str, Any] = {"seconds_in_peaks_phase": None}
+    if not isinstance(peaks, dict) or peaks.get("available") is False:
+        out["reason"] = "no peaks"
+        return out
+    if not isinstance(peaks.get("phase"), str) or not peaks["phase"]:
+        out["reason"] = "no phase"
+        return out
+    try:
+        began = datetime.fromisoformat(str(peaks["phase_since"]))
+        last = datetime.fromisoformat(str(peaks["last_ts"]))
+        secs = (last - began).total_seconds()
+    except (KeyError, ValueError, TypeError):
+        out["reason"] = "no phase start"
+        return out
+    if secs < 0:
+        out["reason"] = "clock moved"
+        return out
+    out["seconds_in_peaks_phase"] = round(secs, 1)
     return out
+
+
+def _with_answers(out: dict[str, Any]) -> dict[str, Any]:
+    """``out`` with the evidence state of the open questions (``can_answer.py``). Never raises."""
+    try:
+        from src.monitoring.can_answer import assess
+
+        out["can_answer"] = assess(out)
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        out["can_answer"] = {"unavailable": f"unreadable ({type(exc).__name__})"}
+    return out
+
+
+def _oom_counters_between(prev: dict[str, Any] | None) -> dict[str, Any]:
+    """The kernel's kill counters at the previous session's start and at this one, and the kills counted between (question 22). Never raises."""
+    try:
+        from src.monitoring.oom_counters import compare
+
+        before = (prev or {}).get("oom_counters")
+        prev_boot = (prev or {}).get("boot_id")
+        same_boot = None if not prev_boot or not _BOOT_ID_AT_BOOT else prev_boot == _BOOT_ID_AT_BOOT
+        return {
+            "previous_session_start": before,
+            "this_session_start": _OOM_AT_BOOT,
+            "between": compare(before, _OOM_AT_BOOT, same_boot=same_boot),
+            "note": (
+                "Counters the kernel keeps, read once at each session start: 'between' is the kills counted from the previous session's "
+                "start to this one's. It covers the previous session AND the gap, and a count of zero is a count only where the reading "
+                "exists (an unreadable counter is named, never zero)."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        return {"unavailable": f"unreadable ({type(exc).__name__})"}
 
 
 def previous_memory_stop() -> dict[str, Any] | None:
@@ -982,10 +1082,14 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
     boot = prev.get("boot_id") if isinstance(prev.get("boot_id"), str) else None
     out: dict[str, Any] = {}
     try:
-        from src.monitoring.exit_evidence import launcher_exit, previous_trace
+        from src.monitoring.exit_evidence import launcher_exit, launcher_stderr, previous_trace
 
-        out["launcher"] = launcher_exit(pid, boot)
+        out["launcher"] = launcher_exit(pid, boot, prev.get("started_at") if isinstance(prev.get("started_at"), str) else None)
+        out["launcher_stderr"] = launcher_stderr(pid, boot, prev.get("started_at") if isinstance(prev.get("started_at"), str) else None)
         out["crash_trace"] = previous_trace(pid, boot, prev.get("started_at"))
+        from src.monitoring.native_inflight import report as _native_report
+
+        out["native_in_flight"] = _native_report(pid, boot)
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
         out["unavailable"] = _why(exc)
     if _JOURNAL_EXIT_EVIDENCE is not None:
@@ -1544,7 +1648,9 @@ def _render_exit_evidence(ev: Any) -> list[str]:
     if ev.get("unavailable"):
         out.append(f"  - unavailable: {ev['unavailable']}")
     launcher = ev.get("launcher")
-    if isinstance(launcher, dict):
+    if isinstance(launcher, dict) and launcher.get("kind") == "unreadable":
+        out.append(f"  - launcher: record file unreadable — {launcher.get('unparsed_lines')} lines, none a row; this is not a record that nothing was seen")
+    elif isinstance(launcher, dict):
         how = launcher.get("signal") or f"exit status {launcher.get('status')}"
         out.append(f"  - launcher: {how} at {launcher.get('at')} — {launcher.get('meaning')}")
     elif "launcher" in ev:
@@ -1651,6 +1757,25 @@ def render_text(d: dict[str, Any] | None = None) -> str:
     how = prev.get("how_it_ended") or {}
     if how.get("summary"):
         lines.append(f"- how it ended: {how['summary']}")
+    dip = how.get("died_into_phase")
+    if isinstance(dip, dict):
+        secs = dip.get("seconds_in_peaks_phase")
+        which = (prev.get("previous_session_peaks") or {}).get("phase") or "unknown"
+        lines.append(
+            f"  - the last phase seen (previous_session_peaks.phase: {which}): "
+            + (f"{secs} s from its start to the last record" if secs is not None else f"duration unmeasured ({DIED_REASON_WORDS.get(str(dip.get('reason')), dip.get('reason'))})")
+        )
+    cen = (prev.get("previous_session_peaks") or {}).get("last_thread_census")
+    if isinstance(cen, dict):
+        if cen.get("unavailable"):
+            lines.append(f"  - native thread census: unavailable ({cen['unavailable']})")
+        else:
+            made = ", ".join(f"{k} x{v}" for k, v in (cen.get("non_python") or {}).items()) or "none"
+            lines.append(
+                f"  - native threads at the LAST census (a lower bound in time: a pool started after it is not here): "
+                f"{cen.get('os_threads')} OS threads, {cen.get('python_threads')} started by Python; not by Python: {made}"
+                + (f" (+{cen['other_comms']} more names)" if cen.get("other_comms") else "")
+            )
     kern = prev.get("kernel_evidence") or {}
     if kern:
         lines.append(f"- host kernel evidence: {kern.get('verdict', 'unknown')}")

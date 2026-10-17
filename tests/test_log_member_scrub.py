@@ -251,3 +251,100 @@ def test_the_release_runs_session_forensics_block_is_scrubbed_where_it_enters(tm
     out = rr._collect(_Ctx(), run)
     shown = json.dumps(out["session_forensics"])
     assert _KEY not in shown and "run-pass-planted-77" not in shown and "oom (cmd" in shown, "the held passphrase AND the run's own are taken out"
+
+
+def test_a_scheduler_run_report_is_scrubbed_where_it_is_recorded_and_where_it_is_read(monkeypatch, tmp_path):
+    """The run's result carries free text; record_run takes the held passphrase out as it writes, and recent_runs checks a line an older
+    build left raw."""
+    from src.scheduler import runlog
+
+    monkeypatch.setattr(runlog, "_runs_path", lambda: tmp_path / "scheduler_runs.jsonl")
+    runlog.record_run({"ok": True, "result": {"failures": [f"fetch failed for https://x/?k={_KEY}"]}, "error": None})
+    raw = (tmp_path / "scheduler_runs.jsonl").read_text(encoding="utf-8")
+    assert _KEY not in raw and "fetch failed" in raw, "the line is kept, the key is not"
+    with (tmp_path / "scheduler_runs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ok": False, "result": {"note": f"older build wrote {_KEY}"}}) + "\n")
+    rows = runlog.recent_runs()
+    assert len(rows) == 2 and _KEY not in json.dumps(rows)
+    assert any("older build wrote" in json.dumps(r) for r in rows)
+
+
+def test_a_skipped_ledger_note_is_checked_whole_before_it_is_cut():
+    """The note is cut at 200 characters: a key that straddles the cut must not leave its first half behind."""
+    from src.monitoring import activity_ledger as al
+
+    reason = "x" * (200 - len(_KEY) // 2) + _KEY + " tail"
+    e = al.build_entry("lane:world_discovery", {"enabled": True, "skipped": reason})
+    note = e.as_record()["note"]
+    assert _KEY not in note and _KEY[: len(_KEY) // 2] not in note, "the first half of a cut key stays too"
+    assert len(note) <= 200 and note.startswith("x")
+
+
+def test_a_field_test_step_that_fails_does_not_record_the_key(monkeypatch, tmp_path):
+    from src.monitoring import field_test as ft
+
+    monkeypatch.setattr(ft, "_log_path", lambda: tmp_path / "field_test.jsonl")
+
+    def boom():
+        raise RuntimeError(f"driver said PRAGMA key = '{_KEY}'")
+
+    ft._run_step("probe", boom)
+    raw = (tmp_path / "field_test.jsonl").read_text(encoding="utf-8")
+    assert _KEY not in raw and "probe" in raw and "false" in raw
+
+
+def _reports_stage(tmp_path, monkeypatch, body: str):
+    from src.backup import artifact
+
+    monkeypatch.setattr(artifact, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.backup.sqlite_backup.live_db_path", lambda: tmp_path / "live.db")
+    monkeypatch.setattr(artifact, "snapshot_sqlite", lambda _src, dest: Path(dest).write_bytes(b""))
+    d = tmp_path / "import_reports"
+    d.mkdir(exist_ok=True)
+    (d / "restore-20260101T000000Z-ab.json").write_text(body, encoding="utf-8")
+    out = tmp_path / "stage"
+    out.mkdir(exist_ok=True)
+    members = [m for m in artifact._collect_members(False, out) if m.role == "import_reports"]
+    assert [m.name for m in members] == ["import_reports/restore-20260101T000000Z-ab.json"]
+    return members[0].path.read_text(encoding="utf-8")
+
+
+def test_the_single_file_backup_carries_older_import_reports_scrubbed(tmp_path, monkeypatch):
+    """``import_reports/*.json`` ride the single-file backup; a report an older build wrote holds an engine's error text. MUTATION TARGET:
+    ``_stage_json_report`` in ``artifact.py``."""
+    old = {"kind": "restore", "errors": [{"msg": f"near '{_KEY}' syntax", "esc": json.dumps(_KEY)[1:-1]}]}
+    staged = _reports_stage(tmp_path, monkeypatch, json.dumps(old, indent=2))
+    assert _KEY not in staged and json.loads(staged)["kind"] == "restore"
+    assert _KEY in (tmp_path / "import_reports" / "restore-20260101T000000Z-ab.json").read_text(encoding="utf-8"), "the live report is not rewritten"
+
+
+def test_a_report_is_checked_as_a_document_not_line_by_line(tmp_path, monkeypatch):
+    """A passphrase that is also a number in the report must not tear the document (a line copy rewrote the number to the redaction
+    word, which is not JSON), and one that is a key name must not rename the key. Values are checked; keys and numbers are kept."""
+    monkeypatch.setattr(connect, "_passphrase", "20260917")
+    ss.forget_held()
+    body = json.dumps({"outcome": "ok", "plan": {"articles_merged": 20260917123}, "n": 20260917, "msg": "held 20260917 here"}, indent=2)
+    doc = json.loads(_reports_stage(tmp_path, monkeypatch, body))
+    assert doc["plan"]["articles_merged"] == 20260917123 and doc["outcome"] == "ok"
+    assert "20260917" not in doc["msg"]
+
+
+def test_a_report_that_does_not_parse_is_withheld_and_says_so(tmp_path, monkeypatch):
+    staged = _reports_stage(tmp_path, monkeypatch, '{"msg": "torn ' + _KEY)
+    assert _KEY not in staged and "withheld" in json.loads(staged)
+
+
+def test_the_report_download_and_listing_check_an_older_report(tmp_path, monkeypatch):
+    """An older build's report is served (json and md) and listed (label) with the passphrase taken out. MUTATION TARGETS: the check in
+    ``import_reports_download`` and the one on the label in ``import_reports.py``."""
+    from src.api import backup_v2
+    from src.backup import import_reports
+
+    monkeypatch.setattr(import_reports, "_reports_dir", lambda: tmp_path)
+    old = {"outcome": "ok", "import_run": {"id": "r1", "label": f"run {_KEY}"}, "errors": [f"driver said {_KEY}"]}
+    (tmp_path / "restore-20260101T000000Z-ab.json").write_text(json.dumps(old), encoding="utf-8")
+    for fmt in ("json", "md"):
+        body = backup_v2.import_reports_download("restore-20260101T000000Z-ab.json", format=fmt).body.decode()
+        assert _KEY not in body, fmt
+    facts = import_reports._report_facts(tmp_path / "restore-20260101T000000Z-ab.json", 1)
+    assert _KEY not in json.dumps(facts)

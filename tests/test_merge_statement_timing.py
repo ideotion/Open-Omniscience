@@ -138,3 +138,18 @@ def test_the_trace_hook_is_removed_when_the_step_ends() -> None:
     n_after_step = len(ended)
     con.execute("SELECT COUNT(*) FROM t").fetchone()
     assert len(ended) == n_after_step
+
+
+def test_a_key_the_label_cut_would_split_is_taken_out_before_the_cut(monkeypatch) -> None:
+    """The label is cut to 120 characters; a statement that holds the passphrase across that cut must not leave its start in the label.
+    MUTATION TARGET: the ``scrubbed`` call in ``_stmt_label``."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    key = "split-key-Wq4!zz9-long-enough"
+    monkeypatch.setattr(connect, "_passphrase", key)
+    ss.forget_held()
+    sql = "A" * 110 + " " + key + " tail"
+    label = _stmt_label(sql)
+    assert key not in label and key[:6] not in label, label
+    assert len(label) <= 120

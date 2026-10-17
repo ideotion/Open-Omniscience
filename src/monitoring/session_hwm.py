@@ -144,6 +144,17 @@ _PLATEAU_INTERVAL_S = 300.0
 _LIGHT_FILE = "session_pressure_light.json"
 _LIGHT_INTERVAL_S = 15.0
 _LIGHT_NEAR_FACTOR = 1.5
+# SWAP IN USE is the other way the guard's line fails to see a machine in trouble: the guard's numbers are fixed from the RAM read at
+# boot, a VM whose RAM was taken back by its host (ballooning) keeps the boot numbers while it pages, and one October instance sat with
+# its swap full for hours and took no light snapshot at all. Swap in use means pages the machine has already moved out and will have to
+# read back, which is where the stalls and the kills come from. A small amount is not that: the kernel parks idle pages on a healthy machine
+# for days. So the trigger is swap holding at least this much, or this share of the RAM read NOW, whichever is larger.
+_LIGHT_SWAP_MIN_MB = 256.0
+_LIGHT_SWAP_SHARE = 0.05
+# Swap is a LEVEL, not a rate: after one spike it can sit parked for the rest of the session, and a snapshot every 15 s of that is a
+# rewrite of the file for nothing. So swap earns a light snapshot when it first crosses the floor, again each time it has grown by this
+# much since the last one it earned, and at the heavy plateau cadence while it stays above the floor (``_PLATEAU_INTERVAL_S``).
+_LIGHT_SWAP_STEP_MB = 64.0
 _LIGHT_KEEP = 8
 _LIGHT_THREADS = 3
 # CPU is read for at most this many working threads: every read waits for the GIL under a burst
@@ -155,7 +166,10 @@ _MEMBER_SLACK = 32
 _LIGHT_METHOD = (
     "taken at most every 15 s (a tick that a heavy snapshot takes is skipped, so the gap can be "
     "longer) while available memory is within 1.5 times the memory guard's floor, the process "
-    "holds at least 1/1.5 of the share of RAM at which the guard trips, or the guard is engaged: "
+    "holds at least 1/1.5 of the share of RAM at which the guard trips, the guard is engaged, swap holds "
+    "at least 256 MB or 5% of the RAM read at that moment (the larger; once when it first does, again for each "
+    "64 MB it grows, and every five minutes while it stays), or available memory is below 15% "
+    "of the RAM read at that moment (at most 1,024 MB): "
     "the kernel's memory counters, the Python block count and the blocks gained since the previous "
     "light snapshot (over_s says over how long, for the threads' CPU too), and the threads that "
     "spent the most CPU in that time, with their stacks, chosen among the first 16 working threads "
@@ -188,6 +202,7 @@ _MARKS: dict[str, Any] = {}
 _NEVER = float("-inf")
 _LAST_WRITE = _NEVER
 _LAST_COMPOSITION = _NEVER
+_LAST_CENSUS = _NEVER
 _LAST_PRESSURE = _NEVER
 _PRESSURE: list[dict[str, Any]] = []
 _PRESSURE_TAKEN = 0
@@ -199,6 +214,7 @@ _LIGHT: list[dict[str, Any]] = []
 _LIGHT_TAKEN = 0
 _LIGHT_FAILED = 0  # light snapshots that raised, this session (their count is in the marks)
 _LAST_LIGHT = _NEVER
+_SWAP_SEEN: tuple[float, float] | None = None  # (swap MB, time) at the last snapshot swap in use earned
 _LIGHT_BASELINE: dict[str, Any] | None = None  # {"at", "blocks", "cpu": {tid: s}} of the last light one
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
@@ -692,6 +708,61 @@ def thread_snapshot() -> list[dict[str, Any]]:
     return out
 
 
+# THE NATIVE THREAD CENSUS: which kernel threads the process had that Python did not create (an OpenMP, Arrow, DuckDB or allocator pool),
+# by the name the kernel keeps for them. Three of the four SIGABRT traces open with a thread Python never started, and nothing said
+# what such threads existed. Taken at most this often by the liveness thread (a listdir and one small read per thread, no GIL wait):
+# the record is the LAST census taken, so it is a LOWER-BOUND-IN-TIME view (a pool started after it is not in it).
+_CENSUS_INTERVAL_S = 60.0
+#: Serialised bytes the whole ``last_thread_census`` member (its key included) may take in the marks. Part of WAL's 2,415 B headroom
+#: (150 B; the core-dump stack's 570 is the remainder after it). Comms are added, most numerous first, while the member still fits.
+CENSUS_BYTES = 150
+_CENSUS_KEY = "last_thread_census"
+_CENSUS_TASKS = "/proc/self/task"
+
+
+def _census_fits(record: dict[str, Any]) -> bool:
+    return len(json.dumps({_CENSUS_KEY: record}, separators=(",", ":"))) <= CENSUS_BYTES
+
+
+def thread_census() -> dict[str, Any]:
+    """The kernel threads Python did not start, counted by kernel thread name. Linux only: elsewhere ``{"unavailable": reason}``, never 0.
+
+    ``os_threads`` is every thread of the process, ``python_threads`` the ones ``threading`` knows, ``non_python`` the rest by name (the
+    most numerous first, as many as fit :data:`CENSUS_BYTES`), ``other_comms`` how many distinct names did not fit. Python threads are
+    left out by their kernel id, so a name a request chose (``oo-osm-<code>``) is never read; the names kept are passed through the
+    passphrase scrub anyway. A thread that ended between the listing and the read is skipped."""
+    try:
+        tids = os.listdir(_CENSUS_TASKS)
+    except OSError:
+        return {"unavailable": "no /proc/self/task on this system"}
+    known = {t.native_id for t in threading.enumerate() if t.native_id is not None}
+    names: dict[str, int] = {}
+    total = 0
+    for tid in tids:
+        if not tid.isdigit():
+            continue
+        total += 1
+        if int(tid) in known:
+            continue
+        try:
+            with open(f"{_CENSUS_TASKS}/{tid}/comm", encoding="utf-8", errors="replace") as fh:
+                comm = fh.read(32).strip()[:15]
+        except OSError:
+            continue
+        key = scrubbed_name(comm) or "?"
+        names[key] = names.get(key, 0) + 1
+    record: dict[str, Any] = {"os_threads": total, "python_threads": len(known), "non_python": {}, "other_comms": 0}
+    ranked = sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))
+    for i, (name, count) in enumerate(ranked):
+        trial = {**record, "non_python": {**record["non_python"], name: count}, "other_comms": len(ranked) - i - 1}
+        if not _census_fits(trial):
+            record["other_comms"] = len(ranked) - i
+            break
+        record = trial
+    return record
+
+
+
 def _pressure_line_mb(total_mb: float) -> float:
     return min(total_mb * _PRESSURE_AVAIL_SHARE, _PRESSURE_CAP_MB)
 
@@ -1055,14 +1126,42 @@ def _light_near(readings: dict[str, float], guard: dict[str, Any] | None) -> str
         return "available memory near the guard's floor"
     if rss is not None and total and pct is not None and 100.0 * rss / total >= pct / _LIGHT_NEAR_FACTOR:
         return "process memory near the guard's share"
+    # Both of these use the readings of THIS tick (the RAM total included), never the boot-time budget the guard's line comes from.
+    if avail is not None and total and avail <= _pressure_line_mb(total):
+        return "available memory below the pressure line of the RAM read now"
+    if _swap_high(readings):
+        return "swap in use"
     return None
+
+
+def _swap_high(readings: dict[str, float]) -> bool:
+    """Swap holds at least ``max(_LIGHT_SWAP_MIN_MB, _LIGHT_SWAP_SHARE`` of the RAM read in these readings``)``; a missing reading is no."""
+    swap = readings.get("swap_used_mb")
+    return swap is not None and swap >= max(_LIGHT_SWAP_MIN_MB, (readings.get("total_mb") or 0.0) * _LIGHT_SWAP_SHARE)
+
+
+def _swap_earns_a_snapshot(swap_mb: float, now: float) -> bool:
+    """Whether swap in use earns a light snapshot now (crossing, growth by a step, or the plateau interval); CLAIMED under the lock."""
+    global _SWAP_SEEN
+    with _LOCK:
+        seen = _SWAP_SEEN
+        if seen is None or swap_mb >= seen[0] + _LIGHT_SWAP_STEP_MB or (now - seen[1]) >= _PLATEAU_INTERVAL_S:
+            _SWAP_SEEN = (swap_mb, now)
+            return True
+    return False
 
 
 def _light_due(readings: dict[str, float], guard: dict[str, Any] | None, now: float) -> str | None:
     """Why this reading earns a LIGHT snapshot, or None; CLAIMED under the lock."""
     global _LAST_LIGHT
+    global _SWAP_SEEN
     why = _light_near(readings, guard)
+    if not _swap_high(readings):
+        with _LOCK:
+            _SWAP_SEEN = None  # swap is back under the floor: the next crossing is a new episode
     if why is None:
+        return None
+    if why == "swap in use" and not _swap_earns_a_snapshot(readings.get("swap_used_mb") or 0.0, now):
         return None
     with _LOCK:
         if (now - _LAST_LIGHT) < _LIGHT_INTERVAL_S:
@@ -1157,7 +1256,8 @@ def _light_snapshot(readings: dict[str, float], why: str, guard: dict[str, Any] 
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
-    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE, _LIGHT_FAILED
+    global _GUARD_WAS_ENGAGED, _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE, _LIGHT_FAILED, _SWAP_SEEN
+    _SWAP_SEEN = None
     _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
     _LAST_BLOCKS, _LAST_BURST, _GUARD_WAS_ENGAGED = None, _NEVER, False
     _LIGHT, _LIGHT_TAKEN, _LAST_LIGHT, _LIGHT_BASELINE = [], 0, _NEVER, None
@@ -1183,7 +1283,11 @@ def capture_previous() -> dict[str, Any] | None:
                 stale.unlink(missing_ok=True)
             except OSError as exc:
                 log_failure(_LOG, f"could not reset {stale.name}", exc, level=logging.DEBUG)
-        return _PREV
+    # The native in-flight file is made now, not by the first native call, so a session that never entered one still leaves its own.
+    from src.monitoring.native_inflight import start as _native_start
+
+    _native_start()
+    return _PREV
 
 
 def previous() -> dict[str, Any] | None:
@@ -1218,7 +1322,7 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
 
     ``force_why`` (with ``may_snapshot_threads``) takes a heavy snapshot NOW with that reason, whatever the throttles say: the clean
     stop (``scheduler.memstop``) keeps the evidence before it releases anything."""
-    global _LAST_WRITE, _LAST_COMPOSITION, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
+    global _LAST_WRITE, _LAST_COMPOSITION, _LAST_CENSUS, _PRESSURE_TAKEN, _LIGHT_TAKEN, _LIGHT_FAILED
     try:
         readings = _readings()
         # THE TIME OF THE READING, taken the moment it was read: the thread walk and the heap walk
@@ -1257,6 +1361,10 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                     said = record_text(exc, typed=False)  # through the one scrub, THEN cut to its first line
                     first = said.splitlines()[0][:160] if said else ""
                     light_failure = f"{type(exc).__name__}: {first}"
+        census = None
+        if may_snapshot_threads and (now - _LAST_CENSUS) >= _CENSUS_INTERVAL_S:
+            _LAST_CENSUS = now
+            census = thread_census()
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
         at_peak = None
@@ -1283,6 +1391,8 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                 if readings.get("total_mb") is not None:
                     at_peak["total_mb"] = readings["total_mb"]
                 at_peak["at"] = stamp
+        # The numbers this tick's checks were compared with: read outside the lock (the guard's line is plain attributes).
+        lines = _lines_in_force(readings) if may_snapshot_threads else None
         with _LOCK:
             if not _MARKS:
                 _MARKS.update(_session_header())
@@ -1344,13 +1454,27 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False, for
                 if prev_a is None or avail < prev_a:
                     _MARKS["avail_min_mb"] = avail
                     _MARKS["avail_min_at"] = stamp
+            if may_snapshot_threads:
+                _MARKS["watch_ticks"] = int(_MARKS.get("watch_ticks") or 0) + 1
+                _MARKS["watch_lines"] = lines
+                total_now = readings.get("total_mb")
+                if rss is not None and total_now:
+                    share = round(100.0 * rss / total_now, 1)
+                    prev_share = _MARKS.get("rss_share_max_pct")
+                    if prev_share is None or share > prev_share:
+                        _MARKS["rss_share_max_pct"] = share
+                        _MARKS["rss_share_max_at"] = stamp
             swap = readings.get("swap_used_mb")
             if swap is not None:
                 prev_s = _MARKS.get("swap_used_max_mb")
                 if prev_s is None or swap > prev_s:
                     _MARKS["swap_used_max_mb"] = swap
                     _MARKS["swap_used_max_at"] = stamp
+            if census is not None:
+                _MARKS[_CENSUS_KEY] = census
             if phase:
+                if phase != _MARKS.get("phase"):
+                    _MARKS["phase_since"] = _now()  # when this phase was first seen, so a death can be placed inside it
                 _MARKS["phase"] = phase
             _MARKS["last_ts"] = _now()
             # A pressure snapshot is written through at once, with the marks beside it:
@@ -1399,6 +1523,41 @@ def current() -> dict[str, Any]:
         if _LIGHT:
             out["pressure_light"] = list(_LIGHT)
         return out
+
+
+def _lines_in_force(readings: dict[str, float]) -> dict[str, float | None]:
+    """The numbers the light and heavy snapshots were being compared with at this reading, so an empty ring can be read against them.
+
+    ``total_mb`` is the RAM read at this tick; the guard's own two numbers (``light_avail_within_mb`` = its floor times
+    ``_LIGHT_NEAR_FACTOR``, ``light_rss_share_pct`` = its share divided by the factor) come from the boot-time guard and are ``None`` where
+    the guard cannot be read. Absent, never zero."""
+    total = readings.get("total_mb")
+    floor, pct = _guard_line()
+    return {
+        "total_mb": total,
+        "heavy_avail_below_mb": round(_pressure_line_mb(total), 1) if total else None,
+        "light_avail_within_mb": round(floor * _LIGHT_NEAR_FACTOR, 1) if floor is not None else None,
+        "light_rss_share_pct": round(pct / _LIGHT_NEAR_FACTOR, 1) if pct is not None else None,
+        "swap_at_least_mb": round(max(_LIGHT_SWAP_MIN_MB, (total or 0.0) * _LIGHT_SWAP_SHARE), 1) if total else None,
+    }
+
+
+def _watched(marks: dict[str, Any]) -> dict[str, Any]:
+    """What one session's sampler WATCHED, from its high-water marks, so that no snapshot can be told from the numbers: how many
+    liveness checks ran, the lowest available memory, the highest swap, RSS and RSS share it saw (each with when), and the lines in force
+    at its last check. A mark the session never set is ``None`` (a build that did not keep it, or a reading that could not be taken),
+    never zero."""
+    return {
+        "liveness_checks": marks.get("watch_ticks"),
+        "lowest_available_mb": marks.get("avail_min_mb"),
+        "lowest_available_at": marks.get("avail_min_at"),
+        "highest_swap_mb": marks.get("swap_used_max_mb"),
+        "highest_swap_at": marks.get("swap_used_max_at"),
+        "highest_rss_mb": marks.get("rss_max_mb"),
+        "highest_rss_share_pct": marks.get("rss_share_max_pct"),
+        "highest_rss_share_at": marks.get("rss_share_max_at"),
+        "lines_at_last_check": marks.get("watch_lines"),
+    }
 
 
 def _fit_newest(items: list[Any], budget: int) -> tuple[list[Any], int]:
@@ -1457,11 +1616,13 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             "kept_per_session": _LIGHT_KEEP,
             "this_session": {
                 "taken": now.get("pressure_light_taken"),
+                "watched": _watched(now),
                 "snapshots": [],
                 "dropped_oldest_to_fit": 0,
             },
             "previous_session": {
                 "taken": prev.get("pressure_light_taken"),
+                "watched": _watched(prev),
                 "snapshots": [],
                 "dropped_oldest_to_fit": 0,
                 "started_at": prev.get("started_at"),
@@ -1487,7 +1648,7 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
 
 def reset_for_tests() -> None:
     """Clear the module state. Test-only; the suite shares one process."""
-    global _PREV, _PREV_WHY, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION
+    global _PREV, _PREV_WHY, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION, _LAST_CENSUS
     with _LOCK:
         _PREV = None
         _PREV_WHY = None
@@ -1495,4 +1656,5 @@ def reset_for_tests() -> None:
         _MARKS = {}
         _LAST_WRITE = _NEVER
         _LAST_COMPOSITION = _NEVER
+        _LAST_CENSUS = _NEVER
         _reset_snapshots()

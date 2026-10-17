@@ -238,7 +238,7 @@ def test_a_clock_that_fails_costs_the_stamp_never_the_sample(monkeypatch):
     latency.record(1, "GET /api/articles", 200, 750.0)
     row = _row("GET /api/articles")
     assert row["count"] == 1 and row["window_n"] == 1 and row["p95_ms"] == 750.0
-    assert row["slowest"] == {"ms": 750.0, "status": 200, "ended_at": None, "started_after_unlock_s": None}
+    assert row["slowest"] == {"ms": 750.0, "status": 200, "before_dispatch_ms": None, "ended_at": None, "started_after_unlock_s": None}
     assert row["first_ms"] == 750.0
 
 

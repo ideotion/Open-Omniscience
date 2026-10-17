@@ -285,7 +285,7 @@ def rows_from_bundle_bytes(
     """The qualification export out of an all-diagnostics bundle.
 
     A bundle whose export member did not complete carries a sidecar in its place
-    (``<member>.error.txt`` or ``.skipped-deadline.txt``). That is a DIFFERENT problem
+    (``<member>.error.txt``, ``.skipped-deadline.txt`` or ``.skipped-paused.txt``). That is a DIFFERENT problem
     from "wrong file" -- the instance is fine, its export run was not -- and the remedy
     differs, so it is reported as itself with the recorded reason rather than folded into
     a generic not-found.
@@ -294,7 +294,7 @@ def rows_from_bundle_bytes(
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             names = set(z.namelist())
             if BUNDLE_MEMBER not in names:
-                for suffix in (".error.txt", ".skipped-deadline.txt"):
+                for suffix in (".error.txt", ".skipped-deadline.txt", ".skipped-paused.txt"):
                     sidecar = BUNDLE_MEMBER + suffix
                     if sidecar in names:
                         # scrubbed BEFORE the cut and the strip (a cut inside a key keeps its start). The read is bounded by memory, not by the

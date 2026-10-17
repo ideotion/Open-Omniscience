@@ -114,7 +114,7 @@ def test_every_earlier_unclean_end_reports_its_own_trace_and_the_previous_sessio
     for row in out["sessions"]:
         t = row["trace"]
         assert t["summary"] == "Fatal Python error: Aborted"
-        assert len(t["lines"]) == ee.EARLIER_TRACE_LINES == 60 and t["lines_total"] == 100
+        assert len(t["lines"]) == t["lines_total"] == 100 and "cut_note" not in t, "a dump that fits is kept whole"
         assert "why_no_trace" not in row
 
 
@@ -171,15 +171,15 @@ def test_the_signal_falls_back_to_the_launcher_record_when_the_end_line_has_none
 
 
 def test_the_member_stays_far_inside_one_r115_part_on_a_crash_loop(dd):
-    """10 ends of 60 lines is what keeps the member small: about 60 KB, against a 1,000,000-byte part."""
+    """The newest end keeps 400 lines and the others 120: about 100 KB at these widths, against a 1,000,000-byte part."""
     recs = []
     for n in range(1, 40):
         recs += _session(n, pid=100 + n, signal="SIGABRT")
     _trace_log(dd, "".join(_trace(100 + n, 4000, n, width=140) for n in range(1, 40)))
     out = ee.earlier_unclean_ends(None, records=recs)
     size = len(json.dumps(out))
-    assert out["shown"] == 10 and size < 150_000, size
-    assert size < 1_000_000 / 6, "a tenth of one part, with room for the member's neighbours"
+    assert out["shown"] == 10 and size < 400_000, size
+    assert size < 1_000_000 / 2, "under half of one part, with room for the member's neighbours"
 
 
 def test_the_text_report_lists_each_session_with_its_trace_or_its_reason(dd):
@@ -556,3 +556,231 @@ def test_the_bundle_member_is_held_to_its_bound_and_the_route_keeps_the_whole_le
     assert member["cut"]["stacks_omitted_for_size"] == 1500 - ch.CHRONOLOGY_KEEP_PEAKS and len(member["sessions"]) == 1500
     assert member["sessions"][-1]["session_id"] == "s1499"
     assert len(whole["sessions"]) == 1500 and "cut" not in whole
+
+
+def test_a_big_dump_is_cut_by_a_counted_rule_and_the_newest_end_keeps_more(dd):
+    recs = _session(1, pid=501, signal="SIGABRT") + _session(2, pid=502, signal="SIGABRT")
+    _trace_log(dd, _trace(501, 900, 1) + _trace(502, 900, 2))
+    out = ee.earlier_unclean_ends(None, records=recs)
+    newest, older = out["sessions"][0]["trace"], out["sessions"][1]["trace"]
+    assert len(newest["lines"]) == ee.NEWEST_EARLIER_TRACE_LINES == 400 and len(older["lines"]) == ee.EARLIER_TRACE_LINES == 120
+    for t in (newest, older):
+        assert t["lines_total"] == 900, "what is counted is the log's own"
+        assert t["lines_kept"] == len(t["lines"]) and "of 900 lines are kept" in t["cut_note"]
+
+
+def test_a_cut_dump_shows_the_crashing_thread_and_the_top_of_every_other_thread(dd):
+    body = ["Fatal Python error: Aborted", ""]
+    for i in range(50):
+        body += [f"Thread 0x{i:016x} (most recent call first):"] + [f'  File "/app/src/w.py", line {j} in w{i}' for j in range(60)] + [""]
+    body += ["Current thread 0x00007f (most recent call first):"] + [f'  File "/app/src/c.py", line {j} in crash' for j in range(100)]
+    kept = ee._trace_report(body, ee.Path("c.log"), 400)
+    heads = [ln for ln in kept["lines"] if ln.startswith(("Thread 0x", "Current thread"))]
+    assert heads[0].startswith("Current thread") and len(heads) == 51, "all 50 workers are listed beside the crashing thread"
+    assert sum("in crash" in ln for ln in kept["lines"]) == 100, "the crashing thread is whole"
+    assert kept["threads_not_listed"] == 0 and kept["lines_total"] == len(body)
+    few = ee._trace_report(body, ee.Path("c.log"), 120)
+    assert few["threads_not_listed"] > 0 and f"{few['threads_not_listed']} of 50 other threads are not listed" in few["cut_note"]
+    assert len(few["lines"]) <= 120
+
+
+def _dump(tag: str, crash_frames: int, labelled: bool = True) -> list[str]:
+    body = ["Fatal Python error: Aborted", ""]
+    for i in range(30):
+        body += [f"Thread 0x{i:016x} (most recent call first):"] + [f'  File "/app/src/w.py", line {j} in idle{i}' for j in range(40)] + [""]
+    label = "Current thread" if labelled else "Thread"
+    body += [f"{label} 0x00007f (most recent call first):"] + [f'  File "/app/src/c.py", line {j} in {tag}' for j in range(crash_frames)]
+    return body
+
+
+def test_each_earlier_end_keeps_its_own_crashing_thread_whole(dd):
+    recs = _session(1, pid=601, signal="SIGABRT") + _session(2, pid=602, signal="SIGABRT")
+    text = "".join("\n" + _header(pid, n) + "\n" + "\n".join(_dump(tag, 90)) + "\n" for pid, n, tag in ((601, 1, "crash_one"), (602, 2, "crash_two")))
+    _trace_log(dd, text)
+    rows = {r["pid"]: r["trace"] for r in ee.earlier_unclean_ends(None, records=recs)["sessions"]}
+    for pid, tag, other in ((601, "crash_one", "crash_two"), (602, "crash_two", "crash_one")):
+        t = rows[pid]
+        assert sum(f"in {tag}" in ln for ln in t["lines"]) == 90 and not any(other in ln for ln in t["lines"])
+        assert t["crashing_thread"].startswith("Current thread") and t["lines_kept"] == len(t["lines"]) < t["lines_total"]
+
+
+def test_a_dump_that_names_no_current_thread_says_so_and_does_not_pick_one(dd):
+    t = ee._trace_report(_dump("busiest", 90, labelled=False), ee.Path("c.log"), 120)
+    assert t["crashing_thread"] is None and "none is named" in t["crashing_thread_reason"]
+    assert "no thread is marked as the crashing one" in t["cut_note"]
+    assert not any(ln.startswith("Current thread") for ln in t["lines"])
+
+
+@pytest.mark.parametrize("max_lines", [3, 8, 40, 120, 400])
+def test_a_cut_never_keeps_more_lines_than_it_was_given(max_lines):
+    body = [f"Preamble line {i}" for i in range(200)] + _dump("x", 90)
+    t = ee._trace_report(body, ee.Path("c.log"), max_lines)
+    assert len(t["lines"]) <= max_lines and t["lines_kept"] == len(t["lines"]) and t["lines_total"] == len(body)
+
+
+def test_a_long_preamble_does_not_take_the_crashing_thread_s_room():
+    body = [f"Preamble line {i}" for i in range(200)] + _dump("crash_here", 90)
+    t = ee._trace_report(body, ee.Path("c.log"), 120)
+    assert sum("in crash_here" in ln for ln in t["lines"]) == 90, "the crashing block is whole"
+    assert "Preamble line 0" in t["lines"][0] and any("line 199" in ln for ln in t["lines"]), "the preamble keeps its first and its last lines"
+    assert "lines before the first thread are cut from the middle" in t["cut_note"]
+
+
+def test_a_message_line_that_starts_like_the_label_is_not_taken_for_the_current_thread():
+    body = ["Fatal Python error: Aborted", "Current thread is gone"] + _dump("busy", 90, labelled=False)[2:]
+    t = ee._trace_report(body, ee.Path("c.log"), 120)
+    assert t["crashing_thread"] is None
+
+
+def test_without_a_current_thread_the_room_is_shared_alike_not_given_to_the_first_thread():
+    t = ee._trace_report(_dump("x", 90, labelled=False), ee.Path("c.log"), 120)
+    first = [ln for ln in t["lines"] if "in idle0" in ln]
+    assert t["crashing_thread"] is None and len(first) < 10, len(first)
+
+
+def test_a_dump_with_no_thread_blocks_is_cut_to_the_first_lines_and_says_so():
+    t = ee._trace_report([f"line {i}" for i in range(500)], ee.Path("c.log"), 50)
+    assert len(t["lines"]) == 50 and "no thread blocks" in t["cut_note"] and t["lines_total"] == 500
+
+
+def test_the_leftover_of_short_threads_goes_to_the_threads_that_were_cut():
+    body = ["Fatal Python error: Aborted", ""]
+    body += ["Thread 0x1 (most recent call first):", "  File \"a.py\", line 1 in a", ""]  # a short thread
+    body += ["Thread 0x2 (most recent call first):"] + [f'  File "b.py", line {j} in b' for j in range(80)] + [""]
+    body += ["Current thread 0x3 (most recent call first):", '  File "c.py", line 1 in c']
+    t = ee._trace_report(body, ee.Path("c.log"), 50)
+    assert len(t["lines"]) == 50, "nothing of the room is left unused while a thread is cut"
+
+
+@pytest.mark.parametrize("hostile", ['"', "\\", "\x01", "\t", "é", "\U0001d518"], ids=["quote", "backslash", "control", "tab", "accent", "astral"])
+def test_a_trace_of_escape_heavy_text_stays_within_the_written_byte_budget(dd, hostile):
+    """Every line is cut to 202 bytes AS WRITTEN (JSON escapes counted), so the member's worst case is the line count times one figure
+    whatever the text holds: a raw 202-byte line of control characters used to serialise to about 1.2 KB."""
+    import json
+
+    recs, text = [], ""
+    for n in range(1, 13):
+        recs += _session(n, pid=700 + n, signal="SIGABRT")
+        body = ["Fatal Python error: Aborted", ""]
+        for i in range(30):
+            body += [f"Thread 0x{i:016x} (most recent call first):"] + ["  " + hostile * 150 for _ in range(30)] + [""]
+        body += ["Current thread 0x7f (most recent call first):"] + ["  " + hostile * 150 for _ in range(100)]
+        text += "\n" + _header(700 + n, n) + "\n" + "\n".join(body) + "\n"
+    _trace_log(dd, text)
+    out = ee.earlier_unclean_ends(None, records=recs)
+    written = json.dumps(out, ensure_ascii=False).encode("utf-8")
+    budget = (ee.NEWEST_EARLIER_TRACE_LINES + 9 * ee.EARLIER_TRACE_LINES) * (ee._TRACE_LINE_BYTES + 4)
+    assert out["shown"] == 10 and len(written) < budget + 40_000, (len(written), budget)
+    for row in out["sessions"]:
+        for ln in row["trace"]["lines"] + [row["trace"]["summary"]]:
+            assert len(json.dumps(ln, ensure_ascii=False).encode("utf-8")) - 2 <= ee._TRACE_LINE_BYTES
+        assert row["trace"]["lines_total"] > len(row["trace"]["lines"]), "what is counted stays whole"
+
+
+# ---- crashing_thread_kind: python / non-python / not-in-dump / no-trace, read off the first faulthandler block (10-17 reading of the 10 SIGABRTs) ----
+
+
+def test_a_dump_with_a_current_thread_is_kind_python():
+    t = ee._trace_report(_dump("lxml_here", 10), ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "python"
+
+
+def test_a_dump_of_thread_blocks_with_none_current_is_kind_non_python():
+    t = ee._trace_report(_dump("x", 10, labelled=False), ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "non-python" and t["crashing_thread"] is None
+
+
+def test_a_trace_with_no_thread_block_at_all_is_kind_not_in_dump():
+    t = ee._trace_report(["Uncaught exception ended the server", "ValueError", "  File \"a.py\", line 1 in f"], ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "not-in-dump"
+
+
+def test_a_message_line_that_only_looks_like_a_thread_block_does_not_make_the_kind_python_or_non_python():
+    t = ee._trace_report(["Fatal Python error: Aborted", "Current thread is gone", "Thread count was 3"], ee.Path("c.log"), 120)
+    assert t["crashing_thread_kind"] == "not-in-dump"
+
+
+def test_a_session_with_no_trace_is_kind_no_trace_with_its_reason(dd):
+    recs = _session(1, pid=701, signal="SIGABRT")
+    _trace_log(dd, "")
+    row = ee.earlier_unclean_ends(None, records=recs)["sessions"][0]
+    assert row["trace"] is None and row["crashing_thread_kind"] == "no-trace" and row["why_no_trace"]
+
+
+def test_an_earlier_end_with_a_dump_carries_the_kind_on_its_trace(dd):
+    recs = _session(1, pid=702, signal="SIGABRT")
+    _trace_log(dd, "\n" + _header(702, 1) + "\n" + "\n".join(_dump("c", 10, labelled=False)) + "\n")
+    t = ee.earlier_unclean_ends(None, records=recs)["sessions"][0]["trace"]
+    assert t["crashing_thread_kind"] == "non-python"
+
+
+# --------------------------------------------------------------------------- #
+#  died_into_phase: where in its last phase the previous session was
+# --------------------------------------------------------------------------- #
+def test_died_into_phase_is_the_seconds_from_phase_start_to_last_record():
+    got = forensics._died_into_phase({
+        "phase": "pass tail: hygiene", "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
+    })
+    assert got == {"seconds_in_peaks_phase": 270.0}
+
+
+@pytest.mark.parametrize("peaks, reason", [
+    (None, "no peaks"),
+    ({"available": False, "reason": "x"}, "no peaks"),
+    ({"last_ts": "2026-10-16T10:04:30+00:00"}, "no phase"),
+    ({"phase": "import", "last_ts": "2026-10-16T10:04:30+00:00"}, "no phase start"),
+    ({"phase": "import", "phase_since": "not a time", "last_ts": "2026-10-16T10:04:30+00:00"}, "no phase start"),
+    ({"phase": "import", "phase_since": "2026-10-16T10:05:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00"}, "clock moved"),
+])
+def test_died_into_phase_is_null_with_a_reason_never_zero(peaks, reason):
+    got = forensics._died_into_phase(peaks)
+    assert got["seconds_in_peaks_phase"] is None, "an unmeasured duration must not read as 0"
+    assert reason in got["reason"]
+
+
+def test_died_into_phase_never_carries_seconds_without_the_phase_it_points_at():
+    # The report does not repeat the phase name (byte room): the seconds mean "in previous_session_peaks.phase", so
+    # they must never be given where that field is absent, empty or not a string.
+    stamps = {"phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00"}
+    for phase in (None, "", 7, ["x"]):
+        peaks = {**stamps, **({} if phase is None else {"phase": phase})}
+        assert forensics._died_into_phase(peaks)["seconds_in_peaks_phase"] is None, phase
+
+
+def test_the_text_names_the_phase_the_seconds_refer_to():
+    prev = {
+        "previous_session": "unclean-end",
+        "how_it_ended": {"summary": "x", "died_into_phase": {"seconds_in_peaks_phase": 270.0}},
+        "previous_session_peaks": {"available": True, "phase": "pass tail: hygiene"},
+    }
+    text = forensics.render_text({"previous_session": prev})
+    assert "previous_session_peaks.phase: pass tail: hygiene" in text and "270.0 s" in text
+
+
+def test_phase_since_moves_only_when_the_phase_changes(monkeypatch):
+    session_hwm.reset_for_tests()
+    monkeypatch.setattr(session_hwm, "_readings", lambda: {"rss_mb": 800.0})
+    monkeypatch.setattr(session_hwm, "composition", lambda walk_heap=False: {})
+    stamps = iter(f"2026-10-16T10:00:0{i}+00:00" for i in range(9))
+    monkeypatch.setattr(session_hwm, "_now", lambda: next(stamps))
+    session_hwm.observe("collect")
+    first = session_hwm.current()["phase_since"]
+    session_hwm.observe("collect")
+    assert session_hwm.current()["phase_since"] == first, "the same phase seen again must not restart its clock"
+    session_hwm.observe("pass-tail")
+    assert session_hwm.current()["phase_since"] != first
+    session_hwm.reset_for_tests()
+
+
+def test_died_into_phase_costs_few_serialised_bytes():
+    # The longest phase string today is the collector's own "collecting (pass <ISO timestamp>)", 43 characters; the phase name
+    # is not in died_into_phase, so the size must not grow with it. phase_since rides previous_session_peaks (the new mark).
+    phase = "collecting (pass 2026-10-16T10:00:00+00:00)"
+    assert len(phase) == 43
+    measured = forensics._died_into_phase({
+        "phase": phase, "phase_since": "2026-10-16T10:00:00+00:00", "last_ts": "2026-10-16T10:04:30+00:00",
+    })
+    null = forensics._died_into_phase({"phase": phase, "last_ts": "2026-10-16T10:04:30+00:00"})
+    new_mark = len(json.dumps({"phase_since": "2026-10-16T10:00:00+00:00"}, separators=(",", ":"))) - 1
+    sizes = [len(json.dumps(measured, separators=(",", ":"))) + new_mark, len(json.dumps(null, separators=(",", ":")))]
+    assert max(sizes) <= 130, f"died_into_phase is {sizes} B (measured+mark, null); the report has 130 B of margin"

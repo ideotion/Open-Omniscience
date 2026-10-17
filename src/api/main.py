@@ -40,6 +40,7 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from starlette.requests import HTTPConnection
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
@@ -740,6 +741,19 @@ async def lifespan(app: FastAPI):
     logger.info("Open Omniscience API shut down cleanly")
 
 
+async def _note_dispatch(request: HTTPConnection) -> None:
+    """Application-level dependency: stamp the moment routing handed this request to its endpoint (``latency.before_dispatch_ms``).
+    ``HTTPConnection`` and not ``Request``, so a WebSocket route added later gets the same dependency without a TypeError.
+    ``async`` on purpose: a sync dependency would take a thread of the pool the endpoint is about to wait for, and change what it
+    measures."""
+    try:
+        from src.monitoring import latency as _lat
+
+        _lat.note_dispatched(request.scope)
+    except Exception:  # noqa: BLE001 - instrumentation must never affect the request
+        pass
+
+
 # Initialize FastAPI app
 # `default_response_class`: every JSON payload leaves in its WIRE country form (alpha-3, Q304);
 # Python inside keeps speaking alpha-2. One boundary, src/api/country_wire.py.
@@ -748,6 +762,7 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
     default_response_class=CountryWireResponse,
+    dependencies=[Depends(_note_dispatch)],
 )
 
 # Prometheus metrics
@@ -1040,6 +1055,7 @@ async def monitor_requests(request: Request, call_next):
         from src.monitoring import latency as _lat
 
         _lat.note_start(req_id, f"{diag_method} {UNMATCHED_ROUTE}", scope=request.scope, method=diag_method)
+        _lat.note_received(request.scope)
     except Exception:  # noqa: BLE001 - instrumentation must never affect the request
         _lat = None  # type: ignore[assignment]
 
