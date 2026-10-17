@@ -312,9 +312,14 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     exists) and without :func:`disk_changing` having been called (a refusal before anything was touched) the earlier connections are valid
     again. Raises :class:`LibraryBusy` if it cannot be had.
 
-    The lock is given back whatever the cleanup does, except at the one place no code can protect: the call that gives it back, if the
-    allocator refuses to start it. ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every instruction of the cleanup
-    that can allocate and names that site."""
+    The lock is given back whatever the cleanup does, except at the places no code can protect: the call that gives it back, if the
+    allocator refuses to start it (natively the ``BEFORE_WITH`` inside it, which makes the bound ``__enter__`` and ``__exit__``); and the exit
+    of any ``with <lock>:`` in the cleanup, which calls ``__exit__(None, None, None)``, builds a 3-tuple on CPython 3.13 and so allocates when
+    the tuple free list is empty. A failed exit leaves that lock held. The ``with`` form is what the interrupt rules require (R144, R171) and
+    nothing runs after an exit that did not run; the cleanup's three ``with _STATE:`` sections (the read of ``_DISK_CHANGED``, ``_revive``,
+    ``_close_window``) are such exits, and a failed one blocks the next with the window held.
+    ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every other instruction of the cleanup that can allocate and
+    names the call."""
     global _DISK_CHANGED
     # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the

@@ -10,13 +10,17 @@ binary operation that makes a new object, an iterator), never between two statem
 puts a MemoryError where none can happen. So the module's frames are traced instruction by instruction, and once the body of the window is over a
 MemoryError is raised BEFORE the Nth instruction that can allocate (the instruction does not run: the allocation it needed failed), for every N.
 Left out on purpose: attribute loads, truth tests, comparisons (they return the two singletons), stores, jumps, pops, loads of locals and
-globals, and the enter and exit of every ``with <lock>:`` (a lock's acquire and release take no memory, and the exit call has no object to make).
+globals, and the enter and exit of every ``with <lock>:`` (a harness cannot inject there without deadlocking on its own state lock, and nothing can protect them:
+the enter is a ``BEFORE_WITH`` making the bound ``__enter__`` and ``__exit__``, and the exit calls ``__exit__(None, None, None)``, which builds a 3-tuple on
+CPython 3.13 and so DOES allocate when the tuple free list is empty; a failure there leaves the lock held, measured with the allocator).
 A call into the standard library is ONE instruction at its call site: "the call could not start", not "it failed half way".
 
 WHAT IT PROVES, AND THE ONE SITE IT NAMES. At every such instruction: the lock is given back, a thread that was already waiting for a
-connection got through, and one that arrived afterwards did, and the write gate is free again. The single exception is the call of
-``release_if_held_here`` itself: if the allocator refuses to start THAT call, no code that runs after it can help, so it is named here, in the
-docstring of ``swap_window`` and in the report, not hidden. The test allows that site to leave the lock held and no other.
+connection got through, and one that arrived afterwards did, and the write gate is free again. The single exception it models is the call of
+``release_if_held_here`` itself: if the allocator refuses to start THAT call, no code that runs after it can help (natively the site is the
+``BEFORE_WITH`` inside it), so it is named here, in the docstring of ``swap_window`` and in the report, not hidden. The test allows that site to
+leave the lock held and no other. The exit of a ``with <lock>:`` is a second residual the sweep does not model (see above), named in the same
+places.
 
 THE MUTANTS. A sweep that finds nothing proves nothing until it is seen to find something, so the module's own source is rewritten three ways
 (each undoes one thing this fix or ``#1426`` did) and the sweep must report the defect each time: the release that asks for the thread

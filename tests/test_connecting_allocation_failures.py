@@ -19,7 +19,9 @@ THE MODEL IS THE SWAP WINDOW'S (read its docstring): the module's frames are tra
   its wait takes steps).
 
 THE ONE SITE IT NAMES. The call of ``release_shared_since`` in ``connecting``'s ``finally``: if the allocator refuses to start THAT call, no
-code that runs after it can help. The test allows that site to leave the level raised and no other.
+code that runs after it can help. The test allows that site to leave the level raised and no other. The exit of the ``with self._lock:`` inside
+the give-back is a second residual the sweep does not model (it builds a 3-tuple on CPython 3.13 and allocates when the free list is empty; a failure
+leaves the lock held): see ``tests/test_swap_window_allocation_failures.py``.
 
 THE MUTANTS. A sweep that finds nothing proves nothing until it is seen to find something, so the module's own source is rewritten three ways,
 each undoing one thing this change did, and the sweep must report the defect each time.
