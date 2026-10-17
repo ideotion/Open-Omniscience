@@ -748,11 +748,23 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     free = cap - worst
     assert free >= slots.HEADROOM_AT_LEAST_BYTES, f"{free:,} bytes are left of a part, the table promises {slots.HEADROOM_AT_LEAST_BYTES:,}"
     # the stated figures are the ones the comment names, not drifted copies
-    assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_092_960
+    assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_204_329
     # the arithmetic beside the number: the plan's 919 KB with its +125 KB session-forensics estimate swapped for the crash
-    # trace export's worst case, (400 + 9 x 120) lines of 202 bytes
-    assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + (400 + 9 * 120) * 202
-    assert free == 1_613_784, "the comment on the table states the free room; move them together"
+    # trace export's worst case, COMPUTED from the export's own constants so that a cut that grows fails here: the newest earlier
+    # end keeps ``NEWEST_EARLIER_TRACE_LINES`` lines (the cut of the one export that has the constant; the others have no such
+    # distinction), the other earlier ends keep ``EARLIER_TRACE_LINES`` each, the previous session keeps ``_TRACE_REPORT_LINES``,
+    # every line is at most ``_TRACE_LINE_BYTES`` + 4 bytes with the JSON around it, and about 10,000 bytes frame the member
+    from src.monitoring import exit_evidence as ee
+
+    line = ee._TRACE_LINE_BYTES + 4
+    newest_earlier = getattr(ee, "NEWEST_EARLIER_TRACE_LINES", ee.EARLIER_TRACE_LINES)
+    crash_trace = (newest_earlier + (ee.EARLIER_ENDS_LIMIT - 1) * ee.EARLIER_TRACE_LINES + ee._TRACE_REPORT_LINES) * line + 10_000
+    assert crash_trace <= 400_000, f"the crash trace export's worst case is {crash_trace:,} bytes; the slot counts 400,000: measure again"
+    # ...plus the three readings the crash-evidence change added to the same member, each at its measured worst case
+    oom_counters, native_libs, can_answer = 2_145, 6_437, 1_747
+    assert oom_counters + native_libs + can_answer == 10_329
+    assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000 + 10_329
+    assert free == 1_502_415, "the comment on the table states the free room; move them together"
 
 
 def test_a_budget_raised_past_the_headroom_fails_the_pin(monkeypatch):

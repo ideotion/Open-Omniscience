@@ -36,8 +36,9 @@ THE SCAN'S STATED BOUNDARY (measured by planting each shape; a shape here is NOT
     ``type(con).execute(con, sql)`` / ``con.__class__.execute(con, sql)`` (only the capitalised spelling ``sqlite3.Connection.execute`` is
     caught).
  6. The lexical shape of a statement, not its meaning, over-reports and never misses: ``WITH ... INSERT`` is flagged even when qualified, a
-    quoted ``"main"."t"`` is flagged although it is main, a ``;`` inside a string literal splits a statement, and a prose string that
-    starts with "Update" / "Create table" is read as a write.
+    quoted ``"main"."t"`` is flagged although it is main, and a prose string that starts with "Update" / "Create table" is read as a
+    write. (A ``;`` inside a literal, a quoted name or a comment, and the conflict clause of ``UPDATE OR IGNORE``, used to over-report too: they are
+    read as SQLite reads them since ``_statements``; a text that does not close falls back to every ``;``.)
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ _MERGE = Path(__file__).resolve().parents[1] / "src" / "backup" / "merge.py"
 _EXEMPT = ("main.", "temp.")
 #: A statement's HEAD, with its target: the writes the module sends. The target is read up to the next space or bracket.
 _WRITE = re.compile(
-    r"\s*(INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE|DELETE\s+FROM|DROP\s+(?:TABLE|INDEX|VIEW|TRIGGER)(?:\s+IF\s+EXISTS)?"
+    r"\s*(INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM|DROP\s+(?:TABLE|INDEX|VIEW|TRIGGER)(?:\s+IF\s+EXISTS)?"
     r"|ALTER\s+TABLE|CREATE\s+(?:TABLE|VIRTUAL\s+TABLE|INDEX|UNIQUE\s+INDEX|TRIGGER|VIEW)(?:\s+IF\s+NOT\s+EXISTS)?)\s+(\"?[\w{}.]+\"?)",
     re.I,
 )
@@ -145,12 +146,59 @@ def _pragma_problems(stmt: str) -> list[str]:
     return []
 
 
+#: SQLite's TCL-style parameters (`$name(...)`, `:name(...)`, `@name(...)`, `#name(...)`): one token up to the `)`, so a quote or a comment opener inside it opens nothing.
+_TCL_PARAMETER = re.compile(r"[$@:#][\w:]*\w\(")
+
+
+def _statements(sql: str) -> list[str]:
+    """The statements of one text, split at the ``;`` that SQLite itself would end a statement at: a ``;`` inside a string literal (``'a;b'``),
+    a quoted name (``"a;b"``, backtick, ``[a;b]``) or a comment (``-- x;`` / ``/* x; */``) does not end one. A text this reading cannot trust
+    (an unterminated quote or comment, a TCL-style parameter, or a run-time ``{}`` piece) falls back to
+    splitting at every ``;``, which can only report MORE statements, never hide one."""
+    if _TCL_PARAMETER.search(sql):  # `$a(') ; DELETE FROM u ; SELECT $b(')`: SQLite reads `$a(...)` as one token, so its quote opens nothing
+        return sql.split(";")
+    if "{" in sql:
+        # a `{}` stands for a piece the source builds at run time, and that piece may hold the quote this reading assumed was open (or
+        # shut), so what looks like "inside a literal" cannot be trusted
+        return sql.split(";")
+    out: list[str] = []
+    start = i = 0
+    n = len(sql)
+    while i < n:
+        c = sql[i]
+        if c in "'\"`":
+            j = sql.find(c, i + 1)  # a doubled quote (``'it''s'``) reads as two literals side by side, which hides the same ``;``
+            if j == -1:
+                return sql.split(";")
+            i = j + 1
+        elif c == "[":
+            j = sql.find("]", i + 1)
+            if j == -1:
+                return sql.split(";")
+            i = j + 1
+        elif sql.startswith("--", i):
+            j = sql.find("\n", i)
+            i = n if j == -1 else j + 1
+        elif sql.startswith("/*", i):
+            j = sql.find("*/", i + 2)
+            if j == -1:
+                return sql.split(";")
+            i = j + 2
+        elif c == ";":
+            out.append(sql[start:i])
+            start = i = i + 1
+        else:
+            i += 1
+    out.append(sql[start:])
+    return out
+
+
 def _classify(sql: str) -> list[str]:
     """What is wrong with one statement text (``{}`` stands for a piece the source builds at run time): empty when it is a read, a
     temp-table statement, or a write that names ``main``. The schema prefix is compared case-insensitively and must be the BARE word:
     a quoted ``"main.t"`` is a table of that odd name, in main."""
     problems: list[str] = []
-    for stmt in (_strip_leading_comments(part) for part in sql.split(";")):
+    for stmt in (_strip_leading_comments(part) for part in _statements(sql)):
         if not stmt:
             continue
         m = _WRITE.match(stmt)
@@ -770,6 +818,86 @@ def test_the_scan_fails_on_every_unqualified_write_shape(snippet):
 )
 def test_the_scan_passes_the_qualified_and_the_read_shapes(snippet):
     assert _scan(snippet) == [], snippet
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("DELETE FROM main.a; DELETE FROM main.b", ["DELETE FROM main.a", " DELETE FROM main.b"]),
+        ("SELECT 'a;b'", ["SELECT 'a;b'"]),  # a string literal
+        ("SELECT 'it''s;'; SELECT 2", ["SELECT 'it''s;'", " SELECT 2"]),  # a doubled quote stays inside the literal
+        ('SELECT "a;b" FROM main.t', ['SELECT "a;b" FROM main.t']),  # a quoted name
+        ("SELECT `a;b` FROM main.t", ["SELECT `a;b` FROM main.t"]),
+        ("SELECT [a;b] FROM main.t", ["SELECT [a;b] FROM main.t"]),
+        ("-- x; DELETE FROM u\nSELECT 1", ["-- x; DELETE FROM u\nSELECT 1"]),  # a line comment, to the end of its line
+        ("SELECT 1 -- x\n; SELECT 2", ["SELECT 1 -- x\n", " SELECT 2"]),  # ... and a real ; after the comment still ends the statement
+        ("/* x; DELETE FROM u */ SELECT 1", ["/* x; DELETE FROM u */ SELECT 1"]),
+        ("SELECT 1; /* x */ SELECT 2", ["SELECT 1", " /* x */ SELECT 2"]),
+        # ``*/`` ends a comment at the ``/``: the ``*`` of ``*2`` is not the start of another one
+        ("SELECT 1 /*a*/*2; DELETE FROM u /* c */", ["SELECT 1 /*a*/*2", " DELETE FROM u /* c */"]),
+        # an apostrophe INSIDE a comment must not open a string that swallows the real ``;`` after it
+        ("DELETE FROM main.t -- it's\n; DELETE FROM u -- it's", ["DELETE FROM main.t -- it's\n", " DELETE FROM u -- it's"]),
+        # what it cannot close falls back to every ``;`` (more statements, never fewer)
+        ("SELECT 'a; DELETE FROM u", ["SELECT 'a", " DELETE FROM u"]),
+        ('SELECT "a; DELETE FROM u', ['SELECT "a', " DELETE FROM u"]),
+        ("SELECT [a; DELETE FROM u", ["SELECT [a", " DELETE FROM u"]),
+        ("SELECT 1 /* a; DELETE FROM u", ["SELECT 1 /* a", " DELETE FROM u"]),
+        ("", [""]),
+        ("SELECT 1;", ["SELECT 1", ""]),
+        # a TCL-style parameter: SQLite reads `$a(')` as one token, so the quote opens nothing and the `;` after it ends a statement
+        ("SELECT $a(') ; DELETE FROM u ; SELECT $b(')", ["SELECT $a(') ", " DELETE FROM u ", " SELECT $b(')"]),
+        ("SELECT :a(--) ; DELETE FROM u", ["SELECT :a(--) ", " DELETE FROM u"]),
+        ("SELECT @a(/*) ; DELETE FROM u ; SELECT @b(*/)", ["SELECT @a(/*) ", " DELETE FROM u ", " SELECT @b(*/)"]),
+        # a run-time piece may carry the quote this reading took as open: with a `;` skipped, every `;` counts
+        ("SELECT '{}; DELETE FROM u -- '\n", ["SELECT '{}", " DELETE FROM u -- '\n"]),
+        ("INSERT INTO main.{} VALUES ('a')", ["INSERT INTO main.{} VALUES ('a')"]),
+        ("SELECT '{};' ", ["SELECT '{}", "' "]),  # over-reports (a `;` in a literal beside a run-time piece); never hides
+    ],
+)
+def test_statements_ends_a_statement_where_sqlite_does(text, expected):
+    assert _statements(text) == expected
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # the ``;`` inside a literal / quoted name / comment is not a second statement, and an UPDATE's conflict clause is not its target
+        'def f(con):\n    con.execute("INSERT INTO main.t (a) VALUES (\'x;y\')")',
+        'def f(con):\n    con.execute("DELETE FROM main.t WHERE a = \'it\'\'s;\'")',
+        'def f(con):\n    con.execute("UPDATE main.t SET a = \'x;y\' WHERE b = 1")',
+        'def f(con):\n    con.execute("UPDATE OR IGNORE main.t SET a = 1")',
+        'def f(con):\n    con.execute("UPDATE OR REPLACE temp.x SET a = 1")',
+        'def f(con):\n    con.execute("-- a; b\\nDELETE FROM main.t")',
+        'def f(con):\n    con.execute("DELETE FROM main.t /* a; b */")',
+    ],
+)
+def test_a_semicolon_in_a_literal_and_an_update_conflict_clause_are_not_reported(snippet):
+    assert _scan(snippet) == [], snippet
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # a real second statement after a literal that holds a ``;`` is still read
+        'def f(con):\n    con.execute("DELETE FROM main.t WHERE a = \'x;y\'; DELETE FROM u")',
+        'def f(con):\n    con.execute("SELECT \'it\'\'s;\'; DELETE FROM u")',
+        'def f(con):\n    con.execute("SELECT 1 -- it\'s\\n; DELETE FROM u -- it\'s")',
+        'def f(con):\n    con.execute("SELECT 1 /* a */; DELETE FROM u")',
+        # an unclosed quote or comment makes every ``;`` count
+        'def f(con):\n    con.execute("SELECT \'a; DELETE FROM u")',
+        'def f(con):\n    con.execute("SELECT 1 /* a; DELETE FROM u")',
+        # the conflict clause does not hide an unqualified target
+        'def f(con):\n    con.execute("UPDATE OR IGNORE t SET a = 1")',
+        'def f(con):\n    con.execute("UPDATE OR REPLACE main_t SET a = 1")',
+        # SQLite runs the DELETE in both of these (measured on 3.45 with executescript); neither may read as one string / one comment
+        'def f(con):\n    con.executescript("SELECT $a(\') ; DELETE FROM u ; SELECT $b(\')")',
+        'def f(con):\n    con.executescript("SELECT :a(--) ; DELETE FROM u")',
+        'def f(con, v):\n    con.executescript("SELECT \'" + v + "; DELETE FROM u -- \'\\n")',
+        'def f(con, v):\n    con.executescript(f"SELECT \'{v}; DELETE FROM u -- \'\\n")',
+    ],
+)
+def test_the_scan_still_fails_on_the_shapes_the_semicolon_reading_could_hide(snippet):
+    assert _scan(snippet), snippet
 
 
 #: The functions OUTSIDE ``merge.py`` that receive the merge connection, each with why it is not a way to write unqualified. The scan reads

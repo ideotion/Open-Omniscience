@@ -694,9 +694,10 @@ def _run_discovery_on_a_shared_session(session, *, per_run: int, third: int) -> 
     its own fresh session via ``session_scope()``), so the 26-minute-scan-under-
     the-gate risk (finding A2) does not apply to it.
     """
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     try:
+        connection_first(session)  # the connection first, then the gate
         with write_lock(), session.begin_nested():
             pruned = prune_noise_candidates(session)
             cited = citation_channel(session, cap=third)
@@ -739,7 +740,7 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     if per_run <= 0:
         return {"enabled": False, "created": 0}
 
-    from src.database.writer import write_lock
+    from src.database.writer import connection_first, write_lock
 
     third = max(1, per_run // 3)
 
@@ -827,6 +828,9 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     # instead of the one carrying the 26-minute scan.
     # ----------------------------------------------------------------------- #
     try:
+        # The connection first, then the gate: the decide phase ended its read snapshot with a rollback, which gave the session's
+        # connection back, so the savepoint below would have waited for the pool while holding the gate.
+        connection_first(session)
         with write_lock(), session.begin_nested():
             pruned = prune_noise_candidates(session, _decided_ids=prune_ids)
             cited = citation_channel(session, cap=third, _decided=cite_result)

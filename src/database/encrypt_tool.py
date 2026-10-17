@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -46,11 +48,18 @@ def _table_counts(conn) -> dict[str, int]:
     return {n: conn.execute(f'SELECT COUNT(*) FROM "{n}"').fetchone()[0] for n in names}  # noqa: S608  # nosec B608 - identifier from the fixed store list, never input
 
 
-def encrypt_database(path: Path | str, key: str) -> dict:
+def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> dict:
     """Encrypt one SQLite file in place: snapshot -> export -> verify -> swap.
 
     The live file is replaced only AFTER the encrypted copy passes
-    quick_check and per-table count equality. Returns an honest report."""
+    quick_check and per-table count equality. Returns an honest report.
+
+    ``library`` is True for the file the app's engine is open on (the corpus): the swap then happens inside the one window of
+    ``library_generation`` (``backup.merge.swap_in_corpus`` uses it for the restore and the repair). A request that held a pooled
+    connection to the old file while it waited for the write gate would otherwise save into the replaced inode after the gate was
+    given back: it reports success and the row is in no library. Inside the window every connection made before is refused from its
+    first line (``StaleLibraryError``: "do it again"), so that save fails loudly and loses nothing. The other stores (the custody log,
+    the lanes) have no engine of that kind and swap as they always did."""
     p = Path(path)
     if not p.exists() or p.stat().st_size == 0:
         return {"path": str(p), "skipped": "file does not exist"}
@@ -87,11 +96,12 @@ def encrypt_database(path: Path | str, key: str) -> dict:
                 f"{got == want}); the original file is untouched"
             )
 
-        for suffix in ("-wal", "-shm"):
-            stale = p.with_name(p.name + suffix)
-            if stale.exists():
-                stale.unlink()
-        os.replace(enc_tmp, p)  # atomic on the same filesystem
+        with _library_window(enc_tmp) if library else nullcontext():
+            for suffix in ("-wal", "-shm"):
+                stale = p.with_name(p.name + suffix)
+                if stale.exists():
+                    stale.unlink()
+            os.replace(enc_tmp, p)  # atomic on the same filesystem
     finally:
         enc_tmp.unlink(missing_ok=True)
     _LOG.info("encrypted %s (snapshot kept: %s)", p.name, snapshot.name)
@@ -103,6 +113,24 @@ def encrypt_database(path: Path | str, key: str) -> dict:
         "snapshot_note": "kept ON PURPOSE as your escape hatch -- delete it once "
         "you have unlocked successfully and are satisfied",
     }
+
+
+@contextmanager
+def _library_window(enc_tmp: Path) -> Iterator[None]:
+    """The window in which the library's name is moved onto the encrypted copy: connections made before it are refused from here on,
+    and the log names about to be removed are announced (``disk_changing``) so a replace that fails after that point does not give the
+    earlier connections their validity back. A window that cannot be had (a connection still being opened after its wait) is a named
+    refusal before anything was touched."""
+    from src.database import library_generation
+
+    try:
+        with library_generation.swap_window(enc_tmp):
+            library_generation.disk_changing()
+            yield
+    except library_generation.LibraryBusy:
+        raise EncryptToolError(
+            "a connection to the library was still being opened, so the file was not replaced; the original file is untouched"
+        ) from None
 
 
 def _table_counts_safe(p: Path, key: str) -> dict:
@@ -155,7 +183,7 @@ def encrypt_all(key: str) -> dict:
 
     with write_lock():
         reports = {
-            "corpus": encrypt_database(main, key),
+            "corpus": encrypt_database(main, key, library=True),
             "custody": encrypt_database(data_dir() / "custody_log.db", key),
         }
         # Close any lane pool first: encrypt_database swaps the file underneath, and a
