@@ -1071,6 +1071,9 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
         out["launcher"] = launcher_exit(pid, boot)
         out["launcher_stderr"] = launcher_stderr(pid, boot)
         out["crash_trace"] = previous_trace(pid, boot, prev.get("started_at"))
+        from src.monitoring.native_inflight import report as _native_report
+
+        out["native_in_flight"] = _native_report(pid, boot)
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
         out["unavailable"] = _why(exc)
     if _JOURNAL_EXIT_EVIDENCE is not None:
