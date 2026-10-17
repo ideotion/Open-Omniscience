@@ -113,8 +113,31 @@ def test_the_worst_case_of_every_member_this_lane_writes_fits_the_headroom(dd, t
 
 
 def test_each_member_has_its_own_allowance_so_one_cannot_spend_anothers(dd, tmp_path, monkeypatch):
-    assert _stderr_worst(dd) <= 290
+    assert _stderr_worst(dd) <= 300
     assert _died_worst() <= 80
     assert _native_worst() <= ni.REPORT_BYTES_BUDGET
     assert _census_worst(tmp_path, monkeypatch) <= hwm.CENSUS_BYTES
     assert _stack_worst() <= ee.COREDUMP_STACK_BYTES
+
+
+def test_a_count_at_the_limit_is_written_as_saturated_never_as_an_exact_looking_number(dd):
+    path = dd / "diagnostics" / ee.LAUNCHER_STDERR
+    rows = [{"pid": 5, "boot_id": "b", "at": "t", "line": "Fatal Python error: Aborted"}]
+    for kept, dropped, over, want_dropped, want_over in ((3, 10**19, 10**9, ee.COUNT_SATURATED, ee.COUNT_SATURATED), (3, 999_998, 999_999, 999_998, ee.COUNT_SATURATED)):
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows + [{"pid": 5, "boot_id": "b", "at": "t", "summary": True, "kept_lines": kept, "dropped_lines": dropped, "over_cap_lines": over}]), encoding="utf-8")
+        out = ee.launcher_stderr(5, "b")
+        assert out["dropped_lines"] == want_dropped and out["over_cap_lines"] == want_over
+        assert out["lines_recorded"] == 3 and out["lines_not_found"] == 2
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows + [{"pid": 5, "boot_id": "b", "at": "t", "summary": True, "kept_lines": 10**9, "dropped_lines": 0, "over_cap_lines": 0}]), encoding="utf-8")
+    out = ee.launcher_stderr(5, "b")
+    assert out["lines_recorded"] == ee.COUNT_SATURATED and out["lines_not_found"] == ee.COUNT_SATURATED
+    assert ee.COUNT_SATURATED == "999999+" and isinstance(ee.COUNT_SATURATED, str)
+
+
+def test_every_died_into_phase_code_has_its_words():
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    codes = {forensics._died_into_phase(c).get("reason") for c in (None, {"last_ts": t0.isoformat()}, {"phase": "x", "last_ts": t0.isoformat()},
+                                                                    {"phase": "x", "phase_since": (t0 + timedelta(days=1)).isoformat(), "last_ts": t0.isoformat()})}
+    assert codes == set(forensics.DIED_REASON_WORDS)
+    got = forensics.render_text({"previous_session": {"previous_session": {"summary": "x"}, "how_it_ended": {"summary": "s", "died_into_phase": {"seconds_in_peaks_phase": None, "reason": "no phase start"}}}})
+    assert "phase start not recorded (older build)" in got

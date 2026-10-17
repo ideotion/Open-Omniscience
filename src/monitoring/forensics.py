@@ -842,6 +842,16 @@ def previous_session_report() -> dict[str, Any]:
     return _with_answers(out)
 
 
+#: What each ``died_into_phase`` reason code says in words (the stored record carries the short code; every reader maps it back, so the report
+#: reads as it did before the codes). tools/diag_reader.py carries the same table for the triage.
+DIED_REASON_WORDS = {
+    "no peaks": "no high-water record",
+    "no phase": "no phase was recorded",
+    "no phase start": "phase start not recorded (older build)",
+    "clock moved": "clock moved",
+}
+
+
 def _died_into_phase(peaks: dict[str, Any] | None) -> dict[str, Any]:
     """Seconds from the first sighting of the previous session's last phase to its last record.
 
@@ -1746,7 +1756,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         which = (prev.get("previous_session_peaks") or {}).get("phase") or "unknown"
         lines.append(
             f"  - the last phase seen (previous_session_peaks.phase: {which}): "
-            + (f"{secs} s from its start to the last record" if secs is not None else f"duration unmeasured ({dip.get('reason')})")
+            + (f"{secs} s from its start to the last record" if secs is not None else f"duration unmeasured ({DIED_REASON_WORDS.get(str(dip.get('reason')), dip.get('reason'))})")
         )
     cen = (prev.get("previous_session_peaks") or {}).get("last_thread_census")
     if isinstance(cen, dict):

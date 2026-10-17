@@ -111,8 +111,8 @@ _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
 
 #: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included. WHAT IT
 #: PROTECTS: the 2,415 B headroom above the diagnostics floor. The sum of every member's MEASURED worst case, three launcher_stderr sessions at
-#: 281 B, died_into_phase 75, native_in_flight 181 (key included), the thread census 150, this 570 and crashing_thread_kind 440 (WAL's), is
-#: 2,259 B (tests/test_session_forensics_budget.py builds each with the real code and goes red if any grows): 156 B are unspent.
+#: 293 B, died_into_phase 75, native_in_flight 181 (key included), the thread census 150, this 570 and crashing_thread_kind 440 (WAL's), is
+#: 2,295 B (tests/test_session_forensics_budget.py builds each with the real code and goes red if any grows): 120 B are unspent.
 COREDUMP_STACK_BYTES = 570
 _COREDUMP_HEAD = re.compile(r"systemd-coredump\S*:\s+Process\s+(\d+)\s+\(")
 _COREDUMP_KEEP = re.compile(r"^(?:Stack trace of thread \d+:|#\d+\s)")
@@ -245,7 +245,7 @@ def _ended_before(at: Any, started: Any, slack_s: float = 0.0) -> bool:
 
 #: Lines of the launcher's stderr record shown per session (the launcher keeps up to 20): 2. WHAT IT PROTECTS: the report's byte budget
 #: (a real abort is one or two messages; a crash loop is what could repeat them), not a view of how many there were: ``lines_recorded``
-#: is always the full count the launcher kept. Worst case per session 281 B as measured by tests/test_session_forensics_budget.py, typical about 100 B.
+#: is always the full count the launcher kept. Worst case per session 293 B as measured by tests/test_session_forensics_budget.py, typical about 100 B.
 STDERR_LINES_SHOWN = 2
 #: Earlier unclean ends that carry a ``launcher_stderr`` (the newest 2, beside the previous session's own). WHAT IT PROTECTS: the report's byte
 #: room (R119, measured by WAL): 3 sessions at the measured worst case (tests/test_session_forensics_budget.py) against the 2,415 B headroom.
@@ -366,15 +366,22 @@ _STDERR_READ_BYTES = 256 * 1024
 _STDERR_START_SLACK_S = 120.0
 
 
-#: The largest count the launcher's stderr summary can show: 999,999 (a count above it reads 999,999). WHAT IT PROTECTS: the byte room of
-#: ``launcher_stderr`` (a 19-digit count in each of five fields is 55 B of a 341 B worst case). A chatty server's dropped-line count is the
-#: one that can pass it; past a million lines the exact figure answers nothing the cap does not.
+#: The largest count the launcher's stderr summary shows exactly: 999,999. A count at or above it is shown as the string ``"999999+"``, never as a
+#: number, so it cannot read as exact. WHAT IT PROTECTS: the session-forensics byte budget (a 19-digit count in each of five fields is 55 B of a
+#: 341 B worst case; tests/test_session_forensics_budget.py measures the saturated form too). A chatty server's dropped-line count is the one
+#: that can reach it.
 _COUNT_CAP = 999_999
+COUNT_SATURATED = f"{_COUNT_CAP}+"
 
 
 def _count(value: Any) -> int | None:
-    """A count from the untrusted file: a real, non-negative integer (not a boolean), else None; above ``_COUNT_CAP`` it reads the cap."""
-    return min(value, _COUNT_CAP) if type(value) is int and value >= 0 else None
+    """A count from the untrusted file: a real, non-negative integer (not a boolean), else None. Not capped: see :func:`_shown`."""
+    return value if type(value) is int and value >= 0 else None
+
+
+def _shown(n: int | None) -> int | str | None:
+    """A count as the report writes it: the number, or ``"999999+"`` once it reaches the cap."""
+    return COUNT_SATURATED if isinstance(n, int) and n >= _COUNT_CAP else n
 
 
 def _tail_text(path: Path, limit: int) -> str:
@@ -443,18 +450,18 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
         if used + len(x) <= STDERR_SHOWN_CHARS:
             chosen.insert(0, x)
             used += len(x)
-    out: dict[str, Any] = {"lines": chosen, "lines_recorded": recorded}
+    out: dict[str, Any] = {"lines": chosen, "lines_recorded": _shown(recorded)}
     cut = len(pool[-STDERR_LINES_SHOWN:]) - len(chosen)
     if cut > 0:
         out["lines_cut"] = cut
     if recorded > found:
-        out["lines_not_found"] = recorded - found
-    out["dropped_lines"] = _count(summary.get("dropped_lines")) if summary else None
+        out["lines_not_found"] = _shown(recorded - found)
+    out["dropped_lines"] = _shown(_count(summary.get("dropped_lines"))) if summary else None
     over = _count(summary.get("over_cap_lines")) if summary else None
     if over:
-        out["over_cap_lines"] = over
+        out["over_cap_lines"] = _shown(over)
     if rejected:
-        out["rejected_lines"] = rejected
+        out["rejected_lines"] = _shown(rejected)
     if summary is None:
         out["no_summary"] = True
     if pid_only:
