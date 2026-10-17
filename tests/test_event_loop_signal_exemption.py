@@ -162,7 +162,10 @@ def _serve_and_interrupt(tmp_path: Path, *, plant: str = "") -> tuple[int, str]:
     the child: a deliberately broken server for the red-without run."""
     port = _free_port()
     env = dict(os.environ, OO_DATA_DIR=str(tmp_path), OO_PORT=str(port), OO_DB_PLAINTEXT="1", OO_NO_SCHEDULER="1", PYTHONUNBUFFERED="1")
-    code = f"{plant}\nfrom src.api.main import main\nmain()\n"
+    # Python installs ``default_int_handler`` for SIGINT at start only when the parent did not leave SIGINT ignored; a suite started as
+    # a background job from a non-interactive shell does (SigIgn 0x1001006), and then no handler exists to be taken back or captured.
+    # Setting it first gives the child the state an interactive run has, so the test measures uvicorn's capture, not the parent's shell.
+    code = f"import signal\nsignal.signal(signal.SIGINT, signal.default_int_handler)\n{plant}\nfrom src.api.main import main\nmain()\n"
     proc = subprocess.Popen([sys.executable, "-c", code], cwd=_ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         deadline = time.monotonic() + 60
