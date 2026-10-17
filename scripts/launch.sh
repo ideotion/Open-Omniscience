@@ -129,6 +129,29 @@ record_exit() {
     fi
 }
 
+# A STOP SOMEBODY ASKED FOR (R168, 17 Oct). record_exit writes nothing for a stop the window itself saw (STOP_REQUESTED), so an end whose
+# teardown did not finish after a Ctrl-C, a closed window or a service stop looked, at the next boot, like a SIGKILL. This writes one small row
+# BEFORE anything is forwarded: the signal trapped (INT, TERM or HUP), the server's pid, the machine boot and the time. Nothing from the
+# environment or the command line. The app reads it only when the previous session did not end cleanly, and says "stop requested, teardown
+# incomplete" instead of leaving the end unexplained. Never fails the stop: every error is swallowed. Bounded like the exit record.
+record_stop() {
+    local name="$1" boot boot_json="null" dd f
+    boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+    case "$boot" in
+        ""|*[!0-9a-f-]*) ;;
+        *) boot_json="\"$boot\"" ;;
+    esac
+    dd="$(oo_data_dir)" || return 0
+    f="$dd/diagnostics/launcher_stops.jsonl"
+    mkdir -p "$dd/diagnostics" 2>/dev/null || return 0
+    printf '{"schema":"oo-launcher-stop-1","at":"%s","pid":%s,"boot_id":%s,"signal":"SIG%s"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER" "$boot_json" "$name" >> "$f" 2>/dev/null || return 0
+    if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt 40 ]; then
+        tail -n 20 "$f" > "$f.tmp" 2>/dev/null && mv -f "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp"
+    fi
+    return 0
+}
+
 # What the C library says as a process aborts (2026-10-17, the ten SIGABRTs of the three field sets): glibc writes
 # "free(): invalid pointer" and its kind to STDERR, which is the launcher window, and nothing kept it -- the app's own
 # crash trace holds the Python stacks and not this line, which is what separates heap corruption from an assert.
@@ -330,9 +353,12 @@ SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # launcher; 3 of 3 on the bare server with TERM then INT 30 ms apart) it skipped the app's lifespan shutdown, the teardown that
 # writes the clean-stop mark. TERM and HUP are not terminal-group signals, so they are still forwarded (once). After either, the
 # launcher WAITS for the server to end, so its own exit comes after the server's teardown and carries the server's status.
+# KNOWN RESIDUAL (R168, no fix): a bare `kill -INT <launcher pid>` is not a terminal's Ctrl-C. Nothing sends the server a SIGINT then, and INT is not
+# forwarded, so the launcher waits and the server keeps running; stop it with TERM or HUP (forwarded) or close the window. Recorded in docs/ledger/OPEN_QUEUE.md.
 STOP_REQUESTED=0
-trap 'STOP_REQUESTED=1; kill "$SERVER" 2>/dev/null || true' TERM HUP
-trap 'STOP_REQUESTED=1' INT
+trap 'STOP_REQUESTED=1; record_stop HUP; kill "$SERVER" 2>/dev/null || true' HUP
+trap 'STOP_REQUESTED=1; record_stop TERM; kill "$SERVER" 2>/dev/null || true' TERM
+trap 'STOP_REQUESTED=1; record_stop INT' INT
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 
 # Wait up to ~20s for the health endpoint.

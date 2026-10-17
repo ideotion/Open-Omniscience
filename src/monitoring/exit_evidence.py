@@ -54,6 +54,12 @@ from src.paths import data_dir
 _LOG = logging.getLogger(__name__)
 
 LAUNCHER_EXITS = "launcher_exits.jsonl"
+#: One row per stop the launcher was ASKED for (R168, scripts/launch.sh ``record_stop``): the signal it trapped (INT, TERM or HUP), the server's pid, the time.
+#: Written before the launcher forwards anything or starts waiting, so a teardown that never finishes still leaves it. Never an exit row: the launcher
+#: writes ``launcher_exits.jsonl`` only for an end nobody asked for, so for one pid at most one of the two exists.
+LAUNCHER_STOPS = "launcher_stops.jsonl"
+#: The only signals a stop row may name (a row naming another is not read as a stop): the three the launcher traps.
+STOP_SIGNALS = frozenset({"SIGINT", "SIGTERM", "SIGHUP"})
 #: The abort messages the launcher's stderr filter recorded (scripts/launch.sh ``stderr_filter``), one JSON line each plus a summary per launch.
 LAUNCHER_STDERR = "launcher_stderr.jsonl"
 CRASH_TRACE = "crash_trace.log"
@@ -207,7 +213,7 @@ def launcher_exit(pid: int | None, boot_id: str | None = None, session_started: 
     try:
         raw = _tail_text(_diag_dir() / LAUNCHER_EXITS, _STDERR_READ_BYTES)
     except OSError:
-        return None
+        raw = ""  # no exit file: the stop row may still answer
     for line in reversed(raw.splitlines()):
         try:
             rec = json.loads(line)
@@ -217,6 +223,38 @@ def launcher_exit(pid: int | None, boot_id: str | None = None, session_started: 
             if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
                 continue
             return describe_exit(rec)
+    return launcher_stop(pid, boot_id, session_started)
+
+
+def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
+    """The launcher's record that a STOP WAS ASKED of process ``pid`` (Ctrl-C, a close of the window, a service stop), or None.
+
+    Read only when :func:`launcher_exit` found no exit row for the pid, so the two never answer for one session. The same guards as the exit row:
+    the machine boot, and a row written before the session began is another process's (pid reuse). It describes a request, not a cause of death:
+    a stop was asked and the session's end was not clean, so the teardown did not complete."""
+    if not isinstance(pid, int):
+        return None
+    try:
+        raw = _tail_text(_diag_dir() / LAUNCHER_STOPS, _STDERR_READ_BYTES)
+    except OSError:
+        return None
+    for line in reversed(raw.splitlines()):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and rec.get("pid") == pid and rec.get("signal") in STOP_SIGNALS and _same_boot(rec.get("boot_id"), boot_id):
+            if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
+                continue
+            return {
+                "seen_by": "the launcher (scripts/launch.sh), the process's parent",
+                "at": _stamp_or_none(rec.get("at")),
+                "started_at": None,
+                "status": None,
+                "signal": rec["signal"],
+                "kind": "stop asked",
+                "meaning": f"a stop was asked of the launcher ({rec['signal']}) and the session's end was not clean: its shutdown did not complete. Not a crash",
+            }
     return None
 
 
@@ -1264,7 +1302,9 @@ def earlier_unclean_ends(
                 exit_seen = None
         signal_name = (exit_seen or {}).get("signal")
         row["signal"] = signal_name
-        if exit_seen and not signal_name:
+        if exit_seen and exit_seen.get("kind") == "stop asked":
+            row["kind"] = "stop asked"  # the signal above is the one asked for, not one that ended the process
+        elif exit_seen and not signal_name:
             # An exit by status (an error exit) has no signal to show: say what the launcher saw.
             row["status"], row["kind"] = exit_seen.get("status"), exit_seen.get("kind")
         if not isinstance(pid, int):
@@ -1353,7 +1393,9 @@ def how_it_ended(
         parts.append("systemd-coredump logged a core dump of this process")
     if kverdict == "native-fatal":
         parts.append("the kernel log records a native fault in this process")
-    if launcher:
+    if launcher and launcher.get("kind") == "stop asked":
+        parts.append(f"a stop was asked of the launcher ({launcher.get('signal')}) and the shutdown did not complete: stop requested, teardown incomplete, not a crash")
+    elif launcher:
         sig = launcher.get("signal")
         parts.append(
             f"the launcher saw it end by {sig}" if sig else f"the launcher saw it exit with status {launcher.get('status')}"
