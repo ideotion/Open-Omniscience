@@ -44,6 +44,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
+def _print_warnings(pf: dict) -> None:
+    """Before the run starts, not after it: the disk's worst case and the history phase's memory floor."""
+    for w in (pf.get("warning"), (pf.get("history_memory") or {}).get("warning")):
+        if w:
+            print(f"warning: {w}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     from src.osm import reference_run as R
 
@@ -123,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             min_free_override=int(args.min_free_gb * R.GIB) if args.min_free_gb is not None else None,
             prior_report=prior, sample_seconds=args.sample_seconds, plan_only=args.plan,
             on_start=lambda d: print(f"store: {d} (if this run is killed, delete it with --cleanup)", flush=True),
-            on_preflight=lambda pf: print(f"warning: {pf['warning']}", flush=True) if pf.get("warning") else None,
+            on_preflight=_print_warnings,
             report_path=None if args.plan else target,
         )
     except (OSError, ValueError) as exc:

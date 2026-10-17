@@ -271,14 +271,16 @@ def test_a_big_share_country_is_warned_by_name_with_the_extrapolated_worst_case(
                        prior_report=prior)["warning"] is None
     assert R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=100 * GB, reserve_bytes=2 * GB,
                        min_free_override=10 * GB)["warning"] is None
-    # The history phase writes into the same store after the ingest: the worst case doubles.
-    hist = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=400 * GB, reserve_bytes=2 * GB)
-    assert hist["worst_case_bytes"] == 2 * int(10.5 * 14 * GB) + 2 * GB
+    # The history phase writes into the same store after the ingest: the worst case is HISTORY_DISK_MULTIPLE times the cut, the most
+    # a synthetic 16x history wrote (4,779 MB against the ingest's 1,436 MB, which a doubling would have understated).
+    assert R.HISTORY_DISK_MULTIPLE >= 4779 / 1436, "the figure told to an operator must cover what the run measured"
+    hist = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=2000 * GB, reserve_bytes=2 * GB)
+    assert hist["worst_case_bytes"] == int(R.HISTORY_DISK_MULTIPLE * int(10.5 * 14 * GB)) + 2 * GB
     # A refusal stays by name: the floor itself is not met.
     refused = R.preflight(extract_bytes=14 * GB, history_bytes=None, free_bytes=20 * GB, reserve_bytes=2 * GB)
     assert refused["ok"] is False and refused["warning"] is None, "a refusal says so by name; it is not also a warning"
-    assert "history phase" in R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=100 * GB,
-                                          reserve_bytes=2 * GB)["warning"]
+    w = R.preflight(extract_bytes=14 * GB, history_bytes=150 * GB, free_bytes=100 * GB, reserve_bytes=2 * GB)["warning"]
+    assert "history phase" in w and "SYNTHETIC" in w and "unmeasured" in w
 
 
 def test_free_disk_falling_below_the_reserve_stops_the_child_cleanly_and_ends_the_run(tmp_path):
@@ -1479,3 +1481,57 @@ def test_the_preflight_is_handed_over_before_the_store_exists(tmp_path):
     _run(tmp_path, phases_override=_scripted("print('hi')"), probe=_Probe(free=1),
          on_preflight=lambda pf: refused.append(pf))
     assert refused == []
+
+
+# --- the history phase's memory floor (night 2026-10-16) ------------------------------------------------------------------ #
+def test_the_history_memory_floor_warns_when_the_room_is_below_it_and_cites_its_basis():
+    reach = R.HISTORY_NODE_FILTER_BYTES + R.HISTORY_BASE_BYTES
+    small = R.preflight(extract_bytes=10**6, history_bytes=10**6, free_bytes=10**12, reserve_bytes=0,
+                        memory_room={"room_bytes": reach - 1, "source": "cgroup_v2", "notes": []})["history_memory"]
+    assert small["reach_bytes"] == reach and "kernel may kill" in small["warning"] and "cgroup_v2" in small["warning"]
+    assert "measured" in small["reach_basis"] and "NOT in this figure" in small["reach_basis"]
+    assert "can reach up to" in small["warning"] and "1,250 MB" in small["warning"] and "needs at least" not in small["warning"]
+    roomy = R.preflight(extract_bytes=10**6, history_bytes=10**6, free_bytes=10**12, reserve_bytes=0,
+                        memory_room={"room_bytes": reach, "source": "mem_available", "notes": []})["history_memory"]
+    assert roomy["warning"] is None and roomy["room_bytes"] == reach
+
+
+def test_an_unreadable_memory_limit_makes_the_history_floor_unchecked_with_the_reason():
+    pf = R.preflight(extract_bytes=10**6, history_bytes=10**6, free_bytes=10**12, reserve_bytes=0,
+                     memory_room={"room_bytes": None, "source": None, "notes": ["cgroup_v2: x is unreadable (PermissionError)"]})
+    assert "unchecked" in pf["history_memory"]["warning"] and "PermissionError" in pf["history_memory"]["warning"]
+    none = R.preflight(extract_bytes=10**6, history_bytes=10**6, free_bytes=10**12, reserve_bytes=0)
+    assert "unchecked" in none["history_memory"]["warning"]
+
+
+def test_no_history_phase_means_no_memory_floor():
+    assert R.preflight(extract_bytes=10**6, history_bytes=None, free_bytes=10**12, reserve_bytes=0)["history_memory"] is None
+
+
+def test_the_command_prints_the_history_memory_warning_before_the_run_starts(monkeypatch, capsys):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("osm_reference_run_cli", Path(__file__).resolve().parents[1] / "scripts" / "osm_reference_run.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    cli._print_warnings({"warning": "W-DISK", "history_memory": {"warning": "W-HISTORY-MEMORY"}})
+    out = capsys.readouterr().out
+    assert "warning: W-DISK" in out and "warning: W-HISTORY-MEMORY" in out
+    cli._print_warnings({"warning": None, "history_memory": None})
+    assert capsys.readouterr().out == ""
+
+
+def test_a_plan_with_a_history_file_carries_the_memory_floor_read_from_this_machine(tmp_path, monkeypatch):
+    """run() hands the preflight the room read at the start; a plan shows the floor beside the disk it needs, runs nothing."""
+    from src.osm import reader
+
+    reach = R.HISTORY_NODE_FILTER_BYTES + R.HISTORY_BASE_BYTES
+    monkeypatch.setattr(reader, "memory_room", lambda: {"room_bytes": reach // 2, "source": "cgroup_v1", "notes": []})
+    hist = tmp_path / "h.osm.pbf"
+    hist.write_bytes(b"x" * 100)
+    report, _ = _run(tmp_path, plan_only=True, history=hist)
+    hm = report["preflight"]["history_memory"]
+    assert hm["room_bytes"] == reach // 2 and hm["room_source"] == "cgroup_v1" and "kernel may kill" in hm["warning"]
+    plain, _ = _run(tmp_path, plan_only=True)
+    assert plain["preflight"]["history_memory"] is None
