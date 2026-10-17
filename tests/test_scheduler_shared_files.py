@@ -41,7 +41,7 @@ def test_a_pass_journal_trim_never_loses_a_line_another_process_appends(dd, monk
     while child.poll() is None:
         pass_journal.trim()
     child.wait()
-    got = [json.loads(ln)["n"] for ln in pass_journal._path().read_text().splitlines()]
+    got = [json.loads(ln)["n"] for ln in pass_journal._path().read_text(encoding="utf-8").splitlines()]
     assert got == list(range(300 - len(got), 300)), "a line appended by the other process was lost by a trim"
     assert got
 
@@ -65,4 +65,4 @@ def test_the_capacity_state_is_replaced_through_a_unique_temp(dd, monkeypatch):
     target = dd / "collect_capacity.json"
     capacity._save(target, {"a": 1})
     assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen
-    assert json.loads(target.read_text()) == {"a": 1}
+    assert json.loads(target.read_text(encoding="utf-8")) == {"a": 1}

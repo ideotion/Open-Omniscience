@@ -73,8 +73,8 @@ def _local(key: str) -> _Local:
         return got
 
 
-def _contended(exc: OSError) -> bool:
-    return isinstance(exc, BlockingIOError) or exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES, errno.EDEADLK)
+def _contended(fault: OSError) -> bool:
+    return isinstance(fault, BlockingIOError) or fault.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES, errno.EDEADLK)
 
 
 def _try_os_lock(fd: int, shared: bool) -> None:
@@ -135,16 +135,17 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
 
     Everything that can fail is inside the ``try`` that releases, so an interrupt at any line leaves nothing held."""
     path = Path(path)
-    sidecar = path.with_name(path.name + _SIDECAR)
-    key = str(sidecar)
     me = threading.get_ident()
-    loc = _local(key)
+    loc: _Local | None = None
     fd: int | None = None
-    held = Held(locked=False, reason="not taken")
+    held: Held | None = None
     in_local = False
     began = time.perf_counter()
     got_at = began
     try:
+        sidecar = path.with_name(path.name + _SIDECAR)
+        loc = _local(str(sidecar))
+        held = Held(locked=False, reason="not taken")
         with loc.cond:
             while True:
                 if loc.writer == me or (loc.reader_threads is not None and me in loc.reader_threads):
@@ -162,8 +163,8 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(sidecar, os.O_RDWR | os.O_CREAT, 0o600)  # not inheritable (PEP 446)
-        except OSError as exc:
-            held = Held(locked=False, reason=f"the lock file could not be opened ({type(exc).__name__})")
+        except OSError as fault:
+            held = Held(locked=False, reason=f"the lock file could not be opened ({type(fault).__name__})")
             _warn_unlocked(path, held.reason or "")
         if fd is not None:
             while True:
@@ -171,9 +172,9 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
                     _try_os_lock(fd, shared)
                     held = Held(locked=True)
                     break
-                except OSError as exc:
-                    if not _contended(exc):
-                        held = Held(locked=False, reason=f"the filesystem could not lock ({type(exc).__name__})")
+                except OSError as fault:
+                    if not _contended(fault):
+                        held = Held(locked=False, reason=f"the filesystem could not lock ({type(fault).__name__})")
                         _warn_unlocked(path, held.reason or "")
                         break
                 time.sleep(_POLL_S)
@@ -183,12 +184,12 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
     finally:
         _note(path.name, "max_hold_s", time.perf_counter() - got_at)
         if fd is not None:
-            if held.locked:
+            if held is not None and held.locked:
                 with contextlib.suppress(OSError):
                     _release_os_lock(fd)
             with contextlib.suppress(OSError):
                 os.close(fd)
-        if in_local:
+        if in_local and loc is not None:
             with loc.cond:
                 if shared:
                     loc.readers -= 1

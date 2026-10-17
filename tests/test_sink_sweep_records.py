@@ -56,6 +56,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
+    "src/safety/file_lock.py": {"the caught exception 'fault' is used outside a scrubbing call": 1},  # reads the errno of an OSError to tell a busy lock from a filesystem that cannot lock; its words are not used
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
     "src/ingest/fetch_release.py": {

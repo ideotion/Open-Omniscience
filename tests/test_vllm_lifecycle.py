@@ -2534,7 +2534,7 @@ def test_two_processes_appending_to_the_start_journal_lose_no_attempt_to_a_trim(
         V._record_start_attempt({"probe": "parent", "n": n})
         n += 1
     child.wait()
-    rows = [json.loads(ln) for ln in V._start_history_path().read_text().splitlines() if ln.strip()]
+    rows = [json.loads(ln) for ln in V._start_history_path().read_text(encoding="utf-8").splitlines() if ln.strip()]
     kids = [r["n"] for r in rows if r.get("probe") == "child"]
     assert kids == list(range(150 - len(kids), 150)), "an attempt written by the other process was lost by a trim"
     assert kids and len(rows) <= 20

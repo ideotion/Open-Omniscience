@@ -892,6 +892,6 @@ def test_a_trim_by_one_process_never_loses_a_record_another_process_appends(_dat
     while child.poll() is None:
         r._append({"k": "probe", "n": -1}, trim_runs=0)
     child.wait()
-    got = [json.loads(ln)["n"] for ln in _file(_data).read_text().splitlines() if '"probe"' in ln and '"n":-1' not in ln]
+    got = [json.loads(ln)["n"] for ln in _file(_data).read_text(encoding="utf-8").splitlines() if '"probe"' in ln and '"n":-1' not in ln]
     assert got == list(range(120 - len(got), 120)), "a record written by the other process was lost by a trim"
     assert got

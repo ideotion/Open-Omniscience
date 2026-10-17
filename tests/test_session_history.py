@@ -573,7 +573,7 @@ def test_a_compaction_never_loses_a_line_written_by_another_process(tmp_path, mo
     while child.poll() is None:
         sh.compact_if_needed(max_lines=100)
     child.wait()
-    got = [json.loads(ln)["n"] for ln in sh.ledger_path().read_text().splitlines() if '"child"' in ln]
+    got = [json.loads(ln)["n"] for ln in sh.ledger_path().read_text(encoding="utf-8").splitlines() if '"child"' in ln]
     assert got == list(range(300 - len(got), 300)), "a line written by the other process was lost by a compaction"
     assert got
 

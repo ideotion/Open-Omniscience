@@ -118,6 +118,6 @@ def test_a_trim_never_loses_a_line_appended_by_another_process(journal):
     while child.poll() is None:
         errorlog._trim(journal)
     child.wait()
-    got = [ln for ln in journal.read_text().splitlines() if ln.startswith('{"appended"')]
+    got = [ln for ln in journal.read_text(encoding="utf-8").splitlines() if ln.startswith('{"appended"')]
     assert got == [f'{{"appended":{i}}}' for i in range(300 - len(got), 300)], "an appended line was lost or reordered by a trim"
     assert len(got) > 0

@@ -57,14 +57,14 @@ def test_a_second_process_waits_for_the_exclusive_section_and_sees_its_result(tm
     with lock(target) as held:
         waited = time.monotonic() - began
         assert held.locked
-        assert target.read_text() == "from-child"
+        assert target.read_text(encoding="utf-8") == "from-child"
     child.wait(timeout=20)
     assert waited > 0.3, "the parent did not wait for the child's section"
 
 
 def test_a_trim_in_one_process_never_loses_a_line_appended_by_another(tmp_path):
     target = tmp_path / "ledger.jsonl"
-    target.write_text("".join(f"{i}\n" for i in range(200)))
+    target.write_text("".join(f"{i}\n" for i in range(200)), encoding="utf-8")
     appender = _run(
         """
         import sys
@@ -79,12 +79,12 @@ def test_a_trim_in_one_process_never_loses_a_line_appended_by_another(tmp_path):
     trims = 0
     while appender.poll() is None:
         with lock(target):
-            kept = target.read_text().splitlines()[-150:]
+            kept = target.read_text(encoding="utf-8").splitlines()[-150:]
             atomic_replace(target, "\n".join(kept) + "\n")
         trims += 1
     appender.wait()
     assert trims >= 1
-    got = [ln for ln in target.read_text().splitlines() if ln.startswith("a")]
+    got = [ln for ln in target.read_text(encoding="utf-8").splitlines() if ln.startswith("a")]
     want = [f"a{i}" for i in range(400)]
     assert got == want[-len(got) :], "a line appended by the other process was lost, or the order broke"
     assert got[-1] == "a399"
@@ -159,7 +159,7 @@ def test_two_writers_never_share_a_temp_name(tmp_path):
 
 def test_a_failed_replace_leaves_the_old_file_whole_and_no_temp(tmp_path, monkeypatch):
     target = tmp_path / "f"
-    target.write_text("old")
+    target.write_text("old", encoding="utf-8")
 
     def boom(a, b):
         raise OSError("disk")
@@ -167,13 +167,13 @@ def test_a_failed_replace_leaves_the_old_file_whole_and_no_temp(tmp_path, monkey
     monkeypatch.setattr(file_lock.os, "replace", boom)
     with pytest.raises(OSError):
         atomic_replace(target, "new")
-    assert target.read_text() == "old"
+    assert target.read_text(encoding="utf-8") == "old"
     assert not list(tmp_path.glob("f.tmp.*"))
 
 
 def test_no_wait_loop_is_a_while_on_a_condition():
     """R161-R165: a wait loop is ``while True:`` with an ``if ...: break`` inside, never ``while <cond>:``."""
-    tree = ast.parse(Path(file_lock.__file__).read_text())
+    tree = ast.parse(Path(file_lock.__file__).read_text(encoding="utf-8"))
     loops = [n for n in ast.walk(tree) if isinstance(n, ast.While)]
     assert loops, "the waits are gone; this test would pass for the wrong reason"
     for n in loops:
@@ -192,7 +192,7 @@ def test_locked_append_writes_the_text(tmp_path):
     p = tmp_path / "log"
     locked_append(p, "a\n")
     locked_append(p, "b\n")
-    assert p.read_text() == "a\nb\n"
+    assert p.read_text(encoding="utf-8") == "a\nb\n"
 
 
 def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
@@ -205,7 +205,7 @@ def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
     assert synced == [] and len(swept) == 1, "a throttled writer swept twice, or synced when told not to"
     atomic_replace(f, "c")
     assert len(synced) == 1 and len(swept) == 2
-    assert f.read_text() == "c"
+    assert f.read_text(encoding="utf-8") == "c"
 
 
 def test_holding_runs_the_function_inside_the_lock_and_follows_a_redirected_path(tmp_path):
