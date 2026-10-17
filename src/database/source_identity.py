@@ -86,8 +86,23 @@ def backfill_feed_keys(conn: Connection) -> int:
     """Set every row's ``feed_key`` from its ``rss_url``; returns the rows whose key changed."""
     rows = conn.exec_driver_sql("SELECT id, rss_url, feed_key FROM sources").fetchall()
     changed = [(feed_key(r[1]), r[0]) for r in rows if (r[2] or "") != feed_key(r[1])]
-    for key, sid in changed:
-        conn.exec_driver_sql("UPDATE sources SET feed_key = ? WHERE id = ?", (key, sid))
+    if not changed:
+        return 0
+    # One transaction when the connection is in none (the boot path runs in autocommit, where every UPDATE would be
+    # its own commit: 10.5 s encrypted for the 6,400 sources of the shipped catalogue, 0.47 s in one). A caller that
+    # already has a transaction open owns its commit, so nothing is begun or committed on its behalf.
+    own = not getattr(conn.connection.dbapi_connection, "in_transaction", False)
+    if own:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+    try:
+        for key, sid in changed:
+            conn.exec_driver_sql("UPDATE sources SET feed_key = ? WHERE id = ?", (key, sid))
+    except BaseException:
+        if own:
+            conn.exec_driver_sql("ROLLBACK")
+        raise
+    if own:
+        conn.exec_driver_sql("COMMIT")
     return len(changed)
 
 
