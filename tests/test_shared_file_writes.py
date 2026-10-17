@@ -66,7 +66,6 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/bulletin/store.py": (6, "Plan J"),
     "src/catalog/build.py": (1, "qual"),
     "src/catalog/discover_job.py": (2, "qual"),
-    "src/config/app_settings.py": (1, "rc2"),
     "src/custody/pending.py": (3, "Q"),
     "src/custody/settings.py": (1, "Q"),
     "src/custody/signing.py": (2, "Q"),
@@ -106,9 +105,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/reporting/evidence.py": (1, "Plan J"),
     "src/safety/data_location.py": (1, "Q"),
     "src/safety/data_volume.py": (5, "Q"),
-    "src/safety/settings.py": (1, "rc2"),
     "src/scheduler/runlog.py": (2, "rc2"),
-    "src/scheduler/settings.py": (1, "rc2"),
     "src/weather/openmeteo.py": (1, "Plan J"),
     "src/wiki/dumps.py": (2, "export"),
 }

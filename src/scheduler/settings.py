@@ -15,6 +15,8 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 
+from src.safety.file_lock import atomic_replace
+
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-scheduler-settings-1"
@@ -1048,9 +1050,7 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
     payload = {"version": SETTINGS_VERSION, **current.to_dict()}
     if not _use_kv():
         path = _settings_path()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
-        tmp.replace(path)
+        atomic_replace(path, json.dumps(payload, indent=2, sort_keys=True), fsync=False)
         return current
     from src.config.kv_store import kv_set_json
 
