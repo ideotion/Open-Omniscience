@@ -1539,3 +1539,120 @@ def test_the_stop_names_the_sizes_read_before_the_fatal_batch(session):
     assert got.value.reason == "duckdb-limit" and d["stage"] == "stage-insert" and d["engine_error_class"] == "FatalException"
     assert d["rows_done"] > 0 and d["resident_mib"] > 0 and d["peak_mib"] >= d["resident_mib"]
     assert got.value.__cause__ is None and "allocate" not in repr(d)
+
+
+# --------------------------------------------------------------------------- #
+# R160 follow-on: a FATAL engine error at SERVE time leaves the instance unusable, so the rollup is dropped (inferred, not
+# observed in the field)
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture()
+def serving(serve_env, session, monkeypatch):
+    """A real rollup built over the seeded corpus and installed as the serving one, with the change gate and the env pinned."""
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    monkeypatch.setattr(rollup_serve, "_maybe_refresh", lambda *a, **k: None)
+    for name in ("_boot_order_verdict", "_memory_verdict", "_last_build_verdict", "_affordability_verdict"):
+        monkeypatch.setattr(rollup_serve, name, lambda: None)
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", True)
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 7)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 120)
+    assert rollup_serve._build_inmemory_and_swap() is None
+    columnar._SERVE_FALLBACKS.clear()
+    columnar._SERVE_FATAL.update(kind=None, con=None)
+    yield session
+    columnar._SERVE_FALLBACKS.clear()
+    columnar._SERVE_FATAL.update(kind=None, con=None)
+
+
+def _break_serving(prefix, words=_FATAL_WORDS, exc_cls=None):
+    real = rollup_serve._STATE["con"]
+    proxy = _FatalAt(real, prefix, words=words)
+    if exc_cls is not None:
+        class _P(_FatalAt):
+            def execute(self, sql, *a, **k):
+                if sql.lstrip().startswith(self._prefix):
+                    self.fired += 1
+                    raise exc_cls(self._words)
+                return self._real.execute(sql, *a, **k)
+
+        proxy = _P(real, prefix, words=words)
+    rollup_serve._STATE["con"] = proxy
+    return proxy
+
+
+@pytest.mark.parametrize("which", ["rows", "counts"])
+def test_a_served_query_that_hits_the_fatal_allocation_error_drops_the_rollup_and_takes_the_serve_fatal_stop(serving, which):
+    from datetime import date, timedelta
+
+    from src.analytics import rollup_hold
+
+    proxy = _break_serving("SELECT m.term" if which == "rows" else "SELECT keyword_id")
+    if which == "rows":
+        assert rollup_serve.windowed_rows(serving, days=30) is None, "the live scan answers"
+    else:
+        assert rollup_serve.windowed_counts(serving, lo=date.today() - timedelta(days=30), hi=date.today()) is None
+    assert proxy.fired == 1
+    assert rollup_serve._STATE["con"] is None and rollup_serve._STATE["built_at"] == 0.0 and rollup_serve.status()["built"] is False
+    stopped = rollup_serve.status()["stopped"]
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == "serve-fatal" and stopped["engine_error_class"] == "FatalException"
+    assert rollup_hold.read()["stage"] == "serve-fatal"
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit", "the next request does not rebuild into the wall"
+    blob = _text_everywhere(stopped)
+    assert "allocate" not in blob and "957" not in blob and "checkpoint" not in blob
+    fb = rollup_serve.status()["serve_fallbacks"]["fallbacks"]
+    assert [(r["error"], r["count"]) for r in fb] == [("FatalException", 1)], "counted by class name"
+
+
+def test_any_other_fatal_error_drops_the_rollup_too_but_keeps_no_stop(serving):
+    proxy = _break_serving("SELECT m.term", words="FATAL Error: database has been invalidated")
+    assert rollup_serve.windowed_rows(serving, days=30) is None
+    assert proxy.fired == 1 and rollup_serve._STATE["con"] is None
+    assert rollup_serve.status()["stopped"] is None, "a plain failure: a later request may rebuild as for any failed build"
+    from src.analytics import rollup_hold
+
+    assert rollup_hold.read() is None
+    assert rollup_serve.status()["serve_fallbacks"]["total"] == 1
+
+
+def test_an_ordinary_query_error_still_leaves_the_rollup_serving(serving):
+    proxy = _break_serving("SELECT m.term", words="a plain error", exc_cls=RuntimeError)
+    assert rollup_serve.windowed_rows(serving, days=30) == []
+    assert proxy.fired == 1 and rollup_serve._STATE["con"] is proxy, "only a FATAL error invalidates the instance"
+    assert rollup_serve.status()["stopped"] is None
+
+
+def test_a_fatal_left_by_another_connection_is_not_blamed_on_the_serving_rollup(serving):
+    class Other:
+        def execute(self, *a, **k):
+            raise FatalException(_FATAL_WORDS)
+
+    assert columnar.windowed_term_counts(Other()) == {}  # the benchmark's own connection
+    real = rollup_serve._STATE["con"]
+    assert rollup_serve.windowed_rows(serving, days=30) is not None
+    assert rollup_serve._STATE["con"] is real and rollup_serve.status()["stopped"] is None
+
+
+def test_the_serve_check_reads_a_fatal_allocation_error_as_the_wall_and_any_other_fatal_as_unusable():
+    class Con(_FakeCon):
+        def __init__(self, words):
+            super().__init__(FatalException(words))
+
+    wall = columnar.serve_canary(Con(_FATAL_WORDS))
+    assert wall["outcome"] == "out-of-memory" and wall["error_class"] == "FatalException" and "allocate" not in repr(wall)
+    other = columnar.serve_canary(Con("FATAL Error: database has been invalidated"))
+    assert other["outcome"] == "fatal" and other["error_class"] == "FatalException"
+    assert rollup_serve._serve_check_stop(wall)["engine_error_class"] == "FatalException"
+
+
+def test_a_build_whose_serve_check_found_the_instance_unusable_serves_nothing_and_keeps_no_stop(serve_env, session, monkeypatch):
+    _seed(session, keywords=30, mentions_per=4)
+    monkeypatch.setattr(columnar, "serve_canary", lambda con: _canary("fatal", error_class="FatalException"))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    with pytest.raises(RuntimeError, match="unusable"):
+        rollup_serve._build_inmemory_and_swap()
+    assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["stopped"] is None and rollup_marker.read() is None

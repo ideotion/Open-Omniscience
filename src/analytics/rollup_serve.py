@@ -317,7 +317,8 @@ def _serve_check_stop(canary: dict) -> dict:
     ``duckdb-limit`` so the release rules of that stop apply unchanged (a larger limit, offload allowed, a corpus 5%
     smaller, another version). Names the query, its peak and the resident size, as numbers and codes only."""
     return {"reason": "duckdb-limit", "at": time.time(), "stage": "serve-check", "query": canary.get("query"),
-            "peak_mib": canary.get("peak_mib"), "resident_mib": canary.get("resident_mib")}
+            "peak_mib": canary.get("peak_mib"), "resident_mib": canary.get("resident_mib"),
+            "engine_error_class": canary.get("error_class")}
 
 
 def _build_inmemory_and_swap() -> dict | None:
@@ -374,6 +375,9 @@ def _build_inmemory_and_swap() -> dict | None:
                 # R157: a rollup that fits its limit can still leave no room for the query that uses it. Ask it the
                 # one question the serve asks first (the 30-day terms), now, on the connection nobody else holds.
                 canary = columnar.serve_canary(con)
+                if canary["outcome"] == "fatal":
+                    # a FATAL engine error leaves the instance unusable: never served, never retried on (a plain failure)
+                    raise RuntimeError("the serve check found the DuckDB instance unusable")
                 skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
             if skip is not None:
                 skip.update({
@@ -1234,6 +1238,45 @@ def _same_bind(session: Session | None, built_bind) -> bool:
         return False
 
 
+def _drop_if_unusable(con) -> bool:
+    """A served query that hit DuckDB's FATAL error leaves the instance unusable: drop it so nothing is served from it
+    again (the caller answers live), and when the error said it could not allocate (the memory wall) keep the same
+    ``duckdb-limit`` stop a build gets, at stage ``serve-fatal``, so the next request does not rebuild into it.
+    Any other fatal is a plain failure: dropped, counted, and a later request may rebuild as for any failed build.
+    INFERRED, not observed in the field (2026-10-17: the build-time fatal was). Returns True when it dropped ``con``.
+    No engine text is kept: the kind comes from ``columnar`` as a word."""
+    from src.analytics import columnar
+
+    kind = columnar.take_serve_fatal(con)
+    if kind is None:
+        return False
+    with _LOCK:
+        if _STATE["con"] is not con or _STATE["persisted"]:
+            return False  # a newer build already replaced it, or it is the persisted store (not ours to drop)
+        _STATE.update(con=None, built_at=0.0, rows=0, bind=None, token=None, pending=False)
+        spill, _STATE["spill"] = _STATE.get("spill"), None
+        last = _STATE.get("last_build") or {}
+    with contextlib.suppress(Exception):
+        con.close()
+    _remove_spill(spill)
+    _LOG.warning("rollup serve: a served query hit a FATAL engine error (%s); the rollup was dropped and the live scan answers", kind)
+    if kind == "allocation":
+        check = last.get("serve_check") or {}
+        record = {
+            "reason": "duckdb-limit", "at": time.time(), "stage": "serve-fatal", "engine_error_class": "FatalException",
+            "duckdb_limit_mb": last.get("duckdb_limit_mb") or _duckdb_limit_mb(), "duckdb_threads": last.get("duckdb_threads"),
+            "budget_total_mb": last.get("budget_total_mb"), "budget_read_at": last.get("budget_read_at"),
+            # the sizes of the finished build's own serve check: the instance cannot be read now
+            "peak_mib": check.get("peak_mib"), "resident_mib": check.get("resident_mib"),
+            "epoch": _current_epoch(), "mentions_count": _current_mention_count(),
+        }
+        with _LOCK:
+            _STATE["last_skip"] = record
+        _keep_stopped({**record, "offload_allowed": _build_budget().get("offload_allowed")})
+        _note_decline("stopped", "serve", record)
+    return True
+
+
 def windowed_rows(
     _session: Session, *, days: int, kind: str | None = None, limit: int = 80
 ) -> list[dict] | None:
@@ -1267,7 +1310,8 @@ def windowed_rows(
             con = _STATE["con"]
             if con is None:
                 return None
-            return columnar.windowed_top_terms_raw(con, start_day=start, kind=kind, limit=limit)
+            rows = columnar.windowed_top_terms_raw(con, start_day=start, kind=kind, limit=limit)
+        return None if _drop_if_unusable(con) else rows
     except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
         log_failure(_LOG, "rollup serve: windowed serve failed; falling back to live", exc, level=logging.WARNING)
         return None
@@ -1299,6 +1343,8 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
             if con is None:
                 return None
             counts = columnar.windowed_term_counts(con, start_day=lo, end_day=hi)
+        if _drop_if_unusable(con):
+            return None
         return {kid: mv[0] for kid, mv in counts.items()}  # mentions only (exact)
     except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback
         log_failure(_LOG, "rollup serve: windowed counts failed; falling back to live", exc, level=logging.WARNING)

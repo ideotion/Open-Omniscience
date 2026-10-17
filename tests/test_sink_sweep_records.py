@@ -801,6 +801,11 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # (the class is raised as an empty _EngineWall / BuildDeclined `from None`, and the stop names the class only)
         ('_bulk_insert', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
         ('build_keyword_daily', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+        # R160 follow-on: the same ONE phrase, read once in each serve handler to tell the memory wall from any other fatal; only a
+        # word ("allocation" / "other") leaves the handler, and the canary keeps only an outcome word and the class name
+        ('windowed_term_counts', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
+        ('windowed_top_terms_raw', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
+        ('serve_canary', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
     },
     'src/analytics/equivalence.py': {
         # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere

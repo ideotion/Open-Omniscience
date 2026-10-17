@@ -1521,7 +1521,8 @@ def windowed_term_counts(
             "FROM keyword_daily d" + kw + " GROUP BY keyword_id", params
         ).fetchall()
     except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> fall back to live
-        _note_serve_fallback("term-counts", type(exc).__name__)
+        _note_serve_fallback("term-counts", type(exc).__name__, _serve_fatal_kind(type(exc).__name__, (
+            _ALLOCATION_FATAL_PHRASE in str(exc))), con)
         return {}
     return {int(r[0]): (int(r[1]), int(r[2])) for r in rows}
 
@@ -1556,10 +1557,35 @@ _SERVE_FALLBACKS_LOCK = threading.Lock()
 _SERVE_FALLBACKS_SINCE = time.time()
 
 
-def _note_serve_fallback(query: str, error_class: str) -> None:
+#: A served query that failed with DuckDB's ``FatalException`` leaves the instance unusable (the engine says so for every
+#: later statement). The serve cannot see the exception (this module swallows it and answers live), so the kind is left
+#: here for ``rollup_serve`` to take: ``"allocation"`` (the memory wall, by class name plus the one fixed phrase) or
+#: ``"other"``. Only the kind is kept, never the engine's text.
+_SERVE_FATAL: dict = {"kind": None, "con": None}
+
+
+def _note_serve_fallback(query: str, error_class: str, fatal: str | None = None, con=None) -> None:
     key = (query, error_class)
     with _SERVE_FALLBACKS_LOCK:
         _SERVE_FALLBACKS[key] = _SERVE_FALLBACKS.get(key, 0) + 1
+        if fatal is not None and (_SERVE_FATAL["kind"] != "allocation" or _SERVE_FATAL["con"] != id(con)):
+            _SERVE_FATAL.update(kind=fatal, con=id(con))
+
+
+def take_serve_fatal(con) -> str | None:
+    """The kind of FATAL engine error a served query on ``con`` hit since the last call (``"allocation"`` or ``"other"``),
+    and forget it. A fatal left by another connection (the benchmark's) is forgotten, not attributed to ``con``."""
+    with _SERVE_FALLBACKS_LOCK:
+        kind, owner = _SERVE_FATAL["kind"], _SERVE_FATAL["con"]
+        _SERVE_FATAL.update(kind=None, con=None)
+    return kind if owner == id(con) else None
+
+
+def _serve_fatal_kind(error_class: str, said_allocation: bool) -> str | None:
+    """``"allocation"``/``"other"`` for DuckDB's FatalException, ``None`` for any other error class."""
+    if error_class != _ALLOCATION_FATAL_CLASS:
+        return None
+    return "allocation" if said_allocation else "other"
 
 
 def serve_fallback_counts() -> dict:
@@ -1584,7 +1610,8 @@ def windowed_top_terms_raw(
     try:
         rows = con.execute(sql, params).fetchall()
     except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> fall back to live
-        _note_serve_fallback("top-terms", type(exc).__name__)
+        _note_serve_fallback("top-terms", type(exc).__name__, _serve_fatal_kind(type(exc).__name__, (
+            _ALLOCATION_FATAL_PHRASE in str(exc))), con)
         return []
     return [
         {"term": r[0], "normalized": r[1], "kind": r[2], "language": r[3],
@@ -1607,8 +1634,10 @@ def serve_canary(con, *, today=None, max_s: float = CANARY_MAX_S) -> dict:
     """Ask the finished rollup the question the serve will ask it, once, and say what it cost.
 
     Returns ``{"query", "outcome", "rows", "resident_mib", "peak_mib", "secs"}``. ``outcome`` is ``"ok"``,
-    ``"out-of-memory"`` (the engine's own limit: the rollup cannot answer at this size) or ``"inconclusive"`` (any
-    other error, or the time cap: nothing is concluded from it). Measured, not modelled: a build that fits its limit
+    ``"out-of-memory"`` (the engine's own limit: the rollup cannot answer at this size; a FATAL allocation error
+    counts, with ``error_class`` ``"FatalException"``), ``"fatal"`` (any other FATAL engine error: the instance is
+    unusable and must not be served) or ``"inconclusive"`` (any other error, or the time cap: nothing is concluded
+    from it). Measured, not modelled: a build that fits its limit
     can leave too little room for the query that uses it (2026-10-17: 922 MiB resident of 957.5 at 20 M mentions
     answered nothing). Counts and sizes only."""
     import datetime
@@ -1646,7 +1675,12 @@ def serve_canary(con, *, today=None, max_s: float = CANARY_MAX_S) -> dict:
         out["rows"] = len(con.execute(sql, params).fetchall())
         out["outcome"] = "ok"
     except Exception as exc:  # noqa: BLE001 - classified by name, as the build's own limit is
-        out["outcome"] = "out-of-memory" if type(exc).__name__ == "OutOfMemoryException" else "inconclusive"
+        if type(exc).__name__ == _ALLOCATION_FATAL_CLASS:
+            # the instance is invalid afterwards: the memory wall when it said so (a stop), else a failure the caller must not serve
+            out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"
+            out["error_class"] = _ALLOCATION_FATAL_CLASS
+        else:
+            out["outcome"] = "out-of-memory" if type(exc).__name__ == "OutOfMemoryException" else "inconclusive"
         if out["outcome"] == "inconclusive":
             log_failure(_LOG, "rollup serve canary: the query failed for another reason", exc, level=logging.WARNING)
     finally:
