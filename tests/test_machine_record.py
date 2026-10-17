@@ -14,14 +14,21 @@ WHAT MUST NOT REGRESS, one test each:
 4. It repeats nothing another member carries (the plan's redundancy rule): no hardware block, no
    transport, nothing the manifest's ``run.hardware`` holds.
 5. It stays inside the budget the plan states for it (20 KB).
+6. It says which XML driver feedparser uses in this process (``feed_xml``, R179), read WITHOUT importing
+   the driver, and the section costs the archive no bytes: two sentences of the same block were
+   shortened by what it adds.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import sys
+import types
+import xml.sax.expatreader  # noqa: F401 - imported up front so a parse that falls through to expat finds it
 import zipfile
 
+import feedparser
 import pytest
 
 from src.api.diagnostics import bundle as B
@@ -46,7 +53,7 @@ def _build(members, **kw):
 def test_the_record_has_its_sections_and_reads_the_libraries():
     block = MR.machine_block()
     assert block["version"] == MR.MACHINE_RECORD_VERSION
-    for key in ("taken_at", "build", "process", "versions", "memory", "allocator", "environment"):
+    for key in ("taken_at", "build", "process", "versions", "memory", "allocator", "environment", "feed_xml"):
         assert key in block, key
     versions = block["versions"]
     assert versions["python"].count(".") >= 1
@@ -142,3 +149,123 @@ def test_the_record_stays_inside_its_budget(monkeypatch):
     for i in range(300):
         monkeypatch.setenv(f"OO_SWITCH_{i:03d}_WITH_A_FAIRLY_LONG_NAME", "v")
     assert len(json.dumps(MR.machine_block(), ensure_ascii=False).encode()) < 20 * 1024
+
+
+# --------------------------------------------------------------------------
+# feed_xml: which XML driver feedparser uses (R179)
+# --------------------------------------------------------------------------
+_FEED = (
+    b'<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>t</title>'
+    b"<link>https://example.org/</link><description>d</description>"
+    b"<item><title>One</title><link>https://example.org/1</link><guid>1</guid></item>"
+    b"</channel></rss>"
+)
+
+#: What a driver module written by the test does: leave a marker file when it is IMPORTED, and hand back
+#: a real expat parser, so a feed parse that reaches it still reads the feed.
+_DRIVER_SOURCE = (
+    "import pathlib, xml.sax.expatreader\n"
+    "pathlib.Path(__file__).with_name('imported.marker').write_text('imported')\n"
+    "def create_parser():\n"
+    "    return xml.sax.expatreader.create_parser()\n"
+)
+
+
+@pytest.fixture
+def driver_dir(monkeypatch, tmp_path):
+    """A directory first on ``sys.path`` holding a ``drv_libxml2.py`` that writes a marker when imported,
+    with the name not in ``sys.modules`` and feedparser's list set to its default. The module is gone again
+    afterwards, whatever the test did."""
+    (tmp_path / "drv_libxml2.py").write_text(_DRIVER_SOURCE, encoding="utf-8")
+    monkeypatch.delitem(sys.modules, "drv_libxml2", raising=False)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(feedparser.api, "PREFERRED_XML_PARSERS", ["drv_libxml2"])
+    yield tmp_path
+    sys.modules.pop("drv_libxml2", None)
+
+
+def test_a_driver_on_the_path_is_found_without_being_imported(driver_dir):
+    got = MR._feed_xml()
+    assert got == {"preferred": "drv_libxml2", "drv_libxml2": "found_not_loaded"}
+    # red without the fix: a probe that imports the driver (``__import__``, ``make_parser``) leaves the marker
+    assert not (driver_dir / "imported.marker").exists(), "the record imported the driver"
+    assert "drv_libxml2" not in sys.modules
+
+
+def test_a_feed_parse_that_reaches_the_driver_turns_found_into_loaded(driver_dir):
+    assert MR._feed_xml()["drv_libxml2"] == "found_not_loaded"
+    parsed = feedparser.parse(_FEED)
+    assert (driver_dir / "imported.marker").exists(), "the parse did not reach the driver"
+    assert [e.link for e in parsed.entries] == ["https://example.org/1"]
+    assert MR._feed_xml() == {"preferred": "drv_libxml2", "drv_libxml2": "loaded"}
+
+
+def test_no_driver_anywhere_reads_absent_and_a_parse_still_works(monkeypatch, tmp_path):
+    """The control: the same parse with the name findable nowhere falls through to expat and the record says so
+    (a ``None`` entry in ``sys.modules`` is no stand-in for that: ``make_parser`` re-raises for a name it finds there)."""
+    monkeypatch.setattr(feedparser.api, "PREFERRED_XML_PARSERS", ["drv_libxml2"])
+    monkeypatch.delitem(sys.modules, "drv_libxml2", raising=False)
+    monkeypatch.setattr(sys, "path", [str(tmp_path)])  # an empty directory
+    assert len(feedparser.parse(_FEED).entries) == 1
+    assert MR._feed_xml() == {"preferred": "drv_libxml2", "drv_libxml2": "absent"}
+
+
+def test_absent_when_the_import_path_holds_no_such_module(monkeypatch, tmp_path):
+    monkeypatch.delitem(sys.modules, "drv_libxml2", raising=False)
+    monkeypatch.setattr(sys, "path", [str(tmp_path)])  # an empty directory: nothing named drv_libxml2 anywhere
+    assert MR._feed_xml()["drv_libxml2"] == "absent"
+
+
+def test_a_module_without_a_spec_in_sys_modules_reads_loaded_not_unavailable(monkeypatch):
+    """``importlib.util.find_spec`` raises ``ValueError`` for a module placed in ``sys.modules`` without a spec,
+    so the record reads ``sys.modules`` first (red without the order: ``unavailable``)."""
+    monkeypatch.setitem(sys.modules, "drv_libxml2", types.ModuleType("drv_libxml2"))
+    assert MR._feed_xml()["drv_libxml2"] == "loaded"
+
+
+def test_preferred_is_feedparsers_own_list_as_it_stands(monkeypatch):
+    monkeypatch.setattr(feedparser.api, "PREFERRED_XML_PARSERS", [])
+    assert MR._feed_xml()["preferred"] == ""
+    monkeypatch.setattr(feedparser.api, "PREFERRED_XML_PARSERS", ["drv_libxml2", "other"])
+    assert MR._feed_xml()["preferred"] == "drv_libxml2,other"
+
+
+def test_a_feedparser_that_cannot_be_read_is_a_reason_by_class_and_the_others_stand(monkeypatch):
+    monkeypatch.setitem(sys.modules, "feedparser", None)  # ``import feedparser`` now raises
+    got = MR._feed_xml()
+    assert list(got) == ["unavailable"] and got["unavailable"].startswith("feedparser could not be read (")
+    assert "Error" in got["unavailable"] and "/" not in got["unavailable"], "the class name, never a path or a message"
+    block = MR.machine_block()
+    assert block["feed_xml"] == got
+    assert block["versions"]["sqlite"] and block["allocator"]
+
+
+def test_the_section_is_in_the_manifest_of_every_build():
+    manifest, _ = _build([("a.json", lambda: {"x": 1})])
+    assert set(manifest["machine"]["feed_xml"]) >= {"preferred", "drv_libxml2"} or "unavailable" in manifest["machine"]["feed_xml"]
+    assert manifest["machine"]["version"] == MR.MACHINE_RECORD_VERSION == 2
+
+
+#: The bytes of the two sentences this section's neighbours carried on main before it, in the manifest's own
+#: encoding: ``not_here`` (166) and ``environment.method`` (92). The section is paid for out of them, so an
+#: archive does not grow (the diagnostics part has no room to give).
+_FREED_BY_THE_SHORTENED_SENTENCES = 166 + 92
+
+
+def _manifest_bytes(machine: dict) -> int:
+    return len(json.dumps({"machine": machine}, ensure_ascii=False, indent=2).encode())
+
+
+def test_the_driver_section_costs_the_archive_no_bytes():
+    empty = _manifest_bytes({})
+    widest_states = [
+        {"preferred": "drv_libxml2", "drv_libxml2": "found_not_loaded"},  # the longest of the three values
+        {"unavailable": "feedparser could not be read (ModuleNotFoundError)"},  # the longest class feedparser's import gives
+    ]
+    widest = max(_manifest_bytes({"feed_xml": s}) - empty for s in widest_states)
+    block = MR.machine_block()
+    now = widest + len(block["not_here"].encode()) + len(block["environment"]["method"].encode())
+    assert now <= _FREED_BY_THE_SHORTENED_SENTENCES, (
+        f"the driver section (widest {widest} B) and the two sentences it was paid out of now take {now} B, "
+        f"more than the {_FREED_BY_THE_SHORTENED_SENTENCES} B they took before it"
+    )
