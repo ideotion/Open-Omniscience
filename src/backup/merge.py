@@ -2794,7 +2794,7 @@ def _same_source(i: str = "i", m: str = "m") -> str:
     backup carrying two feeds of one domain yields two sources and a domain-keyed backup never duplicates an
     existing feed-keyed one."""
     return (
-        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_feed_key({i}.rss_url)"
+        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_feed_key({i}.rss_url)"  # noqa: S608  # nosec B608 - only the caller's literal aliases (i, m) are interpolated
         f" OR ((SELECT COUNT(*) FROM inc.sources x WHERE x.domain = {i}.domain) = 1"
         f" AND (SELECT COUNT(*) FROM main.sources y WHERE y.domain = {i}.domain) = 1)))"
     )
@@ -2907,7 +2907,7 @@ def _merge_sources(con, batch_id, results) -> None:
     _SAME = _same_source()
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.sources i WHERE EXISTS"
+        "SELECT COUNT(*) FROM inc.sources i WHERE EXISTS"  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
         f" (SELECT 1 FROM sources m WHERE {_SAME})",
     )
     # Local wins entirely: differing incoming fields are REPORTED, never applied.
@@ -2921,7 +2921,7 @@ def _merge_sources(con, batch_id, results) -> None:
         r.conflicts.append({"domain": row[0], "incoming_name": row[1], "local_name": row[2]})
     r.conflict = _count(
         con,
-        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
+        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')",
     )
     # The QUALIFICATION STAMP (status / qualified_at / qualification_criteria_version)
@@ -3006,7 +3006,7 @@ def _merge_sources(con, batch_id, results) -> None:
         " (domain TEXT, verdict TEXT, engine TEXT, stamped_at TEXT, mode TEXT)"
     )
     con.execute(
-        "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
+        "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
         " SELECT i.domain, COALESCE(sv.status, i.status),"
         " CASE WHEN sv.old IS NULL THEN i.qualification_criteria_version ELSE sv.criteria END,"
         " CASE WHEN sv.old IS NULL THEN i.qualified_at ELSE sv.qualified_at END,"
@@ -3048,7 +3048,7 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "sources",
-        "INSERT INTO main.sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
+        "INSERT INTO main.sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"  # noqa: S608  # nosec B608 - only {_SAME}, built by _same_source from this module's literal aliases
         " reliability_score, language, region, country, source_type, update_frequency,"
         " cacheability, status, qualified_at, qualification_criteria_version,"
         " catalog_baseline, feed_key)"
@@ -3111,7 +3111,7 @@ def _merge_sources(con, batch_id, results) -> None:
 
     _build_map(
         con, "map_sources",
-        f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",
+        f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
     )
     _record_inherited_sibling_verdicts(con, batch_id, sibling_ids)
     con.execute("DROP TABLE IF EXISTS temp.sib_verdict")  # read by the INSERT and the tally above; nothing reads it later
