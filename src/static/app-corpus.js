@@ -1927,7 +1927,10 @@
             ? termListHtml(rest, t2 => growthFallback(t2) || trendRateText(t2, {short: true}))
             : "";
           return `<div style="flex:1;min-width:240px">${head}${spark}${restList}</div>`;
-        }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
+        }).join("") || (d.partial && d.caveat
+          // a partial answer with NO window finished is "not computed", which is not "nothing is rising"
+          ? `<div class="muted" role="status">${esc(t(d.caveat))}</div>`
+          : `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`);
         const note = $("trd-windows-note"); if (note) note.textContent = d.caveat ? t(d.caveat) : "";
         // If a non-default lens (slope / small multiples) is active, re-render it with
         // the fresh payload (visibility was already set by setTrendLens).

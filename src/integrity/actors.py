@@ -58,6 +58,9 @@ def corpus_actors(
         .limit(limit)
         .all()
     )
+    from src.database.outlet import OutletMap
+
+    outlets = OutletMap(session)  # an actor is made of OUTLETS: one site's several feeds are one member
     documents = []
     for article, source_name, domain in rows:
         text = article.get_content() or article.title or ""
@@ -66,7 +69,7 @@ def corpus_actors(
         documents.append(
             {
                 "id": str(article.id),
-                "source": source_name or domain or f"source-{article.source_id}",
+                "source": outlets.label(article.source_id, source_name, domain),
                 "text": text,
                 "published_at": article.published_at or article.created_at,
                 "host": domain,

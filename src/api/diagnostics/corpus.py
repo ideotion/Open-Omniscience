@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.heavy import guarded_read
+from src.api.heavy import guarded_read, statement_budget
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 
@@ -386,6 +386,13 @@ def card_audit(
     depth: str = Query("summary", pattern="^(summary|standard|full)$"),
     determinism: bool = Query(True),
     download: bool = Query(False),
+    budget_s: float | None = Query(
+        None,
+        gt=0,
+        le=3600,
+        description="Statement budget in seconds for this read. Omitted: what is left of an "
+        "enclosing deadline (the diagnostics bundle member), else the process default (60 s).",
+    ),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """Deep card-system audit at SUMMARY depth — the validate-and-optimize instrument
@@ -424,7 +431,14 @@ def card_audit(
             **bounds,
         )
 
-    report = guarded_read(db, "card-audit", _compute)
+    seconds, source = statement_budget(db, budget_s)
+    report = guarded_read(db, "card-audit", _compute, deadline_s=seconds)
+    if isinstance(report, dict):
+        # Said in the report, so a reader of a 60 s skip can tell the default from a short grant.
+        report["statement_budget"] = {
+            "seconds": None if seconds is None else round(seconds, 1),
+            "source": source,
+        }
     headers = {}
     if download:
         fname = f"oo-card-audit-{datetime.now().strftime('%Y%m%d')}.json"

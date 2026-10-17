@@ -510,6 +510,15 @@ def is_registered() -> bool:
     return _REGISTERED
 
 
+def _forget_collected_pools() -> None:
+    """Drop the labels of pools that have been collected (their ``id`` may be reused). Called with ``_LOCK`` held; a function of its own because
+    CPython 3.13 leaves a loop's back-edge outside the exception table of the ``with`` around it, so an interrupt delivered there would leave the
+    lock owned. ``register`` runs when ``src.database.session`` is first imported, on whichever thread that is, and a script imports it on the main
+    one (R163; measured: ``MainThread`` for a plain ``import src.database.session``)."""
+    for k in [k for k, (ref, _l) in _POOL_LABELS.items() if ref() is None]:
+        _POOL_LABELS.pop(k, None)
+
+
 def register(engine, *, label: str = "corpus") -> bool:
     """Attach the listeners to ``engine``'s pool. Idempotent per engine; never raises.
 
@@ -526,8 +535,7 @@ def register(engine, *, label: str = "corpus") -> bool:
             return False
         pool = engine.pool
         with _LOCK:
-            for k in [k for k, (ref, _l) in _POOL_LABELS.items() if ref() is None]:
-                _POOL_LABELS.pop(k, None)  # a collected pool's id may be reused
+            _forget_collected_pools()
             _POOL_LABELS[id(pool)] = (weakref.ref(pool), label)
         event.listen(engine, "checkout", _on_checkout)
         event.listen(engine, "checkin", _on_checkin)

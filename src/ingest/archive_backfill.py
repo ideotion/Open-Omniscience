@@ -169,6 +169,15 @@ def advance_backfill(
             # through a possibly-large stale backlog in one call).
             _save_state(state, state_path)
             return {"enabled": True, "source_id": sid, "skipped": "source no longer exists"}
+        # A sitemap is the SITE's: once one feed of an outlet has been backfilled, its siblings add no pages (row J, D1).
+        # "Done" also holds a failed enumeration and a backfill cut short, so the skip reads the outlets whose
+        # backfill actually RAN TO THE END (``completed_outlets``), never ``done_sources``: a transient failure on one
+        # feed must leave its siblings their own attempt.
+        if source.domain in {str(x) for x in state.get("completed_outlets", [])}:
+            done.append(sid)
+            state["done_sources"] = done
+            _save_state(state, state_path)
+            return {"enabled": True, "source_id": sid, "skipped": "its outlet's archive was already backfilled by another feed", "done": True}
         try:
             urls = discover(fetcher, source, full_history=bool(entry.get("full_history")))
         except Exception as exc:  # noqa: BLE001 - one source's enumeration failure must not abort the queue
@@ -225,6 +234,7 @@ def advance_backfill(
     if done_now:
         done.append(sid)
         state["done_sources"] = done
+        state["completed_outlets"] = sorted({*(str(x) for x in state.get("completed_outlets", [])), source.domain})
         state["active"] = None
     else:
         state["active"] = {**active, "cursor": cursor, "tally": tally}

@@ -54,6 +54,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
+    "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
@@ -62,6 +63,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
         "a ** mapping handed to a log call can carry exc_info": 1,
     },  # the session-releasing proxy forwards attributes of the fetcher
     "src/ingest/seed_sources.py": {"getattr reaches field, a way round the scan of the log calls": 2},  # a model field name
+    # the urllib3 log scrub: it assigns None to a library record's exc_info (three places: the trace drop, the fallback) and reads the class name
+    # of the exception the record carried; it stores the exception nowhere and writes the class name only
+    "src/ingest/urllib3_log.py": {"sys.exc_info() reads the exception being handled": 3},
     "src/scheduler/settings.py": {"getattr reaches key, a way round the scan of the log calls": 1},
     "src/scheduler/storage_guard.py": {"_LOG.warning is kept as a name, a log call the scan cannot read": 1,
                                        "_LOG.info is kept as a name, a log call the scan cannot read": 1},
@@ -325,9 +329,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/database/writer.py': {
         ('release_if_held', 'if session.info.pop(_SESSION_FLAG, False):'): 1,
-        ('hold_write_window', 'session.info[_SESSION_FLAG] = True'): 1,
-        ('_on_before_flush', 'session.info[_SESSION_FLAG] = True'): 1,
-        ('_on_orm_execute', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('_take_for_session', 'if session.info.get(_SESSION_FLAG):'): 1,
+        ('_take_for_session', 'session.info[_SESSION_FLAG] = True'): 1,
+        ('_take_for_session', 'session.info.pop(_SESSION_FLAG, None)'): 1,
         ('hold_write_window', 'if not session.info.get(_SESSION_FLAG):'): 1,
         ('_on_before_flush', 'if not session.info.get(_SESSION_FLAG):'): 1,
         ('_on_orm_execute', 'if not session.info.get(_SESSION_FLAG):'): 1,
@@ -418,6 +422,11 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('record', '_internal_failure("record", exc)'): 1,
         ('update', '_internal_failure("update", exc)'): 1,
         ('end', '_internal_failure("end", exc)'): 1,
+        ('run_started', '_internal_failure("run_started", exc)'): 1,
+        ('run_facts', '_internal_failure("run_facts", exc)'): 1,
+        ('free_bytes_of', '_internal_failure("free_bytes_of", exc)'): 1,
+        ('run_ended', '_internal_failure("run_ended", exc)'): 1,
+        ('run_refused', '_internal_failure("run_refused", exc)'): 1,
         ('note_checkpoint', '_internal_failure("note_checkpoint", exc)'): 1,
         ('note_open', '_internal_failure("note_open", exc)'): 1,
         ('note_pool_timeout', '_internal_failure("note_pool_timeout", exc)'): 1,
@@ -794,6 +803,18 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('run_progressive_triage_job', 'f"{outage_detail(_why, exc, recovery=_fix)} — retrying in "'): 1,
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('run_progressive_triage_job', 'if is_context_overflow(exc) and working_batch > 1:'): 1,
+    },
+    'src/analytics/columnar.py': {
+        # R160: read for ONE fixed phrase to CLASSIFY DuckDB's FATAL allocation error as the memory wall; the text goes nowhere
+        # (the class is raised as an empty _EngineWall / BuildDeclined `from None`, and the stop names the class only)
+        ('_bulk_insert', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+        ('build_keyword_daily', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+        # R160 follow-on: the same ONE phrase, read once in each serve handler to tell the memory wall from any other fatal; only a
+        # word ("allocation" / "other") leaves the handler, and the canary keeps only an outcome word and the class name
+        ('windowed_term_counts', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
+        ('windowed_top_terms_raw', '_ALLOCATION_FATAL_PHRASE in str(exc))), con)'): 1,
+        ('serve_canary', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
+        ('compact', 'out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"'): 1,
     },
     'src/analytics/equivalence.py': {
         # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere

@@ -33,7 +33,17 @@ _ISOLATED = tempfile.mkdtemp(prefix="oo-tests-")
 # ignore_errors=True: a stray open handle (e.g. a not-yet-closed sqlite3 connection
 # at shutdown) must never turn cleanup into a crash on the way out.
 atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
+# pytest-xdist workers INHERIT the controller's environment, so the `setdefault` below would hand every worker the CONTROLLER's directory: the
+# workers then share one database, one `app_errors.jsonl`, one `data/` (measured 2026-10-16: `pytest -n 4 tests/test_restore_timing_instrumentation.py`
+# failed on `logs/app_errors.jsonl: sha256 mismatch`, another worker having appended to it while a backup was being verified). The controller
+# records the directory it chose as ITS default; a worker that finds exactly that value replaces it with its own. A directory the operator chose
+# explicitly (CI, a specific scenario) is a different value and is left alone.
+_DEFAULT_MARK = "OO_TESTS_DEFAULT_DATA_DIR"
+if os.environ.get("PYTEST_XDIST_WORKER") and os.environ.get("OO_DATA_DIR") == os.environ.get(_DEFAULT_MARK):
+    os.environ["OO_DATA_DIR"] = _ISOLATED
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
+if os.environ["OO_DATA_DIR"] == _ISOLATED and not os.environ.get("PYTEST_XDIST_WORKER"):
+    os.environ[_DEFAULT_MARK] = _ISOLATED
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
 # Never start the offline-maintenance timer either: the boot-upkeep tests that unset

@@ -179,14 +179,18 @@ def test_shutdown_retires_a_pending_resume_before_it_stops_the_scheduler(sched1,
     old = _Pass()
     fake = _Sched(old)
     monkeypatch.setattr(sched1, "get_scheduler", lambda: fake)
+    before = set(threading.enumerate())
     sched1.resume_after_exclusive_operation(True, retries=0, retry_delay=0.0)
-    watchers = [t for t in threading.enumerate() if t.name == "oo-resume-watch"]
+    # The watcher THIS call started, not every one alive: another file's test may have left one behind, sleeping out its own poll.
+    watchers = [t for t in threading.enumerate() if t.name == "oo-resume-watch" and t not in before]
+    assert watchers, "the resume did not hand over to a watcher"
     sched1.cancel_pending_resume()
     # A retired watcher leaves at its next look; the old pass is released only once it
     # has, so the check below cannot race a start() already past its generation check.
     for t in watchers:
         t.join(timeout=5)
-    assert not any(t.is_alive() for t in watchers)
+    still = [f"{t.name} (ident {t.ident})" for t in watchers if t.is_alive()]
+    assert not still, f"the watcher this test started is still alive after its retirement: {still}"
     old.release.set()
     time.sleep(0.05)
     assert fake.starts == 0 and sched1.resume_pending() is None

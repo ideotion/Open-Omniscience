@@ -689,7 +689,7 @@ def _trending(Sess, **kw):
         return q.trending(s, min_recent=1, limit=200, **kw)
 
 
-def _single(session, *, key, day, rowid, value, lo, hi, keep, where=(), range_ids=None):  # noqa: ARG001
+def _single(session, *, key, day, rowid, value, lo, hi, keep, where=(), range_ids=None, deadline=None):  # noqa: ARG001
     stmt = select(key, value).where(day >= lo, day < hi, *where).group_by(key)
     return dq.grouped_counts(session, stmt, keep)
 

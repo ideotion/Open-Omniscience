@@ -1093,21 +1093,27 @@ class DamageRegistry:
         except Exception as exc:  # noqa: BLE001 - a latch that cannot be re-read stays
             _LOG.warning("database damage: could not start the re-read of the reported tables (%s)", type(exc).__name__)
             outcome = {}
-        released: list[str] = []
         with self._lock:
-            for key in recheck:
-                if outcome.get(key) == "started":
-                    continue
-                st = self._files.get(key)
-                if st is None:
-                    continue
-                if self._claim_is(st, claims.get(key)):
-                    st.pop("rechecking", None)
-                if outcome.get(key) == "nothing-to-read" and st["latched"]:
-                    st["latched"] = False
-                    st.pop("check_tables", None)
-                    st.pop("check_stopped_after", None)
-                    released.append(key)
+            return self._settle_unstarted(recheck, outcome, claims)
+
+    def _settle_unstarted(self, recheck: dict[str, list[str]], outcome: dict[str, str], claims: dict[str, int]) -> list[str]:
+        """The loop of :meth:`_start_recheck`, called with ``self._lock`` held. A function of its own because CPython 3.13 leaves a loop's back-edge
+        outside the exception table of the ``with`` around it, so an interrupt delivered there would leave the lock owned (R163: the restore CLI
+        reaches this through ``DamageRegistry.retry``). A function with no handler has nothing to skip."""
+        released: list[str] = []
+        for key in recheck:
+            if outcome.get(key) == "started":
+                continue
+            st = self._files.get(key)
+            if st is None:
+                continue
+            if self._claim_is(st, claims.get(key)):
+                st.pop("rechecking", None)
+            if outcome.get(key) == "nothing-to-read" and st["latched"]:
+                st["latched"] = False
+                st.pop("check_tables", None)
+                st.pop("check_stopped_after", None)
+                released.append(key)
         return released
 
     @staticmethod
@@ -1697,8 +1703,9 @@ class DamageRegistry:
             for inc in self._incidents:
                 if inc.get("file") != file_key or inc.get("process") == self._process or inc.get("superseded"):
                     continue
-                if str(inc.get("last_at") or inc.get("at") or "") > done_at:
-                    return True
+                if str(inc.get("last_at") or inc.get("at") or "") <= done_at:
+                    continue  # a loop ends in a guard clause, not a bare ``if``: that shape leaves its back-edge outside the ``with`` on CPython 3.13 (R163)
+                return True
         return False
 
     def _repair_notes_locked(self, corpus_latched: bool) -> list[dict[str, Any]]:
@@ -1846,15 +1853,16 @@ class DamageRegistry:
                 if on and st.get("auto_stayed"):
                     # Said beside the damage sentence: why this pause was not read again by itself, and what a start does.
                     out.append({"kind": "damage", "file": key, "frame": FRAME_STAYED, "vars": {}})
-                if on and st.get("check_stopped_after"):
-                    out.append(
-                        {
-                            "kind": "damage",
-                            "file": key,
-                            "frame": FRAME_CHECK_STOPPED,
-                            "vars": {"tries": int(st["check_stopped_after"])},
-                        }
-                    )
+                if not (on and st.get("check_stopped_after")):
+                    continue  # a guard clause, not a bare ``if`` ending the loop (R163; see incident_after_last_check)
+                out.append(
+                    {
+                        "kind": "damage",
+                        "file": key,
+                        "frame": FRAME_CHECK_STOPPED,
+                        "vars": {"tries": int(st["check_stopped_after"])},
+                    }
+                )
             corpus = self._files.get(FILE_CORPUS)
             provisional = bool(corpus and (corpus.get("rechecking") or {}).get("auto"))
             out.extend(self._repair_notes_locked(bool(on and corpus and corpus["latched"] and not provisional)))

@@ -903,6 +903,10 @@ def count_imported_newsletters(session: Session) -> int:
     return len(_newsletter_article_ids(session))
 
 
+# Article ids per statement AND per hold of the gate in the removal below; under SQLite's 999-variable cap.
+_NEWSLETTER_DELETE_CHUNK = 900
+
+
 def delete_imported_newsletters(session: Session) -> dict:
     """Remove imported-newsletter articles from the LIVE corpus (the "replace the faulty
     ones" loop).
@@ -918,6 +922,9 @@ def delete_imported_newsletters(session: Session) -> dict:
 
     Reversible only via a prior backup (the caller nudges "back up first"). Counts only;
     takes the single-writer gate so it never races a scrape/import write.
+
+    A removal that stops between two chunks (the process ends) has removed the earlier chunks whole and left the counters stale until
+    the removal is run again, which finds the articles that are left, or the counter sweep (``reconcile_keyword_counters``) runs.
     """
     from src.database.models import Base
     from src.database.writer import write_lock
@@ -934,13 +941,18 @@ def delete_imported_newsletters(session: Session) -> dict:
     # `__table__` is typed FromClause on the declarative base (a class may map to
     # any selectable); this one is a real Table, which is what carries .delete().
     articles_tbl = cast(Table, Article.__table__)
-    with write_lock():
-        for lo in range(0, len(art_ids), 900):  # under SQLite's 999-variable cap
-            chunk = art_ids[lo : lo + 900]
+    # One hold of the gate and one commit PER CHUNK (2026-10-16, write-gate holds). The first version took the gate once around every chunk
+    # and committed at the end, so a writer waited for the removal of every newsletter article and every row that hangs off it (dozens of
+    # dependent tables each) before it could run. A chunk is a complete unit (its dependents, then its articles, in one transaction), and
+    # the ids were read before the first chunk, so a pass that stops between two chunks leaves earlier chunks gone and later ones whole,
+    # and running the removal again finds exactly the ones left.
+    for lo in range(0, len(art_ids), _NEWSLETTER_DELETE_CHUNK):
+        chunk = art_ids[lo : lo + _NEWSLETTER_DELETE_CHUNK]
+        with write_lock():
             for t in dep_tables:
                 session.execute(t.delete().where(t.c.article_id.in_(chunk)))
             session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
-        session.commit()
+            session.commit()
 
     # The bulk delete didn't go through index_article, so the denormalised
     # Keyword.mention_count / article_count are now stale — repair them authoritatively.

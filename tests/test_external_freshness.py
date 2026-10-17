@@ -132,6 +132,33 @@ def test_sqlcipher3_range_in_pyproject_matches_the_registry_and_keeps_its_ceilin
     )
 
 
+def test_urllib3_range_in_pyproject_matches_the_registry_and_keeps_its_ceiling():
+    """src/ingest/urllib3_log.py is built on the log calls of the urllib3 releases it was read from (2.7.0 and 2.8.0).
+    pyproject carries the range with a ceiling at the first release NOT read, and the registry carries the same floor and ceiling:
+    lifting the ceiling is the qualification's last step (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never a way to get a lane green."""
+    entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
+    pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'"urllib3>=([0-9.]+),<([0-9.]+)"', pyproject)
+    assert m, "pyproject.toml's urllib3 requirement lost its floor or its ceiling (see the comment above it)"
+    assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the urllib3 floor"
+    assert m.group(2) == str(entry["pin"]["ceiling"]), "pyproject and the registry disagree on the urllib3 ceiling"
+    assert not R._ver_ge(str(entry["pin"]["verified"]), m.group(2)), "the verified version is not below the ceiling"
+    assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified version is not inside the range"
+    assert entry["upstream_check"]["current"] == str(entry["pin"]["verified"]), "the release the watch compares with is the newest one read"
+
+
+def test_the_lockfile_pins_urllib3_inside_the_range_the_filter_was_read_for():
+    """``lockfile-install`` installs ``requirements.lock`` and then the project with ``--no-deps``, so a lock whose urllib3 is outside the
+    pyproject range installs green and runs a release nobody read the log calls of (the ``urllib3-floor`` job installs 2.7.0 by name, not
+    from the lock). The lock's pin is the third place the range is written, and nothing else ties it to the other two."""
+    entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
+    lock = (R.repo_root() / "requirements.lock").read_text(encoding="utf-8")
+    pins = re.findall(r"^urllib3==([0-9][0-9.]*)\b", lock, flags=re.MULTILINE)
+    assert len(pins) == 1, f"requirements.lock must pin urllib3 exactly once, found {pins}"
+    assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins urllib3 {pins[0]}, below the floor the filter was read for"
+    assert not R._ver_ge(pins[0], str(entry["pin"]["ceiling"])), f"the lock pins urllib3 {pins[0]}, at or above the ceiling (the first release not read)"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

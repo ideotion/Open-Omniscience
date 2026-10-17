@@ -286,6 +286,7 @@ def resolve_newsletter_publisher(
     rows = (
         session.query(Source.id, Source.name, Source.domain)
         .filter(func.lower(Source.domain).in_(sorted(wanted)))
+        .order_by(Source.id)
         .all()
     )
     exact = next((r for r in rows if (r.domain or "").lower() == pk.key), None)

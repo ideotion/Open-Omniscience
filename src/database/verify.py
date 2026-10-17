@@ -1017,9 +1017,9 @@ def _give_back_attempt(key: str) -> None:
 def _pass_in_flight(key: str) -> Iterator[None]:
     """Names the file whose page pass is running, so that :func:`stop` can give its attempt back while the pass cannot end."""
     global _PASS_FILE
-    with _LOCK:
-        _PASS_FILE = key
     try:
+        with _LOCK:  # inside the try, and the give-back below sets None whether or not this ran
+            _PASS_FILE = key
         yield
     finally:
         with _LOCK:

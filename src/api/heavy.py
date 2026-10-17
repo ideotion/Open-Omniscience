@@ -214,6 +214,7 @@ def guarded_read(
     *,
     on_timeout: Callable[[BaseException], Any] | None = None,
     on_busy: Callable[[BaseException], Any] | None = None,
+    deadline_s: float | None = None,
 ):
     """Compose the heavy-read cap + single-flight + a statement DEADLINE around ``compute``,
     for the heavy read endpoints that have NO TTL cache of their own (signals/flood, bury,
@@ -223,13 +224,17 @@ def guarded_read(
     at capacity → ``on_busy(exc)`` if given (an honest degraded/stale payload), else a fast
     HTTP 429 "busy, retry". Both fall-back paths return a value WITHOUT caching it (there is
     no cache here) — a partial is never mistaken for the real answer.
+
+    ``deadline_s`` replaces the process default (``OO_STATEMENT_TIMEOUT_S``, 60 s) for this one read; ``None``
+    keeps the default. A caller running INSIDE a longer deadline (the diagnostics bundle gives each member 300 s)
+    passes what is left of it, because this block REPLACES the outer deadline rather than nesting under it.
     """
     from fastapi import HTTPException
 
     from src.database.maintenance import StatementTimeout, statement_deadline
 
     def _run() -> Any:
-        with statement_deadline(session):
+        with statement_deadline(session, deadline_s):
             return compute()
 
     try:
@@ -244,6 +249,35 @@ def guarded_read(
         raise HTTPException(
             status_code=429, detail=http_detail(exc), headers={"Retry-After": "2"}
         ) from exc
+
+
+def statement_budget(db: Session, requested: object) -> tuple[float | None, str]:
+    """The statement budget for one heavy read, in seconds, and where it came from.
+
+    Three sources, in this order: the caller's ``budget_s``; what is LEFT of an enclosing
+    statement deadline (the all-diagnostics bundle wraps each member in its own, 300 s by
+    default); and ``None`` for the process default (``OO_STATEMENT_TIMEOUT_S``, 60 s).
+
+    The middle one is the point. ``guarded_read`` opens its OWN deadline, which replaces the outer
+    one rather than nesting under it, so a bundle member that had 300 s was cut at 60 s: both
+    bundles of 2026-10-16 recorded ``rising_now`` running 60.1 s and every later producer
+    ``skipped-budget``. ``requested`` is checked for type because the bundle calls this endpoint
+    function directly, and a parameter it does not pass arrives as FastAPI's ``Query`` object.
+    """
+    import time
+
+    from src.database.maintenance import _DEADLINE_KEY
+
+    if isinstance(requested, (int, float)) and not isinstance(requested, bool) and requested > 0:
+        return float(requested), "requested"
+    try:
+        at = db.info.get(_DEADLINE_KEY)
+    except Exception:  # noqa: BLE001 - a stub session with no .info
+        at = None
+    left = None if at is None else float(at) - time.monotonic()
+    if left is not None and left > 0:
+        return left, "enclosing-deadline"
+    return None, "default"
 
 
 def status() -> dict:

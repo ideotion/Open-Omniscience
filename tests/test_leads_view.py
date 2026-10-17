@@ -143,3 +143,13 @@ def test_endpoint_serves_the_view_over_the_cached_briefing(monkeypatch):
             assert c.get("/api/insights/leads-view", params={"sort": "turbo"}).status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+def test_the_leads_view_says_its_source_chips_count_feeds():
+    """Row J, R146 (b): the chips count the distinct source LABELS a card's evidence carries, which are feeds."""
+    from datetime import UTC, datetime
+
+    from src.briefing.leads import assemble_leads_view
+    from src.database.outlet import FEEDS_NOT_OUTLETS
+
+    assert assemble_leads_view([], now=datetime.now(UTC))["sources_note"] == FEEDS_NOT_OUTLETS

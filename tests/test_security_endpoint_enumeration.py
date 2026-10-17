@@ -768,7 +768,8 @@ def test_the_hover_reads_only_loopback_endpoints():
     # Every path-shaped literal in the block, however it reaches api() -- the
     # reads go through a `one(path)` helper, so a needle anchored on `api("` finds
     # nothing and passes vacuously. That is what the first run of this guard did.
-    paths = re.findall(r'"(/[A-Za-z0-9/_.-]+)"', src)
+    # (a query string belongs to the path: `/api/custody/settings?late=0` is one read, and a class without `?=` found two)
+    paths = re.findall(r'"(/[A-Za-z0-9/_.?=&-]+)"', src)
     assert paths, "the lane states are no longer read from anywhere"
     for path in paths:
         assert path.startswith("/api/"), f"the consent dialog reads a non-local path: {path}"

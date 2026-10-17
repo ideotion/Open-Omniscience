@@ -151,6 +151,14 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "reader sees exactly the rows a pass wrote; it changes how they are read, never what "
         "extraction writes"
     ),
+    "src/database/feed_key.py": (
+        "derives sources.feed_key from a source's feed URL when a source row is written; an index pass reads "
+        "sources and never writes them, so it cannot change what a pass writes"
+    ),
+    "src/database/outlet.py": (
+        "names the OUTLET (a domain) a source belongs to, so a gate that states independence counts a site's "
+        "feeds once; it only reads sources, so an index pass that loads it writes exactly what it wrote before"
+    ),
     "src/database/stand_in.py": (
         "says which row is a salvage copy's PLACE-HOLDER (a lost article's stand-in has no text) so a pass "
         "leaves it out; a real article is written exactly as before, so a change here can make no indexed "

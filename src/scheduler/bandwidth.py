@@ -36,6 +36,8 @@ from __future__ import annotations
 import threading
 import time
 
+from src.utils.interrupts import wait as _wait
+
 # Default seed concurrency for target mode (maintainer's estimate: ~25 workers
 # reach ~500 kbps). Only a STARTING point — the controller measures and adapts.
 DEFAULT_SEED = 25
@@ -57,35 +59,41 @@ class _AdjustableSemaphore:
     """
 
     def __init__(self, permits: int) -> None:
-        self._cond = threading.Condition()
+        # a plain RLock under the Condition and `with self._lock:` everywhere: a Condition's own __enter__/__exit__ are Python frames, where a
+        # KeyboardInterrupt can land between "taken" and "released" and leave the lock taken for ever (see src/config/kv_store.py::_hold_lock)
+        self._lock = threading.RLock()
+        self._cond = threading.Condition(self._lock)
         self._permits = max(1, int(permits))
         self._active = 0
 
     def acquire(self) -> None:
-        with self._cond:
-            while self._active >= self._permits:
-                self._cond.wait()
+        with self._lock:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if self._active < self._permits:
+                    break
+                _wait(self._cond, self._lock)
             self._active += 1
 
     def release(self) -> None:
-        with self._cond:
+        with self._lock:
             if self._active > 0:
                 self._active -= 1
-            self._cond.notify()
+            self._cond.notify_all()  # not notify(): a stale entry in the waiter list (an interrupted wait) would swallow the one wake
 
     def set_permits(self, n: int) -> None:
-        with self._cond:
+        with self._lock:
             self._permits = max(1, int(n))
             self._cond.notify_all()
 
     @property
     def permits(self) -> int:
-        with self._cond:
+        with self._lock:
             return self._permits
 
     @property
     def active(self) -> int:
-        with self._cond:
+        with self._lock:
             return self._active
 
 

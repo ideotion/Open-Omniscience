@@ -156,7 +156,7 @@ def test_the_ingest_is_the_same_in_memory_on_a_work_file_and_after_a_spill(osm_l
 
     seen = []
     for budget in (10**9, None, 1):
-        monkeypatch.setattr(reader, "memory_budget_bytes", lambda b=budget: b)
+        monkeypatch.setattr(reader, "memory_budget_bytes", lambda *a, b=budget: b)
         ingest.ingest_country(FIXTURE, "ZZ", reader="python", workdir=tmp_path / "work")
         seen.append({k: (v["lat"], v["lon"], v["geom"]) for k, v in _rows().items()})
         assert not list((tmp_path / "work").glob("osm-locations*"))
@@ -174,6 +174,63 @@ def test_the_adaptive_store_spills_past_its_budget(tmp_path):
     assert st.spilled and st.get(0) == (0.0, -0.0) and st.get(3) == (3.0, -3.0) and st.get(9) is None
     st.close()
     assert not list(tmp_path.glob("osm-locations*"))
+
+
+@pytest.fixture
+def plenty_of_room(monkeypatch):
+    """A fixed 8 GiB room and no ``OO_OSM_LOCATION_INDEX``, so the index choice does not depend on the machine running the test."""
+    from src.osm import reader
+
+    monkeypatch.delenv(reader.LOCATION_INDEX_ENV, raising=False)
+    monkeypatch.setattr(reader, "memory_room", lambda: {"room_bytes": 8 * 1024**3, "source": "mem_available", "notes": []})
+
+
+@pytest.mark.parametrize("reader", READERS)
+def test_the_run_record_names_the_location_index_and_what_it_holds(osm_lane_dir, plenty_of_room, reader):
+    """The index choice is a rule on the FILE's size, so a node-dense extract under the threshold is the one case it can get
+    wrong; the record says which index held the locations, by which rule, and the bytes it holds (arithmetic, not a sample)."""
+    rep = ingest.ingest_country(FIXTURE, "ZZ", reader=reader)
+    li = rep.to_dict()["location_index"]
+    assert li["nodes_set"] > 0 and li["memory_bytes_settled"] > 0 and li["rule"]
+    if reader == "pyosmium":
+        assert li["index"] == "sparse_mem_array" and li["extract_bytes"] == FIXTURE.stat().st_size
+        assert li["memory_bytes_settled"] == li["nodes_set"] * li["entry_bytes"] and li["file_bytes_settled"] == 0
+    else:
+        assert li["index"] == "python_dict" and li["memory_bytes_settled"] > 0
+
+
+@pytest.mark.skipif(not HAVE_OSMIUM, reason="needs the [geo] extra")
+def test_the_record_names_the_file_index_when_the_extract_is_over_the_threshold(osm_lane_dir, plenty_of_room, monkeypatch, tmp_path):
+    from src.osm.reader import PyosmiumExtract
+
+    mem = ingest.ingest_country(FIXTURE, "ZZ", reader="pyosmium").to_dict()["location_index"]
+    monkeypatch.setattr(PyosmiumExtract, "ON_DISK_ABOVE", 0)
+    disk = ingest.ingest_country(FIXTURE, "ZZ", reader="pyosmium", workdir=tmp_path / "work").to_dict()["location_index"]
+    assert disk["index"] == "sparse_file_array" and mem["index"] == "sparse_mem_array"
+    assert disk["memory_bytes_settled"] == 0 and disk["file_bytes_settled"] == disk["nodes_set"] * disk["entry_bytes"]
+    assert disk["nodes_set"] == mem["nodes_set"], "the same nodes are stored whichever index holds them"
+
+
+@pytest.mark.skipif(not HAVE_OSMIUM, reason="needs the [geo] extra")
+def test_both_readers_store_the_same_number_of_locations(osm_lane_dir, plenty_of_room):
+    a = ingest.ingest_country(FIXTURE, "ZZ", reader="pyosmium").to_dict()["location_index"]["nodes_set"]
+    b = ingest.ingest_country(FIXTURE, "ZZ", reader="python").to_dict()["location_index"]["nodes_set"]
+    assert a == b > 0
+
+
+def test_the_python_record_says_when_the_budget_spilled_or_was_unreadable(osm_lane_dir, monkeypatch, tmp_path):
+    from src.osm import reader
+
+    seen = {}
+    for name, budget in (("fits", 10**9), ("unreadable", None), ("spilled", 1)):
+        monkeypatch.setattr(reader, "memory_budget_bytes", lambda *a, b=budget: b)
+        seen[name] = ingest.ingest_country(FIXTURE, "ZZ", reader="python", workdir=tmp_path / "work").to_dict()["location_index"]
+    assert seen["fits"]["index"] == "python_dict" and seen["fits"]["memory_bytes_settled"] > 0
+    for name in ("unreadable", "spilled"):
+        assert seen[name]["index"] == "sqlite_file" and seen[name]["memory_bytes_settled"] == 0
+    assert seen["unreadable"]["budget_bytes"] is None and "unreadable" in seen["unreadable"]["rule"]
+    assert seen["spilled"]["budget_bytes"] == 1
+    assert len({v["nodes_set"] for v in seen.values()}) == 1
 
 
 def test_the_change_model_exists_and_stays_EMPTY_in_0_5(osm_lane_dir):
@@ -224,8 +281,8 @@ def test_the_on_disk_location_index_is_used_and_then_deleted(osm_lane_dir, monke
     made: list = []
     real = reader._OsmiumLocations.__init__
 
-    def spy(self, workdir, *, on_disk):
-        real(self, workdir, on_disk=on_disk)
+    def spy(self, workdir, **kw):
+        real(self, workdir, **kw)
         made.append(self._file)
 
     monkeypatch.setattr(reader._OsmiumLocations, "__init__", spy)

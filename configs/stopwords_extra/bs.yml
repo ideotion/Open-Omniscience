@@ -1,0 +1,4 @@
+stopwords:
+  # batch bs-2026-10-batch1 (log sha256 6467504ab8ab; verdicts sha256 47400de97c79; words with repeat_agreed: 2 of 2)
+  - izuzev
+  - nijedan

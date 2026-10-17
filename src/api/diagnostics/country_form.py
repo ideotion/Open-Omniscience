@@ -80,14 +80,24 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
                 rep = migrate(Path(engine.url.database), estimate_only=True)
                 est = rep.estimate or {}
                 plan = {"rows_to_rewrite": est.get("rows_to_rewrite"), "store_bytes": est.get("store_bytes"),
-                        "free_bytes": est.get("free_bytes"), "left_as_stored": rep.unmapped, "time": est.get("time")}
+                        "free_bytes": est.get("free_bytes"), "left_as_stored": rep.unmapped, "time": est.get("time"),
+                        "search_index": est.get("fts")}
             except MigrationRefused as exc:
                 plan = {"refused": record_text(exc, typed=False)}
             except Exception as exc:  # noqa: BLE001 - a locked or keyless file, a read that failed: the class is the answer
                 plan = {"refused": f"the plan could not be read ({type(exc).__name__}); nothing was changed"}
+    # The article index keeps the tokenizer it was created with; an index from before 0.5 splits Hindi and Bengali words
+    # at their vowel signs until the migration rebuilds it, so the card says which one this store has.
+    try:
+        from src.database.fts import fts_tokenizer
+
+        index_tokenizer = fts_tokenizer(db.connection())
+    except Exception:  # noqa: BLE001 - a diagnostic degrades: "could not read" is its own answer, never "current"
+        index_tokenizer = "unreadable"
     return {
         "form": form,
         "readable": True,
+        "search_index": {"tokenizer": index_tokenizer, "needs_rebuild": index_tokenizer == "legacy"},
         "stamped_by": marker.get("set_by"),
         "stamped_at": marker.get("at"),
         "migrated": form == "alpha3" and marker.get("set_by") != "new-store",

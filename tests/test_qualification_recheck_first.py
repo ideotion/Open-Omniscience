@@ -284,6 +284,43 @@ def test_the_boot_step_lists_measured_inversions_in_both_directions(db, store, m
     assert set(store[q.RECHECK_FIRST_KEY]["flagged"]) == {str(dis.id)}
 
 
+def test_the_boot_step_lists_a_status_held_by_an_inherited_verdict_for_the_early_recheck(db, store, monkeypatch):
+    """R154: a restore handed the outlet's disqualification to a sibling another instance had judged qualified (R149: the
+    integrity check and repair leave that status alone). It is not an inversion anyone repairs, but the imported
+    judgement still disagrees with it, so it keeps the early local re-check; a row that is merely disqualified with its own
+    history is not listed."""
+    import contextlib
+
+    import src.database.session as sess
+    from src.database.models import MergeBatch, MergedRow
+
+    @contextlib.contextmanager
+    def scope():
+        yield db
+
+    monkeypatch.setattr(sess, "session_scope", scope)
+    monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
+    held = _src(db, "held.example", STATUS_DISQUALIFIED)
+    held.qualification_criteria_version = MEASURED
+    db.commit()
+    _attempt(db, held, STATUS_QUALIFIED, NOW - timedelta(days=9))        # the other instance's judgement
+    _attempt(db, held, q.VERDICT_INHERITED, NOW - timedelta(days=1))     # the restore's hand-on, newer
+    plain = _src(db, "plain.example", STATUS_DISQUALIFIED)
+    _attempt(db, plain, STATUS_DISQUALIFIED, NOW - timedelta(days=9))
+    batch = MergeBatch()
+    db.add(batch)
+    db.flush()
+    judging = db.query(SourceQualificationAttempt).filter_by(source_id=held.id, verdict=STATUS_QUALIFIED).one()
+    db.add(MergedRow(batch_id=batch.id, table_name="source_qualification_attempts", row_id=judging.id))
+    db.commit()
+
+    plan = qi.repair_inversions(db, dry_run=True, name_cap=None)
+    assert plan["held_by_inherited_verdict"] == 1 and plan["restored_to_qualified_total"] == 0   # the repair leaves it
+    out = qi.flag_inversions_for_recheck(now=NOW)
+    assert out["flagged"] == 1 and set(store[q.RECHECK_FIRST_KEY]["flagged"]) == {str(held.id)}
+    assert _selected(db, per_pass=0, recheck_per_pass=2) == {"held.example"}
+
+
 def test_the_boot_step_fails_closed_and_can_be_switched_off(db, store, monkeypatch):
     import src.config.kv_store as kv
 

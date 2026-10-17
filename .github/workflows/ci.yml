@@ -618,6 +618,31 @@ jobs:
           tests/test_database_damage.py tests/test_damage_reread.py tests/test_database_verify.py
           tests/test_salvage.py tests/test_repair.py tests/test_bundle_damaged_read.py tests/test_stand_in_rows.py
 
+  # The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two releases, and the `test` job resolves the newest one the
+  # pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0" is a sentence that nothing else keeps true.
+  urllib3-floor:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    name: urllib3 log table (floor release)
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + dev), then force the floor release
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install --no-deps "urllib3==2.7.0"
+          python -c "import urllib3; print('urllib3', urllib3.__version__)"
+
+      - name: Test (the log-shape table against the floor release)
+        run: python -m pytest -q tests/test_urllib3_log_withholds_the_path.py tests/test_external_freshness.py
+
   # A pinned lock file must INSTALL from a clean environment against public PyPI --
   # not just "the developer's existing venv still works" (audit finding OO-03:
   # numpy==2.5.0 was pinned while unresolvable, and the lock had drifted out of sync

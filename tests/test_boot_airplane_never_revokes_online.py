@@ -45,6 +45,14 @@ except BaseException:  # noqa: BLE001 - cryptography's pyo3 extension PANICS in 
 _needs_main = pytest.mark.skipif(M is None, reason="src.api.main is unimportable here (CI runs it)")
 
 
+def _no_boot_sequence_thread(monkeypatch):
+    """The upkeep starts a REAL ``oo-boot-sequence`` daemon thread (src/api/main.py) whenever the scheduler is not disabled, and
+    nobody joins it: it outlived these tests and wrote its steps into the next test that patched the boot steps
+    (tests/test_boot_sequence.py failed 3 of 8 runs of this module followed by that one). These tests are about the kill switch
+    the upkeep decides, not about the boot sequence, so it runs nothing here."""
+    monkeypatch.setattr("src.api.boot_sequence.run", lambda *a, **k: None)
+
+
 @pytest.fixture(autouse=True)
 def _reset():
     I._reset_crossed_online_for_tests()
@@ -105,6 +113,7 @@ def test_the_boot_engage_is_skipped_once_the_operator_has_crossed_online(monkeyp
     # removing that mask surfaced it as eight unrelated "the kill switch is active"
     # failures. monkeypatch restores the variable at teardown.
     monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)
+    _no_boot_sequence_thread(monkeypatch)
     I.clear_kill_switch()             # the operator's click, mid-upkeep...
     I.note_operator_crossed_online()  # ...which the endpoint records as a decision
     assert I.kill_switch_active() is False
@@ -124,6 +133,7 @@ def test_a_boot_with_no_operator_decision_STILL_engages_airplane(monkeypatch):
     non-negotiable. Skipping the engage whenever the switch happens to be clear would
     turn a first boot into an ONLINE boot."""
     monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)  # restored at teardown
+    _no_boot_sequence_thread(monkeypatch)
     I.clear_kill_switch()  # the STATE, with no decision recorded -- see below
     assert I.crossed_online_since_boot() is False
 

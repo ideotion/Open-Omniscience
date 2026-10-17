@@ -97,6 +97,10 @@ class IngestReport:
     #: order (held in a side set at a Python set's cost, not 8 bytes). A file that lists its ids ascending says 0; anything else
     #: says so here (libosmium's own order puts negative ids first, so a file with negative ids reports them).
     id_sets: dict[str, int] = field(default_factory=dict)
+    #: Which index held the node locations while the ways were assembled, the rule that chose it and the bytes it holds
+    #: once settled (arithmetic from the entry size, not a sample, and not a peak: an index that grows holds more while it does):
+    #: the one place a node-dense extract below the file-size threshold would show.
+    location_index: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -113,6 +117,7 @@ class IngestReport:
             "search_index": self.search_index,
             "view_index": self.view_index,
             "id_sets": self.id_sets,
+            "location_index": self.location_index,
         }
 
 
@@ -233,8 +238,9 @@ def ingest_country(
         row.error = None
         s.add(row)
 
-    locations = extract.location_store(workdir or (data_dir() / "osm_work"))
+    locations = None  # made inside the try: a bad OO_OSM_LOCATION_INDEX or an unwritable work directory must end the row "failed", named
     try:
+        locations = extract.location_store(workdir or (data_dir() / "osm_work"))
         rel, border, facts = build_border(extract, alpha2)
         report.border = facts
         counts: dict[str, int] = dict.fromkeys(T.KINDS, 0)
@@ -315,6 +321,7 @@ def ingest_country(
         report.counts = counts
         report.id_sets = {"nodes": len(kept_nodes), "ways": len(kept_ways),
                           "out_of_order": kept_nodes.out_of_order + kept_ways.out_of_order}
+        report.location_index = locations.describe()
         report.blob = {"objects": kept, "q810_bytes": blob_q810, "extended_bytes": blob_ext}
         report.name = _country_name(report.border.get("relation_id"))
         report.status = "complete"
@@ -326,7 +333,8 @@ def ingest_country(
         _LOG.warning("the %s cut from %s failed: %s", alpha2, path.name, report.error)
         raise
     finally:
-        locations.close()
+        if locations is not None:
+            locations.close()
         report.seconds = round(time.monotonic() - t0, 3)
         with store.lane_session("osm") as s:
             row = s.query(OsmCountry).filter_by(alpha3=alpha3).one()
@@ -392,7 +400,7 @@ class _IdSet:
     A file lists its nodes, then its ways, in ascending id order, so each kind arrives sorted and an ``array('q')`` with a
     binary search holds it. That replaces ``osmium.index.IdSet``, a bitmap whose memory follows the SPAN of the ids and not
     their count: it allocates 4 MiB for every 2**25-id window an id falls in (measured 2026-10-15 with pyosmium 4.3.1), so
-    ids spread over today's node range (1.2e10, 358 windows) cost up to 1.43 GB and over the way range (1.35e9) up to 164 MB,
+    ids spread over the node range as of 2026-10-16 (about 1.2e10, 358 windows; it keeps growing) cost up to 1.43 GB and over the way range (1.35e9) up to 164 MB,
     arriving steadily as the scan moves through the id space, which read as memory per object. An id that arrives out of
     order (an unsorted file) goes to a side ``set`` at a Python set's cost (about 65 bytes an id, measured), so the answer is
     right for any file and only a sorted one is compact; the count of those is recorded so a large side set is visible.

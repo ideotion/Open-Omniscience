@@ -46,6 +46,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from src.utils.interrupts import wait as _wait
+
 _LOG = logging.getLogger(__name__)
 
 _KEY = "oo_library_generation"
@@ -113,9 +115,11 @@ def _open_window() -> None:
 def _close_window(*, swapped: bool) -> None:
     global _VALID, _WINDOW_STAMP
     with _STATE:
-        if not swapped and _WINDOW_STAMP is not None:
-            _VALID = frozenset(_VALID | {_WINDOW_STAMP})
-        _WINDOW_STAMP = None
+        # the stamp is taken and cleared in ONE step (no call between), so an interrupt in what follows leaves no stamp set; the cost of that
+        # interrupt is a window connection that stays refused, which is the safe side
+        stamp, _WINDOW_STAMP = _WINDOW_STAMP, None
+        if not swapped and stamp is not None:
+            _VALID = frozenset(_VALID | {stamp})
 
 
 # --- the lock --------------------------------------------------------------------------------------------------------------
@@ -127,48 +131,74 @@ class _Lock:
     waits on it, and the swap's own wait is bounded."""
 
     def __init__(self) -> None:
-        self._cond = threading.Condition()
+        # a plain RLock under the Condition and `with self._lock:` everywhere: a Condition's own __enter__/__exit__ are Python frames, where a
+        # KeyboardInterrupt can land between "taken" and "released" and leave the lock taken for ever (see src/config/kv_store.py::_hold_lock)
+        self._lock = threading.RLock()
+        self._cond = threading.Condition(self._lock)
         self._shared = 0
         self._holder: int | None = None
+        self._mine = threading.local()  # shared levels THIS thread holds: what a caller reads to learn, after an exception, whether it took one
+
+    def shared_held_here(self) -> int:
+        return getattr(self._mine, "n", 0)
 
     def shared(self) -> bool:
         me = threading.get_ident()
-        with self._cond:
+        with self._lock:
             if self._holder == me:
                 return False
-            while self._holder is not None:
-                self._cond.wait()
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if self._holder is None:
+                    break
+                _wait(self._cond, self._lock)
+            # the count and this thread's record in one step, with no call between them: an exception after the count was raised and before
+            # the caller saw the answer still leaves the record, which is what the caller releases by
             self._shared += 1
+            self._mine.n = getattr(self._mine, "n", 0) + 1
             return True
 
     def release_shared(self) -> None:
-        with self._cond:
+        with self._lock:
             self._shared -= 1
+            self._mine.n = getattr(self._mine, "n", 1) - 1
             if not self._shared:
                 self._cond.notify_all()
 
     def exclusive(self, timeout: float) -> None:
         me = threading.get_ident()
         deadline = time.monotonic() + max(0.0, timeout)
-        with self._cond:
+        with self._lock:
             if self._holder == me:
                 raise RuntimeError("the library swap window is already held by this thread")
-            while self._holder is not None or self._shared:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if self._holder is None and not self._shared:
+                    break
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise LibraryBusy(
                         f"a connection to the library was still being opened after {timeout:.0f} s, so the file was not switched"
                     )
-                self._cond.wait(left)
+                _wait(self._cond, self._lock, left)
             self._holder = me
 
     def held_here(self) -> bool:
         return self._holder == threading.get_ident()
 
     def release_exclusive(self) -> None:
-        with self._cond:
+        with self._lock:
             self._holder = None
             self._cond.notify_all()
+
+    def release_if_held_here(self) -> None:
+        """Release the window only if THIS thread holds it, checked and released under the lock in one call: a caller whose ``exclusive``
+        may have been interrupted after the holder was set and before it saw the answer cannot tell from outside, and two calls
+        (``held_here`` then ``release_exclusive``) leave a gap between them."""
+        with self._lock:
+            if self._holder == threading.get_ident():
+                self._holder = None
+                self._cond.notify_all()
 
 
 _LOCK = _Lock()
@@ -179,8 +209,10 @@ _local = threading.local()
 def connecting() -> Iterator[None]:
     """Around ONE open of a connection to the library file: the generation is read and the file opened under the shared lock, and the
     stamp is handed to the ``connect`` event of the same thread (the DBAPI connection cannot carry it, the pool's record can)."""
-    took = _LOCK.shared()
+    before = _LOCK.shared_held_here()
+    took = False
     try:
+        took = _LOCK.shared()
         # The thread that holds the window opens its connections BEFORE the replace (the data-version read, a fold of the log): they are
         # on the OLD file, so they carry the window's own stamp, valid inside the window and after it only if the swap did not happen.
         _local.stamp = _GENERATION if took or _WINDOW_STAMP is None else _WINDOW_STAMP
@@ -189,7 +221,8 @@ def connecting() -> Iterator[None]:
         _local.stamp = None  # an open that failed hands nothing to the next ``connect`` event of this thread
         raise
     finally:
-        if took:
+        # what THIS thread holds says whether a level was taken, even if the exception arrived between the take and the answer
+        if _LOCK.shared_held_here() > before:
             _LOCK.release_shared()
 
 
@@ -235,28 +268,38 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     exists) and without :func:`disk_changing` having been called (a refusal before anything was touched) the earlier connections are valid
     again. Raises :class:`LibraryBusy` if it cannot be had."""
     global _DISK_CHANGED
-    _LOCK.exclusive(timeout)
+    # Everything after the first line is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
+    # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
+    # answer" still finds the lock held by this thread and releases it (src/utils/interrupts.py).
+    before = _LOCK.held_here()  # already held: ``exclusive`` raises, and what this thread holds is not ours to release
     earlier = _VALID
     swapped = True  # until the window ends with the source still there
-    with _STATE:
-        _DISK_CHANGED = False
     try:
-        bump()
-        _open_window()
-        yield
+        _LOCK.exclusive(timeout)
+        earlier = _VALID
+        with _STATE:
+            _DISK_CHANGED = False
+        try:
+            bump()
+            _open_window()
+            yield
+        finally:
+            try:
+                swapped = not source.exists()
+                with _STATE:
+                    changed = _DISK_CHANGED
+                if not swapped and not changed:
+                    _revive(earlier)
+                swapped = swapped or changed  # a file whose log names were removed is not the file the old connections opened, replaced or not
+            except OSError:  # cannot tell whether the file moved: stale is the safe answer
+                _LOG.debug("library generation: could not tell whether the swap happened; the old connections stay refused")
     finally:
         try:
-            swapped = not source.exists()
-            with _STATE:
-                changed = _DISK_CHANGED
-            if not swapped and not changed:
-                _revive(earlier)
-            swapped = swapped or changed  # a file whose log names were removed is not the file the old connections opened, replaced or not
-        except OSError:  # cannot tell whether the file moved: stale is the safe answer
-            _LOG.debug("library generation: could not tell whether the swap happened; the old connections stay refused")
+            if not before and _LOCK.held_here():  # a window that was never had (LibraryBusy) has no stamp to clear
+                _close_window(swapped=swapped)
         finally:
-            _close_window(swapped=swapped)
-            _LOCK.release_exclusive()
+            if not before:
+                _LOCK.release_if_held_here()
 
 
 def disk_changing() -> None:

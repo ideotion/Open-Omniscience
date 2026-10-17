@@ -262,6 +262,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     )
     from src.database.migrate import stamp_if_unstamped
     from src.database.models import Base
+    from src.database.source_identity import ensure_source_composite_key
 
     Base.metadata.create_all(engine)
     ensure_fts(engine)
@@ -296,6 +297,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_source_counter_columns(engine)
     ensure_source_qualification_columns(engine)
     ensure_source_last_crawled_column(engine)
+    ensure_source_composite_key(engine)
     ensure_merged_rows_row_key_column(engine)
     analyze = optimize_at_boot(engine)
     return {"hot_indexes_created": created, "analyze": analyze}
@@ -442,8 +444,11 @@ def wal_bench(
                         (f"__wal_bench_{i}", "x" * 200),
                     )
                     raw.commit()
-                    if i % 250 == 0 and wal_path.exists():
-                        peak_wal = max(peak_wal, wal_path.stat().st_size)
+                    # the guard-clause form, as in src/database/encrypt_tool.py: a loop ending in a bare ``if`` has its back-edge outside the
+                    # exception table of the ``try`` around it on CPython 3.13 (R163)
+                    if i % 250 != 0 or not wal_path.exists():
+                        continue
+                    peak_wal = max(peak_wal, wal_path.stat().st_size)
                 cur.close()
             finally:
                 raw.close()

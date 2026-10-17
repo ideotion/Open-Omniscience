@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Source
 from src.database.session import get_db
+from src.database.source_lookup import source_for_domain
 from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.ingest.email import (
@@ -200,7 +201,7 @@ def _ensure_import_source(db: Session, *, domain: str, name: str) -> Source:
     """Get-or-create a local import source, stamping the newsletter provenance and
     self-healing any pre-existing row that still carries the mislabelled default
     (deterministic, idempotent, no migration)."""
-    src = db.query(Source).filter_by(domain=domain).first()
+    src = source_for_domain(db, domain)
     if src is None:
         src = Source(
             name=name, domain=domain, enabled=False, source_type=_IMPORT_SOURCE_TYPE

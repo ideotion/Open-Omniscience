@@ -18,6 +18,14 @@ not break the app). EXPLAIN is read-only and deadline-guarded.
 
 It sees SINGLE statements: a read that totals minutes as thousands of short statements (the chunked
 trending and corpus-keyword reads, ``database/query.py``) no longer shows up here as one slow query.
+
+WALL TIME ALONE CANNOT SAY WHY A STATEMENT WAS SLOW (a ``SAVEPOINT`` averaged 36.5 s in the 16 Oct 2026 bundles, as long as an
+``INSERT INTO articles``). Each record therefore also carries what the executing thread did over the same interval:
+``cpu_ms``, ``nvcsw``, ``nivcsw``, ``majflt`` and ``inblock``, from :mod:`src.monitoring.thread_usage`, which says what each
+figure means, what it cannot tell apart, and that an unavailable figure is absent and never 0. The interval is the one
+between this module's two listeners, which is the DBAPI call to within the listeners registered before it (the stale-library
+check and the statement-kind note both run first, and no other ``after_cursor_execute`` listener exists), so it is the same
+interval the wall time was always taken over.
 """
 
 from __future__ import annotations
@@ -34,6 +42,7 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from src.monitoring import thread_usage
 from src.monitoring.secret_scrub import record_text
 
 _CAP = 200  # newest slow-query records kept
@@ -67,12 +76,13 @@ def _normalise(sql: str) -> str:
     return s[:600]
 
 
-def _record(sql: str, duration_ms: float) -> None:
+def _record(sql: str, duration_ms: float, thread: dict[str, float | int] | None = None) -> None:
     try:
         norm = _normalise(sql)
         at = datetime.now(UTC).isoformat(timespec="seconds")
+        extra = thread or {}
         with _LOCK:
-            _RING.append({"at": at, "duration_ms": round(duration_ms, 1), "sql": norm})
+            _RING.append({"at": at, "duration_ms": round(duration_ms, 1), "sql": norm, **extra})
             agg = _AGG.get(norm)
             if agg is None:
                 agg = {"count": 0, "total_ms": 0.0, "max_ms": 0.0, "sql": norm}
@@ -83,6 +93,13 @@ def _record(sql: str, duration_ms: float) -> None:
             agg["count"] += 1
             agg["total_ms"] += duration_ms
             agg["max_ms"] = max(agg["max_ms"], duration_ms)
+            # The thread's own figures, summed over the calls that HAD them (``measured``), so a figure missing on some calls is
+            # not averaged as a 0 over all of them.
+            if extra:
+                agg["measured"] = agg.get("measured", 0) + 1
+                agg["measured_ms"] = agg.get("measured_ms", 0.0) + duration_ms
+                for name, value in extra.items():
+                    agg[name] = agg.get(name, 0) + value
     except Exception:  # noqa: BLE001 - the log must never break the app
         return
 
@@ -97,16 +114,19 @@ def install(engine: Engine) -> None:
 
         @event.listens_for(engine, "before_cursor_execute")
         def _before(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
-            conn.info[_START_KEY] = time.perf_counter()
+            # The thread's sample first, the clock last: what is measured as the statement's time must not include taking it.
+            sample = thread_usage.sample()
+            conn.info[_START_KEY] = (time.perf_counter(), sample)
 
         @event.listens_for(engine, "after_cursor_execute")
         def _after(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
             started = conn.info.pop(_START_KEY, None)
             if started is None:
                 return
-            dur_ms = (time.perf_counter() - started) * 1000.0
+            t0, sample = started
+            dur_ms = (time.perf_counter() - t0) * 1000.0
             if dur_ms >= _threshold_ms():
-                _record(statement, dur_ms)
+                _record(statement, dur_ms, thread_usage.since(sample))
 
         _installed = True
     except Exception:  # noqa: BLE001 - instrumentation must never break boot
@@ -118,18 +138,28 @@ def recent(limit: int = 100) -> list[dict[str, Any]]:
         return list(_RING)[-limit:]
 
 
+def _agg_row(a: dict[str, Any]) -> dict[str, Any]:
+    """One shape's row. The thread's figures are TOTALS over the calls that had them, beside ``measured`` (how many) and
+    ``measured_ms`` (their wall time), so ``cpu_ms / measured_ms`` is the share of the wall time the thread spent working."""
+    row: dict[str, Any] = {
+        "sql": a["sql"],
+        "count": a["count"],
+        "total_ms": round(a["total_ms"], 1),
+        "avg_ms": round(a["total_ms"] / a["count"], 1) if a["count"] else 0.0,
+        "max_ms": round(a["max_ms"], 1),
+    }
+    if a.get("measured"):
+        row["measured"] = a["measured"]
+        row["measured_ms"] = round(a["measured_ms"], 1)
+        for name in ("cpu_ms", *thread_usage.COUNTS):
+            if name in a:
+                row[name] = round(a[name], 1) if name == "cpu_ms" else int(a[name])
+    return row
+
+
 def _by_total() -> list[dict[str, Any]]:
     with _LOCK:
-        rows = [
-            {
-                "sql": a["sql"],
-                "count": a["count"],
-                "total_ms": round(a["total_ms"], 1),
-                "avg_ms": round(a["total_ms"] / a["count"], 1) if a["count"] else 0.0,
-                "max_ms": round(a["max_ms"], 1),
-            }
-            for a in _AGG.values()
-        ]
+        rows = [_agg_row(a) for a in _AGG.values()]
     rows.sort(key=lambda r: r["total_ms"], reverse=True)
     return rows
 

@@ -20,6 +20,7 @@ import os
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,14 @@ from src.config import kv_store
 from src.database.writer import write_gate, write_lock
 
 _PATIENCE_S = 30.0
+
+
+def _reset_hold_state() -> None:
+    """Back to no hold and no write counted. A test that fails with a write counted or a hold taken would otherwise leave them for every
+    later test of the session, which then refuses to start for a reason that is not theirs (one red cascading into twenty)."""
+    with kv_store._hold_lock:
+        kv_store._inflight.clear()
+        kv_store._hold_by = None
 
 
 @pytest.fixture
@@ -38,8 +47,37 @@ def store(tmp_path, monkeypatch):
     con.close()
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{live}")
     kv_store.kv_invalidate()
+    _reset_hold_state()
+    real_inflight = kv_store._inflight  # the real set: a test may have patched the module's name by the time this runs
     yield live
     kv_store.kv_invalidate()
+    leaked = (set(real_inflight), kv_store._hold_by)
+    _reset_hold_state()  # so a leak fails the test that made it, not the twenty after it
+    assert leaked == (set(), None), "the test ended with a settings write counted in flight or a hold taken"
+
+
+def test_the_reset_helper_clears_a_hold_and_a_write_a_failed_test_left():
+    kv_store._inflight.add(object())
+    kv_store._hold_by = threading.get_ident()
+    _reset_hold_state()
+    assert not kv_store._inflight and kv_store._hold_by is None
+
+
+def test_the_store_fixture_resets_before_and_after_the_test():
+    import ast
+
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    body = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "store").body
+    yield_at = next(i for i, st in enumerate(body) if isinstance(st, ast.Expr) and isinstance(st.value, ast.Yield))
+
+    def calls_reset(stmts):
+        return any(
+            isinstance(st, ast.Expr) and isinstance(st.value, ast.Call) and getattr(st.value.func, "id", "") == "_reset_hold_state"
+            for st in stmts
+        )
+
+    assert calls_reset(body[:yield_at]), "the fixture must reset the hold state before the test"
+    assert calls_reset(body[yield_at + 1 :]), "the fixture must reset the hold state after the test"
 
 
 def _stored(live, key):
@@ -164,8 +202,8 @@ def test_an_interrupt_inside_the_slot_neither_leaks_a_count_nor_releases_another
 
 
 class _InterruptedEnter:
-    """``kv_store._hold`` whose Nth ``with`` entry raises KeyboardInterrupt, as a signal delivered inside ``Condition.__enter__`` (Python
-    code in CPython 3.13, measured with real signals) does: before the body of the ``with`` runs."""
+    """``kv_store._hold_lock`` whose Nth ``with`` entry raises KeyboardInterrupt before the lock is taken, as a signal delivered while the lock
+    is being taken does: before the body of the ``with`` runs."""
 
     def __init__(self, real, *, fail_on):
         self._real, self._fail_on, self._entries = real, fail_on, 0
@@ -184,12 +222,12 @@ class _InterruptedEnter:
 
 
 def test_an_interrupt_as_the_release_takes_the_lock_does_not_leave_the_write_counted(store, monkeypatch):
-    """The release is a lock-free ``remove`` BEFORE the lock is taken to wake a hold: an interrupt delivered while ``with _hold`` is
+    """The release is a lock-free ``remove`` BEFORE the lock is taken to wake a hold: an interrupt delivered while ``with _hold_lock`` is
     entered (the second entry of a slot, the first being the count) used to arrive before the decrement and leave the write counted
     for ever, so every later hold refused to start until a restart (about 5 % of interrupted writes with real signals on CPython 3.13).
-    MUTATION TARGET: the release moved back inside ``with _hold``."""
+    MUTATION TARGET: the release moved back inside ``with _hold_lock``."""
     with monkeypatch.context() as patched:  # not monkeypatch.undo(): that would also revert the store fixture's DATABASE_URL
-        patched.setattr(kv_store, "_hold", _InterruptedEnter(kv_store._hold, fail_on=2))
+        patched.setattr(kv_store, "_hold_lock", _InterruptedEnter(kv_store._hold_lock, fail_on=2))
         with pytest.raises(KeyboardInterrupt), kv_store._write_slot():
             pass
         assert not kv_store._inflight, "the write stayed counted after its body ended"
@@ -198,7 +236,7 @@ def test_an_interrupt_as_the_release_takes_the_lock_does_not_leave_the_write_cou
 
 
 class _AfterFirstExit:
-    """``kv_store._hold`` that runs ``hook`` once, on the thread that left it, right after the lock is released at the end of the FIRST
+    """``kv_store._hold_lock`` that runs ``hook`` once, on the thread that left it, right after the lock is released at the end of the FIRST
     ``with`` block: the instant between a write's hold check and whatever the write does next."""
 
     def __init__(self, real, hook):
@@ -222,8 +260,8 @@ def test_a_hold_that_starts_right_after_a_write_passed_the_check_waits_for_that_
     """The count is taken in the SAME locked section as the hold check. A write that checked the hold and left the lock before counting
     itself leaves a gap in which a restore sets its hold, finds nothing in flight and starts switching the file, while the write goes
     on into the old one. The hold is started in that gap: it must find the write counted (zero budget, so it refuses at once).
-    MUTATION TARGET: the ``_inflight.add(token)`` moved out of ``with _hold`` (after it, or into the ``with _lock`` block). The hook fires
-    on the FIRST release of ``_hold`` in the slot, which is the section that checks the hold and counts; a new ``with _hold`` in front of it
+    MUTATION TARGET: the ``_inflight.add(token)`` moved out of ``with _hold_lock`` (after it, or into the ``with _lock`` block). The hook fires
+    on the FIRST release of ``_hold_lock`` in the slot, which is the section that checks the hold and counts; a new ``with _hold_lock`` in front of it
     would move the instant, and this test would then need the hook moved with it."""
     seen: list[str] = []
 
@@ -235,7 +273,7 @@ def test_a_hold_that_starts_right_after_a_write_passed_the_check_waits_for_that_
             seen.append("busy")
 
     with monkeypatch.context() as patched:  # not monkeypatch.undo(): that would also revert the store fixture's DATABASE_URL
-        patched.setattr(kv_store, "_hold", _AfterFirstExit(kv_store._hold, hold_in_the_gap))
+        patched.setattr(kv_store, "_hold_lock", _AfterFirstExit(kv_store._hold_lock, hold_in_the_gap))
         with kv_store._write_slot():
             pass
     assert seen == ["busy"], "a hold started after the write passed its check did not see the write"
@@ -619,7 +657,7 @@ def test_an_interrupt_as_the_hold_is_set_does_not_leave_it_set(store, monkeypatc
     class Interrupted(BaseException):
         pass
 
-    real = kv_store._hold
+    real = kv_store._hold_lock
 
     class Proxy:
         def __init__(self):
@@ -637,10 +675,10 @@ def test_an_interrupt_as_the_hold_is_set_does_not_leave_it_set(store, monkeypatc
         def __getattr__(self, name):
             return getattr(real, name)
 
-    monkeypatch.setattr(kv_store, "_hold", Proxy())
+    monkeypatch.setattr(kv_store, "_hold_lock", Proxy())
     with pytest.raises(Interrupted), kv_store.hold_writes(5):
         pass
-    monkeypatch.setattr(kv_store, "_hold", real)
+    monkeypatch.setattr(kv_store, "_hold_lock", real)
     assert kv_store._hold_by is None
     kv_store.kv_set_json("settings.after", {"v": 1})  # and a save is not made to wait
 

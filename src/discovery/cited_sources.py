@@ -56,14 +56,17 @@ def cited_domain_stats(session) -> dict[str, dict]:
     """Per externally-cited registrable domain: the distinct citing SOURCES + ARTICLES.
 
     Returns ``{domain: {"sources": set[int], "articles": set[int]}}``. Independence is
-    the size of ``sources`` (distinct outlets), never ``articles``.
+    the size of ``sources`` (distinct outlets, each named by its oldest source's id), never ``articles``.
     """
     from src.catalog.normalize import registrable_domain
     from src.database.models import Article, ArticleLink
     from src.database.stand_in import not_a_stand_in_article_id
 
+    from src.database.outlet import OutletMap
+
     # article_id -> source_id, via the covering source_id index (no row decrypt).
     art_source: dict[int, int] = dict(session.query(Article.id, Article.source_id))
+    outlets = OutletMap(session)  # a citing OUTLET is one citer however many of its feeds cite (row J, R146)
 
     by_sources: dict[str, set[int]] = {}
     by_articles: dict[str, set[int]] = {}
@@ -87,7 +90,7 @@ def cited_domain_stats(session) -> dict[str, dict]:
         by_articles.setdefault(dom, set()).add(aid)
         sid = art_source.get(aid)
         if sid is not None:
-            by_sources.setdefault(dom, set()).add(sid)
+            by_sources.setdefault(dom, set()).add(outlets.primary_id(sid))
 
     return {
         dom: {"sources": by_sources.get(dom, set()), "articles": arts}

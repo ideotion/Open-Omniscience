@@ -1,0 +1,207 @@
+"""R165: the loops that run on the event loop's thread are exempt from the loop-form rule because uvicorn, not Python's default handler, takes SIGINT.
+
+A synchronous loop on the event loop (the lifespan's boot code, a request middleware) is on the main thread, where a Ctrl-C would normally raise
+KeyboardInterrupt in whatever line is running. It does not here: ``uvicorn.run`` replaces SIGINT and SIGTERM with a handler that only sets a flag
+(``Server.capture_signals``), so the loop runs to its end and the server then shuts down. Measured, 18 of 18 runs, by RC2:
+/mnt/project-files/rc-diagnostics/sigint-probe-2026-10-17/REPORT.md (a held-lock spin planted at startup, in the middleware and at shutdown; no
+KeyboardInterrupt in the planted code, the lock never left owned).
+
+The exemption holds only while the app is served that way, so this file is its precondition. The allowlist in tests/test_gates_survive_an_interrupt.py
+names each exempt function with this file as part of its reason. Part 1 reads the sources; part 2 sends a real SIGINT to a real server.
+"""
+
+from __future__ import annotations
+
+import ast
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+import pytest
+
+_ROOT = Path(__file__).resolve().parents[1]
+
+#: the signals uvicorn takes, and a handler anywhere else for either of them would take them back
+_TAKEN = {"SIGINT", "SIGTERM"}
+
+#: modules that install handlers for those signals in a process of their own, and are imported by no server code (checked below): the OSM reference run
+#: is a CLI (scripts/osm_reference_run.py) whose handlers last for the length of its ``with`` and end its own process
+_OWN_PROCESS = {"src/osm/reference_run.py": "reference_run"}
+
+
+def _signal_calls(tree: ast.AST):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"signal", "add_signal_handler", "set_wakeup_fd"}:
+            yield node
+
+
+def _names_in(node: ast.AST) -> set[str]:
+    return {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)} | {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def exemption_problems(sources: dict[str, str], pyproject: str) -> list[str]:
+    """Why the event-loop exemption would no longer hold for these sources (``{relative path: text}`` of everything under src/) and this pyproject.
+    Empty when it holds."""
+    problems: list[str] = []
+    main_src = sources.get("src/api/main.py", "")
+    main_tree = ast.parse(main_src)
+    top = {n.name: n for n in main_tree.body if isinstance(n, ast.FunctionDef)}
+    serve_fn = top.get("_serve")
+    runs = [
+        c for c in ast.walk(serve_fn) if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "run" and "uvicorn" in _names_in(c.func)
+    ] if serve_fn is not None else []
+    if not runs:
+        problems.append("src/api/main.py: _serve() does not serve with uvicorn.run(...)")
+    if "main" not in top or not any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "_serve" for c in ast.walk(top["main"])):
+        problems.append("src/api/main.py: main() does not call _serve()")
+    for call in runs:
+        for kw in call.keywords:
+            if kw.arg and "signal" in kw.arg.lower():
+                problems.append(f"src/api/main.py: uvicorn.run(...) is given {kw.arg}=, which changes who takes the signals")
+    if not re.search(r'^open-omniscience\s*=\s*"src\.api\.main:main"\s*$', pyproject, re.MULTILINE):
+        problems.append("pyproject.toml: the open-omniscience script is not src.api.main:main")
+
+    for path, module in _OWN_PROCESS.items():
+        importers = [p for p, t in sources.items() if p != path and re.search(rf"\b{module}\b", t)]
+        if importers:
+            problems.append(f"{path} installs SIGINT/SIGTERM handlers for a process of its own, but {importers} mention {module}")
+
+    for path, text in sources.items():
+        if path in _OWN_PROCESS:
+            continue
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and any("Server" in ast.unparse(b) for b in node.bases):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name in {"capture_signals", "install_signal_handlers", "handle_exit"}:
+                        problems.append(f"{path}:{item.lineno}: a uvicorn Server subclass overrides {item.name}")
+        for call in _signal_calls(tree):
+            where = f"{path}:{call.lineno}"
+            if call.func.attr == "set_wakeup_fd":
+                problems.append(f"{where}: signal.set_wakeup_fd")
+                continue
+            if call.func.attr == "add_signal_handler":
+                problems.append(f"{where}: loop.add_signal_handler")
+                continue
+            first = _names_in(call.args[0]) if call.args else set()
+            if first & _TAKEN or "default_int_handler" in _names_in(call):
+                problems.append(f"{where}: a handler for {sorted(first & _TAKEN) or 'SIGINT'} (default_int_handler) is installed")
+            elif path == "src/api/main.py" and "sig" in first:
+                # install_signal_handlers loops over names: it must still be SIGHUP only
+                loops = [n for n in ast.walk(tree) if isinstance(n, ast.For) and isinstance(n.iter, ast.Tuple) and call in ast.walk(n)]
+                names = {c.value for c in ast.walk(loops[-1].iter) if isinstance(c, ast.Constant)} if loops else set()
+                if names != {"SIGHUP"}:
+                    problems.append(f"{where}: install_signal_handlers registers {sorted(names) or 'an unknown set'}, not SIGHUP alone")
+            elif not (first & {"SIGHUP"}) and path != "src/api/main.py":
+                problems.append(f"{where}: signal.signal with a handler this test cannot name")
+    return problems
+
+
+def _repo_sources() -> dict[str, str]:
+    return {str(p.relative_to(_ROOT)).replace(os.sep, "/"): p.read_text(encoding="utf-8") for p in (_ROOT / "src").rglob("*.py")}
+
+
+def test_the_app_is_served_by_uvicorn_run_and_nothing_takes_sigint_or_sigterm_back():
+    problems = exemption_problems(_repo_sources(), (_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert not problems, "the event-loop exemption of R165 no longer holds: " + "; ".join(problems)
+
+
+_PYPROJECT_OK = '[project.scripts]\nopen-omniscience = "src.api.main:main"\n'
+_MAIN_OK = (
+    "import uvicorn, signal\n"
+    "def install_signal_handlers():\n"
+    "    for name in ('SIGHUP',):\n"
+    "        sig = getattr(signal, name)\n"
+    "        signal.signal(sig, print)\n"
+    "def _serve():\n"
+    "    uvicorn.run(app)\n"
+    "def main():\n"
+    "    _serve()\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("label", "sources", "pyproject", "expect"),
+    [
+        ("sound", {"src/api/main.py": _MAIN_OK}, _PYPROJECT_OK, None),
+        ("a SIGINT handler planted elsewhere", {"src/api/main.py": _MAIN_OK, "src/x.py": "import signal\nsignal.signal(signal.SIGINT, signal.default_int_handler)\n"}, _PYPROJECT_OK, "SIGINT"),
+        ("a SIGTERM handler planted elsewhere", {"src/api/main.py": _MAIN_OK, "src/x.py": "import signal\nsignal.signal(signal.SIGTERM, lambda *a: None)\n"}, _PYPROJECT_OK, "SIGTERM"),
+        ("a loop signal handler", {"src/api/main.py": _MAIN_OK, "src/x.py": "def f(loop):\n    loop.add_signal_handler(2, f)\n"}, _PYPROJECT_OK, "add_signal_handler"),
+        ("a plain asyncio.run serving loop", {"src/api/main.py": _MAIN_OK.replace("uvicorn.run(app)", "asyncio.run(serve())")}, _PYPROJECT_OK, "does not serve with uvicorn.run"),
+        ("uvicorn.run given a signal option", {"src/api/main.py": _MAIN_OK.replace("run(app)", "run(app, install_signal_handlers=False)")}, _PYPROJECT_OK, "install_signal_handlers"),
+        ("the install loop growing SIGINT", {"src/api/main.py": _MAIN_OK.replace("('SIGHUP',)", "('SIGHUP', 'SIGINT')")}, _PYPROJECT_OK, "not SIGHUP alone"),
+        ("a Server subclass taking the signals", {"src/api/main.py": _MAIN_OK, "src/s.py": "import uvicorn\nclass S(uvicorn.Server):\n    def capture_signals(self):\n        pass\n"}, _PYPROJECT_OK, "capture_signals"),
+        ("another entry point", {"src/api/main.py": _MAIN_OK}, '[project.scripts]\nopen-omniscience = "src.other:main"\n', "not src.api.main:main"),
+    ],
+)
+def test_the_exemption_check_goes_red_on_each_way_of_losing_it(label, sources, pyproject, expect):
+    problems = exemption_problems(sources, pyproject)
+    if expect is None:
+        assert problems == [], problems
+    else:
+        assert any(expect in p for p in problems), (label, problems)
+
+
+# --- part 2: a real SIGINT to a real server ------------------------------------------------------------------------------------------------
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _serve_and_interrupt(tmp_path: Path, *, plant: str = "") -> tuple[int, str]:
+    """Boot ``main()`` on a throwaway data dir, wait for /api/health, send one SIGINT, return (exit status, stderr). ``plant`` is code run first in
+    the child: a deliberately broken server for the red-without run."""
+    port = _free_port()
+    env = dict(os.environ, OO_DATA_DIR=str(tmp_path), OO_PORT=str(port), OO_DB_PLAINTEXT="1", OO_NO_SCHEDULER="1", PYTHONUNBUFFERED="1")
+    code = f"{plant}\nfrom src.api.main import main\nmain()\n"
+    proc = subprocess.Popen([sys.executable, "-c", code], cwd=_ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                break
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as r:
+                    if r.status == 200:
+                        break
+            except OSError:
+                time.sleep(0.3)
+        else:
+            raise AssertionError("the server did not become healthy within 60 s")
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=60)
+        return proc.returncode, (out or "") + (err or "")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals: the exemption was measured on POSIX")
+def test_a_real_sigint_stops_the_server_through_uvicorn_and_never_raises_keyboardinterrupt(tmp_path):
+    status, log = _serve_and_interrupt(tmp_path)
+    assert "KeyboardInterrupt" not in log, log[-2000:]
+    assert "Application shutdown complete" in log, log[-2000:]
+    assert status in (0, 130, 143, -signal.SIGINT), (status, log[-2000:])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals: the exemption was measured on POSIX")
+def test_the_run_goes_red_when_the_default_handler_takes_sigint_back(tmp_path):
+    """Red-without: the same boot with uvicorn's capture of the signals switched off, which is what a handler installed elsewhere would amount to."""
+    plant = (
+        "import contextlib, uvicorn.server as _s\n"
+        "@contextlib.contextmanager\n"
+        "def _no_capture(self):\n    yield\n"
+        "_s.Server.capture_signals = _no_capture\n"
+    )
+    _status, log = _serve_and_interrupt(tmp_path, plant=plant)
+    assert "KeyboardInterrupt" in log, "the planted fault was not seen: the real-signal test above proves nothing"

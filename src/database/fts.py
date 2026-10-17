@@ -662,14 +662,35 @@ _DELETE_OLD = f"""
         DELETE FROM article_fts_norm WHERE article_id = old.id;
 """  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
-_FTS_DDL = [
-    """
+#: The tokenizer a NEW index is created with (S05-02 S6, R39). ``categories 'L* N* Co M*'`` keeps the combining marks
+#: and vowel signs of Devanagari, Bengali and vocalised Arabic INSIDE a word: under the default categories सरकार indexed
+#: as सरक + र, so a search for सरक matched सरकार and every word with a matra was shredded. Measured on the SQLCipher the
+#: app ships (3.51.1) and on SQLite 3.45.1: सरकार, বাংলা and a vocalised مَدْرَسَةٌ each stay one token and ``remove_diacritics 2``
+#: still folds é, ï and the like. A tokenizer is fixed when the table is CREATED, so an index made before this has to be
+#: dropped and rebuilt (:func:`rebuild_with_current_tokenizer`); it is never swapped silently at boot.
+FTS_TOKENIZER = "unicode61 remove_diacritics 2 categories 'L* N* Co M*'"
+
+#: What every index made before 0.5 was created with.
+FTS_TOKENIZER_LEGACY = "unicode61 remove_diacritics 2"
+
+
+def _tokenize_clause(tokenizer: str) -> str:
+    """The ``tokenize=`` option text for ``tokenizer``: FTS5 reads a quote inside it doubled."""
+    return "tokenize='" + tokenizer.replace("'", "''") + "'"
+
+
+def _article_fts_ddl(tokenizer: str = FTS_TOKENIZER) -> str:
+    return f"""
     CREATE VIRTUAL TABLE IF NOT EXISTS article_fts USING fts5(
         title, content,
         content='articles', content_rowid='id',
-        tokenize='unicode61 remove_diacritics 2'
+        {_tokenize_clause(tokenizer)}
     )
-    """,
+    """  # nosec B608 - the tokenizer is one of this module's two constants, never input
+
+
+_FTS_DDL = [
+    _article_fts_ddl(),
     # The record of each document indexed differently from its stored text. Its name
     # starts with ``article_fts`` so every place that skips the FTS shadow tables by that
     # prefix (backup counts, the merge's table walk) skips it too: its ids are this store's
@@ -845,8 +866,16 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         healed = _heal_raw_triggers(conn)
         if healed:
             _LOG.info("FTS: the sync triggers now index Arabic folded and CJK segmented (%s)", ", ".join(healed))
+        # The explicit re-index is a full rebuild already; it is where an old index gets the current tokenizer. A
+        # normal boot never does (``auto``): that would be the corpus-sized cost at every upgrade. The swap runs
+        # under a savepoint (``rebuild_with_current_tokenizer``): a bare DROP commits by itself under pysqlite, and a
+        # re-index that died after it would leave an empty index.
+        swap = rebuild == "always" and existed and fts_tokenizer(conn) == "legacy"
         for ddl in _FTS_DDL:
             conn.execute(text(ddl))
+        if swap:
+            rebuild_with_current_tokenizer(conn)
+            return "rebuilt"
         action = _decide_fts_rebuild(conn, rebuild, existed)
         if action == "rebuilt":
             rebuild_index(conn)
@@ -933,6 +962,54 @@ def rebuild_index(con) -> int:
         _index_rows(con, rows, caps)
         n += len(rows)
         last = int(rows[-1][0])
+
+
+def _tokenizer_of(ddl) -> str:
+    """``"current"`` or ``"legacy"`` from an index's own ``CREATE VIRTUAL TABLE`` text (the one place that decides)."""
+    sql = str(ddl or "").lower()
+    return "current" if "categories" in sql and "m*" in sql else "legacy"
+
+
+def fts_tokenizer(con) -> str | None:
+    """Which tokenizer the article index was created with: ``"current"``, ``"legacy"`` (every index made before 0.5),
+    or ``None`` when there is no index. Read from the table's own DDL in ``sqlite_master``: the schema is the truth,
+    so there is no marker that could drift from it. ``con`` is a SQLAlchemy ``Connection`` or a DB-API connection."""
+    row = _run(con, "SELECT sql FROM sqlite_master WHERE type='table' AND name='article_fts'").fetchone()
+    if row is None:
+        return None
+    return _tokenizer_of(row[0])
+
+
+def rebuild_with_current_tokenizer(con) -> dict:
+    """Make the article index use :data:`FTS_TOKENIZER`, then rebuild it in full. Returns what happened.
+
+    An index made with the legacy tokenizer is dropped and created again (the tokenizer cannot be altered), then
+    :func:`rebuild_index` fills it; one that already has the current tokenizer is rebuilt as is. The caller owns the
+    transaction, so the drop, the create and the rebuild commit together or not at all: a run that dies half way
+    leaves the old index and the old tokenizer, never an empty one. Only for a window the app is stopped in, or an
+    explicit re-index: the rebuild reads every article's text through the codec (981 to 1,645 s on a 130 GB corpus)."""
+    before = fts_tokenizer(con)
+    if before is None:
+        raise RuntimeError("there is no article index to rebuild")
+    # pysqlite opens its transaction before a DML statement and not before DDL, so the drop below would commit by
+    # itself; a savepoint makes the drop, the create and the rebuild ONE unit whatever the driver does.
+    _run(con, "SAVEPOINT oo_fts_tokenizer")
+    try:
+        if before == "legacy":
+            _run(con, "DROP TABLE main.article_fts")
+            _run(con, _article_fts_ddl())
+        out = {"tokenizer_before": before, "tokenizer_after": fts_tokenizer(con), "indexed": rebuild_index(con)}
+    except BaseException:
+        # SQLite can already have rolled the whole transaction back (a full disk, an I/O error): then there is no
+        # savepoint to return to, and that second error must not hide the one the caller needs.
+        try:
+            _run(con, "ROLLBACK TO oo_fts_tokenizer")
+            _run(con, "RELEASE oo_fts_tokenizer")
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+    _run(con, "RELEASE oo_fts_tokenizer")
+    return out
 
 
 def _index_rows(con, rows, caps: int) -> None:
@@ -1109,6 +1186,9 @@ def fts_status(session: Session) -> dict:
     Returns (SQLite only; ``{"supported": False, ...}`` on another backend):
       * ``present``      — ``article_fts`` is declared in the schema (authoritative); ``None``
         only if even the metadata read failed.
+      * ``tokenizer``    — ``"current"`` or ``"legacy"`` (an index made before 0.5, which splits Devanagari and
+        Bengali words at their vowel signs until the migration (or ``ensure_fts(rebuild="always")``) rebuilds it); absent when there
+        is no index.
       * ``healthy``      — a cheap bounded probe (``SELECT rowid ... LIMIT 1``) ran without a
         corruption error. ``False`` = the index exists but is DAMAGED (a post-crash malformed
         FTS index — a re-index / ``ensure_fts`` rebuild heals it, the actionable verdict D4
@@ -1143,9 +1223,11 @@ def fts_status(session: Session) -> dict:
     #    listed with type='table', exactly what schema-drift's get_table_names() reads).
     try:
         row = session.execute(
-            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='article_fts'")
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='article_fts'")
         ).fetchone()
         out["present"] = row is not None
+        if row is not None:
+            out["tokenizer"] = _tokenizer_of(row[0])
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never crashes
         out["present"] = None
         out["error"] = failure_text(exc)

@@ -148,25 +148,81 @@ def _rewrite(items: list[dict[str, Any]]) -> None:
     os.replace(tmp, p)
 
 
-def late_count(log: Any = None) -> int | None:
-    """How many INGEST entries in the log were recorded late (None when unreadable)."""
-    own = log is None
-    try:
-        if own:
-            from src.custody.log import CustodyLog
+#: How long the late count waits for a writer's commit (milliseconds). It protects the request thread, which is a settings read,
+#: from queueing behind ingest: past it the count is reported unread, with the reason, never waited out.
+_LATE_READ_BUSY_MS = 3000
 
-            log = CustodyLog()
-        row = log.conn.execute(
-            "SELECT COUNT(*) FROM custody_entries WHERE action = 'ingest' AND metadata_json LIKE ?",
-            (f"%{_LATE_NEEDLE}%",),
-        ).fetchone()
-        return int(row[0]) if row else 0
+
+def _late_count_on(conn: Any) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM custody_entries WHERE action = 'ingest' AND metadata_json LIKE ?",
+        (f"%{_LATE_NEEDLE}%",),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def late_reading() -> dict[str, Any]:
+    """The late count, read WITHOUT a :class:`CustodyLog`: ``{"count", "reason", "computed_at"}``.
+
+    A plain read-only connection: no signer (no key unwrap), no process-wide append lock (which every ingest ``record`` holds, and
+    which a settings read queued behind: measured 3.5-6 s of a 9-12 s read with 50 workers on 2 cores), no table creation. It
+    never writes, so a log that does not exist yet reads 0 and is NOT created by being asked about. ``count`` is ``None`` when
+    the log could not be read, and ``reason`` then names the CLASS of the failure (never the driver's words); a count carries the
+    moment its read ENDED, because nothing here caches it.
+
+    The wait for a writer is bounded at :data:`_LATE_READ_BUSY_MS` on the OPEN too, not only on the statement: an encrypted log is
+    read once per page-size candidate while it is opened, under the connection's own timeout, so a bound set only afterwards
+    did not hold (measured: an exclusive writer held for 10 s made an encrypted read wait 10.2 s, not 3 s).
+
+    A log that a crashed write left a hot rollback journal beside cannot be recovered by a read-only open, and the driver reports that
+    as a failed open (``WrongPassphraseError`` on an encrypted file); ``reason`` then says a journal is present, instead of leaving the
+    class name to blame the passphrase.
+    """
+    out: dict[str, Any] = {"count": None, "reason": None, "computed_at": None}
+    conn = None
+    path = None
+    try:
+        from src.database.connect import connect
+        from src.paths import data_dir
+
+        path = data_dir() / "custody_log.db"
+        try:
+            conn = connect(path, read_only=True, timeout=_LATE_READ_BUSY_MS / 1000.0)
+        except FileNotFoundError:
+            out["count"] = 0  # no log yet: nothing was recorded late
+            return out
+        conn.execute(f"PRAGMA busy_timeout={_LATE_READ_BUSY_MS}")
+        # The table's absence is asked, not read off an error's words: a log file whose table is not made yet has no entries.
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'custody_entries'").fetchone() is None:
+            out["count"] = 0
+        else:
+            out["count"] = _late_count_on(conn)
+    except Exception as exc:  # noqa: BLE001 - a count is a disclosure, never a failure
+        out["reason"] = type(exc).__name__
+        try:
+            journal = path.with_name(path.name + "-journal") if path is not None else None
+            if journal is not None and journal.exists() and journal.stat().st_size > 0:
+                out["reason"] += "; a rollback journal is present beside the log (an interrupted write, recovered by the next ingest)"
+        except OSError:
+            pass
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.close()
+        out["computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    return out
+
+
+def late_count(log: Any = None) -> int | None:
+    """How many INGEST entries in the log were recorded late (None when unreadable).
+
+    Without a ``log`` this is :func:`late_reading`'s count; with one, it reads through that log's connection."""
+    if log is None:
+        return late_reading()["count"]
+    try:
+        return _late_count_on(log.conn)
     except Exception:  # noqa: BLE001 - a count is a disclosure, never a failure
         return None
-    finally:
-        if own and log is not None:
-            with contextlib.suppress(Exception):
-                log.close()
 
 
 def _columns_for(ids: list[int], session_factory: Any = None) -> dict[int, dict[str, Any]]:
@@ -196,6 +252,17 @@ def _key(rec: dict[str, Any]) -> str:
     return json.dumps(rec, sort_keys=True, separators=(",", ":"))
 
 
+def _ids_missing_columns(todo: list[dict[str, Any]]) -> list[int]:
+    """Article ids of the entries that carry no ``item_hash``. A helper and not a comprehension in :func:`drain`: a loop written under
+    ``with lock:`` has a back-edge outside the ``with``'s exception-table entry on CPython 3.13 (see ``src/utils/interrupts.py``)."""
+    return sorted({int(it["article_id"]) for it in todo if not it.get("item_hash")})
+
+
+def _not_settled(pending: list[dict[str, Any]], done: set[Any]) -> list[dict[str, Any]]:
+    """The entries whose key is not in ``done`` (a helper, for the reason :func:`_ids_missing_columns` gives)."""
+    return [it for it in pending if _key(it) not in done]
+
+
 def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = None,
           prefs: Any = None) -> dict[str, Any]:
     """Record up to ``limit`` pending entries now, each marked late. An entry whose article
@@ -216,7 +283,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
         settled: list[dict[str, Any]] = []
         recorded = already = gone = 0
-        need = sorted({int(it["article_id"]) for it in todo if not it.get("item_hash")})
+        need = _ids_missing_columns(todo)
         read: dict[int, dict[str, Any]] | None = {}
         read_error: str | None = None
         if need:
@@ -280,7 +347,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 log.close()
         done = {_key(it) for it in settled}
         with _LOCK:
-            remaining = [it for it in read_pending() if _key(it) not in done]
+            remaining = _not_settled(read_pending(), done)
             try:
                 _rewrite(remaining)
             except OSError as exc:

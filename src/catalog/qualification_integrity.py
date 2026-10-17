@@ -65,6 +65,7 @@ from src.catalog.qualification import (
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
 )
+from src.database.source_lookup import source_for_domain
 from src.database.stand_in import not_a_stand_in_source
 from src.monitoring.secret_scrub import log_failure
 
@@ -266,6 +267,64 @@ def _newest_judging(session: Session, source_id: int):
     )
 
 
+def held_by_inherited_verdict(session: Session, source: Source, newest_judging) -> bool:
+    """Is this source's live status held by an INHERITED verdict THIS INSTALL wrote when it set the status? (R149)
+
+    A restore that lands a sibling feed under an outlet (R148), the seeder's new sibling and the catalogue overlay's adoption
+    give a source the verdict of ANOTHER row and write one ``inherited`` attempt beside it -- while the source may still carry
+    judging attempts of its own from another instance, older than that adoption. Read as "status == newest judging attempt"
+    such a source is an inversion, and the repair would put the other instance's verdict back over the outlet's.
+
+    The status is held by the inherited verdict when ALL hold:
+
+    1. an ``inherited`` attempt is newer than the newest judging one (``attempted_at``, then ``id``, the order
+       :func:`_newest_judging` uses);
+    2. that inherited row is THIS install's: not one a backup merge copied from another instance, OR the source row itself was
+       inserted by a merge (an R148 sibling, whose inherited row the merge wrote in the same batch that created it). An
+       inherited row copied under a source this install already held records how ANOTHER instance set ITS status, and says
+       nothing about this one's (the second read's HIGH: it hid a real laundered inversion);
+    3. the newest judging attempt is itself an imported one: an adoption never overrides a judgement this install made
+       (the overlay adopts onto a row reading ``unqualified`` even when it carries a local disqualification);
+    4. the live status is a verdict at all (``qualified`` or ``disqualified``; ``unqualified`` is "no verdict", which no
+       adoption hands on) and a ``qualified`` one still carries its stamp date;
+    5. nothing set the status afterwards -- every measuring writer (``evaluate_and_stamp``) writes a judging attempt in the
+       same transaction, which would be NEWER than the inherited row and restore the normal rule.
+
+    WHAT THE ROW CANNOT SAY: an ``inherited`` attempt records WHEN and under which criteria, not which verdict was handed
+    on (``verdict`` holds the word ``inherited``). So (4) is the verdict CLASS, not a comparison with the inherited value,
+    and a status flipped between the two verdicts by something that wrote no attempt after the adoption cannot be told apart
+    from it. That is why the report names these rows as their own line instead of counting them clean."""
+    from sqlalchemy import exists
+
+    from src.catalog.qualification import VERDICT_INHERITED
+    from src.database.models import MergedRow
+    from src.database.models import SourceQualificationAttempt as A
+
+    if newest_judging is None:
+        return False
+    if source.status not in (STATUS_QUALIFIED, STATUS_DISQUALIFIED):
+        return False
+    if source.status == STATUS_QUALIFIED and source.qualified_at is None:
+        return False
+    imported_judging = session.query(
+        exists().where(MergedRow.table_name == "source_qualification_attempts", MergedRow.row_id == newest_judging.id)
+    ).scalar()
+    if not imported_judging:
+        return False
+    source_imported = session.query(
+        exists().where(MergedRow.table_name == "sources", MergedRow.row_id == source.id)
+    ).scalar()
+    q = session.query(A.id).filter(
+        A.source_id == source.id,
+        A.verdict == VERDICT_INHERITED,
+        (A.attempted_at > newest_judging.attempted_at)
+        | ((A.attempted_at == newest_judging.attempted_at) & (A.id > newest_judging.id)),
+    )
+    if not source_imported:
+        q = q.filter(not_imported(A))
+    return q.first() is not None
+
+
 def _inversion_candidates(session: Session) -> list[Any]:
     """The ids of the sources whose newest JUDGING attempt names a verdict that is not their live status: ONE join, read by the report and by
     the repair, so what one names the other can fix (two copies of it would let them disagree). A stand-in source (the place-holder a salvage
@@ -351,6 +410,8 @@ def qualification_integrity_report(
     demoted: list[dict[str, Any]] = []
     other: list[dict[str, Any]] = []
     n_laundered = n_demoted = n_other = n_auto_repairable = n_kept_measured = n_held = 0
+    n_inherited_held = 0
+    inherited_held: list[dict[str, Any]] = []
     held = held_domains()
     resolved_by_tie = 0
     for (sid,) in candidates:
@@ -363,6 +424,19 @@ def qualification_integrity_report(
             # never dropped in silence: a corpus that produces many of these is telling
             # us something about how its attempts were written.
             resolved_by_tie += 1
+            continue
+        if held_by_inherited_verdict(session, source, attempt):
+            # R149: the status is an adoption's (a restored sibling feed, an overlay adoption), newer than the
+            # judging attempt it contradicts. Not an inversion, and not silently clean: its own line below.
+            n_inherited_held += 1
+            if len(inherited_held) < NAME_CAP:
+                inherited_held.append({
+                    "domain": source.domain,
+                    "live_status": source.status,
+                    "live_stamp": live_stamp_class(source),
+                    "last_judged": attempt.verdict,
+                    "judged_at": _iso(attempt.attempted_at),
+                })
             continue
         row = {
             "domain": source.domain,
@@ -429,12 +503,20 @@ def qualification_integrity_report(
             f"Every one of the {with_attempt} judged sources still carries the verdict "
             "its own attempt history last recorded."
         )
+        if n_inherited_held:
+            reason = (
+                f"None of the {with_attempt} judged sources contradicts its attempt history, but {n_inherited_held} of them "
+                "carry a status held by an INHERITED verdict newer than their last judgement (listed under "
+                "status_held_by_inherited_verdict): an inherited attempt does not record which verdict it handed on, so "
+                "those are not compared with a recorded verdict."
+            )
     else:
         verdict = "inversions-found"
         reason = (
             f"{inversions_total} of {with_attempt} judged sources no longer carry the "
             f"verdict their history recorded ({n_laundered} previously disqualified, "
             f"{n_demoted} previously qualified)."
+            + (f" A further {n_inherited_held} carry a status held by an inherited verdict, listed apart." if n_inherited_held else "")
         )
 
     return {
@@ -476,6 +558,11 @@ def qualification_integrity_report(
         # known-bad source back in the trial queue with its backoff ladder reset.
         "laundered_total": n_laundered,
         "laundered": laundered,
+        # R149: sources whose live status is an INHERITED verdict (a restored sibling feed under an outlet, an overlay
+        # adoption) newer than the judging attempt that disagrees with it. Not inversions, not counted as clean in
+        # silence: named, with the stated limit of what an `inherited` row can prove (see held_by_inherited_verdict).
+        "status_held_by_inherited_verdict_total": n_inherited_held,
+        "status_held_by_inherited_verdict": inherited_held,
         # The same stamp loss pointing the other way: judged qualified, no longer
         # qualified -- starved out of collection until re-trialled over the network.
         "demoted_total": n_demoted,
@@ -573,6 +660,8 @@ def repair_inversions(
     n_restored_to_qualified = n_restored_to_disqualified = 0
     resolved_by_tie = 0
     held_by_revert = 0
+    held_by_inherited = 0
+    held_rows: list[dict[str, Any]] = []
     for (sid,) in candidates:
         attempt = _newest_judging(session, int(sid))
         source = session.get(Source, int(sid))
@@ -582,6 +671,15 @@ def repair_inversions(
             # Same tie the grouped candidate query cannot break on its own; the exact
             # re-read cleared it -- nothing to repair here, exactly as the report treats it.
             resolved_by_tie += 1
+            continue
+        if held_by_inherited_verdict(session, source, attempt):
+            held_by_inherited += 1  # R149: an adoption's verdict, newer than the judging attempt: not the repair's to undo
+            # R154: named so the early local re-check can still settle it (the repair never changes it, and no list of
+            # inversions includes it). Every one, not capped by ``name_cap``: the re-check list must be complete.
+            held_rows.append({
+                "domain": source.domain, "source_id": int(source.id), "was": source.status,
+                "live_stamp": live_stamp_class(source), "judged_at": _iso(attempt.attempted_at),
+            })
             continue
         if only_to is not None and attempt.verdict != only_to:
             continue
@@ -644,6 +742,8 @@ def repair_inversions(
         "names_cap": name_cap,
         "ties_resolved_by_append_order": resolved_by_tie,
         "held_by_operator_revert": held_by_revert,
+        "held_by_inherited_verdict": held_by_inherited,
+        "held_by_inherited_verdict_rows": held_rows,
         "method": (
             "Re-runs qualification_integrity_report's own candidate join (newest judging "
             "attempt per source, JUDGING_VERDICTS only, exact re-read on "
@@ -919,7 +1019,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     copied-in attempt resets the re-verification clock, so left alone the re-check would come a
     whole interval after the OTHER instance's attempt. This lists every such source, in either
     direction (live qualified against a newer disqualification, or live disqualified against a
-    newer qualification), keeps the ``flagged_at`` and ``last_tried_at`` of one already listed, and drops
+    newer qualification) and every status held by an inherited verdict (R149, R154: the repair leaves it, the
+    install's own measurement settles it), keeps the ``flagged_at`` and ``last_tried_at`` of one already listed, and drops
     those no longer inverted. It changes no verdict and writes nothing else.
 
     Fails closed like the repair: an unreadable stored list skips the step and rewrites nothing.
@@ -950,6 +1051,10 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
         for r in [*plan["restored_to_disqualified"], *plan["restored_to_qualified"]]
         if r.get("live_stamp") == STAMP_MEASURED
     }
+    # R154: a status held by an INHERITED verdict (R149) is not an inversion the repair touches, but it still disagrees
+    # with an imported judgement this install never made, so it keeps its early local re-check: the install's own
+    # measurement settles it, as it settles a measured inversion.
+    wanted.update({str(int(r["source_id"])): r.get("judged_at") for r in plan["held_by_inherited_verdict_rows"]})
     stamp = _iso(now or datetime.now(UTC)) or ""
 
     def _entry(sid: str) -> dict[str, Any]:
@@ -1056,7 +1161,6 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     documentation asks a user to run this.
     """
     from src.config.kv_store import kv_set_json
-    from src.database.models import Source
     from src.database.session import session_scope
 
     idx = _read_repair_index(strict=True)   # raises rather than rewrite an index it could not read
@@ -1081,7 +1185,7 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
                 seen.add(domain)
                 if r.get("reverted_at"):
                     continue
-                source = session.query(Source).filter(Source.domain == domain).first()
+                source = source_for_domain(session, domain)
                 newest = _newest_judging(session, int(source.id)) if source is not None else None
                 if (
                     source is not None and domain in held
@@ -1118,7 +1222,7 @@ def revert_repairs(*, dry_run: bool = True) -> dict[str, Any]:
     stamp = _iso(datetime.now(UTC))
     with session_scope() as session:
         for _run_at, r in plan:
-            source = session.query(Source).filter(Source.domain == r["domain"]).first()
+            source = source_for_domain(session, r["domain"])
             if source is None or source.status != r.get("restored_to"):
                 continue
             source.status = r.get("was") or STATUS_UNQUALIFIED

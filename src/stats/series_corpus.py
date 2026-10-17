@@ -70,6 +70,7 @@ from sqlalchemy.orm import Session
 from src.catalog.aggregates import aggregate_name
 from src.catalog.countries import classify_ref_area, country_display_name, to_iso2
 from src.database.models import Article, Source, StatFigure
+from src.database.source_lookup import source_for_domain
 from src.stats import indicators as ind
 
 __all__ = [
@@ -121,7 +122,7 @@ def ensure_statistics_source(session: Session, agency: str) -> Source:
     """
     a = (agency or "unknown").strip().lower() or "unknown"
     domain = _stats_domain(a)
-    src = session.query(Source).filter_by(domain=domain).first()
+    src = source_for_domain(session, domain)
     if src is None:
         src = Source(
             name=f"Official statistics ({AGENCY_LABELS.get(a, a)})",

@@ -99,7 +99,7 @@ const LAUNDER = {
       t: "Outbound origins cited by >= {v1} distinct sources (and >= {v2} articles); "
         + "social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy pages, "
         + "share widgets, license footers); at most one card per registrable origin domain. "
-        + "Independence = distinct sources, not article count.",
+        + "Independence = distinct OUTLETS (one site's several feeds count once), not article count.",
       v: { v1: "3", v2: "3" },
     }],
   },

@@ -58,6 +58,8 @@ from sqlalchemy import event
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.pool import QueuePool
 
+from src.utils.interrupts import wait as _wait
+
 _ROLE = threading.local()
 _KEYS = itertools.count(1)
 
@@ -86,28 +88,34 @@ class _Slots:
 
     def __init__(self, limit: int) -> None:
         self.limit = max(1, int(limit))
-        self._cond = threading.Condition()
+        # a plain RLock under the Condition and `with self._lock:` everywhere: a Condition's own __enter__/__exit__ are Python frames, where a
+        # KeyboardInterrupt can land between "taken" and "released" and leave the lock taken for ever (see src/config/kv_store.py::_hold_lock)
+        self._lock = threading.RLock()
+        self._cond = threading.Condition(self._lock)
         self._held: dict[int, threading.Thread] = {}  # slot key -> the thread that took it
         self.waits = 0  # checkouts that had to queue, ever (a reading, not a control)
         self.nested = 0  # checkouts by a thread that already held a slot (see holds())
 
     def acquire(self, key: int, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
-        with self._cond:
+        with self._lock:
             queued = False
-            while len(self._held) >= self.limit:
+            # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
+            while True:
+                if len(self._held) < self.limit:
+                    break
                 if not queued:
                     queued = True
                     self.waits += 1
                 left = deadline - time.monotonic()
                 if left <= 0:
                     return False
-                self._cond.wait(left)
+                _wait(self._cond, self._lock, left)
             self._held[key] = threading.current_thread()
             return True
 
     def note_nested(self) -> None:
-        with self._cond:
+        with self._lock:
             self.nested += 1
 
     def holds(self, thread: threading.Thread) -> bool:
@@ -118,19 +126,19 @@ class _Slots:
         could ever release one -- the pool's own exhaustion deadlock, moved up a level.
         Such a checkout goes through unreserved and is counted in ``nested``.
         """
-        with self._cond:
+        with self._lock:
             # Compared by OBJECT, not ident: a finished thread's ident is reused by the next one.
             return any(t is thread for t in self._held.values())
 
     def release(self, key: int) -> None:
-        with self._cond:
+        with self._lock:
             if key in self._held:
                 del self._held[key]
-                self._cond.notify()
+                self._cond.notify_all()  # not notify(): a stale entry in the waiter list (an interrupted wait) would swallow the one wake
 
     @property
     def held(self) -> int:
-        with self._cond:
+        with self._lock:
             return len(self._held)
 
 
@@ -225,27 +233,30 @@ class ReservingQueuePool(QueuePool):
             self._reserve.note_nested()
             return super().connect()
         key = next(_KEYS)
-        if not self._reserve.acquire(key, float(self._timeout)):
-            raise PoolTimeoutError(
-                "QueuePool limit reached for the collector: it may not take the last "
-                f"{self._api_margin} connections, which stay free for the app "
-                f"(collector ceiling {self._reserve.limit}); "
-                f"connection timed out, timeout {self._timeout:.2f}"
-            )
+        # The try opens BEFORE the slot is taken and releases by key, which is idempotent: an interrupt that lands after the slot is
+        # taken but before the caller sees it (or before it is recorded against the connection) gives the slot back instead of
+        # leaking it, and one that lands before it was taken releases a key that was never held.
         try:
+            if not self._reserve.acquire(key, float(self._timeout)):
+                raise PoolTimeoutError(
+                    "QueuePool limit reached for the collector: it may not take the last "
+                    f"{self._api_margin} connections, which stay free for the app "
+                    f"(collector ceiling {self._reserve.limit}); "
+                    f"connection timed out, timeout {self._timeout:.2f}"
+                )
             fairy = super().connect()
+            record = getattr(fairy, "_connection_record", None)
+            if record is None:
+                # Cannot be tracked, so it cannot be returned by the events: give the slot
+                # back NOW. An unreserved connection is a smaller failure than a leaked slot.
+                self._reserve.release(key)
+                return fairy
+            with self._slot_lock:
+                self._slot_key[id(record)] = key
+            return fairy
         except BaseException:
             self._reserve.release(key)
             raise
-        record = getattr(fairy, "_connection_record", None)
-        if record is None:
-            # Cannot be tracked, so it cannot be returned by the events: give the slot
-            # back NOW. An unreserved connection is a smaller failure than a leaked slot.
-            self._reserve.release(key)
-            return fairy
-        with self._slot_lock:
-            self._slot_key[id(record)] = key
-        return fairy
 
     def _on_return(self, _dbapi_connection, record=None) -> None:
         if record is None:

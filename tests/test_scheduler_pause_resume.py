@@ -12,6 +12,8 @@ PAUSE call's own return value, never unconditional).
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from src.scheduler.runner import BackgroundScheduler
@@ -30,6 +32,24 @@ class _FakeSettings:
 @pytest.fixture(autouse=True)
 def _isolate_data_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _no_resume_watcher_outlives_the_test(monkeypatch, request):
+    """A resume that runs out of its retries hands over to a watcher thread (``oo-resume-watch``) that looks every ``RESUME_POLL_S`` (30 s). A test that
+    left one behind made a LATER test of another file fail, in whatever order the suite ran (test_field_round_defects joined every watcher alive and
+    waited 5 s for a thread sleeping 30 s). The poll is short here, and the test is held to retiring what it started, by name."""
+    import src.scheduler.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "RESUME_POLL_S", 0.01)
+    runner_mod.cancel_pending_resume()
+    yield
+    runner_mod.cancel_pending_resume()
+    left = [t for t in threading.enumerate() if t.name == "oo-resume-watch"]
+    for t in left:
+        t.join(timeout=5)
+    alive = [f"{t.name} (ident {t.ident})" for t in left if t.is_alive()]
+    assert not alive, f"{request.node.nodeid} left a resume watcher running: {alive}"
 
 
 def _running_scheduler() -> BackgroundScheduler:

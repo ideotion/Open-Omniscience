@@ -77,7 +77,7 @@ HELD_SLEEP_S = 2.0
 # `finally` by the context manager, so a raising batch cannot strand the lane.
 _hold_lock = threading.Lock()
 _hold_count = 0
-_hold_reasons: list[str] = []
+_hold_reasons: dict[object, str] = {}  # one entry per live hold, keyed by a token only that hold knows: giving it back is a subscript delete, with no call to be interrupted
 
 
 @contextmanager
@@ -89,18 +89,22 @@ def user_batch_hold(reason: str) -> Iterator[None]:
     wait behind a sweep is the very thing this exists to prevent.
     """
     global _hold_count
-    with _hold_lock:
-        _hold_count += 1
-        _hold_reasons.append(reason)
+    token = object()
+    counted = listed = False
     try:
+        with _hold_lock:
+            _hold_count += 1
+            counted = True  # each flag is set by the statement right after the one it records, with no call between: an interrupt cannot land in the gap
+            _hold_reasons[token] = reason
+            listed = True
         yield
     finally:
+        # the flags say what was taken, and each give-back is one statement with no call in it (R161 / R171)
         with _hold_lock:
-            _hold_count = max(0, _hold_count - 1)
-            try:
-                _hold_reasons.remove(reason)
-            except ValueError:  # pragma: no cover - defensive
-                pass
+            if counted:
+                _hold_count -= 1
+            if listed:
+                del _hold_reasons[token]
 
 
 def user_batch_active() -> dict:
@@ -112,7 +116,7 @@ def user_batch_active() -> dict:
     incomplete (the 2026-07-24 lesson).
     """
     with _hold_lock:
-        return {"held": _hold_count > 0, "holders": list(_hold_reasons)}
+        return {"held": _hold_count > 0, "holders": list(_hold_reasons.values())}
 
 
 # --------------------------------------------------------------------------- #

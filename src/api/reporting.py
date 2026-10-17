@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article
+from src.database.outlet import FEEDS_NOT_OUTLETS
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_article
 from src.monitoring.secret_scrub import http_detail
@@ -89,6 +90,7 @@ def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
         "bundle_version": BUNDLE_VERSION,
         "articles": int(n_articles),
         "sources": int(n_sources),
+        "sources_note": FEEDS_NOT_OUTLETS,
         "item_fields": list(ITEM_FIELDS),
         "text_included": False,
         "signer": {"exists": state != "none", "state": state, "ed25519_pub": pub},

@@ -492,6 +492,8 @@ def investigate_state_b(playwright, report: Report, shots: Path) -> None:
                     evidence=path or "",
                     new=True,
                 )
+            else:
+                pass  # a loop ending in a bare if/elif has its back-edge outside the ``finally`` on CPython 3.13 (R163)
     finally:
         browser.close()
 
@@ -1902,7 +1904,9 @@ def investigate_state_d_import(playwright, report: Report, shots: Path) -> None:
         page.click("#ux-imp-run")
         deadline = time.monotonic() + 180
         summary_text = ""
-        while time.monotonic() < deadline:
+        while True:  # not ``while <cond>:``: that form's back-edge sits outside the ``finally`` on CPython 3.13 (src/utils/interrupts.py; R163)
+            if time.monotonic() >= deadline:
+                break
             page.wait_for_timeout(1500)
             summary_text = page.evaluate(
                 "() => (document.getElementById('ux-imp-summary')||{innerText:''}).innerText || ''"
@@ -2373,6 +2377,8 @@ def investigate_state_c(playwright, report: Report, shots: Path) -> None:
                     detail=f"documentElement.dir={dir_attr!r} after OOI18N.setLang('{locale}')",
                     evidence=shot or "", new=True,
                 )
+            else:
+                pass  # a loop ending in a bare ``if`` has its back-edge outside the ``finally`` on CPython 3.13 (R163)
         driver.set_locale("en")
 
         # -- opacity-composited pseudo-elements: a spot check across a few state-carrying icons #

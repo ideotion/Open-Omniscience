@@ -1403,19 +1403,28 @@ def test_a_refusal_in_the_second_file_leaves_the_first_unwritten(tmp_path, monke
 
 
 @NEEDS_LINKS
-@pytest.mark.parametrize("planted", ["symlink", "file"])
+@pytest.mark.parametrize("planted", ["symlink", "dangling", "file"])
 def test_a_planted_temporary_path_is_refused_and_never_written_through(tmp_path, monkeypatch, planted):
     extra = _ko_dir(tmp_path)
     victim = tmp_path / "victim.txt"
-    victim.write_text("keep me", "utf-8")
-    if planted == "symlink":
+    if planted == "dangling":
+        # a link whose target does not exist: ``Path.exists()`` is False for it, so the symlink check is what names it; the
+        # exclusive open would also refuse it, with a different message, which is why the message is matched below
         (extra / "ko.yml.tmp").symlink_to(victim)
     else:
-        (extra / "ko.yml.tmp").write_text("someone's file", "utf-8")
+        victim.write_text("keep me", "utf-8")
+        if planted == "symlink":
+            (extra / "ko.yml.tmp").symlink_to(victim)
+        else:
+            (extra / "ko.yml.tmp").write_text("someone's file", "utf-8")
     with pytest.raises(SystemExit, match="exists or is a link"):
         _ko_apply(tmp_path, monkeypatch)
-    assert victim.read_text("utf-8") == "keep me", "the link was written through"
-    assert (extra / "ko.yml.tmp").exists(), "a path this run did not make was removed"
+    if planted == "dangling":
+        assert not victim.exists(), "the dangling link was written through and created its target"
+    else:
+        assert victim.read_text("utf-8") == "keep me", "the link was written through"
+    assert (extra / "ko.yml.tmp").is_symlink() or (extra / "ko.yml.tmp").exists(), \
+        "a path this run did not make was removed"
     assert (extra / "ko.yml").read_text("utf-8") == _KO_FILE
     assert (extra / "_multilingual.yml").read_text("utf-8") == _MULTI_FILE
     (extra / "ko.yml.tmp").unlink()

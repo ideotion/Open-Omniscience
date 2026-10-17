@@ -160,3 +160,24 @@ def test_source_laundering_endpoint(tmp_path):
         assert sorted(body["clusters"][0]["article_ids"]) == [1, 2, 3]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_several_feeds_of_one_outlet_are_one_voice_not_several(db):
+    """Row J (R146): independence is counted in OUTLETS. Four sources of three domains citing one origin are THREE
+    independent outlets; two of them being the same site's feeds must not read as corroboration."""
+    db.add_all([
+        Source(id=1, name="BBC News", domain="bbc.com", rss_url="https://bbc.com/en/rss"),
+        Source(id=2, name="BBC Arabic", domain="bbc.com", rss_url="https://bbc.com/ar/rss"),
+        Source(id=3, name="DW", domain="dw.com", rss_url="https://dw.com/rss"),
+        Source(id=4, name="Reuters", domain="reuters.com", rss_url="https://reuters.com/rss"),
+    ])
+    db.commit()
+    for aid, sid in enumerate((1, 2, 3, 4), start=1):
+        _art_citing(db, aid, sid, "https://origin.example/claim")
+    out = find_source_laundering(db, min_sources=3, min_articles=3)
+    assert out["count"] == 1
+    c = out["clusters"][0]
+    assert c["distinct_sources"] == 3, "four feeds of three outlets counted as four independent sources"
+    assert c["source_names"] == ["BBC News", "DW", "Reuters"], "an outlet is listed once, by its oldest source's name"
+    # and with only the BBC pair it cannot fire at all
+    assert find_source_laundering(db, min_sources=4, min_articles=3)["count"] == 0

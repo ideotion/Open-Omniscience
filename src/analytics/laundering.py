@@ -62,16 +62,19 @@ def find_source_laundering(
     counts only; no score.
     """
     from src.database.models import Article, ArticleLink, Source
+    from src.database.outlet import OutletMap, outlet_expr
     from src.database.stand_in import not_a_stand_in_article_id
 
     # The links a salvage copy kept for a lost article stay in the table: a stand-in is no article, and its placeholder source is no independent
     # outlet, so the kept links are left out of the counts AND of the member list (the condition is on the child row: no article row is read).
     kept = not_a_stand_in_article_id(ArticleLink.article_id)
     arts = func.count(func.distinct(ArticleLink.article_id))
-    srcs = func.count(func.distinct(Article.source_id))
+    # Independence is counted in OUTLETS (a domain), not feeds: two feeds of one site citing one origin are one voice.
+    srcs = func.count(func.distinct(outlet_expr(Article.source_id, Source.domain)))
     q = (
         session.query(ArticleLink.normalized_url, arts.label("arts"), srcs.label("srcs"))
         .join(Article, Article.id == ArticleLink.article_id)
+        .outerjoin(Source, Source.id == Article.source_id)
         .filter(ArticleLink.normalized_url.isnot(None), kept)
     )
     if days and days > 0:
@@ -87,6 +90,7 @@ def find_source_laundering(
         .all()
     )
 
+    outlets = OutletMap(session)
     clusters = []
     seen_domains: set[str] = set()
     for url, n_arts, n_srcs in rows:
@@ -101,14 +105,15 @@ def find_source_laundering(
         seen_domains.add(dom)
         # The exact citing articles + the distinct source names (provenance the card shows).
         members = (
-            session.query(Article.id, Source.name)
+            session.query(Article.id, Article.source_id, Source.name, Source.domain)
             .join(ArticleLink, ArticleLink.article_id == Article.id)
             .outerjoin(Source, Source.id == Article.source_id)
             .filter(ArticleLink.normalized_url == url, kept)
             .all()
         )
         article_ids = sorted({m[0] for m in members})
-        source_names = sorted({m[1] for m in members if m[1]})
+        # one name per OUTLET (its oldest source's), so a list of sources never shows an outlet twice
+        source_names = sorted({outlets.label(m[1], m[2], m[3]) for m in members if m[2]})
         clusters.append({
             "origin": url,
             "origin_domain": registrable_domain(url),
@@ -129,7 +134,7 @@ def find_source_laundering(
             "Outbound origins cited by >= {ms} distinct sources (and >= {ma} articles); "
             "social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy "
             "pages, share widgets, license footers); at most one card per registrable origin "
-            "domain. Independence = distinct sources, not article count.".format(
+            "domain. Independence = distinct OUTLETS (one site's several feeds count once), not article count.".format(
                 ms=min_sources, ma=min_articles
             )
         ),

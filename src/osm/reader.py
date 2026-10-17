@@ -17,9 +17,10 @@ country row):
   while the ways are assembled, at :data:`DICT_BYTES_PER_NODE` in a Python dict. So the
   locations stay in memory while they fit :data:`MEMORY_SHARE` of what the system reports
   available when the ingest starts, and move to a work file past that
-  (:class:`_AdaptiveLocations`). Time is the cost that remains: pure Python is one to two
-  orders of magnitude slower than pyosmium (FROM MEMORY; the country row records the real
-  seconds), which is why the lane still recommends the add-on for anything large.
+  (:class:`_AdaptiveLocations`). Time is the cost that remains: pure Python cut a 45 MB
+  composite country 1.4 times slower than pyosmium (902 s against 642 s, where the database writes dominate;
+  ``docs/audit/osm-real-extract-2026-10-15/README.md``), and a file whose cost is decoding was not measured, so the lane still
+  recommends the add-on for anything large (the country row records the real seconds).
 
 :class:`GeoExtraMissing` is raised only when pyosmium is ASKED for and not installed.
 
@@ -63,6 +64,7 @@ class LocationStore(Protocol):
     def set(self, node_id: int, lat: float, lon: float) -> None: ...
     def get(self, node_id: int) -> tuple[float, float] | None: ...
     def close(self) -> None: ...
+    def describe(self) -> dict[str, Any]: ...
 
 
 class Extract(Protocol):
@@ -112,39 +114,176 @@ def available_memory_bytes() -> int | None:
     return None
 
 
+#: Where the kernel mounts the cgroup tree, and the file that says which cgroup THIS process is in. Parameters of
+#: :func:`cgroup_reading` so a test can point at a tree of its own.
+CGROUP_ROOT = "/sys/fs/cgroup"
+PROC_CGROUP = "/proc/self/cgroup"
+
+#: (source, directory under the root, limit file, usage file) for cgroup v2, then v1.
+CGROUP_LAYOUTS: tuple[tuple[str, str, str, str], ...] = (
+    ("cgroup_v2", "", "memory.max", "memory.current"),
+    ("cgroup_v1", "memory", "memory.limit_in_bytes", "memory.usage_in_bytes"),
+)
+
+#: A limit at or above this is the kernel's "no limit" (v1 reports 2**63 less a page; v2 says ``max``).
+_NO_LIMIT_AT = 1 << 60
+
+
+def _own_cgroup_paths(proc_cgroup: str, notes: list[str]) -> tuple[dict[str, str], bool, bool]:
+    """``({"cgroup_v2": "/a/b", "cgroup_v1": "/a"}, unreadable, was_read)``: where in each tree this process sits.
+
+    A process in a child cgroup has its limit there or in an ancestor, NOT necessarily at the mount root (a systemd service with
+    ``MemoryMax=``, a container started without its own cgroup namespace). A file that does not exist (no Linux cgroups at all) is
+    the common case and means "the root is all there is"; one that exists and cannot be read is a limit we cannot see.
+    """
+    try:
+        with open(proc_cgroup, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        notes.append(f"{proc_cgroup} is absent: only the cgroup mount root can be read")
+        return {}, False, False
+    except (OSError, ValueError) as exc:
+        notes.append(f"{proc_cgroup} is unreadable ({type(exc).__name__}): this process's own cgroup is unknown")
+        return {}, True, False
+    paths: dict[str, str] = {}
+    for line in lines:
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        _hier, controllers, path = parts
+        if controllers == "":  # the unified (v2) hierarchy: "0::/path"
+            paths["cgroup_v2"] = path
+        elif "memory" in controllers.split(","):
+            paths["cgroup_v1"] = path
+    return paths, False, True
+
+
+def _read_int_file(path: str) -> tuple[str, int | None, str | None]:
+    """``("ok", n, None)``, ``("absent", None, None)``, ``("no_limit", None, raw)`` or ``("bad", None, reason)``."""
+    try:
+        with open(path, encoding="ascii") as fh:
+            raw = fh.read().strip()
+    except FileNotFoundError:
+        return "absent", None, None
+    except (OSError, ValueError) as exc:
+        return "bad", None, f"unreadable ({type(exc).__name__})"
+    if raw == "max":
+        return "no_limit", None, raw
+    if not raw.isdigit():
+        return "bad", None, "unparseable"  # an empty or garbled file is not "no limit"
+    n = int(raw)
+    if n >= _NO_LIMIT_AT:
+        return "no_limit", None, raw[:20]
+    return "ok", n, None
+
+
+def cgroup_reading(
+    root: str = CGROUP_ROOT, proc_cgroup: str = PROC_CGROUP, layouts: tuple[tuple[str, str, str, str], ...] = CGROUP_LAYOUTS
+) -> dict[str, Any]:
+    """What the cgroups this process is in say about a memory limit, and WHY when they say nothing.
+
+    ``{"source", "limit_bytes", "headroom_bytes", "path", "unreadable", "notes": [...]}``. The process's own cgroup is found in
+    ``/proc/self/cgroup`` and every ancestor up to the mount root is read; the TIGHTEST headroom (limit less usage) wins, since the
+    kernel kills at the first limit reached. Absent, unreadable, unparseable and "no limit set" are different facts and each is named
+    in ``notes``; when a limit or its usage exists and cannot be read, ``unreadable`` is True and ``headroom_bytes`` is None so
+    that a caller takes its cautious branch, never "unlimited". (``headroom_bytes`` None with ``unreadable`` False is "no limit at any
+    level that could be read"; ``own_dir_missing`` says the process's own cgroup directory is not in the mount, so a limit set there
+    was not read, and :func:`memory_room` still bounds the room by ``MemAvailable``.) Usage includes page cache, which the kernel reclaims before it kills: the headroom is a LOWER bound.
+    """
+    notes: list[str] = []
+    own, unreadable, proc_read = _own_cgroup_paths(proc_cgroup, notes)
+    best: dict[str, Any] | None = None
+    own_dir_missing = False
+    for source, sub, limit_name, usage_name in layouts:
+        mounted = os.path.isfile(os.path.join(root, "cgroup.controllers")) if not sub else os.path.isdir(os.path.join(root, sub))
+        if source not in own and proc_read and mounted:
+            notes.append(f"{source}: {proc_cgroup} has no line for it, so only the mount root was read")
+        path = own.get(source, "/")
+        parts = [p for p in path.split("/") if p and p != ".."]
+        if parts and not os.path.isdir(os.path.join(root, sub, *parts)):
+            # Docker on cgroup v1 without a cgroup namespace shows the container's host path here while the mount root IS the
+            # container's cgroup, so this is legitimate; it is also what a tree we cannot see looks like. Named either way: the
+            # limit at this level, if any, was not read, and the levels above it were.
+            own_dir_missing = True
+            notes.append(
+                f"{source}: the cgroup directory {path!r} that {proc_cgroup} names is not in the mount, so a limit set there was "
+                "not read; its ancestors and the mount root were"
+            )
+        # from the process's own cgroup up to the mount root
+        for depth in range(len(parts), -1, -1):
+            rel = "/".join(parts[:depth])
+            base = os.path.join(root, sub, rel) if rel else os.path.join(root, sub)
+            where = f"{source}:/{rel}"
+            kind, limit, why = _read_int_file(os.path.join(base, limit_name))
+            if kind == "absent":
+                notes.append(f"{where}: {limit_name} is absent")
+                continue
+            if kind == "no_limit":
+                notes.append(f"{where}: no limit is set ({why!r})")
+                continue
+            if kind == "bad" or limit is None:
+                notes.append(f"{where}: {limit_name} is {why}")
+                unreadable = True
+                continue
+            ukind, used, uwhy = _read_int_file(os.path.join(base, usage_name))
+            if ukind != "ok" or used is None:
+                notes.append(f"{where}: usage is {uwhy or ukind}, so this limit's headroom is unknown (never counted as free)")
+                unreadable = True
+                continue
+            head = max(0, limit - used)
+            if best is None or head < best["headroom_bytes"]:
+                best = {"source": source, "limit_bytes": limit, "headroom_bytes": head, "path": f"/{rel}"}
+    if unreadable:
+        return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": True,
+                "own_dir_missing": own_dir_missing, "notes": notes}
+    if best is None:
+        return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": False,
+                "own_dir_missing": own_dir_missing, "notes": notes}
+    return {**best, "unreadable": False, "own_dir_missing": own_dir_missing, "notes": notes}
+
+
 def cgroup_headroom_bytes() -> int | None:
-    """What a container's memory limit leaves free, or None when there is no limit to read.
+    """What a container's memory limit leaves free, or None when there is no limit to read (or it cannot be read).
 
     psutil and ``/proc/meminfo`` report the HOST's memory; inside a container with a lower limit
     the kernel kills the process at that limit, so the budget must not exceed it.
     """
-    for limit_f, used_f in (
-        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),                  # cgroup v2
-        ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),  # v1
-    ):
-        try:
-            with open(limit_f, encoding="ascii") as fh:
-                raw = fh.read().strip()
-            if not raw.isdigit() or int(raw) >= 1 << 60:   # "max", or v1's "no limit" sentinel
-                continue
-            with open(used_f, encoding="ascii") as fh:
-                used = int(fh.read().strip())
-            return max(0, int(raw) - used)
-        except (OSError, ValueError):
-            continue
-    return None
+    return cgroup_reading()["headroom_bytes"]
 
 
-def memory_budget_bytes() -> int | None:
-    """How much the pure-Python path may hold in memory: a share of what is available now,
-    never more than a container's own limit leaves."""
+def memory_room() -> dict[str, Any]:
+    """The memory this process may use, from the tighter of a cgroup's headroom and the system's available memory.
+
+    ``{"room_bytes", "source": "cgroup_v1" | "cgroup_v2" | "mem_available" | None, "notes": [...]}``. ``room_bytes`` is None when
+    NOTHING could be read AND when a cgroup limit exists that could not be (the notes say which): a caller then takes the cautious
+    branch, never "unlimited".
+    """
+    cg = cgroup_reading()
+    notes = list(cg["notes"])
     avail = available_memory_bytes()
     if avail is None:
+        notes.append("MemAvailable is unreadable (psutil and /proc/meminfo both failed)")
+    if cg.get("unreadable"):
+        notes.append("a cgroup limit or its usage could not be read, so no room is claimed")
+        return {"room_bytes": None, "source": None, "notes": notes}
+    room, source = avail, ("mem_available" if avail is not None else None)
+    head = cg["headroom_bytes"]
+    if head is not None and (room is None or head < room):
+        room, source = head, cg["source"]
+    return {"room_bytes": room, "source": source, "notes": notes}
+
+
+def memory_budget_bytes(room: dict[str, Any] | None = None) -> int | None:
+    """How much the pure-Python path may hold in memory: a share of the room :func:`memory_room` reads,
+    None (the file from the start) when the room cannot be read.
+
+    The same reading the pyosmium guard uses, so the two readers take the same branch on one machine. (On main an unreadable
+    cgroup usage fell through to ``MemAvailable`` alone; it now takes the file from the start, the cautious side.)
+    """
+    room_bytes = (room if room is not None else memory_room())["room_bytes"]
+    if room_bytes is None:
         return None
-    room = cgroup_headroom_bytes()
-    if room is not None:
-        avail = min(avail, room)
-    return int(avail * MEMORY_SHARE)
+    return int(room_bytes * MEMORY_SHARE)
 
 
 class _SqliteLocations:
@@ -201,18 +340,39 @@ class _AdaptiveLocations:
     read, and the file is then used from the first node.
     """
 
-    def __init__(self, workdir: Path, budget: int | None) -> None:
+    def __init__(self, workdir: Path, budget: int | None, room: dict[str, Any] | None = None) -> None:
         self._workdir = workdir
         self.budget = budget
+        self._room = room or {}
         self._max = None if budget is None else budget // DICT_BYTES_PER_NODE
         self._d: dict[int, tuple[float, float]] | None = {} if budget is not None else None
         self._disk: _SqliteLocations | None = None if budget is not None else _SqliteLocations(workdir)
+        self._set_calls = 0
 
     @property
     def spilled(self) -> bool:
         return self._disk is not None
 
+    def describe(self) -> dict[str, Any]:
+        """Which store held the locations and what it cost, for the run record (no behaviour of its own)."""
+        in_memory = self._d is not None
+        return {
+            "index": "python_dict" if in_memory else "sqlite_file",
+            "rule": "memory budget unreadable: the file from the first node" if self.budget is None
+            else f"a dict while it fits {MEMORY_SHARE:.0%} of the memory room read at the start (the tighter of the cgroup and "
+            "MemAvailable), a file past that",
+            "budget_bytes": self.budget,
+            "room_bytes": self._room.get("room_bytes"),
+            "room_source": self._room.get("source"),
+            "room_notes": self._room.get("notes", []),
+            "nodes_set": self._set_calls,
+            # Stated, not sampled: DICT_BYTES_PER_NODE per held location (the dict's own cost; resident memory ran about 14% above it
+            # on the 16x composite, see the audit README); the file holds none.
+            "memory_bytes_settled": len(self._d) * DICT_BYTES_PER_NODE if self._d is not None else 0,
+        }
+
     def set(self, node_id: int, lat: float, lon: float) -> None:
+        self._set_calls += 1
         if self._d is not None:
             self._d[node_id] = (lat, lon)
             if self._max is not None and len(self._d) > self._max:
@@ -272,10 +432,61 @@ class PythonExtract:
                 yield el
 
     def location_store(self, workdir: Path) -> LocationStore:
-        return _AdaptiveLocations(workdir, memory_budget_bytes())
+        room = memory_room()
+        return _AdaptiveLocations(workdir, memory_budget_bytes(room), room)
 
 
 # --- pyosmium --------------------------------------------------------------- #
+#: The in-memory location index is one vector that grows by doubling its capacity, and while it reallocates the process holds the old
+#: buffer and the new one with every entry copied: TWICE the settled bytes at each doubling (``location_probe.py`` measured 32.0
+#: bytes a location right after a doubling, N=4,194,305, and 1,024 MiB at 2**25 entries = 2 x 512 MiB; the 1.68 read from the
+#: 40 million point sat between two doublings and under-stated it). The guard compares 2 x settled, the envelope of every doubling.
+LOCATION_GROWTH_PEAK_FACTOR = 2.0
+
+#: What the rest of the cut held besides the locations on the largest composite run (2.88 million objects, 3.5 GiB envelope): 823 MiB
+#: peak less 282 MiB of settled locations (18.49 million x 16 B) is 541 MiB, rounded up to 600 MiB. It is the room the guard leaves
+#: for everything that is not the index (Python heap, SQLite, batches, the kept ids); at a hundred times that size it will be larger,
+#: and the guard then errs toward stopping too late, which the run record's ``location_index`` figures show.
+LOCATION_REST_OF_CUT_BYTES = 600 * 1024 * 1024
+
+#: The fewest locations worth keeping in memory under the guard: below a million (about 2.5 MB of extract at the 16x composite's
+#: 0.404 locations per file byte) the guard would stop an ordinary city extract on a room it should not have been chosen for, so a
+#: room that cannot hold this many takes the file index up front, with the reason in the record.
+LOCATION_MIN_IN_MEMORY = 1_000_000
+
+
+def location_capacity(room_bytes: int, entry_bytes: int = 16) -> int:
+    """How many locations the in-memory index may take in ``room_bytes`` before its doubling peak plus the rest of the cut pass it."""
+    return int(max(0, room_bytes - LOCATION_REST_OF_CUT_BYTES) / LOCATION_GROWTH_PEAK_FACTOR / entry_bytes)
+
+
+#: ``OO_OSM_LOCATION_INDEX=file`` keeps the locations in a work file whatever the extract's size: the way out of a
+#: :class:`LocationIndexTooLarge` stop, and a way to compare the two indexes on one file.
+LOCATION_INDEX_ENV = "OO_OSM_LOCATION_INDEX"
+
+
+def location_index_choice() -> str | None:
+    """``"file"`` when :data:`LOCATION_INDEX_ENV` asks for the file index, None when it is unset or says ``auto``.
+
+    Anything else is a typo and is refused by name: an operator who typed ``OO_OSM_LOCATION_INDEX=disk`` to get out of a
+    :class:`LocationIndexTooLarge` stop must not get the in-memory index again without being told.
+    """
+    raw = os.environ.get(LOCATION_INDEX_ENV, "").strip().lower()
+    if raw in ("", "auto"):
+        return None
+    if raw == "file":
+        return "file"
+    raise ValueError(f"{LOCATION_INDEX_ENV} must be 'file' or 'auto' (or unset), not {raw[:20]!r}")
+
+
+class LocationIndexTooLarge(RuntimeError):
+    """The in-memory node-location index would pass the memory this process has; the scan stopped before the kernel could kill it.
+
+    The extract is under the file-size threshold that picks the in-memory index and denser in nodes than that rule assumes. The
+    message carries the figures (they are numbers, not paths or secrets) so the run record states what was measured.
+    """
+
+
 class _OsmiumLocations:
     """pyosmium's own sparse index: in memory for a small extract, a file for a large one.
 
@@ -285,11 +496,31 @@ class _OsmiumLocations:
     WHICH box was cut says which country the operator chose.
     """
 
-    def __init__(self, workdir: Path, *, on_disk: bool) -> None:
+    #: What libosmium's sparse index holds per location: an 8-byte id and an 8-byte location, 16.0 bytes each once settled
+    #: (``docs/audit/osm-real-extract-2026-10-15/location_probe.py``). The in-memory variant is one growing vector, and while it
+    #: grows the process briefly holds the old buffer and the new one (2.0 times the settled figure at each doubling,
+    #: see ``LOCATION_GROWTH_PEAK_FACTOR``), so the run record's figure is the SETTLED bytes, arithmetic from this constant, not a peak.
+    ENTRY_BYTES = 16
+
+    def __init__(
+        self, workdir: Path, *, on_disk: bool, extract_bytes: int | None = None, rule: str | None = None,
+        room: dict[str, Any] | None = None,
+    ) -> None:
         import osmium.index
 
         self._file: Path | None = None
         self._map: Any
+        self._on_disk = on_disk
+        self._extract_bytes = extract_bytes
+        self._rule = rule
+        self._room = room or {}
+        self._set_calls = 0
+        #: The most locations the in-memory index may take before its growth peak plus the rest of the cut passes the room read at
+        #: the start; None when it is a file or the room was not read (then the cautious file branch was already taken).
+        self._max_locations: int | None = None
+        room_bytes = self._room.get("room_bytes")
+        if not on_disk and room_bytes is not None:
+            self._max_locations = location_capacity(room_bytes, self.ENTRY_BYTES)
         if on_disk:
             workdir.mkdir(parents=True, exist_ok=True)
             self._file = workdir / "osm-locations.idx"
@@ -300,10 +531,46 @@ class _OsmiumLocations:
 
         self._loc = Location
 
+    def _stop(self) -> None:
+        stored = self._set_calls - 1  # the location that tripped the check was never stored
+        held = stored * self.ENTRY_BYTES
+        raise LocationIndexTooLarge(
+            f"the node-location index held {stored} locations ({held} bytes settled); with its doubling peak "
+            f"({LOCATION_GROWTH_PEAK_FACTOR}x, measured) and the rest of the cut ({LOCATION_REST_OF_CUT_BYTES} bytes, measured) "
+            f"that passes the {self._room.get('room_bytes')} bytes this process has ({self._room.get('source')}); stopped before "
+            f"the kernel could kill it. This extract ({self._extract_bytes} bytes) is denser in nodes than the file-size rule "
+            f"assumes: set {LOCATION_INDEX_ENV}=file to keep the locations in a work file"
+        )
+
+    def describe(self) -> dict[str, Any]:
+        """Which index was chosen, by which rule, and the bytes it holds (no behaviour of its own)."""
+        held = self._set_calls * self.ENTRY_BYTES
+        return {
+            "index": "sparse_file_array" if self._on_disk else "sparse_mem_array",
+            "rule": self._rule,
+            "extract_bytes": self._extract_bytes,
+            "nodes_set": self._set_calls,
+            "entry_bytes": self.ENTRY_BYTES,
+            "memory_bytes_settled": 0 if self._on_disk else held,
+            "file_bytes_settled": held if self._on_disk else 0,
+            # The guard's inputs, read once when the index was made: where the room came from, what it was, and how many
+            # locations the in-memory index could take before its measured growth peak plus the rest of the cut passed it.
+            "room_bytes": self._room.get("room_bytes"),
+            "room_source": self._room.get("source"),
+            "room_notes": self._room.get("notes", []),
+            "max_locations_in_memory": self._max_locations,
+        }
+
     def set(self, node_id: int, lat: float, lon: float) -> None:
+        self._set_calls += 1
+        if self._max_locations is not None and self._set_calls > self._max_locations:
+            self._stop()
         self._map.set(node_id, self._loc(lon, lat))
 
     def set_location(self, node_id: int, loc) -> None:
+        self._set_calls += 1
+        if self._max_locations is not None and self._set_calls > self._max_locations:
+            self._stop()
         self._map.set(node_id, loc)
 
     def get(self, node_id: int) -> tuple[float, float] | None:
@@ -441,7 +708,30 @@ class PyosmiumExtract:
 
     def location_store(self, workdir: Path) -> LocationStore:
         size = self.path.stat().st_size
-        return _OsmiumLocations(workdir, on_disk=size > self.ON_DISK_ABOVE)
+        big = f"the extract file is above {self.ON_DISK_ABOVE} bytes (the file's size, not its node count)"
+        if location_index_choice() == "file":
+            return _OsmiumLocations(workdir, on_disk=True, extract_bytes=size, rule=f"{LOCATION_INDEX_ENV}=file asked for the file index")
+        if size > self.ON_DISK_ABOVE:
+            return _OsmiumLocations(workdir, on_disk=True, extract_bytes=size, rule=big)
+        room = memory_room()
+        if room["room_bytes"] is not None and location_capacity(room["room_bytes"]) < LOCATION_MIN_IN_MEMORY:
+            return _OsmiumLocations(
+                workdir, on_disk=True, extract_bytes=size, room=room,
+                rule=f"the memory room ({room['room_bytes']} bytes, {room['source']}) holds fewer than {LOCATION_MIN_IN_MEMORY} locations "
+                f"once the doubling peak and the rest of the cut are counted: the file index, not an in-memory one that would stop on any real extract",
+            )
+        if room["room_bytes"] is None:
+            # Nothing could be read: the cautious branch, as the pure-Python path takes (a limit that cannot be read is not no limit).
+            why = "; ".join(room["notes"]) or "no reading"
+            return _OsmiumLocations(
+                workdir, on_disk=True, extract_bytes=size, room=room,
+                rule=f"the memory this process may use could not be read ({why}): the file index, never an unlimited in-memory one",
+            )
+        return _OsmiumLocations(
+            workdir, on_disk=False, extract_bytes=size, room=room,
+            rule=f"the extract file is at or below {self.ON_DISK_ABOVE} bytes (the file's size, not its node count) and its "
+            "growth peak is checked against the memory this process has while the scan runs",
+        )
 
 
 def open_extract(path: str | Path, *, reader: str | None = None) -> Extract:

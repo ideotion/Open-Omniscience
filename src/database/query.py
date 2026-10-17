@@ -6,6 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterator
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -120,6 +121,13 @@ MAX_RANGE_STATEMENTS = 20_000
 MAX_WINDOW_DAYS = 3_660
 
 
+class ReadBudgetExceeded(Exception):
+    """A read given a wall-clock budget (``deadline=``) ran past it between two of its statements.
+
+    Not a ``StatementTimeout``: that one is the hard stop of a request (HTTP 503) and ends the answer, this one is
+    a caller's own bound and ends only the read it was given to, so the caller can say what it left undone."""
+
+
 def _as_date(value: Any) -> date | None:
     """A ``date`` bound as itself; anything else (a ``datetime``, a string) is not walkable by days.
 
@@ -185,6 +193,7 @@ def windowed_group_counts(
     keep: Callable[[Any, Any], bool],
     where: tuple = (),
     range_ids: int | None = None,
+    deadline: float | None = None,
 ) -> tuple[dict[Any, Any], int]:
     """``grouped_counts`` for ``SELECT key, value WHERE day IN [lo, hi) GROUP BY key``, read as many SHORT
     statements instead of one that stays open for the whole window.
@@ -231,6 +240,11 @@ def windowed_group_counts(
     thresholded ratios) read their two windows in two statements before this change too, and nothing relies
     on one snapshot. ``rowid`` is assumed to be ONE id space: when the derived view becomes a head plus
     sealed segments (R96) the bound has to be taken per segment, or the ids guaranteed disjoint.
+
+    ``deadline`` (a ``time.monotonic()`` instant): the read stops with :class:`ReadBudgetExceeded` before the first
+    statement it would start past it. It is checked between statements (a day of one key range each, about 110 us), so
+    it overruns by one statement at most; a window read as the one statement (see below) is not interruptible and
+    ignores it. ``None`` (every caller but the Home trends' bounded fallback) checks nothing.
 
     ``value`` must ADD across days (``SUM(count)`` does; an average does not). ``where`` is any further
     filter (the country). A window it cannot walk by days (not ``date`` bounds, a ``datetime`` included, or
@@ -284,6 +298,8 @@ def windowed_group_counts(
         acc: dict[Any, Any] = {}
         conn = session.connection()  # the same one within a range; a new one after the release below
         for d in window_days:
+            if deadline is not None and time.monotonic() > deadline:
+                raise ReadBudgetExceeded("the read ran past its time budget")
             rows = conn.execute(
                 seek, {"oo_day": d, "oo_start": start, "oo_stop": start + width, "oo_top": top_row}
             ).all()

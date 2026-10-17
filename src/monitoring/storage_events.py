@@ -24,6 +24,19 @@ exception text, no term and no address):
 - ``open``: one record per opening of the store, by an unlock or by a start with no passphrase: the synchronous total, its phases,
   the log at open and the slowest steps of ``init_db`` (the whole step record stays in ``session-forensics.json``).
 - ``pool_timeout``: a checkout that waited out the pool's timeout: how long, for which route, and who held the connections then.
+- ``run_export``, ``run_import`` and ``run_verify``: the last ten runs of each kind. They are the volume backup, restore and
+  verification, the single-file restore of a legacy backup, the folder backup, restore and verification of the large data, and the
+  folder import of newsletter files, each saying which way it came in (``via``) and how it ended (ok, refused, stopped, cancelled,
+  paused, error, or never recorded as ended), the class of its failure, a FIXED sentence for a refusal, the seconds, the free bytes
+  of the volume it wrote to when it began and, for a volume backup, the figures the engine measured (volumes, bytes, write-gate
+  seconds, snapshot seconds and bytes, what the read-back found). A run is written OPEN when it starts, so a run that was killed in
+  the middle leaves "started, never ended"; a start that was refused before any run existed (no passphrase, an unusable destination,
+  a path that could not be examined, a job already running) is written closed, because the run journal opens nothing for it. The run
+  journal (``run-journal.json``) names these runs differently from this journal: its ``export`` is the volume backup, its ``import``
+  the volume restore and the legacy restore, its ``verify`` the folder verification (the volume-set verification has no run there),
+  and it calls the folder backup ``folder-export``, the folder restore ``folder-import`` and the newsletter import
+  ``newsletter-import``; match a record here to a run there by ``via``, the kind and the time. No path, no folder name, no exception text and no passphrase is a field of these: the
+  hooks hand over numbers, class names and keys of the fixed tables below, and anything else is dropped here.
 
 WHAT A NUMBER HERE PROTECTS. ``KEEP`` bounds what is KEPT, never what is COUNTED: every kind carries ``total`` (events recorded since
 ``since``, across restarts) and the member shows ``kept`` and ``dropped`` beside it, so a reader sees how much history the zip is NOT
@@ -53,10 +66,13 @@ from __future__ import annotations
 import atexit
 import contextvars
 import errno
+import itertools
 import json
 import logging
 import math
 import os
+import re
+import shutil
 import threading
 import time
 from collections.abc import Iterator
@@ -79,7 +95,10 @@ _FILE = "storage_events.json"
 #: Twenty holds are the stall episodes of a bad week (the 30 Sep crash read had holds of 60 to 175 s, a handful a day at worst); ten
 #: of the others are the lead-up to one crash, which is what the question "was the log pinned by a reader or outrun by a writer"
 #: needs. The pass boundary checkpoints every 300 s by default, so ``checkpoint`` alone covers fifty minutes and ``checkpoint_notable``
-#: is what reaches back further.
+#: is what reaches back further. The three run kinds keep ten runs EACH (not ten between them): a restore queue of eight items that all
+#: fail must not push the one failed backup of last week out of the journal; ten is the lead-up the other kinds keep. A client-driven
+#: export writes TWO ``run_export`` records (the corpus volume backup, then the folder backup of the large data), so ten records are five
+#: such exports, not ten.
 KEEP: dict[str, int] = {
     "gate_hold": 20,
     "guard": 10,
@@ -87,7 +106,74 @@ KEEP: dict[str, int] = {
     "checkpoint_notable": 10,
     "open": 10,
     "pool_timeout": 10,
+    "run_export": 10,
+    "run_import": 10,
+    "run_verify": 10,
 }
+
+#: THE LONGEST ARE KEPT TOO, NOT ONLY THE NEWEST. For the kinds below ``KEEP`` is split: the ``n`` longest events by the named field, and
+#: the rest of the cap for the newest. WHAT THIS PROTECTS: the one event a reader most needs. The 16 Oct 2026 bundles kept the newest 20
+#: gate holds and the longest of the session (219.6 s) was not among them, because a stream of newer, shorter holds had pushed it out;
+#: the rule "the newest N" shows the lead-up to a crash and hides the worst stall of the week. Both guarantees hold at once: the ``n``
+#: longest AND the cap minus ``n`` newest are always kept (a repeat of both is counted once, and the spare room goes to the next newest),
+#: so the kept list never exceeds ``KEEP`` and the slot's measured width does not change. ``picked_by`` on a kept event says why it is
+#: there (``longest``, ``newest`` or ``both``). ``checkpoint`` has its own notable lane for the slow ones and the run kinds have their own
+#: rule (a run still open is never pushed out), so neither is split.
+LONGEST: dict[str, tuple[str, int]] = {
+    "gate_hold": ("seconds", 10),
+    "guard": ("seconds", 5),
+    "pool_timeout": ("waited_s", 5),
+    "open": ("total_ms", 5),
+}
+
+
+def _length(event: dict[str, Any], field: str) -> float | None:
+    """The number an event is ranked by, or None (absent, or not a number: a bool is not a duration)."""
+    value = event.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return None
+    return float(value)
+
+
+def _select(kind: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The events of ``kind`` the journal keeps out of ``events`` (oldest first), in the same order: at most ``KEEP[kind]``. A kind in
+    :data:`LONGEST` keeps its ``n`` longest (ties go to the newer) and the cap minus ``n`` newest, then fills what is left with the next
+    newest; any other kind keeps the newest. Idempotent: selecting what was selected changes nothing."""
+    cap = KEEP[kind]
+    if len(events) <= cap:
+        return list(events)
+    rule = LONGEST.get(kind)
+    if rule is None:
+        return list(events[-cap:])
+    field, n_long = rule
+    n_new = cap - n_long
+    keep = set(range(len(events) - n_new, len(events)))
+    measured = [i for i in range(len(events)) if _length(events[i], field) is not None]
+    for i in sorted(measured, key=lambda j: (-(_length(events[j], field) or 0.0), -j))[:n_long]:
+        keep.add(i)
+    i = len(events) - 1
+    while len(keep) < cap and i >= 0:  # the room the overlap left goes to the next newest
+        keep.add(i)
+        i -= 1
+    return [events[i] for i in sorted(keep)]
+
+
+def _picked_by(kind: str, kept: list[dict[str, Any]]) -> list[str | None]:
+    """Why each event of a kept list is there, from the list alone: ``longest`` (among the ``n`` longest of it), ``newest`` (among the
+    cap minus ``n`` newest, or the next newest that filled the room) or ``both``. None for a kind with no rule."""
+    rule = LONGEST.get(kind)
+    if rule is None:
+        return [None] * len(kept)
+    field, n_long = rule
+    n_new = KEEP[kind] - n_long
+    measured = [i for i in range(len(kept)) if _length(kept[i], field) is not None]
+    longest = set(sorted(measured, key=lambda j: (-(_length(kept[j], field) or 0.0), -j))[:n_long])
+    out: list[str | None] = []
+    for i in range(len(kept)):
+        newest = i >= len(kept) - n_new
+        out.append("both" if i in longest and newest else "longest" if i in longest else "newest")
+    return out
+
 
 #: A checkpoint that took this long is notable whatever its rows say. WHAT IT PROTECTS: the notable list's meaning. Five seconds is
 #: three orders of magnitude over a healthy TRUNCATE on a drained log (milliseconds) and well under the pool's 30 s timeout.
@@ -249,7 +335,7 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
     if not isinstance(kinds, dict) or data.get("schema") != SCHEMA:
         raise ValueError("not this journal")
     earlier: dict[str, dict[str, Any]] = {}
-    for kind, cap in KEEP.items():
+    for kind in KEEP:
         entry = kinds.get(kind)
         if not isinstance(entry, dict):
             continue
@@ -261,7 +347,7 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
             if e.get("open") and e.get("proc") != _PROC:
                 e["open"] = False
                 e["ended"] = "the process ended while this was open; its end was not recorded"
-        earlier[kind] = {"total": total, "events": events[-cap:]}
+        earlier[kind] = {"total": total, "events": _select(kind, events)}
     since = data.get("since")
     return earlier, since if isinstance(since, str) else None
 
@@ -334,10 +420,10 @@ def _combined_locked() -> tuple[dict[str, dict[str, Any]], str | None]:
     """What the journal holds: the file's events then this process's, the newest ``KEEP`` of each kind, and the running totals of both.
     Caller holds the lock."""
     kinds: dict[str, dict[str, Any]] = {}
-    for kind, cap in KEEP.items():
+    for kind in KEEP:
         old = _EARLIER.get(kind) or _empty_kind()
         new = _STATE.get(kind) or _empty_kind()
-        kinds[kind] = {"total": old["total"] + new["total"], "events": [*old["events"], *new["events"]][-cap:]}
+        kinds[kind] = {"total": old["total"] + new["total"], "events": _select(kind, [*old["events"], *new["events"]])}
     return kinds, _SINCE_FILE or _SINCE
 
 
@@ -525,12 +611,25 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
             entry = _STATE.setdefault(kind, _empty_kind())
             entry["total"] += 1
             entry["events"].append(event)
-            while len(entry["events"]) > KEEP[kind]:
-                gone = entry["events"].pop(0)
-                for k in [k for k, v in _OPEN.items() if v is gone]:
-                    _OPEN.pop(k, None)
             if key is not None:
                 _OPEN[(kind, key)] = event
+            if kind in LONGEST and len(entry["events"]) > KEEP[kind]:
+                # The longest are kept beside the newest (see LONGEST); an event that is not kept is forgotten, open or not (an open hold
+                # is the newest, so it is always kept).
+                kept = _select(kind, entry["events"])
+                kept_ids = {id(e) for e in kept}
+                for gone in [e for e in entry["events"] if id(e) not in kept_ids]:
+                    for k in [k for k, v in _OPEN.items() if v is gone]:
+                        _OPEN.pop(k, None)
+                entry["events"] = kept
+            while len(entry["events"]) > KEEP[kind]:
+                # A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one
+                # long backup would otherwise evict its open record, and its end would be lost. The oldest event that is not live
+                # goes first; only when every event is live does the oldest go. The other kinds keep the plain rule (the oldest goes).
+                live = {id(v) for v in _OPEN.values()} if kind in _RUN_JOURNAL_KINDS else set()
+                gone = entry["events"].pop(next((i for i, e in enumerate(entry["events"]) if id(e) not in live), 0))
+                for k in [k for k, v in _OPEN.items() if v is gone]:
+                    _OPEN.pop(k, None)
             _mark_dirty_locked()
     except Exception as exc:  # noqa: BLE001
         _internal_failure("record", exc)
@@ -745,16 +844,338 @@ def note_pool_timeout(
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------
+#  Runs: the volume backup, restore and verification
+# ---------------------------------------------------------------------------------------------------------------------------------
+#: The journal kind of each run, by the name a run has HERE (``export`` is the volume backup and the folder backup, ``import`` every
+#: restore and the newsletter import, ``verify`` both verifications). The run journal names the folder and newsletter runs differently
+#: (see the module docstring), so a record here and a run in ``run-journal.json`` are matched by ``via`` and time, never by name alone.
+RUN_KINDS: dict[str, str] = {"export": "run_export", "import": "run_import", "verify": "run_verify"}
+_RUN_JOURNAL_KINDS = frozenset(RUN_KINDS.values())  # the kinds whose open events the trimming in :func:`record` keeps
+
+#: How a run can end, as the run journal names it, with these differences: a backup the newsletter filter refused is "error" in
+#: ``run-journal.json`` (which records its class) and "refused" here, because nothing ran; and for the legacy single-file restore the
+#: hook here sees a failure before the run journal does, so a merge check's refusal (``MergeError``) is "refused" here and "error"
+#: there, and the operator's own Stop (``RestoreAborted``) is "stopped-by-operator" here and "error" there. The same cause can end
+#: differently by way in (a ``MergeError`` of a volume restore is "error" here), which is why every run carries ``via``. Anything else a
+#: hook hands over is recorded as ``(unnamed outcome)``.
+RUN_OUTCOMES = frozenset(
+    {"ok", "skipped-already-merged", "refused", "stopped-by-operator", "cancelled", "paused", "error", "ended-without-a-recorded-outcome"}
+)
+
+#: Why a run was refused, as a FIXED sentence: a refusal's own text names a folder, a holder or a path, so the journal keeps the key
+#: the hook chose and writes the sentence itself. A key that is not here records no sentence.
+RUN_REFUSALS: dict[str, str] = {
+    "no-passphrase": "the volume backup is always encrypted and no passphrase was given",
+    "destination-unusable": "the destination folder could not be used (empty, not a folder, not writable or not creatable)",
+    "not-a-folder": "the path given is not a folder",
+    "already-running": "another volume backup, restore or verification was already running",
+    "barrier": "another job still held the corpus when the restore reached the swap",
+    "not-a-file": "the path given is not a file",
+    "memory": "this machine could not hold the merge of an encrypted corpus, asked before anything was staged",
+    "import-running": "another folder import was already running",
+    "folder-running": "another folder backup, restore or verification was already running",
+    "no-space": "the destination did not have the free space the backup needs",
+    "free-space-unreadable": "the free space of the destination could not be read, so the backup was not started",
+    "path-unreadable": "a path the request named could not be examined (the operating system refused to look at it)",
+}
+
+#: What a run came through, as a FIXED key, on every run: the volume backup, restore and verification (``volume-set``), the single-file
+#: restore of a legacy backup (``single-file``), the folder import of newsletter files (``newsletter-eml``) and the large-data folder
+#: backup, restore and verification (``folder``). Several ways in record as the same kind (every restore is an ``import``),
+#: so a reader tells them apart by this key and by nothing else. A value outside the table is not recorded (it is never a path or a
+#: folder name).
+RUN_VIA: frozenset[str] = frozenset({"volume-set", "single-file", "newsletter-eml", "folder"})
+
+#: The measurements a run may carry, by name; a value is kept only if it is a number. The free bytes are the volume the run WRITES to,
+#: read when it began: the destination for a backup, the data folder (where the restore stages) for a restore. An unreadable figure is
+#: absent, never ``0``.
+_RUN_NUMBERS = frozenset(
+    {"dest_free_bytes", "data_free_bytes", "volumes", "bytes", "gate_held_s", "snapshot_s", "snapshot_bytes", "engine_wall_s",
+     "articles_merged", "reindexed", "files", "files_done", "resumed_from", "copied", "skipped", "restored", "checked",
+     "mismatches"}
+)
+#: What the backup's read-back of the written set found (``VolumeBackupManager._verify_after_write``), the five outcomes it keeps apart.
+_RUN_VERIFY_STATES = frozenset({"verified", "failed", "off", "stopped", "unavailable"})
+#: A fact that is a yes or a no (a verification's own verdict on the set it read).
+_RUN_FLAGS = frozenset({"set_ok"})
+#: A fact that is the CLASS of a failure at a step that is not the run's end (the backup's summary file could not be written).
+_RUN_CLASSES = frozenset({"summary_error"})
+_CLASS_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*")
+_CLASS_NAME_MAX = 80
+_RUN_SEQ = itertools.count(1)
+
+
+def _class_name(value: Any) -> str | None:
+    """``value`` if it is shaped like the name of a class (letters, digits, underscores, dots; at most 80), else a fixed marker: the
+    journal accepts a class and never a message, so a hook that hands it a sentence by mistake leaves the marker, not the sentence."""
+    if value is None:
+        return None
+    if isinstance(value, str) and len(value) <= _CLASS_NAME_MAX and _CLASS_NAME.fullmatch(value):
+        return value
+    return "(not a class name)"
+
+
+def _run_fields(facts: dict[str, Any]) -> dict[str, Any]:
+    """The facts a run may carry, from what a hook handed over: numbers and flags by name, class names, one of five read-back states.
+    Every other key, and a value of the wrong kind, is dropped (a text field cannot be added by accident, whatever the site holds)."""
+    out: dict[str, Any] = {}
+    for key, value in facts.items():
+        if key in _RUN_NUMBERS:
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                out[key] = value
+        elif key in _RUN_FLAGS:
+            if isinstance(value, bool):
+                out[key] = value
+        elif key in _RUN_CLASSES:
+            if value is not None:
+                out[key] = _class_name(value)
+        elif isinstance(value, str) and (
+            (key == "verify" and value in _RUN_VERIFY_STATES) or (key == "via" and value in RUN_VIA)
+        ):
+            out[key] = value  # one of five read-back states, or the way in: a key of a fixed table, never the text
+    return out
+
+
+class _RefusalScope:
+    """What one start has written so far, so that the net round it (:func:`run_refusals_net`) never records the same start twice. A net
+    inside another one (a restore run from a queue item) marks the ones round it as well: the error it re-raises is the same error."""
+
+    __slots__ = ("recorded", "parent")
+
+    def __init__(self, parent: _RefusalScope | None = None) -> None:
+        self.recorded = False
+        self.parent = parent
+
+    def mark(self) -> None:
+        scope: _RefusalScope | None = self
+        while scope is not None:
+            scope.recorded = True
+            scope = scope.parent
+
+
+_REFUSAL_SCOPE: contextvars.ContextVar[_RefusalScope | None] = contextvars.ContextVar("storage_events_refusal_scope", default=None)
+
+
+def _scope_has_written() -> None:
+    scope = _REFUSAL_SCOPE.get()
+    if scope is not None:
+        scope.mark()
+
+
+class RunNote:
+    """A run opened in the journal: which kind, the key it is addressable by while this process runs, and when it began (monotonic)."""
+
+    __slots__ = ("kind", "key", "started")
+
+    def __init__(self, kind: str, key: Any, started: float) -> None:
+        self.kind = kind
+        self.key = key
+        self.started = started
+
+
+def run_started(what: str, **facts: Any) -> RunNote | None:
+    """Open a run of ``what`` (``export``, ``import`` or ``verify``): written OPEN, so a process killed in the middle of it leaves
+    "started, never ended". Returns the note the later calls take, or None (an unknown ``what``, or the journal could not record it:
+    every later call then does nothing). Never raises, never touches the disk."""
+    _scope_has_written()  # a run began: the net round the start has nothing left to say
+    try:
+        kind = RUN_KINDS.get(what)
+        if kind is None:
+            return None
+        key = ("run", next(_RUN_SEQ))
+        record(kind, _run_fields(facts), key=key)
+        return RunNote(kind, key, time.monotonic())
+    except Exception as exc:  # noqa: BLE001
+        _internal_failure("run_started", exc)
+        return None
+
+
+def run_facts(note: RunNote | None, **facts: Any) -> None:
+    """Add facts to the run still open under ``note`` (see :func:`_run_fields` for what is kept). Never raises."""
+    if note is None:
+        return
+    try:
+        fields = _run_fields(facts)
+        if fields:
+            update(note.kind, note.key, fields)
+    except Exception as exc:  # noqa: BLE001
+        _internal_failure("run_facts", exc)
+
+
+def free_bytes_of(path: str | os.PathLike[str] | None = None) -> int | None:
+    """Free bytes on the volume holding ``path`` (the data folder when ``path`` is None), or None when it cannot be read: an unreadable
+    figure is not ``0``, which would read as a full drive, and it is not another volume's figure either (the path is stat-ed as given,
+    never its parent). Never raises. A stat of the volume, so it is for a worker thread, never for a site that holds the write gate; it
+    is a helper of the run records and not a recording, which stay dict updates. A volume that cannot be read (gone, a permission, a
+    mount that gave up) is an absent field and nothing more: it is not a fault of the journal and is neither counted nor logged."""
+    try:
+        return int(shutil.disk_usage(Path(path) if path is not None else data_dir()).free)
+    except OSError:
+        return None
+    except Exception as exc:  # noqa: BLE001 - a path that is not a path: the journal's fault, counted
+        _internal_failure("free_bytes_of", exc)
+        return None
+
+
+def run_free_space(note: RunNote | None, name: str, path: str | os.PathLike[str] | None = None) -> None:
+    """Read the free bytes of the volume the run writes to and add them to it as ``name`` (``dest_free_bytes`` or ``data_free_bytes``).
+    Called AFTER :func:`run_started`, so a stat that hangs on a dead mount leaves the run open, which is what a reader needs to see."""
+    if note is None or name not in ("dest_free_bytes", "data_free_bytes"):
+        return
+    free = free_bytes_of(path)
+    if free is not None:
+        run_facts(note, **{name: free})
+
+
+def run_ended(note: RunNote | None, outcome: str, *, failure: str | None = None, reason: str | None = None, **facts: Any) -> None:
+    """Close the run under ``note``: how it ended (one of :data:`RUN_OUTCOMES`), the CLASS NAME of its failure (``failure=type(exc).__name__``,
+    never a message; recorded as ``error``), a key of :data:`RUN_REFUSALS` when it was refused, the seconds since it began and the facts. A no-op for a run that
+    already ended (the ``finally`` net calls it unconditionally). Never raises."""
+    if note is None:
+        return
+    try:
+        fields: dict[str, Any] = {
+            "outcome": outcome if outcome in RUN_OUTCOMES else "(unnamed outcome)",
+            "seconds": round(time.monotonic() - note.started, 3),
+        }
+        cls = _class_name(failure)
+        if cls is not None:
+            fields["error"] = cls
+        sentence = RUN_REFUSALS.get(reason) if isinstance(reason, str) else None
+        if sentence is not None:
+            fields["reason"] = sentence
+        fields.update(_run_fields(facts))
+        end(note.kind, note.key, fields)
+    except Exception as exc:  # noqa: BLE001
+        _internal_failure("run_ended", exc)
+
+
+def run_refused(what: str, reason: str, *, failure: str | None = None, via: str | None = None) -> None:
+    """Record a start that was refused before any run existed (the run journal opens nothing for it), closed in one write: the outcome,
+    ``ran`` False, the fixed sentence of ``reason`` (a key of :data:`RUN_REFUSALS`), the way in (``via``, a key of :data:`RUN_VIA`) and,
+    if given, the class name. Never raises."""
+    _scope_has_written()  # one start, one refusal: the net round it records nothing after this
+    try:
+        kind = RUN_KINDS.get(what)
+        if kind is None:
+            return
+        fields: dict[str, Any] = {"outcome": "refused", "ran": False}
+        sentence = RUN_REFUSALS.get(reason) if isinstance(reason, str) else None
+        if sentence is not None:
+            fields["reason"] = sentence
+        cls = _class_name(failure)
+        if cls is not None:
+            fields["error"] = cls
+        fields.update(_run_fields({"via": via}))
+        record(kind, fields)
+    except Exception as exc:  # noqa: BLE001
+        _internal_failure("run_refused", exc)
+
+
+@contextmanager
+def run_path_checked(what: str, *, via: str | None = None) -> Iterator[None]:
+    """Around a request's first look at the paths it names (a stat, a listing): an ``OSError`` the operating system raises there ends the
+    start in a refusal record (the ``path-unreadable`` sentence, the class name, the way in) and is raised on unchanged, so a start that
+    could not even examine its path leaves a record like every other refused start. Nothing else is caught, and the record never raises."""
+    try:
+        yield
+    except OSError as exc:
+        run_refused(what, "path-unreadable", failure=type(exc).__name__, via=via)
+        raise
+
+
+#: What a start that checks a folder before it runs reads as, when the one statement that looks at the path answers "no": the error it
+#: raises is a ``ValueError``, and the journal's key is ``not-a-folder``. Handed to :func:`run_refusals_net` as ``refused_as``.
+NOT_A_FOLDER: tuple[tuple[type[Exception], str], ...] = ((ValueError, "not-a-folder"),)
+
+
+@contextmanager
+def run_refusals_net(
+    what: str, *, via: str | None = None, refused_as: tuple[tuple[type[Exception], str], ...] = ()
+) -> Iterator[None]:
+    """Round a whole start (a ``with self._lock:`` header, or the decorator of a function): the start that is refused by the one
+    statement that looks at a path leaves a refusal record, and the error goes on unchanged for the caller.
+
+    What it records, and only when nothing else was recorded inside it (a refusal written by a hook in the body, or a run opened there,
+    stands in for it): an ``OSError`` is ``path-unreadable`` (Python 3.13's ``Path.is_dir``, ``exists`` and ``is_file`` re-raise every
+    error but a missing path, so a dropped mount or a too-long name reaches here); an error of a class in ``refused_as`` (pairs of a class
+    and a key of :data:`RUN_REFUSALS`) is that refusal; any other error is not named, and so not recorded here.
+
+    THE CLASS IS ALL THAT IS READ. No word of the error is looked at, so nothing a request chose (a path, a passphrase) can reach the
+    record. The price is that a class stands for a place: ``refused_as`` is only given where the one error of that class a start can
+    leave unrecorded is the path check's own (the tests read every ``raise`` of the guarded functions, and a ``raise`` of that class
+    written anywhere else in them must be recorded where it is raised).
+
+    WHY A NET AND NOT A WRAPPER ROUND THE STATEMENT. Code scanning reports a finding on a pull request for a line the pull request
+    changes. A wrapper round ``if not destp.is_dir():`` moves that line (one level in), and a record inside the branch changes the text
+    that follows it: either way a check that was already on the base branch comes back as a new finding of the pull request, whatever
+    its text hashes to. A net round the header leaves the statement and its neighbours exactly as they were written."""
+    scope = _RefusalScope(_REFUSAL_SCOPE.get())
+    token = _REFUSAL_SCOPE.set(scope)
+    try:
+        yield
+    except OSError as exc:
+        if not scope.recorded:
+            run_refused(what, "path-unreadable", failure=type(exc).__name__, via=via)
+        raise
+    except Exception as exc:
+        if not scope.recorded:
+            for cls, key in refused_as:
+                if isinstance(exc, cls):
+                    run_refused(what, key, failure=type(exc).__name__, via=via)
+                    break
+        raise
+    finally:
+        _REFUSAL_SCOPE.reset(token)
+
+
+@contextmanager
+def run_open(what: str, *, via: str, free: str = "data_free_bytes", **facts: Any) -> Iterator[RunNote | None]:
+    """A run in the journal for the length of a ``with`` block, in place of a ``try``/``finally`` that would move the block's lines.
+
+    Opens the run (:func:`run_started`, then the free bytes under ``free``), hands the note to the block and closes the run on the way
+    out: an error that leaves the block ends it as ``error`` with the CLASS NAME of the failure (of what leaves the block: for an HTTP error built from another, the
+    HTTP error's), unless the block already ended it as
+    something it knows better (``refused``, ``stopped-by-operator``: the first outcome written stands), and whatever is still open ends as
+    ``ended-without-a-recorded-outcome``, a no-op for a run already closed. The error goes on unchanged. Never raises of its own."""
+    note = run_started(what, via=via, **facts)
+    run_free_space(note, free)
+    try:
+        yield note
+    except Exception as exc:
+        run_ended(note, "error", failure=type(exc).__name__)
+        raise
+    finally:
+        run_ended(note, "ended-without-a-recorded-outcome")
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------
 #  The Diagnostics member (the slot contract: ``(max_bytes) -> dict``, never raises, counts and names the cut)
 # ---------------------------------------------------------------------------------------------------------------------------------
 _METHOD = (
     "Events recorded at the sites that already measure them (the write gate's release and its 15-second watchdog, the storage "
     "guard's transitions, the checkpoint sites, the unlock and the boot, the pool's timeout) and kept in a small file written by a "
     "background thread at most once a second. 'total' counts every event since 'since', across restarts; 'kept' is what the file "
-    "holds (the newest, the cap is 'keep'); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
+    "holds (the newest, the cap is 'keep'; for 'gate_hold', 'guard', 'pool_timeout' and 'open' the cap is split by 'keep_rule': the "
+    "longest by the named field AND the newest, each event saying why it is there in 'picked_by': 'longest', 'newest' or 'both', so a "
+    "long hold is not pushed out by a stream of shorter, newer ones); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
     "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
     "shown. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
-    "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been."
+    "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
+    "'run_export' (the volume backup and the folder backup of the large data), 'run_import' (the volume restore, the single-file "
+    "restore of a legacy backup, the folder restore of the large data and the folder import of newsletter files) and 'run_verify' (the "
+    "volume-set and the folder verification) keep the last ten runs of each, every run saying which way it came in ('via': "
+    "'volume-set', 'single-file', 'newsletter-eml' or 'folder'): how each ended, the class of its failure, a fixed sentence for a "
+    "refusal, its seconds, the free bytes of the volume it wrote to when it began ('dest_free_bytes' for a backup, 'data_free_bytes' "
+    "for a restore, where it stages; absent when unreadable, and for a folder restore, which writes to several volumes) and the "
+    "figures the engine measured. A run 'open' with no end was going when this member was built, or its process was killed (an "
+    "earlier process's says so in 'ended'); a refusal with 'ran' false is a start that never became a run. The run journal names "
+    "the same runs differently ('export', 'import' and 'verify' for the volume backup, the volume and legacy restores and the folder "
+    "verification; 'folder-export', 'folder-import' and 'newsletter-import' for the rest): match by 'via' and time. Outcomes agree "
+    "except 'refused' here for a backup the newsletter filter refused or a legacy restore refused by a merge check, and "
+    "'stopped-by-operator' here for the operator's stop of a legacy restore ('error' there for all three). A folder "
+    "verification's 'mismatches' counts what its verdict counts, a bad signature among them. Refused starts share the ten "
+    "kept with the runs ('total' counts them all); a run still open is the last to be pushed out."
 )
 _CAVEAT = (
     "A process kill loses the last second of events when writes succeed (a failed write is tried again, doubling to a minute), and a "
@@ -766,15 +1187,17 @@ _CAVEAT = (
 )
 
 
-def _for_member(event: dict[str, Any]) -> dict[str, Any]:
+def _for_member(event: dict[str, Any], picked_by: str | None = None) -> dict[str, Any]:
     out = {k: v for k, v in event.items() if k != "proc"}
     out["session"] = "this" if event.get("proc") == _PROC else "earlier"
+    if picked_by is not None:
+        out["picked_by"] = picked_by
     return out
 
 
 def diagnostics_member(max_bytes: int) -> dict[str, Any]:
-    """The journal as one Diagnostics member. Over ``max_bytes`` the OLDEST events of the largest kind go first and the member
-    says how many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut."""
+    """The journal as one Diagnostics member. Over ``max_bytes`` the OLDEST events of the largest kind go first (an event kept as one of
+    the longest goes last) and the member says how many (``dropped_to_fit``); ``total`` and ``dropped`` never change by that cut."""
     try:
         budget = max(1024, int(max_bytes))
         _ensure_loaded()
@@ -783,7 +1206,8 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             kinds: dict[str, Any] = {}
             for kind, cap in KEEP.items():
                 entry = combined[kind]
-                events = [_for_member(e) for e in entry["events"]]
+                tags = _picked_by(kind, entry["events"])
+                events = [_for_member(e, tag) for e, tag in zip(entry["events"], tags, strict=True)]
                 kinds[kind] = {
                     "keep": cap,
                     "total": entry["total"],
@@ -791,6 +1215,9 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                     "dropped": entry["total"] - len(events),
                     "events": events,
                 }
+                if kind in LONGEST:
+                    field, n_long = LONGEST[kind]
+                    kinds[kind]["keep_rule"] = {"longest": n_long, "by": field, "newest": cap - n_long}
             file_state = {
                 "read_at_first_use": _READ_STATE,
                 "history_loaded": _LOADED,
@@ -817,7 +1244,9 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
             biggest = max(kinds, key=lambda k: _size(kinds[k]["events"]))
             if not kinds[biggest]["events"]:
                 return {"omitted": "max_bytes is below the member's fixed part", "needs_at_least_bytes": _size(out)}
-            kinds[biggest]["events"].pop(0)
+            # The oldest goes first, but a "longest" one is the last to go: it is the event the zip is kept for (see LONGEST).
+            events = kinds[biggest]["events"]
+            events.pop(next((i for i, e in enumerate(events) if e.get("picked_by") not in ("longest", "both")), 0))
             kinds[biggest]["kept"] -= 1
             out["dropped_to_fit"][biggest] = out["dropped_to_fit"].get(biggest, 0) + 1
         return out
