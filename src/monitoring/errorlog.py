@@ -25,6 +25,7 @@ import threading
 import time
 import traceback
 from collections import Counter
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -192,6 +193,23 @@ def _append(entry: dict) -> None:
         _append(later)
 
 
+@contextlib.contextmanager
+def _marked() -> Iterator[None]:
+    """Mark this thread as inside the journal lock for the body, so a record a garbage-collector finalizer logs there is held (as in ``_append``) and written
+    after the lock has been let go, not waited for. Use it as ``with _marked(), _LOCK:`` so the held records are written once ``_LOCK`` is free. Not an RLock
+    on purpose: a record written in the middle of a dict change or a trim would run on half-changed state."""
+    nested = getattr(_IN_APPEND, "busy", False)
+    try:
+        if not nested:
+            _IN_APPEND.busy, _IN_APPEND.pending = True, []
+        yield
+    finally:
+        if not nested:
+            held, _IN_APPEND.pending, _IN_APPEND.busy = _IN_APPEND.pending, [], False
+            for later in held:
+                _append(later)
+
+
 def _flags(message: str, traceback_tail: str) -> dict[str, bool]:
     """What the summary counts a record for (``database is locked``, an aborted statement), read off the text AS LOGGED. The
     journal's text has the passphrases out of it, and a passphrase that is a piece of those phrases (``database``,
@@ -286,7 +304,7 @@ def note_http_error(method: str, path: str, status: int) -> None:
         method = safe_method(method)  # a method is any token the client sends
         key = (method, str(path), int(status))
         now = time.monotonic()
-        with _LOCK:
+        with _marked(), _LOCK:
             last = _http_last.get(key)
             if last is not None and (now - last) < _HTTP_THROTTLE_S:
                 return
@@ -348,7 +366,7 @@ def note_frontend_error(
         endpoint = _without_query(endpoint)
         k = (clean(kind, 40), clean(message, 200), clean(source or "", 200))
         now = time.monotonic()
-        with _LOCK:
+        with _marked(), _LOCK:
             last = _frontend_last.get(k)
             if last is not None and (now - last) < _FRONTEND_THROTTLE_S:
                 return
