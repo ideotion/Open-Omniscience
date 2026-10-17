@@ -18,6 +18,7 @@ import ast
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NamedTuple
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -810,6 +811,37 @@ def test_a_release_whose_download_address_is_not_text_is_a_missing_address(named
     assert not isinstance(caught.value, installer.InstallerRedirectRefused) and "github.com" not in str(caught.value)
 
 
+_GOOD_ASSET = {"name": "install.sh", "browser_download_url": "https://github.com/x", "digest": "sha256:" + "0" * 64}
+
+
+@pytest.mark.parametrize(
+    "release",
+    [
+        {"assets": [1]},
+        {"assets": ["install.sh"]},
+        {"assets": [None]},
+        {"assets": {"name": "install.sh"}},
+        {"assets": "install.sh"},
+        {"tag_name": 5, "assets": []},
+        {"tag_name": ["v1"], "assets": [_GOOD_ASSET]},
+        {"tag_name": "v1", "assets": [{**_GOOD_ASSET, "digest": 5}]},
+        {"tag_name": "v1", "assets": [{**_GOOD_ASSET, "digest": ["sha256:" + "0" * 64]}]},
+        {"tag_name": "v1", "assets": [{"name": "other"}, 7]},
+    ],
+    ids=["number", "string", "null", "mapping", "text", "tag number", "tag list", "digest number", "digest list", "a later asset"],
+)
+def test_a_release_whose_members_are_not_the_types_the_lookup_reads_is_a_named_fetch_failure(release):
+    """JSON, an object, but ``assets`` that is not a list, an asset that is not an object, a ``tag_name`` or ``digest`` that is not text: the
+    reader used to end in an unhandled ``AttributeError`` (a 500 naming a type). It is ``InstallerFetchFailed`` with the class ``TypeError``,
+    like a body that is not an object, and has neither cause nor context."""
+    from src.llm import installer
+
+    with pytest.raises(installer.InstallerFetchFailed) as caught:
+        installer.resolve_and_verify(lambda url: release, lambda url: b"")
+    assert caught.value.why == "TypeError" and caught.value.__cause__ is None and caught.value.__context__ is None
+    assert str(caught.value) == installer.InstallerFetchFailed.LOOKUP.format(why="TypeError")
+
+
 def test_the_whole_install_check_runs_through_the_real_redirect_machinery(installer_scripted):
     """Lookup, redirect from the release host to the storage host, and the digest check, with nothing replaced but the wire."""
     from src.llm import installer
@@ -1164,9 +1196,11 @@ POPUP_LANE_LISTS = [
     ("src.llm.installer", "GITHUB_ASSET_HOSTS", ("ai",)),
 ]
 
-#: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned.
+#: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned. Keyed by
+#: ``(path, enclosing function, name)``, not by the name alone: a name-based allowance would accept any session built with a variable of that
+#: name anywhere in the file, so the function is part of the key and the test below checks the function really takes that parameter.
 PASSED_ON_HOST_LISTS = {
-    ("src/llm/installer.py", "hosts"): "_get_within takes its list from its two callers, which pass GITHUB_API_HOSTS and GITHUB_ASSET_HOSTS (the rows above)",
+    ("src/llm/installer.py", "_get_within", "hosts"): "_get_within takes its list from its two callers, which pass GITHUB_API_HOSTS and GITHUB_ASSET_HOSTS (the rows above)",
 }
 
 
@@ -1196,49 +1230,184 @@ def test_no_host_list_reaches_further_than_the_consent_popup_tells_the_person(mo
     assert not wider, f"{module}.{name} may reach {wider}, which the popup lane(s) {list(lane_ids)} do not name"
 
 
-def _host_list_sites(source: str, filename: str) -> list[tuple[str, tuple[str, str] | None]]:
-    """Every session-factory call in ``source`` that passes ``allowed_hosts=`` something other than a literal ``None``, as ``(identifier,
-    where it was imported from)``: the identifier is the name or attribute the list is written as (``''`` for anything else: an inline
-    tuple, a call, a subscript), and the second item is ``(module, name)`` when that name was imported with ``from module import name``."""
+class _Site(NamedTuple):
+    """One session-factory call that passes ``allowed_hosts=`` something other than a literal ``None``."""
+
+    #: The name the list is written as, resolvable to a row of ``POPUP_LANE_LISTS``: a plain name, or ``Class.NAME`` for ``cls.NAME`` or
+    #: ``self.NAME`` inside that class. ``''`` for everything else (an inline tuple, a call, a subscript, ``module.NAME``, ``other.NAME``).
+    ident: str
+    #: ``(module, name)`` when that name was imported with ``from module import name``.
+    imported: tuple[str, str] | None
+    #: The function the call is in (``''`` at module level).
+    function: str
+    #: True when the name is NOT bound exactly once in the place the pin reads it: a plain name must have ONE binding in the whole module,
+    #: made at module level (an assignment or an import); ``Class.NAME`` must be bound once in the body of a class bound once at module
+    #: level. A parameter, a second assignment anywhere (a function with ``global``, a loop variable, a comprehension, a class body), a star
+    #: import, or no binding at all makes it something other than the constant the pin reads.
+    rebound: bool
+    #: The source of the value, for the failure message.
+    text: str
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+def _bindings(tree: ast.AST) -> tuple[dict[str, list[bool]], bool]:
+    """Every place a name is bound anywhere in the module, as ``name -> [made at module level, ...]``, and whether a star import is there
+    (it binds names nobody can list). Counts what rebinding costs: an assignment target (also augmented, loop, ``with``, walrus,
+    comprehension), a parameter, ``def``/``class``/``import``, ``except ... as``, a ``match`` capture, ``del``; a ``global`` rebind in
+    another function is an assignment inside it, so it is counted by being a second binding."""
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
+    def at_module_level(node: ast.AST) -> bool:
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, _SCOPES):
+                return False
+        return True
+
+    found: dict[str, list[bool]] = {}
+    star = False
+
+    def bind(name: str | None, node: ast.AST) -> None:
+        if name:
+            found.setdefault(name, []).append(at_module_level(node))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            bind(node.id, node)
+        elif isinstance(node, ast.arg):
+            bind(node.arg, node)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bind(node.name, node)
+        elif isinstance(node, ast.alias):
+            if node.name == "*":
+                star = True
+            else:
+                bind(node.asname or node.name.split(".")[0], node)
+        elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+            bind(node.name, node)
+        elif isinstance(node, ast.MatchMapping):
+            bind(node.rest, node)
+    return found, star
+
+
+def _class_binds_once(owner: ast.ClassDef, name: str) -> bool:
+    """``name`` is bound exactly once in the BODY of ``owner`` (not in its methods): the class constant the pin reads."""
+    count = 0
+    stack: list[ast.AST] = list(owner.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load) and node.id == name:
+            count += 1
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            count += 1
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue  # a method's own names are its own
+        stack.extend(ast.iter_child_nodes(node))
+    return count == 1
+
+
+def _host_list_sites(source: str, filename: str) -> list[_Site]:
+    """Every session-factory call in ``source`` that passes ``allowed_hosts=`` something other than a literal ``None``."""
     tree = ast.parse(source, filename=filename)
     aliases: dict[str, str] = {}
     imported: dict[str, tuple[str, str]] = {}
+    parents: dict[ast.AST, ast.AST] = {}
     for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
         if isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 imported[alias.asname or alias.name] = (node.module, alias.name)
                 if alias.name in _SESSION_FACTORIES and alias.asname:
                     aliases[alias.asname] = alias.name
+    bound, star = _bindings(tree)
 
     def name_of(node: ast.AST) -> str:
         if isinstance(node, ast.Name):
             return aliases.get(node.id, node.id)
         return node.attr if isinstance(node, ast.Attribute) else ""
 
-    sites: list[tuple[str, tuple[str, str] | None]] = []
+    def ancestors(node: ast.AST):
+        while node in parents:
+            node = parents[node]
+            yield node
+
+    sites: list[_Site] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and name_of(node.func) in _SESSION_FACTORIES:
-            for k in node.keywords:
-                if k.arg == "allowed_hosts" and not (isinstance(k.value, ast.Constant) and k.value.value is None):
-                    ident = k.value.id if isinstance(k.value, ast.Name) else k.value.attr if isinstance(k.value, ast.Attribute) else ""
-                    sites.append((ident, imported.get(ident)))
+        if not (isinstance(node, ast.Call) and name_of(node.func) in _SESSION_FACTORIES):
+            continue
+        scopes = [a for a in ancestors(node) if isinstance(a, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))]
+        owner = next((a for a in ancestors(node) if isinstance(a, ast.ClassDef)), None)
+        function = scopes[0].name if scopes and not isinstance(scopes[0], ast.Lambda) else ""
+        for k in node.keywords:
+            if k.arg != "allowed_hosts" or (isinstance(k.value, ast.Constant) and k.value.value is None):
+                continue
+            value = k.value
+            ident, rebound = "", True
+            if isinstance(value, ast.Name):
+                ident, rebound = value.id, star or bound.get(value.id) != [True]
+            elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name) and value.value.id in ("cls", "self") and owner is not None:
+                ident = f"{owner.name}.{value.attr}"
+                rebound = star or bound.get(owner.name) != [True] or not _class_binds_once(owner, value.attr)
+            sites.append(_Site(ident, imported.get(value.id) if isinstance(value, ast.Name) else None, function, rebound, ast.unparse(value)))
     return sites
 
 
+#: The attribute a finished session's list is read from (``GuardedSession.allowed_hosts``): assigning it after the build replaces the list
+#: whatever the factory was given.
+_LIST_ATTRIBUTE = "allowed_hosts"
+
+
+def _pinned_attribute_names() -> set[str]:
+    return {name.split(".")[-1] for _m, name, _lanes in POPUP_LANE_LISTS} | {_LIST_ATTRIBUTE}
+
+
+def _rebinds_in(source: str, rel: str) -> list[tuple[str, str]]:
+    """Writes to a pinned list that no name-based walk sees: an ATTRIBUTE assigned anywhere (``self.ALLOWED_HOSTS = ...`` shadows the class
+    constant for that instance, ``module.API_HOSTS = ...`` rebinds another module's, ``session.allowed_hosts = ...`` replaces a built
+    session's list), and ``setattr``/``__setattr__`` with the name written as a string. A name built at run time (``setattr(o, name, v)``)
+    is out of reach of a source walk, which is why the walk also refuses a star import and the pin test reads the live values."""
+    names = _pinned_attribute_names()
+    found: list[tuple[str, str]] = []
+    for node in ast.walk(ast.parse(source, filename=rel)):
+        if isinstance(node, ast.Attribute) and not isinstance(node.ctx, ast.Load) and node.attr in names:
+            found.append((rel, f"assigns .{node.attr}"))
+        elif isinstance(node, ast.Call):
+            callee = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ""
+            if callee in ("setattr", "__setattr__", "delattr", "__delattr__") and any(
+                isinstance(a, ast.Constant) and a.value in names for a in node.args[:2]
+            ):
+                found.append((rel, f"{callee} of a pinned list"))
+    return found
+
+
+def _unpinned_in(source: str, rel: str, module: str) -> list[tuple[str, str]]:
+    """The sessions of ``source`` whose list is not one of the rows of ``POPUP_LANE_LISTS``, as ``(path, what the list is written as)``, and
+    the writes to a pinned list that the name-based walk cannot see."""
+    pinned = {(m, n) for m, n, _lanes in POPUP_LANE_LISTS}
+    found: list[tuple[str, str]] = _rebinds_in(source, rel)
+    for site in _host_list_sites(source, rel):
+        if (rel, site.function, site.ident) in PASSED_ON_HOST_LISTS:
+            continue
+        if site.ident and not site.rebound and ((module, site.ident) in pinned or site.imported in pinned):
+            continue
+        found.append((rel, site.text))
+    return found
+
+
 def _unpinned_host_lists() -> list[tuple[str, str]]:
-    pinned = {(module, name.rsplit(".", 1)[-1]) for module, name, _lanes in POPUP_LANE_LISTS}
     found: list[tuple[str, str]] = []
     for path in sorted((ROOT / "src").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         if rel == "src/safety/fetcher.py":
             continue
         module = rel[: -len(".py")].replace("/", ".")
-        for ident, source in _host_list_sites(path.read_text(encoding="utf-8"), rel):
-            if ident and ((module, ident) in pinned or source in pinned):
-                continue
-            if (rel, ident) in PASSED_ON_HOST_LISTS:
-                continue
-            found.append((rel, ident or "<not a name>"))
+        found += _unpinned_in(path.read_text(encoding="utf-8"), rel, module)
     return found
 
 
@@ -1253,6 +1422,45 @@ def test_every_host_list_a_session_is_built_with_is_pinned_to_a_popup_lane():
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_get_within"
     ]
     assert sorted(passed) == ["GITHUB_API_HOSTS", "GITHUB_ASSET_HOSTS"], "the installer's two fetches pass the two pinned lists and nothing else"
+    # ... and the allowance is for a PARAMETER of that function, not for whatever else is called ``hosts``
+    (get_within,) = [n for n in ast.walk(ast.parse(installer_src)) if isinstance(n, ast.FunctionDef) and n.name == "_get_within"]
+    assert "hosts" in [a.arg for a in get_within.args.args]
+    assert all(key[1] == "_get_within" for key in PASSED_ON_HOST_LISTS)
+
+
+def _subclasses_of(source: str, rel: str, owners: set[str]) -> list[tuple[str, str]]:
+    """Classes of ``source`` that name one of ``owners`` among their bases (by the last word of the base, so ``mod.Owner`` counts)."""
+    found: list[tuple[str, str]] = []
+    for node in ast.walk(ast.parse(source, filename=rel)):
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                word = base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute) else ""
+                if word in owners:
+                    found.append((rel, f"class {node.name}({word})"))
+    return found
+
+
+def test_no_class_that_owns_a_pinned_host_list_is_subclassed():
+    """``cls.ALLOWED_HOSTS`` is the pinned constant only when ``cls`` is the owner: a subclass that overrides the constant (anywhere under
+    ``src/``, so the walk of one module cannot see it) makes the same classmethod build its session with the subclass's list."""
+    owners = {name.split(".")[0] for _m, name, _lanes in POPUP_LANE_LISTS if "." in name}
+    assert "DuckDuckGoSearch" in owners, "the table's class-owned row (the DuckDuckGo search) is among the classes that must not be subclassed"
+    found: list[tuple[str, str]] = []
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        found += _subclasses_of(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix(), owners)
+    assert found == [], f"subclasses of a class that owns a pinned host list: {found}"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("class Wide(DuckDuckGoSearch):\n    ALLOWED_HOSTS = ('evil.example',)", 1),
+        ("import m\nclass Wide(m.DuckDuckGoSearch):\n    pass", 1),
+        ("class Other(Base):\n    pass", 0),
+    ],
+)
+def test_the_subclass_walk_sees_a_base_written_as_a_name_or_an_attribute(source, expected):
+    assert len(_subclasses_of(source, "x.py", {"DuckDuckGoSearch"})) == expected
 
 
 @pytest.mark.parametrize(
@@ -1261,14 +1469,118 @@ def test_every_host_list_a_session_is_built_with_is_pinned_to_a_popup_lane():
         ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=('a.org',))", [("", None)]),
         ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=HOSTS)", [("HOSTS", None)]),
         ("from x import HOSTS\nfrom src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=HOSTS)", [("HOSTS", ("x", "HOSTS"))]),
-        ("from src.safety.fetcher import following_session\nfollowing_session('o', 'ua', allowed_hosts=cls.HOSTS)", [("HOSTS", None)]),
+        ("from src.safety.fetcher import following_session\nclass C:\n    def f(self):\n        following_session('o', 'ua', allowed_hosts=self.HOSTS)", [("C.HOSTS", None)]),
         ("from src.safety.fetcher import guarded_session as gs\ngs(allowed_hosts=NEW_HOSTS)", [("NEW_HOSTS", None)]),
         ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=None)", []),
         ("from src.safety.fetcher import guarded_session\nguarded_session()", []),
+        # an attribute of anything but the class's own cls/self is not a name the pin reads
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=wide.API_HOSTS)", [("", None)]),
+        ("from src.safety.fetcher import guarded_session\ndef f(cls):\n    guarded_session(allowed_hosts=cls.HOSTS)", [("", None)]),
     ],
 )
 def test_the_completeness_walk_reads_the_list_every_session_is_built_with(source, expected):
-    assert _host_list_sites(source, "x.py") == expected
+    assert [(s.ident, s.imported) for s in _host_list_sites(source, "x.py")] == expected
+
+
+_WIDE_ATTRIBUTE = "from src.safety.fetcher import guarded_session\nimport wide\nguarded_session(allowed_hosts=wide.API_HOSTS)"
+_LOCAL_REBIND = "from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\ndef f():\n    API_HOSTS = ('evil.example',)\n    guarded_session(allowed_hosts=API_HOSTS)"
+_PARAMETER = "from src.safety.fetcher import guarded_session\ndef f(API_HOSTS):\n    guarded_session(allowed_hosts=API_HOSTS)"
+_LOOP_TARGET = "from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\ndef f(xs):\n    for API_HOSTS in xs:\n        guarded_session(allowed_hosts=API_HOSTS)"
+_G = "from src.safety.fetcher import guarded_session\n"
+_COMPREHENSION = _G + "[guarded_session(allowed_hosts=API_HOSTS) for API_HOSTS in [('evil.example',)]]"
+_COMPREHENSION_AND_CONSTANT = _G + "API_HOSTS = ('a.org',)\n[guarded_session(allowed_hosts=API_HOSTS) for API_HOSTS in [('evil.example',)]]"
+_CLASS_BODY = _G + "class C:\n    API_HOSTS = ('evil.example',)\n    s = guarded_session(allowed_hosts=API_HOSTS)"
+_GLOBAL_REBIND = _G + "API_HOSTS = ('a.org',)\ndef later():\n    global API_HOSTS\n    API_HOSTS = ('evil.example',)\ndef f():\n    guarded_session(allowed_hosts=API_HOSTS)"
+_BRANCHED = _G + "if X:\n    API_HOSTS = ('a.org',)\nelse:\n    API_HOSTS = ('evil.example',)\nguarded_session(allowed_hosts=API_HOSTS)"
+_AUGMENTED = _G + "API_HOSTS = ('a.org',)\nAPI_HOSTS += ('evil.example',)\nguarded_session(allowed_hosts=API_HOSTS)"
+_STAR_IMPORT = _G + "from elsewhere import *\nAPI_HOSTS = ('a.org',)\nguarded_session(allowed_hosts=API_HOSTS)"
+_NEVER_BOUND = _G + "guarded_session(allowed_hosts=API_HOSTS)"
+_IMPORTED_AND_REBOUND = "from src.catalog.wikidata import WDQS_HOSTS\n" + _G + "WDQS_HOSTS = ('evil.example',)\nguarded_session(allowed_hosts=WDQS_HOSTS)"
+_DDG = _G + "class DuckDuckGoSearch:\n"
+_INSTANCE_SHADOW = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    def __init__(self, hosts):\n        self.ALLOWED_HOSTS = hosts\n    def f(self):\n        guarded_session(allowed_hosts=self.ALLOWED_HOSTS)"
+_CLASS_BOUND_TWICE = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    ALLOWED_HOSTS = ('evil.example',)\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)"
+_CLASS_REDEFINED = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)\nclass DuckDuckGoSearch:\n    ALLOWED_HOSTS = ('evil.example',)"
+_CLASS_WITHOUT_CONSTANT = _DDG + "    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)"
+_CLASS_CONSTANT_ONCE = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)"
+_PARAMETER_BESIDE_CONSTANT = _G + "API_HOSTS = ('a.org',)\ndef f(API_HOSTS):\n    guarded_session(allowed_hosts=API_HOSTS)"
+_EXCEPT_AS = _G + "API_HOSTS = ('a.org',)\ntry:\n    pass\nexcept ValueError as API_HOSTS:\n    guarded_session(allowed_hosts=API_HOSTS)"
+_MATCH_CAPTURE = _G + "API_HOSTS = ('a.org',)\nmatch x:\n    case [API_HOSTS]:\n        guarded_session(allowed_hosts=API_HOSTS)"
+_MATCH_STAR = _G + "API_HOSTS = ('a.org',)\nmatch x:\n    case [*API_HOSTS]:\n        guarded_session(allowed_hosts=API_HOSTS)"
+_MATCH_MAPPING = _G + "API_HOSTS = ('a.org',)\nmatch x:\n    case {'k': 1, **API_HOSTS}:\n        guarded_session(allowed_hosts=API_HOSTS)"
+_CLASS_STAR_IMPORT = "from elsewhere import *\n" + _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)"
+_CLASS_METHOD_LOCAL = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    def other(self):\n        ALLOWED_HOSTS = 1\n        return ALLOWED_HOSTS\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)"
+_CLASS_METHOD_SAME_NAME = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    def ALLOWED_HOSTS(self):\n        return ('evil.example',)\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)"
+_CLASS_OTHER_RECEIVER = _DDG + "    ALLOWED_HOSTS = ('a.org',)\n    def f(self, wide):\n        guarded_session(allowed_hosts=wide.ALLOWED_HOSTS)"
+_METHOD_SETATTR = _G + "API_HOSTS = ('a.org',)\ns = guarded_session(allowed_hosts=API_HOSTS)\ns.__setattr__('allowed_hosts', ('evil.example',))"
+_SESSION_ATTRIBUTE = _G + "API_HOSTS = ('a.org',)\ns = guarded_session(allowed_hosts=API_HOSTS)\ns.allowed_hosts = ('evil.example',)"
+_OTHER_MODULE_ATTRIBUTE = "import src.catalog.wikidata_apply as w\nw.API_HOSTS = ('evil.example',)"
+_SETATTR = _G + "API_HOSTS = ('a.org',)\ns = guarded_session(allowed_hosts=API_HOSTS)\nsetattr(s, 'allowed_hosts', ('evil.example',))"
+_DUNDER_SETATTR = _G + "API_HOSTS = ('a.org',)\ns = guarded_session(allowed_hosts=API_HOSTS)\nobject.__setattr__(s, 'allowed_hosts', ('evil.example',))"
+_NESTED_REBIND = "from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\ndef outer():\n    API_HOSTS = ('evil.example',)\n    def inner():\n        guarded_session(allowed_hosts=API_HOSTS)"
+
+
+@pytest.mark.parametrize(
+    ("source", "rel", "module", "unpinned"),
+    [
+        # what the pin reads is the module's own constant, so these are accepted ...
+        ("from src.safety.fetcher import guarded_session\nAPI_HOSTS = ('a.org',)\nguarded_session(allowed_hosts=API_HOSTS)", "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", False),
+        ("from src.catalog.wikidata import WDQS_HOSTS\nfrom src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=WDQS_HOSTS)", "src/catalog/discover.py", "src.catalog.discover", False),
+        ("from src.safety.fetcher import guarded_session\nclass DuckDuckGoSearch:\n    ALLOWED_HOSTS = ('a.org',)\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)", "src/services/duckduckgo.py", "src.services.duckduckgo", False),
+        ("from src.safety.fetcher import guarded_session\ndef _get_within(url, hosts):\n    guarded_session(allowed_hosts=hosts)", "src/llm/installer.py", "src.llm.installer", False),
+        # ... and these are not: a name the pin does not read the value of
+        (_WIDE_ATTRIBUTE, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_LOCAL_REBIND, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_PARAMETER, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_LOOP_TARGET, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_NESTED_REBIND, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        ("from src.safety.fetcher import guarded_session\nclass Other:\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)", "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        ("from src.safety.fetcher import guarded_session\nclass DuckDuckGoSearch:\n    @classmethod\n    def f(cls):\n        guarded_session(allowed_hosts=cls.ALLOWED_HOSTS)", "src/services/other.py", "src.services.other", True),
+        # the installer's parameter allowance is for that function only, in that file only
+        ("from src.safety.fetcher import guarded_session\ndef other(url, hosts):\n    guarded_session(allowed_hosts=hosts)", "src/llm/installer.py", "src.llm.installer", True),
+        ("from src.safety.fetcher import guarded_session\ndef _get_within(url, hosts):\n    guarded_session(allowed_hosts=hosts)", "src/llm/other.py", "src.llm.other", True),
+        ("from src.safety.fetcher import guarded_session\nguarded_session(allowed_hosts=('a.org',))", "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        # a second binding of the name ANYWHERE in the module is a different value than the constant the pin reads: a comprehension and a
+        # class body at module level, a function that rebinds through ``global``, a branch, an augmented assignment, a star import
+        (_COMPREHENSION, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_COMPREHENSION_AND_CONSTANT, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_CLASS_BODY, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_GLOBAL_REBIND, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_BRANCHED, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_AUGMENTED, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_STAR_IMPORT, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_NEVER_BOUND, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_IMPORTED_AND_REBOUND, "src/catalog/discover.py", "src.catalog.discover", True),
+        # a class constant is the pinned one only when it is bound once in the class body, in a class bound once; an instance attribute
+        # of the same name, a second class of the name, or a constant that is a method are not
+        (_INSTANCE_SHADOW, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        (_CLASS_BOUND_TWICE, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        (_CLASS_REDEFINED, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        (_CLASS_WITHOUT_CONSTANT, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        (_CLASS_CONSTANT_ONCE, "src/services/duckduckgo.py", "src.services.duckduckgo", False),
+        # writes to a pinned list that are not a name: the attribute of a built session, a pinned name on another module, setattr
+        (_SESSION_ATTRIBUTE, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_OTHER_MODULE_ATTRIBUTE, "src/catalog/other.py", "src.catalog.other", True),
+        (_SETATTR, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_DUNDER_SETATTR, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_METHOD_SETATTR, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        # every other way a name is bound: a parameter beside the constant, an exception name, the three kinds of match capture, a star import
+        (_PARAMETER_BESIDE_CONSTANT, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_EXCEPT_AS, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_MATCH_CAPTURE, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_MATCH_STAR, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_MATCH_MAPPING, "src/catalog/wikidata_apply.py", "src.catalog.wikidata_apply", True),
+        (_CLASS_STAR_IMPORT, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        (_CLASS_METHOD_SAME_NAME, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        (_CLASS_OTHER_RECEIVER, "src/services/duckduckgo.py", "src.services.duckduckgo", True),
+        # a method's own local of the same name is not the class constant, so it does not count against it
+        (_CLASS_METHOD_LOCAL, "src/services/duckduckgo.py", "src.services.duckduckgo", False),
+    ],
+)
+def test_the_completeness_walk_accepts_only_a_list_the_pin_reads(source, rel, module, unpinned):
+    """The walk used to keep the last word of whatever the list was written as, so ``wide.API_HOSTS`` in a module whose own ``API_HOSTS``
+    is pinned was accepted while the pin read the OTHER list; and a name bound inside the function (a rebind, a parameter, a loop variable)
+    is not the module's constant either."""
+    assert bool(_unpinned_in(source, rel, module)) is unpinned
 
 
 def test_every_endpoint_list_is_exactly_the_host_of_the_endpoint_it_serves():
@@ -1384,6 +1696,11 @@ def test_a_guarded_session_without_a_host_list_is_a_decision_not_an_accident():
         "import functools\nfrom src.safety.fetcher import guarded_session\nfunctools.partial(guarded_session, isolation_token='x')",
         "from src.safety.fetcher import GuardedSession\nGuardedSession()",
         "from src.safety.fetcher import _session_for\n_session_for(s, user_agent='ua')",
+        # a list handed in a form the pin cannot read is unlisted too, so the file has to be in UNLISTED_SESSIONS with its reason
+        "import functools\nfrom src.safety.fetcher import guarded_session\nfunctools.partial(guarded_session, allowed_hosts=('evil.example',))",
+        "from src.safety.fetcher import guarded_session\nguarded_session(**{'allowed_hosts': ('evil.example',)})",
+        "from src.safety.fetcher import guarded_session\nopts = {}\nguarded_session(**opts)",
+        "from src.safety.fetcher import guarded_session\nbuild = guarded_session\nbuild(allowed_hosts=('evil.example',))",
     ],
 )
 def test_the_scanner_counts_every_way_of_building_a_session_without_a_list(source):

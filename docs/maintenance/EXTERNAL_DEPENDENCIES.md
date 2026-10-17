@@ -124,6 +124,19 @@ the encrypted round trip — that in-lane checksum is **never** written back int
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
   Dependabot bump; re-pin to the new SHA with its tag comment.
+- **urllib3** (`urllib3-log-shapes`) — the HTTP library under `requests`. `src/ingest/urllib3_log.py` keeps the
+  request target (the signature of a signed storage download) and anything else a record carries out of urllib3's own log lines:
+  it withholds a line it does not know, and in a line it knows it reduces every argument that is not a number or text to its
+  class name and drops the exception, the stack and the extra attributes. It is built on a table of the library's log calls read
+  from 2.7.0 and 2.8.0. `pyproject.toml` carries `urllib3>=2.7.0,<2.8.1` (the ceiling is the first release not read, a patch
+  release included, as for `sqlcipher3`) and the registry carries the same floor and ceiling. A new release is qualified by
+  running `tests/test_urllib3_log_withholds_the_path.py` on it (for the second release on hand, put its unpacked wheel first on
+  `PYTHONPATH`): a log call that is new, changed or gone, a keyword added, a second call with a template the table has, or a
+  logger the module does not cover (however it is bound) fails by name. Decide per failure whether the table is out of date
+  (extend `SHAPES`, and the target positions if the new line carries an address) or the library began to log something this app
+  must not keep; never loosen a test to pass. Then move the pyproject range, the registry `{floor, verified, ceiling, current}`,
+  the `urllib3-floor` job in `.github/workflows/ci.yml` if the floor moved, and, if it moved, `requirements.lock` together. The
+  weekly freshness run opens the issue when upstream publishes a release past `current`.
 
 ## Clearing an `on-security` artifact without re-vendoring (`reviewed_through`)
 
