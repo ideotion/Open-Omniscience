@@ -210,7 +210,10 @@ STDERR_ROWS_SHOWN = 3
 #: The fixed messages the launcher's stderr filter admits (scripts/launch.sh ``STDERR_MESSAGES``, which a test pins equal to this set):
 #: glibc 2.41's heap-corruption messages and the interpreter's fatal-error headers. A line is shown only when it IS one of these, whole
 #: (no pattern, no tail), checked AGAIN here because the file is on disk and anything may have written to it; any other line is not
-#: shown, only counted in ``rejected_lines``. A message from another libc (musl, macOS) is not here and so is never recorded.
+#: shown, only counted in ``rejected_lines``. musl has NO message to add: its allocator detects corruption with ``assert`` redefined to
+#: ``a_crash()`` (src/malloc/mallocng/glue.h; ``hlt`` on x86_64), so the process dies of a signal with nothing printed and the signal is
+#: what the launcher's exit record already holds. macOS libmalloc prints its messages with the program name, pid, thread and object
+#: address in them, so those are matched as TEMPLATES (:data:`MAC_ABORT_TAILS`), never as fixed lines.
 ABORT_MESSAGES = frozenset({
     "malloc(): unaligned fastbin chunk detected",
     "malloc(): unaligned fastbin chunk detected 2",
@@ -254,6 +257,55 @@ ABORT_MESSAGES = frozenset({
     "Fatal Python error: Illegal instruction",
     "Fatal Python error: Floating point exception",
 })
+
+
+#: macOS libmalloc abort messages, each a TEMPLATE because the line carries the program name, the pid, the thread and an object address:
+#: ``<progname>(<pid>,0x<thread>) malloc: <tail>`` (src/malloc_printf.c ``malloc_vreport``: ``"%s(%d,%p) malloc: "`` with getprogname(), getpid(),
+#: the thread). ``%p`` in a tail stands for ``0x`` and lower-case hex. Every tail is the format string of a ``malloc_zone_error`` /
+#: ``malloc_report`` call in apple-oss-distributions/libmalloc (``main`` as read on 2026-10-17): malloc_common.c (the default zone's
+#: ``*** error for object %p: pointer being freed was not allocated``), malloc_printf.c (``*** set a breakpoint in malloc_error_break to
+#: debug``, printed after every error that stops the process), magazine_malloc.c, magazine_large.c, magazine_small.c, magazine_medium.c (the
+#: rest). The variable parts are character-class limited (a program name of ``[A-Za-z0-9._+-]``, digits, hex), so no free text can ride in: a
+#: line with anything else in those places does not match. NOT RUN ON macOS (this was written on Linux against the source text and tested
+#: with the awk implementations that ship there or descend from it); an older macOS words some of these differently and is not matched.
+MAC_ABORT_TAILS = (
+    "*** set a breakpoint in malloc_error_break to debug",
+    "*** error for object %p: pointer being freed was not allocated",
+    "pointer %p being freed was not allocated",
+    "pointer %p being freed already on death-row",
+    "pointer %p being reallocated was not allocated",
+    "pointer %p of size zero being freed",
+    "large entry %p reallocated is not properly in table",
+    "Non-aligned pointer %p being freed",
+    "Non-aligned pointer %p being freed (2)",
+    "Pointer %p to metadata being freed",
+    "Pointer %p to metadata being freed (2)",
+    "non-page-aligned, non-allocated pointer %p being freed",
+    "double free for ptr %p",
+)
+#: A line longer than this is never a template match (the launcher checks the same figure): the longest tail with a long program name is far below it.
+MAC_LINE_MAX = 200
+_MAC_PREFIX_ERE = r"[A-Za-z0-9._+-]+\([0-9]+,0x[0-9a-f]+\) malloc: "
+_PTR_ERE = "0x[0-9a-f]+"
+
+
+def _ere_escape(text: str) -> str:
+    return re.sub(r"([\\^$.\[\]|()*+?{}])", r"\\\1", text)
+
+
+def mac_abort_ere() -> str:
+    """The one extended regular expression the launcher's awk and this reader both apply to a whole line (POSIX ERE, no intervals, so
+    mawk, gawk, the one-true-awk that macOS ships and busybox awk all read it the same way)."""
+    alts = "|".join(_ere_escape(t).replace("%p", _PTR_ERE) for t in MAC_ABORT_TAILS)
+    return "^" + _MAC_PREFIX_ERE + "(" + alts + ")$"
+
+
+_MAC_ABORT_RE = re.compile(mac_abort_ere())
+
+
+def accepted_abort_line(text: object) -> bool:
+    """Is this line one the launcher's filter would have kept: one of the fixed messages, or a whole-line macOS template match."""
+    return isinstance(text, str) and (text in ABORT_MESSAGES or (len(text) <= MAC_LINE_MAX and _MAC_ABORT_RE.fullmatch(text) is not None))
 
 
 #: The most of the launcher's stderr record the reader looks at: 256 KiB, the file's own tail. WHAT IT PROTECTS: the boot (the launcher
@@ -312,7 +364,7 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
             summary = rec
             continue
         text = rec.get("line")
-        if not isinstance(text, str) or text not in ABORT_MESSAGES:
+        if not accepted_abort_line(text):
             rejected += 1
             continue
         found += 1

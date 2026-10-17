@@ -428,3 +428,92 @@ def test_a_pid_file_touched_in_the_last_minute_is_never_swept(tmp_path):
     _run_launcher(root, env)
     assert fresh.exists(), "touched a moment ago: the filter that owns it may still be writing its summary"
     assert not old.exists(), "the same file two minutes old, dead launcher and dead server: swept"
+
+
+# ---- macOS libmalloc templates and the awk implementations the filter has to run under (10-17, launcher parity) ----
+
+MAC_GOOD = [
+    "python3.13(4242,0x1f2a3b4c0) malloc: *** error for object 0x600003a8c0a0: pointer being freed was not allocated",
+    "Python(7,0x20a8d8f40) malloc: *** set a breakpoint in malloc_error_break to debug",
+    "python3(12,0xab) malloc: pointer 0x6000 being freed was not allocated",
+    "python3(12,0xab) malloc: Non-aligned pointer 0x7f12 being freed (2)",
+    "python3(12,0xab) malloc: double free for ptr 0xdeadbeef",
+]
+MAC_BAD = [
+    "python3(4242,0x1f2a3b4c0) malloc: *** error for object 0x6000: the passphrase hunter2-secret was typed",
+    "python3(4242,0x1f2a3b4c0) malloc: pointer 0xZZ being freed was not allocated",
+    "py thon3(4242,0x1f) malloc: double free for ptr 0x12",
+    "python3(4242,0x1f) malloc: double free for ptr 0x12 and more",
+    "prefix python3(4242,0x1f) malloc: double free for ptr 0x12",
+    "python3(4242,0x1f) malloc: *** set a breakpoint in malloc_error_break to debug now",
+    "a" * 250 + "(4242,0x1f) malloc: double free for ptr 0x12",  # fits the expression, not the length cap
+]
+
+
+def _awk_dirs(tmp_path: Path) -> dict[str, Path]:
+    """One directory per awk implementation found, each holding an ``awk`` that runs it and leaves its name in a marker file."""
+    import shutil
+
+    found: dict[str, Path] = {}
+    for label, argv in (("mawk", ["mawk"]), ("gawk", ["gawk"]), ("one-true-awk", ["original-awk"]), ("busybox", ["busybox", "awk"])):
+        exe = shutil.which(argv[0])
+        if not exe:
+            continue
+        d = tmp_path / f"awk-{label}"
+        d.mkdir()
+        wrapper = d / "awk"
+        wrapper.write_text(f'#!/bin/sh\necho "{label}" >> "{d}/ran"\nexec "{exe}" {" ".join(argv[1:])} "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
+        found[label] = d
+    return found
+
+
+def test_the_launchers_macos_expression_is_the_readers():
+    import re as _re
+
+    src = (Path(__file__).resolve().parent.parent / "scripts" / "launch.sh").read_text(encoding="utf-8")
+    m = _re.search(r"^STDERR_MAC_RE='(.*)'\n", src, _re.M)
+    assert m, "launch.sh must define STDERR_MAC_RE"
+    assert m.group(1) == ee.mac_abort_ere()
+    assert f"STDERR_MAC_MAX={ee.MAC_LINE_MAX}\n" in src
+    assert "'" not in ee.mac_abort_ere() and '"' not in "".join(ee.MAC_ABORT_TAILS) and "\\" not in "".join(ee.MAC_ABORT_TAILS), "the line goes into a JSON string unescaped"
+
+
+@pytest.mark.parametrize("line", MAC_GOOD)
+def test_the_reader_accepts_a_macos_template_line(dd, line):
+    _write(dd, [{"pid": 5, "boot_id": "b1", "at": "t", "line": line}])
+    out = ee.launcher_stderr(5, "b1")
+    assert out["lines"] == [line] and "rejected_lines" not in out
+
+
+@pytest.mark.parametrize("line", MAC_BAD)
+def test_the_reader_refuses_a_line_that_only_looks_like_a_macos_template(dd, line):
+    _write(dd, [{"pid": 5, "boot_id": "b1", "at": "t", "line": line}])
+    out = ee.launcher_stderr(5, "b1")
+    assert out["lines"] == [] and out["rejected_lines"] == 1
+
+
+@posix_only
+def test_the_filter_gives_the_same_record_under_every_awk_it_may_meet(tmp_path):
+    awks = _awk_dirs(tmp_path)
+    if len(awks) < 2:
+        pytest.skip("fewer than two awk implementations installed here")
+    body = "sleep 0.2\n" + "".join(f"printf '%s\\n' {json.dumps(x)} >&2\n" for x in [*MAC_GOOD, *MAC_BAD]) + SERVER.split("\n", 1)[1]
+    seen: dict[str, list[str]] = {}
+    for label, d in awks.items():
+        sub = tmp_path / f"run-{label}"
+        sub.mkdir()
+        root, env = _launcher_tree(sub, body)
+        env["PATH"] = f"{d}{os.pathsep}{env['PATH']}"
+        proc = _run_launcher(root, env, tty=True)
+        assert proc.returncode == 134, (label, proc.stderr)
+        assert (d / "ran").read_text(encoding="utf-8").strip().splitlines(), f"{label}: the filter did not run under this awk"
+        recs = _records(root)
+        seen[label] = [r["line"] for r in recs if not r.get("summary")]
+        [summary] = [r for r in recs if r.get("summary")]
+        assert summary["dropped_lines"] == len(MAC_BAD) + 3, (label, summary)
+        raw = (root / "data" / "diagnostics" / ee.LAUNCHER_STDERR).read_text(encoding="utf-8")
+        assert "hunter2" not in raw, label
+    first = next(iter(seen.values()))
+    assert first == [*MAC_GOOD, "free(): invalid pointer", "double free or corruption (!prev)", "Fatal Python error: Aborted"]
+    assert all(v == first for v in seen.values()), seen

@@ -188,6 +188,12 @@ Fatal Python error: Segmentation fault
 Fatal Python error: Bus error
 Fatal Python error: Illegal instruction
 Fatal Python error: Floating point exception'
+# macOS libmalloc words its aborts with the program name, pid, thread and an object address in the line, so they are matched as ONE extended
+# regular expression over the WHOLE line (src/monitoring/exit_evidence.py MAC_ABORT_TAILS builds it, a test pins this copy equal to it).
+# The variable parts are limited to name characters, digits and hex, so no free text can ride along. POSIX ERE with no intervals: mawk, gawk,
+# the one-true-awk macOS ships and busybox awk read it alike. UNTESTED ON macOS ITSELF (see docs/ledger/OPEN_QUEUE.md).
+STDERR_MAC_RE='^[A-Za-z0-9._+-]+\([0-9]+,0x[0-9a-f]+\) malloc: (\*\*\* set a breakpoint in malloc_error_break to debug|\*\*\* error for object 0x[0-9a-f]+: pointer being freed was not allocated|pointer 0x[0-9a-f]+ being freed was not allocated|pointer 0x[0-9a-f]+ being freed already on death-row|pointer 0x[0-9a-f]+ being reallocated was not allocated|pointer 0x[0-9a-f]+ of size zero being freed|large entry 0x[0-9a-f]+ reallocated is not properly in table|Non-aligned pointer 0x[0-9a-f]+ being freed|Non-aligned pointer 0x[0-9a-f]+ being freed \(2\)|Pointer 0x[0-9a-f]+ to metadata being freed|Pointer 0x[0-9a-f]+ to metadata being freed \(2\)|non-page-aligned, non-allocated pointer 0x[0-9a-f]+ being freed|double free for ptr 0x[0-9a-f]+)$'
+STDERR_MAC_MAX=200
 # The window's copy of stderr is made by `tee`, NOT by awk: some awks (mawk, the default on Debian and Ubuntu) read their whole
 # input before they print, so a pass-through done by awk showed the window nothing until the server exited. awk reads only a COPY, so
 # at worst it logs late: each recorded line's "at" is when the filter handled it (the end of the run on such an awk), not when the
@@ -197,11 +203,12 @@ Fatal Python error: Floating point exception'
 stderr_filter() {
     # (INT, HUP, TERM and PIPE are already ignored here: the caller sets them, and an ignored signal stays ignored in children)
     OO_SF_OUT="$STDERR_RECORD" OO_SF_PIDFILE="$STDERR_PIDFILE" OO_SF_BOOT="$1" OO_SF_KEEP="$STDERR_KEEP" \
-    OO_SF_MSGS="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" awk '
+    OO_SF_MSGS="$(printf '%s' "$STDERR_MESSAGES" | tr '\n' '|')" OO_SF_MRE="$STDERR_MAC_RE" OO_SF_MRE_MAX="$STDERR_MAC_MAX" awk '
     BEGIN {
         out = ENVIRON["OO_SF_OUT"]; pidfile = ENVIRON["OO_SF_PIDFILE"]; boot = ENVIRON["OO_SF_BOOT"]; keep = ENVIRON["OO_SF_KEEP"] + 0
         n = split(ENVIRON["OO_SF_MSGS"], list, "|")
         for (i = 1; i <= n; i++) ok[list[i]] = 1
+        mre = ENVIRON["OO_SF_MRE"]; mmax = ENVIRON["OO_SF_MRE_MAX"] + 0
         kept = 0; dropped = 0; over = 0; thepid = ""
     }
     function stamp(   t) { t = ""; "date -u +%Y-%m-%dT%H:%M:%SZ" | getline t; close("date -u +%Y-%m-%dT%H:%M:%SZ"); return t }
@@ -213,7 +220,7 @@ stderr_filter() {
     }
     function bootj() { return (boot ~ /^[0-9a-f-]+$/) ? "\"" boot "\"" : "null" }
     {
-        if ($0 in ok) {
+        if (($0 in ok) || (mre != "" && length($0) <= mmax && $0 ~ mre)) {
             if (kept < keep) {
                 printf "{\"schema\":\"oo-launcher-stderr-1\",\"at\":\"%s\",\"pid\":%s,\"boot_id\":%s,\"line\":\"%s\"}\n", stamp(), pid(), bootj(), $0 >> out
                 kept++
