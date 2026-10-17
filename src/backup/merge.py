@@ -2820,34 +2820,30 @@ def _refuse_feeds_a_legacy_store_cannot_hold(con) -> None:
         )
 
 
-def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -> list[int]:
-    """R148: an incoming source whose feed matches none of the feeds this store holds for its domain is ADDED as a
-    new sibling feed under that outlet (never mapped onto the oldest local row, which would file its articles under
-    the wrong feed). Two things follow from it, both done HERE, before anything reads the incoming stamps:
+def _plan_sibling_feeds(con, same: str, r: DomainResult) -> list[int]:
+    """R148, narrowed by R153: an incoming source whose feed matches none of the feeds this store holds for its domain is
+    ADDED as a new sibling feed under that outlet (never mapped onto the oldest local row, which would file its articles
+    under the wrong feed). Two things follow from it, both done HERE, before anything reads the incoming stamps:
 
-    * the sibling receives the OUTLET's measured verdict (R145 (2)): its stamp becomes the outlet's measured
-      ``qualified`` / ``disqualified``: the STRICTER one wins (R150 -- any measured local feed that is disqualified decides),
-      otherwise the oldest measured row does (a catalogue-curated stamp is provenance, not a verdict, and is not handed on),
-      so a locally disqualified outlet is never laundered back into collection by a sibling another instance judged,
-      and the qualification tally reads what actually lands (``temp.sib_verdict``, read through ``COALESCE``);
-    * the report lists each one with its reason and the rule that decided its verdict (``verdict_rule``), and counts it.
+    * a verdict is handed on in the DISQUALIFIED direction only (R153): if ANY measured local feed of the outlet is
+      ``disqualified`` (R150), the sibling's stamp becomes ``disqualified``, so a locally disqualified outlet is never
+      laundered back into collection by a sibling another instance judged. A ``qualified`` outlet hands nothing on: the
+      sibling keeps what its own incoming evidence says (an incoming ``disqualified`` feed stays disqualified, an
+      unjudged one gets its own trial). The qualification tally reads what actually lands (``temp.sib_verdict``, read
+      through ``COALESCE``);
+    * the report lists each one with its reason and the rule that decided it (``verdict_rule``), and counts it.
 
     Returns the incoming ids whose verdict was taken from the outlet, for the ``inherited`` attempt rows written after
     the id map exists."""
-    cur = curated_version.replace("'", "''")
     rows = _q(
         con,
-        "SELECT i.id, i.domain, i.rss_url, i.status,"  # nosec B608 - constant-only text and the module's own curated-version constant
+        "SELECT i.id, i.domain, i.rss_url, i.status,"
         " (SELECT o.name FROM main.sources o WHERE o.domain = i.domain ORDER BY o.id LIMIT 1),"
-        # R150: the STRICTER verdict wins -- any measured local feed of the outlet that is disqualified decides ...
+        # R150/R153: any measured local feed of the outlet that is disqualified decides; nothing else is handed on.
         " (SELECT o.id FROM main.sources o WHERE o.domain = i.domain AND o.status = 'disqualified'"
-        "   ORDER BY o.id LIMIT 1),"
-        # ... and otherwise the oldest measured row does (R148).
-        " (SELECT o.id FROM main.sources o WHERE o.domain = i.domain AND o.status IN ('qualified', 'disqualified')"
-        f"   AND NOT (o.status = 'qualified' AND COALESCE(o.qualification_criteria_version, '') = '{cur}')"
         "   ORDER BY o.id LIMIT 1)"
         " FROM inc.sources i"
-        f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {same})"
+        f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {same})"  # nosec B608 - constant-only text from the module's own predicate
         "   AND EXISTS (SELECT 1 FROM main.sources o WHERE o.domain = i.domain)"
         " ORDER BY i.id",
     )
@@ -2857,24 +2853,17 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult, curated_version: str) -
     con.execute("DROP TABLE IF EXISTS temp.sib_verdict")
     con.execute("CREATE TEMP TABLE sib_verdict (old INTEGER PRIMARY KEY, status TEXT, qualified_at TEXT, criteria TEXT)")
     inherited: list[int] = []
-    for inc_id, domain, feed, status, outlet, strict_src, oldest_src in rows:
+    for inc_id, domain, feed, status, outlet, strict_src in rows:
         takes = False
-        verdict_src = strict_src if strict_src is not None else oldest_src
         rule = ("a measured feed of the outlet is disqualified" if strict_src is not None
-                else "oldest measured feed of the outlet" if oldest_src is not None
-                else "the outlet has no measured verdict")
-        if verdict_src is not None:
-            o = con.execute(
-                "SELECT status, qualified_at, qualification_criteria_version FROM main.sources WHERE id = ?",
-                (verdict_src,),
-            ).fetchone()
-            if o[0] != status:
-                con.execute(
-                    "INSERT INTO temp.sib_verdict (old, status, qualified_at, criteria) VALUES (?, ?, ?, ?)",
-                    (inc_id, o[0], o[1] if o[0] == "qualified" else None, o[2] if o[0] == "qualified" else None),
-                )
-                inherited.append(inc_id)
-                takes = True
+                else "no feed of the outlet is disqualified (a qualified verdict is not handed on)")
+        if strict_src is not None and status != "disqualified":
+            con.execute(
+                "INSERT INTO temp.sib_verdict (old, status, qualified_at, criteria) VALUES (?, 'disqualified', NULL, NULL)",
+                (inc_id,),
+            )
+            inherited.append(inc_id)
+            takes = True
         r.siblings_total += 1
         if len(r.siblings) < _SAMPLE_LIMIT:
             r.siblings.append({
@@ -3002,7 +2991,7 @@ def _merge_sources(con, batch_id, results) -> None:
         "((m.status = 'unqualified' AND i.status <> 'unqualified')"
         f" OR ({_local_curated} AND {_incoming_measured} AND NOT {_local_newer_judging}))"
     )
-    sibling_ids = _plan_sibling_feeds(con, _SAME, r, CURATED_CRITERIA_VERSION)
+    sibling_ids = _plan_sibling_feeds(con, _SAME, r)
     con.execute("DROP TABLE IF EXISTS temp.qual_landed")
     con.execute(
         "CREATE TEMP TABLE qual_landed"

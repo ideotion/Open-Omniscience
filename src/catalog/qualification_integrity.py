@@ -661,6 +661,7 @@ def repair_inversions(
     resolved_by_tie = 0
     held_by_revert = 0
     held_by_inherited = 0
+    held_rows: list[dict[str, Any]] = []
     for (sid,) in candidates:
         attempt = _newest_judging(session, int(sid))
         source = session.get(Source, int(sid))
@@ -673,6 +674,12 @@ def repair_inversions(
             continue
         if held_by_inherited_verdict(session, source, attempt):
             held_by_inherited += 1  # R149: an adoption's verdict, newer than the judging attempt: not the repair's to undo
+            # R154: named so the early local re-check can still settle it (the repair never changes it, and no list of
+            # inversions includes it). Every one, not capped by ``name_cap``: the re-check list must be complete.
+            held_rows.append({
+                "domain": source.domain, "source_id": int(source.id), "was": source.status,
+                "live_stamp": live_stamp_class(source), "judged_at": _iso(attempt.attempted_at),
+            })
             continue
         if only_to is not None and attempt.verdict != only_to:
             continue
@@ -736,6 +743,7 @@ def repair_inversions(
         "ties_resolved_by_append_order": resolved_by_tie,
         "held_by_operator_revert": held_by_revert,
         "held_by_inherited_verdict": held_by_inherited,
+        "held_by_inherited_verdict_rows": held_rows,
         "method": (
             "Re-runs qualification_integrity_report's own candidate join (newest judging "
             "attempt per source, JUDGING_VERDICTS only, exact re-read on "
@@ -1011,7 +1019,8 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
     copied-in attempt resets the re-verification clock, so left alone the re-check would come a
     whole interval after the OTHER instance's attempt. This lists every such source, in either
     direction (live qualified against a newer disqualification, or live disqualified against a
-    newer qualification), keeps the ``flagged_at`` and ``last_tried_at`` of one already listed, and drops
+    newer qualification) and every status held by an inherited verdict (R149, R154: the repair leaves it, the
+    install's own measurement settles it), keeps the ``flagged_at`` and ``last_tried_at`` of one already listed, and drops
     those no longer inverted. It changes no verdict and writes nothing else.
 
     Fails closed like the repair: an unreadable stored list skips the step and rewrites nothing.
@@ -1042,6 +1051,10 @@ def flag_inversions_for_recheck(*, now: datetime | None = None) -> dict[str, Any
         for r in [*plan["restored_to_disqualified"], *plan["restored_to_qualified"]]
         if r.get("live_stamp") == STAMP_MEASURED
     }
+    # R154: a status held by an INHERITED verdict (R149) is not an inversion the repair touches, but it still disagrees
+    # with an imported judgement this install never made, so it keeps its early local re-check: the install's own
+    # measurement settles it, as it settles a measured inversion.
+    wanted.update({str(int(r["source_id"])): r.get("judged_at") for r in plan["held_by_inherited_verdict_rows"]})
     stamp = _iso(now or datetime.now(UTC)) or ""
 
     def _entry(sid: str) -> dict[str, Any]:

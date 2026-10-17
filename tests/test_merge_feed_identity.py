@@ -209,8 +209,8 @@ def _stamp(path: Path, feed: str, criteria: str):
 
 
 def test_a_catalogue_stamp_is_provenance_not_a_verdict_the_sibling_inherits(tmp_path):
-    """R148 (a): a catalogue-curated 'qualified' on the outlet's only stamped row is not handed on; the incoming
-    disqualified feed keeps its own verdict and is NOT reported as inheriting one."""
+    """R148 (a), kept by R153: a catalogue-curated 'qualified' on the outlet's only stamped row is not handed on; the
+    incoming disqualified feed keeps its own verdict and is NOT reported as inheriting one."""
     from src.catalog.qualification import CURATED_CRITERIA_VERSION
 
     def local(s):
@@ -239,15 +239,37 @@ def test_the_qualification_tally_counts_what_lands_not_what_arrived(tmp_path):
     assert tally["introduced_qualified"] == 0
 
 
-def test_the_outlets_verdict_is_the_oldest_measured_rows_not_the_newest(tmp_path):
-    """Two measured rows that disagree: R148 reads the OLDEST (the row the outlet's name and signatures come from)."""
+def test_a_disqualified_feed_anywhere_in_the_outlet_decides_not_only_the_oldest_row(tmp_path):
+    """R150/R153: the outlet's oldest measured row is qualified, a later feed is disqualified: the sibling lands
+    disqualified (the stricter verdict wins; the oldest row does not)."""
     def local(s):
-        _src(s, "dw.com", "https://dw.com/en", status="unqualified")  # oldest row, not measured: skipped
-        _src(s, "dw.com", "https://dw.com/de", status="disqualified")  # oldest MEASURED row
-        _src(s, "dw.com", "https://dw.com/fr", status="qualified")
+        _src(s, "dw.com", "https://dw.com/en", status="qualified")  # oldest measured row
+        _src(s, "dw.com", "https://dw.com/de", status="unqualified")
+        _src(s, "dw.com", "https://dw.com/fr", status="disqualified")  # newest, and decides
 
     working = _run(tmp_path, local, lambda s: _src(s, "dw.com", "https://dw.com/old-feed", status="qualified"))
     assert {r[1]: r for r in _rows(working)}["f:dw.com/old-feed"][2] == "disqualified"
+
+
+def test_a_qualified_outlet_hands_nothing_on_the_sibling_keeps_its_own_evidence(tmp_path):
+    """R153: verdicts are handed on in the disqualified direction ONLY. Under a qualified outlet an incoming
+    unjudged feed stays unjudged (its own trial), an incoming disqualified one stays disqualified, and an incoming
+    qualified one keeps the qualified another instance measured on that very feed."""
+    def local(s):
+        _src(s, "dw.com", "https://dw.com/en", status="qualified")
+        _src(s, "dw.com", "https://dw.com/de", status="unqualified")
+
+    def incoming(s):
+        _src(s, "dw.com", "https://dw.com/a", status="unqualified")
+        _src(s, "dw.com", "https://dw.com/b", status="disqualified")
+        _src(s, "dw.com", "https://dw.com/c", status="qualified")
+
+    working = _run(tmp_path, local, incoming)
+    rows = {r[1]: r[2] for r in _rows(working)}
+    assert rows["f:dw.com/a"] == "unqualified" and rows["f:dw.com/b"] == "disqualified" and rows["f:dw.com/c"] == "qualified"
+    entries = _report_of(tmp_path)["sources"]["siblings"]
+    assert len(entries) == 3 and not any(e["verdict_inherited"] for e in entries)
+    assert all("not handed on" in e["verdict_rule"] for e in entries)
 
 
 def test_an_incoming_row_without_a_feed_is_not_reported_as_a_feed(tmp_path):
@@ -262,8 +284,8 @@ def test_an_incoming_row_without_a_feed_is_not_reported_as_a_feed(tmp_path):
 
 
 def test_when_the_outlets_feeds_disagree_the_stricter_verdict_wins_and_the_report_names_the_rule(tmp_path):
-    """R150: en (oldest measured) is qualified, de is disqualified; an incoming QUALIFIED feed lands disqualified,
-    and the report says a measured feed decided. With no disqualified feed the oldest measured row decides."""
+    """R150/R153: en (oldest measured) is qualified, de is disqualified; an incoming QUALIFIED feed lands disqualified,
+    and the report says a measured feed decided. With no disqualified feed nothing is handed on (the rule says so)."""
     def local(s):
         _src(s, "dw.com", "https://dw.com/en", status="qualified")
         _src(s, "dw.com", "https://dw.com/de", status="disqualified")
@@ -276,7 +298,10 @@ def test_when_the_outlets_feeds_disagree_the_stricter_verdict_wins_and_the_repor
 
     working = _run(tmp_path, local, incoming)
     rows = {r[1]: r for r in _rows(working)}
-    assert rows["f:dw.com/old-feed"][2] == "disqualified"  # stricter wins over the oldest measured (qualified)
-    assert rows["f:bbc.com/old-feed"][2] == "qualified"  # nothing disqualified: the oldest measured row decides
+    assert rows["f:dw.com/old-feed"][2] == "disqualified"  # a disqualified feed of the outlet decides
+    assert rows["f:bbc.com/old-feed"][2] == "disqualified"  # a qualified outlet hands nothing on: the feed's own evidence
     rules = {e["domain"]: e["verdict_rule"] for e in _report_of(tmp_path)["sources"]["siblings"]}
-    assert rules == {"dw.com": "a measured feed of the outlet is disqualified", "bbc.com": "oldest measured feed of the outlet"}
+    assert rules == {
+        "dw.com": "a measured feed of the outlet is disqualified",
+        "bbc.com": "no feed of the outlet is disqualified (a qualified verdict is not handed on)",
+    }

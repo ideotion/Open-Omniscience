@@ -55,21 +55,30 @@ def _check(session):
     return qualification_integrity_report(session), repair_inversions(session, dry_run=True)
 
 
-def test_both_restore_directions_hold_their_status_without_an_inversion(tmp_path):
-    for outlet, incoming in (("disqualified", "qualified"), ("qualified", "disqualified")):
-        sub = tmp_path / outlet
-        sub.mkdir()
-        with _restore(sub, outlet, incoming)() as s:
-            sib = s.query(Source).filter_by(rss_url="https://dw.com/old-feed").one()
-            assert sib.status == outlet  # R148: the outlet's verdict, not the incoming one
-            report, repair = _check(s)
-            assert report["inversions_total"] == 0 and report["laundered_total"] == 0
-            assert report["status_held_by_inherited_verdict_total"] == 1  # named, not silently clean
-            assert report["status_held_by_inherited_verdict"][0]["domain"] == "dw.com"
-            # not called clean in silence: the verdict's own words name the held rows
-            assert report["verdict"] == "consistent" and "INHERITED" in report["reason"]
-            assert repair["restored_to_qualified_total"] == 0 and repair["restored_to_disqualified_total"] == 0
-            assert repair["held_by_inherited_verdict"] == 1
+def test_a_restore_under_a_disqualified_outlet_holds_its_status_without_an_inversion(tmp_path):
+    with _restore(tmp_path, "disqualified", "qualified")() as s:
+        sib = s.query(Source).filter_by(rss_url="https://dw.com/old-feed").one()
+        assert sib.status == "disqualified"  # R148/R153: the outlet's disqualification, not the incoming qualified
+        report, repair = _check(s)
+        assert report["inversions_total"] == 0 and report["laundered_total"] == 0
+        assert report["status_held_by_inherited_verdict_total"] == 1  # named, not silently clean
+        assert report["status_held_by_inherited_verdict"][0]["domain"] == "dw.com"
+        # not called clean in silence: the verdict's own words name the held rows
+        assert report["verdict"] == "consistent" and "INHERITED" in report["reason"]
+        assert repair["restored_to_qualified_total"] == 0 and repair["restored_to_disqualified_total"] == 0
+        assert repair["held_by_inherited_verdict"] == 1
+
+
+def test_a_restore_under_a_qualified_outlet_keeps_the_incoming_disqualified_on_its_own_evidence(tmp_path):
+    """R153: nothing is handed on in the qualified direction, so the feed stays disqualified WITH its own judging
+    attempt behind it: consistent, nothing held, nothing for the repair to undo."""
+    with _restore(tmp_path, "qualified", "disqualified")() as s:
+        sib = s.query(Source).filter_by(rss_url="https://dw.com/old-feed").one()
+        assert sib.status == "disqualified"
+        report, repair = _check(s)
+        assert report["inversions_total"] == 0 and report["laundered_total"] == 0
+        assert report["status_held_by_inherited_verdict_total"] == 0
+        assert repair["restored_to_qualified_total"] == 0 and repair["held_by_inherited_verdict"] == 0
 
 
 def _judged(session, status, *, qualified_at=None, extra=(), judging_imported=True):
