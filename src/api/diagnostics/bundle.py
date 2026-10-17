@@ -107,7 +107,6 @@ from .system import (
     session_forensics_report,
     slow_queries,
     soak_window_report,
-    stall_forensics_report,
     storage_composition_report,
     storage_footprint_report,
     windows_locks_report,
@@ -1944,15 +1943,36 @@ def _contention_member() -> dict:
 
     Every name in it is a thread's, and a request can choose one (``oo-osm-{code}``): the readers scrub the names they hand out (the
     gate's stats, the pool watch) and the whole member goes through the bundle's net as well, because a stall is filed in memory
-    BEFORE a passphrase is set and read after it."""
+    BEFORE a passphrase is set and read after it.
+
+    The stall section is fitted to ``CONTENTION_LINE_BYTES`` net of the gate section and the frame, measured in the bytes the member
+    is written in, longest and newest records first (``selection`` says shown, of, and the basis). The whole ring stays in memory and
+    on the ``/stall-forensics`` route."""
+    from src.monitoring.stall_forensics import CONTENTION_LINE_BYTES, report_fit
+
+    replaces = ["write-gate.json", "stall-forensics.json"]
+    why = "one subject: who held what while a request waited"
+    held: dict[str, Any] = {}
+
+    def gate() -> Any:
+        held["gate"] = write_gate_report()
+        return held["gate"]
+
+    def stalls() -> Any:
+        skeleton = {
+            "merged": {"replaces": list(replaces), "why": why},
+            "sections": {"write-gate": _section_value(held.get("gate", {})), "stall-forensics": {}},
+            "complete": True,
+        }
+        # the section's own `{}` in the skeleton is replaced by the report, so its two bytes are given back
+        room = CONTENTION_LINE_BYTES - len(_member_bytes(skeleton)) + 2
+        return report_fit(room, measure=lambda v: len(_member_bytes(v)))
+
     return _scrubbed_member_value(
         _merged_member(
-            {
-                "write-gate": write_gate_report,
-                "stall-forensics": lambda: stall_forensics_report(limit=200),
-            },
-            replaces=["write-gate.json", "stall-forensics.json"],
-            why="one subject: who held what while a request waited",
+            {"write-gate": gate, "stall-forensics": stalls},
+            replaces=replaces,
+            why=why,
         )
     )
 

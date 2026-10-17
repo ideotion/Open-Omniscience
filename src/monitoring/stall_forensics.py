@@ -37,9 +37,11 @@ still file.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -297,17 +299,14 @@ def note_stall(route: str, status: int, duration_ms: float) -> dict[str, Any] | 
         return None
 
 
-def report(limit: int = 50) -> dict[str, Any]:
-    """The stall log, newest first, with a per-class and per-route tally.
+#: What ``contention.json`` may take in the diagnostics bundle: the plan's section-4 line for it, inside
+#: ``diagnostics_slots.OTHER_NEW_MEMBERS_BYTES`` (that 919,000 counts "contention 200" KB). No slot row covers the stall ring (a full ring
+#: at the field's record width is over 320 KB) and a row would take the part below its fixed floor, so the member FITS the line: the
+#: bundle gives :func:`report_fit` what is left after the gate section and the frame.
+CONTENTION_LINE_BYTES = 200_000
 
-    The tallies are counts of RECORDS, and a record can carry more than one class,
-    so the class counts do not sum to the record count -- stated here because a
-    reader who assumes they do would conclude the log had lost some.
-    """
-    limit = max(1, min(int(limit or 50), _RING_CAP))
-    with _LOCK:
-        rows = list(_RING)
-    newest = list(reversed(rows))[:limit]
+
+def _tallies(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     by_class: dict[str, int] = {}
     for r in rows:
         for c in r.get("consistent_with", []):
@@ -316,18 +315,27 @@ def report(limit: int = 50) -> dict[str, Any]:
     for r in rows:
         rt = str(r.get("route") or "")
         by_route[rt] = by_route.get(rt, 0) + 1
+    return (
+        [{"class": k, "n": v} for k, v in sorted(by_class.items())],
+        [{"route": k, "n": v} for k, v in sorted(by_route.items(), key=lambda kv: -kv[1])],
+    )
+
+
+def _assemble(rows: list[dict[str, Any]], shown: list[dict[str, Any]]) -> dict[str, Any]:
+    """The report body: the tallies are over EVERY record in ``rows``, ``stalls`` is the ``shown`` ones (newest first)."""
+    by_class, by_route = _tallies(rows)
     return {
         "threshold_ms": threshold_ms(),
         "n_recorded": len(rows),
         "ring_capacity": _RING_CAP,
         "truncated": len(rows) >= _RING_CAP,
-        "shown": len(newest),
+        "shown": len(shown),
         # A status field, not a key -- "degraded" contains "grade", and this repo's
         # no-score walkers ban that substring in KEYS. Counts live under an explicit
         # list of {class, n} objects for the same reason.
-        "by_class": [{"class": k, "n": v} for k, v in sorted(by_class.items())],
-        "by_route": [{"route": k, "n": v} for k, v in sorted(by_route.items(), key=lambda kv: -kv[1])],
-        "stalls": newest,
+        "by_class": by_class,
+        "by_route": by_route,
+        "stalls": shown,
         "method": (
             "A request slower than the threshold is filed with a point-in-time reading "
             "of the single-writer gate, the event-loop watchdog and the slow-query log. "
@@ -342,6 +350,74 @@ def report(limit: int = 50) -> dict[str, Any]:
             "request was healthy. In-memory and bounded: a restart empties this log."
         ),
     }
+
+
+def report(limit: int = 50) -> dict[str, Any]:
+    """The stall log, newest first, with a per-class and per-route tally.
+
+    The tallies are counts of RECORDS, and a record can carry more than one class,
+    so the class counts do not sum to the record count -- stated here because a
+    reader who assumes they do would conclude the log had lost some.
+    """
+    limit = max(1, min(int(limit or 50), _RING_CAP))
+    with _LOCK:
+        rows = list(_RING)
+    return _assemble(rows, list(reversed(rows))[:limit])
+
+
+def _size(value: Any) -> int:
+    """Serialised bytes in the form the diagnostics members are written in (compact, not ASCII-escaped)."""
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
+
+
+def _select_fit(rows: list[dict[str, Any]], room: int, measure: Callable[[Any], int]) -> list[dict[str, Any]]:
+    """The records that fit ``room`` bytes, taken alternately from the newest and from the longest (by ``duration_ms``), each record once.
+
+    Kept samples include the extremes: the ring drops its OLDEST record when it is full, and the oldest records may hold the longest
+    stalls, so newest-only would show the latest and lose the worst. A record that does not fit the room still left is passed over,
+    and a smaller one further down either list may take its place; the walk ends when neither list has one that fits.
+    ``rows`` is oldest first; the answer is newest first, as :func:`report` gives it.
+    """
+    sized = [(i, r, measure(r) + 1) for i, r in enumerate(rows)]  # +1: the comma between records
+    newest = sorted(sized, key=lambda t: -t[0])
+    longest = sorted(sized, key=lambda t: (-float(t[1].get("duration_ms") or 0.0), -t[0]))
+    taken: set[int] = set()
+    left = room
+    progressed = True
+    while progressed:
+        progressed = False
+        for order in (newest, longest):
+            for i, _r, n in order:
+                if i not in taken and n <= left:
+                    taken.add(i)
+                    left -= n
+                    progressed = True
+                    break
+    return [rows[i] for i in sorted(taken, reverse=True)]
+
+
+def report_fit(max_bytes: int, measure: Callable[[Any], int] | None = None) -> dict[str, Any]:
+    """The report with as many records as fit ``max_bytes`` for the WHOLE section (header, tallies and records), chosen longest+newest.
+
+    ``selection`` says how many are shown, of how many the ring holds, and on what basis, so a short list is never read as a short
+    log. The ring itself is untouched. ``measure`` is the caller's own byte count (the diagnostics bundle passes the one it writes
+    members with); the default is the compact JSON length.
+    """
+    size = measure or _size
+    with _LOCK:
+        rows = list(_RING)
+    basis = f"longest+newest, fit to {int(max_bytes)} B"
+
+    def build(shown: list[dict[str, Any]]) -> dict[str, Any]:
+        rep = _assemble(rows, shown)
+        rep["selection"] = {"shown": len(shown), "of": len(rows), "basis": basis}
+        return rep
+
+    fixed = size(build([]))
+    # the count's digits can only shrink from "of", so the header measured with every record counted is the widest it gets
+    widest = size({**build([]), "selection": {"shown": len(rows), "of": len(rows), "basis": basis}, "shown": len(rows)})
+    room = int(max_bytes) - max(fixed, widest)
+    return build(_select_fit(rows, room, size) if room > 0 else [])
 
 
 def _reset_for_tests() -> None:
