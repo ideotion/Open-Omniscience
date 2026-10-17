@@ -323,8 +323,16 @@ SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # is graceful whether the signal reaches it directly or through this trap.
 # STOP_REQUESTED marks the stop as ASKED FOR before the server is signalled, so the
 # exit check below never records a stop the user made as a crash.
+#
+# INT (Ctrl-C) IS NOT FORWARDED (17 Oct, measured): the terminal already sent that SIGINT to the whole foreground group, the server
+# included. Forwarding a SIGTERM beside it gave the server TWO signals for one Ctrl-C, and uvicorn reads a SIGINT that arrives after a
+# stop is already under way as the second Ctrl-C ("force quit"): in the runs where the TERM won the race (3 of 14 through this
+# launcher; 3 of 3 on the bare server with TERM then INT 30 ms apart) it skipped the app's lifespan shutdown, the teardown that
+# writes the clean-stop mark. TERM and HUP are not terminal-group signals, so they are still forwarded (once). After either, the
+# launcher WAITS for the server to end, so its own exit comes after the server's teardown and carries the server's status.
 STOP_REQUESTED=0
-trap 'STOP_REQUESTED=1; kill "$SERVER" 2>/dev/null || true' INT TERM HUP
+trap 'STOP_REQUESTED=1; kill "$SERVER" 2>/dev/null || true' TERM HUP
+trap 'STOP_REQUESTED=1' INT
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 
 # Wait up to ~20s for the health endpoint.
@@ -338,6 +346,11 @@ open_browser "$URL"
 # Keep running (and holding the server) until the user closes the window.
 status=0
 wait "$SERVER" || status=$?
+# A trapped signal ends `wait` while the server is still stopping; wait again until it has really ended (its status is the answer).
+while kill -0 "$SERVER" 2>/dev/null; do
+    status=0
+    wait "$SERVER" || status=$?
+done
 if [ "$STOP_REQUESTED" = 0 ] && [ "$status" -ne 0 ]; then
     record_exit "$status" || true
     case "$status" in
