@@ -256,11 +256,13 @@ def paired_rows(session: Session, sources: list[dict], *, plan=None, rows_by_dom
 
 
 def _dump_baseline(shipped: dict, base: dict | None) -> str:
-    """The baseline JSON for ``shipped`` fields, carrying over the tags the catalogue has already merged onto the row."""
+    """The baseline JSON for ``shipped`` fields, carrying over the tags the catalogue has already merged onto the row and
+    the ones it was refused (a conflicting lean)."""
     out = dict(shipped)
-    merged = (base or {}).get("merged_tags")
-    if merged:
-        out["merged_tags"] = merged
+    for key in ("merged_tags", "refused_tags"):
+        carried = (base or {}).get(key)
+        if carried:
+            out[key] = carried
     return json.dumps(out, sort_keys=True)
 
 
@@ -270,8 +272,13 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
     A merged tag NEVER overwrites a different existing value: ``lean-*`` is exclusive on a row, so a second, different
     lean is a CONFLICT -- kept, listed with both sides, counted. A tag is merged ONCE per row (recorded in the row's
     baseline), so a tag the operator removed afterwards is not put back by the next boot; a row with no readable
-    baseline is skipped and counted, never guessed at. ``via:`` provenance is not merged (it states a row's origin)."""
-    merged_n = rows_touched = skipped_no_baseline = 0
+    baseline is skipped and counted, never guessed at. ``via:`` provenance is not merged (it states a row's origin).
+
+    A REFUSED TAG IS RECORDED ONCE, WITH ITS REASON (``refused_tags`` in the baseline: the kept tag, the entry, its
+    catalogue). The boot that refuses it lists it (``conflicts``, ``conflict_count``); every later boot only counts it as
+    ``refused_standing``, so the report stays visible and the log stays quiet. If the row's own lean is removed later the
+    refusal lapses and the tag merges like any other."""
+    merged_n = rows_touched = skipped_no_baseline = standing = 0
     conflicts: list[dict] = []
     touched: set[int] = set()
     for entry, row in merges:
@@ -280,6 +287,8 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
             skipped_no_baseline += 1
             continue
         done = {str(t) for t in (base.get("merged_tags") or [])}
+        refused = dict(base.get("refused_tags") or {})
+        refused_before = dict(refused)
         have = split_tags(row.tags)
         added: list[str] = []
         offered_present: list[str] = []
@@ -294,16 +303,24 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
             fam = exclusive_family(tag)
             clash = next((t for t in have if fam and t.startswith(fam) and t != tag), None)
             if clash is not None:
-                conflicts.append({
-                    "domain": row.domain, "kept": clash, "catalogue": tag,
-                    "entry": entry.get("name"), "provenance": entry.get("_provenance"),
-                })
+                note = {"kept": clash, "entry": entry.get("name"), "provenance": entry.get("_provenance")}
+                if tag in refused:
+                    standing += 1                 # refused at an earlier boot: counted, not listed again
+                    continue
+                refused[tag] = note
+                conflicts.append({"domain": row.domain, "kept": clash, "catalogue": tag, **{
+                    k: note[k] for k in ("entry", "provenance")}})
                 continue
+            refused.pop(tag, None)                # the kept lean is gone: the refusal lapses and the tag merges
             have.append(tag)
             added.append(tag)
         recorded = done | set(added) | set(offered_present)
-        if recorded != done:
+        if recorded != done or refused != refused_before:
             base["merged_tags"] = sorted(recorded)
+            if refused:
+                base["refused_tags"] = refused
+            else:
+                base.pop("refused_tags", None)
             row.catalog_baseline = json.dumps(base, sort_keys=True)
         if not added:
             continue
@@ -314,6 +331,7 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
             rows_touched += 1
     return {
         "tags_merged": merged_n, "rows_touched": rows_touched, "conflict_count": len(conflicts),
+        "refused_standing": standing,
         "conflicts": conflicts[:_CONFLICT_EXAMPLES], "skipped_no_baseline": skipped_no_baseline,
     }
 
@@ -715,9 +733,13 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     ``shadowed`` is the entries NO install can register (the same feed claimed twice, a feed-less duplicate, a second
     legal entry for a host) with ``unregistered_by_reason`` and examples carrying the reason, and ``merged`` is the
     feed-less entries whose tags went onto the outlet's row (``tag_merge`` says what was added and what conflicted).
-    ``skipped`` keeps its old meaning (every reason an entry did not become a row).
+    ``skipped`` keeps its old meaning (every reason an entry did not become a row), and EVERY entry lands in exactly one
+    counter: ``created + skipped == total``, where ``skipped`` is ``skipped_existing`` + ``merged`` + ``shadowed`` +
+    ``skipped_malformed`` (no domain or no name) + ``held_back_legacy_key``. ``merged`` counts a feed-less entry whose tags
+    went onto a feed row of the outlet, whether the plan found that row in the same list or the database held it already.
     """
-    skipped_malformed = sum(1 for s in sources if not (s.get("domain") or ""))
+    # An entry the seeder cannot read as a source: no domain, or no name (the two things ``_usable`` requires).
+    skipped_malformed = len(sources) - len(_usable(sources))
     # First: a row the seed flip-flop emptied must carry its feed again before entries are matched to rows by feed key.
     feed_repair = repair_erased_feeds(session, sources)
     pairs, todo, plan, rows_by_domain = paired_rows(session, sources)
@@ -778,12 +800,12 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         "corrections": corrections,
         "tag_merge": tag_merge,
         "sibling_verdicts": inherited,
-        "skipped": len(pairs) + len(unregistered) + len(plan.merges) + skipped_malformed + len(held_back),
+        "skipped": len(pairs) + len(unregistered) + len(plan.merges) + len(extra_merges) + skipped_malformed + len(held_back),
         "held_back_legacy_key": len(held_back),
         "total": len(sources),
         "skipped_existing": len(pairs),
         "skipped_malformed": skipped_malformed,
-        "merged": len(plan.merges),
+        "merged": len(plan.merges) + len(extra_merges),
         "shadowed": len(unregistered),
         "unregistered_by_reason": dict(sorted(by_reason.items())),
         "shadowed_examples": [

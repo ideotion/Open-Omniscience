@@ -208,3 +208,64 @@ def test_a_corrected_feed_url_on_an_outlet_with_several_feeds_is_the_same_source
     result = seed_sources(s, [_e("O en", "en-v2"), _e("O ar", "ar")])
     assert result["created"] == 0 and s.query(Source).count() == 2
     assert sorted(r.rss_url for r in s.query(Source)) == ["https://outlet.example/ar.xml", "https://outlet.example/en-v2.xml"]
+
+
+# --- the report adds up, and a refused conflicting lean is loud once (OPEN_QUEUE row J item 6 (a), (d)) ---
+def _accounted(result):
+    return result["created"] + result["skipped"] == result["total"] and result["skipped"] == (
+        result["skipped_existing"] + result["merged"] + result["shadowed"]
+        + result["skipped_malformed"] + result["held_back_legacy_key"]
+    )
+
+
+def test_every_entry_lands_in_exactly_one_counter(s):
+    first = [
+        _e("Outlet EN", "en"), _e("Outlet AR", "ar"),
+        _e("Outlet", tags=["lean-left"]),                    # feed-less: merges onto the feed row in the same list
+        _e("Outlet EN", "en"),                               # the same feed named twice: its tags merge (R145 amendment)
+        _e("Bare", domain="bare.example"), _e("Bare", domain="bare.example"),   # a feed-less duplicate: unregistered
+        {"domain": "nameless.example"},                      # no name
+        {"name": "No domain"},                               # no domain
+    ]
+    r1 = seed_sources(s, first)
+    assert _accounted(r1) and r1["merged"] == 2 and r1["skipped_malformed"] == 2 and r1["shadowed"] == 1
+    # the legal-only call: the outlet's feed rows are in the database, not in the input (``extra_merges``)
+    r2 = seed_sources(s, [_e("Outlet", tags=["wire"]), _e("Other", "x", domain="other.example")])
+    assert _accounted(r2) and r2["merged"] == 1 and r2["created"] == 1
+    r3 = seed_sources(s, first)
+    assert _accounted(r3) and r3["created"] == 0
+
+
+def test_a_store_that_cannot_hold_a_second_feed_still_accounts_for_every_entry(s, monkeypatch):
+    seed_sources(s, [_e("Outlet EN", "en")])
+    monkeypatch.setattr("src.ingest.seed_sources.composite_key_active", lambda _c: False)
+    r = seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
+    assert r["held_back_legacy_key"] == 1 and _accounted(r)
+
+
+def test_a_refused_lean_is_listed_once_with_its_reason_and_only_counted_afterwards(s):
+    entries = [_e("Outlet", "en", tags=["lean-right"]), _e("Outlet", tags=["lean-left"], _provenance="spectrum")]
+    first = seed_sources(s, entries)["tag_merge"]
+    assert first["conflict_count"] == 1 and first["refused_standing"] == 0
+    refused = json.loads(s.query(Source).one().catalog_baseline)["refused_tags"]
+    assert refused["lean-left"]["kept"] == "lean-right" and refused["lean-left"]["provenance"] == "spectrum"
+    again = seed_sources(s, entries)["tag_merge"]
+    assert again["conflict_count"] == 0 and again["conflicts"] == [] and again["refused_standing"] == 1
+    assert "lean-left" not in s.query(Source).one().tags.split(",")
+
+
+def test_a_refusal_lapses_when_the_kept_lean_is_removed_and_a_sync_keeps_the_record(s):
+    row_entry = _e("Outlet", "en", tags=["lean-right", "wire"])    # a second tag: an EMPTY tag list is a gap reconcile refills
+    spectrum = _e("Outlet", tags=["lean-left"], _provenance="spectrum")
+    seed_sources(s, [row_entry, spectrum])
+    assert "refused_tags" in json.loads(s.query(Source).one().catalog_baseline)
+    renamed = seed_sources(s, [dict(row_entry, name="Outlet (renamed)"), spectrum])   # a correction rewrite must not forget it
+    assert renamed["corrections"]["applied"] == 1
+    assert renamed["tag_merge"]["conflict_count"] == 0 and renamed["tag_merge"]["refused_standing"] == 1
+    assert "refused_tags" in json.loads(s.query(Source).one().catalog_baseline)
+    row = s.query(Source).one()
+    row.tags = ",".join(t for t in row.tags.split(",") if t != "lean-right")   # the operator removes the kept lean
+    s.commit()
+    out = seed_sources(s, [dict(row_entry, name="Outlet (renamed)"), spectrum])["tag_merge"]
+    assert out["tags_merged"] == 1 and "lean-left" in s.query(Source).one().tags.split(",")
+    assert "refused_tags" not in json.loads(s.query(Source).one().catalog_baseline)
