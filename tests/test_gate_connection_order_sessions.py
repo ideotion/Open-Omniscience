@@ -21,7 +21,15 @@ from sqlalchemy import create_engine, event, insert
 from sqlalchemy.pool import QueuePool
 
 from src.database import writer
-from src.database.models import Article, Base, DerivedMeta, Keyword, KeywordMention, KeywordTag, Source
+from src.database.models import (
+    Article,
+    Base,
+    DerivedMeta,
+    Keyword,
+    KeywordMention,
+    KeywordTag,
+    Source,
+)
 from tests.test_gate_connection_order import GateProbe, _factory
 
 
