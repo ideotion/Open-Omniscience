@@ -3,7 +3,7 @@
 Before: a module could ``os.replace`` a fixed ``.tmp``, append to, or ``write_text`` a data-folder file with no cross-process lock, and nothing said so.
 Now every such site outside ``src/safety/file_lock.py`` is listed here with the lane that will convert it and why it is waiting, and a NEW site fails this test and
 names its line. An entry whose site no longer exists also fails (a stale allowlist hides the next regression). This is a position-based scan of the source: it finds
-the call shapes, not what the path is, so it refuses on a site that writes a path outside the data folder too; such a site gets an entry with that reason.
+the call shapes, not what the path is (a call inside a ``with file_lock(...)`` block is held and passes), so it refuses on a site that writes a path outside the data folder too; such a site gets an entry with that reason.
 """
 
 from __future__ import annotations
@@ -90,7 +90,6 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/llm/vllm_lifecycle.py": (4, "rc2"),
     "src/monitoring/ai_check.py": (1, "rc2"),
     "src/monitoring/collect_perf.py": (2, "export"),
-    "src/monitoring/diagnostics_runs.py": (2, "rc2"),
     "src/monitoring/exit_evidence.py": (3, "rc2"),
     "src/monitoring/feed_preflight.py": (1, "rc2"),
     "src/monitoring/field_test.py": (1, "rc2"),
@@ -131,7 +130,23 @@ def _append_mode(call: ast.Call) -> bool:
     return isinstance(mode, ast.Constant) and isinstance(mode.value, str) and mode.value.startswith("a")
 
 
+def _under_file_lock(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    """True when ``node`` sits inside a ``with file_lock(...)`` block, which is how a converted site that must also touch the file directly proves it holds the lock."""
+    cur = parents.get(node)
+    while cur is not None:
+        if isinstance(cur, ast.With):
+            for item in cur.items:
+                call = item.context_expr
+                if isinstance(call, ast.Call):
+                    name = call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, "attr", "")
+                    if name == "file_lock":
+                        return True
+        cur = parents.get(cur)
+    return False
+
+
 def _sites(tree: ast.AST) -> list[int]:
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
     found = []
     for n in ast.walk(tree):
         if not isinstance(n, ast.Call):
@@ -139,7 +154,7 @@ def _sites(tree: ast.AST) -> list[int]:
         f = n.func
         replaces = isinstance(f, ast.Attribute) and f.attr == "replace" and isinstance(f.value, ast.Name) and f.value.id == "os"
         writes = isinstance(f, ast.Attribute) and f.attr in {"write_text", "write_bytes"}
-        if replaces or writes or _append_mode(n):
+        if (replaces or writes or _append_mode(n)) and not _under_file_lock(n, parents):
             found.append(n.lineno)
     return found
 

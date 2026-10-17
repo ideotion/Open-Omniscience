@@ -141,7 +141,7 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
     fd: int | None = None
     held = Held(locked=False, reason="not taken")
     in_local = False
-    began = time.monotonic()
+    began = time.perf_counter()
     got_at = began
     try:
         with loc.cond:
@@ -176,11 +176,11 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
                         _warn_unlocked(path, held.reason or "")
                         break
                 time.sleep(_POLL_S)
-        got_at = time.monotonic()
+        got_at = time.perf_counter()
         _note(path.name, "max_wait_s", got_at - began)
         yield held
     finally:
-        _note(path.name, "max_hold_s", time.monotonic() - got_at)
+        _note(path.name, "max_hold_s", time.perf_counter() - got_at)
         if fd is not None:
             if held.locked:
                 with contextlib.suppress(OSError):
@@ -220,7 +220,7 @@ _SWEPT_AT: dict[str, float] = {}
 
 
 def _sweep_due(path: Path, every_s: float) -> bool:
-    now = time.monotonic()
+    now = time.perf_counter()
     key = str(path)
     with _REGISTRY_LOCK:
         last = _SWEPT_AT.get(key)

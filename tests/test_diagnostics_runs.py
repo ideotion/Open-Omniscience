@@ -365,14 +365,13 @@ def test_the_rewrite_writes_lf_alone_whatever_the_platform(_data, monkeypatch):
     """Text mode writes each LF as CRLF on Windows, and the trim counts one byte a newline: the file
     would pass the ceiling it is trimmed to."""
     opened: list[object] = []
-    real_open = open
+    real_replace = r.atomic_replace
 
-    def spy(file, mode="r", *args, **kwargs):
-        if str(file).endswith(".tmp"):
-            opened.append(kwargs.get("newline", "<the platform's>"))
-        return real_open(file, mode, *args, **kwargs)
+    def spy(path, data, **kwargs):
+        opened.append(kwargs.get("newline", "<the platform's>"))
+        return real_replace(path, data, **kwargs)
 
-    monkeypatch.setattr(r, "open", spy, raising=False)
+    monkeypatch.setattr(r, "atomic_replace", spy)
     for i in range(r.KEEP_RUNS + 2):
         _run(i)
     assert opened and set(opened) == {"\n"}, opened
@@ -869,3 +868,30 @@ def test_a_record_that_cannot_be_written_never_raises(_data, tmp_path):
     r.serve_end(None)
     doc = r.diagnostics_member()
     assert doc["available"] is True and doc["runs"] == [] and doc["serves"] == []
+
+
+def test_a_trim_by_one_process_never_loses_a_record_another_process_appends(_data):
+    """R176: the size check, the trim and the append are one section under the file's lock, so a second server's record cannot fall between a trim's read and its swap."""
+    import subprocess
+    import sys
+    import textwrap
+    from pathlib import Path
+
+    root = str(Path(r.__file__).parents[2])
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {root!r})
+        os.environ["OO_DATA_DIR"] = {str(_data)!r}
+        from src.monitoring import diagnostics_runs as r
+        for i in range(120):
+            r._append({{"k": "probe", "n": i}})
+        """
+    )
+    child = subprocess.Popen([sys.executable, "-c", script])
+    while child.poll() is None:
+        r._append({"k": "probe", "n": -1}, trim_runs=0)
+    child.wait()
+    got = [json.loads(ln)["n"] for ln in _file(_data).read_text().splitlines() if '"probe"' in ln and '"n":-1' not in ln]
+    assert got == list(range(120 - len(got), 120)), "a record written by the other process was lost by a trim"
+    assert got
