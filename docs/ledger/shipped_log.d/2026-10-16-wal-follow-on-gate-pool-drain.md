@@ -1,4 +1,4 @@
-## 2026-10-16 — the WAL, disk and pool follow-on: pool before gate everywhere, the hold's phase, the measured pin, the explicit pause list, the encryption guard and the gate-free copy (PR #1421)
+## 2026-10-16 — the WAL, disk and pool follow-on: pool before gate everywhere, the hold's phase, the measured pin, the explicit pause list, the encryption guard and the gate-free copy (PR #1429)
 
 Built on the pushed #1421 head as local commits and pushed after #1416 merges (writer.py is the shared file): `writer.connection_first` in both ORM hooks and at eleven raw sites, `thread_phase`/`thread_phases` shared by the gate hold and the pin report, `pin` from the drain's passive step, `PAUSED_WHILE_WAL_PINNED` in `heavy.py` with `log_pause_in_force` (log latch and a running supervisor) and the briefing's stand-aside, the encryption route's exclusive window with the drain's second ask under its lease, and `checkpoint_wal(passive_without_gate=True)` for the guard's drain only.
 

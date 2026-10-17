@@ -1,4 +1,4 @@
-## 2026-10-16 — an exclusive operation and a worker must take their two steps in opposite orders: the operation opens its window and then reads the leases, the worker takes its lease and then reads the window (PR #1421)
+## 2026-10-16 — an exclusive operation and a worker must take their two steps in opposite orders: the operation opens its window and then reads the leases, the worker takes its lease and then reads the window (PR #1429)
 
 **What was found.** The storage guard's drain read `owns_the_machine()` and later took its corpus lease; an encryption in place that opened its window and then waited for the leases could land between the two, find no lease, and swap the file while the drain was about to open it. With a drain that needs no gate (PASSIVE) nothing else keeps it out.
 

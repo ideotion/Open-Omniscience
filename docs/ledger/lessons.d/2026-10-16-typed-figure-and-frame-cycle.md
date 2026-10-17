@@ -1,4 +1,4 @@
-## 2026-10-16 — a test that checks a typed number against another typed number cannot fail, and a frame snapshot is a reference cycle (PR #1421)
+## 2026-10-16 — a test that checks a typed number against another typed number cannot fail, and a frame snapshot is a reference cycle (PR #1429)
 
 **A budget figure is a ceiling computed from the code, or it is decoration.** The slot test asserted `(400 + 9 * 120) * 206 + ... == 397_280`: constants typed into the test and compared with themselves. A mutation raising the export's cut to 4000 lines survived (`1 passed`). It now computes the worst case from `exit_evidence`'s own constants and asserts a ceiling of 400,000; the same mutation fails with 8,274,720.
 

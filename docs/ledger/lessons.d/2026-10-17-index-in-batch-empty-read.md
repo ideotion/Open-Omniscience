@@ -1,4 +1,4 @@
-## 2026-10-17 — A read inside the gate hold that can only return nothing is a statement every other writer waits behind (PR #1421)
+## 2026-10-17 — A read inside the gate hold that can only return nothing is a statement every other writer waits behind (PR #1429)
 
 **What was found.** `index_article` read the article's stored mention rows inside the write-gate hold, one statement per article, to diff them against the rows the pass produces. The batched collect flush calls it for articles it has just INSERTED in the transaction it is still in, so the read cannot return a row, and it lengthens the hold that the whole write queue waits behind (the longest recorded holds are made of per-article statements). The case that could have made "nothing" false is an id handed out again after a delete (SQLite keeps no counter without AUTOINCREMENT, `src/database/query.py`): the old article's mention rows would be met by the new one. They are not there, because every pooled connection runs `PRAGMA foreign_keys=ON` and the mention model's `article_id` is `ON DELETE CASCADE`.
 

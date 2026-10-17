@@ -1,4 +1,4 @@
-## 2026-10-17 — The holder's kernel state is sampled where it can be, journaled where it is cheap, and its width is paid by a measured maximum (PR #1421)
+## 2026-10-17 — The holder's kernel state is sampled where it can be, journaled where it is cheap, and its width is paid by a measured maximum (PR #1429)
 
 **What was found.** The 16 Oct holds of 30 to 182 s had a collector thread as holder, seven of them at a plain `SELECT` (which cannot wait for the write lock in WAL mode). The journal could not say whether the thread was working, waiting for a CPU, waiting for the GIL or a lock, sleeping in SQLite's busy handler or waiting for the disk: the holder's CPU time is read at the START and END of a hold, and a counter says how much a thread waited, not for what. The kernel does: `/proc/self/task/<tid>/{stat,wchan,schedstat}`.
 

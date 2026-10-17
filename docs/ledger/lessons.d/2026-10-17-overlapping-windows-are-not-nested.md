@@ -1,4 +1,4 @@
-## 2026-10-17 — "restore what I found on entry" is right only for strict nesting: two threads' windows overlap without nesting (PR #1421)
+## 2026-10-17 — "restore what I found on entry" is right only for strict nesting: two threads' windows overlap without nesting (PR #1429)
 
 **What was found.** `exclusive_window` kept one process-wide flag and every exit put back the value ITS entry had found. That is correct only when windows nest. The encryption route opens a window on a request thread while a backup export holds one on a job thread; the export holds the gate (`stream_backup.freeze`), the encryption waits for it, the export lets go of the gate and THEN closes its window. The export's exit lowered the flag (it found False) and resumed collection while the encryption was swapping the file, so the guard's drain ran its ungated copy inside the swap; the encryption's own exit then restored True, for good: every later drain refused, a later restore did not pause collection. The defect predates the encryption route (any two windows that overlap without nesting); the route made the sequence the expected one rather than a narrow race.
 

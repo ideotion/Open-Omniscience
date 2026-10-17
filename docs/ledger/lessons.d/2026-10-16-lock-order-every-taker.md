@@ -1,4 +1,4 @@
-## 2026-10-16 — a rule about the order of two resources holds only if every taker obeys it: the hooks were fixed and eleven raw sites were not (PR #1421)
+## 2026-10-16 — a rule about the order of two resources holds only if every taker obeys it: the hooks were fixed and eleven raw sites were not (PR #1429)
 
 **What was found.** `connection_first` made the ORM hooks ask the pool before the write gate, and the Opus read of the follow-on found eleven other places that took both and still took the gate first. Reproduced with a pool of two: the gate holder failed with `TimeoutError` after 3.3 s where it took 0.3 s, the queued writers having the connections.
 

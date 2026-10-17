@@ -1,4 +1,4 @@
-## 2026-10-17 — The first event of a kind is recorded at the event, beside the sample, because a keep rule drops exactly that one (PR #1421)
+## 2026-10-17 — The first event of a kind is recorded at the event, beside the sample, because a keep rule drops exactly that one (PR #1429)
 
 **What was found.** Two Diagnostics bundles of ONE process put the first bad hour of the pool at 16:00 in one and 15:00 in the other: the reader took the oldest KEPT pool timeout as the onset (10 of 1,575 kept, then 10 of 1,362), and the keep rule (the longest and the newest) moves that event as new ones arrive. The onset is a time EXTREME, and a rule that keeps extremes of length keeps none of time.
 

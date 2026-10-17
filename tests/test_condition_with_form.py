@@ -37,7 +37,7 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 
 #: Modules that still enter a Condition with ``with``, each with its number of sites and why it is not converted yet.
 _STILL_WITH_CONDITION: dict[str, tuple[int, str]] = {
-    "monitoring/storage_events.py": (2, "the storage-event journal's wait for a change; held behind the run-records PR (#1421), which edits the same lines"),
+    "monitoring/storage_events.py": (2, "the journal writer's two waits (_wait_out, _wait_until_dirty), called only from its background flusher thread; their loops already take the R161 form, and the plain lock under the Condition (R144) is left for a change that has another reason to edit them"),
 }
 
 

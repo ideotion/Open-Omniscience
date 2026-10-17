@@ -1,4 +1,4 @@
-## 2026-10-17 — A dependency floor nobody has run on the interpreter the project requires is a claim, not a floor (PR #1421)
+## 2026-10-17 — A dependency floor nobody has run on the interpreter the project requires is a claim, not a floor (PR #1429)
 
 **What was found.** Reading the SQLAlchemy names the write-gate phase table relies on against four releases, the floor `pyproject.toml` names (`sqlalchemy>=2.0.30`) did not import at all on the required interpreter: on Python 3.13, `import sqlalchemy` from the 2.0.30 wheel raises `TypeError: Can't replace canonical symbol for '__firstlineno__'` in `sqlalchemy/util/langhelpers.py` (a class body gains `__firstlineno__` on 3.13, which the release's symbol machinery refuses). 2.0.31 imports and passes `tests/test_write_gate_phase.py` (10 tests), as do 2.0.51 (the `requirements.lock` pin), 2.1.1 and 2.1.5. `requires-python` is `>=3.13`, so no install can reach 2.0.30 by pip in practice, but the number in the file says something untrue, and nothing in CI would ever have shown it: the test job resolves the newest release the range admits, and the lock pins 2.0.51.
 

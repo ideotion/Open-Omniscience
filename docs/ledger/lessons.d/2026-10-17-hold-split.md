@@ -1,4 +1,4 @@
-## 2026-10-17 — A long hold's cause is its split by kind of work, and the part that gives way to the zip's budget is the shortest holds' (PR #1421)
+## 2026-10-17 — A long hold's cause is its split by kind of work, and the part that gives way to the zip's budget is the shortest holds' (PR #1429)
 
 **What was found.** The 16 Oct bundles held the gate for up to 685 s. The slow-query ring said which STATEMENTS were slow (INSERT INTO articles 58.6 %, SAVEPOINT 11.5 %, a mention-row read inside the hold about 16 %), the journal said the phase of a SAMPLE (pool-wait, execute, commit, python), and neither said how the HOLD was spent. The gate now keeps, for the hold in progress, the seconds its owner thread spent in INSERT statements, savepoint statements, any other statement and commits, and what no measured statement covers is `between_statements`; a hold of 30 s or more writes the split as `seconds_by`, as the watchdog's sample (a statement still running counted so far) and exactly at its end.
 
