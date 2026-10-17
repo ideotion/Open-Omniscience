@@ -72,9 +72,11 @@ def _default_session():
 
 _ID_SET_CHUNK = 900  # SQLite bound-variable safety (the fts_ids/.in_() chunking precedent)
 
-#: Article ids the job keeps per signal as a spot-check sample. It protects two things and is
-#: measured on neither: the persisted state (rewritten every chunk) stays a few hundred bytes per
-#: signal, and an operator can read the whole sample on one page. A sample is not a rate.
+#: Article ids the job keeps per signal for the operator's spot-check (a DISPLAY sample: it is read on
+#: one page, and it is not a rate). It also bounds the persisted state, which is rewritten every chunk:
+#: MEASURED 2026-10-17 with the manager's own ``_save``, 20 ids of seven digits for each of the 15
+#: signals a run can name (7 URL/body, 2 stub, 6 index-page-tier) = 3,063 bytes added to a 868-byte
+#: state file (3,931 in all); about 205 bytes per signal.
 SAMPLE_PER_SIGNAL = 20
 
 
