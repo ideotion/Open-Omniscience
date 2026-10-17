@@ -139,6 +139,14 @@ class native_call(contextlib.AbstractContextManager):  # noqa: N801 - used as a 
                 _bump(self._slot, -1)
 
 
+def start() -> None:
+    """Called once at boot: keep the previous process's bytes, then open this process's file. Without this the file is made by the first
+    wired call, and a session that died before entering one would leave NO file, which reads the same as a build that wires nothing:
+    "no wired call was ever entered" is an outcome only if the file exists from the start. Never raises."""
+    with _LOCK, contextlib.suppress(Exception):
+        _open_locked()
+
+
 def capture_previous_now() -> None:
     """Preserve the previous process's file before anything of this process's can replace it. Called at boot; also done by the
     first :func:`native_call`, so the order of the two cannot lose it."""

@@ -1283,7 +1283,11 @@ def capture_previous() -> dict[str, Any] | None:
                 stale.unlink(missing_ok=True)
             except OSError as exc:
                 log_failure(_LOG, f"could not reset {stale.name}", exc, level=logging.DEBUG)
-        return _PREV
+    # The native in-flight file is made now, not by the first native call, so a session that never entered one still leaves its own.
+    from src.monitoring.native_inflight import start as _native_start
+
+    _native_start()
+    return _PREV
 
 
 def previous() -> dict[str, Any] | None:

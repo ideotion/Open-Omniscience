@@ -154,3 +154,23 @@ def test_airplane_wraps_the_native_calls():
 def test_forensics_carries_the_field():
     src = (_ROOT / "src" / "monitoring" / "forensics.py").read_text()
     assert 'out["native_in_flight"]' in src
+
+
+def test_start_makes_the_file_so_a_session_with_no_call_still_leaves_its_own(_data):
+    ni.start()
+    raw = bytes(ni._STATE["map"][:])
+    assert ni.report(os.getpid(), None, raw)["result"] == "no-calls-recorded"
+    assert Path(ni._path()).exists()
+
+
+def test_start_keeps_the_previous_process_bytes_first(_data):
+    path = Path(ni._path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_rec(pid=31, slots=[(0, 0), (0, 0), (1, 1)]))
+    ni.start()
+    assert ni.report(31, "b" * 36)["counts"] == {"lxml": 1}
+
+
+def test_boot_starts_it():
+    src = (_ROOT / "src" / "monitoring" / "session_hwm.py").read_text()
+    assert "_native_start()" in src
