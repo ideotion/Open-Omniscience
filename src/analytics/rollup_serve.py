@@ -724,21 +724,30 @@ def _stopped_build_verdict() -> dict | None:
             seen = float(st.get("checked_at") or st.get("at") or 0.0)
             if time.time() - seen >= max(float(rollup_serve_ttl_s()), _COUNT_MIN_INTERVAL_S):
                 now_epoch = _current_epoch()
-                if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
+                epoch_moved = now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]
+                # The epoch is bumped by the non-append mutators it knows (re-index, prune, restore-merge) and is blind to
+                # the rest: a cascade delete of the mentions of a removed source or article moves neither the epoch nor a
+                # max id (serve_gate's disclosed invisible classes). The same long backstop that bounds a served rollup's
+                # staleness bounds this one: a stop not looked at for that long is counted once, epoch or no epoch.
+                backstop = time.time() - seen >= _BACKSTOP_S
+                if epoch_moved or backstop:
                     count = _current_mention_count()
                     base = st.get("mentions_count")
                     if count is not None and isinstance(base, int) and count < base * (1.0 - _SHRINK_TO_RETRY):
                         _release_stopped()
                         return None
                     if count is not None:
-                        # not smaller by enough: the wall stands; look again when the epoch moves next. The count
-                        # the stop was measured at stays the base, so small drops add up to the margin.
-                        _keep_stopped({**st, "epoch": now_epoch, "checked_at": time.time(),
+                        # not smaller by enough: the wall stands; look again when the epoch moves next (or at the
+                        # backstop). The count the stop was measured at stays the base, so small drops add up.
+                        _keep_stopped({**st, "epoch": now_epoch if now_epoch is not None else st.get("epoch"),
+                                       "checked_at": time.time(),
                                        "mentions_count": base if isinstance(base, int) else count})
             return {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": limit,
                     "stopped_at": st.get("at"), "restored": bool(st.get("restored")),
                     "note": "a build under this limit was already stopped by it; retried when the memory budget's "
-                            "limit grows, offload becomes allowed, or the corpus is smaller than at the stop"}
+                            "limit grows, offload becomes allowed, or the corpus is smaller than at the stop "
+                            "(counted when the corpus epoch moves, and at the long backstop for a delete the epoch "
+                            "does not see)"}
         # A corpus that has been re-indexed, pruned or restored is a different corpus (the epoch moves for
         # exactly those); what stopped the last build says nothing about it, so the hold is released.
         # Not before the rebuild TTL (``rollup_serve_ttl_s``, the churn bound every rebuild already honours):

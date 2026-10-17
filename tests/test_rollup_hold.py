@@ -324,3 +324,52 @@ def test_a_stop_kept_by_the_single_pass_build_is_released_by_the_sharded_one(mon
     calls, outcome = _build_attempts(monkeypatch)
     assert outcome == "built" and calls == [1]
     assert not _env.exists()
+
+
+def test_a_cascade_delete_the_epoch_never_saw_releases_the_stop_at_the_backstop(monkeypatch, _env):
+    """A source removed with its mentions bumps no epoch and moves no max id (serve_gate's disclosed invisible classes), so a
+    stop that counted only on an epoch move would hold a corpus that had since shrunk for good."""
+    _stop(monkeypatch, at=time.time() - rollup_serve._BACKSTOP_S - 60.0)
+    _restart()
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 7)  # unchanged: the delete bumped nothing
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: 11_000_000)  # 8% fewer
+    calls, outcome = _build_attempts(monkeypatch)
+    assert (outcome, calls) == ("built", [1])
+    assert not _env.exists()
+
+
+def test_before_the_backstop_an_unchanged_epoch_is_not_counted(monkeypatch):
+    counted = []
+    _stop(monkeypatch, at=time.time() - rollup_serve._BACKSTOP_S + 600.0)  # past the TTL, inside the backstop
+    _restart()
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 7)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: counted.append(1) or 11_000_000)
+    calls, outcome = _build_attempts(monkeypatch)
+    assert (outcome, calls) == ("declined", []) and counted == []
+
+
+def test_at_the_backstop_a_corpus_that_did_not_shrink_enough_keeps_the_wall_and_is_not_recounted_for_another_backstop(monkeypatch, _env):
+    counted = []
+    _stop(monkeypatch, at=time.time() - rollup_serve._BACKSTOP_S - 60.0)
+    _restart()
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 7)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: counted.append(1) or 11_900_000)  # 0.8% fewer
+    calls, outcome = _build_attempts(monkeypatch)
+    assert (outcome, calls) == ("declined", []) and counted == [1]
+    kept = json.loads(_env.read_text(encoding="utf-8"))
+    assert kept["mentions_count"] == 12_000_000, "the base the wall was measured at stays"
+    assert time.time() - kept["checked_at"] < 60, "looked at now: the next count is a backstop away"
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit" and counted == [1]
+
+
+def test_the_backstop_count_is_still_not_a_read_per_serve_with_a_zero_ttl(monkeypatch):
+    counted = []
+    monkeypatch.setattr(rollup_serve, "rollup_serve_ttl_s", lambda: 0)
+    monkeypatch.setattr(rollup_serve, "_BACKSTOP_S", 0)
+    _stop(monkeypatch)
+    _restart()
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 7)
+    monkeypatch.setattr(rollup_serve, "_current_mention_count", lambda: counted.append(1) or 12_000_000)
+    for _ in range(3):
+        rollup_serve._stopped_build_verdict()
+    assert counted == [], "the stop is seconds old: the one-a-minute floor holds even with a zero backstop"
