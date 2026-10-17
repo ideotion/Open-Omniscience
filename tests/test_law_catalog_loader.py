@@ -100,3 +100,22 @@ def test_an_unparseable_law_catalogue_still_ends_with_the_named_error_and_no_pat
         law_catalog._read_catalog_yaml(target)
     assert klass in str(info.value)
     assert str(tmp_path) not in str(info.value) and "pwned" not in str(info.value)
+
+
+def _pure_loader(text: str):
+    return _pure(text)
+
+
+@pytest.mark.parametrize("loader_name", ["shared", "pure"])
+def test_an_impossible_date_ends_in_the_named_error_under_both_loaders(tmp_path, monkeypatch, loader_name):
+    """The independent read found, older than its delta: PyYAML's CONSTRUCTOR rejects ``2026-13-45`` with a ``ValueError``, which
+    is not a ``YAMLError``, so the contract "every other failure ends the load with LawCatalogUnreadable, naming the file and
+    the error's class only" did not hold for it under either loader. It does now, and the file's text stays out."""
+    if loader_name == "pure":
+        monkeypatch.setattr(law_catalog, "_load_safe_yaml", _pure_loader)
+    target = tmp_path / "law.yml"
+    target.write_text("sources: []\ndocuments: []\nas_of: 2026-13-45\n", encoding="utf-8")
+    with pytest.raises(law_catalog.LawCatalogUnreadable, match="law.yml could not be read") as info:
+        law_catalog._read_catalog_yaml(target)
+    assert "ValueError" in str(info.value)
+    assert str(tmp_path) not in str(info.value) and "13-45" not in str(info.value)

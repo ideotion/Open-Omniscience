@@ -78,7 +78,9 @@ def _read_catalog_yaml(path: Path) -> dict:
         # parse cost 0.43 s, twice per boot; libyaml's is 0.044 s and its parsed objects are identical (pinned in
         # tests/test_law_catalog_loader.py on both real files).
         data = _load_safe_yaml(raw)
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, ValueError) as exc:
+        # ValueError: PyYAML's constructor, not its parser, rejects an impossible date (``2026-13-45``), and that error is not a
+        # YAMLError; under both loaders it would have left this function as a bare ValueError carrying the file's text.
         failed = type(exc).__name__
     if failed:
         raise _unreadable(path, failed)
