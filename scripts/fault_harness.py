@@ -17,6 +17,13 @@ SCENARIOS (each = boot, wait, fault, launcher exit, boot, read the report):
   sigkill        SIGKILL from the harness: no trace is possible; the report must say so rather than claim one
   clean-stop     SIGTERM: the control; nothing may claim a crash
 
+AND ONE LAB SCENARIO (LAB_SCENARIOS, named only; not a crash check, so tests/test_fault_harness.py does not run it):
+  contention-zip        a real diagnostics zip with real storage-events: a SQLite write lock held from OUTSIDE the app (a second process, BEGIN IMMEDIATE)
+                        makes the app's first writer wait in SQLite's busy handler while it holds the write gate (a gate_hold of the lock's length),
+                        and a pool of one connection with a checkout timeout of 0 (the app's own OO_DB_POOL_* settings) makes overlapping requests
+                        fail their checkout (pool_timeout). No src hook. Needs OO_FAULT_OUT (a folder for the zip); OO_FAULT_TREE points at the
+                        checkout whose src/ is booted. The zip is of a throwaway data folder: no user data exists in it.
+
 AND TWO THAT ARE RUN ONLY WHEN NAMED (EXTRA_SCENARIOS), for a launcher that has no boot id (Windows and macOS have none the app reads; here the
 copy of launch.sh is made to find none, which is the same code path):
   bootless-sigkill      SIGKILL on the server: the launcher's own record (status 137) must still be joined to the session by pid
@@ -46,14 +53,18 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+# another checkout's src/ (a lab boot of a branch that is not this one); the launcher script stays this checkout's
+TREE = Path(os.environ["OO_FAULT_TREE"]).resolve() if os.environ.get("OO_FAULT_TREE") else ROOT
 CANARY = "hunter2-canary-OOFAULT-91c3"
 SCENARIOS = ("native-abort", "sigsegv", "sigkill", "clean-stop")
 EXTRA_SCENARIOS = ("bootless-sigkill", "bootless-reused-pid")
+LAB_SCENARIOS = ("contention-zip",)  # not a crash scenario: a lab boot that makes real journal events and exports a real diagnostics zip
 _BOOT_ID = "/proc/sys/kernel/random/boot_id"
 BOOT_WAIT_S = 90
 SETTLE_S = 12  # the liveness thread's first observe takes the census and writes the marks within one 5 s tick
@@ -115,7 +126,7 @@ def _env(base: Path, port: int, mode: str) -> dict[str, str]:
         OO_HARNESS_CANARY=CANARY,
         OO_HARNESS_FAULT=mode,
         OO_HARNESS_TRIGGER=str(base / "trigger"),
-        PYTHONPATH=os.pathsep.join([str(hooks), str(ROOT)]),
+        PYTHONPATH=os.pathsep.join([str(hooks), str(TREE)]),
         HOME=str(base / "home"),
     )
     (base / "home").mkdir(exist_ok=True)
@@ -295,16 +306,109 @@ def _assert_report(mode: str, rep: dict[str, Any]) -> list[str]:
     return out
 
 
+LOCK_HOLD_S = 45  # past the app's 30 s busy_timeout and the journal's 30 s hold threshold (writer.HOLD_RECORD_S)
+
+
+def _http(port: int, method: str, path: str, body: dict[str, Any] | None = None, timeout: float = 120) -> tuple[Any, float]:
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(body).encode() if body is not None else None, method=method,
+                                 headers={"Content-Type": "application/json"})
+    t = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            r.read()
+            return r.status, round(time.monotonic() - t, 1)
+    except urllib.error.HTTPError as exc:
+        return exc.code, round(time.monotonic() - t, 1)
+    except OSError as exc:
+        return type(exc).__name__, round(time.monotonic() - t, 1)
+
+
+def run_contention_zip() -> list[str]:
+    import threading
+
+    out = os.environ.get("OO_FAULT_OUT")
+    if not out:
+        return ["OO_FAULT_OUT (a folder for the zip) is required"]
+    failures: list[str] = []
+    base = Path(tempfile.mkdtemp(prefix="oo-lab-"))
+    port = _free_port()
+    proc = None
+    try:
+        inst = _fake_install(base)
+        env = _env(base, port, "")
+        env.update(OO_DB_POOL_SIZE="1", OO_DB_MAX_OVERFLOW="0", OO_DB_POOL_TIMEOUT="0", OO_WRITE_GATE_WATCH_INTERVAL_S="1", OO_NO_BROWSER="1", BROWSER="true")
+        proc = _launch(inst, env, base / "launcher.log")
+        if not _wait_health(port, proc):
+            return ["the lab boot never became healthy"]
+        time.sleep(SETTLE_S)
+        db = base / "data" / "open_omniscience.db"
+        holder = subprocess.Popen([sys.executable, "-I", "-c", f"import sqlite3,time;c=sqlite3.connect({str(db)!r},timeout=0,isolation_level=None);c.execute('BEGIN IMMEDIATE');print('locked',flush=True);time.sleep({LOCK_HOLD_S});c.execute('COMMIT')"],
+                                  stdout=subprocess.PIPE, text=True)
+        assert holder.stdout is not None
+        if holder.stdout.readline().strip() != "locked":
+            return ["the outside lock was not taken"]
+        results: list[Any] = []
+        writers = [threading.Thread(target=lambda i=i: results.append(("write", *_http(port, "PUT", "/api/scheduler/config", {"collect_target_kbps": 500 + i})))) for i in range(3)]
+        for t in writers:
+            t.start()
+            time.sleep(0.3)
+        deadline = time.monotonic() + LOCK_HOLD_S + 5
+        while time.monotonic() < deadline:  # overlapping reads on a pool of one connection with a checkout timeout of 0
+            storm = [threading.Thread(target=lambda: results.append(("read", *_http(port, "GET", "/api/diagnostics/session-forensics")))) for _ in range(6)]
+            for t in storm:
+                t.start()
+            for t in storm:
+                t.join()
+            time.sleep(1.0)
+        holder.wait()
+        for t in writers:
+            t.join(timeout=60)
+        time.sleep(3)  # the journal's writer
+        ev = json.loads((base / "data" / "storage_events.json").read_text(encoding="utf-8"))["kinds"]
+        for kind in ("gate_hold", "pool_timeout"):
+            if not ev.get(kind, {}).get("total"):
+                failures.append(f"no {kind} event was recorded (the lab did not force it)")
+        status, _ = _http(port, "POST", "/api/diagnostics/all-job", {})
+        if status != 200:
+            return [*failures, f"the all-diagnostics job did not start ({status})"]
+        end = time.monotonic() + 900
+        ready = False
+        while time.monotonic() < end:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/diagnostics/all-job/status", timeout=30) as r:
+                st = json.loads(r.read())
+            if st.get("ready"):
+                ready = True
+                break
+            if st.get("state") in ("failed", "error"):
+                return [*failures, f"the all-diagnostics job ended {st.get('state')}"]
+            time.sleep(5)
+        if not ready:
+            return [*failures, "the all-diagnostics job did not finish in 900 s"]
+        Path(out).mkdir(parents=True, exist_ok=True)
+        dest = Path(out) / f"oo-diagnostics-lab-{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.zip"
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/diagnostics/all-job/download", timeout=300) as r, open(dest, "wb") as f:
+            shutil.copyfileobj(r, f)
+        print(f"zip: {dest} ({dest.stat().st_size} bytes); requests: " + json.dumps({k: sorted({str(x[1]) for x in results if x[0] == k}) for k in ("write", "read")}))
+        return failures
+    finally:
+        if proc is not None:
+            _stop(proc)
+        if os.environ.get("OO_FAULT_KEEP") == "1":
+            print(f"kept {base}")
+        else:
+            shutil.rmtree(base, ignore_errors=True)
+
+
 def main(argv: list[str]) -> int:
     names = argv or list(SCENARIOS)
-    bad = [n for n in names if n not in SCENARIOS + EXTRA_SCENARIOS]
+    bad = [n for n in names if n not in SCENARIOS + EXTRA_SCENARIOS + LAB_SCENARIOS]
     if bad:
-        print(f"unknown scenario(s) {bad}; choose from {SCENARIOS + EXTRA_SCENARIOS}", file=sys.stderr)
+        print(f"unknown scenario(s) {bad}; choose from {SCENARIOS + EXTRA_SCENARIOS + LAB_SCENARIOS}", file=sys.stderr)
         return 2
     code = 0
     for name in names:
         t0 = time.monotonic()
-        failed = run_scenario(name)
+        failed = run_contention_zip() if name in LAB_SCENARIOS else run_scenario(name)
         print(f"{'FAIL' if failed else 'ok  '} {name} ({time.monotonic() - t0:.0f} s)")
         for f in failed:
             print(f"     - {f}")
