@@ -468,7 +468,12 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     every kind, with the events the hooks write. Measured 78,634 bytes with ordinary names and 123,344 with every name at the cut, 1,494 of which are the keep rule's (``picked_by`` on the 50 events of the four split kinds, and the method sentence and ``keep_rule`` lines) (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip.
 
-    THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,483 bytes with ordinary names and 126,193 with every name at the cut, over the row by 1,193; the member built at the row's budget (124,934 bytes) takes the split off the shortest holds until it fits and keeps it on the other 5, counting the 15 it cut. Ordinary names keep all twenty."""
+    THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,483 bytes with ordinary names and 126,193 with every name at the cut, over the row by 1,193; the member built at the row's budget (124,934 bytes) takes the split off the shortest holds until it fits and keeps it on the other 5, counting the 15 it cut. Ordinary names keep all twenty.
+
+    THE ONSET (``first_seen_at`` on ``gate_hold`` and ``pool_timeout``, 17 Oct) is paid for in the member's words, not in splits: the two keys add
+    88 bytes, and the method and the caveat, with the sentence that names the key in them and the others tightened, are 66 bytes shorter than before,
+    so the fixed part grows from 5,129 to 5,151 bytes. Measured with the real fixtures: ordinary names 81,505 bytes (43,495 free), every name at the cut 126,215 with every split and 124,956 at the
+    row's budget, 44 free, the same 5 splits kept. If a later change to the method costs a split, ``len(_carrying(...)) >= 5`` below says so."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
@@ -489,6 +494,10 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     assert at_budget["kinds"]["gate_hold"]["kept"] == 20
     if not long_names:
         assert size <= slot.budget_bytes and "seconds_by_omitted_to_fit" not in at_budget["kinds"]["gate_hold"], "ordinary names: every hold keeps its split"
+    else:
+        assert len(_carrying(at_budget)) >= 5, "the widest journal keeps the splits of at least the 5 longest holds (the onset's bytes did not cost one)"
+    for kind in se.ONSET_KINDS:
+        assert at_budget["kinds"][kind]["first_seen_at"], f"{kind}: the onset is part of the fixed member, so no budget cut can take it"
     assert len(json.dumps(m["kinds"]["gate_hold"]["events"][0])) < se.MAX_EVENT_BYTES
 
 
@@ -2000,3 +2009,157 @@ def test_a_non_numeric_seconds_in_the_file_does_not_turn_the_member_into_an_erro
     assert m["kinds"]["gate_hold"]["events"], "the member carries the holds"
     odd = [e for e in m["kinds"]["gate_hold"]["events"] if e.get("seconds") == "62.0s"]
     assert odd and odd[0]["seconds_by"].get("omitted") in (se.OMITTED_TO_FIT, se.OMITTED_UNKNOWN), "the odd event is the first to lose its split"
+
+
+# --------------------------------------------------------------------------- #
+#  The onset of a kind (``first_seen_at``) is recorded at the event, beside the sample
+# --------------------------------------------------------------------------- #
+def _clock(monkeypatch, start_hour: int = 15):
+    """``se._now`` as a hand-turned clock: ``tick(h)`` makes the next event happen at ``2026-10-16T<h>:00:00+00:00``."""
+    now = {"h": start_hour}
+    monkeypatch.setattr(se, "_now", lambda: f"2026-10-16T{now['h']:02d}:00:00+00:00")
+
+    def tick(h: int) -> None:
+        now["h"] = h
+
+    return tick
+
+
+@pytest.mark.parametrize("kind", list(se.ONSET_KINDS))
+def test_the_onset_is_the_first_event_ever_even_after_the_keep_rule_has_dropped_it(journal, monkeypatch, kind):
+    """THE BUG THIS PINS (16 Oct 2026): two bundles of ONE process put the first bad hour at 16:00 in one and 15:00 in the other, because
+    the oldest KEPT pool timeout moved as events arrived. The first event is recorded short and the events after it are longer, so by
+    the keep rule it is not one of the longest and, once the newest are in, not one of the newest either."""
+    tick = _clock(monkeypatch)
+    field, n_long = se.LONGEST[kind]
+    se.record(kind, {field: 0.1, "n": "first"})  # 15:00, the shortest
+    for n in range(se.KEEP[kind] + 5):
+        tick(16 + n % 6)
+        se.record(kind, {field: 10.0 + n, "n": n})
+    k = _member()["kinds"][kind]
+    assert "first" not in {e["n"] for e in k["events"]}, "ANTI-VACUITY: the first event has left the sample, so the sample cannot give the onset"
+    assert min(e["at"] for e in k["events"]) == "2026-10-16T16:00:00+00:00", "what the sample alone would say: an hour late"
+    assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert k["total"] == se.KEEP[kind] + 6, "'total' counts from that onset: the first event and every one after it"
+    assert k["dropped"] == k["total"] - k["kept"]
+
+
+def test_the_onset_does_not_move_when_the_sample_does(journal, monkeypatch):
+    """The two bundles of one process: the same onset in both, whatever the counts and the kept events have become between them."""
+    tick = _clock(monkeypatch)
+    for n in range(12):
+        tick(15 + n // 6)
+        se.record("pool_timeout", {"waited_s": 30.0 + n, "n": n})
+    first = _member()["kinds"]["pool_timeout"]
+    for n in range(12, 40):
+        tick(17)
+        se.record("pool_timeout", {"waited_s": 30.0 + n, "n": n})
+    second = _member()["kinds"]["pool_timeout"]
+    assert first["first_seen_at"] == second["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert first["total"] == 12 and second["total"] == 40
+    assert 0 not in {e["n"] for e in second["events"]}, "ANTI-VACUITY: the first event is gone from the later sample"
+
+
+def test_the_onset_survives_a_restart_and_is_the_files_not_the_new_processes(journal, monkeypatch):
+    tick = _clock(monkeypatch)
+    for kind in se.ONSET_KINDS:
+        se.record(kind, {se.LONGEST[kind][0]: 1.0})
+    se.flush()
+    on_disk = json.loads(journal.read_text(encoding="utf-8"))["kinds"]
+    assert {k: on_disk[k]["first_seen_at"] for k in se.ONSET_KINDS} == dict.fromkeys(se.ONSET_KINDS, "2026-10-16T15:00:00+00:00")
+    se.reset_for_tests(keep_file=True)  # the process ends
+    monkeypatch.setattr(se, "_PROC", "the-next-process")
+    tick(19)
+    for kind in se.ONSET_KINDS:
+        se.record(kind, {se.LONGEST[kind][0]: 2.0})
+    for kind in se.ONSET_KINDS:
+        k = _member()["kinds"][kind]
+        assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00", f"{kind}: the later process's first event is not the onset"
+        assert k["total"] == 2
+    se.flush()
+    again = json.loads(journal.read_text(encoding="utf-8"))["kinds"]
+    assert all(again[k]["first_seen_at"] == "2026-10-16T15:00:00+00:00" for k in se.ONSET_KINDS), "and the file keeps it for the next start"
+
+
+def test_a_file_that_counted_events_without_an_onset_says_unknown_and_does_not_take_the_new_processs_first_event(journal, monkeypatch):
+    """A file written before the field existed: its first event is not known, and this process's is not a stand-in for it."""
+    tick = _clock(monkeypatch)
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "pool_timeout": {"total": 7, "events": [{"at": "2026-10-12T09:00:00+00:00", "proc": "gone", "waited_s": 31.0}]},
+        "gate_hold": {"total": 0, "events": []}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    tick(18)
+    se.record("pool_timeout", {"waited_s": 32.0})
+    se.record("gate_hold", {"seconds": 40.0})
+    m = _member()["kinds"]
+    assert m["pool_timeout"]["first_seen_at"] is None and m["pool_timeout"]["first_seen_unknown"] == se.ONSET_UNKNOWN
+    assert m["pool_timeout"]["total"] == 8
+    assert m["gate_hold"]["first_seen_at"] == "2026-10-16T18:00:00+00:00", "the file counted none: this process's first is the onset"
+    assert "first_seen_unknown" not in m["gate_hold"]
+    se.flush()
+    assert "first_seen_at" not in json.loads(journal.read_text(encoding="utf-8"))["kinds"]["pool_timeout"], "an unknown onset is not written as a time"
+
+
+@pytest.mark.parametrize("junk", [None, 12, ["2026-10-16T15:00:00+00:00"], "", True])
+def test_a_first_seen_that_is_not_a_time_in_the_file_is_unknown_not_an_error(journal, junk):
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "gate_hold": {"total": 3, "events": [], "first_seen_at": junk}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    k = _member()["kinds"]["gate_hold"]
+    assert k["first_seen_at"] is None and k["first_seen_unknown"] == se.ONSET_UNKNOWN and k["total"] == 3
+
+
+def test_a_kind_with_no_event_has_no_onset_and_no_reason(journal):
+    for kind in se.ONSET_KINDS:
+        k = _member()["kinds"][kind]
+        assert k["total"] == 0 and k["first_seen_at"] is None and "first_seen_unknown" not in k, kind
+
+
+def test_only_the_two_kinds_carry_an_onset(journal):
+    """Every key is bytes in a slot that is full at its widest: the other kinds are runs and transitions whose first event is not asked for."""
+    assert se.ONSET_KINDS == ("gate_hold", "pool_timeout")
+    for kind in se.KEEP:
+        se.record(kind, {"n": 1})
+    m = _member()["kinds"]
+    assert {k for k, v in m.items() if "first_seen_at" in v} == set(se.ONSET_KINDS)
+    se.flush()
+    on_disk = json.loads(se._path().read_text(encoding="utf-8"))
+    assert {k for k, v in on_disk["kinds"].items() if "first_seen_at" in v} == set(se.ONSET_KINDS)
+
+
+def test_the_zip_budget_cuts_events_and_splits_but_never_the_onset(journal, monkeypatch):
+    tick = _clock(monkeypatch)
+    se.record("pool_timeout", {"waited_s": 0.5, "n": "first"})
+    for n in range(40):
+        tick(16)
+        se.record("pool_timeout", {"waited_s": 20.0 + n, "n": n})
+        se.record("gate_hold", {"seconds": 40.0 + n, "holder": "writer"})
+    full = _member()
+    squeezed = se.diagnostics_member(6_000)
+    assert squeezed["dropped_to_fit"], "ANTI-VACUITY: the budget did cut events"
+    for kind in se.ONSET_KINDS:
+        assert squeezed["kinds"][kind]["first_seen_at"] == full["kinds"][kind]["first_seen_at"] is not None, kind
+    assert squeezed["kinds"]["pool_timeout"]["first_seen_at"] == "2026-10-16T15:00:00+00:00"
+    assert squeezed["kinds"]["pool_timeout"]["total"] == full["kinds"]["pool_timeout"]["total"] == 41, "'total' never changes by the cut either"
+
+
+def test_the_onset_is_set_by_record_and_not_by_the_event_that_a_later_record_pushes_out(journal, monkeypatch):
+    """A hold recorded OPEN (the watchdog's first sight) is the first event of its kind: its onset is its record, whatever becomes of it."""
+    tick = _clock(monkeypatch)
+    se.record("gate_hold", {"holder": "writer", "seconds": 31.0}, key=("hold", 1))
+    tick(17)
+    se.end("gate_hold", ("hold", 1), {"seconds": 44.0})
+    for n in range(30):
+        tick(18)
+        se.record("gate_hold", {"seconds": 100.0 + n})
+    k = _member()["kinds"]["gate_hold"]
+    assert k["first_seen_at"] == "2026-10-16T15:00:00+00:00", "the hold's record time, not its close (17:00) and not the sample's oldest"
+
+
+def test_an_onset_in_the_file_is_kept_whatever_the_file_holds_of_events(journal):
+    """The onset is a fact about the kind, not about the sample: a file whose events are all gone still names when the kind began."""
+    old = {"schema": se.SCHEMA, "since": "2026-10-10T08:00:00+00:00", "kinds": {
+        "pool_timeout": {"total": 3, "events": [], "first_seen_at": "2026-10-11T07:00:00+00:00"}}}
+    journal.write_text(json.dumps(old), encoding="utf-8")
+    k = _member()["kinds"]["pool_timeout"]
+    assert (k["first_seen_at"], k["total"], k["kept"]) == ("2026-10-11T07:00:00+00:00", 3, 0) and "first_seen_unknown" not in k

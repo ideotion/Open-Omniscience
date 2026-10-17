@@ -127,6 +127,16 @@ LONGEST: dict[str, tuple[str, int]] = {
 }
 
 
+#: THE ONSET IS KEPT BESIDE THE SAMPLE, NOT READ OFF IT. For the two kinds below the journal records ``first_seen_at``, the ``at`` of the
+#: first event of the kind ever recorded in this journal, at the moment it is recorded and in the file with the counters. WHAT THIS
+#: PROTECTS: the time extreme a keep rule drops. Two bundles of ONE process (16 Oct 2026) put the first bad hour of the pool at 16:00 in one
+#: and 15:00 in the other, because the oldest kept pool timeout was the first of the ten newest or the longest (10 of 1,575 kept, then
+#: 10 of 1,362), and the sample moves as events arrive. ``total`` is the count since this onset (both start at the kind's first event and
+#: are written together, so no separate "count since" is stored). The kinds are the two whose history is read by the hour; any other
+#: kind is a run or a transition whose first event is not what a reader asks for.
+ONSET_KINDS: tuple[str, ...] = ("gate_hold", "pool_timeout")
+
+
 def _length(event: dict[str, Any], field: str) -> float | None:
     """The number an event is ranked by, or None (absent, or not a number: a bool is not a duration)."""
     value = event.get(field)
@@ -325,7 +335,7 @@ def _used_path() -> Path:
 
 
 def _empty_kind() -> dict[str, Any]:
-    return {"total": 0, "events": []}
+    return {"total": 0, "events": []}  # + "first_seen_at" for ONSET_KINDS, set by record() at the first event
 
 
 def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
@@ -348,6 +358,9 @@ def _parse_kinds(data: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
                 e["open"] = False
                 e["ended"] = "the process ended while this was open; its end was not recorded"
         earlier[kind] = {"total": total, "events": _select(kind, events)}
+        first = entry.get("first_seen_at")
+        if kind in ONSET_KINDS and isinstance(first, str) and first:
+            earlier[kind]["first_seen_at"] = first
     since = data.get("since")
     return earlier, since if isinstance(since, str) else None
 
@@ -424,6 +437,13 @@ def _combined_locked() -> tuple[dict[str, dict[str, Any]], str | None]:
         old = _EARLIER.get(kind) or _empty_kind()
         new = _STATE.get(kind) or _empty_kind()
         kinds[kind] = {"total": old["total"] + new["total"], "events": _select(kind, [*old["events"], *new["events"]])}
+        if kind in ONSET_KINDS:
+            # The file's onset when it has one; this process's own only when the file held no event of the kind. A file that counted
+            # events and recorded no onset (written before the field existed) has an onset that is UNKNOWN: this process's first event
+            # is not it, and the reader is told so rather than handed a later time.
+            first = old.get("first_seen_at") or (None if old["total"] else new.get("first_seen_at"))
+            if first:
+                kinds[kind]["first_seen_at"] = first
     return kinds, _SINCE_FILE or _SINCE
 
 
@@ -622,6 +642,8 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
                 _SINCE = event["at"]
             entry = _STATE.setdefault(kind, _empty_kind())
             entry["total"] += 1
+            if kind in ONSET_KINDS and "first_seen_at" not in entry:
+                entry["first_seen_at"] = event["at"]  # at the event: the keep rule below can drop the event, never the onset
             entry["events"].append(event)
             if key is not None:
                 _OPEN[(kind, key)] = event
@@ -1163,17 +1185,21 @@ def _restore_breakdowns_that_fit(out: dict[str, Any], kinds: dict[str, Any], bud
             break
 
 
+#: Why a kind that counted events has no onset: its file was written before the field existed (this process's first event is not it).
+ONSET_UNKNOWN = "the file counting these events was written before the onset was recorded"
+
 _METHOD = (
-    "Events recorded at the sites that already measure them (the write gate's release and its 15-second watchdog, the storage "
-    "guard's transitions, the checkpoint sites, the unlock and the boot, the pool's timeout) and kept in a small file written by a "
-    "background thread at most once a second. 'total' counts every event since 'since', across restarts; 'kept' is what the file "
-    "holds (the newest, the cap is 'keep'; for 'gate_hold', 'guard', 'pool_timeout' and 'open' the cap is split by 'keep_rule': the "
-    "longest by the named field AND the newest, each event saying why it is there in 'picked_by': 'longest', 'newest' or 'both', so a "
-    "long hold is not pushed out by a stream of shorter, newer ones); 'dropped' is the events the cap removed (total minus the file's events). If the zip's "
-    "budget cut the member further, 'dropped_to_fit' names how many events of each kind it removed after that, and 'kept' is what is "
+    "Events recorded where the code already measures them (the write gate's release and 15-second watchdog, the storage guard, "
+    "the checkpoints, the unlock, the boot, the pool's timeout), kept in a small file a background thread writes at most once a "
+    "second. 'total' counts every event since 'since', across restarts; 'gate_hold' and 'pool_timeout' also carry 'first_seen_at', "
+    "the kind's first event ever, recorded at that event and not read off the kept ones (null with 'first_seen_unknown' for a file "
+    "that predates it; 'total' counts from it). 'kept' is what the file holds (the cap is 'keep'; for 'gate_hold', 'guard', "
+    "'pool_timeout' and 'open' it is split by 'keep_rule' into the longest by the named field AND the newest, 'picked_by' saying "
+    "which: 'longest', 'newest' or 'both'); 'dropped' is total minus the file's events. If the zip's budget cut further, "
+    "'dropped_to_fit' counts the events removed per kind and 'kept' is what is "
     "shown. A hold's 'seconds_by' splits its seconds into insert, savepoint, other_statement, commit and between_statements (Python work, "
     "waits, raw-driver calls, a SELECT's rows after the first); an open hold shows them so far. 'omitted' names why a hold has none: 'zip-budget' (the shortest holds are "
-    "cut first to fit; 'seconds_by_omitted_to_fit' counts them) or 'not-recorded'. An event 'open' was still going when this member was built; one whose process ended first says so ('ended'). A field "
+    "cut first to fit; 'seconds_by_omitted_to_fit' counts them) or 'not-recorded'. An 'open' event was still going when this member was built; 'ended' says its process ended first. A field "
     "named in 'fields_dropped' was too large for one event and was left out; 'oversize_bytes' is the size it would have been. "
     "'run_export' (the volume backup and the folder backup of the large data), 'run_import' (the volume restore, the single-file "
     "restore of a legacy backup, the folder restore of the large data and the folder import of newsletter files) and 'run_verify' (the "
@@ -1188,13 +1214,12 @@ _METHOD = (
     "except 'refused' here for a backup the newsletter filter refused or a legacy restore refused by a merge check, and "
     "'stopped-by-operator' here for the operator's stop of a legacy restore ('error' there for all three). A folder "
     "verification's 'mismatches' counts what its verdict counts, a bad signature among them. Refused starts share the ten "
-    "kept with the runs ('total' counts them all); a run still open is the last to be pushed out."
+    "kept ('total' counts all); an open run is the last pushed out."
 )
 _CAVEAT = (
-    "A process kill loses the last second of events when writes succeed (a failed write is tried again, doubling to a minute), and a "
+    "A process kill loses the last second of events when writes succeed (a failed write is retried), and a "
     "power loss can lose more or leave an unreadable file (no fsync). An event is a count, a duration or a name; a hold is attributed to the thread that held "
-    "the gate, not to the code that was running (the frames are the watchdog's sample and are absent for a hold it never saw "
-    "while it lasted). The file is read once at the first use after a start: events of earlier processes are marked 'earlier'. A file "
+    "the gate, not to the code that was running (the frames are the watchdog's sample, absent for a hold it never saw). The file is read once at the first use after a start: events of earlier processes are marked 'earlier'. A file "
     "that cannot be READ (an I/O error that outlasts three looks) is not written over: 'history_loaded' is false, 'read_failures' counts "
     "the tries, and the events shown are this process's only."
 )
@@ -1231,6 +1256,10 @@ def diagnostics_member(max_bytes: int) -> dict[str, Any]:
                 if kind in LONGEST:
                     field, n_long = LONGEST[kind]
                     kinds[kind]["keep_rule"] = {"longest": n_long, "by": field, "newest": cap - n_long}
+                if kind in ONSET_KINDS:
+                    kinds[kind]["first_seen_at"] = entry.get("first_seen_at")
+                    if entry.get("first_seen_at") is None and entry["total"]:
+                        kinds[kind]["first_seen_unknown"] = ONSET_UNKNOWN
             _name_missing_breakdowns(kinds["gate_hold"]["events"])
             file_state = {
                 "read_at_first_use": _READ_STATE,
