@@ -160,3 +160,79 @@ def test_every_owned_field_actually_carries_a_correction(session):
     assert result["applied"] == len(CATALOGUE_OWNED_FIELDS), result
     for field in CATALOGUE_OWNED_FIELDS:
         assert str(getattr(row, field)).lower() == str(corrected[field]).lower(), field
+
+
+# ---- what Q's trace of the "kept 9 / kept 10" report found (2026-10-17): none of the nine was an operator edit ----------
+
+def _set_baseline(row, **fields):
+    base = json.loads(row.catalog_baseline)
+    base.update(fields)
+    row.catalog_baseline = json.dumps(base, sort_keys=True)
+
+
+def test_a_field_reconcile_just_filled_with_the_catalogues_own_value_is_not_reported_as_an_edit(session):
+    """Shape A: the gap was filled earlier in the SAME call with exactly what the catalogue ships now, so there is nothing to
+    apply and nothing to keep. It used to be listed as an operator edit (live 'fr' != baseline None), and nine false ones
+    pushed a real one out of the eight listed examples."""
+    row = _install(session, [_entry()])
+    row.language = None
+    _set_baseline(row, language=None)
+    session.commit()
+
+    result = seed_sources(session, [_entry(_provenance="curated")])["corrections"]
+    session.refresh(row)
+    assert row.language == "fr"
+    assert result["kept"] == 0 and result["conflicts"] == [] and result["advanced"] >= 1
+    assert json.loads(row.catalog_baseline)["language"] == "fr"        # the baseline moved: no second report either
+
+
+def test_a_baseline_taken_from_another_catalogue_against_the_column_default_is_not_an_edit(session):
+    """Shape B: the news entry ships no source_type, the row holds the column default 'news' (nobody chose it) and the
+    baseline holds the OTHER catalogue's 'law'. It is not an operator edit: the baseline moves, the row is unchanged."""
+    entry = _entry()
+    entry.pop("source_type")
+    row = _install(session, [entry])
+    row.source_type = "news"
+    _set_baseline(row, source_type="law")
+    session.commit()
+
+    result = sync_catalogue_corrections(session, [entry])
+    session.refresh(row)
+    assert row.source_type == "news"
+    assert result["kept"] == 0 and result["conflicts"] == [] and result["advanced"] == 1 and result["dropped"] == 0
+    assert json.loads(row.catalog_baseline)["source_type"] is None
+    assert sync_catalogue_corrections(session, [entry])["advanced"] == 0     # reported once
+
+
+def test_a_real_operator_edit_is_listed_even_beside_many_false_ones(session):
+    """The false kept-conflicts crowded the eight listed examples; with them gone the one real edit is the only entry."""
+    rows = []
+    for i in range(10):
+        row = _install(session, [_entry(domain=f"d{i}.example")])
+        row.language = None
+        _set_baseline(row, language=None)
+        rows.append(row)
+    mine = rows[3]
+    mine.language = None
+    mine.name = "My name for it"
+    session.commit()
+    entries = [_entry(domain=f"d{i}.example", _provenance="curated", **({"name": "Corrected"} if i == 3 else {}))
+               for i in range(10)]
+    result = seed_sources(session, entries)["corrections"]
+    assert [c["field"] for c in result["conflicts"]] == ["name"] and result["conflicts"][0]["domain"] == "d3.example"
+
+
+def test_a_catalogue_that_stops_shipping_a_field_never_nulls_the_live_value(session):
+    """R100, inferred in the trace and made a test first: the sync wrote ``computed.get(field)`` (None for an entry that
+    ships no value) over a live value that equalled the old baseline, so a dropped ``source_type`` (nullable) or a
+    feed-less entry would have nulled it. The value stays, the field is counted as dropped, and it is reported once."""
+    entry = _entry(source_type="legal")
+    row = _install(session, [entry])
+    dropped = _entry()
+    dropped.pop("source_type")
+    dropped.pop("rss_url")
+    result = sync_catalogue_corrections(session, [dropped])
+    session.refresh(row)
+    assert row.source_type == "legal" and row.rss_url == "https://ex.example/feed"
+    assert result["applied"] == 0 and result["kept"] == 0 and result["dropped"] == 2
+    assert sync_catalogue_corrections(session, [dropped])["dropped"] == 0

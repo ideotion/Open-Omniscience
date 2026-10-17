@@ -435,6 +435,12 @@ CATALOGUE_OWNED_FIELDS: tuple[str, ...] = (
 )
 
 
+def _column_default(field: str) -> str | None:
+    """The value a ``Source`` column takes when nothing set it (``source_type`` is ``"news"``), in the comparison form."""
+    default = getattr(Source.__table__.c[field].default, "arg", None)
+    return _norm(default) if isinstance(default, str) else None
+
+
 def _norm(value: object) -> str | None:
     """One comparison form, so ``""`` and ``None`` and ``" es "`` cannot read as three values."""
     if value is None:
@@ -481,6 +487,11 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
         costs one comparison and no write.
       * live == shipped then       -> the operator never touched it, so the correction is
         theirs to receive. APPLIED.
+      * live == ships now          -> nothing to apply and nothing to keep (a gap another step filled with the
+        catalogue's own value earlier in the same call): the baseline moves, ``advanced`` counts it.
+      * ships now is EMPTY         -> never a correction and never a conflict (R100: the catalogue's silence does not
+        null a live value). A live value equal to the column default is nobody's choice and only moves the baseline
+        (``advanced``); any other is kept and counted as ``dropped``.
       * otherwise                  -> the operator's value differs from what we gave them.
         KEPT, and REPORTED by domain and field. Never overwritten, never silently dropped.
 
@@ -500,11 +511,12 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
     correction the catalogue made BEFORE this shipped will not reach an existing row.
     """
     pairs = pairs if pairs is not None else paired_rows(session, sources)[0]
-    empty = {"checked": 0, "applied": 0, "kept": 0, "adopted": 0, "foreign_catalogue": 0, "conflicts": []}
+    empty = {"checked": 0, "applied": 0, "kept": 0, "adopted": 0, "foreign_catalogue": 0, "advanced": 0, "dropped": 0,
+             "conflicts": []}
     if not pairs:
         return empty
 
-    applied = adopted = foreign = 0
+    applied = adopted = foreign = advanced = dropped = 0
     conflicts: list[dict] = []
     dirty = False
     for row, entry in pairs:
@@ -533,7 +545,19 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
             if live is None:
                 continue                            # a gap -- reconcile_source_metadata owns it
             touched = True
-            if live == then:
+            if live == now:
+                advanced += 1                       # already what the catalogue ships (a gap filled earlier in this very call)
+            elif now is None:
+                # The catalogue entry ships NO value for this field (a feed-less entry, an entry that dropped its type).
+                # That is never a correction (R100: a live value is not nulled on the catalogue's silence) and never a
+                # conflict either. A live value equal to the column's own default was nobody's choice (the news entry
+                # ships no source_type and the row holds the default, while the baseline came from another catalogue):
+                # that only moves the baseline. Anything else is kept and counted as a dropped field.
+                if live == _column_default(field):
+                    advanced += 1
+                else:
+                    dropped += 1
+            elif live == then:
                 setattr(row, field, computed.get(field))
                 applied += 1
             else:
@@ -551,7 +575,8 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
         )
     return {
         "checked": len(pairs), "applied": applied, "kept": len(conflicts),
-        "adopted": adopted, "foreign_catalogue": foreign, "conflicts": conflicts[:_CONFLICT_EXAMPLES],
+        "adopted": adopted, "foreign_catalogue": foreign, "advanced": advanced, "dropped": dropped,
+        "conflicts": conflicts[:_CONFLICT_EXAMPLES],
     }
 
 
