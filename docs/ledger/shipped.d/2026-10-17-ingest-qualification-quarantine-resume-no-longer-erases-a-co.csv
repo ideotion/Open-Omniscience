@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,ingest/qualification,Quarantine resume no longer erases a counted chunk,shipped,PR #1450; follows PR #1445,src/analytics/quarantine_job.py tests/test_quarantine_samples.py,"resume() copied the tally before start() and wrote it back after, erasing any chunk the worker counted in between; the write-back is gone (start() keeps the tally past cursor 0). Sleeping-subclass test, red on the old source."
