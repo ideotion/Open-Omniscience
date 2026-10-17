@@ -184,6 +184,20 @@ def test_a_shipped_disqualification_still_reaches_every_feed_of_the_outlet(db, t
     assert sibling.status == STATUS_DISQUALIFIED and out["held_by_outlet_disqualified"] == 0
 
 
+def test_a_shipped_disqualification_reaches_a_sibling_even_when_the_outlet_already_has_a_disqualified_feed(db, tmp_path):
+    """The direction test above uses an outlet whose other feed is QUALIFIED, so no outlet is refused and the hold never
+    applies: widening the hold to both directions (dropping the status check in ``apply_overlay``) passed it, and the whole
+    repo suite (R153, the independent read's L1). Here the outlet IS refused (one feed already disqualified), so only the
+    direction keeps a shipped `disqualified` from being held back from the unjudged sibling. Red under that widening."""
+    _src(db, "dw.com", STATUS_DISQUALIFIED, feed="en")
+    sibling = _src(db, "dw.com", feed="ar")
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "disqualified"}])
+    out = apply_overlay(db, now=NOW, path=p)
+    db.refresh(sibling)
+    assert sibling.status == STATUS_DISQUALIFIED
+    assert out["held_by_outlet_disqualified"] == 0 and out["adopted"] == 1
+
+
 def test_a_domain_absent_from_the_overlay_stays_unqualified(db, tmp_path):
     """Negative space, and the second of the two lists the ask describes: everything the
     overlay does not name still ships unqualified and queues for qualification as today."""
