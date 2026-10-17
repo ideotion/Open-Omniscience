@@ -11,7 +11,8 @@ EXPLICIT rules with a disclosed reason, never a score:
   leaves every other byte of the body exactly as extracted.
 * :func:`stub_verdict` names a THIN body (under ``non_article._ARTICLE_MIN_WORDS`` words after
   stripping) as a ``menu_stub`` (nearly every line is a short, unpunctuated, digit-free menu entry)
-  or a ``paywall_stub`` (a short line that is a subscriber prompt).
+  or a ``paywall_stub`` (a short line that is a subscriber prompt and no sentence of article prose
+  beside it: a body that carries a full sentence is a short article that ends on a subscribe call).
 
 Precision first: a false positive hides a real article. The stub verdict is used ONLY by the
 quarantine job, and only when asked for (``include_stubs``): it MARKS, the operator sees dry-run
@@ -49,11 +50,14 @@ PAYWALL_PHRASES = (
     "bereits abonnent", "déjà abonné",
 )
 _PROMPT_MAX_WORDS = 8
-# Prose a paywall_stub body may carry besides its prompt lines (a headline, a "Log in" line). More than
-# this and the body is a short article that merely ends on a subscribe call: it is spared. It protects
-# complete briefs (the 12-word reader example is spared). It is NOT measured on a corpus: none of the
-# four specimens is a paywall body with a lead; the dry run's samples are what should move it.
-_PROMPT_BODY_MAX_WORDS = 8
+# A paragraph of at least this many words that ends in terminal punctuation is a SENTENCE; a body that
+# has one is a short article that merely ends on a subscribe call, and is spared as a paywall_stub. A
+# headline carries no terminal punctuation, so "headline + subscriber prompt + Log in" still is one.
+# FITTED TO TWO DATA POINTS ONLY (the Fjordabladet headline shape, and a 12-word brief with a closing
+# prompt); no corpus has measured it. The quarantine dry-run counts and samples are what should
+# confirm or move it, and stub signals only run when the operator switches them on after those counts.
+_PROMPT_SENTENCE_MIN_WORDS = 6
+_SENTENCE_END = ".!?…"
 
 MENU_MIN_PARAGRAPHS = 12
 MENU_SHORT_WORDS = 6       # a menu entry; the page's own headline (9 words) may exceed it
@@ -86,6 +90,7 @@ def strip_furniture(text: str) -> tuple[str, int]:
     kept: list[str] = []
     removed = 0
     skip_blank = False
+    tail_removed = False
     for line in lines:
         if skip_blank and not line.strip():
             skip_blank = False
@@ -96,10 +101,16 @@ def strip_furniture(text: str) -> tuple[str, int]:
             # The blank after a removed line goes only when a blank (or the start) already precedes
             # it; otherwise it is the separator between two paragraphs and must stay.
             skip_blank = not kept or not kept[-1].strip()
+            tail_removed = True
             continue
+        if line.strip():
+            tail_removed = False
         kept.append(line)
     if not removed:
         return text, 0
+    if tail_removed:  # furniture was the last content: the blanks it leaves behind go with it
+        while kept and not kept[-1].strip():
+            kept.pop()
     return "".join(kept), removed
 
 
@@ -113,9 +124,10 @@ def is_menu_like(text: str) -> bool:
     # A digit means data (a result table, a listing), not a menu entry: such a page is not judged.
     if any(ch.isdigit() for p in paragraphs for ch in p):
         return False
-    # A body that OPENS on a colon line introduces a list ("The nominees are:"): a short list article,
-    # not a menu. A colon line mid-page is a widget label ("Choose a theme:") and does not count.
-    if paragraphs[0].endswith(":"):
+    # A colon line among the first two paragraphs (a headline may come first) introduces a list
+    # ("The nominees are:"): a short list article, not a menu. A colon line deeper in the page is a
+    # widget label ("Choose a theme:") and does not count.
+    if any(p.endswith(":") for p in paragraphs[:2]):
         return False
     menu = sum(
         1 for p, n in zip(paragraphs, counts, strict=True)
@@ -127,9 +139,9 @@ def is_menu_like(text: str) -> bool:
 def _has_prompt(paragraphs: list[str]) -> str | None:
     """The first prompt phrase found, unless the body also carries more prose than a prompt line
     could: a complete short brief that ends on "subscribe?" is an article, not a stub (a teaser
-    lead of that length is spared too, which is the safe error for a precision-first signal)."""
+    lead that is a full sentence is spared too, which is the safe error for a precision-first signal)."""
     found = None
-    other_words = 0
+    sentence = False
     for p in paragraphs:
         n = len(p.split())
         hit = None
@@ -142,8 +154,8 @@ def _has_prompt(paragraphs: list[str]) -> str | None:
         if hit:
             found = found or hit
         else:
-            other_words += n
-    return found if found and other_words <= _PROMPT_BODY_MAX_WORDS else None
+            sentence = sentence or (n >= _PROMPT_SENTENCE_MIN_WORDS and p.rstrip(" »\"”’)").endswith(tuple(_SENTENCE_END)))
+    return found if found and not sentence else None
 
 
 def stub_verdict(text: str | None) -> tuple[str, str] | None:

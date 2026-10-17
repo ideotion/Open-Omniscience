@@ -267,12 +267,30 @@ def test_stripping_a_line_never_merges_the_paragraphs_around_it():
     assert strip_furniture("Annons\n\nB second para.") == ("B second para.", 1)
 
 
-def test_the_paywall_body_threshold_is_pinned_on_both_sides():
-    from src.ingest.furniture import _PROMPT_BODY_MAX_WORDS, stub_verdict
+def test_the_paywall_sentence_rule_is_pinned_on_both_sides():
+    from src.ingest.furniture import _PROMPT_SENTENCE_MIN_WORDS, stub_verdict
 
-    at = " ".join(["ord"] * _PROMPT_BODY_MAX_WORDS)
-    assert stub_verdict(f"{at}\n\nVil du bli abonnent?") is not None
-    assert stub_verdict(f"{at} ord\n\nVil du bli abonnent?") is None
+    n = _PROMPT_SENTENCE_MIN_WORDS
+    sentence = " ".join(["ord"] * n) + "."
+    assert stub_verdict(f"{sentence}\n\nVil du bli abonnent?") is None
+    short = " ".join(["ord"] * (n - 1)) + "."
+    assert stub_verdict(f"{short}\n\nVil du bli abonnent?")[0] == "paywall_stub"
+
+
+def test_the_fjordabladet_paywall_shape_stays_a_paywall_stub():
+    text = ("Har gitt utsett spreiefrist for husdyrgjødsel - varslar innskjerping\n\n"
+            "Allerede abonnent?\n\nLogg inn")
+    assert stub_verdict(text)[0] == "paywall_stub"
+
+
+def test_a_colon_lead_after_a_headline_is_still_a_list_not_a_menu():
+    text = "Kulturpris\nDisse er nominert:\n" + "\n".join(f"Navn Navnesen{'abcdefghijkl'[i]}" for i in range(12))
+    assert stub_verdict(text) is None
+
+
+def test_furniture_at_the_very_end_leaves_no_trailing_blank():
+    assert strip_furniture("A.\nAnnons\n\n") == ("A.\n", 1)
+
 
 
 def test_store_fetched_strip_is_off_with_the_non_article_switch_off(monkeypatch):
