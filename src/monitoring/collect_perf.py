@@ -305,16 +305,54 @@ def _append_jsonl(record: dict) -> None:
         log_failure(_LOG, "collect_perf append failed", exc, level=logging.DEBUG)
 
 
+def _remove_dead_trim_copies(path) -> None:
+    """Remove the cut copies a killed process left beside the log (``<log>.<pid>.<thread>.part``) once that process is gone.
+    A pid that a live process now holds keeps its copy until that one ends; with no way to tell live from dead nothing is removed."""
+    try:
+        import psutil
+    except ImportError:
+        return
+    prefix = path.name + "."
+    try:
+        for child in path.parent.iterdir():
+            if not (child.name.startswith(prefix) and child.name.endswith(".part")):
+                continue
+            pid_text = child.name[len(prefix) :].split(".", 1)[0]
+            if pid_text.isdigit() and int(pid_text) != os.getpid() and not psutil.pid_exists(int(pid_text)):
+                child.unlink(missing_ok=True)
+    except OSError:
+        return  # a copy that cannot be removed is left; it must never stop the cut
+
+
 def _trim_jsonl() -> None:
+    """Cut the log back to its newest ``_CAP_LINES`` rows, written to a copy beside it and swapped in whole.
+
+    The file holds the last samples crash forensics reads. The in-place ``write_text`` this replaces truncated the log first, so a
+    process killed before the rows were written back left it EMPTY. A kill, an error or a full disk now leaves the old log whole.
+    The copy is named for the process and the thread, so two processes cutting at once never write one file; it is synced before
+    the swap and removed if the swap fails. Rows are the same bytes as before. A row another process appends between the read and
+    the swap is still lost: no lock covers that (it needs the ruling on overlapping processes), and none ever did."""
+    part = None
     try:
         path = _log_path()
         if not path.exists():
             return
         lines = path.read_text(encoding="utf-8").splitlines()
         if len(lines) > _CAP_LINES:
-            path.write_text("\n".join(lines[-_CAP_LINES:]) + "\n", encoding="utf-8")
+            _remove_dead_trim_copies(path)
+            part = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.part")
+            with part.open("w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines[-_CAP_LINES:]) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(part, path)
+            part = None
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "collect_perf trim failed", exc, level=logging.DEBUG)
+    finally:
+        if part is not None:
+            with suppress(OSError):
+                part.unlink()
 
 
 class CollectionMonitor:
