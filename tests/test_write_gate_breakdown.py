@@ -344,3 +344,46 @@ def test_the_rows_a_select_hands_back_after_its_first_are_between_statements_and
     assert got["between_statements"] >= 0.5, f"the rows after the first were not left to between_statements: {got}"
     assert got["other_statement"] <= 0.4, f"only the first row's work belongs to the statement: {got}"
     assert "rows after the first" in se._METHOD, "the member must say what between_statements holds"
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, MemoryError])
+def test_a_breakdown_that_raises_in_the_release_never_keeps_the_gate(world, monkeypatch, failure):
+    """The long-hold split is measured AFTER the gate is free (the independent read of #1429's head, finding L1). It loops over the ledger, so an
+    interrupt or a MemoryError can land in it; measured before the free, that left the gate owned with its depth at 0 for good (a second
+    ``release`` returns at the depth check and every other ``acquire`` queues), on the main-thread route ``write_lock`` -> ``release`` of a
+    script. The release still raises (the signal is not swallowed); the next writer is granted."""
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+
+    def _raises(self, held, started=None):
+        raise failure
+
+    monkeypatch.setattr(writer.WriterGate, "_breakdown_locked", _raises)
+    assert GATE.acquire()
+    with pytest.raises(failure):
+        GATE.release()
+    assert GATE._owner is None, "the release raised with the gate still owned: nothing frees it now"
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 10**9)  # the next writer's own release must not measure (and raise) again
+    granted: list[bool] = []
+
+    def other():
+        granted.append(GATE.acquire(timeout=2.0))
+        if granted[-1]:
+            GATE.release()
+
+    t = threading.Thread(target=other)
+    t.start()
+    t.join(5)
+    assert granted == [True], "another writer could not take the gate after a breakdown that raised in the release"
+
+
+def test_the_exact_split_still_counts_the_statement_running_at_the_release(world, monkeypatch):
+    """The split is now measured after ``_held_since`` is cleared, so the release hands it the hold's start: a raw connection's commit, which
+    no end event closes, is still counted up to the release in the journal's exact figures, as it was before the move."""
+    eng, factory = world
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    with eng.connect() as conn, writer.write_lock():
+        conn.exec_driver_sql("INSERT INTO sources (name, domain) VALUES ('r', 'r.example')")
+        conn.commit()
+        time.sleep(0.3)
+    (event_,) = se.diagnostics_member(10**9)["kinds"]["gate_hold"]["events"]
+    assert event_["seconds_by"]["commit"] >= 0.25, f"the commit open at the release was left out of the exact split: {event_['seconds_by']}"
