@@ -1,0 +1,9 @@
+## 2026-10-17 — a build that fits its memory limit is not a rollup that can answer (rollup build, PR #1422)
+
+**Found.** The sharded build was sized to finish inside DuckDB's 1,004 MB limit, and the first write-up said the model "errs high" and holds "under the limit to about 21 M mentions". Streamed builds on seeded corpora (8 mentions per keyword, 2 threads) said otherwise: 12 M mentions peaked at 601 to 604 MiB (model 645), 16 M at 771 (model 716), 20 M at 928 MiB, 97% of the 957.5 MiB limit (model 881). The model is 7% high at 12 M and 5 to 8% low at 16 to 20 M. Then the serve's own two queries were run on each resident rollup: at 12 M the all-history top-terms query ran out of memory, at 16 M the 30-day top-terms query and the all-history counts did, and at 20 M every query did (922 MiB resident leaves 35 MiB). The serve swallows that error and falls back to the live scan, so the build had spent 150 s and 922 MiB to answer nothing.
+
+**Rules this gives.**
+1. A build that finishes under a memory limit proves the build, not the use: run the queries the structure exists to serve, at the same limit, before saying the size "fits". A resident structure needs headroom for its readers (the 30-day top-terms query needed about 190 MiB over the resident rollup at 12 M).
+2. A size claim from a model is labelled inferred until a streamed run at that size exists, and the model's error band is written beside it with its sign: a model that is high at one size and low at another is not "conservative".
+3. Do not refit a three-parameter model to six points to chase a 5% miss; keep the margin that already absorbs it (the 70% fit target) and state the measured band.
+4. An error that a caller swallows and answers around (here, live fallback) hides a wasted build; a measured canary after the build is the only thing that says the structure can serve.
