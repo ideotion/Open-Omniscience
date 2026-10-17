@@ -121,6 +121,14 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   the CI runtime off 3.13: `tests/test_condition_with_form.py::test_the_with_statement_still_compiles_to_before_with` will
   fail; re-run `scripts/signal_leak_probe.py` (`condition`, `raw`, `raw_notify`, `wait`)
   on the new interpreter, and choose a mechanism that leaves 0 held there before accepting the bump.
+- **SQLAlchemy function names** (`sqlalchemy-phase-names`) — the write-gate watchdog reads a long hold's thread stack for six
+  SQLAlchemy functions (`src/database/writer.py` `_PHASE_AT`) to say whether the holder was waiting for a pooled connection, inside
+  the driver's execute or commit, or in Python. A release that renames one makes the phase read `python`, which hides the one answer
+  the record exists to give. `tests/test_write_gate_phase.py` fails on an install where a name is gone. To qualify a release that is
+  not installed yet, put its unpacked wheel first on `PYTHONPATH` and run that file; on a failure find the function's new name in
+  the release's source and extend `_PHASE_AT` (never loosen the test), then move the registry `verified`. Read on 2026-10-17 on
+  2.0.31, 2.0.51, 2.1.1 and 2.1.5. 2.0.30 does not import on Python 3.13, so `pyproject.toml` and the registry floor are both
+  2.0.31 (move them together, and `requirements.lock` if its pin falls below the floor).
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
   Dependabot bump; re-pin to the new SHA with its tag comment.

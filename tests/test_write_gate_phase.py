@@ -137,6 +137,28 @@ def test_every_name_the_phase_table_relies_on_still_exists_in_the_libraries_inst
     assert pool_reserve._Slots.acquire.__code__.co_name == "acquire"
 
 
+def test_the_registry_floor_is_the_pyproject_floor_and_the_lock_pin_is_not_below_it():
+    """The names above were read on releases from the floor up; the three places that state the floor move together (registry, pyproject, lock)."""
+    import re
+    import tomllib
+    from pathlib import Path
+
+    from packaging.requirements import Requirement
+    from packaging.version import Version
+
+    from src.maintenance import registry
+
+    root = Path(__file__).resolve().parents[1]
+    deps = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+    (req,) = [r for r in map(Requirement, deps) if r.name.lower() == "sqlalchemy"]
+    (spec,) = [s for s in req.specifier if s.operator == ">="]
+    entry = next(a for a in registry.load_registry() if a["id"] == "sqlalchemy-phase-names")
+    assert entry["pin"]["floor"] == spec.version, (entry["pin"], str(req))
+    lock = re.search(r"^sqlalchemy==([0-9][^\s]*) ", (root / "requirements.lock").read_text(encoding="utf-8"), re.M)
+    assert lock is not None, "requirements.lock no longer pins sqlalchemy"
+    assert Version(lock.group(1)) >= Version(spec.version), (lock.group(1), spec.version)
+
+
 def _gate_hold_events():
     return se.diagnostics_member(10_000_000)["kinds"]["gate_hold"]["events"]
 
