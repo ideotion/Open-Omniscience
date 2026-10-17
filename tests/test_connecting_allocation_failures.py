@@ -18,6 +18,12 @@ THE MODEL IS THE SWAP WINDOW'S (read its docstring): the module's frames are tra
   it with ``notify_all``, the one call after the level is back; a MemoryError in it loses the wake-up and the swap waits out its deadline unless
   its wait takes steps).
 
+THE MODEL IS NOT THE ALLOCATOR. A Python call, an attribute fetch and a ``getattr`` of an existing record do not necessarily allocate on this interpreter;
+forced with the allocator itself (``_testcapi.set_nomemory``, warm and cold free lists, the old give-back and the new one) both fail only inside the
+``with self._lock:`` of the release: its enter (the level stays raised) and, on cold free lists, its exit (the RLock stays owned). So for a MemoryError the
+sweep proves the ORDER (no call between "this level is ours" and "it is given back"), which is also what an interrupt needs, and it does not prove
+that the old form was unsafe against the allocator; the measurable gain is the record's initialiser (below). The independent read of the delta found this.
+
 THE ONE SITE IT NAMES. The call of ``release_shared_since`` in ``connecting``'s ``finally``: if the allocator refuses to start THAT call, no
 code that runs after it can help. The test allows that site to leave the level raised and no other. The exit of the ``with self._lock:`` inside
 the give-back is a second residual the sweep does not model (it builds a 3-tuple on CPython 3.13 and allocates when the free list is empty; a failure
