@@ -57,6 +57,14 @@ _KEY = "oo_library_generation"
 #: only slow (an encrypted open derives its key in well under a second, and a plain one takes milliseconds).
 WINDOW_WAIT_S = 60.0
 
+#: THE LONGEST A LOST WAKE-UP MAY COST, not a timeout. A connection open waits for the window in steps of this many seconds and looks again
+#: after each, so it still waits as long as the window is held; what the step bounds is a wake-up that never came. The window is given back by
+#: clearing the holder and THEN calling ``notify_all``; a MemoryError in that call (forced in ``tests/test_swap_window_allocation_failures.py``)
+#: leaves the holder clear and every open that was already waiting asleep with nothing to wake it. WHAT IT PROTECTS: a request that waits for a
+#: connection against one that waits for ever. One second because the wait it adds is paid only after that failure, and a stalled request is
+#: noticed in seconds; it is chosen, not measured (the failure has been seen only when forced).
+_RECHECK_S = 1.0
+
 
 class StaleLibraryError(RuntimeError):
     """A statement, a COMMIT or a checkout was about to run on a connection to a library file that has since been replaced (a repair
@@ -151,7 +159,7 @@ class _Lock:
             while True:
                 if self._holder is None:
                     break
-                _wait(self._cond, self._lock)
+                _wait(self._cond, self._lock, _RECHECK_S)  # a step, not a timeout: see _RECHECK_S
             # the count and this thread's record in one step, with no call between them: an exception after the count was raised and before
             # the caller saw the answer still leaves the record, which is what the caller releases by
             self._shared += 1
@@ -191,12 +199,17 @@ class _Lock:
             self._holder = None
             self._cond.notify_all()
 
-    def release_if_held_here(self) -> None:
-        """Release the window only if THIS thread holds it, checked and released under the lock in one call: a caller whose ``exclusive``
-        may have been interrupted after the holder was set and before it saw the answer cannot tell from outside, and two calls
-        (``held_here`` then ``release_exclusive``) leave a gap between them."""
+    def release_if_held_here(self, me: int) -> None:
+        """Release the window only if the thread ``me`` holds it, checked and released under the lock in one call: a caller whose
+        ``exclusive`` may have been interrupted after the holder was set and before it saw the answer cannot tell from outside, and two calls
+        (``held_here`` then ``release_exclusive``) leave a gap between them.
+
+        ``me`` is the caller's own identity, read BEFORE it asked for the window: the comparison and the clearing of the holder are then plain
+        loads and a store with no call between them, so an allocation that fails here cannot leave the holder set (a ``threading.get_ident()``
+        call made here was such a site). The one call left after the holder is clear is ``notify_all``; a failure there loses a wake-up, which
+        :data:`_RECHECK_S` bounds."""
         with self._lock:
-            if self._holder == threading.get_ident():
+            if self._holder == me:
                 self._holder = None
                 self._cond.notify_all()
 
@@ -266,11 +279,17 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     """The window in which the library's name is moved onto ``source``: no connection is being opened or can be, every connection made
     before it is refused from its first line (bump first), and when the window ends WITHOUT ``source`` having been moved (it still
     exists) and without :func:`disk_changing` having been called (a refusal before anything was touched) the earlier connections are valid
-    again. Raises :class:`LibraryBusy` if it cannot be had."""
+    again. Raises :class:`LibraryBusy` if it cannot be had.
+
+    The lock is given back whatever the cleanup does, except at the one place no code can protect: the call that gives it back, if the
+    allocator refuses to start it. ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every instruction of the cleanup
+    that can allocate and names that site."""
     global _DISK_CHANGED
-    # Everything after the first line is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
+    # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
-    # answer" still finds the lock held by this thread and releases it (src/utils/interrupts.py).
+    # answer" still finds the lock held by this thread and releases it (src/utils/interrupts.py). The identity is read FIRST, before anything
+    # is held, so the release at the end compares with a value it already has and calls nothing to learn it.
+    me = threading.get_ident()
     before = _LOCK.held_here()  # already held: ``exclusive`` raises, and what this thread holds is not ours to release
     earlier = _VALID
     swapped = True  # until the window ends with the source still there
@@ -299,7 +318,7 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
                 _close_window(swapped=swapped)
         finally:
             if not before:
-                _LOCK.release_if_held_here()
+                _LOCK.release_if_held_here(me)  # the one call here that cannot be made safe: if it cannot start, nothing after it can run
 
 
 def disk_changing() -> None:
