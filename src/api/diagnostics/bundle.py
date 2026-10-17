@@ -2909,6 +2909,12 @@ def _write_all_diagnostics_zip(
                 if isinstance(cause, StatementTimeout):
                     outcome = "skipped-deadline"
                     zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(cause) + _budget_marker_note(budget_cut, deadline_used))
+                elif any(klass.__name__ == "HeavyPaused" for klass in type(exc).__mro__):
+                    # A scan the write-ahead-log guard stood aside from on purpose (matched by class name through the MRO, as
+                    # insights._raise_if_heavy_paused does, so this file does not import heavy.py). Nothing failed: a pin is
+                    # exactly when an operator takes a bundle, and counting the guard working as an error would misread it.
+                    outcome = "skipped-paused"
+                    zf.writestr(name + ".skipped-paused.txt", _all_diag_err_str(exc))
                 else:
                     outcome = "error"
                     err = _all_diag_err_str(exc)
