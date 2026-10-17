@@ -782,30 +782,27 @@ def test_a_swap_window_interrupted_right_after_the_exclusive_lock_was_set_releas
     assert lg._WINDOW_STAMP is None
 
 
-def test_a_swap_window_interrupted_before_its_try_begins_releases_the_lock(monkeypatch, tmp_path):
-    """The statements between the acquire and the ``try`` are where the old form lost the lock: the first one that calls anything."""
+def test_a_swap_window_interrupted_in_its_first_call_after_the_acquire_releases_the_lock(monkeypatch, tmp_path):
+    """The first call the window makes after it has the lock is ``bump()``: an interrupt there must still give the lock back. The span
+    between the acquire and that call is covered by the test above (it raises as ``exclusive`` returns, before every statement that follows).
+    This test used to inject through the state lock ``_STATE``, which the window took in that span; it injects at ``bump`` so it holds
+    whether or not the state lock exists."""
     from src.database import library_generation as lg
 
     lock = lg._Lock()
     lg, source = _swap_window_with(monkeypatch, tmp_path, lock)
+    raised: list[bool] = []
 
-    class _Raises:
-        def __init__(self):
-            self.raised = False
+    def bump_then_interrupt() -> frozenset[int]:
+        raised.append(True)
+        raise KeyboardInterrupt
 
-        def __enter__(self):
-            if not self.raised:
-                self.raised = True
-                raise KeyboardInterrupt
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-    monkeypatch.setattr(lg, "_STATE", _Raises())
+    monkeypatch.setattr(lg, "bump", bump_then_interrupt)
     with pytest.raises(KeyboardInterrupt), lg.swap_window(source, timeout=5.0):
         pytest.fail("the body must not run")
+    assert raised, "the interrupt was never injected: this test would pass for any code"
     assert lock._holder is None, "the swap window stayed held: every later connection to the library would wait for ever"
+    assert lg._WINDOW_STAMP is None
 
 
 def test_a_swap_window_that_could_not_be_had_leaves_a_holders_window_alone(monkeypatch, tmp_path):
