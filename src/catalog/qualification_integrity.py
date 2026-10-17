@@ -268,37 +268,60 @@ def _newest_judging(session: Session, source_id: int):
 
 
 def held_by_inherited_verdict(session: Session, source: Source, newest_judging) -> bool:
-    """Is this source's live status held by an INHERITED verdict newer than its newest judging attempt? (R149)
+    """Is this source's live status held by an INHERITED verdict THIS INSTALL wrote when it set the status? (R149)
 
-    A restore that lands a sibling feed under an outlet (R148), and the catalogue overlay's adoption, give a source the
-    verdict of ANOTHER row and write one ``inherited`` attempt beside it -- while the source may still carry judging
-    attempts of its own from another instance, older than that adoption. Read as "status == newest judging attempt" such a
-    source is an inversion, and the repair would put the other instance's verdict back over the outlet's.
+    A restore that lands a sibling feed under an outlet (R148), the seeder's new sibling and the catalogue overlay's adoption
+    give a source the verdict of ANOTHER row and write one ``inherited`` attempt beside it -- while the source may still carry
+    judging attempts of its own from another instance, older than that adoption. Read as "status == newest judging attempt"
+    such a source is an inversion, and the repair would put the other instance's verdict back over the outlet's.
 
-    The status is held by the inherited verdict when ALL hold: (1) an ``inherited`` attempt is newer than the newest
-    judging one (``attempted_at``, then ``id``, the order :func:`_newest_judging` uses); (2) the live status is a verdict at
-    all (``qualified`` or ``disqualified``; ``unqualified`` is "no verdict", which no adoption hands on) and a ``qualified``
-    one still carries its stamp date; (3) nothing set the status afterwards -- every measuring writer
-    (``evaluate_and_stamp``) writes a judging attempt in the same transaction, which would be NEWER than the inherited row and
-    restore the normal rule.
+    The status is held by the inherited verdict when ALL hold:
+
+    1. an ``inherited`` attempt is newer than the newest judging one (``attempted_at``, then ``id``, the order
+       :func:`_newest_judging` uses);
+    2. that inherited row is THIS install's: not one a backup merge copied from another instance, OR the source row itself was
+       inserted by a merge (an R148 sibling, whose inherited row the merge wrote in the same batch that created it). An
+       inherited row copied under a source this install already held records how ANOTHER instance set ITS status, and says
+       nothing about this one's (the second read's HIGH: it hid a real laundered inversion);
+    3. the newest judging attempt is itself an imported one: an adoption never overrides a judgement this install made
+       (the overlay adopts onto a row reading ``unqualified`` even when it carries a local disqualification);
+    4. the live status is a verdict at all (``qualified`` or ``disqualified``; ``unqualified`` is "no verdict", which no
+       adoption hands on) and a ``qualified`` one still carries its stamp date;
+    5. nothing set the status afterwards -- every measuring writer (``evaluate_and_stamp``) writes a judging attempt in the
+       same transaction, which would be NEWER than the inherited row and restore the normal rule.
 
     WHAT THE ROW CANNOT SAY: an ``inherited`` attempt records WHEN and under which criteria, not which verdict was handed
-    on (``verdict`` holds the word ``inherited``). So (2) is the verdict CLASS, not a comparison with the inherited value,
+    on (``verdict`` holds the word ``inherited``). So (4) is the verdict CLASS, not a comparison with the inherited value,
     and a status flipped between the two verdicts by something that wrote no attempt after the adoption cannot be told apart
     from it. That is why the report names these rows as their own line instead of counting them clean."""
-    from src.database.models import SourceQualificationAttempt as A
-    from src.catalog.qualification import VERDICT_INHERITED
+    from sqlalchemy import exists
 
+    from src.catalog.qualification import VERDICT_INHERITED
+    from src.database.models import MergedRow
+    from src.database.models import SourceQualificationAttempt as A
+
+    if newest_judging is None:
+        return False
     if source.status not in (STATUS_QUALIFIED, STATUS_DISQUALIFIED):
         return False
     if source.status == STATUS_QUALIFIED and source.qualified_at is None:
         return False
-    q = session.query(A.id).filter(A.source_id == source.id, A.verdict == VERDICT_INHERITED)
-    if newest_judging is not None:
-        q = q.filter(
-            (A.attempted_at > newest_judging.attempted_at)
-            | ((A.attempted_at == newest_judging.attempted_at) & (A.id > newest_judging.id))
-        )
+    imported_judging = session.query(
+        exists().where(MergedRow.table_name == "source_qualification_attempts", MergedRow.row_id == newest_judging.id)
+    ).scalar()
+    if not imported_judging:
+        return False
+    source_imported = session.query(
+        exists().where(MergedRow.table_name == "sources", MergedRow.row_id == source.id)
+    ).scalar()
+    q = session.query(A.id).filter(
+        A.source_id == source.id,
+        A.verdict == VERDICT_INHERITED,
+        (A.attempted_at > newest_judging.attempted_at)
+        | ((A.attempted_at == newest_judging.attempted_at) & (A.id > newest_judging.id)),
+    )
+    if not source_imported:
+        q = q.filter(not_imported(A))
     return q.first() is not None
 
 
@@ -480,12 +503,20 @@ def qualification_integrity_report(
             f"Every one of the {with_attempt} judged sources still carries the verdict "
             "its own attempt history last recorded."
         )
+        if n_inherited_held:
+            reason = (
+                f"None of the {with_attempt} judged sources contradicts its attempt history, but {n_inherited_held} of them "
+                "carry a status held by an INHERITED verdict newer than their last judgement (listed under "
+                "status_held_by_inherited_verdict): an inherited attempt does not record which verdict it handed on, so "
+                "those are not compared with a recorded verdict."
+            )
     else:
         verdict = "inversions-found"
         reason = (
             f"{inversions_total} of {with_attempt} judged sources no longer carry the "
             f"verdict their history recorded ({n_laundered} previously disqualified, "
             f"{n_demoted} previously qualified)."
+            + (f" A further {n_inherited_held} carry a status held by an inherited verdict, listed apart." if n_inherited_held else "")
         )
 
     return {

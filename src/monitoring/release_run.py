@@ -1796,6 +1796,9 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
             {"restore": child.get("restore"), "counts": child.get("counts"),
              "integrity_verdict": integ.get("verdict"),
              "laundered_total": integ.get("laundered_total"), "demoted_total": integ.get("demoted_total"),
+             # sources whose status is an adoption's (an inherited verdict newer than the judgement it differs from): not
+             # inversions and not counted clean in silence (R149)
+             "status_held_by_inherited_verdict_total": integ.get("status_held_by_inherited_verdict_total"),
              # which inversions the boot repair takes and which it LEAVES on purpose (a verdict
              # measured here or adopted from an import is never changed by an imported history,
              # rule 12 = b): a laundered_total above zero is not by itself a laundering
@@ -1933,6 +1936,8 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         {"restored_corpus": (child.get("integrity") or {}).get("verdict"),
          "live_corpus_after_drain": {"verdict": live.get("verdict"), "laundered_total": live.get("laundered_total"),
                                      "demoted_total": live.get("demoted_total"), "checked": live.get("checked"),
+                                     "status_held_by_inherited_verdict_total":
+                                         live.get("status_held_by_inherited_verdict_total"),
                                      "auto_repairable_total": live.get("auto_repairable_total"),
                                      "not_auto_repaired_measured_here_total":
                                          live.get("not_auto_repaired_measured_here_total"),
