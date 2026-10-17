@@ -288,7 +288,8 @@ def test_the_lock_is_taken_back_even_when_another_thread_took_it_in_the_gap():
 
 
 def _uncovered_back_edges(fn) -> list[int]:
-    """Line numbers of ``JUMP_BACKWARD`` instructions that no exception-table entry covers, in ``fn`` and the functions nested in it."""
+    """Line numbers of ``JUMP_BACKWARD`` instructions, in ``fn`` and the functions nested in it, whose loop head an exception-table entry covers and
+    whose own offset none does."""
     import dis
     import inspect
     import types
@@ -303,7 +304,10 @@ def _uncovered_back_edges(fn) -> list[int]:
     for code in walk(inspect.unwrap(fn).__code__):
         ranges = [(e.start, e.end) for e in dis.Bytecode(code).exception_entries]
         for ins in dis.get_instructions(code):
-            if ins.opname == "JUMP_BACKWARD" and not any(start <= ins.offset < end for start, end in ranges):
+            if ins.opname != "JUMP_BACKWARD" or any(start <= ins.offset < end for start, end in ranges):
+                continue
+            # the loop's head is protected but its back-edge is not: a loop in a function with no handler at all has nothing to skip
+            if any(start <= ins.argval < end for start, end in ranges):
                 out.append(ins.positions.lineno if ins.positions else -1)
     return out
 
@@ -351,6 +355,25 @@ def test_no_wait_loop_leaves_its_back_edge_outside_the_with():
     }
     bad = {name: _uncovered_back_edges(fn) for name, fn in gates.items() if _uncovered_back_edges(fn)}
     assert not bad, f"a wait loop's back-edge is outside the with (lines): {bad}"
+
+
+def test_the_other_locked_loops_of_this_lane_keep_their_back_edge_inside_the_with():
+    """R162: a loop that holds a lock and can run on the main thread is written in the covered shape, or lives in a helper called from inside
+    the ``with`` (a function with no handler has nothing to skip; the interrupt propagates to the caller's call, which the ``with`` covers)."""
+    from src.config import kv_store
+    from src.custody import pending
+
+    owned = {"kv_store.kv_invalidate": kv_store.kv_invalidate, "custody.pending.drain": pending.drain}
+    bad = {name: _uncovered_back_edges(fn) for name, fn in owned.items() if _uncovered_back_edges(fn)}
+    assert not bad, f"a loop's back-edge is outside the with (lines): {bad}"
+
+
+def test_kv_invalidate_still_forgets_exactly_the_entries_of_its_key():
+    from src.config import kv_store
+
+    table = {("a", "k1"): 1, ("b", "k1"): 2, ("a", "k2"): 3}
+    kv_store._forget_key(table, "k1")
+    assert table == {("a", "k2"): 3}
 
 
 class _AppendThenInterrupt(list):

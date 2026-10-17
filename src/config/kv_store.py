@@ -560,10 +560,16 @@ def kv_invalidate(key: str | None = None) -> None:
             _failed.clear()
             _seen.clear()
         else:
-            for ck in [ck for ck in _failed if ck[1] == key]:
-                _failed.pop(ck, None)
-            for ck in [ck for ck in _cache if ck[1] == key]:
-                _cache.pop(ck, None)
+            _forget_key(_failed, key)
+            _forget_key(_cache, key)
+
+
+def _forget_key(table: dict, key: str) -> None:
+    """Drop every entry of ``table`` whose key is ``(_, key)``. The loop is HERE and not in :func:`kv_invalidate`: a loop of this shape written
+    under ``with _lock:`` has a back-edge outside the ``with``'s exception-table entry on CPython 3.13 (see ``src/utils/interrupts.py``), where
+    in a function with no handler an interrupt at it simply propagates to the caller's call, which the ``with`` covers."""
+    for ck in [ck for ck in table if ck[1] == key]:
+        table.pop(ck, None)
 
 
 def _loads_strict(raw: str | None) -> dict | None:

@@ -252,6 +252,17 @@ def _key(rec: dict[str, Any]) -> str:
     return json.dumps(rec, sort_keys=True, separators=(",", ":"))
 
 
+def _ids_missing_columns(todo: list[dict[str, Any]]) -> list[int]:
+    """Article ids of the entries that carry no ``item_hash``. A helper and not a comprehension in :func:`drain`: a loop written under
+    ``with lock:`` has a back-edge outside the ``with``'s exception-table entry on CPython 3.13 (see ``src/utils/interrupts.py``)."""
+    return sorted({int(it["article_id"]) for it in todo if not it.get("item_hash")})
+
+
+def _not_settled(pending: list[dict[str, Any]], done: set[Any]) -> list[dict[str, Any]]:
+    """The entries whose key is not in ``done`` (a helper, for the reason :func:`_ids_missing_columns` gives)."""
+    return [it for it in pending if _key(it) not in done]
+
+
 def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = None,
           prefs: Any = None) -> dict[str, Any]:
     """Record up to ``limit`` pending entries now, each marked late. An entry whose article
@@ -272,7 +283,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
         settled: list[dict[str, Any]] = []
         recorded = already = gone = 0
-        need = sorted({int(it["article_id"]) for it in todo if not it.get("item_hash")})
+        need = _ids_missing_columns(todo)
         read: dict[int, dict[str, Any]] | None = {}
         read_error: str | None = None
         if need:
@@ -336,7 +347,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 log.close()
         done = {_key(it) for it in settled}
         with _LOCK:
-            remaining = [it for it in read_pending() if _key(it) not in done]
+            remaining = _not_settled(read_pending(), done)
             try:
                 _rewrite(remaining)
             except OSError as exc:
