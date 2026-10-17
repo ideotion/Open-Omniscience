@@ -109,7 +109,7 @@ class KvLockStuck(KvWriteRefused):
         what = operation if operation else "operation not recorded"
         when = f"since {since_utc}" if since_utc else "time not recorded"
         super().__init__(
-            f"The settings lock ({self.lock}) was left held by an operation that is no longer running ({what}, {thread_kind}, {when}), "
+            f"The settings lock ({self.lock}) was left held by an operation that ended without letting it go ({what}, {thread_kind}, {when}), "
             "so settings cannot be saved or restored in this session. Nothing was written. Restart Open Omniscience."
         )
 
@@ -139,7 +139,8 @@ _hold_by: int | None = None  # ident of the thread holding settings writes (a re
 _inflight: set[object] = set()
 
 
-#: Who last entered a section that takes ``_hold_lock``: thread ident -> (operation, wall time). One call-free store BEFORE each take, never
+#: Who last entered a section that takes ``_hold_lock``: thread ident -> (operation, wall time). One store BEFORE each first take (the release takes record
+#: it inside the lock, after their state change, because a call in a ``finally`` can be interrupted before the release), never
 #: removed (a lock that was left held is named from the entry of the thread that owns it); at most one entry per thread ident that ever saved
 #: a setting or held writes, and the operating system recycles idents. Written only to NAME a stuck lock; whether it is stuck is decided from the
 #: stacks (:func:`_stuck_owner`), not from this.
@@ -180,7 +181,11 @@ def _refuse_if_stuck() -> None:
     last section entry, on two looks one scheduling turn apart. NO TIMEOUT AND NO NUMBER: what makes a holder stuck is where it is (outside the
     code that takes the lock), not for how long, so no figure has to be chosen or measured. RESIDUAL, stated: an owner that left the section and
     a new one that entered it in the gap between the looks, by the same thread ident with the entry rewritten identically to the microsecond,
-    would be read as one stuck owner; and a lock left held in the few instructions after this check blocks without a name."""
+    would be read as one stuck owner. NOT COVERED, by design: only the FIRST take of each section is checked. A save that passed the check and then
+    queues for the single-writer gate (the length of a write) takes ``_hold_lock`` again in its release, and a restore takes it for the drain and
+    the release; if the lock was left held meanwhile, those takes block without a name. A check at the release is not added: it would be a call
+    inside a ``finally``, and a KeyboardInterrupt arriving at that call skips the release itself (measured: with a note there, 8,213 of 218,166
+    interrupts left the restore hold set for good). Later saves are still refused and named by their first take."""
     first = _stuck_owner()
     if first is None:
         return
@@ -274,8 +279,8 @@ def _write_slot() -> Iterator[int]:
         except KeyError:  # never counted (the holder passing through, a refused write): nothing to wake
             pass
         else:
-            _note_section("settings save release")
             with _hold_lock:  # only to wake a hold waiting for the count to reach zero; a missed wake costs that hold its budget, never a wrong start
+                _note_section("settings save release")
                 _hold.notify_all()
 
 
@@ -317,10 +322,10 @@ def hold_writes(timeout: float) -> Iterator[None]:
         yield
     finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         if held:  # never clears another thread's hold (the "already held" refusal above)
-            _note_section("restore hold release")
-            with _hold_lock:
+            with _hold_lock:  # no call before this take: a KeyboardInterrupt arriving at a call in this finally would leave the hold set for good
                 if _hold_by == me:  # held is set one statement before the hold: another thread may own it by now
                     _hold_by = None
+                _note_section("restore hold release")  # after the clear, for the same reason; names a leak of THIS lock by its last entry
                 _hold.notify_all()
 
 

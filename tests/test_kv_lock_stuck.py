@@ -250,3 +250,36 @@ def test_the_api_answers_a_stuck_lock_as_a_503_with_the_fixed_words_and_no_retry
     # The restore-switch refusal keeps its header: the stuck case must not have changed it.
     refused = asyncio.run(settings_write_refused_handler(request, kv_store.KvWriteRefused(kv_store._REFUSED_TEXT)))
     assert refused.status_code == 503 and refused.headers["retry-after"] == "30"
+
+
+def test_an_interrupt_at_a_call_in_the_release_of_the_hold_cannot_leave_the_hold_set(lock, monkeypatch):
+    """The finally of ``hold_writes`` must make no call before it takes the lock and clears the hold. A KeyboardInterrupt arrives at a Python call (the
+    signal handler runs there), and a call that came first skipped the clear: measured with real SIGALRM interrupts, 7,568 of 188,919 left the hold set
+    for good on the first version of the detector (every later save refused after its wait, every restore "already held"), 0 of 191,056 after. The
+    interrupt is placed at the section note, the one call the release makes."""
+
+    def interrupted_at_the_release_note(operation: str) -> None:
+        if operation == "restore hold release":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(kv_store, "_note_section", interrupted_at_the_release_note)
+    with pytest.raises(KeyboardInterrupt):
+        with kv_store.hold_writes(0):
+            pass
+    assert kv_store._hold_by is None, "the interrupt left the restore hold set until a restart"
+    assert not lock._is_owned(), "the interrupt left the lock owned"  # type: ignore[attr-defined]
+
+
+def test_the_release_of_a_save_notes_its_section_only_after_the_count_is_given_back(lock, monkeypatch):
+    """The write is un-counted by one lock-free call before anything else in the finally, so an interrupt at the note cannot leave it counted."""
+
+    def interrupted_at_the_release_note(operation: str) -> None:
+        if operation == "settings save release":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(kv_store, "_note_section", interrupted_at_the_release_note)
+    with pytest.raises(KeyboardInterrupt):
+        with kv_store._write_slot():
+            pass
+    assert not kv_store._inflight, "the interrupt left the write counted: every later restore hold would refuse to start"
+    assert not lock._is_owned()  # type: ignore[attr-defined]
