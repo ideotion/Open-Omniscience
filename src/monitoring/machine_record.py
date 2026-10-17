@@ -14,6 +14,12 @@ allocator setting. They are read ONCE per build, at its start, and written into 
 so a member that is declined or fails still leaves them in the archive. Nothing here is repeated in
 ``debug-bundle.json``, ``session-forensics.json`` or ``soak-window.json``.
 
+THE FEED PARSER'S XML DRIVER (R179, 2026-10-17, ``feed_xml``): feedparser asks ``xml.sax.make_parser`` for
+libxml2's SAX driver (``drv_libxml2``) first, and where the libxml2 Python bindings import (a distro Python, or
+a venv with system site packages) that driver parses feeds outside the extraction lock; a pip venv has no such
+module and feedparser falls through to Python's expat. How many installs have the bindings is not known, so the
+record says which of the three it is on THIS process, read without touching the driver (see ``_feed_xml``).
+
 WHAT IT DOES NOT CARRY, and why. The Wikipedia transport (proxy, pool or direct) is a property of
 each hour of the lane, so it rides ``wiki-lane-history.json`` per hour and has no second copy here.
 Whether a launcher started the app is not a fact the process can read about itself; the launcher's
@@ -29,6 +35,7 @@ its reason, and is never written as an empty or a zero. Never raises.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import platform
 import sqlite3
@@ -36,8 +43,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-#: The record's own version, so a reader of an old archive knows which fields to expect.
-MACHINE_RECORD_VERSION = 1
+#: The record's own version, so a reader of an old archive knows which fields to expect. 2: ``feed_xml``.
+MACHINE_RECORD_VERSION = 2
 
 #: Names only, and only this prefix: the app's own switches. A variable of the operator's other
 #: software is none of a diagnostic's business.
@@ -136,6 +143,47 @@ def _versions() -> dict[str, Any]:
     }
 
 
+#: The module feedparser's SAX parser list names first, and the only name whose presence this record reads.
+_FEED_DRIVER = "drv_libxml2"
+#: The three things ``_feed_xml`` says about that module, named once so the bytes pin measures these strings.
+_DRIVER_LOADED, _DRIVER_ABSENT, _DRIVER_FOUND_NOT_LOADED = "loaded", "absent", "found_not_loaded"
+_DRIVER_STATES = (_DRIVER_LOADED, _DRIVER_ABSENT, _DRIVER_FOUND_NOT_LOADED)
+
+
+def _feed_xml() -> dict[str, Any]:
+    """Which XML driver feedparser uses in this process: ``preferred`` (feedparser's own list) and
+    ``drv_libxml2`` as ``loaded`` / ``absent`` / ``found_not_loaded``.
+
+    READ WITHOUT TOUCHING THE DRIVER. ``xml.sax.make_parser`` imports ``drv_libxml2`` and feedparser's call
+    is the only one in this app's own code (a library that calls ``make_parser`` would load it too), and a
+    failed import is not kept, so the module being in ``sys.modules`` means a feed parse of this process
+    used libxml2's driver (INFERRED from that, not a count of parses).
+    ``absent`` means no module of that name is on the import path, so feedparser parses with expat
+    (a ``None`` placed in ``sys.modules`` for that name also reads ``absent``, but ``make_parser`` re-raises
+    for it and the parse fails: nothing in this app writes that entry, and a reader of this record should know).
+    ``found_not_loaded`` means a file of that name is on the path but no parse has reached it yet,
+    or its import failed: the value does not say which. NOTHING here imports the driver or calls
+    ``make_parser``: on a machine with the bindings that would load libxml2 from the diagnostics thread,
+    outside ``_LXML_LOCK``, which is what this record exists to observe. ``sys.modules`` is read BEFORE
+    ``find_spec`` because ``find_spec`` raises ``ValueError`` for a module put there without a spec."""
+    try:
+        import feedparser
+
+        out: dict[str, Any] = {"preferred": ",".join(feedparser.api.PREFERRED_XML_PARSERS)}
+    except Exception as exc:  # noqa: BLE001 - a missing reading is a reason, never a failure
+        return {"unavailable": f"feedparser could not be read ({type(exc).__name__})"}
+    try:
+        if sys.modules.get(_FEED_DRIVER) is not None:
+            out[_FEED_DRIVER] = _DRIVER_LOADED
+        elif importlib.util.find_spec(_FEED_DRIVER) is None:
+            out[_FEED_DRIVER] = _DRIVER_ABSENT
+        else:
+            out[_FEED_DRIVER] = _DRIVER_FOUND_NOT_LOADED
+    except Exception as exc:  # noqa: BLE001
+        out[_FEED_DRIVER] = {"unavailable": type(exc).__name__}
+    return out
+
+
 def _memory() -> dict[str, Any]:
     """The memory tier the process was resolved to, beside the one the machine gives now, and the
     memory available now. A difference is a measured fact about the machine and no verdict on which
@@ -173,8 +221,7 @@ def _environment() -> dict[str, Any]:
         return {
             "set_names": names,
             "count": len(names),
-            "method": f"the names of the environment variables beginning with {_ENV_PREFIX}; "
-                      "no value is read into this record",
+            "method": f"the names of the {_ENV_PREFIX} variables that are set; no value is read",
         }
     except Exception as exc:  # noqa: BLE001
         return _unavailable(exc)
@@ -192,10 +239,10 @@ def machine_block() -> dict[str, Any]:
             "memory": _memory(),
             "allocator": _allocator(),
             "environment": _environment(),
+            "feed_xml": _feed_xml(),
             "not_here": (
-                "the Wikipedia transport rides wiki-lane-history.json per hour; the hardware is "
-                "run.hardware of this manifest; how the previous process ended is "
-                "session-forensics.json"
+                "transport: wiki-lane-history.json; hardware: run.hardware; "
+                "previous exit: session-forensics.json"
             ),
         }
     except Exception as exc:  # noqa: BLE001 - the one read a build cannot afford to lose its header over
