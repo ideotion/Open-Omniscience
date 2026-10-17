@@ -32,6 +32,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
+from src.monitoring import holder_state
 from src.monitoring import storage_events as se
 
 MARKER = "MARKER-passphrase-4711-correct-horse"
@@ -413,11 +414,17 @@ def _fill_runs() -> None:
 
 def _fill_like_the_hooks(long_names: bool) -> None:
     """Every kind to its cap with the events the hooks write, names at the cut or ordinary."""
+    from src.database import writer
 
     def nm(text: str) -> str:
         return (text + _NAME)[: se.STR_CHARS] if long_names else text
 
-    frames = [nm(f) for f in ("src.analytics.keyword_rollup:rebuild_segment_batches:412", "src.database.maintenance:run_in_write_window:1893", "src.database.writer:write_lock:540")]
+    def frame(text: str) -> str:
+        # The widest a frame the gate's watchdog writes can be: ``writer.FRAME_CHARS``, a measured maximum that tests/test_holder_state.py pins
+        # against every function under src/. The journal's own 160-character cut is NOT the width of a frame: no frame reaches it.
+        return (text + _NAME)[: writer.FRAME_CHARS] if long_names else text
+
+    frames = [frame(f) for f in ("src.analytics.keyword_rollup:rebuild_segment_batches:412", "src.database.maintenance:run_in_write_window:1893", "src.database.writer:write_lock:540")]
     for i in range(se.KEEP["gate_hold"] + 5):
         se.record(
             "gate_hold",
@@ -427,7 +434,9 @@ def _fill_like_the_hooks(long_names: bool) -> None:
         )
         # The widest a long hold's record gets: the phase and its sample counts (a day of 15 s samples in each of the four), and what the
         # holder thread did over the hold and the machine's memory at its end, each at ten digits.
-        se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760}})
+        se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760},
+                                              # the holder's kernel state: six counts of five digits (a day of one-second looks, 14,400 in each class) and the longest gap
+                                              "ws": [14_400] * len(holder_state.CLASSES), "gap": 86_400.0})
         se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume"),
                                            "cpu_ms": 86_400_000.0, "nvcsw": 9_999_999_999, "nivcsw": 9_999_999_999, "majflt": 9_999_999_999,
                                            "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999,
@@ -482,17 +491,30 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, lo
 
     THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,483 bytes with ordinary names and 126,193 with every name at the cut, over the row by 1,193; the member built at the row's budget (124,934 bytes) takes the split off the shortest holds until it fits and keeps it on the other 5, counting the 15 it cut. Ordinary names keep all twenty.
 
-    THE ONSET (``first_seen_at`` on ``gate_hold`` and ``pool_timeout``, 17 Oct) is paid for in the member's words, not in splits: the two keys add
-    88 bytes, and the method and the caveat, with the sentence that names the key in them and others tightened, are 64 characters shorter than
-    before, so the fixed part grows by 26 bytes (5,152 to 5,178 once the file has been written, 5,129 to 5,155 before the first write: the
-    ``file`` block's ``last_write_ok_at`` is null until then and a 25-character time after, 23 bytes more, and WHICH state the member is built
-    in must not be left to the writer thread's timing: ``_fill_and_write`` makes it the written one, the state a running app is in). Measured
-    with the real fixtures, written: ordinary names 81,532 bytes (43,468 free), every name at the cut 126,242 with every split and 124,983 at the
-    row's budget, 17 free, 5 splits kept (before the onset: 43 free, 5 kept). If a later change to the method costs a split,
-    ``len(_carrying(...)) >= 5`` below says so. An onset that is UNKNOWN (a file from before the field, or a history that could not be read)
-    shows a short reason instead of a time (23 and 62 bytes more for the two kinds): the widest names then keep 4 splits, pinned by
-    ``test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown...``."""
+    THE ONSET (``first_seen_at`` on ``gate_hold`` and ``pool_timeout``, 17 Oct) is paid for in the member's words, not in splits: the two keys
+    add 88 bytes, and the method and the caveat, with the sentence that names the key in them and others tightened, are 64 characters shorter
+    than before (the method +3, the caveat -67), so the fixed part grows by 24 bytes: 5,152 to 5,176 once the file has been written, 5,129 to
+    5,153 before the first write. "THE FIXED PART" in this docstring is the member with every kind's ``events`` list emptied, less the 20 bytes
+    of ``,"dropped_to_fit":{}``, which is the definition RC2's independent re-measure used; it corrected the first cut's +26 (88 - 64 is 24) and
+    its "the method gives back 23 bytes" (25). The ``file`` block's ``last_write_ok_at`` is null until the first write and a 25-character time
+    after it (23 bytes more), and WHICH state the member is built in must not be left to the writer thread's timing: ``_fill_and_write`` makes
+    it the written one, the state a running app is in. Measured with the real fixtures, written: ordinary names 81,532 bytes (43,468 free), every
+    name at the cut 126,242 with every split and 124,983 at the
+    row's budget, 17 free, 5 splits kept (before the onset: 43 free, 5 kept). If a later change costs a split,
+    ``len(_carrying(...)) == 20`` below says so (it said ``>= 5`` before the frame width, below). An onset that is UNKNOWN (a file from before the field, or a history that could not be read)
+    shows a short reason instead of a time (23 and 62 bytes more for the two kinds): the widest names then still keep every split (4 of 20
+    before the frame width, below), pinned by ``test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown...``.
+
+    THE HOLDER'S KERNEL STATE (``ws`` and ``gap`` on each gate hold, 17 Oct) is paid for by the width of the frames, not by splits and not by a
+    bigger row. The model above wrote each of a hold's three frames at the journal's 160-character cut; a frame is ``module:function:line``,
+    the longest any function under ``src/`` can produce is 79 characters (pinned in ``tests/test_holder_state.py``), and ``writer.FRAME_CHARS`` (90) is
+    now both what the watchdog writes at most and what this model uses: 3 frames x 70 characters x 20 holds = 4,200 bytes that no real
+    event could reach. The new fields cost 58 bytes a hold at their widest (six five-digit counts and a five-digit gap: 1,160 over the 20)
+    and their sentence in the method 655 (the fixed part, defined above, 5,176 to 5,831). Measured with the real fixtures, written: ordinary names 83,327 bytes (41,673 free), every
+    name at the cut 123,837, 1,163 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
+    the row with 5 splits kept)."""
     from src.api import diagnostics_slots as slots
+    from src.database import writer
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
     _fill_and_write(monkeypatch, long_names)
@@ -510,10 +532,12 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, lo
     assert written <= slot.budget_bytes, f"{written} bytes written (the member with every split is {size}), the row says {slot.budget_bytes}"
     assert at_budget["dropped_to_fit"] == {}, "no event is dropped to fit: only splits are"
     assert at_budget["kinds"]["gate_hold"]["kept"] == 20
-    if not long_names:
-        assert size <= slot.budget_bytes and "seconds_by_omitted_to_fit" not in at_budget["kinds"]["gate_hold"], "ordinary names: every hold keeps its split"
-    else:
-        assert len(_carrying(at_budget)) >= 5, "the widest journal keeps the splits of at least the 5 longest holds (the onset's bytes did not cost one)"
+    assert size <= slot.budget_bytes and "seconds_by_omitted_to_fit" not in at_budget["kinds"]["gate_hold"], "every hold keeps its split, at the widest names too"
+    assert len(_carrying(at_budget)) == 20
+    for event in at_budget["kinds"]["gate_hold"]["events"]:
+        assert len(event["ws"]) == len(holder_state.CLASSES) and event["gap"] == 86_400.0, "the holder's kernel state is in the widest hold"
+        if long_names:
+            assert max(len(f) for f in event["frames"]) == writer.FRAME_CHARS, "the model writes each frame at the width the watchdog can"
     for kind in se.ONSET_KINDS:
         assert at_budget["kinds"][kind]["first_seen_at"], f"{kind}: the onset is part of the fixed member, so no budget cut can take it"
     assert len(json.dumps(m["kinds"]["gate_hold"]["events"][0])) < se.MAX_EVENT_BYTES
@@ -523,19 +547,29 @@ def _carrying(member: dict) -> list[dict]:
     return [e for e in member["kinds"]["gate_hold"]["events"] if "omitted" not in e["seconds_by"]]
 
 
+#: How far short of the widest journal the cut rule's tests make the row. WHAT IT PROTECTS: the premise of those tests, that the member is over
+#: its row by some splits and not others. The real row is no longer short of the widest journal (the frames are written at their measured
+#: width, not the journal's 160-character cut, 17 Oct), so the rule is exercised against a row this many bytes below it: five splits' worth.
+_SHORT_OF_THE_WIDEST = 700
+
+
+def _short_row() -> int:
+    """A row ``_SHORT_OF_THE_WIDEST`` bytes below the size of the widest journal (every name at the cut, every split present)."""
+    return se._size(se.diagnostics_member(10**9)) - _SHORT_OF_THE_WIDEST
+
+
 def test_the_split_stays_on_as_many_of_the_longest_holds_as_the_free_bytes_allow(journal):
-    """The count is computed from the budget, never fixed: with every name at the cut the member is over the row by the splits, and
+    """The count is computed from the budget, never fixed: with a row short of the widest journal the member is over it by some splits, and
     the shortest holds give theirs up first. Four properties, each one a way the rule is wrong: it fits; the holds that keep it are the
     longest; it is MAXIMAL (putting one more back overflows); and each hold without one says why, counted."""
-    from src.api import diagnostics_slots as slots
-
-    (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
     _fill_like_the_hooks(True)
-    m = se.diagnostics_member(slot.budget_bytes)
+    row = _short_row()
+    m = se.diagnostics_member(row)
     holds = m["kinds"]["gate_hold"]["events"]
     cut = [e for e in holds if e["seconds_by"].get("omitted") == se.OMITTED_TO_FIT]
     kept = _carrying(m)
-    assert kept and cut, "the widest journal is over the row by the splits: some are kept and some are cut"
+    assert kept and cut, "the widest journal is over this row by the splits: some are kept and some are cut"
+    assert se._size(m) <= row and m["dropped_to_fit"] == {}
     assert len(kept) + len(cut) == 20 == len(holds), "every hold is still there; the others carry a reason"
     assert m["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] == len(cut)
     assert min(e["seconds"] for e in kept) >= max(e["seconds"] for e in cut), "the longest holds keep the split"
@@ -546,9 +580,9 @@ def test_the_split_stays_on_as_many_of_the_longest_holds_as_the_free_bytes_allow
     back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"] -= 1
     if not back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"]:
         del back["kinds"]["gate_hold"]["seconds_by_omitted_to_fit"]
-    assert len(json.dumps(back, separators=(",", ":"), ensure_ascii=False).encode()) > slot.budget_bytes, "one more split would have fitted: the count is not the most the free bytes allow"
+    assert len(json.dumps(back, separators=(",", ":"), ensure_ascii=False).encode()) > row, "one more split would have fitted: the count is not the most the free bytes allow"
     # The count follows the budget: a bigger budget keeps more, an unlimited one keeps all twenty.
-    assert len(_carrying(se.diagnostics_member(slot.budget_bytes + 1_000))) > len(kept)
+    assert len(_carrying(se.diagnostics_member(row + 1_000))) > len(kept)
     assert len(_carrying(se.diagnostics_member(10**9))) == 20
 
 
@@ -562,11 +596,9 @@ def test_a_hold_without_a_split_says_why_and_never_shows_zeros(journal):
 
 
 def test_a_cut_split_is_the_members_only_the_file_keeps_it(journal):
-    from src.api import diagnostics_slots as slots
-
-    (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
     _fill_like_the_hooks(True)
-    se.diagnostics_member(slot.budget_bytes)
+    cut = se.diagnostics_member(_short_row())
+    assert len(_carrying(cut)) < 20, "the member was cut"
     se.flush()
     on_disk = json.loads(journal.read_text(encoding="utf-8"))["kinds"]["gate_hold"]["events"]
     assert len(on_disk) == 20 and all(isinstance(e["seconds_by"], dict) and "omitted" not in e["seconds_by"] for e in on_disk), "building the member cut nothing in the journal"
@@ -2022,7 +2054,7 @@ def test_a_non_numeric_seconds_in_the_file_does_not_turn_the_member_into_an_erro
     data["kinds"]["gate_hold"]["events"][0]["seconds"] = "62.0s"
     journal.write_text(json.dumps(data), encoding="utf-8")
     se.reset_for_tests(keep_file=True)  # a restart: memory gone, file kept
-    m = se.diagnostics_member(125_000)
+    m = se.diagnostics_member(_short_row())  # a row the splits do not all fit in: something has to be cut
     assert "error" not in m, m
     assert m["kinds"]["gate_hold"]["events"], "the member carries the holds"
     odd = [e for e in m["kinds"]["gate_hold"]["events"] if e.get("seconds") == "62.0s"]
@@ -2299,8 +2331,9 @@ def test_while_the_earlier_history_cannot_be_read_the_onset_is_not_this_processs
 
 @pytest.mark.parametrize("state", ["a file from before the onset", "a history that could not be read"])
 def test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown_and_loses_at_most_one_split(journal, monkeypatch, state):
-    """The reasons cost bytes the known onset does not (23 for the first state, 62 for the second): the member is still cut to the row by the
-    same rule, no event is dropped, and the widest names keep 4 splits of 20 where a known onset keeps 5 (the row says what is kept)."""
+    """The reasons cost bytes the known onset does not (23 for the first state, 62 for the second): the member still fits the row, no event is
+    dropped, and (since the frames are written at their measured width, 17 Oct) every hold still keeps its split. Before that the widest names
+    kept 4 splits of 20 here where a known onset kept 5."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
@@ -2319,4 +2352,4 @@ def test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown_and_los
     assert se._size(m) <= slot.budget_bytes and m["dropped_to_fit"] == {}
     for kind in se.ONSET_KINDS:
         assert (m["kinds"][kind]["first_seen_at"], m["kinds"][kind]["first_seen_unknown"]) == (None, why), kind
-    assert len(_carrying(m)) >= 4, "more than one split lost to the reasons"
+    assert len(_carrying(m)) == 20, "no split is lost to the reasons"

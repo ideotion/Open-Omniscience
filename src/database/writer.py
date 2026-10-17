@@ -92,7 +92,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
 
-from src.monitoring import thread_usage
+from src.monitoring import holder_state, thread_usage
 from src.monitoring.secret_scrub import log_failure, scrubbed_name
 
 _LOG = logging.getLogger("database.writer")
@@ -685,9 +685,19 @@ def _scrubbed_name(name: str | None) -> str | None:
 _JOURNALED_HOLD: float | None = None
 
 
+#: The most characters one frame of a hold's ``frames`` is written with. WHAT IT PROTECTS: the storage-events slot's byte budget, which counts
+#: three frames on each of the twenty kept holds at this width instead of the journal's 160-character string cut. IT IS A MEASURED MAXIMUM, not a
+#: choice: the longest ``module:function:line`` any function under ``src/`` can produce is 79 characters (``src.ai_layer.perception_extract_job:
+#: _perception_extract_sleep_interruptible`` and a three-digit line), and ``tests/test_holder_state.py`` walks every module's names and fails when
+#: one is longer than this, so a frame is never cut in practice and the budget cannot be wrong by a long name. A frame that WERE longer
+#: (a function made by ``exec``, say) ends in an ellipsis, as the journal's own cut does, so a cut is never mistaken for a whole name.
+FRAME_CHARS = 90
+
+
 def _app_frames(ident: int | None, limit: int = 3) -> list[str]:
     """The innermost ``limit`` frames of app code (``src.*``, this module excluded) of the thread with this ident, as
-    ``module:function:line``: names and numbers, no argument and no source text. Best-effort, [] when the thread is gone."""
+    ``module:function:line``: names and numbers, no argument and no source text, each at most :data:`FRAME_CHARS` characters.
+    Best-effort, [] when the thread is gone."""
     out: list[str] = []
     try:
         import sys
@@ -696,7 +706,8 @@ def _app_frames(ident: int | None, limit: int = 3) -> list[str]:
         while frame is not None and len(out) < limit:
             module = str(frame.f_globals.get("__name__", ""))
             if module.startswith("src.") and module != __name__:
-                out.append(f"{module}:{frame.f_code.co_name}:{frame.f_lineno}")
+                text = f"{module}:{frame.f_code.co_name}:{frame.f_lineno}"
+                out.append(text if len(text) <= FRAME_CHARS else text[: FRAME_CHARS - 1] + "…")
             frame = frame.f_back
     except Exception:  # noqa: BLE001 - a diagnostic must never raise
         return out
@@ -823,6 +834,7 @@ def _note_long_hold(gate: WriterGate, holder: str | None, started: float, ident:
             _PHASE_SAMPLES[phase] = _PHASE_SAMPLES.get(phase, 0) + 1
             fields["phase"] = phase
             fields["phase_samples"] = dict(_PHASE_SAMPLES)
+        fields.update(holder_state.fields_for(started))  # the holder's kernel state, counted once a second since the last sample (module docstring)
         if started == _JOURNALED_HOLD and storage_events.update("gate_hold", ("hold", started), fields):
             return
         storage_events.record(
@@ -855,6 +867,7 @@ def _note_hold_end(
             # below it is waiting (``thread_usage`` says what each counter means and what it cannot tell apart).
             fields.update(thread_usage.since(usage0))
         fields.update(_memory_numbers())
+        fields.update(holder_state.fields_for(started))  # the looks up to the release, not the last 15-second sample's
         if breakdown is not None:
             fields["seconds_by"] = breakdown  # exact: taken by the gate at the release, over the whole hold
         route = pool_watch.endpoint_template()
@@ -919,14 +932,51 @@ def watchdog_tick(gate: WriterGate, warned_since: float | None) -> float | None:
     return started
 
 
+#: How often the holder of a hold the journal keeps is looked at (``holder_state``), in seconds. WHAT IT PROTECTS: the resolution of the counts
+#: (a hold of 30 s has thirty looks) against the cost of three small ``/proc`` reads on the watchdog thread; the full tick stays at its own
+#: 15 s. The looks run only while a hold is past :data:`HOLD_RECORD_S` AND already in the journal, so an idle gate costs nothing.
+HOLD_LOOK_S = 1.0
+
+
+def sample_holder_state(gate: WriterGate, now: float | None = None) -> bool:
+    """One look at the holder of a long hold the journal already has (see :mod:`src.monitoring.holder_state`). True while the looks should
+    go on at :data:`HOLD_LOOK_S`. Called by the watchdog thread after its full tick; never raises, never touches the gate's lock beyond the
+    snapshot every tick takes."""
+    try:
+        holder, started, ident = gate._holder_snapshot()
+        if started is None or holder is None:
+            holder_state.forget()  # the gate is free: the next hold starts its counts from none
+            return False
+        if started != _JOURNALED_HOLD:
+            return False  # not a hold the journal keeps (yet): the full tick opens the entry first, at HOLD_RECORD_S or more
+        return holder_state.look(started, ident, time.monotonic() if now is None else now)
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must never raise
+        log_failure(_LOG, "write gate holder state could not be sampled", exc, level=logging.DEBUG)
+        return False
+
+
+def _next_wait_s(interval: float, due: float, now: float, looking: bool) -> float:
+    """How long the watchdog sleeps next: until the full tick is due, or until the next look at a long hold's holder when that comes first."""
+    until_full = max(0.0, due - now)
+    return min(until_full, HOLD_LOOK_S) if looking else until_full
+
+
 def _watchdog_loop(stop: threading.Event) -> None:
     interval = _watchdog_interval_s()
     warned_since: float | None = None
-    while not stop.wait(interval):
+    due = time.monotonic() + interval  # the next full tick; the looks at a long hold's holder run between them
+    wait = interval
+    while not stop.wait(wait):
+        looking = False
         try:
-            warned_since = watchdog_tick(write_gate, warned_since)
+            now = time.monotonic()
+            if now >= due:
+                warned_since = watchdog_tick(write_gate, warned_since)
+                due = time.monotonic() + interval
+            looking = sample_holder_state(write_gate)
         except Exception as exc:  # noqa: BLE001 - the watchdog must never take the app down
             log_failure(_LOG, "write gate watchdog tick failed", exc, level=logging.DEBUG)
+        wait = _next_wait_s(interval, due, time.monotonic(), looking)
 
 
 def start_write_gate_watchdog() -> bool:

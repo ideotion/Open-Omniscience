@@ -31,6 +31,13 @@ def journal(tmp_path, monkeypatch):
     monkeypatch.setattr(writer, "_JOURNALED_HOLD", None)
     monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
     monkeypatch.setenv("OO_WRITE_GATE_WATCHDOG", "0")
+    # The env var only stops a watchdog from STARTING. The process's own one (armed by the first hold of the whole run, a tick every 15 s) shares
+    # the module's gate, and a tick of its that lands in a hold these tests count adds a sample: the 17 Oct battery read {"execute": 3} for two
+    # ticks, about 8 per cent of runs (1.2 s of 15), and a 0.5 s interval makes it fail every time. So only THIS thread ticks here.
+    me = threading.get_ident()
+    real_tick, real_look = writer.watchdog_tick, writer.sample_holder_state
+    monkeypatch.setattr(writer, "watchdog_tick", lambda g, w: real_tick(g, w) if threading.get_ident() == me else w)
+    monkeypatch.setattr(writer, "sample_holder_state", lambda g, now=None: real_look(g, now) if threading.get_ident() == me else False)
     writer._PHASE_SAMPLES.clear()
     se.reset_for_tests()
     yield path

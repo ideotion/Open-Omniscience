@@ -1,0 +1,250 @@
+"""What the thread that holds the write gate was doing, as the kernel sees it, counted once a second while a hold the journal keeps lasts.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+WHY IT EXISTS. The 16 Oct 2026 bundles show gate holds of 30 to 182 s whose holder is a collector thread, and a hold taken at a plain
+``SELECT`` (a read cannot wait for the write lock in WAL mode). So the hold was either honest work done slowly or a thread that was not
+making progress, and the journal could not say which: the holder's CPU time (``thread_usage``) is read at the START and END of a hold, and
+a thread's counters say HOW MUCH it waited, not WHAT it waited for. This module says what, by looking at the holder's kernel state
+(``/proc/self/task/<tid>/{stat,wchan,schedstat}``) once a second and counting the looks by class:
+
+* ``running``: on a CPU. ``runnable``: able to run, waiting for one (the process has more runnable threads than cores). Both are state
+  ``R``; the split is INFERRED from the scheduler's own figures over the second since the previous look (the thread spent more of it
+  waiting on a run queue than on a CPU), so it is a reading of the interval, not of the instant.
+* ``futex``: asleep on a futex: the GIL, a Python lock, a pooled connection's wait, a condition. ``phase_samples`` (the watchdog's own
+  look at the Python frames) says which of those, when it is the pool. It is a FLOOR for waits on the GIL: every read the look makes
+  gives the GIL up, and when the holder is the only thread waiting for it the look hands it over and reads the holder running; with
+  several waiters (the case this exists for: fetch workers and collectors on a few cores) the holder usually still reads futex.
+* ``nap``: asleep in the kernel's ``nanosleep``. SQLite's busy handler sleeps there while another connection holds the file's write lock,
+  and ``time.sleep`` is the same call, so ``nap`` means a busy-handler wait ONLY because the holder of the gate does not call
+  ``time.sleep`` (true of the collector's flush path; the method says so).
+* ``disk``: uninterruptible sleep (state ``D``): the thread is waiting on the disk or on swap, or on a kernel lock a disk wait holds.
+* ``other``: anything else asleep (a poll, a pipe), a state that is not one of these, a sleep whose ``wchan`` cannot be read, and a
+  running-or-runnable look whose scheduler figures cannot be read. It is counted, never folded into a class it was not seen to be.
+
+``gap`` is the longest time between two looks that could be READ. The look runs on the gate's watchdog thread, which needs the GIL: a
+process that is starved as a whole (swap, too many threads for the cores) shows as a gap well over a second, and a thread that is
+only the holder does not, which is exactly the difference between "everything was slow" and "this thread was stuck".
+
+THE FIRST LOOK OF A HOLD COUNTS NOTHING. It sets the baseline the ``running``/``runnable`` split is taken against; counting it would
+need a guess. So the counts of a hold start at its second look, and begin when the watchdog first sees the hold (30 to 45 s in), not
+at its start: they are the state of the hold from the first look the journal made, said so in the member's method.
+
+A figure the OS cannot give is ABSENT, never 0 (a 0 would read as "the thread never waited"): off Linux the answer is ``ws`` null with
+``ws_why`` ``unsupported-os``; a holder whose files are gone ``thread-gone``; files that cannot be read ``proc-unreadable``. Only
+counts and seconds are kept: the kernel symbol and the thread's name are read to classify and never stored, and an error is its fixed
+reason, never its text.
+
+COST, measured on the development machine (a 2-core Intel under a Linux 6.18 kernel, 3,000 looks at a sleeping thread): 29 microseconds of
+CPU per look (three small reads and the table of threads), once a second, only while a hold is past
+:data:`src.database.writer.HOLD_RECORD_S` and already in the journal, on the watchdog thread and never the holder's. The counts go into
+the journal at the full tick (15 s) and at the release, not at each look, so the file is not rewritten once a second.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import threading
+from typing import Any
+
+#: The classes a look is counted in, in the order of the journal's ``ws`` list.
+CLASSES: tuple[str, ...] = ("running", "runnable", "futex", "nap", "disk", "other")
+
+#: Why a hold has no counts (``ws_why``). A reason, never an error's text.
+UNSUPPORTED = "unsupported-os"
+GONE = "thread-gone"
+UNREADABLE = "proc-unreadable"
+#: Why the member shows no counts for a hold that has none to show: the hold ended before the second look, or the journal was written by a build without the field.
+NOT_RECORDED = "not-recorded"
+
+#: The directory of the process's threads. A test points it at a made-up tree; nothing else changes it.
+_TASK_DIR = "/proc/self/task"
+_PLATFORM = sys.platform
+
+#: Bytes read from one ``/proc`` file: a ``stat`` line is about 300 bytes, a ``wchan`` one symbol, a ``schedstat`` three numbers.
+_READ_BYTES = 2048
+
+# A leaf lock: held for a few assignments, never across a read of a file or a call out of this module.
+_LOCK = threading.Lock()
+
+
+class _Look:
+    """One reading of one thread: its state letter, its ``wchan`` symbol ('' when unreadable) and the scheduler's two running totals
+    in nanoseconds (None when unreadable)."""
+
+    __slots__ = ("cpu_ns", "state", "wait_ns", "wchan")
+
+    def __init__(self, state: str, wchan: str, cpu_ns: int | None, wait_ns: int | None) -> None:
+        self.state = state
+        self.wchan = wchan
+        self.cpu_ns = cpu_ns
+        self.wait_ns = wait_ns
+
+
+def classify(state: str, wchan: str, cpu_ns: int | None, wait_ns: int | None) -> str:
+    """The class of one look. ``cpu_ns`` and ``wait_ns`` are what the thread ran and what it waited on a run queue SINCE THE PREVIOUS LOOK
+    (None when the scheduler's figures could not be read)."""
+    if state == "R":
+        if cpu_ns is None or wait_ns is None:
+            return "other"
+        return "runnable" if wait_ns > cpu_ns else "running"
+    if state == "D":
+        return "disk"
+    if state == "S":
+        if "futex" in wchan:
+            return "futex"
+        if "nanosleep" in wchan:
+            return "nap"
+    return "other"
+
+
+def _state_of(stat: bytes) -> str | None:
+    """The state letter of a ``stat`` line: the first field after the LAST ``)`` (the thread's name sits in parentheses and may hold any
+    character, a ``)`` among them)."""
+    rest = stat.rpartition(b")")[2].split()
+    if not rest:
+        return None
+    letter = rest[0][:1].decode("ascii", "replace")
+    return letter if letter.isalpha() else None
+
+
+def _read(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read(_READ_BYTES)
+
+
+def _look_at(tid: int) -> tuple[_Look | None, str | None]:
+    """(the look, None) or (None, the reason there is none). Never raises."""
+    base = f"{_TASK_DIR}/{tid}"
+    try:
+        state = _state_of(_read(f"{base}/stat"))
+    except (FileNotFoundError, ProcessLookupError):
+        return None, GONE
+    except Exception:  # noqa: BLE001 - the reason is the answer, the error's text is not kept
+        return None, UNREADABLE
+    if state is None:
+        return None, UNREADABLE
+    try:
+        wchan = _read(f"{base}/wchan").decode("ascii", "replace").strip()
+    except Exception:  # noqa: BLE001 - a sleep is then "other": counted, not guessed
+        wchan = ""
+    cpu_ns: int | None = None
+    wait_ns: int | None = None
+    try:
+        parts = _read(f"{base}/schedstat").split()
+        cpu_ns, wait_ns = int(parts[0]), int(parts[1])
+    except Exception:  # noqa: BLE001 - running versus runnable is then not told apart
+        cpu_ns = wait_ns = None
+    return _Look(state, wchan, cpu_ns, wait_ns), None
+
+
+def native_id_of(ident: int | None) -> int | None:
+    """The kernel's id of the Python thread with this ident, or None when no live thread has it."""
+    if ident is None:
+        return None
+    for t in threading.enumerate():
+        if t.ident == ident:
+            return t.native_id
+    return None
+
+
+class _Hold:
+    """The looks taken at ONE hold. Written by the watchdog thread (under :data:`_LOCK`), read by the thread that releases the gate."""
+
+    __slots__ = ("counts", "gap", "ident", "last_ok", "prev", "started", "tid", "why", "why_seen")
+
+    def __init__(self, started: float, ident: int | None) -> None:
+        self.started = started
+        self.ident = ident
+        self.tid: int | None = None
+        self.counts = [0] * len(CLASSES)
+        self.prev: _Look | None = None
+        self.last_ok: float | None = None
+        self.gap = 0.0
+        self.why: str | None = None  # why the LAST look could not be taken; None after one that could
+        self.why_seen = False  # a reason was given at some look, so a later journal update must clear it
+
+    def fields(self) -> dict[str, Any]:
+        """What the journal records for this hold now: the counts and the gap, or null and the reason, or nothing yet."""
+        if sum(self.counts):
+            out: dict[str, Any] = {"ws": list(self.counts), "gap": round(self.gap, 1)}
+            if self.why_seen:
+                out["ws_why"] = None  # the journal merges: a reason given while the file was unreadable must not outlive the counts
+            return out
+        if self.why is not None:
+            return {"ws": None, "ws_why": self.why}
+        if self.why_seen:
+            return {"ws": None, "ws_why": NOT_RECORDED}  # a reason went to the journal and the looks since have only set a new baseline: it must not outlive its cause
+        return {}
+
+
+_CURRENT: _Hold | None = None
+
+
+def look(started: float, ident: int | None, now: float) -> bool:
+    """Take one look at the holder of the hold that began at ``started``. True while the looks should go on at their one-second pace.
+
+    ``now`` is a monotonic time. The reads happen outside the lock; the counts are applied inside it. Called by the watchdog thread only."""
+    global _CURRENT
+    with _LOCK:
+        hold = _CURRENT
+        if hold is None or hold.started != started:
+            hold = _CURRENT = _Hold(started, ident)
+        tid = hold.tid
+    if not (_PLATFORM.startswith("linux") and _dir_exists()):
+        _apply(hold, None, UNSUPPORTED, now, tid)
+        return False
+    if tid is None:
+        tid = native_id_of(ident)
+    if tid is None:
+        return _apply(hold, None, GONE, now, None)  # not in the interpreter's table (yet): the next look asks again
+    seen, reason = _look_at(tid)
+    return _apply(hold, seen, reason, now, tid)
+
+
+def _dir_exists() -> bool:
+    return os.path.isdir(_TASK_DIR)
+
+
+def _apply(hold: _Hold, seen: _Look | None, reason: str | None, now: float, tid: int | None) -> bool:
+    with _LOCK:
+        if _CURRENT is not hold:
+            return False  # a newer hold replaced this one while the files were being read
+        hold.tid = tid
+        if seen is None:
+            hold.why = reason
+            hold.why_seen = True
+            return reason in (GONE, UNREADABLE)  # transient: try again at the pace; the OS cannot do it: do not
+        hold.why = None
+        before = hold.prev
+        hold.prev = seen
+        last = hold.last_ok
+        hold.last_ok = now
+        if before is None or last is None:
+            return True  # the baseline: counted as nothing (see the module docstring)
+        hold.gap = max(hold.gap, now - last)
+        cpu = wait = None
+        if seen.cpu_ns is not None and before.cpu_ns is not None and seen.wait_ns is not None and before.wait_ns is not None:
+            cpu, wait = max(0, seen.cpu_ns - before.cpu_ns), max(0, seen.wait_ns - before.wait_ns)
+        hold.counts[CLASSES.index(classify(seen.state, seen.wchan, cpu, wait))] += 1
+        return True
+
+
+def fields_for(started: float | None) -> dict[str, Any]:
+    """The journal fields for the hold that began at ``started`` ({} when no look was taken at that hold). Any thread."""
+    if started is None:
+        return {}
+    with _LOCK:
+        hold = _CURRENT
+        if hold is None or hold.started != started:
+            return {}
+        return hold.fields()
+
+
+def forget() -> None:
+    """Drop the looks of the hold that ended (the gate is free)."""
+    global _CURRENT
+    with _LOCK:
+        _CURRENT = None
