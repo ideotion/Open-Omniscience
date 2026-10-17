@@ -164,6 +164,31 @@ def test_a_windows_exit_status_is_named(status, kind, word):
     assert out["kind"] == kind and word in out["meaning"]
 
 
+@needs_pwsh
+def test_every_named_windows_status_survives_the_wrappers_own_row_writer_and_is_read_back_by_name(tmp_path):
+    """A server cannot exit with an NT status on Linux (exit codes are 8 bits here), so the real server run cannot be made. What can be run is
+    the wrapper's own Add-Row on the signed 32-bit number .NET gives for each status in the reader's table: it must write a plain JSON
+    integer (not a float or an exponent), and the reader must name it."""
+    text = PS1.read_text(encoding="utf-8")
+    fn = re.search(r"^function Add-Row.*?^}\n", text, re.S | re.M)
+    assert fn
+    out = tmp_path / "rows.jsonl"
+    assert re.search(r"status = \$code", text), "the wrapper must write the exit code it got, as it is"
+    for unsigned in ee._NT_STATUS_MEANING:
+        signed = unsigned - 2**32 if unsigned >= 2**31 else unsigned
+        script = (
+            "$Utf8 = New-Object System.Text.UTF8Encoding($false)\n" + fn.group(0)
+            + f"\n[int]$code = {signed}\n[void](Add-Row '{out}' ([ordered]@{{ schema = 'oo-launcher-exit-1'; pid = 7; boot_id = $null; status = $code; signal = $null }}))\n"
+        )
+        proc = subprocess.run([PWSH, "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=60)
+        assert proc.returncode == 0, proc.stderr
+        row = json.loads(out.read_text(encoding="utf-8").splitlines()[-1])
+        assert row["status"] == signed and type(row["status"]) is int
+        assert re.search(rf'"status":{signed}[,}}]', out.read_text(encoding="utf-8").splitlines()[-1]), "written as a plain integer"
+        named = ee.describe_exit(row)
+        assert named["kind"] != "unknown" and named["status"] == signed
+
+
 def test_an_ordinary_exit_status_is_still_an_ordinary_exit():
     assert ee.describe_exit({"status": 3, "signal": None})["kind"] == "exited"
     assert ee.describe_exit({"status": 1, "signal": None})["kind"] == "exited"
