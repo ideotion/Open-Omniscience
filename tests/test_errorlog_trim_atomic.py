@@ -99,3 +99,25 @@ def test_a_failed_swap_removes_its_own_temp_and_the_journal_stays(journal, monke
         errorlog._trim(journal)
     assert journal.read_bytes() == data
     assert not list(journal.parent.glob("app_errors.jsonl.tmp.*"))
+
+
+def test_a_trim_never_loses_a_line_appended_by_another_process(journal):
+    """K4 (R176): an append between a trim's read and its swap was lost. The trim now holds the journal's lock, and the other process's append waits for it."""
+    _big(journal, 4000)
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {str(Path(errorlog.__file__).parents[2])!r})
+        os.environ["OO_DATA_DIR"] = {str(journal.parent)!r}
+        from src.safety.file_lock import locked_append
+        for i in range(300):
+            locked_append(__import__("pathlib").Path({str(journal)!r}), '{{"appended":%d}}' % i + chr(10))
+        """
+    )
+    child = subprocess.Popen([sys.executable, "-c", script])
+    while child.poll() is None:
+        errorlog._trim(journal)
+    child.wait()
+    got = [ln for ln in journal.read_text().splitlines() if ln.startswith('{"appended"')]
+    assert got == [f'{{"appended":{i}}}' for i in range(300 - len(got), 300)], "an appended line was lost or reordered by a trim"
+    assert len(got) > 0

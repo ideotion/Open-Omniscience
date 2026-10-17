@@ -16,10 +16,8 @@ must NEVER raise (a broken log must not break the app).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -43,6 +41,7 @@ from src.monitoring.secret_scrub import (
     scrubbed,
 )
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
 _LOCK = threading.Lock()
@@ -127,37 +126,14 @@ def _log_path() -> Path:
 
 
 def _trim(path: Path) -> None:
-    """Keep the newest ``_CAP`` lines: written to a temp beside the file and moved over it, never truncated in place (R175).
+    """Keep the newest ``_CAP`` lines: written to a temp beside the file and moved over it, never truncated in place (R175), under the file's cross-process
+    lock (R176) so an append by another server cannot land between the read and the swap.
 
-    An in-place ``write_text`` empties the file first, so a crash inside it (the thing this journal exists to survive) left no journal, and a
-    second process appending between the read and the write lost its line. The temp is named for the process and the thread, so two writers
-    never share one; one a killed process left behind is swept here when its process no longer runs. The lines are the same bytes as before."""
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
-    try:
+    An in-place ``write_text`` empties the file first, so a crash inside it (the thing this journal exists to survive) left no journal. The temp is named for
+    the process and the thread, so two writers never share one; one a killed process left behind is swept when its process no longer runs."""
+    with file_lock(path):
         lines = path.read_text(encoding="utf-8").splitlines()[-_CAP:]
-        with tmp.open("w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-            f.flush()
-            with contextlib.suppress(OSError):
-                os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    _sweep_dead_temps(path)
-
-
-def _sweep_dead_temps(path: Path) -> None:
-    """Remove ``<file>.tmp.<pid>.<thread>`` left by a process that no longer runs. Where that cannot be told (no psutil) nothing is removed."""
-    try:
-        import psutil
-
-        for old in path.parent.glob(path.name + ".tmp.*"):
-            pid = old.name.rsplit(".tmp.", 1)[1].split(".")[0]
-            if pid.isdigit() and int(pid) != os.getpid() and not psutil.pid_exists(int(pid)):
-                old.unlink(missing_ok=True)
-    except Exception:  # noqa: BLE001, S110 - a sweep never breaks the log
-        pass
+        atomic_replace(path, "\n".join(lines) + "\n")
 
 
 def _append(entry: dict) -> None:
@@ -167,8 +143,7 @@ def _append(entry: dict) -> None:
         with _LOCK:
             path = _log_path()
             path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
-                f.write(line + "\n")
+            locked_append(path, line + "\n")
             # Bounded by construction: trim once the file doubles the cap.
             if path.stat().st_size > 512 * 1024:
                 _trim(path)

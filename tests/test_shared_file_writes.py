@@ -1,0 +1,169 @@
+"""Detector for unconverted writes to files several servers share (R176).
+
+Before: a module could ``os.replace`` a fixed ``.tmp``, append to, or ``write_text`` a data-folder file with no cross-process lock, and nothing said so.
+Now every such site outside ``src/safety/file_lock.py`` is listed here with the lane that will convert it and why it is waiting, and a NEW site fails this test and
+names its line. An entry whose site no longer exists also fails (a stale allowlist hides the next regression). This is a position-based scan of the source: it finds
+the call shapes, not what the path is, so it refuses on a site that writes a path outside the data folder too; such a site gets an entry with that reason.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+OWNER = "src/safety/file_lock.py"
+REASON = "awaiting owner conversion"
+
+#: ``module path -> (number of unconverted sites, the lane that converts them)``. Every entry's reason is REASON. A conversion lowers its count; a module at zero is removed.
+_ALLOWED: dict[str, tuple[int, str]] = {
+    "src/ai_layer/activity.py": (1, "owner of the package"),
+    "src/ai_layer/bench_batch.py": (2, "owner of the package"),
+    "src/ai_layer/model_bench.py": (3, "owner of the package"),
+    "src/ai_layer/perception_job.py": (1, "owner of the package"),
+    "src/ai_layer/qualification_assist.py": (1, "owner of the package"),
+    "src/ai_layer/triage.py": (1, "owner of the package"),
+    "src/analytics/columnar.py": (1, "owner of the package"),
+    "src/analytics/criteria_calibration.py": (2, "owner of the package"),
+    "src/analytics/filters.py": (1, "owner of the package"),
+    "src/analytics/gold_builder.py": (2, "owner of the package"),
+    "src/analytics/keyword_fold.py": (2, "owner of the package"),
+    "src/analytics/quarantine_job.py": (1, "owner of the package"),
+    "src/analytics/reindex_job.py": (1, "owner of the package"),
+    "src/analytics/ring_loader.py": (1, "owner of the package"),
+    "src/analytics/rollup_hold.py": (2, "owner of the package"),
+    "src/analytics/rollup_marker.py": (2, "owner of the package"),
+    "src/analytics/source_topics.py": (1, "owner of the package"),
+    "src/analytics/stoplist_recompute.py": (1, "owner of the package"),
+    "src/analytics/store.py": (1, "owner of the package"),
+    "src/analytics/upload_parts.py": (1, "owner of the package"),
+    "src/analytics/weather_signals.py": (1, "owner of the package"),
+    "src/annotations/store.py": (4, "rc2"),
+    "src/api/ai.py": (1, "owner of the package"),
+    "src/api/diagnostics/bundle.py": (1, "owner of the package"),
+    "src/api/diagnostics/keywords.py": (1, "owner of the package"),
+    "src/api/diagnostics_volumes.py": (4, "owner of the package"),
+    "src/api/markets.py": (1, "owner of the package"),
+    "src/backup/artifact.py": (5, "owner of the package"),
+    "src/backup/country_migration.py": (2, "owner of the package"),
+    "src/backup/export_folder.py": (2, "owner of the package"),
+    "src/backup/export_summary.py": (2, "owner of the package"),
+    "src/backup/folder_backup.py": (2, "owner of the package"),
+    "src/backup/import_queue.py": (2, "owner of the package"),
+    "src/backup/import_reports.py": (4, "owner of the package"),
+    "src/backup/merge.py": (14, "owner of the package"),
+    "src/backup/newsletter_export.py": (1, "owner of the package"),
+    "src/backup/parity.py": (4, "owner of the package"),
+    "src/backup/runlog.py": (5, "owner of the package"),
+    "src/backup/stream_backup.py": (6, "owner of the package"),
+    "src/backup/volumes.py": (2, "owner of the package"),
+    "src/briefing/card_audit.py": (1, "rc2"),
+    "src/briefing/dismiss_reasons.py": (1, "rc2"),
+    "src/briefing/draft.py": (1, "rc2"),
+    "src/briefing/service.py": (2, "rc2"),
+    "src/bulletin/evidence.py": (1, "owner of the package"),
+    "src/bulletin/store.py": (6, "owner of the package"),
+    "src/catalog/build.py": (1, "owner of the package"),
+    "src/catalog/discover_job.py": (2, "owner of the package"),
+    "src/config/app_settings.py": (1, "owner of the package"),
+    "src/custody/pending.py": (3, "owner of the package"),
+    "src/custody/settings.py": (1, "owner of the package"),
+    "src/custody/signing.py": (2, "owner of the package"),
+    "src/database/article_indexes.py": (2, "owner of the package"),
+    "src/database/damage.py": (2, "owner of the package"),
+    "src/database/encrypt_tool.py": (1, "owner of the package"),
+    "src/database/fts_reindex.py": (2, "owner of the package"),
+    "src/database/maintenance.py": (1, "owner of the package"),
+    "src/database/repair.py": (6, "owner of the package"),
+    "src/entities/gazetteer_build.py": (1, "owner of the package"),
+    "src/events/feeds.py": (2, "owner of the package"),
+    "src/geo/osm_downloads.py": (2, "owner of the package"),
+    "src/hazards/store.py": (1, "owner of the package"),
+    "src/ingest/__init__.py": (2, "owner of the package"),
+    "src/ingest/archive_backfill.py": (2, "owner of the package"),
+    "src/ingest/import_job.py": (1, "owner of the package"),
+    "src/integrity/collapse.py": (1, "owner of the package"),
+    "src/jobs/progress_state.py": (2, "owner of the package"),
+    "src/legal/consent.py": (1, "owner of the package"),
+    "src/llm/installer.py": (1, "owner of the package"),
+    "src/llm/vllm_lifecycle.py": (4, "rc2"),
+    "src/monitoring/activity_ledger.py": (3, "rc2"),
+    "src/monitoring/ai_check.py": (1, "rc2"),
+    "src/monitoring/collect_perf.py": (2, "rc2"),
+    "src/monitoring/diagnostics_runs.py": (2, "rc2"),
+    "src/monitoring/exit_evidence.py": (3, "rc2"),
+    "src/monitoring/expedition.py": (2, "rc2"),
+    "src/monitoring/feed_preflight.py": (1, "rc2"),
+    "src/monitoring/field_test.py": (1, "rc2"),
+    "src/monitoring/forensics.py": (2, "rc2"),
+    "src/monitoring/kpi.py": (4, "rc2"),
+    "src/monitoring/p0_validation.py": (2, "rc2"),
+    "src/monitoring/preflight.py": (1, "rc2"),
+    "src/monitoring/release_run.py": (4, "rc2"),
+    "src/monitoring/release_run_fresh_restore.py": (1, "rc2"),
+    "src/monitoring/search_timing.py": (3, "rc2"),
+    "src/monitoring/secret_scrub.py": (2, "rc2"),
+    "src/monitoring/session_history.py": (5, "rc2"),
+    "src/monitoring/session_hwm.py": (2, "rc2"),
+    "src/monitoring/storage_events.py": (2, "rc2"),
+    "src/monitoring/vitals_history.py": (2, "rc2"),
+    "src/osm/reference_run.py": (2, "owner of the package"),
+    "src/reporting/evidence.py": (1, "owner of the package"),
+    "src/safety/data_location.py": (1, "owner of the package"),
+    "src/safety/data_volume.py": (5, "owner of the package"),
+    "src/safety/settings.py": (1, "rc2"),
+    "src/scheduler/capacity.py": (2, "rc2"),
+    "src/scheduler/memstop.py": (2, "rc2"),
+    "src/scheduler/pass_journal.py": (3, "rc2"),
+    "src/scheduler/runlog.py": (2, "rc2"),
+    "src/scheduler/settings.py": (1, "rc2"),
+    "src/weather/openmeteo.py": (1, "owner of the package"),
+    "src/wiki/dumps.py": (2, "owner of the package"),
+}
+
+
+def _append_mode(call: ast.Call) -> bool:
+    """True for ``open(path, "a")``, ``path.open("a")`` and the ``mode="a..."`` keyword forms."""
+    f = call.func
+    if isinstance(f, ast.Name) and f.id == "open":
+        pos = call.args[1] if len(call.args) > 1 else None
+    elif isinstance(f, ast.Attribute) and f.attr == "open":
+        pos = call.args[0] if call.args else None
+    else:
+        return False
+    mode = {k.arg: k.value for k in call.keywords}.get("mode", pos)
+    return isinstance(mode, ast.Constant) and isinstance(mode.value, str) and mode.value.startswith("a")
+
+
+def _sites(tree: ast.AST) -> list[int]:
+    found = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        replaces = isinstance(f, ast.Attribute) and f.attr == "replace" and isinstance(f.value, ast.Name) and f.value.id == "os"
+        writes = isinstance(f, ast.Attribute) and f.attr in {"write_text", "write_bytes"}
+        if replaces or writes or _append_mode(n):
+            found.append(n.lineno)
+    return found
+
+
+def _scan() -> dict[str, list[int]]:
+    out: dict[str, list[int]] = {}
+    for p in sorted(SRC.rglob("*.py")):
+        rel = p.relative_to(ROOT).as_posix()
+        if rel == OWNER:
+            continue
+        lines = _sites(ast.parse(p.read_text(encoding="utf-8")))
+        if lines:
+            out[rel] = sorted(set(lines))
+    return out
+
+
+def test_no_new_unlocked_write_site_and_no_stale_allowance():
+    found = _scan()
+    new = {m: ls for m, ls in found.items() if len(ls) > _ALLOWED.get(m, (0, ''))[0]}
+    stale = {m: n for m, (n, _lane) in _ALLOWED.items() if len(found.get(m, [])) < n}
+    assert not new, f"unconverted write sites ({REASON}) -- use src.safety.file_lock, or list the module here with its lane: {new}"
+    assert not stale, f"allowed more sites than exist (lower the count): {stale}"
