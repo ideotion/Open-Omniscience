@@ -103,8 +103,6 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/monitoring/release_run_fresh_restore.py": (1, "rc2"),
     "src/monitoring/search_timing.py": (3, "rc2"),
     "src/monitoring/secret_scrub.py": (2, "rc2"),
-    "src/monitoring/session_history.py": (5, "rc2"),
-    "src/monitoring/session_hwm.py": (2, "rc2"),
     "src/monitoring/storage_events.py": (2, "WAL"),
     "src/monitoring/vitals_history.py": (2, "rc2"),
     "src/osm/reference_run.py": (2, "OSM"),

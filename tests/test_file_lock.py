@@ -193,3 +193,16 @@ def test_locked_append_writes_the_text(tmp_path):
     locked_append(p, "a\n")
     locked_append(p, "b\n")
     assert p.read_text() == "a\nb\n"
+
+
+def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
+    synced, swept = [], []
+    monkeypatch.setattr(file_lock.os, "fsync", lambda fd: synced.append(fd))
+    monkeypatch.setattr(file_lock, "sweep_dead_temps", lambda p: swept.append(p))
+    f = tmp_path / "state.json"
+    atomic_replace(f, "a", fsync=False, sweep_every_s=300.0)
+    atomic_replace(f, "b", fsync=False, sweep_every_s=300.0)
+    assert synced == [] and len(swept) == 1, "a throttled writer swept twice, or synced when told not to"
+    atomic_replace(f, "c")
+    assert len(synced) == 1 and len(swept) == 2
+    assert f.read_text() == "c"

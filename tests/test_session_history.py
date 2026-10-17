@@ -548,3 +548,41 @@ def test_the_scheduler_loop_records_its_own_start_and_exit(ledger, monkeypatch):
     assert [e["running"] for e in evs] == [True, False], evs
     assert evs[1]["stop_requested"] is True and "failure" not in evs[1]
     assert evs[0]["uptime_s"] is not None
+
+
+def test_a_compaction_never_loses_a_line_written_by_another_process(tmp_path, monkeypatch):
+    """R176: the compaction's read-then-swap lost a line a second server appended in between. Both now hold the ledger's lock."""
+    import subprocess
+    import sys
+    import textwrap
+    from pathlib import Path
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    root = str(Path(sh.__file__).parents[2])
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {root!r})
+        os.environ["OO_DATA_DIR"] = {str(tmp_path)!r}
+        from src.monitoring import session_history as sh
+        for i in range(300):
+            sh._append({{"kind": "child", "n": i}})
+        """
+    )
+    child = subprocess.Popen([sys.executable, "-c", script])
+    while child.poll() is None:
+        sh.compact_if_needed(max_lines=100)
+    child.wait()
+    got = [json.loads(ln)["n"] for ln in sh.ledger_path().read_text().splitlines() if '"child"' in ln]
+    assert got == list(range(300 - len(got), 300)), "a line written by the other process was lost by a compaction"
+    assert got
+
+
+def test_the_liveness_file_is_replaced_through_a_unique_temp(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    seen = []
+    real = os.replace
+    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    sh._SESSION_ID, sh._STARTED_MONO = "s", 0.0
+    sh._write_liveness(1.0, 1.0)
+    assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen

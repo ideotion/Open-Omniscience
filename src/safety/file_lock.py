@@ -216,9 +216,32 @@ def sweep_dead_temps(path: Path) -> None:
         pass
 
 
-def atomic_replace(path: Path, data: str | bytes, *, encoding: str = "utf-8", newline: str | None = None) -> None:
+_SWEPT_AT: dict[str, float] = {}
+
+
+def _sweep_due(path: Path, every_s: float) -> bool:
+    now = time.monotonic()
+    key = str(path)
+    with _REGISTRY_LOCK:
+        last = _SWEPT_AT.get(key)
+        if last is not None and now - last < every_s:
+            return False
+        _SWEPT_AT[key] = now
+        return True
+
+
+def atomic_replace(
+    path: Path,
+    data: str | bytes,
+    *,
+    encoding: str = "utf-8",
+    newline: str | None = None,
+    fsync: bool = True,
+    sweep_every_s: float = 0.0,
+) -> None:
     """Write ``data`` to a unique temp beside ``path``, flush it, and move it over ``path``. The caller holds :func:`file_lock` when the new content depends on
-    the old. A failure leaves the old file whole and removes the temp."""
+    the old. A failure leaves the old file whole and removes the temp. ``fsync=False`` is for a state file rewritten every few seconds that is rebuilt after a power
+    cut anyway; ``sweep_every_s`` limits the dead-temp sweep to once per that many seconds per file (0: after every replace)."""
     path = Path(path)
     tmp = temp_name(path)
     try:
@@ -226,13 +249,15 @@ def atomic_replace(path: Path, data: str | bytes, *, encoding: str = "utf-8", ne
         with fh as f:
             f.write(data)
             f.flush()
-            with contextlib.suppress(OSError):
-                os.fsync(f.fileno())
+            if fsync:
+                with contextlib.suppress(OSError):
+                    os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
-    sweep_dead_temps(path)
+    if _sweep_due(path, sweep_every_s):
+        sweep_dead_temps(path)
 
 
 def locked_append(path: Path, text: str, *, encoding: str = "utf-8", newline: str | None = None) -> None:
