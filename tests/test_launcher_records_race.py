@@ -255,6 +255,23 @@ def test_a_row_that_times_out_is_written_under_the_lock_after_the_holder_trims_n
 
 
 @posix_only
+def test_a_filesystem_that_cannot_lock_gets_the_row_appended_directly_not_lost(tmp_path):
+    """Opus read of #1444. `flock ... || exit 99` read every flock failure as "held, try later"; the deferred child (no time bound) then failed the same way and
+    wrote nothing, so on a volume that cannot lock at all (NFS without lockd, some FUSE and shared folders) the exit, stop and stderr rows vanished. A flock that
+    says "cannot lock" (not its -E 99 for "held") now reaches the direct append, as a folder that cannot be written already did."""
+    h, env = _helpers(tmp_path, no_flock=False)
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    # works on /dev/null (the probe for -E) and fails on the data file's lock descriptor, as a filesystem without lock support does
+    _exe(fake / "flock", '#!/bin/sh\ncase "$*" in *"/dev/null true"*) exit 0 ;; esac\necho "flock: 9: no locks available" >&2\nexit 1\n')
+    env["PATH"] = f"{fake}{os.pathsep}{env['PATH']}"
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; oo_rec_append "{f}" \'{{"pid":9}}\' 40 20'], env=env, check=True, timeout=30)
+    assert _wait_for(lambda: {"pid": 9} in _rows(f)[0]), "the row was lost on a filesystem that cannot lock"
+
+
+@posix_only
 @pytest.mark.parametrize("no_flock", [False, True], ids=["flock", "mkdir-lock"])
 def test_a_holder_that_is_stuck_for_ever_makes_the_row_late_and_a_killed_holder_releases_it(tmp_path, no_flock):
     """The ONE way a row is late (R174): the holder is alive and does not let go. The row waits with it, is not lost, and is written the moment the holder dies."""
