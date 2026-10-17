@@ -18,6 +18,9 @@ storage-events journal, as a sample (the watchdog, so a hold that never ends sti
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 import threading
 import time
 
@@ -347,22 +350,26 @@ def test_the_rows_a_select_hands_back_after_its_first_are_between_statements_and
 
 
 @pytest.mark.parametrize("failure", [KeyboardInterrupt, MemoryError])
-def test_a_breakdown_that_raises_in_the_release_never_keeps_the_gate(world, monkeypatch, failure):
-    """The long-hold split is measured AFTER the gate is free (the independent read of #1429's head, finding L1). It loops over the ledger, so an
-    interrupt or a MemoryError can land in it; measured before the free, that left the gate owned with its depth at 0 for good (a second
-    ``release`` returns at the depth check and every other ``acquire`` queues), on the main-thread route ``write_lock`` -> ``release`` of a
-    script. The release still raises (the signal is not swallowed); the next writer is granted."""
+@pytest.mark.parametrize("measuring", ["_breakdown_locked", "_account_holder_locked"])
+def test_a_measurement_that_raises_in_the_release_never_keeps_the_gate(world, monkeypatch, measuring, failure):
+    """What the release measures once the gate is free (the long-hold split, which loops over the ledger, and the per-holder row, which every
+    outermost release adds) can be interrupted or run out of memory. Measured BEFORE the free, that left the gate owned with its depth at 0 for
+    good (a second ``release`` returns at the depth check and every other ``acquire`` queues), on the main-thread route ``write_lock`` ->
+    ``release`` of a script (the independent reads of #1429's and #1435's heads, findings L1 and M1). The release still raises (the signal is
+    not swallowed); the next writer is granted."""
     monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    original = getattr(writer.WriterGate, measuring)
 
-    def _raises(self, held, started=None):
+    def _raises(self, *args, **kwargs):
         raise failure
 
-    monkeypatch.setattr(writer.WriterGate, "_breakdown_locked", _raises)
+    monkeypatch.setattr(writer.WriterGate, measuring, _raises)
     assert GATE.acquire()
     with pytest.raises(failure):
         GATE.release()
     assert GATE._owner is None, "the release raised with the gate still owned: nothing frees it now"
-    monkeypatch.setattr(writer, "HOLD_RECORD_S", 10**9)  # the next writer's own release must not measure (and raise) again
+    monkeypatch.setattr(writer.WriterGate, measuring, original)  # the next writer's own release must not raise again
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 10**9)
     granted: list[bool] = []
 
     def other():
@@ -373,7 +380,33 @@ def test_a_breakdown_that_raises_in_the_release_never_keeps_the_gate(world, monk
     t = threading.Thread(target=other)
     t.start()
     t.join(5)
-    assert granted == [True], "another writer could not take the gate after a breakdown that raised in the release"
+    assert granted == [True], f"another writer could not take the gate after {measuring} raised in the release"
+
+
+def test_nothing_that_can_allocate_runs_between_the_last_read_of_the_release_and_the_free():
+    """The branch of ``release`` that ends the outermost hold reads the holder, the start and the usage, clears the owner and calls
+    ``_wake_head``: no call before that point (the clock, the sums and the per-holder row come after). A MemoryError needs an instruction that
+    allocates, and the interrupt tests above reach the helpers by patching them, which cannot reach the clock's call or the arithmetic; this
+    pins the order for everything they cannot."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(writer.WriterGate.release)))
+    (branch,) = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.If)
+        and isinstance(n.test, ast.Compare)
+        and ast.unparse(n.test) == "self._depth == 0"
+    ]
+    before_the_free: list[ast.stmt] = []
+    for stmt in branch.body:
+        if ast.unparse(stmt) == "self._wake_head()":
+            break
+        before_the_free.append(stmt)
+    else:
+        pytest.fail("the outermost branch of release no longer calls _wake_head at its own level")
+    assigned = {ast.unparse(t) for st in before_the_free if isinstance(st, ast.Assign) for t in st.targets}
+    assert {"self._owner", "self._held_since"} <= assigned, "the gate must be cleared before the first call of the branch"
+    calls = [ast.unparse(n) for st in before_the_free for n in ast.walk(st) if isinstance(n, ast.Call)]
+    assert not calls, f"a call runs before the gate is freed in release(): {calls}"
 
 
 def test_the_exact_split_still_counts_the_statement_running_at_the_release(world, monkeypatch):
