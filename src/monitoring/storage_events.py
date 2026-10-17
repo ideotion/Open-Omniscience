@@ -1195,10 +1195,10 @@ _METHOD = (
     "Events recorded where the code already measures them (the write gate's release and watchdog, the storage guard, "
     "the checkpoints, the unlock, the boot, the pool's timeout), kept in a small file a background thread writes at most once a "
     "second. 'total' counts every event since 'since', across restarts; 'gate_hold' and 'pool_timeout' also carry 'first_seen_at', "
-    "their first event ever, recorded when it happened, not read off the kept ones ('total' counts from it); unknown it is null, with "
+    "their first event ever, recorded at the event, not read off the kept ones ('total' counts from it); else null, with "
     "'first_seen_unknown': 'not-recorded' (the file predates it) or 'history-unread'. 'kept' is what the file holds (the newest, "
     "the cap is 'keep'; for 'gate_hold', 'guard', "
-    "'pool_timeout' and 'open' it is split by 'keep_rule' into the longest by the named field AND the newest, 'picked_by' saying "
+    "'pool_timeout' and 'open' it is split by 'keep_rule' into the longest by the named field AND the newest, 'picked_by' says "
     "which: 'longest', 'newest' or 'both'); 'dropped' is total minus the file's events. If the zip's budget cut further, "
     "'dropped_to_fit' counts the events removed per kind and 'kept' is what is "
     "shown. A hold's 'seconds_by' splits its seconds into insert, savepoint, other_statement, commit and between_statements (Python work, "
@@ -1221,11 +1221,11 @@ _METHOD = (
     "kept ('total' counts all); an open run is the last pushed out."
 )
 _CAVEAT = (
-    "A process kill loses the last second of events when writes succeed (a failed write is retried), and a "
+    "A process kill loses the last second of events when writes succeed (a failed one is retried); a "
     "power loss can lose more or leave an unreadable file (no fsync). An event is a count, a duration or a name; a hold is attributed to the thread that held "
     "the gate, not to the code that was running (the frames are the watchdog's sample, absent for a hold it never saw). The file is read once, at the first use after a start; earlier processes' events say 'earlier'. A file "
     "that cannot be READ (an I/O error that outlasts three looks) is not written over: 'history_loaded' is false, 'read_failures' counts "
-    "the tries, and the events shown are this process's only."
+    "the tries, and only this process's events are shown."
 )
 
 

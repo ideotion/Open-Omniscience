@@ -463,8 +463,19 @@ def _fill_like_the_hooks(long_names: bool) -> None:
                       "collector": True, "pool": "corpus"} for k in range(3)])
 
 
+def _fill_and_write(monkeypatch, long_names: bool) -> None:
+    """:func:`_fill_like_the_hooks`, then the file written: the state a running app is in when a bundle is built. The member's ``file`` block
+    carries ``last_write_ok_at``, null before the background writer's first write and a 25-character time after it (23 bytes more), and the
+    fixture's 20 ms delay made WHETHER the writer had run before the member was built a matter of timing (the Opus read of ed2d170f1: the
+    widest-names floor failed 4 runs of 6). The delay is made long so the thread cannot race, and the write is made here."""
+    monkeypatch.setattr(se, "FLUSH_DELAY_S", 3600.0)
+    _fill_like_the_hooks(long_names)
+    se.flush()
+    assert _member()["file"]["last_write_ok_at"], "the file has been written: the member is measured in the state a running app is in"
+
+
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
-def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
+def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
     every kind, with the events the hooks write. Measured 78,634 bytes with ordinary names and 123,344 with every name at the cut, 1,494 of which are the keep rule's (``picked_by`` on the 50 events of the four split kinds, and the method sentence and ``keep_rule`` lines) (a byte or two either way: every event carries the process id; the run kinds carry the figures of the legacy restore, the newsletter import and the folder modes),
     the checkpoints carrying the reader snapshot ``hygiene`` hands every one (not only the busy ones); the row says 125,000. A kind that grows an event past the budget fails here, before it reaches a zip.
@@ -472,16 +483,19 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, long_names):
     THE SPLIT OF A HOLD'S SECONDS (``seconds_by``, build (a) of 17 Oct) is the part that gives way. With all twenty holds carrying it (125 bytes each at its widest, a day-long hold) and its sentence in the method (a few hundred bytes), the same journals measure 81,483 bytes with ordinary names and 126,193 with every name at the cut, over the row by 1,193; the member built at the row's budget (124,934 bytes) takes the split off the shortest holds until it fits and keeps it on the other 5, counting the 15 it cut. Ordinary names keep all twenty.
 
     THE ONSET (``first_seen_at`` on ``gate_hold`` and ``pool_timeout``, 17 Oct) is paid for in the member's words, not in splits: the two keys add
-    88 bytes, and the method and the caveat, with the sentence that names the key in them and others tightened, are 39 bytes shorter than before,
-    so the fixed part grows from 5,129 to 5,178 bytes. Measured with the real fixtures: ordinary names 81,532 bytes (43,468 free), every name at
-    the cut 126,242 with every split and 124,983 at the row's budget, 17 free, the same 5 splits kept. If a later change to the method costs a
-    split, ``len(_carrying(...)) >= 5`` below says so. An onset that is UNKNOWN (a file from before the field, or a history that could not be
-    read) shows a short reason instead of a time (23 and 62 bytes more for the two kinds): the widest names then keep 4 splits, pinned by
+    88 bytes, and the method and the caveat, with the sentence that names the key in them and others tightened, are 64 characters shorter than
+    before, so the fixed part grows by 26 bytes (5,152 to 5,178 once the file has been written, 5,129 to 5,155 before the first write: the
+    ``file`` block's ``last_write_ok_at`` is null until then and a 25-character time after, 23 bytes more, and WHICH state the member is built
+    in must not be left to the writer thread's timing: ``_fill_and_write`` makes it the written one, the state a running app is in). Measured
+    with the real fixtures, written: ordinary names 81,532 bytes (43,468 free), every name at the cut 126,242 with every split and 124,983 at the
+    row's budget, 17 free, 5 splits kept (before the onset: 43 free, 5 kept). If a later change to the method costs a split,
+    ``len(_carrying(...)) >= 5`` below says so. An onset that is UNKNOWN (a file from before the field, or a history that could not be read)
+    shows a short reason instead of a time (23 and 62 bytes more for the two kinds): the widest names then keep 4 splits, pinned by
     ``test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown...``."""
     from src.api import diagnostics_slots as slots
 
     (slot,) = [s for s in slots.SLOTS if s.name == "storage-events.json"]
-    _fill_like_the_hooks(long_names)
+    _fill_and_write(monkeypatch, long_names)
     m = se.diagnostics_member(10**9)
     for kind, cap in se.KEEP.items():
         assert m["kinds"][kind]["kept"] == min(cap, m["kinds"][kind]["total"]), kind
@@ -2297,7 +2311,10 @@ def test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown_and_los
     else:
         monkeypatch.setattr(se, "_read_file", lambda: ({}, None, "unreadable (OSError)", True))
         why = se.ONSET_UNREAD
-    _fill_like_the_hooks(True)
+    if state.startswith("a file"):
+        _fill_and_write(monkeypatch, True)
+    else:
+        _fill_like_the_hooks(True)  # nothing can be written while the history cannot be read
     m = se.diagnostics_member(slot.budget_bytes)
     assert se._size(m) <= slot.budget_bytes and m["dropped_to_fit"] == {}
     for kind in se.ONSET_KINDS:
