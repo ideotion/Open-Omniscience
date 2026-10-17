@@ -111,17 +111,20 @@ def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heal
                 c.execute(text("DELETE FROM articles WHERE id = :i"), {"i": orphan_id})
                 c.commit()
             finally:
+                c.rollback()  # a DELETE that failed leaves the driver's transaction open, and a pragma is a no-op inside one
                 c.exec_driver_sql("PRAGMA foreign_keys=ON")
                 c.commit()
         assert s.execute(select(func.count()).select_from(_MT).where(_MT.c.article_id == orphan_id)).scalar() == 1, "ANTI-VACUITY: no orphan row"
 
-    wide = [engine.connect() for _ in range(4)]
+    # EVERY idle connection and one more: the pool hands out the oldest first, so a fixed number of checkouts misses the one left off
+    # when the pool already holds more idle connections than that (the Opus read of 137a85525: eight idle ones hid it from four checkouts).
+    wide = [engine.connect() for _ in range(engine.pool.checkedin() + 1)]
     try:
         flags = [c.exec_driver_sql("PRAGMA foreign_keys").scalar() for c in wide]
     finally:
         for c in wide:
             c.close()
-    assert flags == [1, 1, 1, 1], f"a pooled connection was left with foreign keys off for every later test of the process: {flags}"
+    assert len(flags) >= 4 and set(flags) == {1}, f"a pooled connection was left with foreign keys off for every later test of the process: {flags}"
 
     reads = _count_reads(monkeypatch)
     indexed: list[int] = []
