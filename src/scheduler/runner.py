@@ -2747,6 +2747,25 @@ def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
     return get_scheduler().stop(timeout=timeout)
 
 
+def _start_or_stand_down(retries: int, retry_delay: float) -> bool:
+    """True when collection runs or must not be started (the kill switch); False when the retries are spent.
+
+    The retry loop of :func:`resume_after_exclusive_operation`, a function of its own and called from inside that function's ``try``: CPython
+    3.13 leaves a loop's back-edge outside the exception table of the ``try`` around it, so an interrupt delivered there would skip the
+    ``finally`` that releases the scheduler's exclusive window. This function has no handler, so there is nothing for an interrupt to skip;
+    it reaches the call, which the ``finally`` covers (R163; tests/test_gates_survive_an_interrupt.py)."""
+    from src.ingest import kill_switch_active
+
+    for attempt in range(retries + 1):
+        if kill_switch_active():
+            return True
+        if get_scheduler().start():
+            return True
+        if attempt < retries:
+            time.sleep(retry_delay)
+    return False
+
+
 def resume_after_exclusive_operation(
     was_paused: bool, *, retries: int = 19, retry_delay: float = 30.0
 ) -> None:
@@ -2806,15 +2825,8 @@ def resume_after_exclusive_operation(
     try:
         if not was_paused:
             return
-        from src.ingest import kill_switch_active
-
-        for attempt in range(retries + 1):
-            if kill_switch_active():
-                return
-            if get_scheduler().start():
-                return
-            if attempt < retries:
-                time.sleep(retry_delay)
+        if _start_or_stand_down(retries, retry_delay):
+            return
         # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
         # still alive. The budget was sized against one blocked WRITE (438 s); on a
         # write-bound machine the unit is a pass's wind-down, and Lenn's took 39 minutes,
