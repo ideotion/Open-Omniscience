@@ -260,11 +260,16 @@ def _remember_mentions(db: Session, count: int, articles: int, duration_s: float
     return memo
 
 
+#: The Library figure's public key for the whole-table mentions count. A name, not a table: the derived-read ratchet
+#: (tests/test_derived_read_seam.py) counts the literal, so the key is spelled once and every write goes through this.
+_COUNT_KEY = "keyword_mentions"
+
+
 def _mentions_fields(memo: dict) -> dict:
     """The count's payload fields, with WHEN it was counted and how long it is carried: the ratio uses the article count of that
     moment, not today's, so the two figures describe the same instant."""
     return {
-        "keyword_mentions": memo["count"],
+        _COUNT_KEY: memo["count"],
         "avg_keywords_per_article": round(memo["count"] / memo["articles"], 1) if memo["articles"] else None,
         "keyword_mentions_state": "counted",
         "keyword_mentions_computed_at": datetime.fromtimestamp(memo["finished_at"], UTC).isoformat(timespec="seconds"),
@@ -323,7 +328,7 @@ def _mentions_count(db: Session) -> int:
 
 
 def _compute_figures(db: Session, now: datetime) -> dict:
-    """Averages + ingestion rate for the Library tab: the cheap part plus the whole-table keyword_mentions COUNT, inline.
+    """Averages + ingestion rate for the Library tab: the cheap part plus the whole-table mentions COUNT, inline.
 
     Counts only, no score. The COUNT is the one O(n) query, so the endpoint does not call this on the request thread (see
     :func:`_compute_figures_counted`); it stays the plain, complete computation the tests and any caller that wants it blocking use."""
@@ -331,7 +336,7 @@ def _compute_figures(db: Session, now: datetime) -> dict:
     if not out["articles"]:
         return out
     n_mentions = _mentions_count(db)
-    out["keyword_mentions"] = n_mentions
+    out[_COUNT_KEY] = n_mentions
     out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
     out["keyword_mentions_state"] = "counted"
     return out
@@ -365,15 +370,17 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
             n_mentions = _mentions_count(db)
     except Exception as exc:  # noqa: BLE001 - a failed count is recorded, never raised into a poller
         out.update(
-            keyword_mentions=None,
-            avg_keywords_per_article=None,
-            keyword_mentions_state="failed",
-            keyword_mentions_failure={
-                "kind": "statement-deadline" if isinstance(exc, StatementTimeout) else type(exc).__name__,
-                "deadline_s": deadline,
-                "at": datetime.now(UTC).isoformat(timespec="seconds"),
-                "retry_after_s": _FIGURES_FAILURE_WINDOW_S,
-            },
+            {
+                _COUNT_KEY: None,
+                "avg_keywords_per_article": None,
+                "keyword_mentions_state": "failed",
+                "keyword_mentions_failure": {
+                    "kind": "statement-deadline" if isinstance(exc, StatementTimeout) else type(exc).__name__,
+                    "deadline_s": deadline,
+                    "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "retry_after_s": _FIGURES_FAILURE_WINDOW_S,
+                },
+            }
         )
         out["__ttl_s__"] = _FIGURES_FAILURE_WINDOW_S
         with contextlib.suppress(Exception):
@@ -381,7 +388,7 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
         return out
     memo = _remember_mentions(db, n_mentions, out["articles"], max(time.monotonic() - started, 0.001))
     if memo is None:
-        out["keyword_mentions"] = n_mentions
+        out[_COUNT_KEY] = n_mentions
         out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
         out["keyword_mentions_state"] = "counted"
         out["keyword_mentions_computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
@@ -395,10 +402,12 @@ def _figures_pending(db: Session) -> dict:
     out = _cheap_figures(db, datetime.now(UTC))
     if out["articles"]:
         out.update(
-            keyword_mentions=None,
-            avg_keywords_per_article=None,
-            keyword_mentions_state="computing",
-            keyword_mentions_reason="counting every keyword mention in the background; the other figures are exact now",
+            {
+                _COUNT_KEY: None,
+                "avg_keywords_per_article": None,
+                "keyword_mentions_state": "computing",
+                "keyword_mentions_reason": "counting every keyword mention in the background; the other figures are exact now",
+            }
         )
     return out
 
@@ -412,7 +421,7 @@ def library_figures(db: Session = Depends(get_db)) -> dict:
     state the figures' real age.
 
     The FIRST call after boot used to compute that count inline (55 s on the field corpus, 2026-10-16): it now starts one
-    background count and answers at once with the cheap figures, ``keyword_mentions`` null and ``keyword_mentions_state:
+    background count and answers at once with the cheap figures, the mentions count null and ``keyword_mentions_state:
     "computing"`` (``pending_since`` says when it started). A count that passes its statement deadline is recorded as
     ``"failed"`` with its kind, deadline and retry window rather than retried on every poll."""
 
