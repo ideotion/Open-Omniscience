@@ -29,6 +29,11 @@ WHAT IT MEASURES, and what a reader may therefore conclude:
   ``dates``   -- P3. htmldate's last-resort date hunt, per PLACEMENT and per LANGUAGE:
                  what it costs, and what it returns on a page that has no publication
                  date. The second column is the reason the bound shipped.
+  ``threads`` -- extract_article ALONE under N threads: articles per second against the
+                 thread count, no DB, no fetcher. It exists to price the process-wide
+                 extraction lock (``src/ingest/extract.py``: one extraction at a time), and
+                 is meant to be run on two trees (``--repo`` a tree before the lock and
+                 one with it): the ratio is the cost, the absolute figures are this box's.
   ``loop``    -- P6. Event-loop lag and a synchronous handler's wall time against
                  collector worker count, on a real loop with the real watchdog. This is
                  the measurement that decides whether the collector starves our own
@@ -56,6 +61,7 @@ USAGE
     python3 scripts/analysis/collect_throughput_bench.py patterns
     python3 scripts/analysis/collect_throughput_bench.py dates
     python3 scripts/analysis/collect_throughput_bench.py loop --seconds 7
+    python3 scripts/analysis/collect_throughput_bench.py threads --sweep-workers 1,4,8,16,50
 
     # compare two trees (a git worktree of an older commit works unchanged):
     python3 scripts/analysis/collect_throughput_bench.py stages --repo /tmp/oo-old
@@ -183,6 +189,36 @@ def cmd_stages(args) -> None:
         share = ms / total * 100 if total else 0
         print(f"    {label:34s} {ms:8.1f} ms  {share:5.1f}%")
     print(f"    {'TOTAL':34s} {total:8.1f} ms")
+
+
+# --------------------------------------------------------------------------- #
+# threads: extract_article alone, N threads
+# --------------------------------------------------------------------------- #
+
+def cmd_threads(args) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from src.ingest.extract import extract_article
+
+    rnd = random.Random(5)
+    docs = [_page(rnd, 0, j, args.size) for j in range(args.articles)]
+    tasks = docs * args.rounds
+    counts = [int(x) for x in args.sweep_workers.split(",") if x.strip()]
+    for h in docs:  # warm: imports, compiled patterns, the language and date caches
+        extract_article(h, url="https://bench.example/x")
+    print(f"extract_article under N threads  ({len(tasks)} articles of ~{args.size:,} body chars, "
+          f"best of {args.repeats}, {os.cpu_count()} CPUs)")
+    print(f"  tree: {args.repo}")
+    print(f"  {'threads':>8} {'wall s':>8} {'articles/s':>11} {'ms/article':>11}")
+    for w in counts:
+        best = float("inf")
+        for _ in range(args.repeats):
+            t0 = time.perf_counter()
+            with ThreadPoolExecutor(max_workers=w) as pool:
+                got = list(pool.map(lambda h: extract_article(h, url="https://bench.example/x"), tasks))
+            best = min(best, time.perf_counter() - t0)
+        assert all(g is not None for g in got), "an article was not extracted: the figures would be of a different workload"
+        print(f"  {w:>8} {best:>8.2f} {len(tasks) / best:>11.1f} {best / len(tasks) * 1000:>11.1f}")
 
 
 # --------------------------------------------------------------------------- #
@@ -567,7 +603,7 @@ def cmd_loop(args) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("mode", choices=("stages", "pass", "sweep", "governor", "patterns",
-                                     "dates", "loop"))
+                                     "dates", "loop", "threads"))
     ap.add_argument("--repo", default=os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))), help="tree to measure (a git worktree works)")
     ap.add_argument("--articles", type=int, default=12)
@@ -579,12 +615,14 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--sweep-workers", default="1,4,8,16,50")
     ap.add_argument("--seconds", type=float, default=7.0, help="loop: seconds per row")
+    ap.add_argument("--rounds", type=int, default=3, help="threads: passes over the --articles pages")
+    ap.add_argument("--repeats", type=int, default=3, help="threads: best of this many runs per thread count")
     args = ap.parse_args()
 
     _bootstrap(args.repo)
     {"stages": cmd_stages, "pass": cmd_pass, "sweep": cmd_sweep,
      "governor": cmd_governor, "patterns": cmd_patterns, "dates": cmd_dates,
-     "loop": cmd_loop}[args.mode](args)
+     "loop": cmd_loop, "threads": cmd_threads}[args.mode](args)
 
 
 if __name__ == "__main__":

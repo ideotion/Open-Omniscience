@@ -15,6 +15,7 @@ explicit extraction failure -- it never fabricates a placeholder article.
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -77,13 +78,30 @@ def extensive_date_search_enabled() -> bool:
     return os.getenv("OO_EXTENSIVE_DATE_SEARCH", "0") == "1"
 
 
+#: ONE extraction at a time, process-wide. libxml2 aborts the process (SIGABRT, no Python traceback) from inside ``lxml.html.document_fromstring``
+#: under the collector's pool of ~50 workers, about one boot in seven (2026-10-14, ``lxml/html/__init__.py:740`` <- ``trafilatura/utils.py:345``
+#: <- ``extract_article``). The cause is NOT established (``docs/ledger/OPEN_QUEUE.md``, "THE lxml SIGABRT"): nothing in lxml 5.2-6.1.3, libxml2
+#: 2.12-2.15 or trafilatura's tracker names it, and the one loose match (trafilatura #840, fixed in 2.1.0) is a release older than the one
+#: that crashed. What is known is that every parse, every tree walk and every tree release of the app's HTML happens inside this one function's
+#: call tree, so a lock around it makes concurrent use of libxml2 impossible from the app, whatever the fault was. The lock covers the whole
+#: call, not only the parse: the faulting frame may be where an earlier corruption surfaced, and the trees (``Document.body``) are released
+#: before the lock is, because the result holds only text. RLock so a caller that nests extraction cannot deadlock itself.
+_LXML_LOCK = threading.RLock()
+
+
 def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None:
     """Extract an article from raw HTML, or return ``None`` if there isn't one.
 
-    ``url`` improves trafilatura's metadata resolution (e.g. canonical link).
+    ``url`` improves trafilatura's metadata resolution (e.g. canonical link). One extraction runs at a time in the process
+    (:data:`_LXML_LOCK`), whatever the number of collect workers.
     """
     if not html or not html.strip():
         return None
+    with _LXML_LOCK:
+        return _extract_locked(html, url=url)
+
+
+def _extract_locked(html: str, *, url: str | None = None) -> ExtractedDoc | None:
 
     # ONE parse, not two. ``extract`` and ``extract_metadata`` each called ``load_html``
     # on the same string, so every article was parsed twice; ``bare_extraction`` does the
