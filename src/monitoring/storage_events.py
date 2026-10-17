@@ -624,6 +624,28 @@ def _build(fields: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
+def _forget_open_of(gone: dict[str, Any]) -> None:
+    """Drop the open-event keys that point at ``gone``. A function of its own, with no handler in it, so its loops have nothing for an interrupt to skip."""
+    for k in [k for k, v in _OPEN.items() if v is gone]:
+        _OPEN.pop(k, None)
+
+
+def _forget_unkept(events: list[dict[str, Any]], kept_ids: set[int]) -> None:
+    """Forget the open keys of every event of ``events`` that is not in ``kept_ids`` (the caller then replaces the list by the kept ones)."""
+    for gone in [e for e in events if id(e) not in kept_ids]:
+        _forget_open_of(gone)
+
+
+def _evict_one(events: list[dict[str, Any]], kind: str) -> None:
+    """Drop one event from ``events`` to make room.
+
+    A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one long backup would otherwise
+    evict its open record, and its end would be lost. The oldest event that is not live goes first; only when every event is live does the oldest go.
+    The other kinds keep the plain rule (the oldest goes)."""
+    live = {id(v) for v in _OPEN.values()} if kind in _RUN_JOURNAL_KINDS else set()
+    _forget_open_of(events.pop(next((i for i, e in enumerate(events) if id(e) not in live), 0)))
+
+
 def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
     """Record one event of ``kind``. With a ``key`` it stays addressable as an OPEN event: :func:`update` and :func:`end` find it by
     that key for as long as this process runs, and an earlier process's open event is closed as "not recorded" when the file is read.
@@ -652,19 +674,14 @@ def record(kind: str, fields: dict[str, Any], *, key: Any = None) -> None:
                 # The longest are kept beside the newest (see LONGEST); an event that is not kept is forgotten, open or not (an open hold
                 # is the newest, so it is always kept).
                 kept = _select(kind, entry["events"])
-                kept_ids = {id(e) for e in kept}
-                for gone in [e for e in entry["events"] if id(e) not in kept_ids]:
-                    for k in [k for k, v in _OPEN.items() if v is gone]:
-                        _OPEN.pop(k, None)
+                _forget_unkept(entry["events"], {id(e) for e in kept})
                 entry["events"] = kept
-            while len(entry["events"]) > KEEP[kind]:
-                # A RUN still open in this process is not pushed out by the records written after it: ten refused starts during one
-                # long backup would otherwise evict its open record, and its end would be lost. The oldest event that is not live
-                # goes first; only when every event is live does the oldest go. The other kinds keep the plain rule (the oldest goes).
-                live = {id(v) for v in _OPEN.values()} if kind in _RUN_JOURNAL_KINDS else set()
-                gone = entry["events"].pop(next((i for i, e in enumerate(entry["events"]) if id(e) not in live), 0))
-                for k in [k for k, v in _OPEN.items() if v is gone]:
-                    _OPEN.pop(k, None)
+            # ``while True: if not <cond>: break`` and the comprehensions in helpers (R163): on CPython 3.13 the back-edge of ``while <cond>:`` and of an
+            # inlined comprehension sits outside the ``with``'s exception table, so a Ctrl-C landing there leaves ``_LOCK`` taken (src/utils/interrupts.py)
+            while True:
+                if len(entry["events"]) <= KEEP[kind]:
+                    break
+                _evict_one(entry["events"], kind)
             _mark_dirty_locked()
     except Exception as exc:  # noqa: BLE001
         _internal_failure("record", exc)
