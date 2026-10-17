@@ -50,13 +50,14 @@ def generating(model: str | None, *, backend: str) -> Iterator[None]:
     "working" forever, which is a worse lie than showing nothing.
     """
     tok = next(_SEQ)
-    with _LOCK:
-        _OPEN[tok] = {
-            "model": (model or "").strip() or None,
-            "backend": backend,
-            "started_at": time.time(),
-        }
     try:
+        # inside the try, and the give-back below is a pop that tolerates a missing entry: an interrupt anywhere from here on still clears
+        with _LOCK:
+            _OPEN[tok] = {
+                "model": (model or "").strip() or None,
+                "backend": backend,
+                "started_at": time.time(),
+            }
         yield
     finally:
         with _LOCK:

@@ -41,7 +41,6 @@ _PENDING = "OWED: the acquire is moved inside the try in the hunk pair named her
 
 # (path under src/, function) -> why a statement before the try is allowed to stay. Every entry was read, not pattern-matched.
 _ALLOWED: dict[tuple[str, str], str] = {
-    ("ai_layer/coordinator.py", "user_batch_hold"): _PENDING + " (r163-cm)",
     ("analytics/bulk_build.py", "bulk_index_window"): _DURABLE + ": open_state writes the marker BEFORE the indexes are dropped, so a gap leaves a marker and no drop",
     ("api/main.py", "lifespan"): "the lifespan runs on the event loop, which uvicorn's signal capture covers (tests/test_event_loop_signal_exemption.py); its pre-yield work is the boot",
     ("backup/merge.py", "_fts_insert_suspended"): "works on a disposable working copy (its docstring), and a DROP TRIGGER that an interrupt strands is undone by the copy's rollback or its discard",
@@ -54,14 +53,11 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("briefing/registry.py", "_wal_guard"): "drains a list of pending items in the session the caller owns; the session's own scope releases it",
     ("config/kv_store.py", "_write_slot"): "an environment read then the slot token; the slot is taken inside the try (tests/test_kv_store_write_hold.py)",
     ("database/connect.py", "_interrupt_when"): "starts a daemon watcher thread that ends with the process; the Event it waits on is local and set by the finally",
-    ("database/corpus_lease.py", "corpus_lease"): _PENDING + " (r163-cm)",
     ("database/maintenance.py", "statement_deadline"): "reads a setting; the progress handler is installed after the memory check and removed in a finally",
     ("database/pool_reserve.py", "collector_role"): _THREAD_LOCAL,
     ("database/read_snapshot.py", "read_snapshot_session"): _SESSION,
     ("database/session.py", "session_scope"): _SESSION,
-    ("database/verify.py", "_pass_in_flight"): _PENDING + " (r163-cm)",
     ("ingest/ssrf_guard.py", "connect_scope"): _THREAD_LOCAL + " (the scope stack is per thread)",
-    ("llm/inflight.py", "generating"): _PENDING + " (r163-cm)",
     ("monitoring/tasks.py", "track"): "a task row the snapshot ages out (its docstring); no lock or count outlives it",
     ("scheduler/runner.py", "exclusive_window"): _PENDING + " (r163-cm): the scheduler stays paused",
     ("testing/scale_bench.py", "sample_peak_rss"): "a bench helper; its sampler is a daemon thread",

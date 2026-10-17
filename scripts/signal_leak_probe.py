@@ -37,7 +37,8 @@ import time
 _INTERVAL_S = 0.0003
 
 
-GATES = ("gate_writer", "gate_writer_bounded", "gate_pool", "gate_governor", "gate_hold", "gate_library", "gate_library_swap", "gate_swap_window")
+GATES = ("gate_writer", "gate_writer_bounded", "gate_pool", "gate_governor", "gate_hold", "gate_library", "gate_library_swap", "gate_swap_window",
+         "gate_corpus_lease", "gate_user_batch_hold", "gate_inflight", "gate_pass_in_flight")
 
 
 def _plain_wait(cond, lock, timeout=None):  # noqa: ARG001 - the signature of src.utils.interrupts.wait
@@ -250,6 +251,77 @@ class _Scenario:
         self.call = call
         self.damage = damage
         self.stale = lambda: 0
+
+    def _cm(self, call, damage) -> None:
+        """A context manager that is free to be had: the interrupt lands anywhere from its first statement to its last."""
+        self.lock, self.cond = threading.RLock(), None
+        self.patch_modules = []
+        self.call = call
+        self.damage = damage
+        self.stale = lambda: 0
+
+    def _gate_corpus_lease(self) -> None:
+        from src.database import corpus_lease as cl
+
+        def call() -> None:
+            with cl.corpus_lease("probe"):
+                pass
+
+        def damage() -> list[str]:
+            raised = any(n > 0 for n in cl._HELD.values())  # noqa: SLF001 - a name at zero is given back (active_leases does not list it)
+            cl._HELD.clear()  # noqa: SLF001
+            return ["lease left raised"] if raised else []
+
+        self._cm(call, damage)
+
+    def _gate_user_batch_hold(self) -> None:
+        from src.ai_layer import coordinator as co
+
+        def call() -> None:
+            with co.user_batch_hold("probe"):
+                pass
+
+        def damage() -> list[str]:
+            bad = []
+            if co._hold_count:  # noqa: SLF001
+                bad.append("hold count left raised")
+                co._hold_count = 0  # noqa: SLF001
+            if co._hold_reasons:  # noqa: SLF001
+                bad.append("hold reason left listed")
+                del co._hold_reasons[:]  # noqa: SLF001
+            return bad
+
+        self._cm(call, damage)
+
+    def _gate_inflight(self) -> None:
+        from src.llm import inflight as inf
+
+        def call() -> None:
+            with inf.generating("probe", backend="probe"):
+                pass
+
+        def damage() -> list[str]:
+            if not inf._OPEN:  # noqa: SLF001
+                return []
+            inf._OPEN.clear()  # noqa: SLF001
+            return ["in-flight call left open"]
+
+        self._cm(call, damage)
+
+    def _gate_pass_in_flight(self) -> None:
+        from src.database import verify as vf
+
+        def call() -> None:
+            with vf._pass_in_flight("probe"):  # noqa: SLF001
+                pass
+
+        def damage() -> list[str]:
+            if vf._PASS_FILE is None:  # noqa: SLF001
+                return []
+            vf._PASS_FILE = None  # noqa: SLF001
+            return ["pass file left named"]
+
+        self._cm(call, damage)
 
     def close(self) -> None:
         self.stop.set()

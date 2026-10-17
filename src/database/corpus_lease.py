@@ -67,23 +67,22 @@ def corpus_lease(name: str) -> Iterator[None]:
     or idle worker holds nothing and the swap is not made to wait on a job that is
     doing nothing.
     """
-    with _LOCK:
-        _HELD[name] = _HELD.get(name, 0) + 1
+    took = False
     try:
+        with _LOCK:
+            _HELD[name] = _HELD.get(name, 0) + 1
+            took = True  # no call between the store and this line: an interrupt later (even in the lock's own exit) finds the lease taken and gives it back
         yield
     finally:
-        with _LOCK:
-            n = _HELD.get(name, 0) - 1
-            if n > 0:
-                _HELD[name] = n
-            else:
-                _HELD.pop(name, None)
+        if took:
+            with _LOCK:
+                _HELD[name] -= 1  # one statement with no call in it; a name at zero stays in the dict and is not listed (active_leases)
 
 
 def active_leases() -> list[str]:
     """Names currently holding live-corpus work, sorted. Empty means quiescent."""
     with _LOCK:
-        return sorted(_HELD)
+        return sorted(name for name, n in _HELD.items() if n > 0)
 
 
 def wait_for_quiescence(
