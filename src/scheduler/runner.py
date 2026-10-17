@@ -1001,6 +1001,8 @@ def run_scrape_once(
             # gate, and the shared fetcher's per-host lock keeps politeness intact.
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
+            from sqlalchemy.exc import TimeoutError as _PoolTimeout
+
             from src.database.models import Source as _Source
             from src.database.pool_reserve import collector_role
             from src.database.session import session_scope
@@ -1060,7 +1062,18 @@ def run_scrape_once(
                         # ``source_metadata``) lazy-loaded through that one session and
                         # its one connection, from every worker at once, and segfaulted
                         # the process (2 crashes in 30 runs of the pool test, 2026-09-25).
-                        own = worker_session.get(_Source, source_id)
+                        try:
+                            own = worker_session.get(_Source, source_id)
+                        except _PoolTimeout as exc:
+                            # This read is the worker's first pooled checkout. With the pool
+                            # exhausted it times out, and an exception out of here ends the
+                            # WHOLE pass at ``fut.result()`` — one source ending the batch.
+                            # Record it against this source and leave it for the next pass;
+                            # nothing retries in this one (a retry holds the very slot the
+                            # pool is short of), and the other sources carry on.
+                            log_failure(_LOG, f"scrape run: source id {source_id} found no pooled connection", exc, level=logging.WARNING)
+                            _defer(source, "pool-timeout")
+                            return {"errors": 1}, 0, 0
                         if own is None:  # deleted since the selection: nothing to fetch
                             return {}, 0, 0
                         return _process_source(
