@@ -243,9 +243,7 @@ class _Scenario:
             if lg._WINDOW_STAMP is not None:  # noqa: SLF001
                 bad.append("window stamp left set")
                 lg._WINDOW_STAMP = None  # noqa: SLF001
-            if lg._STATE.locked():  # noqa: SLF001
-                bad.append("state lock left taken")
-                lg._STATE.release()  # noqa: SLF001
+            # (library_generation has no lock of its own for the window's state any more: it is written only inside the window)
             return bad
 
         self.call = call

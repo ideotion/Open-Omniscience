@@ -77,7 +77,14 @@ class LibraryBusy(RuntimeError):
     """The swap could not get its window: a connection was still being opened after :data:`WINDOW_WAIT_S`."""
 
 
-_STATE = threading.Lock()  # guards the names below
+# The four names below are WRITTEN only inside the exclusive window: by :func:`swap_window` and by the functions it and its body call on the
+# swap's own thread (:func:`bump`, :func:`_open_window`, :func:`_close_window`, :func:`disk_changing`; the restore, the repair and the encrypt call
+# the last one from the body of their window). The window is held by one thread at a time (:class:`_Lock`), so two writers never overlap, and the
+# readers (:func:`current`, :func:`valid`, the stamp in :func:`attach`, :func:`connecting`) never took a lock for them. A lock of their own
+# guarded nothing the window did not already guard, and its one effect was a hazard: a plain ``threading.Lock`` whose ``with`` exit fails (the
+# exit builds a 3-tuple, which allocates on CPython 3.13) stays held for ever, and every later section waits behind it with the window held
+# (tests/test_swap_window_allocation_failures.py). ``tests/test_library_generation_writers_run_in_the_window.py`` pins that every call of a
+# writer, in ``src/``, is made inside the window, so a new writer outside it fails a test and does not race.
 _GENERATION = 0
 _VALID: frozenset[int] = frozenset({0})
 _WINDOW_STAMP: int | None = None  # the stamp of a connection the swap itself opens inside its window, while there is one
@@ -100,10 +107,9 @@ def valid(stamp: int | None) -> bool:
 def bump() -> int:
     """The library's name now (or is about to) point at a different file: every connection made before this call is stale."""
     global _GENERATION, _VALID
-    with _STATE:
-        _GENERATION += 1
-        _VALID = frozenset({_GENERATION})
-        return _GENERATION
+    _GENERATION += 1
+    _VALID = frozenset({_GENERATION})
+    return _GENERATION
 
 
 def _open_window() -> None:
@@ -111,23 +117,22 @@ def _open_window() -> None:
     carry the window's own stamp, which only that thread may use while the window runs (:func:`valid`) and which is valid afterwards only
     if the swap did not happen (:func:`_close_window`)."""
     global _WINDOW_STAMP
-    with _STATE:
-        _WINDOW_STAMP = -_GENERATION  # never a generation: those count up from zero
+    _WINDOW_STAMP = -_GENERATION  # never a generation: those count up from zero
 
 
 def _close_window(*, swapped: bool, earlier: frozenset[int] | None = None) -> None:
-    """The window ends, in ONE section of ``_STATE`` (a second one in the same cleanup would block for ever behind a first whose exit failed).
+    """The window ends. What is read here (``swapped``, :data:`_DISK_CHANGED`), what is decided and what is written are one step, so they cannot
+    disagree: an allocation that fails before it leaves only the new generation valid (the safe side), never the window's own connections.
 
     ``swapped`` says the source is gone, or that nobody could tell (the safe answer); :func:`disk_changing` having been called says the file the
     earlier connections opened is not the library's either. When neither, the swap did not happen: the connections that were valid before
     :func:`bump` (``earlier``, none given means none to give back) and the window's own stamp open the file that is still the library."""
     global _VALID, _WINDOW_STAMP
-    with _STATE:
-        # the stamp is taken and cleared in ONE step (no call between), so an interrupt in what follows leaves no stamp set; the cost of that
-        # interrupt is a window connection that stays refused, which is the safe side
-        stamp, _WINDOW_STAMP = _WINDOW_STAMP, None
-        if not swapped and not _DISK_CHANGED:
-            _VALID = _VALID.union(earlier or (), () if stamp is None else (stamp,))
+    # the stamp is taken and cleared in ONE step (no call between), so an interrupt in what follows leaves no stamp set; the cost of that
+    # interrupt is a window connection that stays refused, which is the safe side
+    stamp, _WINDOW_STAMP = _WINDOW_STAMP, None
+    if not swapped and not _DISK_CHANGED:
+        _VALID = _VALID.union(earlier or (), () if stamp is None else (stamp,))
 
 
 # --- the lock --------------------------------------------------------------------------------------------------------------
@@ -310,23 +315,18 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     exists) and without :func:`disk_changing` having been called (a refusal before anything was touched) the earlier connections are valid
     again. Raises :class:`LibraryBusy` if it cannot be had.
 
-    The lock is given back whatever the cleanup does, except at the places no code can protect: the call that gives it back, if the
-    allocator refuses to start it (natively the ``BEFORE_WITH`` inside it, which makes the bound ``__enter__`` and ``__exit__``); and the exit
-    of any ``with <lock>:`` in the cleanup, which calls ``__exit__(None, None, None)``, builds a 3-tuple on CPython 3.13 and so allocates when
-    the tuple free list is empty. A failed exit leaves that lock held. The ``with`` form is what the interrupt rules require (R144, R171) and
-    nothing runs after an exit that did not run. The cleanup has ONE ``with _STATE:`` section (:func:`_close_window`: the read of
-    ``_DISK_CHANGED``, the earlier connections' validity and the window's stamp, in one step), so a failed exit there still lets this swap give
-    the window back and the pool serve again; ``_STATE`` stays held, and the NEXT swap blocks at its first section with its window held, which
-    stops the pool again as before.
+    The lock is given back whatever the cleanup does, except at the one place no code can protect: the call that gives it back, if the
+    allocator refuses to start it (natively the ``BEFORE_WITH`` inside it, which makes the bound ``__enter__`` and ``__exit__``). The exit of
+    that call's own ``with self._lock:`` is the same kind of site (``__exit__(None, None, None)`` builds a 3-tuple on CPython 3.13 and so
+    allocates when the tuple free list is empty); the ``with`` form is what the interrupt rules require (R144, R171) and nothing runs after an
+    exit that did not run.
 
-    NOT fixed: the sections that come BEFORE the cleanup are the same exits, and a failed one blocks this swap's own ``_close_window`` with the
-    window held. They are the reset of ``_DISK_CHANGED``, :func:`bump` and :func:`_open_window` in this function, and :func:`disk_changing` in
-    the body of every swap that gets as far as changing the disk (the restore, the repair and the encrypt). So such a swap passes 5 sections
-    and a failed exit at any of the first 4 blocks it (4 of 5); one that is refused before :func:`disk_changing` passes 4 (3 of 4); before the
-    merge both were 5 of 6. Merging the opening sections into one would cut the sites, not remove the block (the one left still blocks this
-    swap's close); having no ``_STATE`` at all would remove it (every writer already runs inside the exclusive window), and is a separate change.
-    ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every other instruction of the cleanup that can allocate and
-    names the call, pins the counts above in the source, and fails an exit of each opening section to show the block."""
+    The swap passes no lock for the module's state. The four names this module writes (:data:`_GENERATION`, :data:`_VALID`, :data:`_WINDOW_STAMP`,
+    :data:`_DISK_CHANGED`) are written only here, inside the window, which one thread holds at a time, and they have no lock of their own: a
+    plain lock's failed exit stays held, and every later section of the same swap or of the next one would wait behind it with the window held
+    (a pool stopped until restart). ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every instruction of the cleanup that
+    can allocate and names the call, and pins that the module has no ``with`` section left in a writer; ``tests/test_library_generation_writers_run_in_the_window.py``
+    pins that every call of a writer in ``src/`` is made inside a window."""
     global _DISK_CHANGED
     # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
@@ -339,8 +339,7 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     try:
         _LOCK.exclusive(timeout)
         earlier = _VALID
-        with _STATE:
-            _DISK_CHANGED = False
+        _DISK_CHANGED = False
         try:
             bump()
             _open_window()
@@ -368,8 +367,7 @@ def disk_changing() -> None:
     ``disk I/O error``. Measured with the app's own connect listener on the engine. A refusal BEFORE this call (the repair's
     data-version check) changes nothing on disk, and the window still gives the earlier connections their validity back."""
     global _DISK_CHANGED
-    with _STATE:
-        _DISK_CHANGED = True
+    _DISK_CHANGED = True
 
 
 # --- the guard -------------------------------------------------------------------------------------------------------------
