@@ -135,6 +135,7 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
         return None
 
     waiter_done = threading.Event()
+    threads: list[threading.Thread] = []  # every thread this run starts, so none outlives it (see the end of the function)
 
     def waiting() -> None:
         with lg.connecting():
@@ -146,7 +147,8 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
         sys.settrace(tracer)
         with write_lock(), lg.swap_window(source, timeout=2.0):
             # a thread that wants a connection while the window is held: blocked on the lock, as the pool's connect is
-            threading.Thread(target=waiting, daemon=True).start()
+            threads.append(threading.Thread(target=waiting, daemon=True))
+            threads[-1].start()
             threading.Event().wait(0.05)  # let it reach the lock's wait
             state["armed"] = True  # the body is over: what runs from here is the cleanup
     except MemoryError:
@@ -163,7 +165,8 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
         with write_lock():
             got.set()
 
-    threading.Thread(target=take, daemon=True).start()
+    threads.append(threading.Thread(target=take, daemon=True))
+    threads[-1].start()
     out.gate_taken_by_another = got.wait(GET_THROUGH_S)
     if not out.lock_held:  # a lock still held makes both waits certain to fail: do not pay for them
         out.waiter_through = waiter_done.wait(GET_THROUGH_S)
@@ -174,8 +177,16 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
                 pass
             opened.set()
 
-        threading.Thread(target=opener, daemon=True).start()
+        threads.append(threading.Thread(target=opener, daemon=True))
+        threads[-1].start()
         out.later_through = opened.wait(GET_THROUGH_S)
+    # A site that leaves the window held (the named call, and the mutants' sites) leaves every thread that waits for it polling on this copy of
+    # the module for the rest of the session (11 daemon threads, each waking every TEST_STEP_S, measured after the two files ran). The run
+    # has its answers: give the window back and let them end.
+    if lg._LOCK._holder is not None:
+        lg._LOCK.release_exclusive()
+    for thread in threads:
+        thread.join(GET_THROUGH_S)
     sys.modules.pop(lg.__name__, None)
     return out
 
