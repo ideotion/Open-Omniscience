@@ -226,7 +226,7 @@ def paired_rows(session: Session, sources: list[dict], *, plan=None, rows_by_dom
         if len(entries) == 1 and len(rows) == 1:
             pairs.append((rows[0], entries[0]))
             continue
-        by_key = {}
+        by_key: dict[str, Source] = {}
         for r in rows:
             by_key.setdefault(r.feed_key or "", r)
         unmatched: list[dict] = []

@@ -51,9 +51,10 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import func, update
+from sqlalchemy.engine import CursorResult
 
 from src.config.machine_floor import scan_budget
 from src.database.models import Article
@@ -955,7 +956,7 @@ def log_curated_stamps(session: Session, source_ids: list[int], *, now: datetime
 _ID_CHUNK = 400
 
 
-def _id_chunks(ids: list[int], size: int = _ID_CHUNK):
+def _id_chunks(ids: list[Any], size: int = _ID_CHUNK):  # ids or domains: it only slices
     for start in range(0, len(ids), size):
         yield ids[start:start + size]
 
@@ -1052,12 +1053,12 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
             # ``status`` is in the WHERE as well: a row another writer moved off ``unqualified`` after the scan above is not
             # overwritten by this statement (and gets no attempt row below). ``synchronize_session=False`` because nothing in this
             # session reads a Source instance between here and the commit, which expires them all.
-            done = session.execute(
+            done = cast(CursorResult, session.execute(  # a bulk UPDATE returns a CursorResult
                 update(Source)
                 .where(Source.id.in_(chunk), Source.status == STATUS_UNQUALIFIED)
                 .values(status=STATUS_QUALIFIED, qualified_at=now, qualification_criteria_version=CURATED_CRITERIA_VERSION)
                 .execution_options(synchronize_session=False)
-            )
+            ))
             if done.rowcount == len(chunk):
                 stamped.extend(chunk)
             else:
