@@ -104,7 +104,7 @@ def test_ordinary_sentences_and_section_headings_are_not_furniture():
 def test_stripping_leaves_every_other_byte_alone():
     text = "Rubrik\r\n  indrag kvar\nAnnons\n\nSlutt.\nTo linjer."
     cleaned, removed = strip_furniture(text)
-    assert removed == 1 and cleaned == "Rubrik\r\n  indrag kvar\nSlutt.\nTo linjer."
+    assert removed == 1 and cleaned == "Rubrik\r\n  indrag kvar\n\nSlutt.\nTo linjer."
 
 
 def test_ad_placeholders_and_app_banner_are_stripped_from_teasers():
@@ -260,10 +260,19 @@ def test_a_complete_short_brief_ending_on_a_subscribe_prompt_is_not_a_paywall_st
     assert stub_verdict("Vil du bli abonnent?") is not None
 
 
-def test_stripping_a_line_joins_the_neighbours_and_says_so():
+def test_stripping_a_line_never_merges_the_paragraphs_around_it():
     from src.ingest.furniture import strip_furniture
 
-    assert strip_furniture("A first para.\nAnnons\n\nB second para.") == ("A first para.\nB second para.", 1)
+    assert strip_furniture("A first para.\nAnnons\n\nB second para.") == ("A first para.\n\nB second para.", 1)
+    assert strip_furniture("Annons\n\nB second para.") == ("B second para.", 1)
+
+
+def test_the_paywall_body_threshold_is_pinned_on_both_sides():
+    from src.ingest.furniture import _PROMPT_BODY_MAX_WORDS, stub_verdict
+
+    at = " ".join(["ord"] * _PROMPT_BODY_MAX_WORDS)
+    assert stub_verdict(f"{at}\n\nVil du bli abonnent?") is not None
+    assert stub_verdict(f"{at} ord\n\nVil du bli abonnent?") is None
 
 
 def test_store_fetched_strip_is_off_with_the_non_article_switch_off(monkeypatch):

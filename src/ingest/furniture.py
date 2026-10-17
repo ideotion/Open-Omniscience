@@ -49,6 +49,11 @@ PAYWALL_PHRASES = (
     "bereits abonnent", "déjà abonné",
 )
 _PROMPT_MAX_WORDS = 8
+# Prose a paywall_stub body may carry besides its prompt lines (a headline, a "Log in" line). More than
+# this and the body is a short article that merely ends on a subscribe call: it is spared. It protects
+# complete briefs (the 12-word reader example is spared). It is NOT measured on a corpus: none of the
+# four specimens is a paywall body with a lead; the dry run's samples are what should move it.
+_PROMPT_BODY_MAX_WORDS = 8
 
 MENU_MIN_PARAGRAPHS = 12
 MENU_SHORT_WORDS = 6       # a menu entry; the page's own headline (9 words) may exceed it
@@ -76,8 +81,7 @@ def is_furniture(paragraph: str) -> bool:
 def strip_furniture(text: str) -> tuple[str, int]:
     """``(text without furniture lines, how many were removed)``. Only the matched lines go (plus
     one blank separator line after each); every other byte is kept, so text without furniture
-    comes back identical; when a line goes, the one blank line after it goes too, so two paragraphs
-    that were split by it become adjacent lines."""
+    comes back identical, and a removed line never merges the paragraphs around it."""
     lines = (text or "").splitlines(keepends=True)
     kept: list[str] = []
     removed = 0
@@ -89,7 +93,9 @@ def strip_furniture(text: str) -> tuple[str, int]:
         skip_blank = False
         if line.strip() and is_furniture(line.strip()):
             removed += 1
-            skip_blank = True
+            # The blank after a removed line goes only when a blank (or the start) already precedes
+            # it; otherwise it is the separator between two paragraphs and must stay.
+            skip_blank = not kept or not kept[-1].strip()
             continue
         kept.append(line)
     if not removed:
@@ -137,7 +143,7 @@ def _has_prompt(paragraphs: list[str]) -> str | None:
             found = found or hit
         else:
             other_words += n
-    return found if found and other_words <= _PROMPT_MAX_WORDS else None
+    return found if found and other_words <= _PROMPT_BODY_MAX_WORDS else None
 
 
 def stub_verdict(text: str | None) -> tuple[str, str] | None:
