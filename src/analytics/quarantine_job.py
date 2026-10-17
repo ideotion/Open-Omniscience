@@ -111,6 +111,7 @@ def default_quarantine_candidates_batch(
     criteria_version: str | None = None,
     article_ids: list[int] | None = None,
     index_page_tiers: frozenset[int] | set[int] | None = None,
+    collect_ids: bool = False,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
@@ -149,7 +150,11 @@ def default_quarantine_candidates_batch(
     has no path segment for a slug); tier 2 is a listing by convention where one could live, so
     it wants review before a write run rather than a default. The reason string is prefixed
     ``index_page_tier{n}:`` so a quarantine from this reading is always distinguishable -- and
-    reversible -- separately from the ingest gate's own signals."""
+    reversible -- separately from the ingest gate's own signals.
+
+    ``collect_ids`` (default False): also return ``ids_by_reason`` (this batch's candidate ids per
+    signal) for the job's spot-check sample. Only the job asks; the import-time callers store this
+    function's whole result in their saved reports and must not gain an unbounded key."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
     from src.ingest.furniture import stub_verdict
@@ -246,11 +251,10 @@ def default_quarantine_candidates_batch(
         "already_quarantined": already_quarantined,
         "newly_written": newly_written,
         "by_reason": by_reason,
-        "ids_by_reason": ids_by_reason,
         "last_id": last_id,
         "done": done,
         "write": write,
-    }
+    } | ({"ids_by_reason": ids_by_reason} if collect_ids else {})
 
 
 class QuarantineJobManager:
@@ -438,6 +442,8 @@ class QuarantineJobManager:
                         break
                     with corpus_lease("quarantine"):
                         extra = {"include_stubs": True} if stubs else {}
+                        if work is default_quarantine_candidates_batch:
+                            extra["collect_ids"] = True  # the sample; a test seam keeps its own signature
                         r = work(session, after_id=after, limit=_BATCH, write=write,
                                  index_page_tiers=tiers or None,
                                  include_prose_gate=prose_gate, **extra)
@@ -491,7 +497,6 @@ class QuarantineJobManager:
             sf, wf = self._session_factory, self._work_fn
             cur, tot, done = self._cursor, self._total, self._done
             tally = dict(self._tally)
-            samples = {k: list(v) for k, v in self._samples.items()}
             w = self._write  # ALWAYS preserve the mode the paused run was in
             tiers = self._index_page_tiers  # ...and every other part of that mode
             gate = self._include_prose_gate
@@ -501,7 +506,6 @@ class QuarantineJobManager:
                          include_stubs=stubs)
         with self._lock:
             self._tally = tally
-            self._samples = samples
             self._save()
         return out
 

@@ -80,9 +80,26 @@ def test_a_signal_with_fewer_candidates_than_the_bound_keeps_all_of_them():
 
 def test_the_batch_returns_its_candidates_per_signal_matching_its_counts(world):
     with world() as s:
-        r = qj.default_quarantine_candidates_batch(s, include_stubs=True)
+        r = qj.default_quarantine_candidates_batch(s, include_stubs=True, collect_ids=True)
     assert {k: len(v) for k, v in r["ids_by_reason"].items()} == r["by_reason"]
     assert set(r["by_reason"]) == {"menu_stub", "paywall_stub"}
+
+
+def test_the_batch_returns_no_ids_by_reason_unless_the_job_asks(world):
+    """The import-time callers (restore-merge, newsletter import) store this function's WHOLE result in
+    their saved reports: the unbounded key must not reach them (found by the independent read)."""
+    with world() as s:
+        assert "ids_by_reason" not in qj.default_quarantine_candidates_batch(s, include_stubs=True)
+        ids = [r[0] for r in s.query(Article.id)]
+        assert "ids_by_reason" not in qj.default_quarantine_candidates_batch(s, article_ids=ids, write=True)
+
+
+def test_the_import_callers_do_not_ask_for_the_ids():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("src/backup/merge.py", "src/ingest/import_job.py"):
+        assert "collect_ids" not in (root / rel).read_text(encoding="utf-8"), rel
 
 
 def test_a_dry_run_keeps_a_bounded_sample_and_writes_nothing(world, tmp_path):
@@ -114,6 +131,32 @@ def test_a_paused_run_restored_after_a_restart_keeps_its_sample_and_a_resume_doe
     again.resume()  # continues from the saved cursor, over the rest of the corpus (nothing left)
     again._thread.join(30)
     assert again.sample_ids() == first.sample_ids()
+
+
+def test_a_chunk_merged_while_resume_is_still_returning_is_not_overwritten(world, tmp_path):
+    """Found by the independent read: resume() used to write back a copy of the sample it took BEFORE
+    start(), which erased any chunk the worker merged in between (the sample then depended on timing)."""
+    import time
+
+    class Slow(qj.QuarantineJobManager):
+        def start(self, **kw):
+            out = super().start(**kw)
+            time.sleep(0.5)  # the worker finishes its chunk before start() returns to resume()
+            return out
+
+    def work(session, **kw):
+        return {"scanned": 1, "quarantined": 1, "quarantined_ids": [6], "already_quarantined": 0,
+                "newly_written": 0, "by_reason": {"x": 1}, "ids_by_reason": {"x": [6]},
+                "last_id": 6, "done": True, "write": False}
+
+    mgr = Slow(state_path=tmp_path / "q.json")
+    mgr._state, mgr._cursor, mgr._total, mgr._done = "paused", 5, 10, 5
+    mgr._samples = {"x": [3]}
+    mgr._work_fn = work
+    mgr._session_factory = world
+    mgr.resume()
+    mgr._thread.join(30)
+    assert sorted(mgr.sample_ids()["x"]) == [3, 6]
 
 
 def test_a_fresh_run_starts_with_an_empty_sample(world, tmp_path):
@@ -172,8 +215,11 @@ def test_a_sampled_article_deleted_since_reads_as_no_longer_present(world, tmp_p
 
 def test_an_unknown_signal_or_no_run_reads_as_nothing_not_an_error(world, tmp_path, monkeypatch):
     mgr = qj.QuarantineJobManager(state_path=tmp_path / "none.json")
-    body = _client(monkeypatch, world, mgr).get("/api/quarantine/samples", params={"signal": "nope"}).json()
+    c = _client(monkeypatch, world, mgr)
+    body = c.get("/api/quarantine/samples", params={"signal": "nope"}).json()
     assert body["signals"]["nope"] == {"candidates": 0, "shown": 0, "rows": []}
+    none_at_all = c.get("/api/quarantine/samples").json()
+    assert none_at_all["signals"] == {} and "no sample is held" in none_at_all["note"]
 
 
 def test_the_endpoint_is_a_read_that_selects_no_body():

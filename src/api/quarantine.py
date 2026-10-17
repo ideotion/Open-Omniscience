@@ -72,7 +72,7 @@ def quarantine_status() -> dict:
 def quarantine_samples(
     signal: str | None = Query(None), limit: int = Query(20, ge=1)
 ) -> dict:
-    """A bounded spot-check of what the current (or last) run's rules picked: per signal, up to
+    """A bounded spot-check of what this process's current or last run's rules picked: per signal, up to
     ``limit`` articles' id, title and URL, and whether each is already marked. READ-ONLY and local:
     it never starts a run, writes, or fetches, and it returns no body, snippet or keywords. The sample
     is the candidates with the smallest hash of (signal, id), so the same corpus gives the same rows;
@@ -108,6 +108,10 @@ def quarantine_samples(
         session.close()
     return {
         "signals": out,
+        "note": None if out else (
+            "no sample is held: no run has been made since this process started, or the last one "
+            "finished or was cancelled before a restart (only a running or paused run is restored)"
+        ),
         "limit": n,
         "clamped": limit > SAMPLE_PER_SIGNAL,
         "method": (
