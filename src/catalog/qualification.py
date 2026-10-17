@@ -1016,7 +1016,7 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
 
     pending: list[tuple[int, str]] = []
     refused_outlets: set[str] = set()
-    heal: dict[int, str] = {}                    # id -> the key its own rss_url derives, only where the stored one differs
+    heal: set[int] = set()                       # ids whose stored key disagreed with their own rss_url at the scan: candidates only
     for sid, domain, tags, status, rss_url, stored_key in session.query(
         Source.id, Source.domain, Source.tags, Source.status, Source.rss_url, Source.feed_key
     ):
@@ -1033,7 +1033,7 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
         elif status == STATUS_UNQUALIFIED:
             pending.append((int(sid), outlet))
             if (stored_key or "") != _feed_key(rss_url):
-                heal[int(sid)] = _feed_key(rss_url)
+                heal.add(int(sid))
     pending_ids = [sid for sid, outlet in pending if outlet not in refused_outlets]
     counts["outlet_disqualified"] = len(pending) - len(pending_ids)
     if not pending_ids:
@@ -1073,7 +1073,17 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
         # ``rss_url`` on every ORM update, so the old per-row stamp also repaired a row whose stored key disagreed with its own feed
         # (a raw INSERT that bypassed the event); a bulk UPDATE fires no mapper event and would leave it. Same function the event
         # uses, same rows (the ones this call stamped), one executemany by primary key, and nothing is issued on a healthy store.
-        fixes = [{"id": sid, "feed_key": heal[sid]} for sid in stamped if sid in heal]
+        # The key is derived from the row's CURRENT ``rss_url``, read here inside the write window the UPDATEs opened: the scan's
+        # copy can be stale (another writer may commit a feed edit between the scan and the first UPDATE, and the ORM form
+        # re-loaded each row, so it never derived a key from an old URL). The scan only names the candidates.
+        candidates = [sid for sid in stamped if sid in heal]
+        fixes: list[dict] = []
+        for start in range(0, len(candidates), _ID_CHUNK):
+            for sid, rss_url, stored_key in session.query(Source.id, Source.rss_url, Source.feed_key).filter(
+                Source.id.in_(candidates[start:start + _ID_CHUNK])
+            ):
+                if (stored_key or "") != _feed_key(rss_url):
+                    fixes.append({"id": int(sid), "feed_key": _feed_key(rss_url)})
         if fixes:
             session.execute(update(Source), fixes)
         log_curated_stamps(session, stamped, now=now)

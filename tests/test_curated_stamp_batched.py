@@ -249,3 +249,35 @@ def test_a_healthy_store_issues_no_feed_key_write():
     writes = [(s, many) for s, many in stmts if s.lstrip().upper().startswith("UPDATE SOURCES")]
     assert len(writes) == 1 and not any(many for _, many in writes), writes     # the one chunk UPDATE; no executemany heal
     assert not any("feed_key" in s.split("WHERE", 1)[0] for s, _ in writes)
+
+
+def test_the_heal_derives_the_key_from_the_feed_the_row_holds_when_it_is_stamped(tmp_path, monkeypatch):
+    """The independent read found the heal used the ``rss_url`` the SCAN read: another writer's feed edit committed between the scan
+    and the first UPDATE (the scan opens no write window) was then undone in ``feed_key``, which the ORM form never did because it
+    re-loaded each row. Red without the re-read: ``feed_key`` kept the key of the OLD url."""
+    from src.database.feed_key import feed_key
+
+    engine = create_engine(f"sqlite:///{tmp_path}/race.db", future=True)
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, future=True, autoflush=False)
+    session = maker()
+    session.add(Source(name="X", domain="x.example", rss_url="https://x.example/a", tags=_CURATED, status=STATUS_UNQUALIFIED))
+    session.commit()
+    session.execute(Source.__table__.update().values(feed_key=""))     # a stored key that disagrees: a raw write bypassed the event
+    session.commit()
+    real_chunks = Q._id_chunks
+
+    def racing_chunks(ids, size=Q._ID_CHUNK):
+        other = maker()
+        row = other.query(Source).one()
+        row.rss_url = "https://x.example/b"                            # an ORM edit: the event derives the right key for it
+        other.commit()
+        other.close()
+        yield from real_chunks(ids, size)
+
+    monkeypatch.setattr(Q, "_id_chunks", racing_chunks)
+    assert stamp_curated_catalog(session, now=NOW)["stamped"] == 1
+    session.expire_all()
+    row = session.query(Source).one()
+    assert row.rss_url == "https://x.example/b"
+    assert row.feed_key == feed_key("https://x.example/b"), "the heal wrote the key of the url the scan saw"
