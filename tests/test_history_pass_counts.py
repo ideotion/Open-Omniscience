@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src.scheduler import runner
+from tests.js_source_helper import function_source
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -64,7 +65,7 @@ def test_every_phrase_of_the_line_ships_in_every_language(code):
 
 def test_every_phrase_the_page_uses_is_one_the_locale_test_knows():
     """A phrase added to the line without a locale key would fall back to English in eleven languages."""
-    body = _JS[_JS.index("function passBasisText("):_JS.index("async function renderHistory(")]
+    body = "\n".join(function_source(_JS, name) for name in ("passBasisText", "passBasisTitle", "passCountsLine"))
     used = set(re.findall(r't\("((?:[^"\\]|\\.)*)"\)', body)) | set(re.findall(r'tf\("((?:[^"\\]|\\.)*)"', body))
     used = {u.replace('\\"', '"') for u in used}
     assert used <= set(_KEYS), sorted(used - set(_KEYS))
