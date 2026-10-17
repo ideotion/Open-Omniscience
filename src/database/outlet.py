@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import String, cast, func, literal
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
@@ -28,11 +28,20 @@ sources list is a true count of feeds, and reads as a count of independent voice
 
 
 def outlet_expr(source_id_col: Any, domain_col: Any) -> Any:
-    """SQL: the outlet an article's source belongs to -- its domain, or ``source-<id>`` when the source row is gone.
+    """SQL: the outlet an article's source belongs to -- its domain, or the bare INTEGER source id when the source row is gone.
 
     For ``count(distinct ...)``: the domain column must come from a join to ``sources`` on the same row, and the
-    join must be OUTER where an article may lack a source, or the unmatched rows leave the count."""
-    return func.coalesce(domain_col, literal("source-").op("||")(cast(source_id_col, String)))
+    join must be OUTER where an article may lack a source, or the unmatched rows leave the count.
+
+    The two sides of the coalesce differ in type ON PURPOSE. This used to build ``'source-' || cast(id as text)`` for the
+    missing row, which is the same count (SQLite's ``DISTINCT`` keeps text and integer apart, so an orphan id ``123`` and a
+    domain spelt ``123`` stay two outlets, as ``source-123`` and ``123`` did) at the price of a string built and hashed for
+    every row of a scan: on a 2.34 M-mention window the outlet join read 6.47 s against 5.37 s without the string work
+    (``source_id`` alone: 4.28 s; ``plan-row-j/outlet-key-design-2026-10-17``). ``domain`` is NOT NULL, so the integer
+    only ever appears for a mention whose source row is gone. The value is only counted, never read back; the Python
+    spelling for display, ``outlet_key``, stays ``source-<id>``. SQLite only (the app is SQLite-only; another engine would
+    refuse to mix the two types)."""
+    return func.coalesce(domain_col, source_id_col)
 
 
 class OutletMap:
