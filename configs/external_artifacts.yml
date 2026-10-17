@@ -1125,7 +1125,7 @@ artifacts:
     title: SQLAlchemy function names the write-gate hold classifier recognises
     kind: runtime-coupling
     description: >
-      src/database/writer.py `_PHASE_AT` names six functions of SQLAlchemy (`sqlalchemy.pool.impl._do_get`, `sqlalchemy.util.queue.get`,
+      src/database/writer.py `_PHASE_AT` names seven functions of SQLAlchemy (`sqlalchemy.pool.impl._do_get`, `sqlalchemy.util.queue.get`,
       `sqlalchemy.engine.default.do_execute`, `do_executemany`, `do_execute_no_params`, `do_commit` and `do_rollback`; the pool-wait
       row also names our own `pool_reserve.acquire`). The watchdog reads a thread's stack with them once a hold of the single-writer
       gate is past HOLD_RECORD_S and records whether the holder was waiting for a pooled connection (`pool-wait`), inside the driver's

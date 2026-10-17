@@ -18,6 +18,9 @@ storage-events journal, as a sample (the watchdog, so a hold that never ends sti
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 import threading
 import time
 
@@ -344,3 +347,114 @@ def test_the_rows_a_select_hands_back_after_its_first_are_between_statements_and
     assert got["between_statements"] >= 0.5, f"the rows after the first were not left to between_statements: {got}"
     assert got["other_statement"] <= 0.4, f"only the first row's work belongs to the statement: {got}"
     assert "rows after the first" in se._METHOD, "the member must say what between_statements holds"
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, MemoryError])
+@pytest.mark.parametrize("measuring", ["_breakdown_locked", "_account_holder_locked"])
+def test_a_measurement_that_raises_in_the_release_never_keeps_the_gate(world, monkeypatch, measuring, failure):
+    """What the release measures once the gate is free (the long-hold split, which loops over the ledger, and the per-holder row, which every
+    outermost release adds) can be interrupted or run out of memory. Measured BEFORE the free, that left the gate owned with its depth at 0 for
+    good (a second ``release`` returns at the depth check and every other ``acquire`` queues), on the main-thread route ``write_lock`` ->
+    ``release`` of a script (the independent reads of #1429's and #1435's heads, findings L1 and M1). The release still raises (the signal is
+    not swallowed); the next writer is granted."""
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    original = getattr(writer.WriterGate, measuring)
+
+    def _raises(self, *args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(writer.WriterGate, measuring, _raises)
+    assert GATE.acquire()
+    with pytest.raises(failure):
+        GATE.release()
+    assert GATE._owner is None, "the release raised with the gate still owned: nothing frees it now"
+    monkeypatch.setattr(writer.WriterGate, measuring, original)  # the next writer's own release must not raise again
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 10**9)
+    granted: list[bool] = []
+
+    def other():
+        granted.append(GATE.acquire(timeout=2.0))
+        if granted[-1]:
+            GATE.release()
+
+    t = threading.Thread(target=other)
+    t.start()
+    t.join(5)
+    assert granted == [True], f"another writer could not take the gate after {measuring} raised in the release"
+
+
+#: What can allocate in a branch that only loads names and attributes: a call, arithmetic (a float is a new object), a container or a string built on
+#: the spot, a slice. A name or attribute load, a comparison and a store of an existing object do not.
+_ALLOCATES = (
+    ast.Call, ast.BinOp, ast.UnaryOp, ast.AugAssign, ast.Tuple, ast.List, ast.Dict, ast.Set, ast.JoinedStr,
+    ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Slice,
+)
+
+
+def _before_the_free(source: str) -> list[ast.stmt]:
+    """The statements of ``release``'s outermost branch (``self._depth == 0``) that run before it calls ``_wake_head``."""
+    tree = ast.parse(textwrap.dedent(source))
+    (branch,) = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.If) and isinstance(n.test, ast.Compare) and ast.unparse(n.test) == "self._depth == 0"
+    ]
+    before: list[ast.stmt] = []
+    for stmt in branch.body:
+        if ast.unparse(stmt) == "self._wake_head()":
+            return before
+        before.append(stmt)
+    pytest.fail("the outermost branch of release no longer calls _wake_head at its own level")
+
+
+def _allocating_before_the_free(source: str) -> list[str]:
+    found: list[str] = []
+    for stmt in _before_the_free(source):
+        # the annotation of a local (``x: dict[str, float] | None = None``) is never evaluated in a function, so its subscript and union are not instructions
+        unevaluated = {id(n) for a in ast.walk(stmt) if isinstance(a, ast.AnnAssign) for n in ast.walk(a.annotation)}
+        found += [ast.unparse(n) for n in ast.walk(stmt) if isinstance(n, _ALLOCATES) and id(n) not in unevaluated]
+    return found
+
+
+def test_nothing_that_can_allocate_runs_between_the_last_read_of_the_release_and_the_free():
+    """The branch of ``release`` that ends the outermost hold reads the holder, the start and the usage, clears the owner and calls
+    ``_wake_head``: nothing that can allocate before that point (the clock, the sums and the per-holder row come after). A MemoryError needs an
+    instruction that allocates, and the interrupt tests above reach the helpers by patching them, which cannot reach the clock's call or the
+    arithmetic; this pins the order for everything they cannot, and the test below shows it sees a tuple or a ``+=`` and not only a call."""
+    source = inspect.getsource(writer.WriterGate.release)
+    assigned = {ast.unparse(t) for st in _before_the_free(source) if isinstance(st, ast.Assign) for t in st.targets}
+    assert {"self._owner", "self._held_since"} <= assigned, "the gate must be cleared before the first call of the branch"
+    found = _allocating_before_the_free(source)
+    assert not found, f"something that can allocate runs before the gate is freed in release(): {found}"
+
+
+@pytest.mark.parametrize(
+    "mutant",
+    [
+        "self._account_holder_locked(holder, 0.0)",  # a call
+        "released = (holder, 0.0, started, usage0, None)",  # a tuple built on the spot
+        "self._total_held_s += 0.5",  # arithmetic making a float
+        'label = f"{holder}"',  # a string built on the spot
+    ],
+)
+def test_the_order_pin_sees_what_can_allocate_and_not_only_calls(mutant):
+    """The pin above is only worth having if it fails on the shapes it names: the head's source is rewritten with one statement placed just
+    before the free, and the pin must report it (the independent read of #1435's delta ran the second and third and found them passing)."""
+    lines = textwrap.dedent(inspect.getsource(writer.WriterGate.release)).splitlines()
+    (at,) = [i for i, line in enumerate(lines) if line.strip() == "self._wake_head()"]
+    indent = lines[at][: len(lines[at]) - len(lines[at].lstrip())]
+    lines.insert(at, indent + mutant)
+    assert _allocating_before_the_free("\n".join(lines)), f"the pin passed with {mutant!r} placed before the free"
+
+
+def test_the_exact_split_still_counts_the_statement_running_at_the_release(world, monkeypatch):
+    """The split is now measured after ``_held_since`` is cleared, so the release hands it the hold's start: a raw connection's commit, which
+    no end event closes, is still counted up to the release in the journal's exact figures, as it was before the move."""
+    eng, factory = world
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.0)
+    with eng.connect() as conn, writer.write_lock():
+        conn.exec_driver_sql("INSERT INTO sources (name, domain) VALUES ('r', 'r.example')")
+        conn.commit()
+        time.sleep(0.3)
+    (event_,) = se.diagnostics_member(10**9)["kinds"]["gate_hold"]["events"]
+    assert event_["seconds_by"]["commit"] >= 0.25, f"the commit open at the release was left out of the exact split: {event_['seconds_by']}"
