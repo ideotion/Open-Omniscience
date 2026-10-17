@@ -299,3 +299,15 @@ def test_store_fetched_strip_is_off_with_the_non_article_switch_off(monkeypatch)
 
     src = inspect.getsource(pipeline.store_fetched)
     assert "if skip_non_articles_enabled():" in src and "strip_furniture(doc.text)" in src
+
+
+def test_a_brief_of_short_sentences_or_wrapped_lines_is_spared():
+    prompt = "\n\nVil du bli abonnent?"
+    assert stub_verdict("Brannen startet i natt.\n\nTo personer ble skadet.\n\nPolitiet etterforsker saken." + prompt) is None
+    assert stub_verdict("Kommunen har vedtatt\nå stenge skolen fra\nneste høst etter debatt." + prompt) is None
+
+
+def test_closing_marks_and_an_agency_tag_do_not_hide_a_sentence():
+    for body in ('Er sagte: „Das ist alles nicht wahr.“', "He said the plan was not final.'",
+                 "Ordføreren sier saken er avgjort for i år. [NTB]"):
+        assert stub_verdict(body + "\n\nAllerede abonnent?") is None

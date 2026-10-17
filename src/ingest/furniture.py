@@ -50,14 +50,16 @@ PAYWALL_PHRASES = (
     "bereits abonnent", "déjà abonné",
 )
 _PROMPT_MAX_WORDS = 8
-# A paragraph of at least this many words that ends in terminal punctuation is a SENTENCE; a body that
-# has one is a short article that merely ends on a subscribe call, and is spared as a paywall_stub. A
+# Non-prompt text of at least this many words, with a paragraph ending in terminal punctuation, is
+# SENTENCES; a body that has them is a short article that merely ends on a subscribe call, and is spared as a paywall_stub. A
 # headline carries no terminal punctuation, so "headline + subscriber prompt + Log in" still is one.
 # FITTED TO TWO DATA POINTS ONLY (the Fjordabladet headline shape, and a 12-word brief with a closing
 # prompt); no corpus has measured it. The quarantine dry-run counts and samples are what should
 # confirm or move it, and stub signals only run when the operator switches them on after those counts.
 _PROMPT_SENTENCE_MIN_WORDS = 6
 _SENTENCE_END = ".!?…"
+# Closing marks and a trailing agency tag ("[NTB]") that may follow a sentence's final punctuation.
+_CLOSERS = re.compile(r"(?:\s*\[[^\]]{1,20}\]|[\s»\"”“’'\)\]\}›])+$")
 
 MENU_MIN_PARAGRAPHS = 12
 MENU_SHORT_WORDS = 6       # a menu entry; the page's own headline (9 words) may exceed it
@@ -141,7 +143,8 @@ def _has_prompt(paragraphs: list[str]) -> str | None:
     could: a complete short brief that ends on "subscribe?" is an article, not a stub (a teaser
     lead that is a full sentence is spared too, which is the safe error for a precision-first signal)."""
     found = None
-    sentence = False
+    ends_a_sentence = False
+    prose_words = 0
     for p in paragraphs:
         n = len(p.split())
         hit = None
@@ -154,7 +157,11 @@ def _has_prompt(paragraphs: list[str]) -> str | None:
         if hit:
             found = found or hit
         else:
-            sentence = sentence or (n >= _PROMPT_SENTENCE_MIN_WORDS and p.rstrip(" »\"”’)").endswith(tuple(_SENTENCE_END)))
+            prose_words += n
+            ends_a_sentence = ends_a_sentence or _CLOSERS.sub("", p).endswith(tuple(_SENTENCE_END))
+    # Judged over the whole non-prompt text, so a brief of short sentences or one wrapped over
+    # several lines is spared like a single long paragraph.
+    sentence = ends_a_sentence and prose_words >= _PROMPT_SENTENCE_MIN_WORDS
     return found if found and not sentence else None
 
 
