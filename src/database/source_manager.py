@@ -1052,10 +1052,13 @@ class SourceManager:
         added = 0
         updated = 0
         skipped = 0
-        # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling.
+        # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling. A record
+        # WITHOUT a feed is not a feed (it edits the oldest row), so it does not count (see ``upsert_sources``).
         feeds_of: dict[str, set[str]] = {}
         for source_data in sources_data:
-            feeds_of.setdefault(source_data.get("domain", ""), set()).add(feed_key(source_data.get("rss_url")))
+            keys = feeds_of.setdefault(source_data.get("domain", ""), set())
+            if feed_key(source_data.get("rss_url")):
+                keys.add(feed_key(source_data.get("rss_url")))
         records_of = {d: len(k) for d, k in feeds_of.items()}
 
         for source_data in sources_data:

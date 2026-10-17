@@ -119,3 +119,38 @@ def test_on_a_store_still_keyed_on_the_domain_a_second_feed_reads_as_the_existin
     res = upsert_sources(s, _sheet("https://o.example/ar.xml", "https://o.example/fa.xml", domain="o.example"))
     assert res["created"] == 0 and res["errors"] == []  # edits of the one row, as before row J
     assert s.query(Source).count() == 1
+
+
+V2 = "https://outlet.example/v2.xml"
+
+
+def test_a_csv_feedless_line_beside_one_corrected_feed_still_corrects_the_row(s):
+    """The independent read (L2): the empty feed key counted as a second feed, so the correction became a sibling and the
+    dead feed kept being polled. The seeder reads the same pair as a correction of the one row."""
+    SourceManager(s).create_source("Outlet", "outlet.example", rss_url=EN)
+    rows = [{"name": "Outlet", "domain": "outlet.example", "tags": "wire"},
+            {"name": "Outlet", "domain": "outlet.example", "rss_url": V2}]
+    res = upsert_sources(s, rows)
+    assert res["created"] == 0 and res["updated"] == 2
+    assert _feeds(s) == [V2]
+
+
+def test_a_yaml_feedless_line_beside_one_corrected_feed_still_corrects_the_row(s, tmp_path):
+    import yaml
+
+    SourceManager(s).create_source("Outlet", "outlet.example", rss_url=EN)
+    p = tmp_path / "x.yml"
+    p.write_text(yaml.safe_dump({"sources": [
+        {"name": "Outlet", "domain": "outlet.example"},
+        {"name": "Outlet", "domain": "outlet.example", "rss_url": V2}]}))
+    SourceManager(s).import_sources_from_yaml(str(p))
+    assert _feeds(s) == [V2]
+
+
+def test_a_feedless_line_does_not_stop_two_real_feeds_from_both_landing(s):
+    SourceManager(s).create_source("Outlet", "outlet.example", rss_url=EN)
+    rows = [{"name": "Outlet", "domain": "outlet.example", "tags": "wire"},
+            {"name": "Outlet", "domain": "outlet.example", "rss_url": EN},
+            {"name": "Outlet ar", "domain": "outlet.example", "rss_url": AR}]
+    res = upsert_sources(s, rows)
+    assert res["created"] == 1 and _feeds(s) == sorted([EN, AR])

@@ -283,10 +283,15 @@ def upsert_sources(session, rows: list[dict]) -> dict:
         by_domain.setdefault(d, []).append((sid, fk or ""))
 
     legacy = domain_keyed(session)
-    # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling.
+    # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling. A record WITHOUT a
+    # feed is not a feed: it edits the oldest row whatever else the sheet holds, so counting it made a feed-less line
+    # beside one corrected feed read as two feeds and turned the correction into a sibling (the seeder reads it as a
+    # correction).
     feeds_of: dict[str, set[str]] = {}
     for row in rows:
-        feeds_of.setdefault(row["domain"], set()).add(feed_key(row.get("rss_url")))
+        keys = feeds_of.setdefault(row["domain"], set())
+        if feed_key(row.get("rss_url")):
+            keys.add(feed_key(row.get("rss_url")))
     records_of = {d: len(k) for d, k in feeds_of.items()}
 
     for row in rows:

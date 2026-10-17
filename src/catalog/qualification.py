@@ -961,7 +961,12 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
       it does not launder a source this instance measured and refused;
     * a ``qualified`` row (measured, inherited, or stamped by an earlier boot) is not
       re-stamped, so the clock it already carries is never restarted;
-    * a discovered, cited or hand-added row is out of scope by provenance, whatever it reads.
+    * a discovered, cited or hand-added row is out of scope by provenance, whatever it reads;
+    * an ``unqualified`` row whose OUTLET (domain) has a feed this install measured ``disqualified`` is skipped too
+      (R100: a measurement does not give way to a catalogue stamp; R153: the same rule the restore and the seeder
+      apply). Without it a sibling feed made by an import or ``POST /sources`` under a disqualified outlet was
+      stamped ``qualified`` at the next boot with no measurement at all. It stays ``unqualified`` and is counted as
+      ``outlet_disqualified``.
 
     Idempotent: a stamped row stops matching (``qualified`` is not ``unqualified``), so every
     later boot is one indexed query and no writes. Runs AFTER ``apply_overlay`` at boot, so a
@@ -971,7 +976,9 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
     Returns counts, kept apart because they are different facts: ``stamped`` (this call),
     ``already_qualified`` (an earlier boot, a measurement, or an adoption), ``disqualified``
     (measured and refused; untouched), ``kept_local`` (an unqualified row that nevertheless
-    carries a judging attempt -- an anomaly this never overwrites), ``curated`` (the scope).
+    carries a judging attempt -- an anomaly this never overwrites), ``outlet_disqualified``
+    (an unjudged row left alone because another feed of its outlet is disqualified), ``curated``
+    (the scope).
     """
     from src.catalog.provenance_scope import curated_catalogue_domains, is_curated_tags
     from src.database.models import Source, SourceQualificationAttempt
@@ -992,12 +999,16 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
     # needs -- cheap next to the catalogue parse it sits beside at boot.
     domains = curated_catalogue_domains()
     counts = {"curated": 0, "stamped": 0, "already_qualified": 0, "disqualified": 0,
-              "kept_local": 0}
-    pending_ids: list[int] = []
+              "kept_local": 0, "outlet_disqualified": 0}
+    pending: list[tuple[int, str]] = []
+    refused_outlets: set[str] = set()
     for sid, domain, tags, status in session.query(
         Source.id, Source.domain, Source.tags, Source.status
     ):
-        if not (is_curated_tags(tags) or str(domain or "").strip().lower() in domains):
+        outlet = str(domain or "").strip().lower()
+        if status == STATUS_DISQUALIFIED:
+            refused_outlets.add(outlet)   # any row, in scope or not: the outlet's measurement is the outlet's
+        if not (is_curated_tags(tags) or outlet in domains):
             continue
         counts["curated"] += 1
         if status == STATUS_QUALIFIED:
@@ -1005,7 +1016,9 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
         elif status == STATUS_DISQUALIFIED:
             counts["disqualified"] += 1
         elif status == STATUS_UNQUALIFIED:
-            pending_ids.append(int(sid))
+            pending.append((int(sid), outlet))
+    pending_ids = [sid for sid, outlet in pending if outlet not in refused_outlets]
+    counts["outlet_disqualified"] = len(pending) - len(pending_ids)
     if not pending_ids:
         return counts
     judged = {

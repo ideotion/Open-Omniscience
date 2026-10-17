@@ -8,6 +8,7 @@ sibling feed starts from the outlet's measured verdict -- recorded as inherited,
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
@@ -112,14 +113,14 @@ def test_a_disqualified_outlet_hands_its_verdict_to_a_new_sibling_and_says_it_wa
     seed_sources(s, [_e("Outlet EN", "en")])
     _judged(s, "Outlet EN", STATUS_DISQUALIFIED)
     result = seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
-    assert result["sibling_verdicts"] == {"inherited": 1, "disqualified": 1, "left_to_own_trial": 0}
+    assert result["sibling_verdicts"] == {"inherited": 1, "disqualified": 1, "left_unjudged": 0}
     ar = s.query(Source).filter_by(name="Outlet AR").one()
     assert ar.status == STATUS_DISQUALIFIED and ar.qualified_at is None
     kinds = [a.verdict for a in s.query(SourceQualificationAttempt).filter_by(source_id=ar.id)]
     assert kinds == [VERDICT_INHERITED]  # never a 'disqualified' attempt this install did not measure
 
 
-def test_a_qualified_outlet_hands_nothing_on_the_new_feed_gets_its_own_trial(s):
+def test_a_qualified_outlet_hands_nothing_on_the_new_feed_starts_unjudged(s):
     """R153: the qualified direction is never handed on, curated stamp or measured."""
     for version in ("oo-criteria-9", CURATED_CRITERIA_VERSION):
         s.query(SourceQualificationAttempt).delete()
@@ -128,7 +129,7 @@ def test_a_qualified_outlet_hands_nothing_on_the_new_feed_gets_its_own_trial(s):
         seed_sources(s, [_e("Outlet EN", "en")])
         _judged(s, "Outlet EN", STATUS_QUALIFIED, version=version)
         result = seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
-        assert result["sibling_verdicts"] == {"inherited": 0, "disqualified": 0, "left_to_own_trial": 1}
+        assert result["sibling_verdicts"] == {"inherited": 0, "disqualified": 0, "left_unjudged": 1}
         ar = s.query(Source).filter_by(name="Outlet AR").one()
         assert ar.status == STATUS_UNQUALIFIED and ar.qualification_criteria_version is None
         assert not s.query(SourceQualificationAttempt).filter_by(source_id=ar.id).count()
@@ -269,3 +270,27 @@ def test_a_refusal_lapses_when_the_kept_lean_is_removed_and_a_sync_keeps_the_rec
     out = seed_sources(s, [dict(row_entry, name="Outlet (renamed)"), spectrum])["tag_merge"]
     assert out["tags_merged"] == 1 and "lean-left" in s.query(Source).one().tags.split(",")
     assert "refused_tags" not in json.loads(s.query(Source).one().catalog_baseline)
+
+
+def test_a_first_seed_of_more_than_999_domains_runs_on_a_sqlite_that_caps_variables_at_999():
+    """The independent read (F3): the sibling step bound every created domain in one IN, which raised "too many SQL
+    variables" on a first boot (about 6,000 domains) and skipped the legal seed, the overlay and the curated stamp for
+    that boot. The cap is set on the real connection, so a regression is an OperationalError, not a comment."""
+    from sqlalchemy import event
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+
+    @event.listens_for(engine, "connect")
+    def _cap(dbapi_con, _record):
+        dbapi_con.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+    try:
+        entries = [{"name": f"Outlet {i}", "domain": f"outlet{i}.example", "rss_url": f"https://outlet{i}.example/a.xml"}
+                   for i in range(1200)]
+        result = seed_sources(session, entries)
+        assert result["created"] == 1200
+        assert result["sibling_verdicts"]["inherited"] == 0
+    finally:
+        session.close()

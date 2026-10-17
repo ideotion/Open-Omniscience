@@ -68,9 +68,10 @@ def db():
 
 
 def _src(db, domain, *, tags="news,via:curated", status=STATUS_UNQUALIFIED,
-         qualified_at=None, criteria_version=None, enabled=True):
+         qualified_at=None, criteria_version=None, enabled=True, rss_url=None):
     s = Source(name=domain, domain=domain, tags=tags, status=status, enabled=enabled,
-               qualified_at=qualified_at, qualification_criteria_version=criteria_version)
+               qualified_at=qualified_at, qualification_criteria_version=criteria_version,
+               rss_url=rss_url)
     db.add(s)
     db.commit()
     return s
@@ -869,3 +870,49 @@ def test_the_curated_domain_set_is_real_and_bounded():
     # Read once per process: the files ship with the app and cannot change while it runs,
     # and this sits on the boot path beside the seeder, which parses the same files.
     assert curated_catalogue_domains() is domains
+
+
+# ------------------------------------------------ a measured disqualification is the OUTLET's (R100, R153)
+
+def test_a_sibling_feed_of_a_disqualified_outlet_is_not_stamped_qualified(db):
+    """The independent read of R153 (F1): a feed made by an import or POST /sources beside a feed this install
+    measured and refused was stamped curated-qualified at the next boot with no measurement, and collected.
+    The ruling admits the catalogue; it does not launder a source this install measured and refused, and that
+    is the OUTLET's measurement, not one row's."""
+    from src.catalog.qualification import is_collectable
+
+    refused = _src(db, "outlet.example", status=STATUS_DISQUALIFIED, rss_url="https://outlet.example/en.xml")
+    sibling = _src(db, "outlet.example", rss_url="https://outlet.example/ar.xml")
+    other = _src(db, "other.example", rss_url="https://other.example/a.xml")
+    out = stamp_curated_catalog(db, now=NOW)
+    for s in (refused, sibling, other):
+        db.refresh(s)
+    assert sibling.status == STATUS_UNQUALIFIED and _attempts(db, sibling) == []
+    assert other.status == STATUS_QUALIFIED          # the rule is per outlet, not a general refusal
+    assert out["outlet_disqualified"] == 1 and out["stamped"] == 1 and out["disqualified"] == 1
+    assert {s.id for s in db.query(Source) if is_collectable(s.enabled, s.status)} == {other.id}
+
+
+def test_the_outlets_measurement_counts_even_when_the_refused_row_is_out_of_scope(db):
+    """The refused feed need not carry the catalogue tag itself (a hand-added one); it is still the outlet's."""
+    _src(db, "outlet.example", tags="news", status=STATUS_DISQUALIFIED, rss_url="https://outlet.example/en.xml")
+    sibling = _src(db, "outlet.example", rss_url="https://outlet.example/ar.xml")
+    out = stamp_curated_catalog(db, now=NOW)
+    db.refresh(sibling)
+    assert sibling.status == STATUS_UNQUALIFIED and out["outlet_disqualified"] == 1 and out["stamped"] == 0
+
+
+def test_a_feed_added_under_a_disqualified_catalogue_outlet_stays_out_of_collection_after_the_boot_stamp(db):
+    """The probe's own path, end to end: a shipped-catalogue domain, its feed disqualified here, then a sibling made
+    through the add endpoint's manager, then the boot stamp."""
+    from src.catalog.provenance_scope import curated_catalogue_domains
+    from src.catalog.qualification import is_collectable
+    from src.database.source_manager import SourceManager
+
+    domain = sorted(curated_catalogue_domains())[0]
+    refused = _src(db, domain, tags="news", status=STATUS_DISQUALIFIED, rss_url=f"https://{domain}/en.xml")
+    SourceManager(db).create_source("Sibling", domain, rss_url=f"https://{domain}/ar.xml")
+    stamp_curated_catalog(db, now=NOW)
+    assert [s.id for s in db.query(Source) if is_collectable(s.enabled, s.status)] == []
+    db.refresh(refused)
+    assert refused.status == STATUS_DISQUALIFIED
