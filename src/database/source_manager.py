@@ -41,6 +41,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 # Import database models
+from src.database.feed_key import feed_key
 from src.database.models import (
     Source,
     SourceGroup,
@@ -1051,9 +1052,11 @@ class SourceManager:
         added = 0
         updated = 0
         skipped = 0
-        records_of: dict[str, int] = {}
+        # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling.
+        feeds_of: dict[str, set[str]] = {}
         for source_data in sources_data:
-            records_of[source_data.get("domain", "")] = records_of.get(source_data.get("domain", ""), 0) + 1
+            feeds_of.setdefault(source_data.get("domain", ""), set()).add(feed_key(source_data.get("rss_url")))
+        records_of = {d: len(k) for d, k in feeds_of.items()}
 
         for source_data in sources_data:
             domain = source_data.get("domain", "")

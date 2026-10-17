@@ -76,7 +76,13 @@ _LEAN_TAGS_FLOOR = 150
 #: recovered). The boot figures below count the default seed's own list, which since R152 carries the generated legal catalogue
 #: too (the legal seed registered those rows a moment later anyway): +205 rows, +5 merged, +14 designed legal_collapse. Lower it when an entry is fixed; never raise it to admit one.
 _UNREGISTERED_BUDGET = 16
-_BOOT_UNREGISTERED_BUDGET = 33  # 19 + the 14 legal_collapse entries of the generated legal catalogue (ruled 2026-07-17, designed)
+#: What the boot list leaves out for a reason that is NOT designed: a feed-less duplicate of a feed-less host, or the same feed
+#: named twice. Protects against a catalogue edit that adds one: lower it when an entry is fixed, never raise it to admit one.
+_BOOT_UNREGISTERED_BUDGET = 19
+#: The DESIGNED collapse (ruled 2026-07-17): the legal catalogue carries a host as two rows when it publishes both a codes
+#: portal and a gazette, and registration collapses them. Counted apart so a designed collapse can never hide a real loss
+#: inside the one number, and a real one can never read as designed. 14 are the generated legal catalogue's own.
+_BOOT_LEGAL_COLLAPSE = 14
 _BOOT_ROWS = 6616  # 6,411 + the 205 generated legal rows seed_default_sources now builds as seed_legal_sources does (R152)
 _BOOT_MERGED = 245  # 240 + 5 generated legal entries that describe a host that already has a feed row
 _BOOT_LEAN_RECOVERED = 189
@@ -291,7 +297,9 @@ def test_the_boot_catalogue_registers_the_language_services_and_names_what_stays
 
     plan = plan_registration(boot_catalog)
     assert plan.counts["rows"] == _BOOT_ROWS and plan.counts["merged"] == _BOOT_MERGED
-    assert len(plan.unregistered) == _BOOT_UNREGISTERED_BUDGET
+    designed = [r for _e, r in plan.unregistered if r == "legal_collapse"]
+    assert len(designed) == _BOOT_LEGAL_COLLAPSE
+    assert len(plan.unregistered) - len(designed) == _BOOT_UNREGISTERED_BUDGET
     assert all(reason for _e, reason in plan.unregistered)  # every one is named with a reason
     assert plan.counts["rows"] + plan.counts["merged"] + plan.counts["unregistered"] == len(boot_catalog)
     # the thirty BBC language services are rows now, not losers of the first

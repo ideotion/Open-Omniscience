@@ -64,6 +64,25 @@ def test_a_csv_with_one_record_still_reads_a_changed_feed_as_the_same_source(s):
     assert _feeds(s) == ["https://outlet.example/en-v2.xml"]
 
 
+def test_a_csv_that_repeats_one_corrected_row_still_corrects_the_row_it_is_not_a_sibling(s):
+    SourceManager(s).create_source("Outlet en", "outlet.example", rss_url=EN)
+    new = "https://outlet.example/en-v2.xml"
+    res = upsert_sources(s, _sheet(new, new))
+    assert res["errors"] == [] and res["created"] == 0 and res["updated"] == 2
+    assert _feeds(s) == [new]
+
+
+def test_a_yaml_that_repeats_one_corrected_row_still_corrects_the_row(s, tmp_path):
+    import yaml
+
+    SourceManager(s).create_source("Outlet en", "outlet.example", rss_url=EN)
+    new = "https://outlet.example/en-v2.xml"
+    p = tmp_path / "x.yml"
+    p.write_text(yaml.safe_dump({"sources": [{"name": "Outlet en", "domain": "outlet.example", "rss_url": new}] * 2}))
+    SourceManager(s).import_sources_from_yaml(str(p))
+    assert _feeds(s) == [new]
+
+
 def test_a_yaml_of_two_feeds_into_a_store_holding_one_keeps_both(s, tmp_path):
     import yaml
 

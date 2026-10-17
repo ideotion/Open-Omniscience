@@ -1,14 +1,20 @@
-"""A new feed of an outlet starts from the outlet's verdict (R145 (2), row J, S05-10 J3).
+"""A new feed of an outlet starts from the outlet's DISQUALIFICATION, and from nothing else (R145 (2), R153, row J, S05-10 J3).
 
-Keying a source on ``(domain, feed)`` makes a second feed of an outlet a NEW row. The outlet's existing row may already
-carry a verdict this install reached, and a migration changes no verdict: a measured ``qualified`` or ``disqualified``
-on the outlet's oldest row is copied onto each sibling the seeder creates. The copy is recorded for what it is -- an
-``inherited`` attempt and an admission-audit row (the same two the shipped overlay writes), never a ``qualified``
-attempt this install did not measure -- so the re-verification clock and the undo behave as they do for any adopted stamp.
+Keying a source on ``(domain, feed)`` makes a second feed of an outlet a NEW row. If any measured feed of the outlet is
+``disqualified`` on this install, that verdict is handed to the new sibling: a known-bad outlet is not re-trialled
+feed by feed, and a feed the catalogue adds later must not slip past a disqualification the operator's own
+measurement reached. The copy is recorded for what it is -- an ``inherited`` attempt and an admission-audit row (the
+same two the shipped overlay writes), never a ``disqualified`` attempt this install did not measure -- so the
+re-verification clock and the undo behave as they do for any adopted stamp.
 
-What is NOT copied: a stamp the curated catalogue carries by ruling (``CURATED_CRITERIA_VERSION``). That one is a fact
-about a row's PROVENANCE, applied by ``stamp_curated_catalog`` to the rows that have it; copying it would make a
-spectrum-catalogue feed read as hand-vetted. A sibling that already holds any verdict keeps it (local wins, both ways).
+NOTHING IS HANDED ON IN THE QUALIFIED DIRECTION (R153, Q44 = A). A qualified outlet says nothing about a feed it has not
+fetched: the new feed gets its own trial, like any unjudged source. (Until 2026-10-17 a measured ``qualified`` was copied
+too, which put an untested feed into collection on a sibling's word.) The restore merge applies the same rule to a
+backup's unmatched feed (``src.backup.merge._plan_sibling_feeds``), so two paths cannot disagree about it.
+
+A catalogue-curated stamp (``CURATED_CRITERIA_VERSION``) is a fact about a row's PROVENANCE and was never a verdict; it is
+not a candidate here at all now that only ``disqualified`` travels. A sibling that already holds any verdict keeps it
+(local wins, both ways).
 """
 
 from __future__ import annotations
@@ -18,7 +24,6 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from src.catalog.qualification import (
-    CURATED_CRITERIA_VERSION,
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
@@ -30,56 +35,46 @@ from src.database.models import Source
 
 
 def inherit_sibling_verdicts(session: Session, created: list[Source], *, now: datetime | None = None) -> dict:
-    """Copy the outlet's measured verdict onto each of ``created`` that reads ``unqualified``. Returns the tally."""
+    """Hand the outlet's disqualification to each of ``created`` that reads ``unqualified``. Returns the tally.
+
+    ``left_to_own_trial`` counts the new siblings whose outlet holds a measured ``qualified`` and no disqualification:
+    nothing is handed on, and the number says how many feeds start from a trial of their own."""
     if not created:
-        return {"inherited": 0, "qualified": 0, "disqualified": 0, "skipped_curated_stamp": 0}
+        return {"inherited": 0, "disqualified": 0, "left_to_own_trial": 0}
     now = now or datetime.now(UTC)
     domains = sorted({r.domain for r in created if r.domain})
-    measured: dict[str, list[Source]] = {}
-    curated_domains: set[str] = set()
+    disqualified: dict[str, list[Source]] = {}
+    qualified_domains: set[str] = set()
     for row in (
         session.query(Source)
         .filter(Source.domain.in_(domains), Source.status.in_((STATUS_QUALIFIED, STATUS_DISQUALIFIED)))
         .order_by(Source.id)
     ):
-        # A catalogue-curated stamp is provenance, not a verdict: it is not a candidate, and it does not hide a MEASURED
-        # verdict on a later row of the outlet (the restore merge reads it the same way, R148).
-        if row.status == STATUS_QUALIFIED and row.qualification_criteria_version == CURATED_CRITERIA_VERSION:
-            curated_domains.add(row.domain)
-            continue
-        measured.setdefault(row.domain, []).append(row)
-    skipped_curated = 0
+        if row.status == STATUS_DISQUALIFIED:
+            disqualified.setdefault(row.domain, []).append(row)
+        else:
+            qualified_domains.add(row.domain)
+    left_alone = 0
     inherited: list[Source] = []
-    counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     for row in created:
         if (row.status or STATUS_UNQUALIFIED) != STATUS_UNQUALIFIED:
             continue
-        older = [r for r in measured.get(row.domain, []) if r.id < row.id]
-        # THE STRICTER VERDICT WINS (R150, the same rule as a restored sibling): any measured disqualified feed of the
-        # outlet decides; otherwise the oldest measured row does.
-        src = next((r for r in older if r.status == STATUS_DISQUALIFIED), older[0] if older else None)
+        # THE STRICTER VERDICT WINS (R150): any measured disqualified feed of the outlet decides, the oldest of them.
+        src = next((r for r in disqualified.get(row.domain, []) if r.id < row.id), None)
         if src is None:
-            if row.domain in curated_domains:
-                skipped_curated += 1
+            if row.domain in qualified_domains:
+                left_alone += 1
             continue
         prior_enabled, prior_status = row.enabled, row.status
-        row.status = src.status
-        if src.status == STATUS_QUALIFIED:
-            row.qualified_at = src.qualified_at
-            row.qualification_criteria_version = src.qualification_criteria_version
-        else:
-            row.qualified_at = None
-            row.qualification_criteria_version = None
+        row.status = STATUS_DISQUALIFIED
+        row.qualified_at = None
+        row.qualification_criteria_version = None
         record_admission(
             session, row, prior_enabled=prior_enabled, prior_status=prior_status, now=now,
             verdict=VERDICT_INHERITED, criteria_version=src.qualification_criteria_version or "",
         )
-        counts[src.status] += 1
         inherited.append(row)
     if inherited:
         log_inherited_stamps(session, inherited, now=now)
         session.commit()
-    return {
-        "inherited": len(inherited), "qualified": counts[STATUS_QUALIFIED],
-        "disqualified": counts[STATUS_DISQUALIFIED], "skipped_curated_stamp": skipped_curated,
-    }
+    return {"inherited": len(inherited), "disqualified": len(inherited), "left_to_own_trial": left_alone}

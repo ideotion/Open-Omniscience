@@ -108,30 +108,30 @@ def _judged(s, name, status, version="oo-criteria-9"):
     return row
 
 
-def test_a_new_sibling_inherits_the_outlets_measured_verdict_and_says_it_was_inherited(s):
-    seed_sources(s, [_e("Outlet EN", "en")])
-    _judged(s, "Outlet EN", STATUS_QUALIFIED)
-    result = seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
-    assert result["sibling_verdicts"]["inherited"] == 1
-    ar = s.query(Source).filter_by(name="Outlet AR").one()
-    assert ar.status == STATUS_QUALIFIED and ar.qualification_criteria_version == "oo-criteria-9"
-    kinds = [a.verdict for a in s.query(SourceQualificationAttempt).filter_by(source_id=ar.id)]
-    assert kinds == [VERDICT_INHERITED]  # never a 'qualified' attempt this install did not measure
-
-
-def test_a_disqualified_outlet_hands_its_verdict_to_a_new_sibling_too(s):
+def test_a_disqualified_outlet_hands_its_verdict_to_a_new_sibling_and_says_it_was_inherited(s):
     seed_sources(s, [_e("Outlet EN", "en")])
     _judged(s, "Outlet EN", STATUS_DISQUALIFIED)
-    seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
-    assert s.query(Source).filter_by(name="Outlet AR").one().status == STATUS_DISQUALIFIED
-
-
-def test_a_curated_stamp_is_not_a_verdict_to_hand_on(s):
-    seed_sources(s, [_e("Outlet EN", "en")])
-    _judged(s, "Outlet EN", STATUS_QUALIFIED, version=CURATED_CRITERIA_VERSION)
     result = seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
-    assert result["sibling_verdicts"] == {"inherited": 0, "qualified": 0, "disqualified": 0, "skipped_curated_stamp": 1}
-    assert s.query(Source).filter_by(name="Outlet AR").one().status == STATUS_UNQUALIFIED
+    assert result["sibling_verdicts"] == {"inherited": 1, "disqualified": 1, "left_to_own_trial": 0}
+    ar = s.query(Source).filter_by(name="Outlet AR").one()
+    assert ar.status == STATUS_DISQUALIFIED and ar.qualified_at is None
+    kinds = [a.verdict for a in s.query(SourceQualificationAttempt).filter_by(source_id=ar.id)]
+    assert kinds == [VERDICT_INHERITED]  # never a 'disqualified' attempt this install did not measure
+
+
+def test_a_qualified_outlet_hands_nothing_on_the_new_feed_gets_its_own_trial(s):
+    """R153: the qualified direction is never handed on, curated stamp or measured."""
+    for version in ("oo-criteria-9", CURATED_CRITERIA_VERSION):
+        s.query(SourceQualificationAttempt).delete()
+        s.query(Source).delete()
+        s.commit()
+        seed_sources(s, [_e("Outlet EN", "en")])
+        _judged(s, "Outlet EN", STATUS_QUALIFIED, version=version)
+        result = seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet AR", "ar")])
+        assert result["sibling_verdicts"] == {"inherited": 0, "disqualified": 0, "left_to_own_trial": 1}
+        ar = s.query(Source).filter_by(name="Outlet AR").one()
+        assert ar.status == STATUS_UNQUALIFIED and ar.qualification_criteria_version is None
+        assert not s.query(SourceQualificationAttempt).filter_by(source_id=ar.id).count()
 
 
 def test_a_fresh_install_gives_no_sibling_a_verdict_it_does_not_have(s):
@@ -183,7 +183,7 @@ def split(value):
 
 
 def test_the_seeder_reads_a_curated_oldest_row_past_to_a_measured_disqualified_one(s):
-    """The restore merge hands a sibling the outlet's MEASURED verdict even when the oldest row only carries the
+    """The restore merge hands a sibling the outlet's MEASURED disqualification even when the oldest row only carries the
     catalogue's stamp; the seeder must not give it nothing (boot would then stamp it qualified and collect it)."""
     seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet DE", "de")])
     _judged(s, "Outlet EN", STATUS_QUALIFIED, version=CURATED_CRITERIA_VERSION)
@@ -193,7 +193,7 @@ def test_the_seeder_reads_a_curated_oldest_row_past_to_a_measured_disqualified_o
 
 
 def test_the_stricter_verdict_wins_for_a_new_sibling(s):
-    """R150 in the seeder as in the restore: en (oldest) qualified, de disqualified -> the new sibling is disqualified."""
+    """R150/R153 in the seeder as in the restore: en (oldest) qualified, de disqualified -> the new sibling is disqualified."""
     seed_sources(s, [_e("Outlet EN", "en"), _e("Outlet DE", "de")])
     _judged(s, "Outlet EN", STATUS_QUALIFIED)
     _judged(s, "Outlet DE", STATUS_DISQUALIFIED)

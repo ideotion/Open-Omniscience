@@ -283,9 +283,11 @@ def upsert_sources(session, rows: list[dict]) -> dict:
         by_domain.setdefault(d, []).append((sid, fk or ""))
 
     legacy = domain_keyed(session)
-    records_of: dict[str, int] = {}
+    # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling.
+    feeds_of: dict[str, set[str]] = {}
     for row in rows:
-        records_of[row["domain"]] = records_of.get(row["domain"], 0) + 1
+        feeds_of.setdefault(row["domain"], set()).add(feed_key(row.get("rss_url")))
+    records_of = {d: len(k) for d, k in feeds_of.items()}
 
     for row in rows:
         domain = row["domain"]
