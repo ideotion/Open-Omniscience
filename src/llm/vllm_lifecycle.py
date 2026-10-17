@@ -1868,7 +1868,7 @@ def _preserve_failed_log_result(pid: int | None, returncode: int) -> tuple[str |
 
 _COPY_PENDING_REASON = "the log of this exit is still being copied with the passphrase taken out"
 #: pid -> the thread copying that exit's log. A start waits for these before it truncates server.log.
-_exit_copies: dict[int, "threading.Thread"] = {}
+_exit_copies: dict[int, threading.Thread] = {}
 
 
 def _start_exit_copy(pid: int, code: int) -> None:

@@ -13,7 +13,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.monitoring import exit_evidence as ee
-from src.monitoring import forensics, native_inflight as ni
+from src.monitoring import forensics
+from src.monitoring import native_inflight as ni
 from src.monitoring import session_hwm as hwm
 
 HEADROOM = 2415

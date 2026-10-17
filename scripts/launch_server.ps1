@@ -44,15 +44,26 @@ function Add-Row([string]$Path, $Row) {
         return $true
     } catch { return $false }
 }
+function Add-RowText([string]$Path, [string]$Text) {
+    try {
+        [System.IO.File]::AppendAllText($Path, $Text, $Utf8)
+        return $true
+    } catch { return $false }
+}
 
 # THE EVIDENCE FILES AND THE LAUNCHERS THAT SHARE THEM (R173). Every append and every trim of one file happens under ONE named mutex for that file
 # (the scripts/launch.sh counterpart), and a trim writes a temp file of its own and replaces the file with it. Before, the trim read the whole file
 # and wrote it back in place: a row appended in between was lost, an append during the rewrite failed on the file lock and was swallowed, and a
 # half-written line was left in the file (measured with 8 launchers at once: 4 of 48 exit rows lost, 2 torn lines).
-# WHAT THE WAIT PROTECTS: a row is never lost to wait for the mutex. When the wait runs out the row is still appended and only the trim is skipped (the
-# file grows until the next trim that gets the lock). $RecLockWaitMs is the longest append-plus-trim hold measured under 8 launchers at once, rounded up
-# (144.9 ms, 17 Oct, cold PowerShell 7; tests/test_launcher_records_race.py pins that it is not below that measurement). A mutex whose owner died is abandoned and is taken over.
-$RecLockWaitMs = 150
+# NO ROW IS EVER WRITTEN WITHOUT THE MUTEX (R174). The launcher waits for it only $RecLockWaitMs, so it never blocks its own start or stop; when that runs
+# out it hands the row to a detached child process and carries on at once. The child waits for the same mutex with no time bound, then does the locked
+# append and the trim if due; a holder that dies abandons the mutex, so the child ends once the holder does. THE ONE WAY A ROW CAN STILL BE LATE: a holder
+# that is alive and stuck for ever; the child waits with it. Late is not lost while the machine runs; a machine that goes down before the child writes
+# loses the row. A deferred row can land after later rows: the readers order by the row's own time. The child leaves no file behind (the row travels in its
+# command line). WHAT THE WAIT PROTECTS: the time the launcher itself is willing to wait before it defers. $RecLockWaitMs is the longest append-plus-trim hold
+# measured under the heaviest load tried (8 launchers at once beside 8 busy loops on 4 CPUs: 515.0 ms, cold PowerShell 7, 17 Oct), rounded up to 520
+# (tests/test_launcher_records_race.py pins that the constant is not below that measurement).
+$RecLockWaitMs = 520
 function Get-RecMutex([string]$Path) {
     try {
         $sha = [System.Security.Cryptography.SHA1]::Create()
@@ -60,21 +71,42 @@ function Get-RecMutex([string]$Path) {
         return New-Object System.Threading.Mutex($false, $name)
     } catch { return $null }
 }
-# Append $Row to $Path and, when the file then has more than $Max lines, keep its newest $Keep lines. Returns whether the row was appended.
+# Append $Row to $Path and, when the file then has more than $Max lines, keep its newest $Keep lines. Returns whether the row was appended or handed on.
 function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep) {
+    $text = ($Row | ConvertTo-Json -Compress) + "`n"
     $mutex = Get-RecMutex $Path
+    if (-not $mutex) { return (Add-RowText $Path $text) }   # no mutex can be made at all: as before
     $held = $false
     try {
-        if ($mutex) {
-            try { $held = $mutex.WaitOne($RecLockWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { $held = $false }
-        }
-        $ok = Add-Row $Path $Row
-        if ($held -and $Max -gt 0) { Limit-Rows $Path $Max $Keep }
+        try { $held = $mutex.WaitOne($RecLockWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowText $Path $text) }
+        if (-not $held) { return (Start-DeferredRow $Path $text $Max $Keep) }
+        $ok = Add-RowText $Path $text
+        if ($ok -and $Max -gt 0) { Limit-Rows $Path $Max $Keep }
         return $ok
     } finally {
         if ($held) { try { $mutex.ReleaseMutex() } catch { } }
-        if ($mutex) { $mutex.Dispose() }
+        $mutex.Dispose()
     }
+}
+# The row of a launcher that could not get the mutex in time: a detached child process waits for it with no bound, then appends and trims. Returns $true
+# when the child was started, $false when it could not be (the row is then not written: it is never written without the mutex).
+function Start-DeferredRow([string]$Path, [string]$Text, [int]$Max, [int]$Keep) {
+    try {
+        $fns = (@("Add-RowText", "Get-RecMutex", "Limit-Rows") | ForEach-Object { "function $_ {" + (Get-Command $_ -CommandType Function).ScriptBlock.ToString() + "}" }) -join "`n"
+        $b64 = { param([string]$s) [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($s)) }
+        $child = "`$Utf8 = New-Object System.Text.UTF8Encoding(`$false)`n" + $fns + "`n" +
+            "`$dec = { param(`$s) [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(`$s)) }`n" +
+            "`$path = & `$dec '" + (& $b64 $Path) + "'; `$text = & `$dec '" + (& $b64 $Text) + "'`n" +
+            "`$m = Get-RecMutex `$path`n" +
+            "if (`$m) { `$held = `$false; try { `$m.WaitOne() | Out-Null; `$held = `$true } catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { }`n" +
+            "  if (`$held) { try { [void](Add-RowText `$path `$text); if ($Max -gt 0) { Limit-Rows `$path $Max $Keep } } finally { try { `$m.ReleaseMutex() } catch { } } } }"
+        $enc = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($child))
+        $exe = (Get-Process -Id $PID).Path
+        $argv = @("-NoProfile", "-NonInteractive", "-EncodedCommand", $enc)
+        try { Start-Process -FilePath $exe -ArgumentList $argv -WindowStyle Hidden | Out-Null }
+        catch { Start-Process -FilePath $exe -ArgumentList $argv | Out-Null }
+        return $true
+    } catch { return $false }
 }
 function Limit-Rows([string]$Path, [int]$Max, [int]$Keep) {
     $tmp = "$Path.tmp.$PID"
@@ -149,7 +181,7 @@ while ($true) {
         if ($kept -lt $Keep) {
             if ($writable) {
                 # each row makes its own attempt: one that fails (another launcher held the file) does not switch the later rows off (R173)
-                [void](Add-Row $stderrRecord ([ordered]@{ schema = "oo-launcher-stderr-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; line = $line }))
+                [void](Add-RowTrimmed $stderrRecord ([ordered]@{ schema = "oo-launcher-stderr-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; line = $line }) 0 0)
             }
             $kept++
         } else { $over++ }

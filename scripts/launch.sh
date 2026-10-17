@@ -96,33 +96,41 @@ oo_data_dir() {
     fi
 }
 
-# --- the evidence files and the launchers that share them (R173, 17 Oct) ---------------------------------------------------------------------
+# --- the evidence files and the launchers that share them (R173, R174, 17 Oct) -----------------------------------------------------------------
 # launcher_exits.jsonl, launcher_stops.jsonl and launcher_stderr.jsonl are written and trimmed by every launcher that runs, and a launcher keeps
 # writing for as long as its server lives. A trim is "newest N lines to a temp file, rename over the file": an append between the two steps went
 # to the replaced file, two trims shared one temp name, and the stderr filter held the file open for the whole life of the server, so a trim by
-# launcher's trim sent every later row of a live one to a file nobody could read (measured: 8 of 96 exit rows, 69 of 96 stop rows, and all 3 stderr
+# another launcher sent every later row of a live one to a file nobody could read (measured: 8 of 96 exit rows, 69 of 96 stop rows, and all 3 stderr
 # rows of the launcher whose server was alive, in tests/test_launcher_records_race.py). Now every append and every trim of one file happens under
 # ONE lock for that file (flock where there is one, else a directory made with mkdir that holds its owner's pid, so a lock whose owner died is taken
 # over and never waited on), a trim writes to a temp name of its own, and the filter appends one row at a time.
-# WHAT THE WAIT PROTECTS: a row is never lost to wait for a lock. When the wait runs out the row is still appended and only the trim is skipped
-# (the file grows until the next trim that gets the lock). The launcher never blocks its own start or stop on this lock longer than the wait.
-# OO_REC_LOCK_WAIT_MS is the longest append-plus-trim hold measured under 8 launchers at once (27.3 ms, 17 Oct), rounded up to 30 (tests/test_launcher_records_race.py
-# pins that the constant is not below that measurement).
-OO_REC_LOCK_WAIT_MS=30
+# NO ROW IS EVER WRITTEN WITHOUT THE LOCK (R174). The launcher waits for the lock only OO_REC_LOCK_WAIT_MS, so it never blocks its own start or stop;
+# when that runs out it hands the row to a detached child and carries on at once. The child waits for the same lock with no time bound, then does the
+# locked append and the trim if due. A holder that dies releases the lock (the kernel for flock, a dead-pid takeover for the mkdir lock), so the child
+# ends once the holder does. THE ONE WAY A ROW CAN STILL BE LATE: a holder that is alive and stuck for ever; the child waits with it. Late is not lost
+# while the machine runs; a machine that goes down before the child writes loses the row. A deferred row can land after later rows: the readers order
+# by the row's own time, never by its place in the file.
+# WHAT THE WAIT PROTECTS: the time the launcher itself is willing to wait before it defers. OO_REC_LOCK_WAIT_MS is the longest append-plus-trim hold
+# measured under the heaviest load tried (8 launchers at once beside 8 busy loops on 4 CPUs: 92.4 ms, 17 Oct), rounded up to 100
+# (tests/test_launcher_records_race.py pins that the constant is not below that measurement).
+OO_REC_LOCK_WAIT_MS=100
 
 oo_pid_alive() {
     if [ -d /proc/self ]; then [ -d "/proc/$1" ]; else kill -0 "$1" 2>/dev/null; fi
 }
 
-# oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run),
-# else CMD's own status.
+# oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run), 98 when no
+# lock can be made at all (CMD did not run), else CMD's own status. With OO_REC_LOCK_FOREVER=1 the wait has no bound (the deferred child).
 oo_rec_locked() {
-    local f="$1" rc=0 d tries owner
+    local f="$1" rc=0 d tries owner wait_s
     shift
     if command -v flock >/dev/null 2>&1; then
-        { : >> "$f.lock"; } 2>/dev/null || return 99
+        { : >> "$f.lock"; } 2>/dev/null || return 98
+        wait_s="-w $(awk -v ms="$OO_REC_LOCK_WAIT_MS" 'BEGIN { printf "%.3f", ms / 1000 }')"
+        [ "${OO_REC_LOCK_FOREVER:-}" != 1 ] || wait_s=""
         (
-            flock -w "$(awk -v ms="$OO_REC_LOCK_WAIT_MS" 'BEGIN { printf "%.3f", ms / 1000 }')" 9 || exit 99
+            # shellcheck disable=SC2086
+            flock $wait_s 9 || exit 99
             "$@"
         ) 9>>"$f.lock" 2>/dev/null || rc=$?
         return "$rc"
@@ -131,7 +139,7 @@ oo_rec_locked() {
     tries=$(( OO_REC_LOCK_WAIT_MS / 10 + 1 ))
     while :; do
         if mkdir "$d" 2>/dev/null; then
-            printf '%s\n' "$$" > "$d/pid" 2>/dev/null || true
+            printf '%s\n' "${BASHPID:-$$}" > "$d/pid" 2>/dev/null || true
             "$@" || rc=$?
             rm -rf "$d" 2>/dev/null || true
             return "$rc"
@@ -142,8 +150,12 @@ oo_rec_locked() {
         if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
             mv "$d" "$d.dead.$$" 2>/dev/null && rm -rf "$d.dead.$$" 2>/dev/null
         fi
-        tries=$((tries - 1))
-        [ "$tries" -gt 0 ] || return 99
+        if [ "${OO_REC_LOCK_FOREVER:-}" != 1 ]; then
+            tries=$((tries - 1))
+            [ "$tries" -gt 0 ] || return 99
+        elif [ ! -d "$f.lock.d" ] && [ ! -w "$(dirname "$f")" ]; then
+            return 98  # the folder cannot be written: no lock will ever be made
+        fi
         sleep 0.01 2>/dev/null || sleep 1
     done
 }
@@ -170,14 +182,27 @@ _oo_rec_trim() {
     fi
     return 0
 }
-# oo_rec_append FILE ROW MAX KEEP: 0 appended, 1 the append failed
+# The row of a launcher that could not get the lock in time (R174): a detached child waits for the lock with no bound and then does the locked
+# append and the trim. Nothing is written to a file by this function, and the child leaves no file behind. It ignores the signals a closing window
+# sends. (The mkdir lock records the child's own pid where bash has BASHPID; on a bash without it, the pid of the launcher.)
+_oo_rec_defer() {
+    (
+        exec < /dev/null > /dev/null 2>&1; trap '' HUP INT TERM PIPE
+        OO_REC_LOCK_FOREVER=1
+        rc=0
+        oo_rec_locked "$1" _oo_rec_append_trim "$1" "$2" "$3" "$4" || rc=$?
+        [ "$rc" -ne 98 ] || printf '%s\n' "$2" >> "$1" 2>/dev/null
+        exit 0
+    ) &
+}
+# oo_rec_append FILE ROW MAX KEEP: 0 appended or handed on, 1 the append failed
 oo_rec_append() {
     local rc=0
     oo_rec_locked "$1" _oo_rec_append_trim "$1" "$2" "$3" "$4" || rc=$?
-    if [ "$rc" -eq 99 ]; then
-        printf '%s\n' "$2" >> "$1" 2>/dev/null || return 1
-        return 0
-    fi
+    case "$rc" in
+        99) _oo_rec_defer "$1" "$2" "$3" "$4"; return 0 ;;
+        98) printf '%s\n' "$2" >> "$1" 2>/dev/null || return 1; return 0 ;;  # no lock can be made at all (a folder that cannot be written): as before
+    esac
     return "$rc"
 }
 oo_rec_trim() {
@@ -191,7 +216,7 @@ oo_rec_append_stdin() {
 }
 # The text of the helpers, for the filter: awk starts the appending shell itself, and a function exported through the environment does not reach it under
 # every awk and sh (measured: the one-true-awk lost every row, silently, with a close status of 0), so the shell is handed the definitions to eval.
-oo_rec_lib() { declare -f oo_pid_alive oo_rec_locked _oo_rec_append_trim _oo_rec_trim oo_rec_append oo_rec_append_stdin; }
+oo_rec_lib() { declare -f oo_pid_alive oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
 # --- end of the evidence file helpers ------------------------------------------------------------------------------------------------------
 
 # How the server ended when this launcher did not stop it (2026-09-26, the daily-crash

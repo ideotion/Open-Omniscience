@@ -457,7 +457,7 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
         return None
     from src.monitoring.secret_scrub import scrubbed
 
-    shown: list[str] = []
+    entries: list[tuple[str, int, str]] = []  # (the row's own stamp, its place in the file, the line): a row handed on by a launcher that could not get the lock in time can land after later rows (R174), so the order is the rows' own time, the place in the file only breaks a tie
     summary: dict[str, Any] | None = None
     found = rejected = 0
     pid_only = False
@@ -482,7 +482,8 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started
             rejected += 1
             continue
         found += 1
-        shown.append(scrubbed(str(text)))
+        entries.append((rec["at"] if isinstance(rec.get("at"), str) else "", found, scrubbed(str(text))))
+    shown = [x[2] for x in sorted(entries, key=lambda e: (e[0], e[1]))]
     if summary is None and not shown and not rejected:
         return None
     kept = _count(summary.get("kept_lines")) if summary else None

@@ -12,6 +12,7 @@ PowerShell), a trim writes to a temp name of its own, the filter appends one row
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -32,10 +33,11 @@ posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the launcher is
 _PWSH = os.environ.get("OO_PWSH") or shutil.which("pwsh")
 _needs_pwsh = pytest.mark.skipif(not _PWSH or os.name == "nt", reason="no PowerShell 7 here (OO_PWSH)")
 
-#: The longest append-plus-trim hold measured with 8 launchers at once on 17 Oct (bash 27.3 ms over 320 calls; PowerShell 7, cold, 144.9 ms over 96).
-#: WHAT THE WAIT PROTECTS: the time a launcher is willing to wait to trim. A wait below the longest hold would time out on every contended trim.
-MEASURED_BASH_HOLD_MS = 27.3
-MEASURED_PS_HOLD_MS = 144.9
+#: The longest append-plus-trim hold measured on 17 Oct under the heaviest load tried: 8 launchers at once beside 8 busy loops on 4 CPUs (bash 92.4 ms
+#: over 72 holds; PowerShell 7, cold, 515.0 ms over 48; unloaded they were 27.3 ms and 144.9 ms). WHAT THE WAIT PROTECTS: the time a launcher is willing to
+#: wait for the lock before it hands its row to a deferred writer (a wait below the longest hold defers more rows, and costs latency only, never a row).
+MEASURED_BASH_HOLD_MS = 92.4
+MEASURED_PS_HOLD_MS = 515.0
 MSG = "Fatal Python error: Aborted"
 
 
@@ -213,24 +215,65 @@ def _helpers(tmp: Path, *, no_flock: bool) -> tuple[Path, dict[str, str]]:
     return h, env
 
 
+def _wait_for(pred, secs: float = 20) -> bool:
+    end = time.monotonic() + secs
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return pred()
+
+
 @posix_only
-def test_a_lock_held_by_a_live_owner_costs_the_trim_and_not_the_row(tmp_path):
-    h, env = _helpers(tmp_path, no_flock=True)
+@pytest.mark.parametrize("no_flock", [False, True], ids=["flock", "mkdir-lock"])
+def test_a_row_that_times_out_is_written_under_the_lock_after_the_holder_trims_never_before(tmp_path, no_flock):
+    """R174. A holder takes the lock and trims slowly (tail ... sleep ... mv). A second launcher, 0.3 s in, cannot get the lock inside its wait. On the
+    R173 build it appended WITHOUT the lock, between the holder's tail and its mv, and the mv took the row away (the loaded 8-way sweep lost 15 of 240).
+    Now it returns at once, having handed the row to a detached child that waits for the lock, and the row is in the file after the trim, once."""
+    h, env = _helpers(tmp_path, no_flock=no_flock)
     f = tmp_path / "x.jsonl"
     _seed(f, 60)
-    (tmp_path / "x.jsonl.lock.d").mkdir()
-    holder = subprocess.Popen(["sleep", "30"])
+    slow = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; _slow() {{ tail -n 20 "$1" > "$1.tmp.slow"; sleep 1.5; mv -f "$1.tmp.slow" "$1"; }}; '
+            f'oo_rec_locked "{f}" _slow "{f}"')
+    holder = subprocess.Popen(["bash", "-c", slow], env=env)
     try:
-        (tmp_path / "x.jsonl.lock.d" / "pid").write_text(str(holder.pid), encoding="utf-8")
+        time.sleep(0.4)  # the holder is inside its slow trim
         t = time.monotonic()
-        subprocess.run(["bash", "-c", f'. "{h}"; oo_rec_append "{f}" \'{{"pid":1}}\' 40 20'], env=env, check=True, timeout=30)
+        subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; oo_rec_append "{f}" \'{{"pid":7}}\' 40 20'], env=env, check=True, timeout=30)
         took = time.monotonic() - t
+        assert took < 1.0, f"the launcher handed the row on and went; it did not wait for the holder ({took:.2f} s)"
+        assert {"pid": 7} not in _rows(f)[0], "nothing is written while the lock is held by someone else"
+        holder.wait(timeout=30)
+        assert _wait_for(lambda: {"pid": 7} in _rows(f)[0]), "the deferred row never landed"
     finally:
         holder.kill()
         holder.wait()
+    time.sleep(0.5)
     rows = _rows(f)[0]
-    assert rows[-1] == {"pid": 1} and len(rows) == 61, "the row is appended and the trim is skipped"
-    assert took < 2.0, f"the wait is the measured hold, not a guess ({took:.2f} s)"
+    assert sum(1 for r in rows if r == {"pid": 7}) == 1 and len(rows) == 21, "once, after the holder's trim (20 kept) and before any later trim is due"
+    assert sorted(x.name for x in tmp_path.iterdir() if x.name.startswith("x.jsonl")) in (["x.jsonl", "x.jsonl.lock"], ["x.jsonl"]), "the child left no file behind"
+
+
+@posix_only
+@pytest.mark.parametrize("no_flock", [False, True], ids=["flock", "mkdir-lock"])
+def test_a_holder_that_is_stuck_for_ever_makes_the_row_late_and_a_killed_holder_releases_it(tmp_path, no_flock):
+    """The ONE way a row is late (R174): the holder is alive and does not let go. The row waits with it, is not lost, and is written the moment the holder dies."""
+    h, env = _helpers(tmp_path, no_flock=no_flock)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 5)
+    holder = subprocess.Popen(["bash", "-c", f'. "{h}"; oo_rec_locked "{f}" sleep 300'], env=env, start_new_session=True)
+    try:
+        time.sleep(0.5)
+        subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; oo_rec_append "{f}" \'{{"pid":8}}\' 40 20'], env=env, check=True, timeout=30)
+        time.sleep(1.5)
+        assert {"pid": 8} not in _rows(f)[0], "late while the holder lives"
+        os.killpg(holder.pid, signal.SIGKILL)  # the holder and what it was running die together, as a killed launcher does
+        holder.wait()
+        assert _wait_for(lambda: {"pid": 8} in _rows(f)[0], 30), "written once the holder is gone"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()
 
 
 @posix_only
@@ -254,6 +297,7 @@ def test_the_wait_is_not_below_what_was_measured_and_is_named_for_it():
     ps = int(re.search(r"^\$RecLockWaitMs = (\d+)$", LAUNCH_PS1.read_text(encoding="utf-8"), re.M).group(1))
     assert sh >= MEASURED_BASH_HOLD_MS and sh - MEASURED_BASH_HOLD_MS < 10, "rounded up from the measurement, not a guess"
     assert ps >= MEASURED_PS_HOLD_MS and ps - MEASURED_PS_HOLD_MS < 10
+    assert "4 CPUs" in LAUNCH_SH.read_text(encoding="utf-8") and "4 CPUs" in LAUNCH_PS1.read_text(encoding="utf-8"), "the load the number was measured under is named"
     assert "WHAT THE WAIT PROTECTS" in LAUNCH_SH.read_text(encoding="utf-8")
 
 
@@ -411,3 +455,53 @@ def test_a_powershell_trim_removes_the_temp_file_of_a_dead_launcher_and_keeps_a_
         live.kill()
         live.wait()
     assert names == [f"launcher_exits.jsonl.tmp.{live.pid}"], names
+
+
+def test_the_reader_orders_stderr_lines_by_the_rows_own_time_not_by_their_place_in_the_file(tmp_path, monkeypatch):
+    """R174: a row handed on by a launcher that could not get the lock lands after later rows. The lines shown are in the order they were printed."""
+    from src.monitoring import exit_evidence as ee
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    d = tmp_path / "diagnostics"
+    d.mkdir()
+    rows = [{"schema": "oo-launcher-stderr-1", "at": at, "pid": 4242, "boot_id": None, "line": line}
+            for at, line in (("2026-10-17T10:00:03Z", "free(): invalid pointer"), ("2026-10-17T10:00:01Z", "Fatal Python error: Aborted"),
+                             ("2026-10-17T10:00:02Z", "free(): invalid size"))]
+    (d / ee.LAUNCHER_STDERR).write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    got = ee.launcher_stderr(4242, None, "2026-10-17T09:00:00Z")
+    assert ee.STDERR_LINES_SHOWN == 2
+    assert got["lines"] == ["free(): invalid size", "free(): invalid pointer"], "the newest two by the rows' own time, oldest first (file order would show 'Fatal ...' and 'invalid size')"
+
+
+@_needs_pwsh
+def test_a_powershell_row_that_times_out_is_written_by_a_detached_child_under_the_mutex_after_the_holder_lets_go(tmp_path):
+    import hashlib
+
+    data = tmp_path / "data"
+    f = data / "diagnostics" / "launcher_exits.jsonl"
+    _seed(f, 5)
+    name = "OOLauncherRecords-" + hashlib.sha1(str(f).lower().encode("utf-8")).hexdigest().upper()
+    holder = tmp_path / "hold.ps1"
+    holder.write_text(f'$m = New-Object System.Threading.Mutex($false, "{name}"); [void]$m.WaitOne(); Set-Content "{tmp_path}/held" 1; Start-Sleep 4; $m.ReleaseMutex()',
+                      encoding="utf-8")
+    copy = tmp_path / "w.ps1"
+    copy.write_text(LAUNCH_PS1.read_text(encoding="utf-8").replace("$RecLockWaitMs = 520", "$RecLockWaitMs = 100"), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("OO_")}
+    h = subprocess.Popen([_PWSH, "-NoProfile", "-File", str(holder)], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        assert _wait_for(lambda: (tmp_path / "held").exists(), 30), "the holder never took the mutex"
+        server = tmp_path / "server"
+        _exe(server, "#!/usr/bin/env bash\nexit 3\n")
+        marker = tmp_path / "m"
+        subprocess.run([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(server), "-Marker", str(marker), "-DataDir", str(data)], env=env,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        pid = int(marker.read_text(encoding="utf-8"))
+        assert pid not in {r.get("pid") for r in _rows(f)[0]}, "nothing is written while the mutex is held by someone else"
+        h.wait(timeout=30)
+        assert _wait_for(lambda: pid in {r.get("pid") for r in _rows(f)[0]}, 60), "the deferred row never landed"
+    finally:
+        h.kill()
+        h.wait()
+    time.sleep(1.0)
+    assert sum(1 for r in _rows(f)[0] if r.get("pid") == pid) == 1
+    assert sorted(x.name for x in f.parent.iterdir()) == ["launcher_exits.jsonl", "launcher_stderr.jsonl"], "the child left no file behind"
