@@ -252,11 +252,12 @@ def test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_reso
 
     lookups: list[object] = []
     real_getaddrinfo = socket.getaddrinfo
+    was_installed = airplane.is_installed()  # an earlier fetch in this process may have installed the connect guard, and it stays
     saved = airplane._orig_getaddrinfo
-    airplane._orig_getaddrinfo = lambda host, *a, **k: lookups.append(host) or []  # type: ignore[assignment]
-    airplane.install_airplane_socket_guard()
-    activate_kill_switch()
     try:
+        airplane._orig_getaddrinfo = lambda host, *a, **k: lookups.append(host) or []  # type: ignore[assignment]
+        airplane.install_airplane_socket_guard()
+        activate_kill_switch()
         with pytest.raises(IT.AirplaneRefusal) as err:
             IT.fetch_items(["Q1"], session_factory=_factory(db))  # the PRODUCTION getter
         assert "airplane mode" in str(err.value)
@@ -271,7 +272,9 @@ def test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_reso
         # The spy goes back FIRST: uninstall copies ``_orig_getaddrinfo`` onto ``socket.getaddrinfo``, so with the spy still in place the
         # whole process kept a resolver that answers an empty list for every name (it made a later test's loopback connect fail).
         airplane._orig_getaddrinfo = saved  # type: ignore[assignment]
-        airplane.uninstall_airplane_socket_guard()
+        airplane.uninstall_airplane_socket_guard()  # also disarms airplane mode
+        if was_installed:
+            airplane.ensure_connect_guard_installed()  # back to what it was: installed, not armed
     assert socket.getaddrinfo is real_getaddrinfo, "the test left a stand-in resolver on socket.getaddrinfo for the rest of the process"
     assert lookups == []
     assert db.query(WikidataItem).count() == 0
