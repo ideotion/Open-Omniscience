@@ -43,10 +43,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger(__name__)
 
@@ -121,9 +121,7 @@ def _save(state_path: Path, payload: dict | None) -> None:
         if payload is None:
             state_path.unlink(missing_ok=True)
             return
-        tmp = state_path.with_name(state_path.name + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=1, sort_keys=True), "utf-8")
-        os.replace(tmp, state_path)
+        atomic_replace(state_path, json.dumps(payload, indent=1, sort_keys=True), fsync=False)
     except Exception:  # noqa: BLE001 - see the docstring
         _LOG.debug("collect capacity: could not persist state at %s", state_path)
 
