@@ -26,7 +26,11 @@ tree, so the guard itself is checked to see what it claims to see.
 
 WHAT THE WALKS DO NOT SEE, said so: a dynamic import whose module name is computed, a call deferred out
 of the ``with`` block (a lambda or a thread target created under the lock and run after it), and a
-rebinding of the lock name to something that does not lock (the runtime tests catch that one).
+rebinding of the lock name to something that does not lock (the runtime tests catch that one). Nor do they
+see a third-party library that reaches libxml2 by itself: feedparser asks for the libxml2 SAX driver first
+(``feedparser.api.PREFERRED_XML_PARSERS == ["drv_libxml2"]``) and uses it wherever the libxml2 Python
+bindings import (a system or distro Python; a pip venv has no ``drv_libxml2``), in every collector worker and
+outside the lock. So "nothing else in ``src/`` can reach libxml2" is a statement about the app's own imports.
 
 A regression must FAIL here, not hang the run: the autouse fixture below turns a lock a previous test
 left held (a deadlocked or leaked holder) into a failure of the next test within a second.
@@ -309,6 +313,33 @@ def test_the_trees_of_a_raising_extraction_are_freed_inside_the_lock_and_the_tra
     assert isinstance(context, RuntimeError) and "primary" in [f.name for f in traceback.extract_tb(context.__traceback__)]
 
 
+def test_a_tree_held_by_an_attribute_errors_object_is_freed_inside_the_lock_and_the_message_is_kept(monkeypatch):
+    """Clearing frames is not enough: since Python 3.10 an ``AttributeError`` holds the object whose lookup failed (``obj``), and on an
+    lxml element that is the element and so its whole document. trafilatura, htmldate and justext do their work on elements, so one such
+    error in the primary and one in the fallback would leave both trees alive until the caller drops the exception, after the lock."""
+    _Tree.owned_at_release = []
+
+    def primary(*_a, **_kw):
+        tree = _Tree()
+        tree.no_such_attribute  # noqa: B018 - the interpreter raises AttributeError with obj=tree
+
+    def fallback(*_a, **_kw):
+        tree = _Tree()
+        tree.another_missing_attribute  # noqa: B018
+
+    monkeypatch.setattr(trafilatura, "bare_extraction", primary)
+    monkeypatch.setattr(trafilatura, "extract", fallback)
+    with pytest.raises(AttributeError) as caught:
+        extract_article(_HTML, url="https://example.org/a")
+    assert _Tree.owned_at_release == [True, True], (
+        f"a tree held by an AttributeError was not freed while the lock was held -- saw {_Tree.owned_at_release}"
+    )
+    # what a log shows is kept: the message, the frames, and the chain
+    text = "".join(traceback.format_exception(caught.value))
+    assert "another_missing_attribute" in text and "no_such_attribute" in text and "in fallback" in text and "in primary" in text, text
+    assert caught.value.name == "another_missing_attribute"
+
+
 # --------------------------------------------------------------------------- #
 # 3. nothing else in the app reaches libxml2
 # --------------------------------------------------------------------------- #
@@ -328,7 +359,9 @@ _ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
     # The diagnostics bundle's machine block reads etree.LIBXML_VERSION, LIBXML_COMPILED_VERSION and LIBXSLT_VERSION (module constants)
     # so a crash report names the libxml2 the process ran. It parses nothing and builds no tree; the module (the native-libraries
     # reader of the diagnostics follow-on) is not in the tree before that bundle, and an entry for a file that is absent allows nothing.
-    "src/monitoring/native_libs.py": frozenset({"lxml"}),
+    # The allowance is the ``etree`` module (``from lxml import etree``), by name: ``from lxml import html`` is refused there. The walk
+    # reads imports, not calls, so a parse call on ``etree`` in that file would not be seen here; the file is read by hand when it changes.
+    "src/monitoring/native_libs.py": frozenset({"lxml.etree"}),
 }
 
 
@@ -366,7 +399,14 @@ def _libxml_reach(source: str, path: str) -> list[str]:
                     found.append(f"{path}:{node.lineno} imports src.ingest.extract whole (its locked helpers become reachable)")
         elif isinstance(node, ast.ImportFrom):
             # ``from . import x`` has module None and level > 0: relative, never one of ours.
-            check(node.module or "", node.lineno, "imports from")
+            module = node.module or ""
+            if node.level == 0 and "." not in module and module in _LIBXML_ROOTS and module not in allowed:
+                # ``from lxml import html`` takes the SUBMODULE ``lxml.html``: judge each name, or an allowance for ``lxml.etree`` would
+                # carry ``html`` (a parser) with it. A file allowed the whole package (extract.py: trafilatura) is not affected.
+                for alias in node.names:
+                    check(f"{module}.{alias.name}", node.lineno, "imports from")
+            else:
+                check(module, node.lineno, "imports from")
             if node.module == "bs4" and any(a.name == "BeautifulSoup" and a.asname for a in node.names):
                 found.append(f"{path}:{node.lineno} imports BeautifulSoup under another name (the walk reads calls by name)")
             if path != _EXTRACT_PATH:
@@ -420,8 +460,12 @@ def test_no_module_other_than_extract_reaches_libxml2():
     [
         ("import lxml.html\n", "src/a.py", "imports lxml.html"),
         ("from lxml import etree\n", "src/a.py", "imports from lxml"),
-        # the machine block's allowance is for the root module's constants, not for a parser
+        # the machine block's allowance is for the etree module's constants, not for a parser
         ("import lxml.html\n", "src/monitoring/native_libs.py", "imports lxml.html"),
+        ("from lxml import html\nhtml.fromstring(x)\n", "src/monitoring/native_libs.py", "imports from lxml.html"),
+        ("from lxml import html as h\n", "src/monitoring/native_libs.py", "imports from lxml.html"),
+        ("import lxml\nlxml.etree.fromstring(x)\n", "src/monitoring/native_libs.py", "imports lxml"),
+        ("from lxml import etree, html\n", "src/monitoring/native_libs.py", "imports from lxml.html"),
         ("import trafilatura\n", "src/a.py", "imports trafilatura"),
         ("from htmldate import find_date\n", "src/a.py", "imports from htmldate"),
         ("from trafilatura.meta import reset_caches\n", "src/a.py", "imports from trafilatura.meta"),
@@ -455,6 +499,8 @@ def test_the_walk_sees_each_way_in(source, path, expect):
     ("source", "path"),
     [
         ("from trafilatura.meta import reset_caches\n", "src/scheduler/hygiene.py"),
+        ("from lxml import etree\nprint(etree.LIBXML_VERSION)\n", "src/monitoring/native_libs.py"),
+        ("from lxml.etree import LIBXML_VERSION\n", "src/monitoring/native_libs.py"),
         ("import trafilatura\nfrom trafilatura.settings import Document\n", "src/ingest/extract.py"),
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x, 'html.parser')\n", "src/a.py"),
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x, features='html.parser')\n", "src/a.py"),

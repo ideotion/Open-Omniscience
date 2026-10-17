@@ -570,7 +570,7 @@ artifacts:
     title: trafilatura (article extraction), floor 2.1.0
     kind: runtime-coupling
     description: >
-      src/ingest/extract.py runs every libxml2 parse the app makes (the article extractor: trafilatura, and inside it lxml, htmldate and
+      src/ingest/extract.py runs every parse of the app's article HTML (the article extractor: trafilatura, and inside it lxml, htmldate and
       justext) under one process-wide lock. trafilatura 2.0.x shares a mutable lxml Element("body") default between every Document() (issue #840:
       intermittent SEGV or SIGABRT in concurrent extraction with 50 to 100+ threads, fixed by PR #856, released in 2.1.0 on 2026-06-07),
       so the floor is the first release without it. The floor is NOT what the 2026-10-14 abort is attributed to: the machine that aborted

@@ -160,7 +160,7 @@ def test_the_lockfile_pins_urllib3_inside_the_range_the_filter_was_read_for():
 
 
 def test_trafilatura_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
-    """``src/ingest/extract.py`` runs every libxml2 parse the app makes under one lock because libxml2 aborted the collector (2026-10-14).
+    """``src/ingest/extract.py`` runs every parse of the app's article HTML under one lock because libxml2 aborted the collector (2026-10-14).
     ``trafilatura>=1.12`` admitted 2.0.x, whose ``Document`` shared one mutable lxml ``Element`` between threads (issue #840, fixed in
     2.1.0). The floor is written in three places (pyproject, the registry, the lock file) and nothing else ties them."""
     entry = next(a for a in R.load_registry() if a["id"] == "trafilatura-floor")

@@ -87,15 +87,21 @@ def extensive_date_search_enabled() -> bool:
 #: ``extract_article``). Who called ``abort()`` and why is NOT established (``docs/ledger/OPEN_QUEUE.md``,
 #: "THE lxml SIGABRT"): no lxml 5.2-6.1.3, libxml2 2.12-2.15 or trafilatura report names it, and the
 #: one loose match (trafilatura #840, fixed in 2.1.0) is a release older than the one that aborted.
-#: What is known is that every libxml2 parse, tree walk and tree release of the app's HTML happens
-#: inside this one function's call tree, so a lock around it makes concurrent use of libxml2
-#: impossible from the app, whatever the fault was. It covers the whole call, not only the parse: the
+#: What is known is that every parse, tree walk and tree release of the app's article HTML
+#: (trafilatura, and inside it lxml, htmldate and justext) happens inside this one function's call
+#: tree, so a lock around it makes concurrent use of libxml2 by that extraction impossible, whatever
+#: the fault was. NOT covered: a library that reaches libxml2 on its own, which the walk in
+#: ``tests/test_extract_lock.py`` cannot see. feedparser asks for libxml2's SAX driver first
+#: (``PREFERRED_XML_PARSERS``) and uses it wherever the libxml2 Python bindings import, in every
+#: collector worker and outside this lock: a system or distro Python can have them, a pip venv has
+#: not (OPEN_QUEUE, "THE lxml SIGABRT"). The lock covers the whole call, not only the parse: the
 #: faulting frame may be where an earlier corruption surfaced. The trees die inside it on a return
 #: (the result holds only text, so they go with the call's last local) and on a raise (the
-#: traceback's frames are cleared before the lock is given up, :func:`_release_frames`). An RLock, so
-#: a caller that nests extraction cannot deadlock itself. COST, said so: one page that takes long
-#: (a 10 MiB nav-heavy page measured 85 s) now holds every other extraction in the process, and
-#: nothing can time it out; the OPEN_QUEUE entry has the numbers and what would change it.
+#: traceback's frames are cleared and an AttributeError's object dropped before the lock is given
+#: up, :func:`_release_frames`). An RLock, so a caller that nests extraction cannot deadlock itself.
+#: COST, said so: one page that takes long (a 10 MiB nav-heavy page measured 85 s) now holds every
+#: other extraction in the process, and nothing can time it out; the OPEN_QUEUE entry has the numbers
+#: and what would change it.
 _LXML_LOCK = threading.RLock()
 
 
@@ -134,6 +140,10 @@ def _release_frames(exc: BaseException) -> None:
     ``except`` clause in ``runner.py``), while another worker may be inside a parse. Clearing the
     frames drops the locals and keeps the traceback's lines, so what a log shows is unchanged.
     The chain is walked because the fallback's exception carries the primary's as ``__context__``.
+    An ``AttributeError`` also holds the object it failed on (``obj``, set by the interpreter), so that is dropped too;
+    the message is unchanged, but Python's "Did you mean" hint, which it computes from that object, is not offered.
+    NOT covered: a tree held in an exception's ``args`` or in ``StopIteration.value`` (nothing in the extraction path
+    puts one there; ``tests/test_extract_lock.py`` pins the two cases it does see).
     """
     seen: set[int] = set()
     pending: list[BaseException | None] = [exc]
@@ -143,6 +153,9 @@ def _release_frames(exc: BaseException) -> None:
             continue
         seen.add(id(err))
         traceback.clear_frames(err.__traceback__)
+        if isinstance(err, AttributeError):
+            # The interpreter sets ``obj`` to the object whose lookup failed: on an lxml element that is the element, which keeps its whole document alive.
+            err.obj = None
         pending += [err.__cause__, err.__context__]
 
 
