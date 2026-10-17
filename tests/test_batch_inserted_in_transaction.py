@@ -16,13 +16,28 @@ take fails every article's indexing, which ``_index_one`` reports as "kept unind
 
 from __future__ import annotations
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
 import src.analytics.store as store
-from src.database.models import KeywordMention
+from src.database.models import Keyword, KeywordMention
 from tests.test_collect_extraction_outside_gate import _ingest
 
 _MT = KeywordMention.__table__
+_ORPHAN_TERM = "zzorphankeyword"
+
+
+def _drop_the_orphan_keyword() -> None:
+    """The third test's own keyword. The heal removes the orphan mention ROW and leaves the keyword it belonged to, and the session database is
+    shared for the whole process: ``tests/test_collect_worker_holds_no_session_across_fetch.py`` counts its keywords before and after its run and
+    its clean-up deletes every keyword with no mention, so a keyword left here (the file sorts before it) reads as that test changing the count.
+    Taken away with any mention row a failed run left, by the term and not by an id, so it also runs when the test stopped before it knew the id."""
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        ids = [k for (k,) in s.execute(select(Keyword.id).where(Keyword.normalized_term == _ORPHAN_TERM))]
+        if ids:
+            s.execute(delete(KeywordMention).where(KeywordMention.keyword_id.in_(ids)))
+            s.execute(delete(Keyword).where(Keyword.id.in_(ids)))
 
 
 def _count_reads(monkeypatch):
@@ -73,7 +88,7 @@ def test_the_batch_asks_once_for_the_whole_flush_which_articles_already_carry_ro
     assert len(asked) == 1 and len(asked[0]) == 4, f"one statement for the flush's four articles, not one per article: {asked}"
 
 
-def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heals(monkeypatch):
+def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heals(monkeypatch, request):
     """THE CASE THE FLAG ALONE GOT WRONG (the Opus read of d8deefaa8, M1). The highest article is deleted by something that ran with foreign keys
     off, so its mention rows stay; the next flush's first article gets the id again. With the keywords DISJOINT from the new article's, the flag
     would have kept the orphan rows attached to it without a word. The batch asks first, reads that one article's rows and the diff replaces
@@ -81,10 +96,11 @@ def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heal
     from datetime import UTC, datetime
 
     from src.analytics.store import index_article
-    from src.database.models import Article, Keyword
+    from src.database.models import Article
     from src.database.session import engine, session_scope
     from tests.test_mention_diff_write import _Ex, _t
 
+    request.addfinalizer(_drop_the_orphan_keyword)
     _dom, src_id, first = _ingest(monkeypatch, n=3)
     assert first["stored"] == 3
     primed = [engine.connect() for _ in range(3)]  # three idle connections in the pool afterwards, as a full run leaves it
@@ -98,9 +114,9 @@ def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heal
         s.add(orphan)
         s.flush()
         orphan_id = orphan.id
-        index_article(s, orphan, extractor=_Ex([_t("zzorphankeyword", 5)]), country=None, city=None, commit=False)
+        index_article(s, orphan, extractor=_Ex([_t(_ORPHAN_TERM, 5)]), country=None, city=None, commit=False)
         s.commit()
-        kid = s.execute(select(Keyword.id).where(Keyword.normalized_term == "zzorphankeyword")).scalar_one()
+        kid = s.execute(select(Keyword.id).where(Keyword.normalized_term == _ORPHAN_TERM)).scalar_one()
         s.commit()  # the read above ends: the delete below does not wait behind it
         # ONE checked-out connection from OFF to ON. The pragma belongs to the CONNECTION, and the pool hands out its idle ones in turn,
         # so turning it on through the session after a commit (which gives the connection back) can switch on a different one and leave

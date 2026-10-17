@@ -58,11 +58,11 @@ class _Proc:
         """The thread's next reading: its state, its ``wchan`` and how much it ran and waited on a run queue since the previous one."""
         self.cpu_ns += ran_ns
         self.wait_ns += waited_ns
-        (self.dir / "stat").write_text(f"{self.tid} ({comm}) {state} 1 1 1 0 -1 4194560 100 0 0 0 5 1 0 0 20 0 1 0 100 1000 100\n")
-        (self.dir / "wchan").write_text(wchan)
+        (self.dir / "stat").write_text(f"{self.tid} ({comm}) {state} 1 1 1 0 -1 4194560 100 0 0 0 5 1 0 0 20 0 1 0 100 1000 100\n", encoding="utf-8")
+        (self.dir / "wchan").write_text(wchan, encoding="utf-8")
         sched_file = self.dir / "schedstat"
         if sched:
-            sched_file.write_text(f"{self.cpu_ns} {self.wait_ns} 7\n")
+            sched_file.write_text(f"{self.cpu_ns} {self.wait_ns} 7\n", encoding="utf-8")
         elif sched_file.exists():
             sched_file.unlink()
 
@@ -213,7 +213,7 @@ def test_gap_is_the_longest_time_between_two_looks_that_could_be_read(proc):
     # An unreadable look is not a look: the time it covered shows in the next gap, so a starved process and a vanished file read alike.
     (proc.dir / "stat").unlink()
     assert _look(10.0, 103.0) is True
-    (proc.dir / "stat").write_text("4242 (python) S 1\n")
+    (proc.dir / "stat").write_text("4242 (python) S 1\n", encoding="utf-8")
     _look(10.0, 106.4)
     assert hs.fields_for(10.0)["gap"] == 4.0, "from the last look that was read (102.4) to the next (106.4)"
 
@@ -272,7 +272,7 @@ def test_a_look_whose_state_cannot_be_read_is_left_uncounted_with_its_cause_neve
     proc.put("S", "futex_do_wait")
     _look(10.0, 100.0)
     (proc.dir / "stat").write_bytes(stat)
-    (proc.dir / "wchan").write_text("futex_do_wait")
+    (proc.dir / "wchan").write_text("futex_do_wait", encoding="utf-8")
     _look(10.0, 101.0)
     assert sum(hs._CURRENT.counts) == 0, "not counted in any class"
     assert hs.fields_for(10.0) == {"ws": None, "ws_why": hs.UNREADABLE}
