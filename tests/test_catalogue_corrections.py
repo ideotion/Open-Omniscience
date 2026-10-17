@@ -236,3 +236,75 @@ def test_a_catalogue_that_stops_shipping_a_field_never_nulls_the_live_value(sess
     assert row.source_type == "legal" and row.rss_url == "https://ex.example/feed"
     assert result["applied"] == 0 and result["kept"] == 0 and result["dropped"] == 2
     assert sync_catalogue_corrections(session, [dropped])["dropped"] == 0
+
+
+# --- R167: a field the catalogue starts shipping, on a row that holds the column default --------------------------------
+def _installed_without_region_and_type(session, domain="ex.example"):
+    first = _entry(domain)
+    first.pop("region")
+    first.pop("source_type")
+    row = _install(session, [first])
+    assert (row.region, row.source_type) == ("global", "news"), "the row took the column defaults"
+    base = json.loads(row.catalog_baseline)
+    assert base["region"] is None and base["source_type"] is None, "and the baseline recorded that the catalogue shipped none"
+    return row
+
+
+def test_a_field_the_catalogue_starts_shipping_reaches_a_row_that_holds_the_column_default(session):
+    """The Opus read's M1: 1,807 of 5,580 sources.yml entries ship no region and 3,140 no source_type, so those rows hold
+    the column default with a baseline of None. When the catalogue fills either, the value fell through to the operator-edit
+    list and was never applied (live != baseline None, live != the new value, live != baseline). Red without the R167 clause."""
+    row = _installed_without_region_and_type(session)
+    result = sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])
+    session.refresh(row)
+    assert (row.region, row.source_type) == ("europe", "legal")
+    assert result["applied"] == 2 and result["kept"] == 0 and result["conflicts"] == []
+    assert json.loads(row.catalog_baseline)["region"] == "europe"
+    assert sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])["applied"] == 0
+
+
+def test_a_value_the_operator_chose_over_the_default_is_still_kept_when_the_catalogue_starts_shipping_one(session):
+    row = _installed_without_region_and_type(session)
+    row.region = "asia"
+    session.commit()
+    result = sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])
+    session.refresh(row)
+    assert row.region == "asia" and row.source_type == "legal"
+    assert result["kept"] == 1 and result["conflicts"][0]["field"] == "region" and result["applied"] == 1
+
+
+def test_r167_a_value_typed_exactly_as_the_default_is_taken_for_never_edited_a_known_limit(session):
+    """THE ASSUMPTION R167 MAKES, stated as a test so it is not discovered later: nothing in the app records which fields an
+    operator edited (the PUT allowlist does not even reach region or source_type, and the only per-row record is
+    ``catalog_baseline``), so an operator who set region to exactly ``"global"`` on a row whose baseline is None is
+    indistinguishable from one who never touched it, and receives the catalogue's value. The ``now is None`` branch makes the
+    same assumption in the other direction. If a per-field edit marker ever exists it must win here, and this test changes."""
+    row = _installed_without_region_and_type(session)
+    row.region = "global"      # typed by hand, equal to the default
+    session.commit()
+    sync_catalogue_corrections(session, [_entry(region="europe", source_type="legal")])
+    session.refresh(row)
+    assert row.region == "europe"
+
+
+def test_the_catalogue_filling_region_and_type_on_the_real_sources_yml_shape_lists_no_false_edit(session):
+    """The shape of the real file, not a toy: entries of configs/sources.yml that ship no region or no source_type are seeded
+    as they are (rows hold the defaults), then the catalogue fills every one of them. Zero conflicts, every fill applied."""
+    from src.ingest.seed_sources import load_sources_from_yaml
+
+    real = [e for e in load_sources_from_yaml() if not e.get("region") or not e.get("source_type")]
+    assert len(real) > 1000, "the real catalogue still ships many entries without a region or a type"
+    real = real[:400]
+    entries = []
+    for e in real:
+        e = {k: v for k, v in e.items() if k not in ("region", "source_type")}
+        e["_provenance"] = "curated"
+        entries.append(e)
+    seed_sources(session, entries)
+    assert session.query(Source).filter(Source.region == "global", Source.source_type == "news").count() == len(entries)
+    filled = [dict(e, region="europe", source_type="legal") for e in entries]
+    result = sync_catalogue_corrections(session, filled)
+    assert result["kept"] == 0 and result["conflicts"] == []
+    assert result["applied"] == 2 * len(entries)
+    assert session.query(Source).filter(Source.region == "europe", Source.source_type == "legal").count() == len(entries)
+

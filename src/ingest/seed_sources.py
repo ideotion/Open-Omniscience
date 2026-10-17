@@ -561,7 +561,10 @@ def sync_catalogue_corrections(session: Session, sources: list[dict], *, pairs: 
                     advanced += 1
                 else:
                     dropped += 1
-            elif live == then:
+            elif live == then or (then is None and live == _column_default(field)):
+                # Untouched, or the mirror of the ``now is None`` branch above (R167): the entry shipped no value when the
+                # row was made, so the row took the column default and the baseline recorded None; a live value equal to
+                # that default was nobody's choice, and the catalogue's later value is a correction, not a conflict.
                 setattr(row, field, computed.get(field))
                 applied += 1
             else:
