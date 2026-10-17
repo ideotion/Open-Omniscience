@@ -11,7 +11,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -50,7 +50,8 @@ def test_evidence_chips_are_real_fields_not_a_score():
     view = assemble_leads_view([_card("a", n=42, sources=3, ages=(2,))], now=_NOW)
     chips = view["leads"][0]["evidence_chips"]
     assert chips["n"] == 42
-    assert chips["distinct_sources"] == 3
+    assert chips["distinct_outlets"] == 3 and "distinct_sources" not in chips
+    assert chips["evidence_without_outlet"] == 3  # these hand-built entries name a feed label only
     assert chips["newest_age_days"] == 2.0
 
 
@@ -145,11 +146,33 @@ def test_endpoint_serves_the_view_over_the_cached_briefing(monkeypatch):
         app.dependency_overrides.clear()
 
 
-def test_the_leads_view_says_its_source_chips_count_feeds():
-    """Row J, R146 (b): the chips count the distinct source LABELS a card's evidence carries, which are feeds."""
-    from datetime import UTC, datetime
+def _outlet_card(*pairs) -> dict:
+    """Evidence from ``(feed label, outlet)`` pairs; an outlet of None is an entry that names only its feed."""
+    ev = [{"source": label, **({"outlet": outlet} if outlet else {}), "published_at": None} for label, outlet in pairs]
+    return Card(
+        type="rising", title="T", summary="s", bucket="rising", method="m", caveat="c", key="k", n=9, evidence=ev,
+    ).to_dict()
 
-    from src.briefing.leads import assemble_leads_view
-    from src.database.outlet import FEEDS_NOT_OUTLETS
 
-    assert assemble_leads_view([], now=datetime.now(UTC))["sources_note"] == FEEDS_NOT_OUTLETS
+def test_two_feeds_of_one_outlet_are_one_independent_source_in_the_chips_and_the_order():
+    """Row J, R146: the chips count outlets. BBC English and BBC Arabic are one voice; a different outlet is a second."""
+    card = _outlet_card(("BBC News", "bbc.com"), ("BBC Arabic", "bbc.com"), ("Reuters", "reuters.com"))
+    chips = assemble_leads_view([card], now=_NOW)["leads"][0]["evidence_chips"]
+    assert chips["distinct_outlets"] == 2 and chips["evidence_without_outlet"] == 0
+    wide = _outlet_card(("A", "a.example"), ("B", "b.example"), ("C", "c.example"))
+    ordered = assemble_leads_view([card, wide], now=_NOW, sort="prominence")["leads"]
+    assert [ld["evidence_chips"]["distinct_outlets"] for ld in ordered] == [3, 2]
+    assert "2 independent source" in ordered[1]["order_explain"]
+
+
+def test_evidence_that_names_only_a_feed_is_counted_by_that_label_and_reported():
+    card = _outlet_card(("BBC News", "bbc.com"), ("Old card feed", None), ("Old card feed", None), ("Other", None))
+    chips = assemble_leads_view([card], now=_NOW)["leads"][0]["evidence_chips"]
+    assert chips["distinct_outlets"] == 3 and chips["evidence_without_outlet"] == 3   # said, never silent
+
+
+def test_the_leads_view_says_its_chips_count_outlets_and_how_to_read_a_label_only_entry():
+    """The field says what it holds: the view carries ``outlets_note``, not a feed-count note."""
+    view = assemble_leads_view([], now=datetime.now(UTC))
+    assert "outlets" in view["outlets_note"] and "evidence_without_outlet" in view["outlets_note"]
+    assert "sources_note" not in view

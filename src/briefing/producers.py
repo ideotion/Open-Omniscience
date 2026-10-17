@@ -34,7 +34,7 @@ from src.database.models import (
     WikiPage,
     WikiRevision,
 )
-from src.database.outlet import OutletMap
+from src.database.outlet import OutletMap, outlet_key
 from src.database.stand_in import not_a_stand_in_article_id
 from src.monitoring.secret_scrub import log_failure
 
@@ -261,6 +261,9 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
                 "title": article.title,
                 "url": article.url,
                 "source": source_name,
+                # The OUTLET the article's source belongs to (row J, R146): a lead's independent-source count reads this,
+                # never the feed label above, so two feeds of one site are one voice.
+                "outlet": outlet_key(article.source_id, article.source.domain if article.source is not None else None),
                 "published_at": article.published_at.isoformat() if article.published_at else None,
                 "article_id": article.id,
             }

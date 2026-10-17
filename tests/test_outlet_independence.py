@@ -451,3 +451,23 @@ def test_the_framing_split_producer_groups_by_outlet():
     from src.briefing import producers
 
     assert "outlets.label(" in inspect.getsource(producers.framing_split)
+
+
+def test_a_briefing_leads_evidence_carries_the_outlet_so_two_feeds_of_a_site_count_once(s):
+    """The evidence builder writes the OUTLET (the source's domain) beside the feed label; the leads count reads it."""
+    from src.briefing.card import Card
+    from src.briefing.leads import _distinct_outlets
+    from src.briefing.producers import _evidence_from_articles
+
+    en = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en.xml")
+    ar = _feed(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar.xml")
+    other = _feed(s, "Reuters", "reuters.com", "https://reuters.com/rss")
+    rows = [(a, s.get(Source, a.source_id).name) for a in s.query(Article).order_by(Article.id)]
+    evidence = _evidence_from_articles(rows)
+    assert {e["source"]: e["outlet"] for e in evidence} == {
+        "BBC News": "bbc.com", "BBC Arabic": "bbc.com", "Reuters": "reuters.com",
+    }
+    assert {en, ar, other}  # three feeds, two outlets
+    card = Card(type="rising", title="t", summary="s", bucket="rising", method="m", caveat="c", key="k", n=3,
+                evidence=evidence)
+    assert _distinct_outlets(card) == 2

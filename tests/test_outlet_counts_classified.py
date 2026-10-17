@@ -7,7 +7,8 @@ feeds wherever a user can read it.
 
 SCOPE, stated because absence is weaker evidence than presence: the scan finds ``distinct(<x>.source_id)`` calls,
 ``<query over x.source_id>.distinct()`` method calls and ``len()`` of a set/set-comprehension built from ``source_id``.
-A distinct count keyed on a source NAME, or written some other way, is invisible to it; the per-gate sibling tests in ``tests/test_outlet_independence.py`` are what pin the gates themselves.
+It also finds ``len()`` of a set built from an evidence entry's ``"source"`` LABEL (a briefing lead's count read that way until
+the chips moved to outlets). A distinct count keyed on a source NAME written some other way, is invisible to it; the per-gate sibling tests in ``tests/test_outlet_independence.py`` are what pin the gates themselves.
 """
 
 from __future__ import annotations
@@ -24,6 +25,10 @@ OUTLET_MAPPED = {
     ("src/analytics/supergroup_rising.py", "_distinct_sources_windowed"): "the distinct source ids are mapped to outlets in Python before they are counted",
     ("src/analytics/supergroup_stats.py", "_distinct_source_count"): "the breadth every galaxy and group is ranked by (the Observatory radius): source ids mapped to outlets before the count",
     ("src/analytics/emergence.py", "find_manufactured_emergence"): "the per-keyword distinct source ids are mapped to outlets before the born-wide gate reads them",
+    ("src/analytics/copypasta.py", "find_copypasta"):
+        "the ``source`` it counts is ``OutletMap.label`` (the outlet's oldest source's name), one label per outlet",
+    ("src/signals/coordination.py", "detect_coordination"):
+        "its only caller (src/integrity/actors.py) hands it documents labelled by ``OutletMap.label``, so a label is an outlet",
     ("src/analytics/story_propagation.py", "find_story_propagation"):
         "the active-source list is mapped to each outlet's oldest source before the language ubiquity ratio reads it",
 }
@@ -80,6 +85,18 @@ class _Sites(ast.NodeVisitor):
     def _mentions_source_id(node: ast.AST) -> bool:
         return any(isinstance(n, ast.Attribute) and n.attr == "source_id" for n in ast.walk(node))
 
+    @staticmethod
+    def _mentions_feed_label(node: ast.AST) -> bool:
+        """``x.get("source")`` or ``x["source"]``: the display LABEL of a feed, which a briefing card's evidence carries
+        (a count of those is a count of feeds, however it reads)."""
+        for n in ast.walk(node):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "get" and n.args
+                    and isinstance(n.args[0], ast.Constant) and n.args[0].value == "source"):
+                return True
+            if isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant) and n.slice.value == "source":
+                return True
+        return False
+
     def visit_Call(self, node: ast.Call) -> None:
         f = node.func
         name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
@@ -94,7 +111,7 @@ class _Sites(ast.NodeVisitor):
             arg = node.args[0]
             built = isinstance(arg, (ast.Set, ast.SetComp)) or (
                 isinstance(arg, ast.Call) and getattr(arg.func, "id", None) == "set")
-            if built and self._mentions_source_id(arg):
+            if built and (self._mentions_source_id(arg) or self._mentions_feed_label(arg)):
                 self.found.add((self.path, scope))
         self.generic_visit(node)
 
@@ -134,6 +151,12 @@ def test_the_scan_sees_a_raw_count_and_a_set_count(tmp_path):
     v = _Sites("x.py")
     v.visit(tree)
     assert v.found == {("x.py", "a"), ("x.py", "b")}
+    label = ast.parse("def d(card):\n    return len({e.get('source') for e in card.evidence})\n"
+                      "def e(card):\n    return len(set(x['source'] for x in card.evidence))\n"
+                      "def f(card):\n    return len({x.get('outlet') for x in card.evidence})\n")
+    v = _Sites("w.py")
+    v.visit(label)
+    assert v.found == {("w.py", "d"), ("w.py", "e")}   # a feed-label count goes red; an outlet count does not
     method = ast.parse("def c(db, M):\n    return db.query(M.source_id).filter(M.x).distinct()\n")
     v = _Sites("y.py")
     v.visit(method)
