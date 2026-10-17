@@ -6,7 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 libxml2 aborted the collector (SIGABRT, no Python traceback) inside ``lxml.html.document_fromstring``
 under a pool of ~50 workers: one boot in seven, 2026-10-14. The cause is NOT established
 (``docs/ledger/OPEN_QUEUE.md``, "THE lxml SIGABRT"), so ``src/ingest/extract.py`` makes concurrent use
-of libxml2 impossible from the app, whatever the fault was: ``_LXML_LOCK`` around the whole
+of libxml2 by the app's article extraction impossible, whatever the fault was: ``_LXML_LOCK`` around the whole
 ``extract_article`` call tree. A lock is only as good as its coverage, and coverage is what a later
 change breaks without any test failing, so this file pins three things:
 
@@ -359,7 +359,8 @@ _ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
     # The diagnostics bundle's machine block reads etree.LIBXML_VERSION, LIBXML_COMPILED_VERSION and LIBXSLT_VERSION (module constants)
     # so a crash report names the libxml2 the process ran. It parses nothing and builds no tree; the module (the native-libraries
     # reader of the diagnostics follow-on) is not in the tree before that bundle, and an entry for a file that is absent allows nothing.
-    # The allowance is the ``etree`` module (``from lxml import etree``), by name: ``from lxml import html`` is refused there. The walk
+    # The allowance is the ``etree`` module (``from lxml import etree``, ``from lxml.etree import X`` or ``import lxml.etree as etree``), by
+    # name: ``from lxml import html`` and a bare ``import lxml.etree`` (which binds the whole ``lxml``) are refused there. The walk
     # reads imports, not calls, so a parse call on ``etree`` in that file would not be seen here; the file is read by hand when it changes.
     "src/monitoring/native_libs.py": frozenset({"lxml.etree"}),
 }
@@ -395,6 +396,11 @@ def _libxml_reach(source: str, path: str) -> list[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 check(alias.name, node.lineno, "imports")
+                root = alias.name.split(".")[0]
+                if alias.asname is None and "." in alias.name and alias.name in allowed and root in _LIBXML_ROOTS and root not in allowed:
+                    # ``import lxml.etree`` binds the name ``lxml``, the WHOLE package, so ``lxml.html`` is reachable through it (trafilatura
+                    # has imported it by then): only ``import lxml.etree as etree`` or ``from lxml import etree`` bind just the submodule.
+                    found.append(f"{path}:{node.lineno} imports {alias.name} without 'as' (it binds {root}, the whole package)")
                 if alias.name == "src.ingest.extract" and path != _EXTRACT_PATH:
                     found.append(f"{path}:{node.lineno} imports src.ingest.extract whole (its locked helpers become reachable)")
         elif isinstance(node, ast.ImportFrom):
@@ -466,6 +472,9 @@ def test_no_module_other_than_extract_reaches_libxml2():
         ("from lxml import html as h\n", "src/monitoring/native_libs.py", "imports from lxml.html"),
         ("import lxml\nlxml.etree.fromstring(x)\n", "src/monitoring/native_libs.py", "imports lxml"),
         ("from lxml import etree, html\n", "src/monitoring/native_libs.py", "imports from lxml.html"),
+        # ``import a.b`` binds ``a``: the allowance for one submodule must not carry the package's others with it
+        ("import lxml.etree\nlxml.html.fromstring(x)\n", "src/monitoring/native_libs.py", "imports lxml.etree without 'as'"),
+        ("import trafilatura.meta\n", "src/scheduler/hygiene.py", "imports trafilatura.meta without 'as'"),
         ("import trafilatura\n", "src/a.py", "imports trafilatura"),
         ("from htmldate import find_date\n", "src/a.py", "imports from htmldate"),
         ("from trafilatura.meta import reset_caches\n", "src/a.py", "imports from trafilatura.meta"),
@@ -501,6 +510,8 @@ def test_the_walk_sees_each_way_in(source, path, expect):
         ("from trafilatura.meta import reset_caches\n", "src/scheduler/hygiene.py"),
         ("from lxml import etree\nprint(etree.LIBXML_VERSION)\n", "src/monitoring/native_libs.py"),
         ("from lxml.etree import LIBXML_VERSION\n", "src/monitoring/native_libs.py"),
+        ("import lxml.etree as etree\nprint(etree.LIBXML_VERSION)\n", "src/monitoring/native_libs.py"),
+        ("import trafilatura.settings\n", "src/ingest/extract.py"),
         ("import trafilatura\nfrom trafilatura.settings import Document\n", "src/ingest/extract.py"),
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x, 'html.parser')\n", "src/a.py"),
         ("from bs4 import BeautifulSoup\nBeautifulSoup(x, features='html.parser')\n", "src/a.py"),
