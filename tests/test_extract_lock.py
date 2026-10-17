@@ -325,6 +325,10 @@ _ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
     # low-memory pause loop (runner.py), which can overlap a run-now pass, the housekeeping lane or the API; the memory guard's
     # in-pass release is release_residents (gc.collect, malloc_trim), not reset_caches. OPEN_QUEUE "THE lxml SIGABRT" lists both.
     "src/scheduler/hygiene.py": frozenset({"trafilatura.meta"}),
+    # The diagnostics bundle's machine block reads etree.LIBXML_VERSION, LIBXML_COMPILED_VERSION and LIBXSLT_VERSION (module constants)
+    # so a crash report names the libxml2 the process ran. It parses nothing and builds no tree; the module (the native-libraries
+    # reader of the diagnostics follow-on) is not in the tree before that bundle, and an entry for a file that is absent allows nothing.
+    "src/monitoring/native_libs.py": frozenset({"lxml"}),
 }
 
 
@@ -416,6 +420,8 @@ def test_no_module_other_than_extract_reaches_libxml2():
     [
         ("import lxml.html\n", "src/a.py", "imports lxml.html"),
         ("from lxml import etree\n", "src/a.py", "imports from lxml"),
+        # the machine block's allowance is for the root module's constants, not for a parser
+        ("import lxml.html\n", "src/monitoring/native_libs.py", "imports lxml.html"),
         ("import trafilatura\n", "src/a.py", "imports trafilatura"),
         ("from htmldate import find_date\n", "src/a.py", "imports from htmldate"),
         ("from trafilatura.meta import reset_caches\n", "src/a.py", "imports from trafilatura.meta"),
