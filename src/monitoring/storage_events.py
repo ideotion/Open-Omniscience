@@ -465,18 +465,30 @@ def _wait_out(generation: int, seconds: float) -> None:
     """Wait ``seconds`` on the condition, to the deadline whatever wakes it (every change does), or until a reset."""
     deadline = time.monotonic() + seconds
     with _COND:
-        while generation == _GENERATION and (left := deadline - time.monotonic()) > 0:
+        # ``while True: if <done>: break`` and not ``while <wanted>:``: on CPython 3.13 the jump back of the second form sits outside the
+        # ``with``'s exception-table entry, so an exception raised there leaves the condition's lock owned (R161, src/utils/interrupts.py)
+        while True:
+            left = deadline - time.monotonic()
+            if generation != _GENERATION or left <= 0:
+                break
             _COND.wait(left)
+
+
+def _wait_until_dirty() -> int:
+    """Block until a change is waiting to be written; the generation at that moment."""
+    with _COND:
+        while True:  # this form and not ``while not _DIRTY:``: see _wait_out
+            if _DIRTY:
+                break
+            _COND.wait()
+        return _GENERATION
 
 
 def _flusher_loop() -> None:
     failures = 0  # consecutive failed writes: the retry waits longer each time, to RETRY_MAX_S
     while True:
         try:
-            with _COND:
-                while not _DIRTY:
-                    _COND.wait()
-                generation = _GENERATION
+            generation = _wait_until_dirty()
             # Let a burst of changes become one write: every change wakes the wait, so it runs to the deadline, not to the next wake.
             # A reset ends the wait too (it wakes it): what was waiting to be written is gone.
             _wait_out(generation, FLUSH_DELAY_S)

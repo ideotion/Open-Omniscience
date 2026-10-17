@@ -1850,3 +1850,98 @@ def test_a_reset_of_a_journal_that_was_written_removes_its_file(journal):
     assert journal.exists()
     se.reset_for_tests()
     assert not journal.exists()
+
+
+# --------------------------------------------------------------------------- #
+#  The journal writer's wait loops keep their jump back inside the ``with`` (R161)
+# --------------------------------------------------------------------------- #
+def _uncovered_back_edges(fn) -> list[int]:
+    """Line numbers of the ``JUMP_BACKWARD`` instructions in ``fn`` (and the functions nested in it) that no exception-table entry covers.
+    The same reading as ``tests/test_gates_survive_an_interrupt.py``: on CPython 3.13 the jump back of ``while <wanted>:`` under
+    ``with lock:`` is outside the ``with``'s entry, so an exception raised there skips the release."""
+    import dis
+    import inspect
+    import types
+
+    def walk(code):
+        yield code
+        for const in code.co_consts:
+            if isinstance(const, types.CodeType):
+                yield from walk(const)
+
+    out: list[int] = []
+    for code in walk(inspect.unwrap(fn).__code__):
+        ranges = [(e.start, e.end) for e in dis.Bytecode(code).exception_entries]
+        for ins in dis.get_instructions(code):
+            if ins.opname == "JUMP_BACKWARD" and not any(start <= ins.offset < end for start, end in ranges):
+                out.append(ins.positions.lineno if ins.positions else -1)
+    return out
+
+
+def _loop_as_it_was(lock, cond, held):
+    with lock:
+        while held():
+            cond.wait()
+
+
+def _loop_as_it_is(lock, cond, held):
+    with lock:
+        while True:
+            if not held():
+                break
+            cond.wait()
+
+
+def test_the_reading_sees_the_old_loop_shape_as_uncovered_and_the_new_one_as_covered():
+    """The canary the next test rests on: if this Python covers the old shape too, the next test passes for any loop and says so here."""
+    assert _uncovered_back_edges(_loop_as_it_was), (
+        "this Python covers the jump back of `while cond:` inside a `with` too: the loop form of R161 is no longer needed here, and "
+        "the next test measures nothing"
+    )
+    assert not _uncovered_back_edges(_loop_as_it_is)
+
+
+def test_no_wait_loop_of_the_journal_writer_leaves_its_jump_back_outside_the_with():
+    bad = {name: _uncovered_back_edges(fn) for name, fn in {"_wait_out": se._wait_out, "_wait_until_dirty": se._wait_until_dirty}.items()}
+    assert not any(bad.values()), f"a wait loop's jump back is outside the with (lines): {bad}"
+
+
+def test_wait_out_returns_at_the_deadline_and_never_leaves_the_condition_held():
+    start = time.monotonic()
+    se._wait_out(se._GENERATION, 0.05)
+    assert 0.04 <= time.monotonic() - start < 1.0
+    assert se._COND.acquire(timeout=1.0), "the condition's lock was left held by the wait"
+    se._COND.release()
+
+
+def test_wait_out_returns_at_once_when_a_reset_made_its_generation_old():
+    stale = se._GENERATION
+    se.reset_for_tests()
+    start = time.monotonic()
+    se._wait_out(stale, 30.0)
+    assert time.monotonic() - start < 1.0, "a wait for a generation that was reset must not run to its deadline"
+
+
+def test_a_reset_ends_a_wait_out_in_progress(journal):
+    box: list[float] = []
+    gen = se._GENERATION
+    t = threading.Thread(target=lambda: (se._wait_out(gen, 30.0), box.append(time.monotonic())), daemon=True)
+    began = time.monotonic()
+    t.start()
+    time.sleep(0.1)
+    se.reset_for_tests()
+    t.join(timeout=5.0)
+    assert not t.is_alive() and box and box[0] - began < 5.0, "the reset did not wake the wait"
+
+
+def test_wait_until_dirty_returns_when_a_change_is_waiting_and_leaves_the_condition_free(journal):
+    box: list[int] = []
+    t = threading.Thread(target=lambda: box.append(se._wait_until_dirty()), daemon=True)
+    t.start()
+    time.sleep(0.1)
+    assert t.is_alive() and not box, "nothing was waiting to be written, so the wait must not have returned"
+    se.record("guard", {"n": 1})
+    t.join(timeout=5.0)
+    assert box == [se._GENERATION]
+    assert se._COND.acquire(timeout=1.0)
+    se._COND.release()
