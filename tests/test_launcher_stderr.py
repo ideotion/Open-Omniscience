@@ -446,8 +446,35 @@ MAC_BAD = [
     "python3(4242,0x1f) malloc: double free for ptr 0x12 and more",
     "prefix python3(4242,0x1f) malloc: double free for ptr 0x12",
     "python3(4242,0x1f) malloc: *** set a breakpoint in malloc_error_break to debug now",
+    "jane.doe@example.org(4242,0x1f) malloc: double free for ptr 0x12",  # R156: e-mail-shaped, path-shaped: refused by the filter as well
+    "/home/jane/python3(4242,0x1f) malloc: double free for ptr 0x12",
     "a" * 250 + "(4242,0x1f) malloc: double free for ptr 0x12",  # fits the expression, not the length cap
 ]
+
+
+_HOLE_SECRETS = [
+    "jane.doe@example.org",  # an e-mail-shaped value
+    "/home/jane/secret-project",  # a path
+    "hunter2 passphrase-canary",  # whitespace and the passphrase canary
+    "passphrase/canary-7f3a",  # the canary with a separator the class refuses
+]
+_HOLE_LINES = [
+    "{x}(4242,0x1f2a3b4c0) malloc: double free for ptr 0x12",  # the program-name hole
+    "python3(4242,0x1f2a3b4c0) malloc: double free for ptr {x}",  # the object-address hole
+    "python3(4242,{x}) malloc: double free for ptr 0x12",  # the thread hole
+]
+
+
+@pytest.mark.parametrize("secret", _HOLE_SECRETS)
+@pytest.mark.parametrize("template", _HOLE_LINES)
+def test_a_macos_hole_carrying_a_secret_shaped_value_matches_nothing_and_records_nothing(dd, template, secret):
+    """R156: the holes are character-class-limited, so an e-mail, a path or the canary in one fails the match whole."""
+    line = template.format(x=secret)
+    assert ee.accepted_abort_line(line) is False
+    _write(dd, [{"pid": 5, "boot_id": "b1", "at": "t", "line": line}])
+    out = ee.launcher_stderr(5, "b1")
+    assert out["lines"] == [] and out["rejected_lines"] == 1
+    assert secret not in json.dumps(out), "a refused line must not reach the report in any field"
 
 
 def _awk_dirs(tmp_path: Path) -> dict[str, Path]:
