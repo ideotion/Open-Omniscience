@@ -284,7 +284,7 @@ def test_the_monkeypatch_order_that_left_dns_unguarded_is_healed_by_the_next_ins
     process then installs the guard OVER the stand-in, and the undo writes the recorded real call back over the guard. ``_installed`` stays
     True; before the heal in ``_install_patches`` the next ``install_airplane_socket_guard`` was a no-op and ``test_egress_window`` reached the
     real resolver."""
-    was_installed = ap.is_installed()
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
     uninstall_airplane_socket_guard()
     real = socket.getaddrinfo
     try:
@@ -298,3 +298,13 @@ def test_the_monkeypatch_order_that_left_dns_unguarded_is_healed_by_the_next_ins
         uninstall_airplane_socket_guard()
         if was_installed:
             ap.ensure_connect_guard_installed()
+        ap._airplane_armed = was_armed
+
+
+def test_a_patch_point_that_cannot_be_read_is_left_alone_not_healed(guard, monkeypatch):
+    """A private attribute a newer Python renamed (``HTTPConnection._tunnel``) reads as absent. That point is neither the real call nor a
+    stand-in, so the check names nothing for it and the install does not raise or write a wrapper over a name that is not there."""
+    monkeypatch.delattr(http.client.HTTPConnection, "_tunnel")
+    assert ap.removed_while_installed() == []
+    ap._install_patches()
+    assert not hasattr(http.client.HTTPConnection, "_tunnel")

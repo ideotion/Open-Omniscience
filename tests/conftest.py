@@ -543,12 +543,19 @@ def _put_network_call_back(name: str, value: object) -> None:
         http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
 
 
+def _owner_name(owner: object) -> str:
+    """``socket`` for the module, ``socket.socket`` and ``http.client.HTTPConnection`` for the classes: the name a reader would write."""
+    if isinstance(owner, type):
+        return f"{owner.__module__}.{owner.__qualname__}"
+    return str(getattr(owner, "__name__", owner))
+
+
 def _airplane_guard_removed_while_flagged_installed() -> list[str]:
     """The patched calls that hold the REAL function although ``airplane._installed`` says the guard is in: the guard was removed by a write
     (a ``monkeypatch`` undo that recorded the real call before the install did) that never told the flag."""
     import src.ingest.airplane as airplane
 
-    return [f"{owner.__name__}.{attr}" for owner, attr, _wrapper in airplane.removed_while_installed()]
+    return [f"{_owner_name(owner)}.{attr}" for owner, attr, _wrapper in airplane.removed_while_installed()]
 
 
 def _defined_in_a_test(fn: object) -> bool:

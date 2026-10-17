@@ -264,16 +264,17 @@ def _patch_points() -> list[tuple[Any, str, Any, Any]]:
 
 
 def _standing_calls() -> list[Any]:
-    """What each patch point holds right now, in the order of :func:`_patch_points`."""
+    """What each patch point holds right now, in the order of :func:`_patch_points`. A point that cannot be read (a private attribute a
+    newer Python renamed) reads as ``None``, which is neither a real function nor a stand-in we know, so it is left alone, not healed."""
     calls: list[Any] = [
-        socket.getaddrinfo,
-        socket.create_connection,
-        socket.socket.connect,
-        socket.socket.connect_ex,
-        http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
+        getattr(socket, "getaddrinfo", None),
+        getattr(socket, "create_connection", None),
+        getattr(socket.socket, "connect", None),
+        getattr(socket.socket, "connect_ex", None),
+        getattr(http.client.HTTPConnection, "_tunnel", None),
     ]
     if _orig_socks_connect is not None:
-        calls.append(_pysocks.socksocket.connect)
+        calls.append(getattr(_pysocks.socksocket, "connect", None))
     return calls
 
 
