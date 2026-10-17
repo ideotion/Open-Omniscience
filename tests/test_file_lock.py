@@ -206,3 +206,26 @@ def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
     atomic_replace(f, "c")
     assert len(synced) == 1 and len(swept) == 2
     assert f.read_text() == "c"
+
+
+def test_holding_runs_the_function_inside_the_lock_and_follows_a_redirected_path(tmp_path):
+    from src.safety.file_lock import holding
+
+    target = {"p": tmp_path / "a"}
+    seen: list[bool] = []
+
+    @holding(lambda: target["p"])
+    def work(x):
+        # the lock is held: a second take from ANOTHER thread has to wait for us
+        got = []
+        t = threading.Thread(target=lambda: got.append(lock(target["p"]).__enter__()))
+        t.daemon = True
+        t.start()
+        t.join(0.3)
+        seen.append(not got)
+        return x + 1
+
+    assert work(1) == 2 and seen == [True]
+    target["p"] = tmp_path / "b"
+    assert work(2) == 3
+    assert (tmp_path / "b.lock").exists(), "the decorator did not follow the redirected path"

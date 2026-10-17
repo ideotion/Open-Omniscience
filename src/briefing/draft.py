@@ -18,6 +18,7 @@ import logging
 from datetime import UTC, datetime
 
 from src.monitoring.secret_scrub import log_failure
+from src.safety.file_lock import atomic_replace, holding
 
 _LOG = logging.getLogger(__name__)
 
@@ -47,13 +48,11 @@ def load_draft() -> dict:
 
 def _save(draft: dict) -> dict:
     draft["version"] = DRAFT_VERSION
-    path = _draft_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(draft, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    atomic_replace(_draft_path(), json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
     return draft
 
 
+@holding(lambda: _draft_path())
 def add_card(card: dict, *, note: str = "") -> dict:
     """Pin a card into the draft (idempotent by card id). Updates the note if re-added."""
     if not isinstance(card, dict) or not card.get("id"):
@@ -68,12 +67,14 @@ def add_card(card: dict, *, note: str = "") -> dict:
     return _save(draft)
 
 
+@holding(lambda: _draft_path())
 def remove_card(card_id: str) -> dict:
     draft = load_draft()
     draft["items"] = [it for it in draft["items"] if it["card"].get("id") != card_id]
     return _save(draft)
 
 
+@holding(lambda: _draft_path())
 def set_note(card_id: str, note: str) -> dict:
     draft = load_draft()
     for item in draft["items"]:
@@ -82,6 +83,7 @@ def set_note(card_id: str, note: str) -> dict:
     return _save(draft)
 
 
+@holding(lambda: _draft_path())
 def set_title(title: str) -> dict:
     draft = load_draft()
     draft["title"] = title.strip() or _DEFAULT_TITLE

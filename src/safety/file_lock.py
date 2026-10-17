@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import functools
 import os
 import sys
 import threading
@@ -265,3 +266,18 @@ def locked_append(path: Path, text: str, *, encoding: str = "utf-8", newline: st
     path = Path(path)
     with file_lock(path, shared=True), path.open("a", encoding=encoding, newline=newline) as f:
         f.write(text)
+
+
+def holding(path_of):
+    """Decorator: run the function inside :func:`file_lock` on ``path_of()``, for a read-change-write that is one section (the lock is taken per call, so a test that
+    redirects the path is followed). Not re-entrant: a decorated function must not call another that is decorated for the same file."""
+
+    def wrap(fn):
+        @functools.wraps(fn)
+        def inner(*args, **kwargs):
+            with file_lock(path_of()):
+                return fn(*args, **kwargs)
+
+        return inner
+
+    return wrap

@@ -23,6 +23,7 @@ from collections import Counter
 from datetime import UTC, datetime
 
 from src.monitoring.secret_scrub import log_failure
+from src.safety.file_lock import atomic_replace, holding
 
 _LOG = logging.getLogger(__name__)
 
@@ -57,13 +58,11 @@ def _load() -> dict:
 
 def _save(data: dict) -> dict:
     data["version"] = REASONS_VERSION
-    path = _path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    atomic_replace(_path(), json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return data
 
 
+@holding(lambda: _path())
 def record_reason(
     card_id: str,
     reason: str,
