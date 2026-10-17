@@ -43,6 +43,6 @@ def test_report_assertions_catch_a_missing_native_slot():
 
 
 @pytest.mark.skipif(os.environ.get("OO_FAULT_HARNESS") != "1", reason="slow: two real boots per scenario; set OO_FAULT_HARNESS=1")
-@pytest.mark.parametrize("scenario", fh.SCENARIOS)
+@pytest.mark.parametrize("scenario", fh.SCENARIOS + fh.EXTRA_SCENARIOS)
 def test_scenario(scenario):
     assert fh.run_scenario(scenario) == []

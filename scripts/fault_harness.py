@@ -17,6 +17,13 @@ SCENARIOS (each = boot, wait, fault, launcher exit, boot, read the report):
   sigkill        SIGKILL from the harness: no trace is possible; the report must say so rather than claim one
   clean-stop     SIGTERM: the control; nothing may claim a crash
 
+AND TWO THAT ARE RUN ONLY WHEN NAMED (EXTRA_SCENARIOS), for a launcher that has no boot id (Windows and macOS have none the app reads; here the
+copy of launch.sh is made to find none, which is the same code path):
+  bootless-sigkill      SIGKILL on the server: the launcher's own record (status 137) must still be joined to the session by pid
+  bootless-reused-pid   an OLD launcher row (dated two days before) holds the pid this server then gets, and server AND launcher are killed so
+                        no fresh row is written: the old row must NOT be shown as this session's end (pid reuse). Red when the date guard
+                        in exit_evidence.launcher_exit / launcher_stderr is reverted.
+
 EVERY scenario also asserts that the report carries no passphrase canary, no throwaway path and no e-mail-shaped text. The canary reaches
 the app as the OO_HARNESS_CANARY environment variable, is printed to stderr and is the name of a Python thread before the fault.
 
@@ -46,6 +53,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 CANARY = "hunter2-canary-OOFAULT-91c3"
 SCENARIOS = ("native-abort", "sigsegv", "sigkill", "clean-stop")
+EXTRA_SCENARIOS = ("bootless-sigkill", "bootless-reused-pid")
+_BOOT_ID = "/proc/sys/kernel/random/boot_id"
 BOOT_WAIT_S = 90
 SETTLE_S = 12  # the liveness thread's first observe takes the census and writes the marks within one 5 s tick
 
@@ -76,11 +85,15 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _fake_install(base: Path) -> Path:
+def _fake_install(base: Path, bootless: bool = False) -> Path:
     """A directory shaped like an install: scripts/launch.sh, .venv/bin/activate and an ``open-omniscience`` shim. No src/ is copied."""
     inst = base / "inst"
     (inst / "scripts").mkdir(parents=True)
-    shutil.copy(ROOT / "scripts" / "launch.sh", inst / "scripts" / "launch.sh")
+    text = (ROOT / "scripts" / "launch.sh").read_text(encoding="utf-8")
+    if bootless:  # a launcher that finds no boot id, as on Windows and macOS
+        assert _BOOT_ID in text
+        text = text.replace(_BOOT_ID, "/nonexistent/boot_id")
+    (inst / "scripts" / "launch.sh").write_text(text, encoding="utf-8")
     vbin = inst / ".venv" / "bin"
     vbin.mkdir(parents=True)
     shim = vbin / "open-omniscience"
@@ -159,13 +172,29 @@ def _leaks(text: str, base: Path) -> list[str]:
     return bad
 
 
+def _plant_old_rows(diag: Path, pid: int) -> None:
+    """Launcher rows from a process that had this pid two days ago (null boot id, as a launcher without one writes them)."""
+    from datetime import datetime, timedelta, timezone
+
+    old = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    diag.mkdir(parents=True, exist_ok=True)
+    rows = {
+        "launcher_exits.jsonl": {"schema": "oo-launcher-exit-1", "at": old, "started_at": old, "pid": pid, "boot_id": None, "status": 139, "signal": "SIGSEGV"},
+        "launcher_stderr.jsonl": {"schema": "oo-launcher-stderr-1", "at": old, "pid": pid, "boot_id": None, "line": "Fatal Python error: Segmentation fault"},
+    }
+    for name, row in rows.items():
+        with open(diag / name, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+
+
 def run_scenario(mode: str) -> list[str]:
     """Run one scenario; return the list of failed assertions (empty = held)."""
     failures: list[str] = []
     base = Path(tempfile.mkdtemp(prefix="oo-fault-"))
     port = _free_port()
     try:
-        inst = _fake_install(base)
+        bootless = mode.startswith("bootless-")
+        inst = _fake_install(base, bootless)
         log = base / "launcher.log"
         env = _env(base, port, mode)
         first = _launch(inst, env, log)
@@ -174,8 +203,11 @@ def run_scenario(mode: str) -> list[str]:
         time.sleep(SETTLE_S)
         if mode in ("native-abort", "sigsegv"):
             (base / "trigger").write_text("go")
-        elif mode == "sigkill":
+        elif mode in ("sigkill", "bootless-sigkill"):
             os.kill(int((base / "server.pid").read_text()), signal.SIGKILL)
+        elif mode == "bootless-reused-pid":
+            _plant_old_rows(base / "data" / "diagnostics", int((base / "server.pid").read_text()))
+            os.killpg(first.pid, signal.SIGKILL)  # the launcher dies with the server: no fresh row is written
         else:
             first.send_signal(signal.SIGTERM)
         try:
@@ -183,7 +215,7 @@ def run_scenario(mode: str) -> list[str]:
         except subprocess.TimeoutExpired:
             os.killpg(first.pid, signal.SIGKILL)
             return ["the launcher did not end after the fault"]
-        want = {"native-abort": 134, "sigsegv": 139, "sigkill": 137, "clean-stop": None}[mode]
+        want = {"native-abort": 134, "sigsegv": 139, "sigkill": 137, "clean-stop": None, "bootless-sigkill": 137, "bootless-reused-pid": None}[mode]
         if want is not None and status != want:
             failures.append(f"launcher exit status {status}, expected {want}")
         # The launcher can end before its server has (a stop is asked, then the server shuts down for a few seconds): a second launch
@@ -244,6 +276,15 @@ def _assert_report(mode: str, rep: dict[str, Any]) -> list[str]:
             out.append(f"native_in_flight should name lxml, got {nif}")
         if not (ev.get("crash_trace") or {}):
             out.append("no crash_trace member for a SIGSEGV")
+    elif mode == "bootless-sigkill":
+        lx = ev.get("launcher") or {}
+        if lx.get("status") != 137:
+            out.append(f"a launcher without a boot id must still join its own exit record by pid (status 137), got {lx}")
+    elif mode == "bootless-reused-pid":
+        if ev.get("launcher"):
+            out.append(f"an exit record dated before this session began was shown as its end: {ev.get('launcher')}")
+        if "Segmentation" in json.dumps(ev.get("launcher_stderr") or {}):
+            out.append("a stderr row dated before this session began was shown as its own")
     elif mode == "sigkill":
         if nif.get("result") not in ("no-calls-recorded", "none-in-flight"):
             out.append(f"a session killed with no native call open must read as no-calls-recorded or none-in-flight, got {nif}")
@@ -256,9 +297,9 @@ def _assert_report(mode: str, rep: dict[str, Any]) -> list[str]:
 
 def main(argv: list[str]) -> int:
     names = argv or list(SCENARIOS)
-    bad = [n for n in names if n not in SCENARIOS]
+    bad = [n for n in names if n not in SCENARIOS + EXTRA_SCENARIOS]
     if bad:
-        print(f"unknown scenario(s) {bad}; choose from {SCENARIOS}", file=sys.stderr)
+        print(f"unknown scenario(s) {bad}; choose from {SCENARIOS + EXTRA_SCENARIOS}", file=sys.stderr)
         return 2
     code = 0
     for name in names:
