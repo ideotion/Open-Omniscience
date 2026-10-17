@@ -806,6 +806,10 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     if new_rows:
         session.add_all(new_rows)
         session.commit()
+        # The commit expired every row the session holds, and each is then re-read with its own SELECT the first time a step
+        # below touches it (13,759 SELECTs, 5-6 s, on a first install). One read of the table gives the rows the same committed
+        # values, in one statement. Nothing is pending after a commit, so there is nothing for populate_existing to overwrite.
+        session.query(Source).populate_existing().all()
     created_for: dict[int, Source] = {id(e): r for e, r in zip(to_create, new_rows, strict=True)}
     row_of: dict[int, Source] = {id(e): r for r, e in pairs} | created_for
     # An already-registered source used to end the story: skipped, never re-read. The catalogue keeps LEARNING (new
