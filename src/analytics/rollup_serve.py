@@ -431,6 +431,9 @@ def _build_inmemory_and_swap() -> dict | None:
             "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
             "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
             "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
+            "shard_checkpoints": tally.get("shard_checkpoints"), "shard_checkpoint_secs": tally.get("shard_checkpoint_secs"),
+            "shard_checkpoint_failures": tally.get("shard_checkpoint_failures"),
+            "shard_checkpoint_first_failure": tally.get("shard_checkpoint_first_failure"),
             "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
             "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
             # what the finished rollup was asked before it was served, and what that cost (R157)

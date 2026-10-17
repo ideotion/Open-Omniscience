@@ -1391,8 +1391,25 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
 
         observed_mib = _observe_mib()  # all stages resident: the first of the two peaks
         con.execute(_KEYWORD_DAILY_BUILDING_DDL)
+        ck_done = 0
+        ck_secs = 0.0
+        ck_failed: list[tuple[int, str]] = []
         for j, name in enumerate(stage_names):
             in_stage = int(con.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])  # nosec B608
+            # R169: store what is built so far compressed BEFORE this shard adds to it. Every shard lands uncompressed in the
+            # rollup being built, so without this the rollup alone is hundreds of MiB by the last shards (16 M mentions at
+            # 1,004 MB: the build's own reads 576 -> 199 MiB, the process high-water mark 1,121 -> 508 MiB; the 20 M corpus
+            # that was a kept stop builds). One checkpoint before the FIRST shard changes nothing (measured): the weight is
+            # the rollup, not the stage.
+            ck = _checkpoint(con)
+            ck_done += 1 if ck["compacted"] else 0
+            ck_secs += float(ck["secs"] or 0.0)
+            if ck["outcome"] == "out-of-memory":
+                raise _wall_stop("checkpoint", shard=j) from None
+            if ck["outcome"] == "fatal":
+                raise RuntimeError("the checkpoint before a shard left the DuckDB instance unusable") from None
+            if ck["outcome"] == "failed":
+                ck_failed.append((j, str(ck["reason"])))  # carried on: the rollup is intact, only less compact
             try:
                 splits += _aggregate_stage(con, name, shards, 1, 0)
             except Exception as exc:  # noqa: BLE001 - only the engine's limit becomes a decline
@@ -1475,6 +1492,13 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         "predicted_peak_mib": plan["predicted_peak_mib"],
         "budget_snapshot": snapshot,
         "observed_mib": round(observed_mib, 1),
+        # The checkpoint before each shard's aggregate (R169): how many ran, their total seconds, how many failed and the first
+        # failure (shard and error CLASS, never the engine's text). A failure carries on; it is named here, not hidden.
+        "shard_checkpoints": ck_done,
+        "shard_checkpoint_secs": round(ck_secs, 2),
+        "shard_checkpoint_failures": len(ck_failed),
+        "shard_checkpoint_first_failure": (
+            None if not ck_failed else {"shard": ck_failed[0][0], "error_class": ck_failed[0][1]}),
         # The boundary phase B stopped at (``MAX(created_at)`` read once, before the scan; None when no
         # mention had a ``created_at``). A comparison against the live table must stop at the same one:
         # a row committed after it is left out of this build on purpose, so counting it on the live side
@@ -1709,6 +1733,12 @@ def compact(con) -> dict:
     (any other FATAL error: the instance is unusable and must not be served); or ``"failed"`` (any other error: the
     rollup is intact and serves as it would uncompacted, ``compacted`` false). ``reason`` is the error CLASS name, never
     the engine's text. Counts and sizes only."""
+    return _checkpoint(con)
+
+
+def _checkpoint(con) -> dict:
+    """``CHECKPOINT`` once and say how it went, in the shape ``compact`` documents. The one place the statement is run: the build's
+    checkpoint before each shard (R169) and the final one (``compact``, R164) both use it, so they classify the engine's answer alike."""
     out: dict = {"outcome": "failed", "compacted": False, "reason": None, "resident_before_mib": None,
                  "resident_after_mib": None, "secs": None}
     before = _read_mib(con)
