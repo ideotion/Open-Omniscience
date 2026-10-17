@@ -309,7 +309,10 @@ def test_quarantine_api_wiring_composes_end_to_end():
     assert prefix_m
     decorated = set(re.findall(r'@router\.(?:get|post)\("(/[^"]*)"', api_src))
     routes = {prefix_m.group(1) + d for d in decorated}
-    assert routes == {"/api/quarantine/start", "/api/quarantine/status", "/api/quarantine/{action}"}
+    assert routes == {
+        "/api/quarantine/start", "/api/quarantine/status", "/api/quarantine/samples",
+        "/api/quarantine/{action}",
+    }
 
     # the router is actually included by _wiring.py, not merely defined.
     assert "from src.api.quarantine import router as quarantine_router" in wiring_src

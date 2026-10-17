@@ -72,6 +72,31 @@ def _default_session():
 
 _ID_SET_CHUNK = 900  # SQLite bound-variable safety (the fts_ids/.in_() chunking precedent)
 
+#: Article ids the job keeps per signal as a spot-check sample. It protects two things and is
+#: measured on neither: the persisted state (rewritten every chunk) stays a few hundred bytes per
+#: signal, and an operator can read the whole sample on one page. A sample is not a rate.
+SAMPLE_PER_SIGNAL = 20
+
+
+def _sample_rank(signal: str, article_id: int) -> str:
+    """Order in which a candidate is kept in the sample: the SMALLEST hashes win. Depends only on the
+    signal and the id, so the sample is the same for the same corpus whatever order the chunks came in
+    and across a pause, a resume or a restart (a running-count reservoir would not survive those)."""
+    import hashlib
+
+    return hashlib.sha256(f"{signal}:{article_id}".encode()).hexdigest()
+
+
+def merge_samples(
+    kept: dict[str, list[int]], found: dict[str, list[int]], per_signal: int = SAMPLE_PER_SIGNAL
+) -> dict[str, list[int]]:
+    """``kept`` plus the candidates ``found`` in a chunk, cut to the ``per_signal`` smallest ranks."""
+    out = {sig: list(ids) for sig, ids in kept.items()}
+    for sig, ids in found.items():
+        merged = sorted(set(out.get(sig, [])) | {int(i) for i in ids}, key=lambda i: _sample_rank(sig, i))
+        out[sig] = merged[:per_signal]
+    return out
+
 
 def default_quarantine_candidates_batch(
     session: Any,
@@ -137,6 +162,7 @@ def default_quarantine_candidates_batch(
 
     quarantined_ids: list[int] = []
     by_reason: dict[str, int] = {}
+    ids_by_reason: dict[str, list[int]] = {}  # this batch's candidates per signal (ids only)
     to_write: dict[int, str] = {}  # id -> signal, for rows NOT already quarantined
     already_quarantined = 0
     scanned = 0
@@ -164,6 +190,7 @@ def default_quarantine_candidates_batch(
             if signal is not None:
                 quarantined_ids.append(int(aid))
                 by_reason[signal] = by_reason.get(signal, 0) + 1
+                ids_by_reason.setdefault(signal, []).append(int(aid))
                 if is_quarantined:
                     already_quarantined += 1  # idempotent: already stamped, never re-counted
                 else:
@@ -217,6 +244,7 @@ def default_quarantine_candidates_batch(
         "already_quarantined": already_quarantined,
         "newly_written": newly_written,
         "by_reason": by_reason,
+        "ids_by_reason": ids_by_reason,
         "last_id": last_id,
         "done": done,
         "write": write,
@@ -241,6 +269,7 @@ class QuarantineJobManager:
         self._done = 0  # articles scanned so far (for percent + ETA)
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
         self._tally: dict[str, int] = {}  # quarantined / by-reason / write counts
+        self._samples: dict[str, list[int]] = {}  # signal -> up to SAMPLE_PER_SIGNAL article ids (ids only)
         self._index_page_tiers: frozenset[int] = frozenset()
         self._include_prose_gate = True  # the nav-soup gate over >= _ARTICLE_MIN_WORDS bodies
         self._include_stubs = False  # thin-body menu / subscriber-prompt stubs (opt-in)
@@ -271,6 +300,7 @@ class QuarantineJobManager:
                 json.dumps({
                     "cursor": self._cursor, "total": self._total, "done": self._done,
                     "tally": self._tally, "state": self._state, "write": self._write,
+                    "samples": self._samples,
                     # EVERY dimension of the run mode, not just write: a restart that
                     # restored only some of them would resume the same run under
                     # different criteria and report both halves under one run's name.
@@ -302,6 +332,9 @@ class QuarantineJobManager:
         self._total = max(0, int(d.get("total") or 0))
         self._done = max(0, int(d.get("done") or 0))
         self._tally = {str(k): int(v) for k, v in (d.get("tally") or {}).items()}
+        self._samples = {
+            str(k): [int(i) for i in v][:SAMPLE_PER_SIGNAL] for k, v in (d.get("samples") or {}).items()
+        }
         self._write = bool(d.get("write", False))
         # Absent in a state file written before these were persisted: fall back to the
         # value that start() itself defaults to, so an older file resumes as it would have.
@@ -356,6 +389,7 @@ class QuarantineJobManager:
             self._total = max(0, _total)
             if _cursor <= 0:
                 self._tally = {}
+                self._samples = {}
             # The caller supplies the mode explicitly every time: a genuinely fresh
             # external start passes the operator's own choice; resume() (below) always
             # passes through the PRESERVED mode of the run being resumed -- never
@@ -419,6 +453,7 @@ class QuarantineJobManager:
                         )
                         for sig, cnt in (r.get("by_reason") or {}).items():
                             self._tally[f"reason:{sig}"] = self._tally.get(f"reason:{sig}", 0) + int(cnt)
+                        self._samples = merge_samples(self._samples, r.get("ids_by_reason") or {})
                         self._done += int(r.get("scanned", 0))
                         self._cursor = after
                         self._save()
@@ -454,6 +489,7 @@ class QuarantineJobManager:
             sf, wf = self._session_factory, self._work_fn
             cur, tot, done = self._cursor, self._total, self._done
             tally = dict(self._tally)
+            samples = {k: list(v) for k, v in self._samples.items()}
             w = self._write  # ALWAYS preserve the mode the paused run was in
             tiers = self._index_page_tiers  # ...and every other part of that mode
             gate = self._include_prose_gate
@@ -463,8 +499,14 @@ class QuarantineJobManager:
                          include_stubs=stubs)
         with self._lock:
             self._tally = tally
+            self._samples = samples
             self._save()
         return out
+
+    def sample_ids(self) -> dict[str, list[int]]:
+        """The sampled article ids per signal of the current run (a copy; ids only)."""
+        with self._lock:
+            return {k: list(v) for k, v in self._samples.items()}
 
     def cancel(self) -> None:
         with self._lock:
