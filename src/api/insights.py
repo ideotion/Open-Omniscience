@@ -374,6 +374,11 @@ def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None,
         raise HTTPException(
             status_code=429, detail=http_detail(exc), headers={"Retry-After": "2"}
         ) from exc
+    except HTTPException:
+        # A typed answer that is already an HTTP one (the real ``HeavyPaused`` is, with its own status, words and headers):
+        # it goes out as it is. Rebuilding it from ``str(exc)`` doubled the status into the detail ("503: Paused ...") and
+        # lost the type.
+        raise
     except Exception as exc:
         _raise_if_heavy_paused(type(exc), http_detail(exc))
         raise

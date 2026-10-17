@@ -124,3 +124,26 @@ def test_the_screens_show_the_named_pause_node_suite():
                           capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "ok -" in proc.stdout
+
+
+class _HttpPaused(HTTPException):
+    """The real ``HeavyPaused`` is an ``HTTPException``: it carries its own status, words and headers."""
+
+
+_HttpPaused.__name__ = "HeavyPaused"
+
+
+@pytest.mark.parametrize("replay", [False, True])
+def test_a_pause_that_is_already_an_http_error_goes_out_as_it_is(monkeypatch, replay):
+    """Rebuilt from ``str(exc)`` it answered ``503: Paused ...`` (the status twice) and lost its type and headers."""
+    original = _HttpPaused(status_code=503, detail=WORDS, headers={"Retry-After": "7", "X-OO-Paused": "wal"})
+
+    def run_heavy(_key, _fn):
+        raise original
+
+    monkeypatch.setattr(ins, "run_heavy", run_heavy)
+    with pytest.raises(HTTPException) as got:
+        ins._deadlined(object(), "k", lambda: {}, degraded_replay=replay)
+    assert got.value is original, "the same object, so its type is kept"
+    assert got.value.detail == WORDS and "503" not in got.value.detail
+    assert got.value.headers == {"Retry-After": "7", "X-OO-Paused": "wal"}, "its own headers, not ours"
