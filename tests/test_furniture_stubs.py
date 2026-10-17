@@ -320,9 +320,21 @@ def test_a_short_punctuated_line_is_not_a_sentence():
     assert stub_verdict("Brann i natt\n\nAllerede abonnent?\n\nLogg inn her.")[0] == "paywall_stub"
 
 
-def test_a_long_run_of_whitespace_does_not_stall_the_sentence_check():
+def test_closer_stripping_cost_grows_linearly_with_whitespace():
+    """The closers regex once backtracked cubically (and its simple replacement was quadratic) (4x the input = ~64x the time). Compare 10k with
+    40k whitespace on the same run, best of 3 each: linear is ~4x, cubic ~64x, so a 20x bound holds
+    on a loaded runner (measured here: ~4x) without a wall-clock limit."""
     import time
 
-    t = time.monotonic()
-    stub_verdict("Headline here" + " " * 20000 + "x\n\nAllerede abonnent?")
-    assert time.monotonic() - t < 2
+    from src.ingest.furniture import _without_closers
+
+    def best(n):
+        runs = []
+        for _ in range(3):
+            text = " " * n + "x"
+            t = time.perf_counter()
+            _without_closers(text)
+            runs.append(time.perf_counter() - t)
+        return max(min(runs), 1e-7)
+
+    assert best(40_000) / best(10_000) < 20

@@ -62,7 +62,22 @@ _PROMPT_SENTENCE_MIN_WORDS = 6
 _SENTENCE_LINE_MIN_WORDS = 4
 _SENTENCE_END = ".!?…"
 # Closing marks and a trailing agency tag ("[NTB]") that may follow a sentence's final punctuation.
-_CLOSERS = re.compile(r"(?:\[[^\]]{1,20}\]|[\s»\"”“’'\)\]\}›])+$")
+_CLOSER_CHARS = " \t\r\n»\"”“’'()}›"
+
+
+def _without_closers(paragraph: str) -> str:
+    """``paragraph`` minus trailing closing marks and a trailing ``[tag]``. A right-to-left scan, so
+    the cost is linear in the length (a regex for this backtracked cubically on long whitespace)."""
+    text = paragraph
+    while True:
+        stripped = text.rstrip(_CLOSER_CHARS)
+        if stripped.endswith("]"):
+            open_at = stripped.rfind("[", max(0, len(stripped) - 22))
+            if open_at != -1:
+                stripped = stripped[:open_at]
+        if stripped == text:
+            return text
+        text = stripped
 
 MENU_MIN_PARAGRAPHS = 12
 MENU_SHORT_WORDS = 6       # a menu entry; the page's own headline (9 words) may exceed it
@@ -162,7 +177,7 @@ def _has_prompt(paragraphs: list[str]) -> str | None:
         else:
             prose_words += n
             ends_a_sentence = ends_a_sentence or (
-                n >= _SENTENCE_LINE_MIN_WORDS and _CLOSERS.sub("", p).endswith(tuple(_SENTENCE_END)))
+                n >= _SENTENCE_LINE_MIN_WORDS and _without_closers(p).endswith(tuple(_SENTENCE_END)))
     # Judged over the whole non-prompt text, so a brief of short sentences or one wrapped over
     # several lines is spared like a single long paragraph.
     sentence = ends_a_sentence and prose_words >= _PROMPT_SENTENCE_MIN_WORDS
