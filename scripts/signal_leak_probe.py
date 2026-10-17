@@ -28,6 +28,7 @@ re-run this on any new interpreter before accepting it, and see ``tests/test_con
 from __future__ import annotations
 
 import collections
+import os
 import signal
 import sys
 import threading
@@ -271,6 +272,7 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
     outcomes = collections.Counter()
     iterations = lock_left = damaged = stale = 0
     damage_kinds = collections.Counter()
+    damage_where = collections.Counter()  # (damage kinds, where the interrupt landed): says WHICH statement lost the state
     end = time.monotonic() + seconds
     try:
         # ``while True: if not <cond>: break``, not ``while <cond>:``: the back-edge of the second sits outside the exception table of the
@@ -279,6 +281,7 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
             if time.monotonic() >= end:
                 break
             iterations += 1
+            landed = ""
             try:
                 armed[0] = True
                 try:
@@ -288,6 +291,9 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
                     armed[0] = False
             except BaseException as exc:  # noqa: BLE001 - counting what the interrupt turned into
                 outcomes[type(exc).__name__] += 1
+                landed = _landing(exc)
+            # the exception is gone by here: a traceback still holding a suspended ``@contextmanager`` generator would read as "left held" until
+            # the generator is collected, which is the exception's lifetime and not the code's
             if sc.lock._is_owned():  # noqa: SLF001 - the question is exactly whether this thread still holds it
                 lock_left += 1
                 while True:
@@ -298,6 +304,7 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
             if bad:
                 damaged += 1
                 damage_kinds.update(bad)
+                damage_where[(", ".join(bad), landed)] += 1
             if sc.cond is not None and len(sc.cond._waiters) > 0:  # noqa: SLF001
                 stale += 1
                 sc.cond._waiters.clear()  # noqa: SLF001 - stale entries an interrupted wait leaves
@@ -309,7 +316,22 @@ def _run_gate(name: str, seconds: float, plain: bool) -> int:
         f"{sys.version.split()[0]} {name} [{'plain Condition.wait' if plain or not sc.helper else 'src.utils.interrupts.wait'}]: iterations={iterations} interrupts={total} "
         f"{dict(outcomes)} lock_left_owned={lock_left} counters_left_wrong={damaged} {dict(damage_kinds)} stale_waiter_entries={stale}"
     )
+    for (kinds, landed), n in damage_where.most_common(8):
+        print(f"    {n:6d}  {kinds}  <- interrupt landed in {landed}")
     return 0
+
+
+def _landing(exc: BaseException) -> str:
+    """The innermost frame of the interrupt's traceback outside the signal handler: ``function (file:line)``. An interrupt inside a cleanup call's
+    own entry or body is the class a Python call cannot protect; one in the statements between an acquire and its ``try`` is the class to fix."""
+    frames = []
+    tb = exc.__traceback__
+    while tb is not None:
+        frames.append((tb.tb_frame.f_code.co_name, os.path.basename(tb.tb_frame.f_code.co_filename), tb.tb_lineno))
+        tb = tb.tb_next
+    if frames and frames[-1][0] == "handler":
+        frames.pop()
+    return "{} ({}:{})".format(*frames[-1]) if frames else "?"
 
 
 def main(argv: list[str]) -> int:
