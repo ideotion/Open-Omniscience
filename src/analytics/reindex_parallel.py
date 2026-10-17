@@ -565,7 +565,12 @@ def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
 
     # Daemon: a diagnostic must never be the reason a process refuses to exit.
     threading.Thread(target=_watch, name="oo-precompute-watchdog", daemon=True).start()
-    try:
+    # The loop is a function of its own, called from inside the ``try``: CPython 3.13 leaves a loop's
+    # back-edge outside the exception table of the ``try`` around it, so an interrupt delivered there
+    # would skip ``stop.set()`` (src/utils/interrupts.py, "THE LOOP FORM IS PART OF THE GUARANTEE").
+    # A function with no handler has nothing to skip: the interrupt reaches the call below, which the
+    # ``finally`` covers. R162/R163; tests/test_gates_survive_an_interrupt.py pins it.
+    def _compute_all() -> dict[int, ArticleDerivatives]:
         out: dict[int, ArticleDerivatives] = {}
         for i, t in enumerate(tasks, 1):
             t0 = time.monotonic()
@@ -581,6 +586,9 @@ def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
                     t[0], took, len(t[1] or ""),
                 )
         return out
+
+    try:
+        return _compute_all()
     finally:
         stop.set()
 
@@ -739,8 +747,10 @@ def precompute_batch(
         threading.Thread(
             target=_watch_window, name="oo-precompute-window-watchdog", daemon=True
         ).start()
-        try:
-            for aid, terms, score, label, err, www in pool.map(
+        # The loop is a function of its own, called from inside the ``try``, for the reason given in
+        # ``_serial``: its back-edge would sit outside the ``finally``'s exception table.
+        def _receive_all(live: ProcessPoolExecutor) -> None:
+            for aid, terms, score, label, err, www in live.map(
                 _worker_compute, ids, contents, titles, languages, slangs, ctxs,
                 chunksize=chunksize,
                 timeout=_pool_timeout_s(),
@@ -751,6 +761,9 @@ def precompute_batch(
                     stats["www_errors"] = stats.get("www_errors", 0) + 1
                 elif stats is not None and www:
                     stats["www_precomputed"] = stats.get("www_precomputed", 0) + 1
+
+        try:
+            _receive_all(pool)
         finally:
             w_stop.set()
         _unregister_pool(pool)

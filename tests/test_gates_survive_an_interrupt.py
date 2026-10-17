@@ -368,6 +368,50 @@ def test_the_other_locked_loops_of_this_lane_keep_their_back_edge_inside_the_wit
     assert not bad, f"a loop's back-edge is outside the with (lines): {bad}"
 
 
+def test_the_reindex_precompute_loops_keep_their_back_edge_inside_the_finally():
+    """R163: a loop reachable on the main thread through a CLI or subprocess entry counts as main-thread reachable. ``_serial`` and ``precompute_batch``
+    set a watchdog's stop event in a ``finally``; their loops are functions of their own, called from inside the ``try``."""
+    from src.analytics import reindex_parallel
+
+    owned = {"reindex_parallel._serial": reindex_parallel._serial, "reindex_parallel.precompute_batch": reindex_parallel.precompute_batch}
+    bad = {name: _uncovered_back_edges(fn) for name, fn in owned.items() if _uncovered_back_edges(fn)}
+    assert not bad, f"a loop's back-edge is outside the try (lines): {bad}"
+
+
+_WORKER_ONLY_REPORT = "/mnt/project-files/fix-source-qualification/main-thread-reachability-2026-10-17.md"
+
+
+def _worker_only_loops() -> dict:
+    """The locked or try/finally loops whose every caller is a worker thread, each with the reason (R162 allowlist, R163).
+
+    A name is here ONLY because the call graph in :data:`_WORKER_ONLY_REPORT` shows no path to the main thread; a new caller that can run on the
+    main thread voids the entry and the loop is converted instead (see ``_loop_shaped_like_the_gates_are_now``)."""
+    from src.ai_layer import coordinator
+    from src.analytics import keyword_fold, source_topics
+    from src.database import article_indexes, maintenance
+
+    why = f"worker-only: see {_WORKER_ONLY_REPORT}"
+    return {
+        "keyword_fold.fold_page": (keyword_fold.fold_page, why + " (thread keyword-fold-job)"),
+        "source_topics._apply_source_topics_on_a_shared_session": (source_topics._apply_source_topics_on_a_shared_session, why + " (sync route, scheduler threads)"),
+        "source_topics.apply_source_topics": (source_topics.apply_source_topics, why + " (sync route, scheduler threads)"),
+        "article_indexes._refresh_stats": (article_indexes._refresh_stats, why + " (index-build BackgroundJob)"),
+        "maintenance.maybe_incremental_vacuum": (maintenance.maybe_incremental_vacuum, why + " (oo-scheduler, oo-offline-maintenance)"),
+        "coordinator.run_coordinator": (coordinator.run_coordinator, why + " (BackgroundJob ai-coordinator)"),
+    }
+
+
+def test_each_worker_only_loop_names_its_reason_and_still_needs_it():
+    """An entry without a reason exempts nothing, and an entry whose loop is already written in the covered shape is stale: it would go on
+    exempting the function after somebody wrote the old shape back. Both fail here, so the allowlist can only shrink."""
+    entries = _worker_only_loops()
+    assert entries
+    no_reason = [name for name, (_fn, reason) in entries.items() if _WORKER_ONLY_REPORT not in reason]
+    assert not no_reason, f"worker-only entries without the report as their reason: {no_reason}"
+    stale = [name for name, (fn, _reason) in entries.items() if not _uncovered_back_edges(fn)]
+    assert not stale, f"these loops are already in the covered shape: delete their entries from _worker_only_loops: {stale}"
+
+
 def test_kv_invalidate_still_forgets_exactly_the_entries_of_its_key():
     from src.config import kv_store
 
