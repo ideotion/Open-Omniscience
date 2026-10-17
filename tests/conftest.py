@@ -494,3 +494,75 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
         f"a settings write was entered holding the single-writer gate {len(seen)} time(s) (see kv_store.kv_set_json); the list is "
         "process-global, so fix the CALLER each entry names, which may belong to a thread another test left running:\n  " + "\n  ".join(seen)
     )
+
+
+def _process_wide_network_calls() -> dict[str, object]:
+    """The process-wide network entry points a test may swap and must put back. The class attributes are read with ``getattr`` on the
+    class, which resolves through the MRO to the very same descriptor whether it is inherited or was set back on the subclass."""
+    import http.client
+    import socket
+
+    return {
+        "socket.getaddrinfo": socket.getaddrinfo,
+        "socket.create_connection": socket.create_connection,
+        "socket.socket.connect": socket.socket.connect,
+        "socket.socket.connect_ex": socket.socket.connect_ex,
+        "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,
+    }
+
+
+def _put_network_call_back(name: str, value: object) -> None:
+    import http.client
+    import socket
+
+    if name == "socket.getaddrinfo":
+        socket.getaddrinfo = value  # type: ignore[assignment]
+    elif name == "socket.create_connection":
+        socket.create_connection = value  # type: ignore[assignment]
+    elif name == "socket.socket.connect":
+        socket.socket.connect = value  # type: ignore[method-assign,assignment]
+    elif name == "socket.socket.connect_ex":
+        socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
+    else:
+        http.client.HTTPConnection._tunnel = value  # type: ignore[method-assign,assignment]
+
+
+def _defined_in_a_test(fn: object) -> bool:
+    """True for a callable written in test code: a lambda or inner function a test used as a stand-in."""
+    module = getattr(fn, "__module__", None) or ""
+    return module == "conftest" or module.split(".")[0] == "tests"
+
+
+_NETWORK_CALLS_BEFORE: dict[str, dict[str, object]] = {}
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):
+    """Record the process-wide network calls BEFORE any fixture of the test is set up (see ``pytest_runtest_teardown``)."""
+    _NETWORK_CALLS_BEFORE[item.nodeid] = _process_wide_network_calls()
+    return (yield)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """A test that leaves a STAND-IN it wrote on ``socket.getaddrinfo`` (or its siblings) breaks every LATER test in the same worker,
+    far from the cause: the two real-server event-loop tests failed for hours because ``test_entity_spine`` left a resolver answering
+    an empty list. Checked AFTER every fixture of the test has been torn down (a ``monkeypatch`` undo included), by a hook rather than
+    a fixture for that reason. Whatever a test's own code leaves there is put back, and the test fails, by name. Only a callable
+    DEFINED IN TEST CODE counts: the production airplane guard installs and uninstalls its own wrappers on purpose, once per process,
+    and a comparison with the state before the test would blame every test that boots the app."""
+    result = yield
+    before = _NETWORK_CALLS_BEFORE.pop(item.nodeid, None)
+    if before is not None:
+        after = _process_wide_network_calls()
+        leaked = sorted(name for name in before if after[name] is not before[name] and _defined_in_a_test(after[name]))
+        if leaked:
+            for name in leaked:
+                _put_network_call_back(name, before[name])
+            pytest.fail(
+                "this test left a stand-in it wrote on the process-wide network calls (" + ", ".join(leaked) + "); they were put back, "
+                "but a test that swaps one must restore it itself, in the order that lets any uninstall copy the real one (see "
+                "tests/test_entity_spine.py::test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_resolutions)",
+                pytrace=False,
+            )
+    return result
