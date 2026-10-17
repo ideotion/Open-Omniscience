@@ -40,6 +40,8 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import yaml
 
+from src.utils.safe_yaml import load_safe_yaml
+
 _PATH = Path(__file__).resolve().parents[2] / "configs" / "keyword_equivalents.yml"
 # Rings generated offline from Wikidata labels (scripts/generate_wikidata_rings.py).
 # Read ALONGSIDE the curated file; a curated ring WINS on an id collision.
@@ -122,10 +124,14 @@ def _norm(term: str) -> str:
 
 
 def _read_yaml(path: Path) -> dict:
+    # The project's SAFE loader class (libyaml when the wheel has it, the pure-Python one when not): the generated
+    # ring file is 566 KB and the pure-Python parse of it cost 0.98 s, against 0.11 to 0.14 s here (read on a first
+    # install and a reseed only). From src.utils.safe_yaml, which imports nothing else: the seeder's module would
+    # pull the seed chain into every index pass, and into the engine identity's closure.
     if not path.exists():
         return {}
     try:
-        return yaml.safe_load(path.read_text("utf-8")) or {}
+        return load_safe_yaml(path.read_text("utf-8")) or {}
     except (OSError, yaml.YAMLError):
         return {}
 

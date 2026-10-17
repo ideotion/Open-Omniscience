@@ -1,2 +1,2 @@
 date,area,item,status,refs,key_paths,summary
-2026-10-17,privacy,Run journal reader checks an older file for the passphrase,shipped,PR #1420,src/backup/runlog.py;tests/test_runlog_secrets.py,"Journals an older build wrote raw are parsed then scrubbed when read (raw_runs/summarise/list_runs); a torn line or non-UTF-8 file is withheld and named in milestones_not_read, never passed on raw."
+2026-10-17,privacy,Run journal reader checks an older file for the passphrase,shipped,PR #1444,src/backup/runlog.py;tests/test_runlog_secrets.py,"Journals an older build wrote raw are parsed then scrubbed when read (raw_runs/summarise/list_runs); a torn line or non-UTF-8 file is withheld and named in milestones_not_read, never passed on raw."

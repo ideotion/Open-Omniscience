@@ -73,6 +73,27 @@ def _core_limit(monkeypatch):
     return calls
 
 
+@pytest.fixture(autouse=True)
+def _signals_start_as_a_foreground_run_has_them():
+    """A test that expects the runner to take a signal over must not depend on how pytest was started. A shell that backgrounds a
+    command (``nohup ... &``, ``cmd &``) hands it SIGINT and SIGQUIT as ``SIG_IGN`` (and ``nohup`` does the same for SIGHUP), and the
+    runner correctly leaves an already-ignored signal alone, so those tests failed in a background run and passed in the foreground.
+    Every terminating signal that arrives ignored is made the default for the test (child processes inherit the disposition) and put
+    back after; the tests that mean to start ignored say so themselves, as the ``nohup`` one does with ``preexec_fn``."""
+    names = ("SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM")
+    restored: dict[int, object] = {}
+    for n in names:
+        sig = getattr(signal, n, None)
+        if sig is not None and signal.getsignal(sig) == signal.SIG_IGN:
+            restored[sig] = signal.SIG_IGN
+            signal.signal(sig, signal.SIG_DFL)
+    try:
+        yield
+    finally:
+        for sig, prev in restored.items():
+            signal.signal(sig, prev)
+
+
 def _extract(tmp_path: Path, src: Path = FIXTURE) -> Path:
     d = tmp_path / "inputs"
     d.mkdir(exist_ok=True)

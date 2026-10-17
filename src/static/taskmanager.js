@@ -567,6 +567,37 @@
   // ---- History — recent online sessions (completed collection passes) ---- //
   // Framed as "online sessions" (P2-12): each completed pass IS a session the app
   // ran while online; honest ok/error verdicts, no fabrication.
+
+  // How far a pass that RAISED had got: the record's ``pass_counts`` (src/scheduler/runner.py, _pass_counts_*). Without it every
+  // errored row reads the same ("TimeoutError") and "ingest starved" is visible only in a diagnostics bundle. The BASIS word is on
+  // the row itself, not behind the hover: it is the reason the numbers mean what they mean (a pass that raised counts the sources
+  // whose worker had returned by then, which is not the sources it would have processed). A number the record does not carry
+  // reads "not reported" and never 0, because a 0 would say the pass processed nothing -- a different fact. A row with no
+  // ``pass_counts`` at all (written before the app kept them) draws nothing: the record makes no claim, so the page makes none.
+  function passBasisText(basis) {
+    if (basis === "pass_raised") return t("The pass stopped part-way");
+    if (basis === "pass_returned") return t("The pass finished, a later step failed");
+    return t("The failure came before anything was counted");
+  }
+  function passBasisTitle(basis) {
+    if (basis === "pass_raised") return t("The pass raised an error. The counts are every source whose worker had returned a result by the time it ended, including sources a pool finished after the first failure surfaced. Counts only, read from the run record.");
+    if (basis === "pass_returned") return t("The pass ran to its end and a later step failed. The counts are the pass’s own. Counts only, read from the run record.");
+    return t("The failure came before the pass counted anything, so these figures are unknown. They are not zero.");
+  }
+  function passCountsLine(pc) {
+    if (!pc || typeof pc !== "object") return "";
+    var basis = (pc.basis === "pass_raised" || pc.basis === "pass_returned") ? pc.basis : "not_reported";
+    function whole(v) { return (typeof v === "number" && isFinite(v) && v >= 0) ? v : null; }
+    var done = whole(pc.sources_processed), total = whole(pc.sources_total), stored = whole(pc.articles_stored);
+    var unknown = t("not reported");
+    var sources = done == null ? unknown
+      : (total == null ? fmtNum(done, 0) : tf("{a} of {b}", { a: fmtNum(done, 0), b: fmtNum(total, 0) }));
+    var kept = stored == null ? unknown : fmtNum(stored, 0);
+    return '<div class="detail counts" title="' + esc(passBasisTitle(basis)) + '">' +
+      esc(t("Sources processed")) + ": " + esc(sources) + " · " +
+      esc(t("Articles stored")) + ": " + esc(kept) + " · " +
+      '<span class="basis" data-basis="' + esc(basis) + '">' + esc(passBasisText(basis)) + "</span></div>";
+  }
   async function renderHistory() {
     var el = $("hist-body");
     var d;
@@ -586,7 +617,7 @@
                       : esc(String(r.error || t("failed")).slice(0, 160));
       return '<div class="job"><span>' + pill + '</span><span class="label">' + esc(fmtRel(when)) +
              ' <span class="muted" title="' + esc(fmtLocal(when)) + '" style="font-weight:400">' + esc(fmtLocal(when)) + "</span></span>" +
-             '<div class="detail">' + detail + "</div></div>";
+             '<div class="detail">' + detail + "</div>" + (ok ? "" : passCountsLine(r.pass_counts)) + "</div>";
     }).join("");
     el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + fmtNum(runs.length, 0) + "</span></div>" + rows;
   }

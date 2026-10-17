@@ -324,10 +324,12 @@ def test_gzip_flushes_every_chunk_of_a_streaming_response():
     appears to hang and then arrives all at once. The chat would look broken, and
     nothing in the app would report an error.
 
-    Starlette 1.6.0's ``GZipResponder._compress_body`` calls
-    ``flush(zlib.Z_SYNC_FLUSH)`` on every chunk with ``more_body=True``, so each
-    chunk is independently inflatable the moment it is sent — measured here, five
-    chunks in and five decodable chunks out, rather than trusted from the source.
+    Starlette's ``GZipResponder._compress_body`` calls
+    ``flush(zlib.Z_SYNC_FLUSH)`` on every chunk with ``more_body=True`` from 1.5.0
+    on (the floor in pyproject.toml, registry entry ``starlette-gzip-flush``; 1.0.0
+    to 1.4.1 do not, and this test fails on them), so each chunk is independently
+    inflatable the moment it is sent — measured here, five chunks in and five
+    decodable chunks out, rather than trusted from the source.
     A future Starlette bump that drops that flush would silently reintroduce the
     stall; this is what would catch it.
     """
@@ -400,5 +402,6 @@ def test_gzip_flushes_every_chunk_of_a_streaming_response():
     for i, expected in enumerate(chunks):
         assert delivered[i] == expected, (
             f"chunk {i} was not flushed at its own message — gzip is buffering a "
-            f"live token stream. Delivered so far: {delivered[: i + 1]!r}"
+            "live token stream (a Starlette below 1.5.0 does not flush per chunk; "
+            f"pyproject.toml carries that floor). Delivered so far: {delivered[: i + 1]!r}"
         )

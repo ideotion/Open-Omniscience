@@ -71,7 +71,7 @@ def test_benchmark_shape_parity_and_windows(session):
     assert out["build"]["build_ms"] >= 0 and out["build"]["keyword_daily_rows"] > 0
     # faithful on this corpus: mentions exact, distinct gap zero (unique-constraint)
     assert out["parity"]["mentions_exact"] is True
-    assert out["parity"]["distinct_gap_total"] == 0
+    assert out["parity"]["distinct_over_count_total"] == 0
     # every window compared, both sides cover the same keywords, timings present
     assert len(out["windows"]) == 4
     for w in out["windows"]:

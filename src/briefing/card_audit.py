@@ -1268,10 +1268,10 @@ def _independence(session, card, ids: list[int], *, max_articles: int) -> dict:
     near-duplicate clustering) and ``convergence._shared_origin`` (the exact
     shared-outbound-URL count). No new similarity algorithm is written here.
     """
-    from src.briefing.leads import _distinct_sources
+    from src.briefing.leads import _distinct_outlets
 
     out: dict = {
-        "distinct_evidence_sources": _distinct_sources(card),
+        "distinct_evidence_outlets": _distinct_outlets(card),
         "evidence_rows": len(card.evidence or []),
     }
     if not ids:

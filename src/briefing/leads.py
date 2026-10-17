@@ -81,11 +81,6 @@ def _distinct_outlets(card: Card) -> int:
     return len(set(_evidence_keys(card)))
 
 
-# The name ``card_audit`` (and the quality export) import: the same count, now of outlets. Kept as an alias so a file other
-# work is editing is not touched; callers read it as "distinct independent sources".
-_distinct_sources = _distinct_outlets
-
-
 def _evidence_without_outlet(card: Card) -> int:
     """How many evidence entries named a source but carried no outlet, so were counted by feed label."""
     return sum(1 for e in (card.evidence or []) if e.get("source") and _outlet_of(e) is None)

@@ -494,3 +494,121 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
         f"a settings write was entered holding the single-writer gate {len(seen)} time(s) (see kv_store.kv_set_json); the list is "
         "process-global, so fix the CALLER each entry names, which may belong to a thread another test left running:\n  " + "\n  ".join(seen)
     )
+
+
+_AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_connect", "_orig_connect_ex", "_orig_tunnel")
+
+
+def _process_wide_network_calls() -> dict[str, object]:
+    """The process-wide network entry points a test may swap and must put back. The class attributes are read with ``getattr`` on the
+    class, which resolves through the MRO to the very same descriptor whether it is inherited or was set back on the subclass. The
+    airplane module's saved originals are listed too: an uninstall COPIES them onto the calls above, so a
+    stand-in left on one of them turns up on ``socket`` in whichever test uninstalls next, and that test would be the one blamed."""
+    import http.client
+    import socket
+
+    calls: dict[str, object] = {
+        "socket.getaddrinfo": socket.getaddrinfo,
+        "socket.create_connection": socket.create_connection,
+        "socket.socket.connect": socket.socket.connect,
+        "socket.socket.connect_ex": socket.socket.connect_ex,
+        "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
+    }
+    # Imported here, at the first test's setup and so before any test has swapped a call: the module captures the stdlib's functions at
+    # import, and the first fetch of a process used to be the one to import it, inside a test's ``monkeypatch`` window, which made the
+    # test's stand-in the "real" call for the rest of the process. Importing it installs nothing.
+    import src.ingest.airplane as airplane
+
+    for attr in _AIRPLANE_ORIGINALS:
+        calls["airplane." + attr] = getattr(airplane, attr)
+    return calls
+
+
+def _put_network_call_back(name: str, value: object) -> None:
+    import http.client
+    import socket
+    import sys
+
+    if name.startswith("airplane."):
+        setattr(sys.modules["src.ingest.airplane"], name.removeprefix("airplane."), value)
+    elif name == "socket.getaddrinfo":
+        socket.getaddrinfo = value  # type: ignore[assignment]
+    elif name == "socket.create_connection":
+        socket.create_connection = value  # type: ignore[assignment]
+    elif name == "socket.socket.connect":
+        socket.socket.connect = value  # type: ignore[method-assign,assignment]
+    elif name == "socket.socket.connect_ex":
+        socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
+    else:
+        http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
+
+
+def _owner_name(owner: object) -> str:
+    """``socket`` for the module, ``socket.socket`` and ``http.client.HTTPConnection`` for the classes: the name a reader would write."""
+    if isinstance(owner, type):
+        return f"{owner.__module__}.{owner.__qualname__}"
+    return str(getattr(owner, "__name__", owner))
+
+
+def _airplane_guard_removed_while_flagged_installed() -> list[str]:
+    """The patched calls that hold the REAL function although ``airplane._installed`` says the guard is in: the guard was removed by a write
+    (a ``monkeypatch`` undo that recorded the real call before the install did) that never told the flag."""
+    import src.ingest.airplane as airplane
+
+    return [f"{_owner_name(owner)}.{attr}" for owner, attr, _wrapper in airplane.removed_while_installed()]
+
+
+def _defined_in_a_test(fn: object) -> bool:
+    """True for a plain function (a lambda or inner function) or a bound method written in test code. A ``MagicMock`` or a
+    ``functools.partial`` reports its library as ``__module__`` and is not seen; every stand-in this suite has used is a lambda."""
+    module = getattr(fn, "__module__", None) or ""
+    return module == "conftest" or module.split(".")[0] == "tests"
+
+
+_NETWORK_CALLS_BEFORE: dict[str, dict[str, object]] = {}
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item):
+    """Record the process-wide network calls BEFORE any fixture of the test is set up (see ``pytest_runtest_teardown``)."""
+    _NETWORK_CALLS_BEFORE[item.nodeid] = _process_wide_network_calls()
+    return (yield)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """A test that leaves a STAND-IN it wrote on ``socket.getaddrinfo`` (or its siblings) breaks every LATER test in the same worker,
+    far from the cause: the two real-server event-loop tests failed for hours because ``test_entity_spine`` left a resolver answering
+    an empty list. Checked AFTER every fixture of the test has been torn down (a ``monkeypatch`` undo included), by a hook rather than
+    a fixture for that reason, and also when a fixture's teardown raised (the put-back must not depend on the teardown being clean).
+    Whatever a test's own code leaves there is put back, and the test fails, by name. Only a callable DEFINED IN TEST CODE counts: the
+    production airplane guard installs and uninstalls its own wrappers on purpose, once per process, and a comparison with the state
+    before the test would blame every test that boots the app. A class-, module- or session-scoped fixture that installs one is not
+    supported: it is set up in the first test of its scope, so the first test is blamed and the stand-in is taken out under the rest."""
+    teardown_raised = False
+    try:
+        return (yield)
+    except BaseException:
+        teardown_raised = True
+        raise
+    finally:
+        before = _NETWORK_CALLS_BEFORE.pop(item.nodeid, None)
+        if before is not None:
+            after = _process_wide_network_calls()
+            leaked = sorted(name for name in before if name in after and after[name] is not before[name] and _defined_in_a_test(after[name]))
+            for name in leaked:
+                _put_network_call_back(name, before[name])
+            removed = _airplane_guard_removed_while_flagged_installed()
+            if removed:
+                import src.ingest.airplane as airplane
+
+                airplane._install_patches()  # patch them again, so one such test is one failure
+                leaked += ["guard removed but flagged installed: " + ", ".join(removed)]
+            if leaked and not teardown_raised:  # a teardown that already raised is the failure being reported; the put-back above still ran
+                pytest.fail(
+                    "this test left the process-wide network calls wrong (" + "; ".join(leaked) + "); they were put back, but a test that swaps "
+                    "one must restore it itself, in the order that lets any uninstall copy the real one, and one that records a real call "
+                    "before the guard is installed must install the guard first "
+                    "(see tests/test_entity_spine.py::test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_resolutions)",
+                    pytrace=False,
+                )

@@ -128,9 +128,20 @@ oo_rec_locked() {
         { : >> "$f.lock"; } 2>/dev/null || return 98
         wait_s="-w $(awk -v ms="$OO_REC_LOCK_WAIT_MS" 'BEGIN { printf "%.3f", ms / 1000 }')"
         [ "${OO_REC_LOCK_FOREVER:-}" != 1 ] || wait_s=""
+        # Only a flock that can say "the lock was held" apart from "the lock cannot be made" (-E, util-linux) lets a failure of the second kind be told from a
+        # timeout: a filesystem that cannot lock at all (NFS without lockd, some FUSE and shared folders) must reach the direct append (98), not be read as
+        # "held, try later" for ever. A flock without -E keeps the old reading of every failure as a timeout.
+        if [ -z "${_OO_FLOCK_E+x}" ]; then
+            if flock -E 99 -n /dev/null true 2>/dev/null; then _OO_FLOCK_E="-E 99"; else _OO_FLOCK_E=""; fi
+        fi
         (
             # shellcheck disable=SC2086
-            flock $wait_s 9 || exit 99
+            flock $_OO_FLOCK_E $wait_s 9
+            r=$?
+            if [ "$r" -ne 0 ]; then
+                if [ -n "$_OO_FLOCK_E" ] && [ "$r" -ne 99 ]; then exit 98; fi
+                exit 99
+            fi
             "$@"
         ) 9>>"$f.lock" 2>/dev/null || rc=$?
         return "$rc"
@@ -500,7 +511,13 @@ while kill -0 "$SERVER" 2>/dev/null; do
     status=0
     wait "$SERVER" || status=$?
 done
-if [ "$STOP_REQUESTED" = 0 ] && [ "$status" -ne 0 ]; then
+# A requested stop that ENDED IN A CRASH (a SIGABRT or SIGSEGV during the teardown: 134, 139) is an exit row too: with only the stop row the next boot read
+# it as "a stop was asked ... Not a crash". The statuses a stop ends in when it works (0, 129, 130, 143) stay stop-row only.
+crashed_in_stop=0
+if [ "$STOP_REQUESTED" = 1 ]; then
+    case "$status" in 0|129|130|143) ;; *) crashed_in_stop=1 ;; esac
+fi
+if { [ "$STOP_REQUESTED" = 0 ] || [ "$crashed_in_stop" = 1 ]; } && [ "$status" -ne 0 ]; then
     record_exit "$status" || true
     case "$status" in
         # SIGHUP/SIGINT/SIGTERM: a stop somebody ASKED for, just not through this

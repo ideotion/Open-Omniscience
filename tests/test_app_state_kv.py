@@ -196,7 +196,13 @@ def test_a_read_leaves_a_leftover_wal_byte_for_byte_and_still_reads_the_value(tm
     subprocess.run([sys.executable, "-c", code, str(db)], check=True)
     wal = tmp_path / "open_omniscience.db-wal"
     before = hashlib.sha256(wal.read_bytes()).hexdigest()
-    assert kv_store.kv_get_json("settings.app") == {"theme": "dark"}
+    # kv_get_json folds every failed read into None; the checked read says which kind it was, and the files say what the open met.
+    try:
+        got, why = kv_store.kv_get_json_checked("settings.app"), "the read found no value"
+    except kv_store.KvReadError as exc:
+        got, why = None, f"the read failed ({exc})"
+    files = {f.name: f.stat().st_size for f in sorted(tmp_path.iterdir())}
+    assert got == {"theme": "dark"}, f"{why}; files in the data dir (bytes): {files}; stdlib sqlite {sqlite3.sqlite_version}"
     assert wal.exists() and hashlib.sha256(wal.read_bytes()).hexdigest() == before
 
 

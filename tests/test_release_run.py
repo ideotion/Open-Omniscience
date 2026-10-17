@@ -1274,6 +1274,26 @@ def test_row_C_reads_coverage_and_member_outcomes_from_an_archive_the_real_write
     assert c2["evidence"]["bar_satisfied_by_this_bundle"] is True
 
 
+def test_row_C_fails_and_names_a_member_the_log_guard_stood_aside_from(tmp_path, monkeypatch, fast):
+    """Opus read of #1444. A member that raises ``HeavyPaused`` is written ``skipped-paused`` with a marker; it was in neither list row C fails on, so the row read
+    satisfied with the member missing. The real writer builds the archive, so the manifest outcome and the marker are the ones a release run reads."""
+    from src.api.heavy import HeavyPaused
+
+    def _paused():
+        raise HeavyPaused(10)
+    path = _build_real_archive(tmp_path, [("ok.json", lambda: {"ran": True}), ("card-audit.json", _paused)], monkeypatch)
+    read = rr._read_bundle_archive(str(path))
+    assert read["skipped_paused_members"] == ["card-audit.json"]
+    assert read["error_members"] == [], "the guard working is not a failure of the member"
+    monkeypatch.setattr(rr, "_bundle", lambda ctx: {**read, "measured": True, "path": str(path), "job_state": "done"})
+    c = next(r for r in rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]["board_rows"] if r["row"] == "C")
+    assert c["evidence"]["bar_satisfied_by_this_bundle"] is False
+    assert c["evidence"]["skipped_paused_members"] == ["card-audit.json"]
+    assert "card-audit.json" in c["note"] and "paused" in c["note"]
+    # the marker files alone (an archive whose manifest carries no outcomes) read the same
+    assert rr._MARKER_SUFFIXES[".skipped-paused.txt"] == "skipped-paused"
+
+
 # -- row 5 with fake managers ------------------------------------------------ #
 class _FakeJob:
     """A resumable manager whose status walks a script, one entry per poll."""

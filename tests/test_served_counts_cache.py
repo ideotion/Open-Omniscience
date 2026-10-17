@@ -357,9 +357,9 @@ def test_stats_and_library_overview_share_one_cache_mechanism():
     calls: list[str] = []
     real = served_cache.cached
 
-    def _spy(key, compute, session, *, ttl_s):
+    def _spy(key, compute, session, **kw):
         calls.append(key)
-        return real(key, compute, session, ttl_s=ttl_s)
+        return real(key, compute, session, **kw)
 
     served_cache.cached = _spy  # type: ignore[assignment]
     try:
@@ -380,9 +380,10 @@ def test_figures_are_served_stale_rather_than_recomputed_inline():
     """The whole-table mentions count is the 43 s query; it must never ride a poll."""
     s = SessionLocal()
     try:
-        dbmod.library_figures(s)  # cold
+        dbmod.library_figures(s)  # cold: answered at once, the count runs in the background
     finally:
         s.close()
+    assert _wait_for_refresh("db:figures", lambda p: "keyword_mentions_state" in p)
     _age_out("db:figures")
     with _CountCapture() as cap:
         s = SessionLocal()

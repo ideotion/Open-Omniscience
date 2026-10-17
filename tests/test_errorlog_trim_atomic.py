@@ -166,3 +166,20 @@ def test_a_record_raised_while_a_throttle_holds_the_journal_lock_is_written_afte
     threading.Thread(target=lambda: (call(), done.set()), daemon=True).start()
     assert done.wait(20), "the journal waited on a lock its own thread holds"
     assert '"nested-record"' in journal.read_text(encoding="utf-8")
+
+
+def test_an_interrupt_leaving_the_locked_append_still_writes_the_records_held_meanwhile(journal, monkeypatch):
+    """A record logged by a finalizer while the lock is held is written after the lock is let go, also when the body is left by an interrupt (not an ``Exception``)."""
+    _big(journal, 6000)
+    fired = []
+
+    def interrupted(path):
+        if not fired:
+            fired.append(1)
+            errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "held-record"})
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(errorlog, "_sweep_dead_temps", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "outer-record"})
+    assert '"held-record"' in journal.read_text(encoding="utf-8")

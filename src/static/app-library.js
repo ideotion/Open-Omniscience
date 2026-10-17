@@ -294,11 +294,41 @@
       const again = host.querySelector("details.adv-collect");
       if (again && open) again.open = true;   // a disclosure the reader opened stays open
     }
+    // The keywords-per-article tile, with the count's state stated: the server answers the first request after boot at once and
+    // counts every keyword mention in the background (a 55 s scan on the field corpus), so the value is "counting…" until it
+    // lands, or "not counted" with the reason, never a silent dash. The long form rides the hover bubble (layered, not hidden).
+    function _kwPerArticleTile(fig, t, num, tile) {
+      const label = t("Avg keywords / article");
+      // null is not a time: new Date(null) is the epoch, so an unknown start would print as "12:00:00 AM".
+      const clock = iso => { if (!iso) return "—"; try { return new Date(iso).toLocaleTimeString(); } catch (e) { return iso; } };
+      if (fig.keyword_mentions_state === "computing") {
+        return tile(t("counting…"), label,
+          t("Counting every keyword mention in the background since {t}; the other figures are exact now.")
+            .replace("{t}", clock(fig.pending_since)));
+      }
+      if (fig.keyword_mentions_state === "failed" && fig.keyword_mentions_failure) {
+        const f = fig.keyword_mentions_failure;
+        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", String(f.deadline_s))
+          : f.kind === "memory-short" ? t("stopped because the machine was nearly out of memory") : String(f.kind);
+        return tile(t("not counted"), label,
+          t("Not counted: the keyword-mention count stopped ({why}) at {t}; it is tried again after {m} min.")
+            .replace("{why}", why).replace("{t}", clock(f.at)).replace("{m}", String(Math.round((f.retry_after_s || 0) / 60))));
+      }
+      // A counted figure says WHEN it was counted: the count is a slow scan, so it is carried between counts (never recounted more
+      // often than ten times its own duration) and the hover bubble states the age rather than letting it read as live.
+      if (fig.keyword_mentions_computed_at) {
+        return tile(num(fig.avg_keywords_per_article), label,
+          t("Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.")
+            .replace("{t}", clock(fig.keyword_mentions_computed_at))
+            .replace("{m}", String(Math.max(1, Math.round((fig.keyword_mentions_recount_after_s || 0) / 60)))));
+      }
+      return tile(num(fig.avg_keywords_per_article), label);
+    }
     function _paintLibraryOverview(host, d, fig) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const num = v => (v == null ? "—" : fmtNum(v));
       const sz = v => (v == null || !v) ? "—" : _fmtBytes(v);
-      const tile = (n, k) => `<div class="stat"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
+      const tile = (n, k, title) => `<div class="stat"${title ? ` title="${esc(title)}"` : ""}><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
       const dl = d.downloaded || {}, der = d.derived || {};
       const wiki = dl.wikipedia || {}, maps = dl.maps || {}, laws = dl.laws || {};
       const dlTiles = [
@@ -326,7 +356,7 @@
       // Real counts, no score; each label states its method. "—" when not yet known.
       const figTiles = (fig && fig.articles) ? [
         tile(num(fig.avg_word_count), t("Avg words / article")),
-        tile(num(fig.avg_keywords_per_article), t("Avg keywords / article")),
+        _kwPerArticleTile(fig, t, num, tile),
         tile(num(fig.articles_per_day), t("Articles / day (avg since first)")),
         tile(num(fig.articles_per_hour_recent), t("Articles / hour (last 24h)")),
       ].join("") : "";

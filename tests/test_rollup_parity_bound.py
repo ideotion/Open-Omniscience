@@ -216,3 +216,14 @@ def test_run_rollup_benchmark_reports_the_bound_and_compares_bounded(monkeypatch
     assert out["parity"]["distinct_upper_bound_holds"] is True
     for w in out["windows"]:
         assert w["counts_match"] is True and w["keywords_live_minus_rollup"] == 0
+
+
+def test_the_over_count_fields_say_over_count_and_the_old_gap_names_are_gone():
+    # "gap" read as distance from live; it counted only the rollup ABOVE live. The 10-16 benchmark showed
+    # distinct_upper_bound_holds False beside gap 0 because the rollup was only ever BELOW live.
+    s, _ = _corpus()
+    con, build = _build(s, on_first_batch=lambda: [_add_mention(s, (j * 7) % 200 + 1, 1000) for j in range(5)])
+    old = columnar.keyword_daily_parity(con, s)
+    assert old["distinct_upper_bound_holds"] is False and old["distinct_below_keywords"] > 0
+    assert old["distinct_over_count_keywords"] == 0 and old["distinct_over_count_total"] == 0
+    assert "distinct_gap_keywords" not in old and "distinct_gap_total" not in old

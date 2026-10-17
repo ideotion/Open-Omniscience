@@ -51,6 +51,8 @@ def _server_body(mode: str) -> str:
         return "exit 3\n"
     if mode == "wait":
         return 'trap \'exit 0\' TERM HUP\necho up > "$OO_TEST_PIDFILE.up"\nwhile :; do sleep 0.1; done\n'
+    if mode == "abort_in_stop":  # a server that aborts (134) while it shuts down on a requested stop
+        return 'trap \'exit 134\' TERM HUP\necho up > "$OO_TEST_PIDFILE.up"\nwhile :; do sleep 0.1; done\n'
     if mode == "slowerr":
         return f'echo "{MSG}" >&2\nsleep 4\necho "{MSG}" >&2\nexit 3\n'
     raise AssertionError(mode)
@@ -252,6 +254,50 @@ def test_a_row_that_times_out_is_written_under_the_lock_after_the_holder_trims_n
     rows = _rows(f)[0]
     assert sum(1 for r in rows if r == {"pid": 7}) == 1 and len(rows) == 21, "once, after the holder's trim (20 kept) and before any later trim is due"
     assert sorted(x.name for x in tmp_path.iterdir() if x.name.startswith("x.jsonl")) in (["x.jsonl", "x.jsonl.lock"], ["x.jsonl"]), "the child left no file behind"
+
+
+@posix_only
+def test_a_filesystem_that_cannot_lock_gets_the_row_appended_directly_not_lost(tmp_path):
+    """Opus read of #1444. `flock ... || exit 99` read every flock failure as "held, try later"; the deferred child (no time bound) then failed the same way and
+    wrote nothing, so on a volume that cannot lock at all (NFS without lockd, some FUSE and shared folders) the exit, stop and stderr rows vanished. A flock that
+    says "cannot lock" (not its -E 99 for "held") now reaches the direct append, as a folder that cannot be written already did."""
+    h, env = _helpers(tmp_path, no_flock=False)
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    # works on /dev/null (the probe for -E) and fails on the data file's lock descriptor, as a filesystem without lock support does
+    _exe(fake / "flock", '#!/bin/sh\ncase "$*" in *"/dev/null true"*) exit 0 ;; esac\necho "flock: 9: no locks available" >&2\nexit 1\n')
+    env["PATH"] = f"{fake}{os.pathsep}{env['PATH']}"
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; oo_rec_append "{f}" \'{{"pid":9}}\' 40 20'], env=env, check=True, timeout=30)
+    assert _wait_for(lambda: {"pid": 9} in _rows(f)[0]), "the row was lost on a filesystem that cannot lock"
+
+
+@posix_only
+def test_a_stop_whose_teardown_crashes_leaves_an_exit_row_and_a_clean_stop_does_not(tmp_path):
+    """Opus read of #1444. A Ctrl-C followed by an abort (134) in the teardown left only the stop row, which the next boot reads as "a stop was asked ... Not a
+    crash". The crash status is now an exit row as well; the statuses a working stop ends in (here 0) still write none."""
+    results = {}
+    for mode, label in (("abort_in_stop", "crash"), ("wait", "clean")):
+        sub = tmp_path / label
+        sub.mkdir()
+        b = _Bash(sub)
+        proc, pf = b.start("l0", mode)
+        end = time.monotonic() + 30
+        while not Path(str(pf) + ".up").exists() and time.monotonic() < end:
+            time.sleep(0.05)
+        assert Path(str(pf) + ".up").exists(), "the fake server did not start"
+        time.sleep(1.0)  # the launcher installs its traps right after the server starts
+        pid = _pid(pf)
+        os.kill(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=60)
+        results[label] = (pid, _rows(b.data / "diagnostics" / "launcher_exits.jsonl")[0], _rows(b.data / "diagnostics" / "launcher_stops.jsonl")[0])
+    pid, exits, stops = results["crash"]
+    assert any(r.get("pid") == pid and r.get("status") == 134 for r in exits), "a crash in a requested stop's teardown has no exit row"
+    assert any(r.get("pid") == pid for r in stops), "the stop row is still written"
+    pid, exits, stops = results["clean"]
+    assert not any(r.get("pid") == pid for r in exits), "a stop that ended well wrote an exit row"
+    assert any(r.get("pid") == pid for r in stops)
 
 
 @posix_only

@@ -1830,8 +1830,8 @@ def keyword_daily_parity(
     mention_mismatches = 0
     rollup_below = 0
     rollup_above = 0
-    distinct_gap_keywords = 0
-    distinct_gap_total = 0
+    distinct_over_count_keywords = 0
+    distinct_over_count_total = 0
     distinct_below_keywords = 0
     for kid, (lm, la) in live.items():
         rm, ra = roll.get(kid, (0, 0))
@@ -1843,9 +1843,9 @@ def keyword_daily_parity(
                 rollup_above += 1
         if ra < la:
             distinct_below_keywords += 1  # a rollup distinct count must NEVER be below live
-        if ra > la:
-            distinct_gap_keywords += 1
-            distinct_gap_total += ra - la
+        if ra > la:  # over-count only: the rollup ABOVE live; the rollup below live is distinct_below_keywords
+            distinct_over_count_keywords += 1
+            distinct_over_count_total += ra - la
     # Keywords the rollup holds and the live window no longer does (deleted after they were streamed): the
     # live loop above cannot see them, and they are exactly the "rollup above live" direction.
     rollup_only = sum(1 for kid in roll if kid not in live)
@@ -1862,8 +1862,8 @@ def keyword_daily_parity(
         "rollup_only_keywords": rollup_only,
         "distinct_upper_bound_holds": distinct_below_keywords == 0,
         "distinct_below_keywords": distinct_below_keywords,
-        "distinct_gap_keywords": distinct_gap_keywords,
-        "distinct_gap_total": distinct_gap_total,
+        "distinct_over_count_keywords": distinct_over_count_keywords,
+        "distinct_over_count_total": distinct_over_count_total,
         "bounded_by_scan_bound": bounded,
         "scan_bound": (None if not bounded or scan_bound is None else str(scan_bound)),
         "method": (

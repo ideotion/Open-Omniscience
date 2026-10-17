@@ -571,6 +571,64 @@ def current_progress() -> dict | None:
         return dict(_PROGRESS) if _PROGRESS else None
 
 
+# --- What an ERRORED run record says about how far the pass got ------------------------------------------------- #
+# A run that raises has no ``result`` (the value it never returned), so its record carried only the error's class: all 30 of
+# the recent runs in each field bundle of 2026-10-16 ended in a pool timeout, and not one said whether the pass had processed
+# 40 sources or 4,000, so "the collector is starved" was visible only for the pass in flight. ``run_scrape_once`` notes its
+# three counters here as it ends, however it ends, and ``_do_run`` copies them into the record of a run that raised. Reset
+# before every run, after the run lock is taken (a run that loses the lock race returns before it, so it cannot wipe the counts
+# of the pass that holds it). The key names are the ones the success path uses in ``result``; the record of a run that
+# returned does not repeat them.
+#
+# ``basis`` says which counts these are, and is the reason where they are null:
+#   ``pass_returned``  the collect pass returned and the failure came later, in the pass tail: the pass's own counts;
+#   ``pass_raised``    the collect pass raised. The counts are every source whose worker returned a result by the time the pass
+#                      ended: in a pool pass the sources still queued when the failure surfaced run to their end (the executor's
+#                      exit waits and does not cancel), and ``run_scrape_once`` reads their results before it notes the counts.
+#                      A source whose worker RAISED processed nothing and is in no count, so ``sources_total`` minus the
+#                      processed count is the sources that failed, never ran or were deferred;
+#   ``not_reported``   the failure came before the pass counted anything (the session, the choice of sources) or the run
+#                      function did not report: the three counts are null, never 0.
+COUNTS_COMPLETE = "pass_returned"
+COUNTS_PARTIAL = "pass_raised"
+COUNTS_UNREPORTED = "not_reported"
+_PASS_COUNTS_LOCK = threading.Lock()
+_PASS_COUNTS: dict | None = None
+
+
+def _pass_counts_reset() -> None:
+    global _PASS_COUNTS
+    with _PASS_COUNTS_LOCK:
+        _PASS_COUNTS = None
+
+
+def _pass_counts_note(basis: str, *, sources_total: int, sources_processed: int, articles_stored: int) -> None:
+    """The collect pass's counters at the moment it ends (``sources_total``: the sources the pass chose to run, after the
+    backoff and pacing filters)."""
+    global _PASS_COUNTS
+    with _PASS_COUNTS_LOCK:
+        _PASS_COUNTS = {
+            "articles_stored": articles_stored,
+            "basis": basis,
+            "sources_processed": sources_processed,
+            "sources_total": sources_total,
+        }
+
+
+def _pass_counts_for_error() -> dict:
+    """The ``pass_counts`` member of the record of a run that raised: what the pass noted, else three nulls and the reason."""
+    with _PASS_COUNTS_LOCK:
+        noted = dict(_PASS_COUNTS) if _PASS_COUNTS else None
+    if noted is not None:
+        return noted
+    return {
+        "articles_stored": None,
+        "basis": COUNTS_UNREPORTED,
+        "sources_processed": None,
+        "sources_total": None,
+    }
+
+
 # Coarse PHASE of the in-flight pass, independent of the detailed per-source
 # _PROGRESS (which run_scrape_once owns and clears at the end of the scrape).
 # This survives the whole pass so the task manager can honestly say WHAT the
@@ -719,6 +777,27 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     }
 
 
+def _source_label(source) -> str:
+    """The source's domain for a log line or a progress line, or ``?``. After a failure rolls the session back, every Source
+    object that session holds is expired, and reading one attribute reloads the row through a pooled connection: with the pool
+    exhausted that checkout times out, and a label is never worth ending a pass for."""
+    try:
+        return source.domain
+    except Exception:  # noqa: BLE001 - a label; never worth a failure
+        return "?"
+
+
+def _source_key(source) -> int:
+    """The source's primary key WITHOUT loading it. The deferred sources are objects of the caller's session, expired by any
+    commit or rollback since they were selected, and ``source.id`` on an expired instance reloads the row through a pooled
+    connection: with the pool exhausted that timed out inside the pass's ``finally`` and the deferrals were never recorded.
+    The session already holds the identity."""
+    from sqlalchemy import inspect
+
+    identity = inspect(source).identity
+    return identity[0] if identity else source.id
+
+
 def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     """Scrape ONE source into ``session``; returns (tally, pages_fetched, processed).
 
@@ -747,6 +826,12 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     # src/ingest/fetch_release.py for what is and is not covered).
     fetcher = wrap_fetcher(fetcher, session)
 
+    # Read the label BEFORE the try: a failure inside ingest_source rolls the session
+    # back, which expires every attribute, and reading ``source.domain`` in the handler
+    # then reloads it through a pooled connection — a second checkout that can time out
+    # (the pool is exactly what is exhausted) and escape the handler, ending the pass.
+    domain = _source_label(source)
+
     try:
         # Feeds only. The whole-source crawl branch that sat here served the retired
         # ``mode="crawl"`` (Q1020 = a); crawling now happens beside the pass, bounded, in
@@ -755,7 +840,7 @@ def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
             return {}, 0, 0
         return ingest_source(session, source, fetcher=fetcher), 0, 1
     except Exception as exc:  # noqa: BLE001 - one bad source must not abort the batch
-        log_failure(_LOG, f"scrape run: source {getattr(source, 'domain', '?')!r} failed", exc, level=logging.WARNING)
+        log_failure(_LOG, f"scrape run: source {domain!r} failed", exc, level=logging.WARNING)
         return {"errors": 1}, 0, 0
 
 
@@ -879,11 +964,19 @@ def run_scrape_once(
     deferred_sources: list = []
     deferred_lock = threading.Lock()
     wind_reasons: dict[str, int] = {}
+    pool_deferred: list = []
 
     def _defer(source, reason: str) -> None:
         with deferred_lock:
             deferred_sources.append(source)
             wind_reasons[reason] = wind_reasons.get(reason, 0) + 1
+
+    def _defer_unpooled(source) -> None:
+        # A source that found no pooled connection is carried to the next pass like a wound-down one, but it is not a wind-down:
+        # the pass kept running, so it stays out of ``wind_reasons`` (which names why a pass stopped taking sources).
+        with deferred_lock:
+            deferred_sources.append(source)
+            pool_deferred.append(source)
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
@@ -910,6 +1003,11 @@ def run_scrape_once(
     # ``:memory:`` hands each thread a SEPARATE database) runs sequentially on that
     # same session — correct on any engine, parallel only where it is safe.
     use_pool = w_max > 1 and len(sources) > 1
+    # What the process-wide extraction lock cost this pass (``src.ingest.lock_stats``): set where the pass's monitor
+    # writes its summary, so the run report carries the same block as ``collect_perf.jsonl``.
+    extraction_lock: dict | None = None
+    # The same for the encrypted opens (``src.database.open_stats``).
+    encrypted_opens: dict | None = None
     if use_pool:
         try:
             from src.database.session import engine as _global_engine
@@ -928,6 +1026,8 @@ def run_scrape_once(
             # holds no connection); writes still serialise through the single-writer
             # gate, and the shared fetcher's per-host lock keeps politeness intact.
             from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            from sqlalchemy.exc import TimeoutError as _PoolTimeout
 
             from src.database.models import Source as _Source
             from src.database.pool_reserve import collector_role
@@ -988,7 +1088,18 @@ def run_scrape_once(
                         # ``source_metadata``) lazy-loaded through that one session and
                         # its one connection, from every worker at once, and segfaulted
                         # the process (2 crashes in 30 runs of the pool test, 2026-09-25).
-                        own = worker_session.get(_Source, source_id)
+                        try:
+                            own = worker_session.get(_Source, source_id)
+                        except _PoolTimeout as exc:
+                            # This read is the worker's first pooled checkout. With the pool
+                            # exhausted it times out, and an exception out of here ends the
+                            # WHOLE pass at ``fut.result()`` — one source ending the batch.
+                            # Record it against this source and leave it for the next pass;
+                            # nothing retries in this one (a retry holds the very slot the
+                            # pool is short of), and the other sources carry on.
+                            log_failure(_LOG, f"scrape run: source id {source_id} found no pooled connection", exc, level=logging.WARNING)
+                            _defer_unpooled(source)
+                            return {"errors": 1}, 0, 0
                         if own is None:  # deleted since the selection: nothing to fetch
                             return {}, 0, 0
                         return _process_source(
@@ -1000,13 +1111,17 @@ def run_scrape_once(
                     governor.release()
 
             done = 0
+            futures: list = []
+            read_futures: set = set()
             monitor.start()
             try:
                 with ThreadPoolExecutor(
                     max_workers=w_max, thread_name_prefix="oo-collect"
                 ) as pool:
-                    futures = [pool.submit(_worker, s, s.id) for s in sources]
+                    for s in sources:
+                        futures.append(pool.submit(_worker, s, s.id))
                     for fut in as_completed(futures):
+                        read_futures.add(fut)
                         tally, pages, processed = fut.result()
                         _add(tally)
                         pages_fetched += pages
@@ -1019,6 +1134,21 @@ def run_scrape_once(
                             permits=governor.permits,
                         )
             finally:
+                # A worker's failure surfaces through ``fut.result()`` above and leaves the loop; the pool's exit then ran every
+                # source still queued to its end (``shutdown(wait=True)`` does not cancel), and none of those results was read.
+                # Read them now, so the counts the monitor and the run record carry are every source that returned a result:
+                # a pass that fails at its first worker does not report 0 sources for the 19 that ran. A future that raised
+                # processed nothing and is in no count.
+                for fut in futures:
+                    if fut in read_futures or not fut.done() or fut.cancelled():
+                        continue
+                    try:
+                        tally, pages, processed = fut.result()
+                    except Exception:  # noqa: BLE001 - a worker that raised processed nothing, and the first failure is already on its way out
+                        continue
+                    _add(tally)
+                    pages_fetched += pages
+                    sources_processed += processed
                 summary = monitor.stop(
                     result={
                         "articles_stored": agg.get("stored", 0),
@@ -1026,6 +1156,13 @@ def run_scrape_once(
                         "pages_fetched": pages_fetched,
                     }
                 )
+                # The summary is not written for a pass shorter than one monitor tick; the figures exist all the same.
+                extraction_lock = summary.get("extraction_lock") if summary else None
+                if extraction_lock is None:
+                    extraction_lock = monitor.extraction_lock_block()
+                encrypted_opens = summary.get("encrypted_opens") if summary else None
+                if encrypted_opens is None:
+                    encrypted_opens = monitor.encrypted_opens_block()
                 if summary:
                     _LOG.info(
                         "collect perf: bottleneck=%s",
@@ -1079,13 +1216,23 @@ def run_scrape_once(
                 if reason:
                     _defer(source, reason)
                     continue
-                _progress_set(current=source.domain, done=idx, pages=pages_fetched)
+                _progress_set(current=_source_label(source), done=idx, pages=pages_fetched)
                 tally, pages, processed = _process_source(
                     source, session=session, fetcher=fetcher,
                 )
                 _add(tally)
                 pages_fetched += pages
                 sources_processed += processed
+    except Exception:
+        # The pass failed (a worker's pool timeout surfaces here through ``fut.result()``): say how far it had got, for the
+        # record of the run that raises (``_pass_counts_for_error``).
+        _pass_counts_note(
+            COUNTS_PARTIAL,
+            sources_total=len(sources),
+            sources_processed=sources_processed,
+            articles_stored=agg.get("stored", 0),
+        )
+        raise
     finally:
         _progress_set(_clear=True)
         # Record deferrals in the FINALLY (skeptic-hardened): even if the pool
@@ -1093,16 +1240,18 @@ def run_scrape_once(
         # claim on the next pass (the exactness invariant: every selected
         # source was either processed or is recorded here, in order).
         if deferred_sources:
-            _record_deferred([s.id for s in deferred_sources])
+            _record_deferred([_source_key(s) for s in deferred_sources])
 
     recycled: str | None = None
-    if deferred_sources:
+    if wind_reasons:
         recycled = max(wind_reasons.items(), key=lambda kv: kv[1])[0]
         _LOG.info(
             "pass wound down (%s): %d source(s) deferred to run first next pass",
             recycled,
-            len(deferred_sources),
+            len(deferred_sources) - len(pool_deferred),
         )
+    if pool_deferred:
+        _LOG.info("%d source(s) found no pooled connection and run first next pass", len(pool_deferred))
 
     finished = datetime.now(UTC)
     out = {
@@ -1116,8 +1265,19 @@ def run_scrape_once(
         "duration_s": round((finished - started).total_seconds(), 2),
     }
     if deferred_sources:
-        out["recycled"] = recycled
+        if recycled is not None:
+            out["recycled"] = recycled
         out["deferred_next_pass"] = len(deferred_sources)
+        if pool_deferred:
+            out["pool_timeout_deferred"] = len(pool_deferred)
+    if extraction_lock is not None:
+        out["extraction_lock"] = extraction_lock
+    if encrypted_opens is not None:
+        out["encrypted_opens"] = encrypted_opens
+    # The tail after the pass can still fail; the record of that run carries the pass's own counts.
+    _pass_counts_note(
+        COUNTS_COMPLETE, sources_total=len(sources), sources_processed=sources_processed, articles_stored=agg.get("stored", 0)
+    )
     return out
 
 
@@ -1934,6 +2094,7 @@ class BackgroundScheduler:
         report: dict = {"started_at": started.isoformat(timespec="seconds")}
         # Q1020 = a: every run is the press lane; there is no per-run mode to read.
         report["lane"] = "press"
+        _pass_counts_reset()
         try:
             result = self._run_once_fn()
             with self._state_lock:
@@ -1952,6 +2113,7 @@ class BackgroundScheduler:
                 self._last_error = type(exc).__name__
             report["ok"] = False
             report["error"] = type(exc).__name__
+            report["pass_counts"] = _pass_counts_for_error()
         finally:
             # Between-pass memory hygiene (P0.3 E1): release per-pass state at
             # the run boundary — never mid-worker; the pool is joined and the

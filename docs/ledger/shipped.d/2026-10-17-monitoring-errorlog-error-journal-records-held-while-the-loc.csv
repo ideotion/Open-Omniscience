@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,monitoring/errorlog,Error journal: records held while the lock was taken are written even when an interrupt leaves the append,shipped,PR #1444,"src/monitoring/errorlog.py,tests/test_errorlog_trim_atomic.py","Before: a KeyboardInterrupt or SystemExit leaving the locked append dropped the records a finalizer had logged meanwhile, because the loop that writes them sat after the finally. After: they are written inside the finally; a red-without test."

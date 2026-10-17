@@ -170,6 +170,16 @@ _orig_connect_ex = socket.socket.connect_ex
 # restoring it is the whole point of this backstop.
 _orig_tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
 _orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
+#: The same real calls, never reassigned: a test swaps ``_orig_*`` for spies, and a call that has the stdlib's own function back in it
+#: is "the guard was removed" whether or not a spy is standing in ``_orig_*`` at that moment.
+_REAL_AT_IMPORT = (
+    _orig_getaddrinfo,
+    _orig_create_connection,
+    _orig_connect,
+    _orig_connect_ex,
+    _orig_tunnel,
+    _orig_socks_connect,
+)
 
 _installed = False
 #: True only when ``install_airplane_socket_guard`` armed the AIRPLANE refusal.
@@ -243,20 +253,63 @@ def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no
     return cast(Callable[..., Any], _orig_socks_connect)(self, dest_pair, *args, **kwargs)
 
 
+def _patch_points() -> list[tuple[Any, str, Any, Any]]:
+    """Each patched call as (owner, attribute, our wrapper, the real call we saved)."""
+    points: list[tuple[Any, str, Any, Any]] = [
+        (socket, "getaddrinfo", _guarded_getaddrinfo, _orig_getaddrinfo),
+        (socket, "create_connection", _guarded_create_connection, _orig_create_connection),
+        (socket.socket, "connect", _guarded_connect, _orig_connect),
+        (socket.socket, "connect_ex", _guarded_connect_ex, _orig_connect_ex),
+        (http.client.HTTPConnection, "_tunnel", _guarded_tunnel, _orig_tunnel),
+    ]
+    if _orig_socks_connect is not None:
+        points.append((_pysocks.socksocket, "connect", _guarded_socks_connect, _orig_socks_connect))
+    return points
+
+
+def _standing_calls() -> list[Any]:
+    """What each patch point holds right now, in the order of :func:`_patch_points`. A point that cannot be read (a private attribute a
+    newer Python renamed) reads as ``None``, which is neither a real function nor a stand-in we know, so it is left alone, not healed."""
+    calls: list[Any] = [
+        getattr(socket, "getaddrinfo", None),
+        getattr(socket, "create_connection", None),
+        getattr(socket.socket, "connect", None),
+        getattr(socket.socket, "connect_ex", None),
+        getattr(http.client.HTTPConnection, "_tunnel", None),
+    ]
+    if _orig_socks_connect is not None:
+        calls.append(getattr(_pysocks.socksocket, "connect", None))
+    return calls
+
+
+def removed_while_installed() -> list[tuple[Any, str, Any]]:
+    """The patch points (owner, attribute, our wrapper) that hold a REAL function although the guard is flagged installed: whoever wrote the
+    real call over our wrapper (a ``monkeypatch`` undo that recorded it before the install did exactly that to ``socket.getaddrinfo``,
+    leaving ``_installed`` True with DNS unguarded) removed the guard without telling us. Only the real function (the saved one, or the
+    stdlib's own) counts; anything else standing there is somebody's deliberate stand-in. Empty when the guard is not installed."""
+    if not _installed:
+        return []
+    return [
+        (owner, attr, wrapper)
+        for (owner, attr, wrapper, real), at_import, standing in zip(_patch_points(), _REAL_AT_IMPORT, _standing_calls(), strict=False)
+        if standing is real or standing is at_import
+    ]
+
+
 def _install_patches() -> None:
     """Patch the socket chokepoints. Idempotent, and the ONLY place they are
     patched -- both gates ride the same layer so a call site cannot meet one and
-    miss the other, and an uninstall can never leave half of it behind."""
+    miss the other, and an uninstall can never leave half of it behind.
+
+    Once installed, a call that has the real function back in it is patched again (:func:`removed_while_installed`): a flag that says
+    "installed" must not outlive a write that removed the guard."""
     global _installed
     if _installed:
+        for owner, attr, wrapper in removed_while_installed():
+            setattr(owner, attr, wrapper)
         return
-    socket.getaddrinfo = _guarded_getaddrinfo  # type: ignore[assignment]
-    socket.create_connection = _guarded_create_connection  # type: ignore[assignment]
-    socket.socket.connect = _guarded_connect  # type: ignore[assignment]
-    socket.socket.connect_ex = _guarded_connect_ex  # type: ignore[assignment]
-    http.client.HTTPConnection._tunnel = _guarded_tunnel  # type: ignore[attr-defined]
-    if _orig_socks_connect is not None:
-        _pysocks.socksocket.connect = _guarded_socks_connect  # type: ignore[union-attr]
+    for owner, attr, wrapper, _real in _patch_points():
+        setattr(owner, attr, wrapper)
     _installed = True
 
 
