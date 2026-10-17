@@ -502,11 +502,10 @@ _AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_co
 def _process_wide_network_calls() -> dict[str, object]:
     """The process-wide network entry points a test may swap and must put back. The class attributes are read with ``getattr`` on the
     class, which resolves through the MRO to the very same descriptor whether it is inherited or was set back on the subclass. The
-    airplane module's saved originals are listed too (when it is already imported): an uninstall COPIES them onto the calls above, so a
+    airplane module's saved originals are listed too: an uninstall COPIES them onto the calls above, so a
     stand-in left on one of them turns up on ``socket`` in whichever test uninstalls next, and that test would be the one blamed."""
     import http.client
     import socket
-    import sys
 
     calls: dict[str, object] = {
         "socket.getaddrinfo": socket.getaddrinfo,
@@ -515,10 +514,13 @@ def _process_wide_network_calls() -> dict[str, object]:
         "socket.socket.connect_ex": socket.socket.connect_ex,
         "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
     }
-    airplane = sys.modules.get("src.ingest.airplane")
-    if airplane is not None:
-        for attr in _AIRPLANE_ORIGINALS:
-            calls["airplane." + attr] = getattr(airplane, attr)
+    # Imported here, at the first test's setup and so before any test has swapped a call: the module captures the stdlib's functions at
+    # import, and the first fetch of a process used to be the one to import it, inside a test's ``monkeypatch`` window, which made the
+    # test's stand-in the "real" call for the rest of the process. Importing it installs nothing.
+    import src.ingest.airplane as airplane
+
+    for attr in _AIRPLANE_ORIGINALS:
+        calls["airplane." + attr] = getattr(airplane, attr)
     return calls
 
 
@@ -539,6 +541,14 @@ def _put_network_call_back(name: str, value: object) -> None:
         socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
     else:
         http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
+
+
+def _airplane_guard_removed_while_flagged_installed() -> list[str]:
+    """The patched calls that hold the REAL function although ``airplane._installed`` says the guard is in: the guard was removed by a write
+    (a ``monkeypatch`` undo that recorded the real call before the install did) that never told the flag."""
+    import src.ingest.airplane as airplane
+
+    return [f"{owner.__name__}.{attr}" for owner, attr, _wrapper in airplane.removed_while_installed()]
 
 
 def _defined_in_a_test(fn: object) -> bool:
@@ -581,10 +591,17 @@ def pytest_runtest_teardown(item, nextitem):
             leaked = sorted(name for name in before if name in after and after[name] is not before[name] and _defined_in_a_test(after[name]))
             for name in leaked:
                 _put_network_call_back(name, before[name])
+            removed = _airplane_guard_removed_while_flagged_installed()
+            if removed:
+                import src.ingest.airplane as airplane
+
+                airplane._install_patches()  # patch them again, so one such test is one failure
+                leaked += ["guard removed but flagged installed: " + ", ".join(removed)]
             if leaked and not teardown_raised:  # a teardown that already raised is the failure being reported; the put-back above still ran
                 pytest.fail(
-                    "this test left a stand-in it wrote on the process-wide network calls (" + ", ".join(leaked) + "); they were put "
-                    "back, but a test that swaps one must restore it itself, in the order that lets any uninstall copy the real one "
+                    "this test left the process-wide network calls wrong (" + "; ".join(leaked) + "); they were put back, but a test that swaps "
+                    "one must restore it itself, in the order that lets any uninstall copy the real one, and one that records a real call "
+                    "before the guard is installed must install the guard first "
                     "(see tests/test_entity_spine.py::test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_resolutions)",
                     pytrace=False,
                 )
