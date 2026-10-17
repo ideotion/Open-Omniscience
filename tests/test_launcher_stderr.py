@@ -517,3 +517,52 @@ def test_the_filter_gives_the_same_record_under_every_awk_it_may_meet(tmp_path):
     first = next(iter(seen.values()))
     assert first == [*MAC_GOOD, "free(): invalid pointer", "double free or corruption (!prev)", "Fatal Python error: Aborted"]
     assert all(v == first for v in seen.values()), seen
+
+
+def _as_if_no_proc(root: Path) -> None:
+    """Make the copy of the launcher behave as it does where there is no /proc (macOS, the BSDs): the liveness test falls to ``kill -0`` and the
+    boot id cannot be read. Only these two paths are edited; everything else is the script as shipped."""
+    f = root / "scripts" / "launch.sh"
+    text = f.read_text(encoding="utf-8")
+    assert text.count("[ -d /proc/self ]") == 1 and text.count("/proc/sys/kernel/random/boot_id") == 2
+    f.write_text(text.replace("[ -d /proc/self ]", "false").replace("/proc/sys/kernel/random/boot_id", "/nonexistent-oo-test/boot_id"), encoding="utf-8")
+
+
+@posix_only
+def test_without_proc_the_sweep_uses_kill_zero_and_keeps_the_same_rules(tmp_path):
+    root, env = _launcher_tree(tmp_path, "sleep 0.2\nexit 0\n")
+    _as_if_no_proc(root)
+    diag = root / "data" / "diagnostics"
+    diag.mkdir(parents=True)
+    gone = subprocess.Popen(["true"])
+    gone.wait()
+    gone2 = subprocess.Popen(["true"])
+    gone2.wait()
+    alive = subprocess.Popen(["sleep", "30"])
+    server = subprocess.Popen(["sleep", "30"])
+    try:
+        dead, live, in_use = diag / f".launcher_stderr.{gone.pid}.pid", diag / f".launcher_stderr.{alive.pid}.pid", diag / f".launcher_stderr.{gone2.pid}.pid"
+        dead.write_text(f"{gone.pid}\n", encoding="utf-8")
+        live.write_text(f"{gone.pid}\n", encoding="utf-8")
+        in_use.write_text(f"{server.pid}\n", encoding="utf-8")
+        _age(dead, live, in_use)
+        _run_launcher(root, env)
+        assert not dead.exists() and live.exists() and in_use.exists()
+    finally:
+        for p in (alive, server):
+            p.kill()
+            p.wait()
+
+
+@posix_only
+def test_without_proc_the_record_has_no_boot_id_and_the_reader_says_the_match_is_by_pid_alone(tmp_path, monkeypatch):
+    root, env = _launcher_tree(tmp_path, SERVER)
+    _as_if_no_proc(root)
+    proc = _run_launcher(root, env, tty=True)
+    assert proc.returncode == 134, proc.stderr
+    recs = _records(root)
+    assert recs and all(r["boot_id"] is None for r in recs), "no boot id can be read here: null, not a guess"
+    pid = int((tmp_path / "server.pid").read_text(encoding="utf-8").strip())
+    monkeypatch.setenv("OO_DATA_DIR", str(root / "data"))
+    out = ee.launcher_stderr(pid, "some-boot-id")
+    assert out["pid_only_match"] is True and out["lines"] == ["double free or corruption (!prev)", "Fatal Python error: Aborted"]

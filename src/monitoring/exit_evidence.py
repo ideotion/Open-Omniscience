@@ -150,6 +150,23 @@ _SIGNAL_MEANING: dict[str, tuple[str, str]] = {
     "SIGHUP": ("stopped", "hung up by something other than the launcher"),
 }
 
+# What a Windows exit status means, by its unsigned 32-bit value (the launcher records .NET's signed ExitCode; 0xC0000005 arrives as
+# -1073741819). The names and values are ntstatus.h's (mingw-w64-headers/include/ntstatus.h, read 2026-10-17). A classification, like the
+# signals above: Windows ends a process that crashed with the NTSTATUS of the fault as its exit code and writes nothing to stderr.
+_NT_STATUS_MEANING: dict[int, tuple[str, str]] = {
+    0xC0000005: ("crashed", "STATUS_ACCESS_VIOLATION: a native-code crash, an invalid memory access"),
+    0xC0000374: ("crashed", "STATUS_HEAP_CORRUPTION: the Windows heap found damaged memory"),
+    0xC0000409: ("crashed", "STATUS_STACK_BUFFER_OVERRUN: a fast-fail, which is how abort() ends a process on Windows"),
+    0xC00000FD: ("crashed", "STATUS_STACK_OVERFLOW"),
+    0xC000001D: ("crashed", "STATUS_ILLEGAL_INSTRUCTION"),
+    0xC0000094: ("crashed", "STATUS_INTEGER_DIVIDE_BY_ZERO"),
+    0xC0000006: ("crashed", "STATUS_IN_PAGE_ERROR: a mapped file page could not be read"),
+    0xC0000017: ("crashed", "STATUS_NO_MEMORY: an allocation failed"),
+    0xC0000135: ("failed to start", "STATUS_DLL_NOT_FOUND: a library the app needs was not found"),
+    0xC0000142: ("failed to start", "STATUS_DLL_INIT_FAILED: a library could not initialise"),
+    0xC000013A: ("stopped", "STATUS_CONTROL_C_EXIT: interrupted with Ctrl-C"),
+}
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -368,7 +385,7 @@ def launcher_stderr(pid: int | None, boot_id: str | None = None) -> dict[str, An
             rejected += 1
             continue
         found += 1
-        shown.append(scrubbed(text))
+        shown.append(scrubbed(str(text)))
     if summary is None and not shown and not rejected:
         return None
     kept = _count(summary.get("kept_lines")) if summary else None
@@ -405,6 +422,8 @@ def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
         out["kind"], out["meaning"] = _SIGNAL_MEANING[sig]
     elif isinstance(sig, str) and sig:
         out["kind"], out["meaning"] = "signalled", f"ended by {sig}"
+    elif isinstance(status, int) and not isinstance(status, bool) and (status & 0xFFFFFFFF) in _NT_STATUS_MEANING and (status < 0 or status > 0xFFFF):
+        out["kind"], out["meaning"] = _NT_STATUS_MEANING[status & 0xFFFFFFFF]
     elif isinstance(status, int) and 0 < status <= 128:
         out["kind"] = "exited"
         out["meaning"] = (
