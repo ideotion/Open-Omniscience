@@ -6,16 +6,18 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 THE HAZARD. ``WriterGate.release`` frees the gate (the owner is cleared) and THEN wakes the head of the queue; the head is the only writer FIFO lets
 take a free gate. A KeyboardInterrupt (a script's ``write_lock`` release on the main thread) or a MemoryError inside that wake-up leaves the gate
 free and the head asleep on its own condition, which nobody will notify: a second ``release`` returns at the depth check, and every later writer
-queues behind the head. The same wake-up is the last statement of an ``acquire`` that gave up. The wait had no timeout, so nothing but another
-release could end it, and with the gate free there is no other release.
+queues behind the head. The same wake-up is the last statement of an ``acquire`` that gave up (its ``finally``). The wait had no timeout, so nothing but
+another release could end it, and with the gate free there is no other release. The tests force BOTH paths: the failing wake-up of ``release``, and the
+failing wake-up of the ``finally`` of a head that was interrupted in its wait and gave up on a free gate.
 
 THE FIX AND WHAT IT IS NOT. A waiting writer looks again every ``_WAKE_STEP_S`` seconds (``acquire`` waits in steps). That bounds a lost wake-up; it
 is not a timeout: an ``acquire`` without one still waits as long as the gate is held, and a bounded one still gives up at its own deadline, not at
 a multiple of the step. The tests inject the failure into the real ``release`` with a gate built here (never the process's ``write_gate``) and shorten
 the step, which the module reads at call time, so a passing run takes tenths of a second and the production second is never waited for.
 
-RED WITHOUT. With the waits made untimed again (the test that stubs ``_wait``), the same lost wake-up leaves the writer asleep, so the first test is not
-vacuous; on the module as it was before the step the first test fails.
+RED WITHOUT. With the waits made untimed again (the controls that stub ``_wait``), the same lost wake-up leaves the writer asleep, so the injection tests
+are not vacuous. On the old ``acquire`` with ``_WAKE_STEP_S`` merely defined the injection tests fail on behaviour (the writer never gets through); on the
+module literally as it was they fail earlier, at the ``monkeypatch.setattr`` of the constant that does not exist yet.
 """
 
 from __future__ import annotations
@@ -52,17 +54,21 @@ class _Waiter:
         if self.result:
             self.gate.release()
 
-    def start_and_wait_until_queued(self) -> None:
+    def start_and_wait_until_queued(self, behind: int = 0) -> None:
         self.thread.start()
-        deadline = time.monotonic() + GET_THROUGH_S
-        while self.gate.waiters() != 1:
-            assert time.monotonic() < deadline, "the writer never queued"
-            time.sleep(0.005)
+        _wait_until_queued(self.gate, behind + 1)
+
+
+def _wait_until_queued(gate: writer.WriterGate, n: int) -> None:
+    deadline = time.monotonic() + GET_THROUGH_S
+    while gate.waiters() != n:
+        assert time.monotonic() < deadline, f"{n} writers never queued"
+        time.sleep(0.005)
 
 
 def _release_whose_wake_up_fails(gate: writer.WriterGate, exc: type[BaseException]) -> None:
     """The REAL ``release``, with the wake-up that follows the free raising once (the gate keeps ``_wake_head`` as a method, so it is replaced on
-    the instance and put back by the caller's gate going out of scope)."""
+    the instance and put back in the ``finally`` below)."""
     real = gate._wake_head
     raised = []
 
@@ -80,7 +86,7 @@ def _release_whose_wake_up_fails(gate: writer.WriterGate, exc: type[BaseExceptio
 
 
 @pytest.mark.parametrize("exc", [KeyboardInterrupt, MemoryError], ids=["interrupt", "memory_error"])
-def test_a_wake_up_lost_in_release_costs_a_waiting_writer_one_step(monkeypatch, exc):
+def test_a_wake_up_lost_in_release_does_not_strand_a_waiting_writer(monkeypatch, exc):
     monkeypatch.setattr(writer, "_WAKE_STEP_S", TEST_STEP_S)
     gate = writer.WriterGate()
     assert gate.acquire()
@@ -88,6 +94,7 @@ def test_a_wake_up_lost_in_release_costs_a_waiting_writer_one_step(monkeypatch, 
     waiter.start_and_wait_until_queued()
     _release_whose_wake_up_fails(gate, exc)
     assert gate._owner is None, "the gate was left owned: the free comes before the wake-up"
+    # the bound is GET_THROUGH_S (100 test steps), generous for a slow CI: this proves "not for ever"; the one-step figure is the module's arithmetic
     assert waiter.got.wait(GET_THROUGH_S), "the writer behind a free gate never got through: the lost wake-up is for ever"
     assert waiter.result is True
     waiter.thread.join(GET_THROUGH_S)
@@ -104,6 +111,80 @@ def test_without_the_step_the_same_lost_wake_up_leaves_the_writer_asleep(monkeyp
     waiter.start_and_wait_until_queued()
     _release_whose_wake_up_fails(gate, KeyboardInterrupt)
     assert gate._owner is None
+    assert not waiter.got.wait(10 * TEST_STEP_S), "the writer got through without a wake-up or a step: the scenario does not lose the wake-up"
+    with gate._lock:  # the wake-up that never came, so the thread ends
+        gate._wake_head()
+    assert waiter.got.wait(GET_THROUGH_S)
+    waiter.thread.join(GET_THROUGH_S)
+
+
+def _give_up_with_the_gate_free(
+    monkeypatch, gate: writer.WriterGate, exc: type[BaseException], *, untimed: bool
+) -> tuple[threading.Thread, list[BaseException]]:
+    """Writer A (the queue head, untimed) is interrupted in its wait at the moment the gate is free, so it GIVES UP, and the wake-up its ``finally`` owes
+    the next head raises as well: the other lost-wake-up path, ``acquire``'s ``finally`` and not ``release``. The module's ``_wait`` and the instance's
+    ``_wake_head`` are replaced for A's thread only, so the writer behind A runs the real code. ``untimed`` makes the real waits ignore the step."""
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            gate.acquire()
+        except BaseException as e:  # the interrupt A is given
+            errors.append(e)
+
+    a = threading.Thread(target=run, daemon=True)
+    real_wait = (lambda cond, lock, timeout=None: interrupts.wait(cond, lock)) if untimed else writer._wait
+    real_wake = gate._wake_head
+
+    def wait(cond, lock, timeout=None):
+        woke = real_wait(cond, lock, timeout)
+        if threading.current_thread() is a and gate._owner is None:
+            raise exc  # the interrupt lands in A's wait with the gate free: A gives up
+        return woke
+
+    def wake() -> None:
+        if threading.current_thread() is a:
+            raise exc  # and the wake-up A's finally owes the next head fails
+        real_wake()
+
+    monkeypatch.setattr(writer, "_wait", wait)
+    monkeypatch.setattr(gate, "_wake_head", wake)
+    return a, errors
+
+
+@pytest.mark.parametrize("exc", [KeyboardInterrupt, MemoryError], ids=["interrupt", "memory_error"])
+def test_a_wake_up_lost_in_the_finally_of_a_gave_up_acquire_does_not_strand_the_next_writer(monkeypatch, exc):
+    monkeypatch.setattr(writer, "_WAKE_STEP_S", TEST_STEP_S)
+    gate = writer.WriterGate()
+    assert gate.acquire()
+    a, errors = _give_up_with_the_gate_free(monkeypatch, gate, exc, untimed=False)
+    a.start()
+    _wait_until_queued(gate, 1)
+    waiter = _Waiter(gate)
+    waiter.start_and_wait_until_queued(behind=1)
+    gate.release()  # the real release wakes A; A's wait raises with the gate free, and the wake-up of A's finally fails
+    a.join(GET_THROUGH_S)
+    assert len(errors) == 1 and isinstance(errors[0], exc), "A was not given up and then failed to wake: the test proved nothing"
+    assert gate._timeouts == 1, "A's give-up was not the path under test"
+    assert waiter.got.wait(GET_THROUGH_S), "the writer behind the head that gave up never got through: the lost wake-up is for ever"
+    assert waiter.result is True
+    waiter.thread.join(GET_THROUGH_S)
+    assert gate.waiters() == 0 and gate._owner is None
+
+
+def test_without_the_step_the_same_lost_wake_up_in_the_finally_leaves_the_next_writer_asleep(monkeypatch):
+    """The control of the finally path: waits that ignore the step never see the free gate, so the test above proves something."""
+    monkeypatch.setattr(writer, "_WAKE_STEP_S", TEST_STEP_S)
+    gate = writer.WriterGate()
+    assert gate.acquire()
+    a, errors = _give_up_with_the_gate_free(monkeypatch, gate, KeyboardInterrupt, untimed=True)
+    a.start()
+    _wait_until_queued(gate, 1)
+    waiter = _Waiter(gate)
+    waiter.start_and_wait_until_queued(behind=1)
+    gate.release()
+    a.join(GET_THROUGH_S)
+    assert len(errors) == 1 and gate._timeouts == 1
     assert not waiter.got.wait(10 * TEST_STEP_S), "the writer got through without a wake-up or a step: the scenario does not lose the wake-up"
     with gate._lock:  # the wake-up that never came, so the thread ends
         gate._wake_head()

@@ -114,7 +114,7 @@ _SESSION_FLAG = "_oo_write_gate_held"
 #: larger step trades those two figures one for one: 0.25 s would add at most a quarter of a second to a lost wake-up and cost four times as
 #: much (about 0.7 % of a core at 49 waiters), 2 s would add up to two seconds and cost half (about 0.09 %). NOTHING MEASURED ARGUES FOR 1.0 OVER
 #: 0.25 OR 2: it was chosen, not tuned, and equals the library lock's step (``_RECHECK_S`` in ``library_generation.py``) so that one number is
-#: explained once. The only argument is scale: writers already wait seconds to minutes (the pool's own timeout is 30 s), so a second is
+#: explained once. The only argument is scale: writers already wait seconds to minutes (the 10-16 diagnostics record holds of 917 s and 977 s, and a writer queued behind one waits as long), so a second is
 #: noticed but not material. The failure itself has been seen only when forced.
 _WAKE_STEP_S = 1.0
 
