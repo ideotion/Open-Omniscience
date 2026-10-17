@@ -195,6 +195,19 @@ def test_a_stop_recorded_by_another_build_code_is_released_too(monkeypatch, _env
     assert outcome == "built" and calls == [1], "the build's own memory behaviour changed inside one app version"
 
 
+def test_a_stop_kept_by_the_sharded_build_without_the_per_shard_checkpoint_is_released_by_the_one_with_it(monkeypatch, _env):
+    """Version 2 stopped corpora (20 M mentions at 1,004 MB) that a checkpoint before each shard builds (R169)."""
+    from src import __version__
+
+    rollup_hold.write({"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 1005.0,
+                       "app_version": __version__, "build_code": 2, "mentions_count": 20_000_000})
+    _restart()
+    assert rollup_serve.BUILD_CODE_VERSION >= 3
+    calls, outcome = _build_attempts(monkeypatch)
+    assert outcome == "built" and calls == [1]
+    assert not _env.exists()
+
+
 def test_a_kept_stop_from_before_the_version_fields_existed_is_released(monkeypatch, _env):
     rollup_hold.write({"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 1005.0})
     _restart()

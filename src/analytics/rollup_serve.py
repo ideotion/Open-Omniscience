@@ -649,7 +649,9 @@ def _current_mention_count() -> int | None:
 #: after the upgrade until the limit grew. A kept record from before this field existed has neither, so it is released too.
 #: 2 (2026-10-16): the aggregate is sharded and each stage dropped as it is aggregated (``columnar.plan_build_shards``);
 #: every stop kept by version 1 was the single GROUP BY meeting the limit and is released.
-BUILD_CODE_VERSION = 2
+#: 3 (2026-10-17): a CHECKPOINT before each shard's aggregate (R169) builds corpora that version 2 stopped on DuckDB's limit
+#: (20 M mentions at 1,004 MB), so every stop kept by version 2 is released and the build is tried again.
+BUILD_CODE_VERSION = 3
 
 #: How much smaller than at the stop the corpus must be before a stop on DuckDB's limit is tried again. WHAT IT PROTECTS:
 #: repeated stop/retry cycles near the limit (each a ~15-minute scan that ends at the same wall). The wall is
