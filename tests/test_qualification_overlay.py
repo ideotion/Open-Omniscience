@@ -45,8 +45,9 @@ def _overlay_file(tmp_path: Path, rows: list[dict], **top) -> Path:
     return p
 
 
-def _src(db, domain, status=STATUS_UNQUALIFIED, *, qualified_at=None):
-    s = Source(name=domain, domain=domain, status=status, qualified_at=qualified_at)
+def _src(db, domain, status=STATUS_UNQUALIFIED, *, qualified_at=None, feed=None):
+    s = Source(name=domain, domain=domain, status=status, qualified_at=qualified_at,
+               rss_url=f"https://{domain}/{feed}.xml" if feed else None)
     db.add(s)
     db.commit()
     return s
@@ -151,6 +152,36 @@ def test_a_local_qualified_verdict_is_not_downgraded_by_the_shipped_file(db, tmp
 
     s = db.query(Source).filter_by(domain="mine.example").one()
     assert s.status == STATUS_QUALIFIED and s.qualified_at.date() == earned.date()
+
+
+def test_a_shipped_qualified_verdict_is_not_adopted_onto_a_sibling_of_a_disqualified_outlet(db, tmp_path):
+    """R100/R153, from the read of the J3 delta: the overlay runs BEFORE the curated stamp at boot, so a sibling feed made by
+    an import or POST /sources under an outlet this install disqualified was adopted `qualified` here before the stamp's own
+    outlet check could see it. The outlet's disqualification is the outlet's: the sibling stays unqualified (its own
+    trial), and the report counts it apart from a feed's own local verdict."""
+    refused = _src(db, "dw.com", STATUS_DISQUALIFIED, feed="en")
+    sibling = _src(db, "dw.com", feed="ar")
+    other = _src(db, "bbc.com")
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "qualified", "qualified_at": "2026-08-20"},
+                                 {"domain": "bbc.com", "status": "qualified", "qualified_at": "2026-08-20"}])
+    out = apply_overlay(db, now=NOW, path=p)
+    for s in (refused, sibling, other):
+        db.refresh(s)
+    assert refused.status == STATUS_DISQUALIFIED
+    assert sibling.status == STATUS_UNQUALIFIED and not db.query(SourceQualificationAttempt).filter_by(source_id=sibling.id).count()
+    assert other.status == STATUS_QUALIFIED                      # another outlet adopts as before
+    assert out["adopted"] == 1 and out["held_by_outlet_disqualified"] == 1 and out["kept_local"] == 1
+
+
+def test_a_shipped_disqualification_still_reaches_every_feed_of_the_outlet(db, tmp_path):
+    """The hold is one direction only: a shipped `disqualified` is adopted onto an unjudged sibling whatever the outlet's
+    other feeds read."""
+    _src(db, "dw.com", STATUS_QUALIFIED, qualified_at=NOW, feed="en")
+    sibling = _src(db, "dw.com", feed="ar")
+    p = _overlay_file(tmp_path, [{"domain": "dw.com", "status": "disqualified"}])
+    out = apply_overlay(db, now=NOW, path=p)
+    db.refresh(sibling)
+    assert sibling.status == STATUS_DISQUALIFIED and out["held_by_outlet_disqualified"] == 0
 
 
 def test_a_domain_absent_from_the_overlay_stays_unqualified(db, tmp_path):

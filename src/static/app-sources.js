@@ -327,7 +327,7 @@
     async function seedDefaults() {
       try {
         const r = await api("/api/sources/seed-defaults", {method: "POST"});
-        toast(`Seeded ${r.seeded.created} new source(s) (${r.seeded.skipped} already present).`);
+        toast(`Seeded ${r.seeded.created} new source(s) (${r.seeded.skipped_existing} already present).`);
         loadSources(); loadManagedSources(); loadDbStats(); loadCoverage();
       } catch (e) { toast(_failMsg("Seed failed: {error}", e), "err"); }
     }

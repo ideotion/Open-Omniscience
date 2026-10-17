@@ -29,13 +29,16 @@ OUTLET_MAPPED = {
         "the ``source`` it counts is ``OutletMap.label`` (the outlet's oldest source's name), one label per outlet",
     ("src/signals/coordination.py", "detect_coordination"):
         "its only caller (src/integrity/actors.py) hands it documents labelled by ``OutletMap.label``, so a label is an outlet",
+    ("src/analytics/recycled_claim.py", "find_recycled_claims"):
+        "the ``source`` it counts is ``OutletMap.label``, one label per outlet (the recycled-claim gate reads outlets)",
     ("src/analytics/story_propagation.py", "find_story_propagation"):
         "the active-source list is mapped to each outlet's oldest source before the language ubiquity ratio reads it",
 }
 
 # Feed-level counts, each with why a feed is the right unit. "caveat" = a user-visible count that carries
 # FEEDS_NOT_OUTLETS (pinned per surface below); "registry" = a count of rows of the sources list, never a voice claim;
-# "per_feed" = a per-feed behaviour measure whose numerator and denominator are both feed counts.
+# "per_feed" = a per-feed behaviour measure whose numerator and denominator are both feed counts;
+# "named_limit" = a count that reads feeds where it states independence, a KNOWN limit recorded in OPEN_QUEUE, not a verdict.
 FEED_LEVEL = {
     ("src/analytics/passport.py", "corpus_passport"): ("caveat", "a descriptive size of the selection"),
     ("src/api/reporting.py", "plan_evidence"): ("caveat", "what the bundle holds: one item per article, its source named"),
@@ -43,6 +46,7 @@ FEED_LEVEL = {
     ("src/analytics/claim_workspace.py", "_corpus_source_facets"): ("registry", "which countries, languages and source types the sources list holds, a presence test against the trail, never a voice count"),
     ("src/catalog/qualification.py", "admission_audit"): ("registry", "sources collection can reach vs sources the audit accounts for"),
     ("src/analytics/concentration.py", "find_flooded_topics"): ("per_feed", "a flood is one feed's share; the ubiquity ratio compares feeds with feeds"),
+    ("src/analytics/queries.py", "corpus_coordination"): ("named_limit", "counts distinct source LABELS (a source's name, else its domain), so an outlet with several feeds can read as several voices; named in OPEN_QUEUE, the file belongs to the keyword-rollup PR and is changed after it merges"),
     ("src/analytics/concentration.py", "find_buried_topics"): ("per_feed", "breadth gate on per-feed shares, feeds on both sides"),
 }
 
@@ -73,6 +77,7 @@ OUTLET_GATES = [
 class _Sites(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path, self.stack, self.found = path, [], set()
+        self.tracked: dict[str, set[str]] = {}    # scope -> names bound to a set of source ids or feed labels
 
     def _scope(self, node) -> None:
         self.stack.append(node.name)
@@ -84,6 +89,56 @@ class _Sites(ast.NodeVisitor):
     @staticmethod
     def _mentions_source_id(node: ast.AST) -> bool:
         return any(isinstance(n, ast.Attribute) and n.attr == "source_id" for n in ast.walk(node))
+
+    @staticmethod
+    def _unwrap(node: ast.AST) -> ast.AST:
+        """``sorted({...})``, ``list({...})`` and ``tuple({...})`` count what the set inside them holds."""
+        while (isinstance(node, ast.Call) and getattr(node.func, "id", None) in {"sorted", "list", "tuple"}
+               and node.args):
+            node = node.args[0]
+        return node
+
+    @classmethod
+    def _is_built_set(cls, node: ast.AST) -> bool:
+        node = cls._unwrap(node)
+        return isinstance(node, (ast.Set, ast.SetComp)) or (
+            isinstance(node, ast.Call) and getattr(node.func, "id", None) == "set")
+
+    @classmethod
+    def _elements(cls, node: ast.AST) -> list[ast.AST]:
+        """The ELEMENT expressions of a built set (``{d["source"] for d in docs if d["source"]}`` is a set of ``d["source"]``;
+        its filter is not what it counts), or the node itself when the shape is not one of those."""
+        node = cls._unwrap(node)
+        if isinstance(node, ast.SetComp):
+            return [node.elt]
+        if isinstance(node, ast.Set):
+            return list(node.elts)
+        if isinstance(node, ast.Call) and node.args:
+            inner = node.args[0]
+            if isinstance(inner, (ast.GeneratorExp, ast.ListComp, ast.SetComp)):
+                return [inner.elt]
+            if isinstance(inner, (ast.List, ast.Tuple, ast.Set)):
+                return list(inner.elts)
+        return [node]
+
+    def _counts_sources(self, node: ast.AST) -> bool:
+        return any(self._mentions_source_id(e) or self._mentions_feed_label(e) for e in self._elements(node))
+
+    def _track(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            self.tracked.setdefault(".".join(self.stack), set()).add(target.id)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # ``names = {d["source"] for d in docs}`` and, later, ``len(names)``: the same count, written in two statements.
+        if self._is_built_set(node.value) and self._counts_sources(node.value):
+            for target in node.targets:
+                self._track(target)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None and self._is_built_set(node.value) and self._counts_sources(node.value):
+            self._track(node.target)
+        self.generic_visit(node)
 
     @staticmethod
     def _mentions_feed_label(node: ast.AST) -> bool:
@@ -107,11 +162,15 @@ class _Sites(ast.NodeVisitor):
             # ``session.query(X.source_id).filter(...).distinct()`` -- the same count written as a method call (Opus read,
             # finding 3: the argument-only shape missed it, and with it the Observatory's breadth).
             self.found.add((self.path, scope))
+        if name == "add" and isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and node.args:
+            # ``seen = set()`` ... ``seen.add(d["source"])`` ... ``len(seen)``
+            if self._mentions_source_id(node.args[0]) or self._mentions_feed_label(node.args[0]):
+                self._track(f.value)
         if name == "len" and node.args:
             arg = node.args[0]
-            built = isinstance(arg, (ast.Set, ast.SetComp)) or (
-                isinstance(arg, ast.Call) and getattr(arg.func, "id", None) == "set")
-            if built and (self._mentions_source_id(arg) or self._mentions_feed_label(arg)):
+            if self._is_built_set(arg) and self._counts_sources(arg):
+                self.found.add((self.path, scope))
+            elif isinstance(arg, ast.Name) and arg.id in self.tracked.get(scope, set()):
                 self.found.add((self.path, scope))
         self.generic_visit(node)
 
@@ -135,7 +194,7 @@ def test_every_distinct_source_count_is_classified_and_nothing_stale_is_listed()
     assert not classified - found, f"classified but no longer in the code (stale): {sorted(classified - found)}"
     assert all(reason.strip() for reason in OUTLET_MAPPED.values())
     assert all(reason.strip() for reason in NOT_A_SOURCE_COUNT.values())
-    assert all(kind in {"caveat", "registry", "per_feed"} and why.strip() for kind, why in FEED_LEVEL.values())
+    assert all(kind in {"caveat", "registry", "per_feed", "named_limit"} and why.strip() for kind, why in FEED_LEVEL.values())
 
 
 @pytest.mark.parametrize("path", OUTLET_GATES)
@@ -161,6 +220,19 @@ def test_the_scan_sees_a_raw_count_and_a_set_count(tmp_path):
     v = _Sites("y.py")
     v.visit(method)
     assert v.found == {("y.py", "c")}
+
+
+def test_the_scan_sees_a_name_then_len_and_a_sorted_set_and_an_add_but_not_an_outlet_set():
+    """The shapes a count hides in once it is not one expression: bound to a name first, wrapped in sorted(), built by .add."""
+    tree = ast.parse(
+        "def a(docs):\n    names = {d['source'] for d in docs}\n    return len(names)\n"
+        "def b(docs):\n    return len(sorted({d['source'] for d in docs}))\n"
+        "def c(docs):\n    seen = set()\n    for d in docs:\n        seen.add(d['source'])\n    return len(seen)\n"
+        "def d(docs):\n    names = {d['outlet'] for d in docs}\n    return len(names)\n"
+        "def e(docs):\n    names = {d['source'] for d in docs}\n    return len(docs)\n")
+    v = _Sites("z.py")
+    v.visit(tree)
+    assert v.found == {("z.py", "a"), ("z.py", "b"), ("z.py", "c")}
 
 
 def test_every_caveat_classified_count_carries_the_sentence_on_its_surface():

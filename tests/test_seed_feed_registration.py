@@ -294,3 +294,42 @@ def test_a_first_seed_of_more_than_999_domains_runs_on_a_sqlite_that_caps_variab
         assert result["sibling_verdicts"]["inherited"] == 0
     finally:
         session.close()
+
+
+# --- the read of the J3 delta: the report must not say something false about why a tag or an entry stayed out (F4, F5) ---
+def test_a_feedless_entry_planned_onto_a_held_back_feed_is_counted_held_back_not_merged(s, monkeypatch):
+    """A store keyed on the domain alone holds the second feed back; a feed-less entry planned onto THAT feed has no row to
+    put its tags on. It was counted as merged although its tags landed nowhere."""
+    seed_sources(s, [_e("Outlet EN", "en")])
+    monkeypatch.setattr("src.ingest.seed_sources.composite_key_active", lambda _c: False)
+    r = seed_sources(s, [_e("Outlet AR", "ar"), _e("Outlet EN", "en"), _e("Outlet", tags=["wire"])])
+    assert _accounted(r)
+    assert r["merged"] == 0 and r["held_back_legacy_key"] == 2          # the held feed and the entry planned onto it
+    assert r["tag_merge"]["tags_merged"] == 0
+
+
+def test_a_second_entry_offering_the_tag_just_refused_is_not_reported_as_an_earlier_refusal(s):
+    """``refused_standing`` means refused at an EARLIER boot. Two entries offering the same refused lean in one call are one
+    refusal, listed once, and nothing is standing yet."""
+    entries = [
+        _e("Outlet", "en", tags=["lean-right"]),
+        _e("Outlet", tags=["lean-left"], _provenance="spectrum"),
+        _e("Outlet", tags=["lean-left"], _provenance="curated"),
+    ]
+    tm = seed_sources(s, entries)["tag_merge"]
+    assert tm["conflict_count"] == 1 and tm["refused_standing"] == 0
+
+
+def test_a_standing_refusal_is_relisted_with_the_new_kept_value_when_the_operator_changes_their_lean(s):
+    """The operator swaps the kept lean for another one: the catalogue tag still clashes, but the recorded reason is stale.
+    The new conflict is listed once, the baseline names the lean the row now carries, and the next boot is quiet again."""
+    entries = [_e("Outlet", "en", tags=["lean-right", "wire"]), _e("Outlet", tags=["lean-left"], _provenance="spectrum")]
+    seed_sources(s, entries)
+    row = s.query(Source).one()
+    row.tags = ",".join("lean-center" if t == "lean-right" else t for t in row.tags.split(","))
+    s.commit()
+    tm = seed_sources(s, entries)["tag_merge"]
+    assert tm["conflict_count"] == 1 and tm["refused_standing"] == 0 and tm["conflicts"][0]["kept"] == "lean-center"
+    assert json.loads(s.query(Source).one().catalog_baseline)["refused_tags"]["lean-left"]["kept"] == "lean-center"
+    again = seed_sources(s, entries)["tag_merge"]
+    assert again["conflict_count"] == 0 and again["refused_standing"] == 1

@@ -281,6 +281,7 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
     merged_n = rows_touched = skipped_no_baseline = standing = 0
     conflicts: list[dict] = []
     touched: set[int] = set()
+    refused_at_start: dict[int, dict] = {}        # per row: what the baseline held when THIS call began
     for entry, row in merges:
         base = _baseline_of(row)
         if base is None:
@@ -289,6 +290,7 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
         done = {str(t) for t in (base.get("merged_tags") or [])}
         refused = dict(base.get("refused_tags") or {})
         refused_before = dict(refused)
+        earlier_boots = refused_at_start.setdefault(id(row), dict(refused))
         have = split_tags(row.tags)
         added: list[str] = []
         offered_present: list[str] = []
@@ -304,10 +306,12 @@ def merge_feedless_tags(session: Session, merges: list[tuple[dict, Source]]) -> 
             clash = next((t for t in have if fam and t.startswith(fam) and t != tag), None)
             if clash is not None:
                 note = {"kept": clash, "entry": entry.get("name"), "provenance": entry.get("_provenance")}
-                if tag in refused:
-                    standing += 1                 # refused at an earlier boot: counted, not listed again
+                if tag in earlier_boots and earlier_boots[tag].get("kept") == clash:
+                    standing += 1                 # refused at an earlier boot, and for the same kept lean: counted, not listed again
                     continue
-                refused[tag] = note
+                if refused.get(tag, {}).get("kept") == clash:
+                    continue                      # a second entry offering the tag the first entry was refused on, in this very call
+                refused[tag] = note               # new, or the operator changed their lean since: recorded and listed afresh
                 conflicts.append({"domain": row.domain, "kept": clash, "catalogue": tag, **{
                     k: note[k] for k in ("entry", "provenance")}})
                 continue
@@ -762,7 +766,8 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     ``skipped`` keeps its old meaning (every reason an entry did not become a row), and EVERY entry lands in exactly one
     counter: ``created + skipped == total``, where ``skipped`` is ``skipped_existing`` + ``merged`` + ``shadowed`` +
     ``skipped_malformed`` (no domain or no name) + ``held_back_legacy_key``. ``merged`` counts a feed-less entry whose tags
-    went onto a feed row of the outlet, whether the plan found that row in the same list or the database held it already.
+    went onto a feed row of the outlet, whether the plan found that row in the same list or the database held it already;
+    a feed-less entry whose planned feed was HELD BACK (a store keyed on the domain alone) is counted in ``held_back_legacy_key``.
     """
     # An entry the seeder cannot read as a source: no domain, or no name (the two things ``_usable`` requires).
     skipped_malformed = len(sources) - len(_usable(sources))
@@ -808,7 +813,11 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     # field reconcile just filled reads as a gap rather than as an edit (sync skips empties).
     corrections = sync_catalogue_corrections(session, sources, pairs=all_pairs)
     # Feed-less entries describe an outlet that already has a feed row: their tags go there, after the baseline exists.
-    merges = [(e, row_of[id(t)]) for e, t in plan.merges if id(t) in row_of] + extra_merges
+    plan_merges = [(e, row_of[id(t)]) for e, t in plan.merges if id(t) in row_of]
+    # A feed-less entry planned onto a feed that a domain-keyed store held back has no row to put its tags on: it is held
+    # back with that feed and counted so, never as merged.
+    dropped_merges = len(plan.merges) - len(plan_merges)
+    merges = plan_merges + extra_merges
     tag_merge = merge_feedless_tags(session, merges)
     if merges:
         session.commit()                 # also the baselines a merge only RECORDED: get_db callers never commit for us
@@ -826,12 +835,13 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         "corrections": corrections,
         "tag_merge": tag_merge,
         "sibling_verdicts": inherited,
-        "skipped": len(pairs) + len(unregistered) + len(plan.merges) + len(extra_merges) + skipped_malformed + len(held_back),
-        "held_back_legacy_key": len(held_back),
+        "skipped": len(pairs) + len(unregistered) + len(plan_merges) + len(extra_merges) + skipped_malformed
+        + len(held_back) + dropped_merges,
+        "held_back_legacy_key": len(held_back) + dropped_merges,
         "total": len(sources),
         "skipped_existing": len(pairs),
         "skipped_malformed": skipped_malformed,
-        "merged": len(plan.merges) + len(extra_merges),
+        "merged": len(plan_merges) + len(extra_merges),
         "shadowed": len(unregistered),
         "unregistered_by_reason": dict(sorted(by_reason.items())),
         "shadowed_examples": [
