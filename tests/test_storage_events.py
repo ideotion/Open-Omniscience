@@ -435,9 +435,10 @@ def _fill_like_the_hooks(long_names: bool) -> None:
         # The widest a long hold's record gets: the phase and its sample counts (a day of 15 s samples in each of the four), and what the
         # holder thread did over the hold and the machine's memory at its end, each at ten digits.
         se.update("gate_hold", ("hold", i), {"phase": "pool-wait", "phase_samples": {"pool-wait": 5760, "execute": 5760, "commit": 5760, "python": 5760},
-                                              # the holder's kernel state: six counts of five digits (a day of one-second looks, 14,400 in each class) and the longest gap
-                                              # and a reason that was cleared by the counts (the journal merges: the key stays, null)
-                                              "ws": [14_400] * len(holder_state.CLASSES), "gap": 86_400.0, "ws_why": None})
+                                              # the holder's kernel state: six counts of five digits (a day of one-second looks, 14,400 in each class), the longest gap and
+                                              # the seconds spent waiting for a CPU (``rq``: a day, 86,400.0, the same bound as the gap, since neither can exceed the looks'
+                                              # own span) and a reason that was cleared by the counts (the journal merges: the key stays, null)
+                                              "ws": [14_400] * len(holder_state.CLASSES), "gap": 86_400.0, "rq": 86_400.0, "ws_why": None})
         se.end("gate_hold", ("hold", i), {"seconds": 62.0 + i, "route": nm("POST /api/keywords/reindex/{job_id}/resume"),
                                            "cpu_ms": 86_400_000.0, "nvcsw": 9_999_999_999, "nivcsw": 9_999_999_999, "majflt": 9_999_999_999,
                                            "inblock": 9_999_999_999, "mem_available_mb": 999_999, "swap_used_mb": 999_999,
@@ -484,6 +485,14 @@ def _fill_and_write(monkeypatch, long_names: bool) -> None:
     assert _member()["file"]["last_write_ok_at"], "the file has been written: the member is measured in the state a running app is in"
 
 
+#: The widest a gate hold event the fixture writes (every name at the cut, the file written), in the journal's own count of bytes, and the widest
+#: journal it writes. WHAT THEY PROTECT: the 125,000 bytes of the slot's row and the bytes left under it (749 after the holder's kernel state
+#: gained ``rq``). They are measured maxima pinned both ways, like ``writer.FRAME_CHARS``: a number nothing measured is a margin nobody can
+#: account for, and one that moves without a re-measure is a budget claim nobody checked.
+_WIDEST_HOLD_EVENT_BYTES = 1222
+_WIDEST_JOURNAL_BYTES = 124_251
+
+
 @pytest.mark.parametrize("long_names", [False, True], ids=["ordinary-names", "every-name-at-the-cut"])
 def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, long_names):
     """WHAT THE SLOT'S NUMBER PROTECTS (``diagnostics_slots.SLOTS``): the budget is the size measured here, at full retention of
@@ -516,7 +525,15 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, lo
     (the fixed part, defined above, 5,176 to 6,003). Measured with the real fixtures, written: ordinary names 83,779 bytes (41,221 free), every
     name at the cut 123,749, 1,251 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
     the row with 5 splits kept; 126,242 - 4,740 + 1,140 + 280 + 827 = 123,749). A count reaches six digits only after about 28 hours of
-    looks at one hold and all six pass the five modelled digits together after about 67: the free bytes absorb that."""
+    looks at one hold and all six pass the five modelled digits together after about 67: the free bytes absorb that.
+
+    THE HOLDER'S SECONDS WAITING FOR A CPU (``rq``, 17 Oct) and the change of class (running and runnable become ``run`` and ``unknown`` joins:
+    still six counts) cost 13 bytes a hold at the widest (``,"rq":86400.0``: 260 over the 20, ``rq`` bound to a day like the gap, since neither
+    can pass the span of the looks) and 242 in the method (4,033 to 4,275). That is 502 bytes of the 1,251 free: the widest journal is
+    124,251 and 749 are free, every hold keeps its split and no event is dropped (measured with the real fixtures, written; the probe's output
+    is in /mnt/project-files/wal-disk-pool/night-2026-10-16/record-change/). THE TWO MEASURED MAXIMA ARE PINNED below
+    (``_WIDEST_HOLD_EVENT_BYTES`` and ``_WIDEST_JOURNAL_BYTES``) the way ``writer.FRAME_CHARS`` is: either moving, up or down, fails this test, and
+    the next change re-measures them and pays from what is left under the row."""
     from src.api import diagnostics_slots as slots
     from src.database import writer
 
@@ -539,9 +556,13 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, lo
     assert size <= slot.budget_bytes and "seconds_by_omitted_to_fit" not in at_budget["kinds"]["gate_hold"], "every hold keeps its split, at the widest names too"
     assert len(_carrying(at_budget)) == 20
     for event in at_budget["kinds"]["gate_hold"]["events"]:
-        assert len(event["ws"]) == len(holder_state.CLASSES) and event["gap"] == 86_400.0, "the holder's kernel state is in the widest hold"
+        assert len(event["ws"]) == len(holder_state.CLASSES) and event["gap"] == 86_400.0 and event["rq"] == 86_400.0, "the holder's kernel state is in the widest hold"
         if long_names:
             assert max(len(f) for f in event["frames"]) == writer.FRAME_CHARS, "the model writes each frame at the width the watchdog can"
+    if long_names:
+        widest = max(se._size(e) for e in at_budget["kinds"]["gate_hold"]["events"])
+        assert widest == _WIDEST_HOLD_EVENT_BYTES, f"the widest hold event is {widest} bytes, the pin says {_WIDEST_HOLD_EVENT_BYTES}: re-measure and move the pin and this docstring's figures together"
+        assert written == _WIDEST_JOURNAL_BYTES, f"the widest journal is {written} bytes, the pin says {_WIDEST_JOURNAL_BYTES}: re-measure and move the pin and this docstring's figures together"
     for kind in se.ONSET_KINDS:
         assert at_budget["kinds"][kind]["first_seen_at"], f"{kind}: the onset is part of the fixed member, so no budget cut can take it"
     assert len(json.dumps(m["kinds"]["gate_hold"]["events"][0])) < se.MAX_EVENT_BYTES

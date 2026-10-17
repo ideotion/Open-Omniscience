@@ -93,44 +93,46 @@ def _look(started: float, at: float) -> bool:
 #  The classes
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
-    ("state", "wchan", "cpu", "wait", "expected"),
+    ("state", "wchan", "expected"),
     [
-        ("R", "0", 900_000_000, 50_000_000, "running"),
-        ("R", "0", 100_000_000, 800_000_000, "runnable"),
-        ("R", "0", 5, 5, "running"),  # a tie is not a wait for a CPU
-        ("R", "0", None, None, "other"),  # running or runnable cannot be told apart without the scheduler's figures
-        ("S", "futex_do_wait", None, None, "futex"),
-        ("S", "futex_wait_queue", None, None, "futex"),
-        ("S", "hrtimer_nanosleep", None, None, "nap"),
-        ("S", "do_nanosleep", None, None, "nap"),
-        ("S", "do_epoll_wait", None, None, "other"),
-        ("S", "pipe_read", None, None, "other"),
-        ("S", "0", None, None, "other"),  # a sleep whose wchan cannot be read is not guessed
-        ("S", "", None, None, "other"),
-        ("D", "io_schedule", None, None, "disk"),
-        ("D", "0", None, None, "disk"),
-        ("T", "do_signal_stop", None, None, "other"),
-        ("Z", "0", None, None, "other"),
-        ("I", "0", None, None, "other"),
+        ("R", "0", "run"),
+        ("R", "", "run"),  # a thread on a CPU has no wait to name
+        ("S", "futex_do_wait", "futex"),
+        ("S", "futex_wait_queue", "futex"),
+        ("S", "hrtimer_nanosleep", "nap"),
+        ("S", "do_nanosleep", "nap"),
+        ("S", "do_epoll_wait", "other"),  # a wait the kernel NAMED, and not one of ours
+        ("S", "pipe_read", "other"),
+        ("S", "poll_schedule_timeout.constprop.0", "other"),
+        ("S", "0", "unknown"),  # a sleep the kernel printed nothing for
+        ("S", "", "unknown"),  # a sleep whose wchan cannot be read
+        ("I", "0", "unknown"),
+        ("I", "worker_thread", "other"),
+        ("D", "io_schedule", "disk"),
+        ("D", "0", "disk"),  # the state decides: a disk wait is a disk wait whatever the symbol
+        ("D", "", "disk"),
+        ("T", "do_signal_stop", "other"),
+        ("T", "0", "other"),  # unknown is a SLEEP the kernel did not name, not any state with no symbol
+        ("Z", "0", "other"),
     ],
 )
-def test_each_kernel_state_is_counted_in_its_own_class_and_no_other(state, wchan, cpu, wait, expected):
-    assert hs.classify(state, wchan, cpu, wait) == expected
+def test_each_kernel_state_is_counted_in_its_own_class_and_no_other(state, wchan, expected):
+    assert hs.classify(state, wchan) == expected
 
 
 def test_a_wchan_that_names_a_wait_is_that_wait_whatever_the_state_read_after_it_says():
     """The kernel prints a symbol only for a thread blocked in the kernel when it is read, and the look reads the wchan FIRST: a state letter
     read after it (R, because the look's own reads gave the GIL up and woke the thread) does not undo the wait that was seen."""
-    assert hs.classify("R", "futex_do_wait", 10, 1) == "futex"
-    assert hs.classify("R", "hrtimer_nanosleep", 10, 1) == "nap"
-    assert hs.classify("R", "0", 10, 1) == "running", "the same R with no symbol is what it says"
-    assert hs.classify("D", "io_schedule", None, None) == "disk", "a symbol that is not one of the two waits leaves the state to decide"
+    assert hs.classify("R", "futex_do_wait") == "futex"
+    assert hs.classify("R", "hrtimer_nanosleep") == "nap"
+    assert hs.classify("R", "0") == "run", "the same R with no symbol is what it says"
+    assert hs.classify("D", "io_schedule") == "disk", "a symbol that is not one of the two waits leaves the state to decide"
 
 
 def test_the_wait_is_read_before_the_state_so_a_holder_the_look_wakes_is_still_read_asleep(proc, monkeypatch):
     """Every file the look reads gives the GIL up, and a holder waiting for the GIL is woken by that: asleep at the first read, awake at the
     second. Scripted here exactly so: the first file of each look is read with the thread asleep on a futex, every later one with it running.
-    Read ``stat`` first and the look is S then 0 and lands in ``other`` (29 per cent of the looks of a holder beside three spinners)."""
+    Read ``stat`` first and the look is S then 0 and lands in ``unknown`` (29 per cent of the looks of a holder beside three spinners)."""
     asleep = {"wchan": b"futex_do_wait", "stat": b"4242 (python) S 1 1 1 0\n"}
     awake = {"wchan": b"0", "stat": b"4242 (python) R 1 1 1 0\n", "schedstat": b"9000000 0 7\n"}
     order: list[str] = []
@@ -145,11 +147,11 @@ def test_the_wait_is_read_before_the_state_so_a_holder_the_look_wakes_is_still_r
         order.clear()
         _look(10.0, at)
         assert order[0] == "wchan", order
-    assert hs.fields_for(10.0)["ws"] == [0, 0, 2, 0, 0, 0], "the two looks that count are futex waits: the thread was asleep when the look began"
+    assert hs.fields_for(10.0)["ws"] == [0, 2, 0, 0, 0, 0], "the two looks that count are futex waits: the thread was asleep when the look began"
 
 
 def test_the_classes_are_six_and_in_the_order_the_journal_writes_them():
-    assert hs.CLASSES == ("running", "runnable", "futex", "nap", "disk", "other")
+    assert hs.CLASSES == ("run", "futex", "nap", "disk", "other", "unknown")
 
 
 def test_the_state_is_read_after_the_last_parenthesis():
@@ -160,6 +162,9 @@ def test_the_state_is_read_after_the_last_parenthesis():
     assert hs._state_of(b"4242 (python)") is None
     assert hs._state_of(b"4242 (python) 7 1") is None, "a digit is not a state"
     assert hs._state_of(b"") is None
+    assert hs._state_of(b"4242 (pyth") is None, "a line cut inside the name"
+    assert hs._state_of(b"python S 1 1") is None, "no closing parenthesis: not a stat line, so its first letter is not a state"
+    assert hs._state_of(b"S") is None
 
 
 # --------------------------------------------------------------------------- #
@@ -171,28 +176,32 @@ def test_the_first_look_of_a_hold_counts_nothing_and_the_second_counts_one(proc)
     assert hs.fields_for(10.0) == {}, "the first look is the baseline: no count, no gap, no reason"
     proc.put("S", "futex_do_wait")
     assert _look(10.0, 101.0) is True
-    assert hs.fields_for(10.0) == {"ws": [0, 0, 1, 0, 0, 0], "gap": 1.0}
+    assert hs.fields_for(10.0) == {"ws": [0, 1, 0, 0, 0, 0], "gap": 1.0, "rq": 0.0}, "both looks read the scheduler's total and it did not move: a measured zero"
 
 
 def test_every_class_is_counted_where_it_belongs_over_a_run_of_looks(proc):
     proc.put("S", "futex_do_wait")
     _look(10.0, 100.0)  # baseline
     script = [
-        ("S", "futex_do_wait", 0, 0),
-        ("S", "futex_wait_queue", 0, 0),
-        ("S", "futex_do_wait", 0, 0),
-        ("S", "hrtimer_nanosleep", 0, 0),
-        ("S", "hrtimer_nanosleep", 0, 0),
-        ("D", "io_schedule", 0, 0),
-        ("R", "0", 900_000_000, 10_000_000),
-        ("R", "0", 800_000_000, 20_000_000),
-        ("R", "0", 100_000_000, 700_000_000),
-        ("S", "do_epoll_wait", 0, 0),
+        ("S", "futex_do_wait", 0),
+        ("S", "futex_wait_queue", 0),
+        ("S", "futex_do_wait", 0),
+        ("S", "hrtimer_nanosleep", 0),
+        ("S", "hrtimer_nanosleep", 0),
+        ("D", "io_schedule", 0),
+        ("R", "0", 10_000_000),
+        ("R", "0", 20_000_000),
+        ("R", "0", 700_000_000),
+        ("S", "do_epoll_wait", 0),
+        ("S", "0", 0),
+        ("S", "0", 0),
     ]
-    for i, (state, wchan, ran, waited) in enumerate(script, start=1):
-        proc.put(state, wchan, ran_ns=ran, waited_ns=waited)
+    for i, (state, wchan, waited) in enumerate(script, start=1):
+        proc.put(state, wchan, waited_ns=waited)
         _look(10.0, 100.0 + i)
-    assert hs.fields_for(10.0) == {"ws": [2, 1, 3, 2, 1, 1], "gap": 1.0}, "two running and one runnable: the columns of schedstat are not interchangeable"
+    assert hs.fields_for(10.0) == {"ws": [3, 3, 2, 1, 1, 2], "gap": 1.0, "rq": 0.7}, (
+        "three runs, whatever each waited for a CPU; the time they waited (10 + 20 + 700 ms) is rq, not a count"
+    )
 
 
 def test_gap_is_the_longest_time_between_two_looks_that_could_be_read(proc):
@@ -209,15 +218,17 @@ def test_gap_is_the_longest_time_between_two_looks_that_could_be_read(proc):
     assert hs.fields_for(10.0)["gap"] == 4.0, "from the last look that was read (102.4) to the next (106.4)"
 
 
-def test_a_running_look_with_no_scheduler_figures_is_other_not_a_guess(proc):
-    proc.put("R", "0")
+def test_a_running_look_with_no_scheduler_figures_is_still_run_and_rq_is_null_never_zero(proc):
+    proc.put("R", "0", sched=False)
     _look(10.0, 100.0)
     proc.put("R", "0", sched=False)
     _look(10.0, 101.0)
-    assert hs.fields_for(10.0)["ws"] == [0, 0, 0, 0, 0, 1]
+    f = hs.fields_for(10.0)
+    assert f["ws"] == [1, 0, 0, 0, 0, 0] and f["rq"] is None, f
+    assert json.dumps(f["rq"]) == "null", "unreadable is null in the journal, not 0.0 (which would say the thread never waited)"
 
 
-def test_a_sleep_whose_wchan_cannot_be_read_is_other_not_a_guess(proc):
+def test_a_sleep_whose_wchan_cannot_be_read_is_unknown_not_a_guess(proc):
     proc.put("S", "futex_do_wait")
     _look(10.0, 100.0)
     proc.put("S", "futex_do_wait")
@@ -226,16 +237,57 @@ def test_a_sleep_whose_wchan_cannot_be_read_is_other_not_a_guess(proc):
     assert hs.fields_for(10.0)["ws"] == [0, 0, 0, 0, 0, 1]
 
 
+def test_rq_is_the_scheduler_total_from_the_first_look_that_read_it_to_the_last_and_to_a_tenth_of_a_second(proc):
+    proc.put("S", "futex_do_wait")
+    _look(10.0, 100.0)  # the first look: where rq starts
+    proc.put("S", "futex_do_wait", waited_ns=149_000_000)
+    _look(10.0, 101.0)
+    assert hs.fields_for(10.0)["rq"] == 0.1, "149 ms to a tenth: 0.1"
+    proc.put("S", "futex_do_wait", waited_ns=2_000_000_000)
+    _look(10.0, 102.0)
+    assert hs.fields_for(10.0)["rq"] == 2.1, "2.149 s: 2.1"
+
+
+def test_rq_spans_looks_that_could_not_read_the_total_and_needs_two_that_could(proc):
+    """Only the first and last reading of the total matter, so a look in between that cannot read it costs nothing; ONE reading is not a span."""
+    proc.put("S", "futex_do_wait")
+    _look(10.0, 100.0)
+    proc.put("S", "futex_do_wait", waited_ns=500_000_000, sched=False)  # the middle look cannot read it
+    _look(10.0, 101.0)
+    f = hs.fields_for(10.0)
+    assert f["ws"] == [0, 1, 0, 0, 0, 0] and f["rq"] is None, "one reading of the total: no span, null, not 0"
+    proc.put("S", "futex_do_wait", waited_ns=900_000_000)
+    _look(10.0, 102.0)
+    assert hs.fields_for(10.0)["rq"] == 1.4, "first look to last: 500 + 900 ms of waiting, the unreadable look's share included"
+
+
+@pytest.mark.parametrize(
+    "stat",
+    [b"4242 (pyth", b"4242 (python)", b"python S 1 1", b"", b"4242 (python) 7 1"],
+    ids=["cut-in-the-name", "cut-after-the-name", "no-closing-parenthesis", "empty", "no-state-letter"],
+)
+def test_a_look_whose_state_cannot_be_read_is_left_uncounted_with_its_cause_never_classified(proc, stat):
+    """The state is what decides every class the symbol did not, so a state that cannot be read must not fall through to ``other`` (or any
+    class): the look is not counted, and the hold says ``proc-unreadable``. A baseline is taken first so the next look WOULD count."""
+    proc.put("S", "futex_do_wait")
+    _look(10.0, 100.0)
+    (proc.dir / "stat").write_bytes(stat)
+    (proc.dir / "wchan").write_text("futex_do_wait")
+    _look(10.0, 101.0)
+    assert sum(hs._CURRENT.counts) == 0, "not counted in any class"
+    assert hs.fields_for(10.0) == {"ws": None, "ws_why": hs.UNREADABLE}
+
+
 def test_a_new_hold_starts_from_none_and_the_old_one_is_not_credited(proc):
     _look(10.0, 100.0)
     proc.put("S", "futex_do_wait")
     _look(10.0, 101.0)
-    assert hs.fields_for(10.0)["ws"] == [0, 0, 1, 0, 0, 0]
+    assert hs.fields_for(10.0)["ws"] == [0, 1, 0, 0, 0, 0]
     _look(55.0, 102.0)  # another hold
     assert hs.fields_for(55.0) == {}, "its own baseline, none of the old hold's counts"
     proc.put("D", "io_schedule")
     _look(55.0, 103.0)
-    assert hs.fields_for(55.0) == {"ws": [0, 0, 0, 0, 1, 0], "gap": 1.0}
+    assert hs.fields_for(55.0) == {"ws": [0, 0, 0, 1, 0, 0], "gap": 1.0, "rq": 0.0}
     assert hs.fields_for(10.0) == {}, "the old hold is gone: its release asks for its counts and is answered with none, not another hold's"
     assert hs.fields_for(None) == {}
 
@@ -270,7 +322,7 @@ def test_forgetting_one_hold_leaves_another_alone(proc):
     proc.put("S", "futex_do_wait")
     _look(10.0, 101.0)
     hs.forget(55.0)
-    assert hs.fields_for(10.0)["ws"] == [0, 0, 1, 0, 0, 0], "another hold's forget"
+    assert hs.fields_for(10.0)["ws"] == [0, 1, 0, 0, 0, 0], "another hold's forget"
     hs.forget(10.0)
     assert hs.fields_for(10.0) == {}
 
@@ -330,7 +382,7 @@ def test_a_reason_given_while_the_files_were_unreadable_is_cleared_when_the_coun
     assert hs.fields_for(10.0) == {"ws": None, "ws_why": hs.NOT_RECORDED}
     proc.put("S", "futex_do_wait")
     _look(10.0, 102.0)
-    assert hs.fields_for(10.0) == {"ws": [0, 0, 1, 0, 0, 0], "gap": 1.0, "ws_why": None}
+    assert hs.fields_for(10.0) == {"ws": [0, 1, 0, 0, 0, 0], "gap": 1.0, "rq": 0.0, "ws_why": None}
 
 
 # --------------------------------------------------------------------------- #
@@ -426,7 +478,7 @@ def test_a_thread_in_time_sleep_is_counted_nap_on_the_real_kernel():
 
 
 @live
-def test_a_thread_computing_outside_the_gil_is_counted_running_or_runnable_on_the_real_kernel():
+def test_a_thread_computing_outside_the_gil_is_counted_run_on_the_real_kernel():
     """SQLite's work inside a statement is this case: the GIL is released, the thread is on a CPU (or waiting for one)."""
     import hashlib
 
@@ -436,15 +488,14 @@ def test_a_thread_computing_outside_the_gil_is_counted_running_or_runnable_on_th
             h.update(block)
 
     f = _looks_at_a_thread(compute)
-    busy = f["ws"][hs.CLASSES.index("running")] + f["ws"][hs.CLASSES.index("runnable")]
-    assert busy >= 4, f
+    assert f["ws"][hs.CLASSES.index("run")] >= 4, f
     assert f["ws"][hs.CLASSES.index("nap")] == 0 and f["ws"][hs.CLASSES.index("disk")] == 0, f
 
 
 @live
 def test_a_thread_computing_in_python_is_never_counted_asleep_and_futex_is_only_a_floor_for_gil_waits():
     """The limit the module states: each read the look makes gives the GIL up, so a holder that is the ONLY thread waiting for it is handed it
-    and read running. A pure-Python spinner beside the look therefore reads running, not futex; what must hold is that it is never a nap or a
+    and read running. A pure-Python spinner beside the look therefore reads run, not futex; what must hold is that it is never a nap or a
     disk wait. Pinned so the method's reading of ``futex`` (a floor) cannot drift into a claim."""
 
     def spin(stop: threading.Event) -> None:
@@ -454,7 +505,7 @@ def test_a_thread_computing_in_python_is_never_counted_asleep_and_futex_is_only_
 
     f = _looks_at_a_thread(spin)
     ws = dict(zip(hs.CLASSES, f["ws"], strict=True))
-    assert ws["running"] + ws["runnable"] + ws["futex"] >= 4 and ws["nap"] == 0 and ws["disk"] == 0, f
+    assert ws["run"] + ws["futex"] >= 4 and ws["nap"] == 0 and ws["disk"] == 0, f
 
 
 # --------------------------------------------------------------------------- #
@@ -493,7 +544,7 @@ def test_a_long_hold_carries_the_holders_counts_in_the_journal_and_the_looks_up_
         writer.sample_holder_state(gate, now=started + 1.0 + i)
     writer.watchdog_tick(gate, started)  # the 15-second tick carries the counts so far
     (event,) = _events("gate_hold")
-    assert event["ws"] == [0, 0, 3, 0, 0, 0] and event["gap"] == 1.0 and event["open"] is True
+    assert event["ws"] == [0, 3, 0, 0, 0, 0] and event["gap"] == 1.0 and event["rq"] == 0.0 and event["open"] is True
     for i in range(4, 6):  # two looks after that tick, before the release
         proc.put("S", "hrtimer_nanosleep")
         writer.sample_holder_state(gate, now=started + 1.0 + i)
@@ -501,7 +552,7 @@ def test_a_long_hold_carries_the_holders_counts_in_the_journal_and_the_looks_up_
     t.join(5)
     (event,) = _events("gate_hold")
     assert event["open"] is False
-    assert event["ws"] == [0, 0, 3, 2, 0, 0], "the release carries the looks taken after the last tick, not the tick's count"
+    assert event["ws"] == [0, 3, 2, 0, 0, 0], "the release carries the looks taken after the last tick, not the tick's count"
 
 
 @pytest.mark.usefixtures("journal")
@@ -538,7 +589,7 @@ def test_a_watchdog_look_on_the_free_gate_leaves_the_counts_for_the_release_to_r
     assert window == [True, True], "anti-vacuity: the look did land in the window, on a free gate"
     (event,) = _events("gate_hold")
     assert event["open"] is False
-    assert event["ws"] == [0, 0, 3, 2, 0, 0], "all five looks, not the tick's three"
+    assert event["ws"] == [0, 3, 2, 0, 0, 0], "all five looks, not the tick's three"
     assert hs.fields_for(started) == {}, "the releasing thread forgot its hold after it had read it"
 
 
@@ -582,7 +633,7 @@ def test_a_hold_that_ended_before_the_next_tick_still_carries_the_looks_it_was_g
     let_go.set()
     t.join(5)
     (event,) = _events("gate_hold")
-    assert event["ws"] == [0, 0, 1, 0, 0, 0] and event.get("ws_why") is None
+    assert event["ws"] == [0, 1, 0, 0, 0, 0] and event.get("ws_why") is None
 
 
 @pytest.mark.usefixtures("journal")
@@ -836,6 +887,9 @@ def test_the_method_defines_every_class_the_journal_counts_and_the_two_ways_a_na
     sentence = se._METHOD.split("A hold's 'ws'")[1].split("Else 'ws' is null")[0]
     for name in hs.CLASSES:
         assert re.search(rf"\b{name}\b", sentence), name
-    assert re.search(r"\bother any other wait\b", sentence) and "socket" in sentence, "'other' is defined, not only listed"
+    assert re.search(r"\bother a wait the kernel named otherwise\b", sentence) and "socket" in sentence, "'other' is defined, not only listed"
+    assert re.search(r"\bunknown a wait it did not name\b", sentence), "'unknown' is told apart from 'other' in words"
+    assert "They count looks, not time" in sentence, "a count of looks is not a share of time, and the method says so"
+    assert "'rq'" in sentence and "first look to the last" in sentence and "never 0" in sentence, "rq: its span and its one way to be absent"
     assert "streaming backup" in sentence, "a nap is not only SQLite's busy handler: the backup sleeps between its WAL tries while it holds the gate"
     assert "could not be read" in sentence and "tick" in sentence, "a gap over a second is not only a starved process"
