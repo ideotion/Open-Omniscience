@@ -109,9 +109,10 @@ _SAME_START_S = 5.0
 # The journal identifiers of the user-space killers and of the core-dump handler.
 _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
 
-#: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included
-#: (ruled 2026-10-17: 800 B of WAL's 2,415 B). A test serialises the worst case against it.
-COREDUMP_STACK_BYTES = 800
+#: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included. It is the
+#: REMAINDER of WAL's 2,415 B headroom after this thread's other worst-case members (crashing_thread_kind 440, launcher_stderr about 1,000,
+#: died_into_phase 74, native_in_flight 162 = 1,676), so the worst case fits by construction. Raising it needs WAL's measurement first.
+COREDUMP_STACK_BYTES = 740
 _COREDUMP_HEAD = re.compile(r"systemd-coredump\S*:\s+Process\s+(\d+)\s+\(")
 _COREDUMP_KEEP = re.compile(r"^(?:Stack trace of thread \d+:|#\d+\s)")
 _COREDUMP_FRAME = re.compile(r"^#\d+\s")
