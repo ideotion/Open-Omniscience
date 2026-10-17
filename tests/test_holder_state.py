@@ -801,8 +801,10 @@ def _longest_frames() -> list[tuple[int, str]]:
 
 def test_no_function_under_src_can_produce_a_frame_wider_than_the_width_the_budget_counts():
     """``writer.FRAME_CHARS`` is what ``storage_events``' budget counts each of a hold's three frames at (the journal's own cut is 160, which
-    no frame reaches). It is a MEASURED MAXIMUM: this walks every module, so a new function with a longer name than the budget assumes fails
-    HERE, with the name, and the fix is to raise ``FRAME_CHARS`` and re-measure the slot with ``test_the_storage_events_budget_holds_a_full_journal``."""
+    no frame reaches). It is a MEASURED MAXIMUM with no slack, pinned BOTH WAYS by walking every module: a new function with a longer name than
+    the budget assumes fails HERE, with the name (raise ``FRAME_CHARS`` and re-measure the slot with
+    ``test_the_storage_events_budget_holds_a_full_journal``), and a constant wider than any frame can be fails here too (lower it: the bytes
+    are the budget's, and a width nothing measured is a margin, which is what a measured maximum is not)."""
     found = _longest_frames()
     assert len(found) > 5_000, f"the walk saw only {len(found)} names: it is not looking at src/"
     widest, name = found[0]
@@ -811,6 +813,10 @@ def test_no_function_under_src_can_produce_a_frame_wider_than_the_width_the_budg
     assert any("<generic parameters of " in n for _w, n in found), "the walk lists PEP 695 scopes (src/database/write.py has one)"
     too_wide = [f"{n} ({w})" for w, n in found if w > writer.FRAME_CHARS]
     assert not too_wide, f"frames wider than FRAME_CHARS={writer.FRAME_CHARS}, which the storage-events budget counts: {too_wide[:5]}"
+    assert widest == writer.FRAME_CHARS, (
+        f"FRAME_CHARS={writer.FRAME_CHARS} is wider than the widest frame any function under src/ can produce ({widest}: {name}): "
+        "lower it to the measured maximum, because the budget counts every one of those characters for each of 3 frames x 20 holds"
+    )
 
 
 def test_a_frame_exactly_as_wide_as_the_budget_is_whole_and_one_character_wider_is_cut_and_says_so():

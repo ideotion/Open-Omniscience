@@ -687,11 +687,14 @@ _JOURNALED_HOLD: float | None = None
 
 #: The most characters one frame of a hold's ``frames`` is written with. WHAT IT PROTECTS: the storage-events slot's byte budget, which counts
 #: three frames on each of the twenty kept holds at this width instead of the journal's 160-character string cut. IT IS A MEASURED MAXIMUM, not a
-#: choice: the longest ``module:function:line`` any function under ``src/`` can produce is 79 characters (``src.ai_layer.perception_extract_job:
-#: _perception_extract_sleep_interruptible`` and a three-digit line), and ``tests/test_holder_state.py`` walks every module's names and fails when
-#: one is longer than this, so a frame is never cut in practice and the budget cannot be wrong by a long name. A frame that WERE longer
-#: (a function made by ``exec``, say) ends in an ellipsis, as the journal's own cut does, so a cut is never mistaken for a whole name.
-FRAME_CHARS = 90
+#: choice, with NO slack: the longest ``module:function:line`` any function under ``src/`` can produce is 79 characters (``src.ai_layer.
+#: perception_extract_job:_perception_extract_sleep_interruptible`` and a three-digit line), and ``tests/test_holder_state.py`` walks every
+#: module's names and fails BOTH ways: on a function whose frame would be wider than this (the fix is to raise it and re-measure the slot) and
+#: when this is wider than any frame can be (lower it: the bytes are the budget's). So a frame is never cut in practice and the budget cannot be
+#: wrong by a long name. A frame that WERE longer (a function made by ``exec``, say) ends in an ellipsis, as the journal's own cut does, so a cut
+#: is never mistaken for a whole name. (It was 90 in the first cut of this record: eleven characters nothing had measured, a margin, which is
+#: what a measured maximum is not.)
+FRAME_CHARS = 79
 
 
 def _app_frames(ident: int | None, limit: int = 3) -> list[str]:

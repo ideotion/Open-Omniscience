@@ -508,14 +508,14 @@ def test_the_storage_events_budget_holds_a_full_journal(journal, monkeypatch, lo
 
     THE HOLDER'S KERNEL STATE (``ws`` and ``gap`` on each gate hold, 17 Oct) is paid for by the width of the frames, not by splits and not by a
     bigger row. The model above wrote each of a hold's three frames at the journal's 160-character cut; a frame is ``module:function:line``,
-    the longest any function under ``src/`` can produce is 79 characters (pinned in ``tests/test_holder_state.py``), and ``writer.FRAME_CHARS`` (90) is
-    now both what the watchdog writes at most and what this model uses: 3 frames x 70 characters x 20 holds = 4,200 bytes that no real
-    event could reach (4,080 once a cut frame's ellipsis is counted: the model writes the frame in the cut form, 89 characters and the
-    ellipsis). The new fields cost 57 bytes a hold at their widest (six five-digit counts and a five-digit gap: 1,140 over the 20), 14 more for
+    the longest any function under ``src/`` can produce is 79 characters (pinned in ``tests/test_holder_state.py``), and ``writer.FRAME_CHARS`` (79, the
+    same number, pinned both ways) is now both what the watchdog writes at most and what this model uses: 3 frames x 81 characters x 20 holds
+    = 4,860 bytes that no real event could reach (4,740 once a cut frame's ellipsis is counted: the model writes the frame in the cut form,
+    78 characters and the ellipsis). It was 90 in the first cut: eleven characters nothing had measured, 660 bytes of margin the budget did not need. The new fields cost 57 bytes a hold at their widest (six five-digit counts and a five-digit gap: 1,140 over the 20), 14 more for
     the ``ws_why`` null that stays when counts follow a reason (the journal merges: 280 over the 20), and their sentence in the method 827
     (the fixed part, defined above, 5,176 to 6,003). Measured with the real fixtures, written: ordinary names 83,779 bytes (41,221 free), every
-    name at the cut 124,409, 591 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
-    the row with 5 splits kept; 126,242 - 4,080 + 1,140 + 280 + 827 = 124,409). A count reaches six digits only after about 28 hours of
+    name at the cut 123,749, 1,251 free, every hold keeps its split and no event is dropped (before: 126,242 with every split, 124,983 at
+    the row with 5 splits kept; 126,242 - 4,740 + 1,140 + 280 + 827 = 123,749). A count reaches six digits only after about 28 hours of
     looks at one hold and all six pass the five modelled digits together after about 67: the free bytes absorb that."""
     from src.api import diagnostics_slots as slots
     from src.database import writer
