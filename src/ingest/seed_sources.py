@@ -831,6 +831,11 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     tag_merge = merge_feedless_tags(session, merges)
     if merges:
         session.commit()                 # also the baselines a merge only RECORDED: get_db callers never commit for us
+        if new_rows:
+            # This commit expired every row AGAIN, and ``inherit_sibling_verdicts`` below reads each created row: one read
+            # here, not one SELECT per row. Same argument as above, and the same condition: only a call that created rows
+            # (a steady boot merges the same feed-less tags every time, but has no created row to read back).
+            session.query(Source).populate_existing().all()
     from src.catalog.sibling_verdicts import inherit_sibling_verdicts
 
     inherited = inherit_sibling_verdicts(session, new_rows)

@@ -125,3 +125,66 @@ def test_a_reseed_after_the_refresh_matches_a_cold_run(second):
     if second == "same":
         assert _digest(session) == before
 
+
+# --- the second refresh: the commit that records the merged feed-less tags expires every row again ------------------------
+
+
+def _with_merges(n: int = _N, feedless: int = 10) -> list[dict]:
+    """``n`` feed entries plus ``feedless`` feed-less entries of the same outlets: each one merges its tags into a feed row."""
+    return _entries(n) + [{"name": f"Outlet {i} site", "domain": f"outlet{i}.example", "tags": ["site"]} for i in range(feedless)]
+
+
+def test_the_second_refresh_runs_only_in_a_call_that_created_rows_and_merged_tags(monkeypatch):
+    calls = _spy_refresh(monkeypatch)
+    _engine, session = _session()
+    first = seed_sources(session, _with_merges())
+    assert first["created"] == _N and first["tag_merge"]["tags_merged"] == 10, first
+    assert len(calls) == 2, "one after the commit that created the rows, one after the commit that recorded the merges"
+    seed_sources(session, _with_merges())
+    assert len(calls) == 2, "a steady boot merges the same feed-less tags every time and created nothing: it reads no table"
+    _e, other = _session()
+    calls.clear()
+    seed_sources(other, _entries())
+    assert len(calls) == 1, "rows created and nothing merged: the first refresh stands, there is no second commit to follow"
+
+
+def _reads_by_id(entries, monkeypatch, *, second_refresh_off: bool) -> int:
+    engine, session = _session()
+    reads: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _count(conn, cur, statement, params, context, many):
+        if statement.lstrip().upper().startswith("SELECT") and "FROM sources" in statement and "sources.id = ?" in statement:
+            reads.append(statement)
+
+    if second_refresh_off:
+        real = Query.populate_existing
+        seen = [0]
+
+        def only_the_first(self):
+            seen[0] += 1
+            return real(self) if seen[0] == 1 else self.filter(false())   # the second refresh reads nothing
+
+        monkeypatch.setattr(Query, "populate_existing", only_the_first)
+    seed_sources(session, entries)
+    return len(reads)
+
+
+def test_the_second_refresh_removes_the_per_row_reads_the_sibling_verdict_step_made(monkeypatch):
+    without_second = _reads_by_id(_with_merges(), monkeypatch, second_refresh_off=True)
+    monkeypatch.undo()
+    with_second = _reads_by_id(_with_merges(), monkeypatch, second_refresh_off=False)
+    # inherit_sibling_verdicts reads every created row: one SELECT each without the second refresh, none with it. The bound is
+    # half the created rows, which names what it protects: "not one read per created row after the merge commit".
+    assert without_second - with_second >= _N // 2, f"{without_second} reads by id with only the first refresh, {with_second} with both"
+
+
+def test_the_two_refreshes_change_no_row(monkeypatch):
+    _e1, both = _session()
+    seed_sources(both, _with_merges())
+    kept = _digest(both)
+    monkeypatch.setattr(Query, "populate_existing", lambda self: self.filter(false()))   # both refreshes read nothing
+    _e2, none = _session()
+    seed_sources(none, _with_merges())
+    assert _digest(none) == kept
+    assert none.query(Source).count() == _N
