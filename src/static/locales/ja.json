@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "{n} 件の収集を停止する",
   "stopped": "停止中",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます",
+  "stopped because the machine was nearly out of memory": "マシンのメモリがほぼ尽きたため停止しました",
   "stopped early": "途中で停止",
   "stopped: airplane mode was turned on": "停止: 機内モードがオンになりました",
   "stored": "保存済み",

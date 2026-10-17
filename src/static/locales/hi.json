@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "{n} का संग्रह रोकना",
   "stopped": "रुका हुआ",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "लगातार {n} बैचों में जाँचने लायक कोई प्रमाण न मिलने पर रोका गया — शेष उम्मीदवारों का मूल्यांकन नहीं हो सका (कोई पहुँच योग्य फ़ीड नहीं / कोई पिछला लेख नहीं); वे अभी नहीं परखे गए रहेंगे और बाद के रन में फिर आज़माए जाएँगे",
+  "stopped because the machine was nearly out of memory": "रोका गया क्योंकि मशीन की मेमोरी लगभग खत्म हो गई थी",
   "stopped early": "समय से पहले रुका",
   "stopped: airplane mode was turned on": "रुका: एयरप्लेन मोड चालू किया गया",
   "stored": "संग्रहीत",

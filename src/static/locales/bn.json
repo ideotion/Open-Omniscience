@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "{n}টির সংগ্রহ বন্ধ করা",
   "stopped": "বন্ধ",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "পরপর {n}টি ব্যাচে বিচারের কোনো প্রমাণ না থাকায় থামানো হয়েছে — বাকি প্রার্থীদের মূল্যায়ন করা যায়নি (নাগালযোগ্য ফিড নেই / পূর্ববর্তী নিবন্ধ নেই); তারা এখনও বিচারহীন থাকবে এবং পরবর্তী রানে আবার চেষ্টা করা হবে",
+  "stopped because the machine was nearly out of memory": "থামানো হয়েছে কারণ মেশিনের মেমোরি প্রায় শেষ হয়ে গিয়েছিল",
   "stopped early": "আগেই থেমে গেছে",
   "stopped: airplane mode was turned on": "থেমেছে: বিমান মোড চালু করা হয়েছিল",
   "stored": "সংরক্ষিত",

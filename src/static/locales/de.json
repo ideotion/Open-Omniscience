@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "{n} nicht mehr sammeln",
   "stopped": "gestoppt",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "nach {n} aufeinanderfolgenden Stapeln ohne beurteilbare Belege angehalten — die übrigen Kandidaten konnten nicht bewertet werden (kein erreichbarer Feed / keine früheren Artikel); sie bleiben ungeprüft und werden bei einem späteren Lauf erneut versucht",
+  "stopped because the machine was nearly out of memory": "abgebrochen, weil dem Rechner fast der Arbeitsspeicher ausging",
   "stopped early": "vorzeitig gestoppt",
   "stopped: airplane mode was turned on": "angehalten: Der Flugmodus wurde eingeschaltet",
   "stored": "gespeichert",

@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "stop collecting {n}",
   "stopped": "stopped",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run",
+  "stopped because the machine was nearly out of memory": "stopped because the machine was nearly out of memory",
   "stopped early": "stopped early",
   "stopped: airplane mode was turned on": "stopped: airplane mode was turned on",
   "stored": "stored",

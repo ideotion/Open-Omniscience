@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "berhenti mengumpulkan {n}",
   "stopped": "berhenti",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya",
+  "stopped because the machine was nearly out of memory": "dihentikan karena memori mesin hampir habis",
   "stopped early": "dihentikan lebih awal",
   "stopped: airplane mode was turned on": "berhenti: mode pesawat dinyalakan",
   "stored": "tersimpan",

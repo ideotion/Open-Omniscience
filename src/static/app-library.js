@@ -307,7 +307,8 @@
       }
       if (fig.keyword_mentions_state === "failed" && fig.keyword_mentions_failure) {
         const f = fig.keyword_mentions_failure;
-        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", String(f.deadline_s)) : String(f.kind);
+        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", String(f.deadline_s))
+          : f.kind === "memory-short" ? t("stopped because the machine was nearly out of memory") : String(f.kind);
         return tile(t("not counted"), label,
           t("Not counted: the keyword-mention count stopped ({why}) at {t}; it is tried again after {m} min.")
             .replace("{why}", why).replace("{t}", clock(f.at)).replace("{m}", String(Math.round((f.retry_after_s || 0) / 60))));

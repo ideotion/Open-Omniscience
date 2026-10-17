@@ -342,17 +342,25 @@ def _compute_figures(db: Session, now: datetime) -> dict:
     return out
 
 
+def _failure_kind(exc: BaseException, memory_short: type, statement_timeout: type) -> str:
+    """The NAMED reason a count stopped: a memory stop (a subclass of the deadline abort, so every caller handles it) is not a
+    time limit, and the guard's own numbers stay out of the figure."""
+    if isinstance(exc, memory_short):
+        return "memory-short"
+    return "statement-deadline" if isinstance(exc, statement_timeout) else type(exc).__name__
+
+
 def _compute_figures_counted(db: Session, now: datetime) -> dict:
     """The background computation: the cheap part, then the COUNT under a statement deadline.
 
     A count that cannot finish is a NAMED failure, not a missing number and not a retry on the next poll: the payload carries
-    ``keyword_mentions_state: "failed"`` with the kind (``statement-deadline`` or the exception's class), the deadline, when it
+    ``keyword_mentions_state: "failed"`` with the kind (``statement-deadline``, ``memory-short`` or the exception's class), the deadline, when it
     happened and the window before it is tried again, and the entry stands for that window (``__ttl_s__``).
 
     COST-PROPORTIONAL RECOUNT: a finished count is carried, with ``keyword_mentions_computed_at``, for
     ``_FIGURES_COUNT_DUTY_FACTOR`` times its own measured duration, so a stale entry inside that window recomputes the cheap
     figures and starts no scan."""
-    from src.database.maintenance import StatementTimeout, statement_deadline
+    from src.database.maintenance import MemoryShort, StatementTimeout, statement_deadline
 
     out = _cheap_figures(db, now)
     if not out["articles"]:
@@ -375,7 +383,7 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
                 "avg_keywords_per_article": None,
                 "keyword_mentions_state": "failed",
                 "keyword_mentions_failure": {
-                    "kind": "statement-deadline" if isinstance(exc, StatementTimeout) else type(exc).__name__,
+                    "kind": _failure_kind(exc, MemoryShort, StatementTimeout),
                     "deadline_s": deadline,
                     "at": datetime.now(UTC).isoformat(timespec="seconds"),
                     "retry_after_s": _FIGURES_FAILURE_WINDOW_S,

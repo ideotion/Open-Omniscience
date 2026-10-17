@@ -326,3 +326,24 @@ def test_a_failed_count_is_tried_again_after_its_window_even_when_nothing_was_wr
     finally:
         s.close()
 
+
+def test_a_memory_stop_is_named_as_a_memory_stop_not_as_a_deadline(monkeypatch):
+    """``MemoryShort`` is a ``StatementTimeout`` subclass so every caller handles it, but the figure's failure names the REASON:
+    a count refused or stopped for low memory did not pass its time limit."""
+    from src.database.maintenance import MemoryShort
+
+    _seed_article()
+
+    def stopped(_db):
+        raise MemoryShort("available memory 120 MB is at or below the 300 MB floor")
+
+    monkeypatch.setattr(dbmod, "_mentions_count", stopped)
+    s = SessionLocal()
+    try:
+        dbmod.library_figures(s)
+        assert _wait(lambda: (_entry("db:figures") or {}).get("payload", {}).get("keyword_mentions_state") == "failed")
+        out = dbmod.library_figures(s)
+    finally:
+        s.close()
+    assert out["keyword_mentions_failure"]["kind"] == "memory-short"
+    assert "120" not in str(out), "the guard's own numbers are not copied into the figure's failure"

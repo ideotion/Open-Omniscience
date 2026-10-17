@@ -6464,6 +6464,7 @@
   "stop collecting {n}": "停止采集 {n} 个",
   "stopped": "已停止",
   "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试",
+  "stopped because the machine was nearly out of memory": "已停止：机器内存几乎耗尽",
   "stopped early": "提前停止",
   "stopped: airplane mode was turned on": "已停止：飞行模式已开启",
   "stored": "已保存",
