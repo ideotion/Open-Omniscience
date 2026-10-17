@@ -72,6 +72,33 @@ def _default_session():
 
 _ID_SET_CHUNK = 900  # SQLite bound-variable safety (the fts_ids/.in_() chunking precedent)
 
+#: Article ids the job keeps per signal for the operator's spot-check (a DISPLAY sample: it is read on
+#: one page, and it is not a rate). It also bounds the persisted state, which is rewritten every chunk:
+#: MEASURED 2026-10-17 with the manager's own ``_save``, 20 ids of seven digits for each of the 15
+#: signals a run can name (7 URL/body, 2 stub, 6 index-page-tier) = 3,063 bytes added to a 868-byte
+#: state file (3,931 in all); about 205 bytes per signal.
+SAMPLE_PER_SIGNAL = 20
+
+
+def _sample_rank(signal: str, article_id: int) -> str:
+    """Order in which a candidate is kept in the sample: the SMALLEST hashes win. Depends only on the
+    signal and the id, so the sample is the same for the same corpus whatever order the chunks came in
+    and across a pause, a resume or a restart (a running-count reservoir would not survive those)."""
+    import hashlib
+
+    return hashlib.sha256(f"{signal}:{article_id}".encode()).hexdigest()
+
+
+def merge_samples(
+    kept: dict[str, list[int]], found: dict[str, list[int]], per_signal: int = SAMPLE_PER_SIGNAL
+) -> dict[str, list[int]]:
+    """``kept`` plus the candidates ``found`` in a chunk, cut to the ``per_signal`` smallest ranks."""
+    out = {sig: list(ids) for sig, ids in kept.items()}
+    for sig, ids in found.items():
+        merged = sorted(set(out.get(sig, [])) | {int(i) for i in ids}, key=lambda i: _sample_rank(sig, i))
+        out[sig] = merged[:per_signal]
+    return out
+
 
 def default_quarantine_candidates_batch(
     session: Any,
@@ -84,6 +111,7 @@ def default_quarantine_candidates_batch(
     criteria_version: str | None = None,
     article_ids: list[int] | None = None,
     index_page_tiers: frozenset[int] | set[int] | None = None,
+    collect_ids: bool = False,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
@@ -122,7 +150,11 @@ def default_quarantine_candidates_batch(
     has no path segment for a slug); tier 2 is a listing by convention where one could live, so
     it wants review before a write run rather than a default. The reason string is prefixed
     ``index_page_tier{n}:`` so a quarantine from this reading is always distinguishable -- and
-    reversible -- separately from the ingest gate's own signals."""
+    reversible -- separately from the ingest gate's own signals.
+
+    ``collect_ids`` (default False): also return ``ids_by_reason`` (this batch's candidate ids per
+    signal) for the job's spot-check sample. Only the job asks; the import-time callers store this
+    function's whole result in their saved reports and must not gain an unbounded key."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
     from src.ingest.furniture import stub_verdict
@@ -137,6 +169,7 @@ def default_quarantine_candidates_batch(
 
     quarantined_ids: list[int] = []
     by_reason: dict[str, int] = {}
+    ids_by_reason: dict[str, list[int]] = {}  # this batch's candidates per signal (ids only)
     to_write: dict[int, str] = {}  # id -> signal, for rows NOT already quarantined
     already_quarantined = 0
     scanned = 0
@@ -164,6 +197,7 @@ def default_quarantine_candidates_batch(
             if signal is not None:
                 quarantined_ids.append(int(aid))
                 by_reason[signal] = by_reason.get(signal, 0) + 1
+                ids_by_reason.setdefault(signal, []).append(int(aid))
                 if is_quarantined:
                     already_quarantined += 1  # idempotent: already stamped, never re-counted
                 else:
@@ -220,7 +254,7 @@ def default_quarantine_candidates_batch(
         "last_id": last_id,
         "done": done,
         "write": write,
-    }
+    } | ({"ids_by_reason": ids_by_reason} if collect_ids else {})
 
 
 class QuarantineJobManager:
@@ -241,6 +275,7 @@ class QuarantineJobManager:
         self._done = 0  # articles scanned so far (for percent + ETA)
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
         self._tally: dict[str, int] = {}  # quarantined / by-reason / write counts
+        self._samples: dict[str, list[int]] = {}  # signal -> up to SAMPLE_PER_SIGNAL article ids (ids only)
         self._index_page_tiers: frozenset[int] = frozenset()
         self._include_prose_gate = True  # the nav-soup gate over >= _ARTICLE_MIN_WORDS bodies
         self._include_stubs = False  # thin-body menu / subscriber-prompt stubs (opt-in)
@@ -271,6 +306,7 @@ class QuarantineJobManager:
                 json.dumps({
                     "cursor": self._cursor, "total": self._total, "done": self._done,
                     "tally": self._tally, "state": self._state, "write": self._write,
+                    "samples": self._samples,
                     # EVERY dimension of the run mode, not just write: a restart that
                     # restored only some of them would resume the same run under
                     # different criteria and report both halves under one run's name.
@@ -302,6 +338,9 @@ class QuarantineJobManager:
         self._total = max(0, int(d.get("total") or 0))
         self._done = max(0, int(d.get("done") or 0))
         self._tally = {str(k): int(v) for k, v in (d.get("tally") or {}).items()}
+        self._samples = {
+            str(k): [int(i) for i in v][:SAMPLE_PER_SIGNAL] for k, v in (d.get("samples") or {}).items()
+        }
         self._write = bool(d.get("write", False))
         # Absent in a state file written before these were persisted: fall back to the
         # value that start() itself defaults to, so an older file resumes as it would have.
@@ -356,6 +395,7 @@ class QuarantineJobManager:
             self._total = max(0, _total)
             if _cursor <= 0:
                 self._tally = {}
+                self._samples = {}
             # The caller supplies the mode explicitly every time: a genuinely fresh
             # external start passes the operator's own choice; resume() (below) always
             # passes through the PRESERVED mode of the run being resumed -- never
@@ -402,6 +442,8 @@ class QuarantineJobManager:
                         break
                     with corpus_lease("quarantine"):
                         extra = {"include_stubs": True} if stubs else {}
+                        if work is default_quarantine_candidates_batch:
+                            extra["collect_ids"] = True  # the sample; a test seam keeps its own signature
                         r = work(session, after_id=after, limit=_BATCH, write=write,
                                  index_page_tiers=tiers or None,
                                  include_prose_gate=prose_gate, **extra)
@@ -419,6 +461,7 @@ class QuarantineJobManager:
                         )
                         for sig, cnt in (r.get("by_reason") or {}).items():
                             self._tally[f"reason:{sig}"] = self._tally.get(f"reason:{sig}", 0) + int(cnt)
+                        self._samples = merge_samples(self._samples, r.get("ids_by_reason") or {})
                         self._done += int(r.get("scanned", 0))
                         self._cursor = after
                         self._save()
@@ -465,6 +508,11 @@ class QuarantineJobManager:
             self._tally = tally
             self._save()
         return out
+
+    def sample_ids(self) -> dict[str, list[int]]:
+        """The sampled article ids per signal of the current run (a copy; ids only)."""
+        with self._lock:
+            return {k: list(v) for k, v in self._samples.items()}
 
     def cancel(self) -> None:
         with self._lock:
