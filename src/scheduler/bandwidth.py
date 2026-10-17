@@ -57,35 +57,38 @@ class _AdjustableSemaphore:
     """
 
     def __init__(self, permits: int) -> None:
-        self._cond = threading.Condition()
+        # a plain RLock under the Condition and `with self._lock:` everywhere: a Condition's own __enter__/__exit__ are Python frames, where a
+        # KeyboardInterrupt can land between "taken" and "released" and leave the lock taken for ever (see src/config/kv_store.py::_hold_lock)
+        self._lock = threading.RLock()
+        self._cond = threading.Condition(self._lock)
         self._permits = max(1, int(permits))
         self._active = 0
 
     def acquire(self) -> None:
-        with self._cond:
+        with self._lock:
             while self._active >= self._permits:
                 self._cond.wait()
             self._active += 1
 
     def release(self) -> None:
-        with self._cond:
+        with self._lock:
             if self._active > 0:
                 self._active -= 1
             self._cond.notify()
 
     def set_permits(self, n: int) -> None:
-        with self._cond:
+        with self._lock:
             self._permits = max(1, int(n))
             self._cond.notify_all()
 
     @property
     def permits(self) -> int:
-        with self._cond:
+        with self._lock:
             return self._permits
 
     @property
     def active(self) -> int:
-        with self._cond:
+        with self._lock:
             return self._active
 
 

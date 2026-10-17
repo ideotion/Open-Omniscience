@@ -127,13 +127,16 @@ class _Lock:
     waits on it, and the swap's own wait is bounded."""
 
     def __init__(self) -> None:
-        self._cond = threading.Condition()
+        # a plain RLock under the Condition and `with self._lock:` everywhere: a Condition's own __enter__/__exit__ are Python frames, where a
+        # KeyboardInterrupt can land between "taken" and "released" and leave the lock taken for ever (see src/config/kv_store.py::_hold_lock)
+        self._lock = threading.RLock()
+        self._cond = threading.Condition(self._lock)
         self._shared = 0
         self._holder: int | None = None
 
     def shared(self) -> bool:
         me = threading.get_ident()
-        with self._cond:
+        with self._lock:
             if self._holder == me:
                 return False
             while self._holder is not None:
@@ -142,7 +145,7 @@ class _Lock:
             return True
 
     def release_shared(self) -> None:
-        with self._cond:
+        with self._lock:
             self._shared -= 1
             if not self._shared:
                 self._cond.notify_all()
@@ -150,7 +153,7 @@ class _Lock:
     def exclusive(self, timeout: float) -> None:
         me = threading.get_ident()
         deadline = time.monotonic() + max(0.0, timeout)
-        with self._cond:
+        with self._lock:
             if self._holder == me:
                 raise RuntimeError("the library swap window is already held by this thread")
             while self._holder is not None or self._shared:
@@ -166,7 +169,7 @@ class _Lock:
         return self._holder == threading.get_ident()
 
     def release_exclusive(self) -> None:
-        with self._cond:
+        with self._lock:
             self._holder = None
             self._cond.notify_all()
 
