@@ -189,8 +189,10 @@ def _append(entry: dict) -> None:
         pass
     finally:
         held, _IN_APPEND.pending, _IN_APPEND.busy = _IN_APPEND.pending, [], False
-    for later in held:
-        _append(later)
+        # Written here and not after the ``finally``: an exception that is not an ``Exception`` (an interrupt) leaves the ``try`` by this path, and a loop below it
+        # would never run, dropping the records the finalizer logged while the lock was held.
+        for later in held:
+            _append(later)
 
 
 @contextlib.contextmanager
