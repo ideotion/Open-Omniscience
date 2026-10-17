@@ -109,12 +109,11 @@ def test_the_blocks_own_statement_is_still_deadlined_after_it_commits(tmp_path):
     eng = _engine(tmp_path)
     s = sessionmaker(bind=eng)()
     try:
-        with pytest.raises(StatementTimeout):
-            with statement_deadline(s, seconds=0.2):
-                s.execute(_SHORT)
-                s.commit()          # the connection goes back and is disarmed
-                time.sleep(0.25)    # the deadline elapses
-                s.execute(_LONG)    # re-armed on after_begin -> must be interrupted
+        with pytest.raises(StatementTimeout), statement_deadline(s, seconds=0.2):
+            s.execute(_SHORT)
+            s.commit()          # the connection goes back and is disarmed
+            time.sleep(0.25)    # the deadline elapses
+            s.execute(_LONG)    # re-armed on after_begin -> must be interrupted
     finally:
         s.rollback()
         s.close()
@@ -433,3 +432,40 @@ def test_a_truncated_empty_run_keeps_the_cached_cards(tmp_path, monkeypatch):
         "an untruncated empty run must still be able to empty Home — otherwise a stale "
         "feed freezes forever on a corpus that really has no cards"
     )
+
+
+def test_an_enclosing_deadline_still_fires_after_a_nested_block_has_exited(tmp_path):
+    """The benchmark member's field defect: a case opened its own deadline, and from then on the member's deadline could not stop a
+    statement (the nested block's exit disarmed the connection, and the outer handler came back only at the next transaction).
+    MUTATION TARGET: restore of the enclosing handler in `statement_deadline`'s teardown."""
+    eng = _engine(tmp_path)
+    s = sessionmaker(bind=eng)()
+    try:
+        with pytest.raises(StatementTimeout), statement_deadline(s, seconds=0.3):
+            s.execute(_SHORT)  # the connection is held, in a transaction
+            with statement_deadline(s, seconds=60.0):
+                s.execute(_SHORT)
+            time.sleep(0.35)  # the outer deadline has now elapsed
+            s.execute(_LONG)  # no new transaction begins: only the restored handler can stop it
+    finally:
+        s.rollback()
+        s.close()
+
+
+def test_the_nested_block_keeps_its_own_deadline_inside_and_a_lone_block_is_still_disarmed_on_exit(tmp_path):
+    eng = _engine(tmp_path)
+    s = sessionmaker(bind=eng)()
+    try:
+        with pytest.raises(StatementTimeout), statement_deadline(s, seconds=60.0):
+            s.execute(_SHORT)
+            with statement_deadline(s, seconds=0.1):
+                time.sleep(0.15)
+                s.execute(_LONG)  # the inner one applies inside
+        # a block with no enclosing one leaves the connection unarmed: a long statement afterwards runs to the end
+        with statement_deadline(s, seconds=0.05):
+            s.execute(_SHORT)
+        time.sleep(0.1)
+        assert s.execute(_LONG).scalar() == 400000
+    finally:
+        s.rollback()
+        s.close()

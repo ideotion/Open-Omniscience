@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,privacy,Guard tests for the feed preflight and import results log writers and the merge's traced labels,shipped,PR #1444,tests/test_sink_sweep_writer_gaps.py,"The files feed_preflight.jsonl and import_results.jsonl are read back after a failure that quotes the held passphrase, and an AST guard pins that no keyed statement exists in the merge whose SQL labels reach the journal; each goes red when its scrub or guard is removed. No source change."

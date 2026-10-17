@@ -144,9 +144,9 @@ _ACTIVE_LOCK = threading.Lock()
 def active_staging(path: Path | str) -> Iterator[None]:
     """Mark ``path`` as belonging to a RUNNING backup/restore job for the duration."""
     key = str(Path(path).resolve())
-    with _ACTIVE_LOCK:
-        _ACTIVE_STAGING.add(key)
     try:
+        with _ACTIVE_LOCK:  # inside the try: an interrupt after the add and before the yield still reaches the discard below (R171)
+            _ACTIVE_STAGING.add(key)
         yield
     finally:
         with _ACTIVE_LOCK:
@@ -1007,9 +1007,12 @@ def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], s
                 ).fetchall()
             ]
             for t in tables:
-                if _SAFE_ID.match(t):
-                    cur.execute(f'SELECT COUNT(*) FROM "{t}"')  # noqa: S608  # nosec B608 - identifier from sqlite_master, validated against _SAFE_ID; no user input
-                    counts[t] = int(cur.fetchone()[0])
+                # the guard-clause form: a loop whose body ends in a bare ``if`` has its back-edge outside the exception table of the ``try``
+                # around it on CPython 3.13, so an interrupt delivered there would skip the ``finally`` that closes the connection (R163)
+                if not _SAFE_ID.match(t):
+                    continue
+                cur.execute(f'SELECT COUNT(*) FROM "{t}"')  # noqa: S608  # nosec B608 - identifier from sqlite_master, validated against _SAFE_ID; no user input
+                counts[t] = int(cur.fetchone()[0])
             if "articles" in counts:
                 from src.reporting.evidence import canonical_bytes
 

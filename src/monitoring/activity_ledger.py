@@ -70,7 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, scrubbed
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -466,7 +466,7 @@ def build_entry(action: str, result: Any = None, settings: Any = None) -> Ledger
         what_frame = FAILED_FRAME
     elif res.get("skipped") and not isinstance(res.get("skipped"), int | float):
         what_frame = SKIPPED_FRAME
-        note = str(res["skipped"])[:200]
+        note = scrubbed(str(res["skipped"]))[:200]  # checked whole, then cut: the cut must not fall inside a key
     return LedgerEntry(
         action=action, category=a.category, what_happened=_render(what_frame, vals),
         why=a.why, touched=_render(a.touched, vals), caveat=a.caveat,

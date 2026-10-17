@@ -31,6 +31,7 @@ turns the journal read off with the kernel one. An empty result is never "clean"
 
 from __future__ import annotations
 
+import contextlib
 import faulthandler
 import json
 import logging
@@ -47,12 +48,23 @@ from src.monitoring.kernel_log import (
     _run,
     journal_boot_arg,
     journal_notice,
+    published_lines,
 )
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
 
 LAUNCHER_EXITS = "launcher_exits.jsonl"
+#: One row per stop the launcher was ASKED for (R168, scripts/launch.sh ``record_stop``): the signal it trapped (INT, TERM or HUP), the server's pid, the time.
+#: Written before the launcher forwards anything or starts waiting, so a teardown that never finishes still leaves it. Never an exit row: the launcher
+#: writes ``launcher_exits.jsonl`` only for an end nobody asked for, so for one pid at most one of the two exists.
+LAUNCHER_STOPS = "launcher_stops.jsonl"
+#: The status a Windows process ends with on Ctrl-C (STATUS_CONTROL_C_EXIT, 0xC000013A as a signed 32-bit number): launch_server.ps1 writes it in a stop row.
+_WINDOWS_CTRL_C = -1073741510
+#: The only signals a stop row may name (a row naming another is not read as a stop): the three the launcher traps.
+STOP_SIGNALS = frozenset({"SIGINT", "SIGTERM", "SIGHUP"})
+#: The abort messages the launcher's stderr filter recorded (scripts/launch.sh ``stderr_filter``), one JSON line each plus a summary per launch.
+LAUNCHER_STDERR = "launcher_stderr.jsonl"
 CRASH_TRACE = "crash_trace.log"
 # Rotated to ``crash_trace.log.1`` at arm time once past this size: one header line per
 # session, plus a trace only when a session crashed, so this is years of headers.
@@ -68,7 +80,7 @@ _TRACE_HEADER_RE = re.compile(
 # bounded stack per thread (100 frames at most), so a crashed 40-thread process can
 # still run to a few thousand lines; the head names the fatal error and the crashing
 # thread first.
-_TRACE_REPORT_LINES = 120
+_TRACE_REPORT_LINES = 400
 # A trace line is cut at this many characters. faulthandler writes one line per frame (about 100
 # characters), so the cut only ever touches an exception's message, which can be a page of text;
 # without it a report of ten earlier ends could run to several hundred KB. The summary is one of these
@@ -105,6 +117,15 @@ _SAME_START_S = 5.0
 
 # The journal identifiers of the user-space killers and of the core-dump handler.
 _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
+
+#: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included. WHAT IT
+#: PROTECTS: the 2,415 B headroom above the diagnostics floor. The sum of every member's MEASURED worst case, three launcher_stderr sessions at
+#: 319 B, died_into_phase 75, native_in_flight 181 (key included), the thread census 150, this 570 and crashing_thread_kind 440 (WAL's), is
+#: 2,373 B (tests/test_session_forensics_budget.py builds each with the real code and goes red if any grows): 42 B are unspent.
+COREDUMP_STACK_BYTES = 570
+_COREDUMP_HEAD = re.compile(r"systemd-coredump\S*:\s+Process\s+(\d+)\s+\(")
+_COREDUMP_KEEP = re.compile(r"^(?:Stack trace of thread \d+:|#\d+\s)")
+_COREDUMP_FRAME = re.compile(r"^#\d+\s")
 _KILLER_UNITS = ("systemd-oomd", "earlyoom", "nohang")
 # systemd-oomd names the cgroup it killed: "Killed /user.slice/.../app-x.scope due to ...".
 _OOMD_KILLED = re.compile(r"\bKilled (/\S+)")
@@ -139,6 +160,23 @@ _SIGNAL_MEANING: dict[str, tuple[str, str]] = {
     "SIGHUP": ("stopped", "hung up by something other than the launcher"),
 }
 
+# What a Windows exit status means, by its unsigned 32-bit value (the launcher records .NET's signed ExitCode; 0xC0000005 arrives as
+# -1073741819). The names and values are ntstatus.h's (mingw-w64-headers/include/ntstatus.h, read 2026-10-17). A classification, like the
+# signals above: Windows ends a process that crashed with the NTSTATUS of the fault as its exit code and writes nothing to stderr.
+_NT_STATUS_MEANING: dict[int, tuple[str, str]] = {
+    0xC0000005: ("crashed", "STATUS_ACCESS_VIOLATION: a native-code crash, an invalid memory access"),
+    0xC0000374: ("crashed", "STATUS_HEAP_CORRUPTION: the Windows heap found damaged memory"),
+    0xC0000409: ("crashed", "STATUS_STACK_BUFFER_OVERRUN: a fast-fail, which is how abort() ends a process on Windows"),
+    0xC00000FD: ("crashed", "STATUS_STACK_OVERFLOW"),
+    0xC000001D: ("crashed", "STATUS_ILLEGAL_INSTRUCTION"),
+    0xC0000094: ("crashed", "STATUS_INTEGER_DIVIDE_BY_ZERO"),
+    0xC0000006: ("crashed", "STATUS_IN_PAGE_ERROR: a mapped file page could not be read"),
+    0xC0000017: ("crashed", "STATUS_NO_MEMORY: an allocation failed"),
+    0xC0000135: ("failed to start", "STATUS_DLL_NOT_FOUND: a library the app needs was not found"),
+    0xC0000142: ("failed to start", "STATUS_DLL_INIT_FAILED: a library could not initialise"),
+    0xC000013A: ("stopped", "STATUS_CONTROL_C_EXIT: interrupted with Ctrl-C"),
+}
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -162,38 +200,390 @@ def _same_boot(recorded: Any, boot_id: str | None) -> bool:
     return recorded == boot_id
 
 
-def launcher_exit(pid: int | None, boot_id: str | None = None) -> dict[str, Any] | None:
+def launcher_exit(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
     """The launcher's record of how process ``pid`` ended, or None when it holds none.
 
     ``boot_id`` is the machine boot the session ran in (its sentinel records it); a
     record from another boot is skipped. None is the common case and means nothing by
     itself: the app was started some other way (a terminal, a service, the release-run
-    harness), the launcher predates this record, or the launcher asked it to stop."""
+    harness), the launcher predates this record, or the launcher asked it to stop.
+
+    ``session_started`` (the session's start stamp) closes pid reuse where there is no boot id to tell machine boots apart (Windows, macOS):
+    a record written BEFORE the session began is an earlier process that had the same pid, never this one's end. A stamp that does not
+    parse is not compared (nothing is claimed either way)."""
+    if not isinstance(pid, int):
+        return None
+    unparsed = 0
+    rows: list[dict[str, Any]] = []
+    with contextlib.suppress(OSError):  # no exit file: the stop row may still answer
+        rows, unparsed = _json_rows(_tail_text(_diag_dir() / LAUNCHER_EXITS, _STDERR_READ_BYTES))
+    for rec in reversed(rows):
+        if rec.get("pid") == pid and _same_boot(rec.get("boot_id"), boot_id):
+            if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
+                continue
+            out = describe_exit(rec)
+            if unparsed:
+                out["unparsed_lines"] = unparsed
+            return out
+    stop = launcher_stop(pid, boot_id, session_started)
+    if not rows and unparsed:
+        if stop is None:
+            return _unreadable([LAUNCHER_EXITS], unparsed)
+        if stop.get("kind") == "unreadable":
+            return _unreadable([LAUNCHER_EXITS, *stop["unreadable_files"]], unparsed + stop["unparsed_lines"])
+    return stop
+
+
+def launcher_stop(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
+    """The launcher's record that a STOP WAS ASKED of process ``pid`` (Ctrl-C, a close of the window, a service stop), or None.
+
+    Read only when :func:`launcher_exit` found no exit row for the pid, so the two never answer for one session. The same guards as the exit row:
+    the machine boot, and a row written before the session began is another process's (pid reuse). It describes a request, not a cause of death:
+    a stop was asked and the session's end was not clean, so the teardown did not complete."""
     if not isinstance(pid, int):
         return None
     try:
-        raw = (_diag_dir() / LAUNCHER_EXITS).read_text(encoding="utf-8")
+        rows, unparsed = _json_rows(_tail_text(_diag_dir() / LAUNCHER_STOPS, _STDERR_READ_BYTES))
     except OSError:
         return None
-    for line in reversed(raw.splitlines()):
+    for rec in reversed(rows):
+        sig = rec.get("signal") if isinstance(rec.get("signal"), str) else None  # a list or a dict there is not a signal name (and is not hashable)
+        # a signal the launcher trapped (bash), or Windows' Ctrl-C: no signal name, the NTSTATUS the server ended with (launch_server.ps1)
+        asked = sig if sig in STOP_SIGNALS else ("Ctrl-C" if rec.get("signal") is None and rec.get("status") == _WINDOWS_CTRL_C else None)
+        if rec.get("pid") == pid and asked and _same_boot(rec.get("boot_id"), boot_id):
+            if not (isinstance(rec.get("boot_id"), str) and isinstance(boot_id, str)) and _ended_before(rec.get("at"), session_started):
+                continue
+            out = {
+                "seen_by": "the launcher (scripts/launch.sh), the process's parent" if sig else "the launcher (scripts/launch_server.ps1), the process's parent",
+                "at": _stamp_or_none(rec.get("at")),
+                "started_at": None,
+                "status": None,
+                "signal": sig or "Ctrl-C",
+                "kind": "stop asked",
+                "meaning": f"a stop was asked of the launcher ({asked}) and the session's end was not clean: its shutdown did not complete. Not a crash",
+            }
+            if unparsed:
+                out["unparsed_lines"] = unparsed
+            return out
+    return _unreadable([LAUNCHER_STOPS], unparsed) if not rows and unparsed else None
+
+
+def _utc(v: Any) -> Any:
+    """A timezone-aware ISO stamp (``Z`` or ``+00:00`` forms) as a datetime, or None."""
+    from datetime import datetime
+
+    if not isinstance(v, str) or len(v) > 40:
+        return None
+    try:
+        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo is not None else None
+
+
+def _ended_before(at: Any, started: Any, slack_s: float = 0.0) -> bool:
+    """True only when both stamps parse as zone-aware times and ``at`` is earlier than ``started`` by more than ``slack_s``."""
+    a, b = _utc(at), _utc(started)
+    return a is not None and b is not None and (b - a).total_seconds() > slack_s
+
+
+# --------------------------------------------------------------------------- #
+#  1b. What the C library said as the process aborted (the launcher's stderr filter)
+# --------------------------------------------------------------------------- #
+
+#: Lines of the launcher's stderr record shown per session (the launcher keeps up to 20): 2. WHAT IT PROTECTS: the report's byte budget
+#: (a real abort is one or two messages; a crash loop is what could repeat them), not a view of how many there were: ``lines_recorded``
+#: is always the full count the launcher kept. Worst case per session 319 B as measured by tests/test_session_forensics_budget.py, typical about 100 B.
+STDERR_LINES_SHOWN = 2
+#: Earlier unclean ends that carry a ``launcher_stderr`` (the newest 2, beside the previous session's own). WHAT IT PROTECTS: the report's byte
+#: room (R119, measured by WAL): 3 sessions at the measured worst case (tests/test_session_forensics_budget.py) against the 2,415 B headroom.
+#: It was 3 (four sessions); the oldest of those loses its stderr lines, not its signal, status or trace.
+STDERR_ROWS_SHOWN = 2
+#: Characters of launcher stderr lines shown per session, all lines together: 120. WHAT IT PROTECTS: the same 245 B per session. The fixed
+#: messages are at most 58 characters, so two of them fit; a macOS template line can be 200, and two of those measured +284 B per session
+#: (+1.1 KB over four rows) past the room WAL measured. A line that does not fit is not cut (half a message reads as another message);
+#: it is counted in ``lines_cut``. ``lines_recorded`` still holds the full count.
+STDERR_SHOWN_CHARS = 120
+#: The fixed messages the launcher's stderr filter admits (scripts/launch.sh ``STDERR_MESSAGES``, which a test pins equal to this set):
+#: glibc 2.41's heap-corruption messages and the interpreter's fatal-error headers. A line is shown only when it IS one of these, whole
+#: (no pattern, no tail), checked AGAIN here because the file is on disk and anything may have written to it; any other line is not
+#: shown, only counted in ``rejected_lines``. musl has NO message to add: its allocator detects corruption with ``assert`` redefined to
+#: ``a_crash()`` (src/malloc/mallocng/glue.h; ``hlt`` on x86_64), so the process dies of a signal with nothing printed and the signal is
+#: what the launcher's exit record already holds. macOS libmalloc prints its messages with the program name, pid, thread and object
+#: address in them, so those are matched as TEMPLATES (:data:`MAC_ABORT_TAILS`), never as fixed lines.
+ABORT_MESSAGES = frozenset({
+    "malloc(): unaligned fastbin chunk detected",
+    "malloc(): unaligned fastbin chunk detected 2",
+    "malloc(): unaligned fastbin chunk detected 3",
+    "malloc(): memory corruption",
+    "malloc(): memory corruption (fast)",
+    "malloc(): unaligned tcache chunk detected",
+    "malloc(): smallbin double linked list corrupted",
+    "malloc(): invalid size (unsorted)",
+    "malloc(): invalid next size (unsorted)",
+    "malloc(): mismatching next->prev_size (unsorted)",
+    "malloc(): unsorted double linked list corrupted",
+    "malloc(): largebin double linked list corrupted (nextsize)",
+    "malloc(): largebin double linked list corrupted (bk)",
+    "malloc(): corrupted top size",
+    "malloc_consolidate(): unaligned fastbin chunk detected",
+    "malloc_consolidate(): invalid chunk size",
+    "munmap_chunk(): invalid pointer",
+    "realloc(): invalid pointer",
+    "realloc(): invalid next size",
+    "realloc(): invalid old size",
+    "free(): invalid pointer",
+    "free(): invalid size",
+    "free(): too many chunks detected in tcache",
+    "free(): unaligned chunk detected in tcache 2",
+    "free(): double free detected in tcache 2",
+    "free(): invalid next size (fast)",
+    "free(): invalid next size (normal)",
+    "free(): corrupted unsorted chunks",
+    "double free or corruption (fasttop)",
+    "double free or corruption (top)",
+    "double free or corruption (out)",
+    "double free or corruption (!prev)",
+    "corrupted size vs. prev_size",
+    "corrupted size vs. prev_size while consolidating",
+    "corrupted double-linked list",
+    "corrupted double-linked list (not small)",
+    "Fatal Python error: Aborted",
+    "Fatal Python error: Segmentation fault",
+    "Fatal Python error: Bus error",
+    "Fatal Python error: Illegal instruction",
+    "Fatal Python error: Floating point exception",
+})
+
+
+#: macOS libmalloc abort messages, each a TEMPLATE because the line carries the program name, the pid, the thread and an object address:
+#: ``<progname>(<pid>,0x<thread>) malloc: <tail>`` (src/malloc_printf.c ``malloc_vreport``: ``"%s(%d,%p) malloc: "`` with getprogname(), getpid(),
+#: the thread). ``%p`` in a tail stands for ``0x`` and lower-case hex. Every tail is the format string of a ``malloc_zone_error`` /
+#: ``malloc_report`` call in apple-oss-distributions/libmalloc (``main`` as read on 2026-10-17): malloc_common.c (the default zone's
+#: ``*** error for object %p: pointer being freed was not allocated``), malloc_printf.c (``*** set a breakpoint in malloc_error_break to
+#: debug``, printed after every error that stops the process), magazine_malloc.c, magazine_large.c, magazine_small.c, magazine_medium.c (the
+#: rest). The variable parts are character-class limited (a program name of ``[A-Za-z0-9._+-]``, digits, hex), so no free text can ride in: a
+#: line with anything else in those places does not match. NOT RUN ON macOS (this was written on Linux against the source text and tested
+#: with the awk implementations that ship there or descend from it); an older macOS words some of these differently and is not matched.
+MAC_ABORT_TAILS = (
+    "*** set a breakpoint in malloc_error_break to debug",
+    "*** error for object %p: pointer being freed was not allocated",
+    "pointer %p being freed was not allocated",
+    "pointer %p being freed already on death-row",
+    "pointer %p being reallocated was not allocated",
+    "pointer %p of size zero being freed",
+    "large entry %p reallocated is not properly in table",
+    "Non-aligned pointer %p being freed",
+    "Non-aligned pointer %p being freed (2)",
+    "Pointer %p to metadata being freed",
+    "Pointer %p to metadata being freed (2)",
+    "non-page-aligned, non-allocated pointer %p being freed",
+    "double free for ptr %p",
+)
+#: A line longer than this is never a template match (the launcher checks the same figure): the longest tail with a long program name is far below it.
+MAC_LINE_MAX = 200
+_MAC_PREFIX_ERE = r"[A-Za-z0-9._+-]+\([0-9]+,0x[0-9a-f]+\) malloc: "
+_PTR_ERE = "0x[0-9a-f]+"
+
+
+def _ere_escape(text: str) -> str:
+    return re.sub(r"([\\^$.\[\]|()*+?{}])", r"\\\1", text)
+
+
+def mac_abort_ere() -> str:
+    """The one extended regular expression the launcher's awk and this reader both apply to a whole line (POSIX ERE, no intervals, so
+    mawk, gawk, the one-true-awk that macOS ships and busybox awk all read it the same way)."""
+    alts = "|".join(_ere_escape(t).replace("%p", _PTR_ERE) for t in MAC_ABORT_TAILS)
+    return "^" + _MAC_PREFIX_ERE + "(" + alts + ")$"
+
+
+_MAC_ABORT_RE = re.compile(mac_abort_ere())
+
+
+def accepted_abort_line(text: object) -> bool:
+    """Is this line one the launcher's filter would have kept: one of the fixed messages, or a whole-line macOS template match."""
+    return isinstance(text, str) and (text in ABORT_MESSAGES or (len(text) <= MAC_LINE_MAX and _MAC_ABORT_RE.fullmatch(text) is not None))
+
+
+#: The most of the launcher's stderr record the reader looks at: 256 KiB, the file's own tail. WHAT IT PROTECTS: the boot (the launcher
+#: trims the file to 100 lines of at most about 200 bytes, so the real file is a tenth of this; a file grown past it by something else is
+#: read from its end, where the newest launches are).
+_STDERR_READ_BYTES = 256 * 1024
+#: How far before a session's start stamp a launcher stderr row may be dated and still be this session's: 120 s. WHAT IT PROTECTS: an abort
+#: in the seconds before the app stamps its own start (imports, the first allocations) is the evidence most worth keeping.
+_STDERR_START_SLACK_S = 120.0
+
+
+#: The largest count the launcher's stderr summary shows exactly: 999,999. A count at or above it is shown as the string ``"999999+"``, never as a
+#: number, so it cannot read as exact. WHAT IT PROTECTS: the session-forensics byte budget (a 19-digit count in each of five fields is 55 B of a
+#: 341 B worst case; tests/test_session_forensics_budget.py measures the saturated form too). A chatty server's dropped-line count is the one
+#: that can reach it.
+_COUNT_CAP = 999_999
+COUNT_SATURATED = f"{_COUNT_CAP}+"
+
+
+def _count(value: Any) -> int | None:
+    """A count from the untrusted file: a real, non-negative integer (not a boolean), else None. Not capped: see :func:`_shown`."""
+    return value if type(value) is int and value >= 0 else None
+
+
+def _shown(n: int | None) -> int | str | None:
+    """A count as the report writes it: the number, or ``"999999+"`` once it reaches the cap."""
+    return COUNT_SATURATED if isinstance(n, int) and n >= _COUNT_CAP else n
+
+
+def _tail_text(path: Path, limit: int) -> str:
+    with path.open("rb") as fh:
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(max(0, size - limit))
+        data = fh.read(limit)
+    # utf-8-sig: a file an editor saved with a byte-order mark would otherwise start its first line with U+FEFF, which json.loads rejects,
+    # and the oldest row would go unread without a word. The mark can only be at byte 0, so a read from further in is not changed by it.
+    text = data.decode("utf-8-sig", errors="replace")
+    return text.split("\n", 1)[1] if size > limit and "\n" in text else text  # drop the line the cut fell inside
+
+
+def _json_rows(raw: str) -> tuple[list[dict[str, Any]], int]:
+    """The rows of a launcher record file in file order, and how many non-blank lines were NOT a row (not JSON, or JSON that is not an
+    object). The count is of lines after the text was decoded as UTF-8, so a file in another encoding gives a count of fragments, not of rows:
+    the point of it is that a file nothing could be read from is never reported as an empty one."""
+    rows: list[dict[str, Any]] = []
+    unparsed = 0
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
         try:
             rec = json.loads(line)
         except ValueError:
+            unparsed += 1
             continue
-        if isinstance(rec, dict) and rec.get("pid") == pid and _same_boot(rec.get("boot_id"), boot_id):
-            return describe_exit(rec)
-    return None
+        if isinstance(rec, dict):
+            rows.append(rec)
+        else:
+            unparsed += 1  # a torn or interleaved line can be valid JSON that is not a row (a number, null, a list): not a row, not an error
+    return rows, unparsed
+
+
+def _unreadable(files: list[str], unparsed: int) -> dict[str, Any]:
+    """What a reader returns when a launcher record file holds lines and none of them is a row: the file was UNREADABLE, which is not the
+    same fact as 'the launcher left no record'. ``unparsed_lines`` is how many lines it held."""
+    return {
+        "seen_by": "the launcher record files",
+        "at": None,
+        "started_at": None,
+        "status": None,
+        "signal": None,
+        "kind": "unreadable",
+        "meaning": f"the launcher's record file ({', '.join(files)}) could not be read: {unparsed} lines, none of them a row (an editor or another "
+        "program may have changed its encoding). That is not a record that the launcher saw nothing",
+        "unreadable_files": files,
+        "unparsed_lines": unparsed,
+    }
+
+
+def launcher_stderr(pid: int | None, boot_id: str | None = None, session_started: str | None = None) -> dict[str, Any] | None:
+    """The abort messages the launcher's stderr filter recorded for process ``pid``, or None when it holds no record for it.
+
+    None means the launcher left nothing for this pid and boot: the app was started some other way, the launcher predates the filter, awk
+    or tee was missing, the run was ephemeral, or the launcher was killed before it wrote anything. It is NOT "the process printed
+    nothing": that is a record with a summary and ``lines_recorded`` 0. ``dropped_lines`` is how many other lines the filter saw and did
+    not keep (it counts, it never stores); it is None when the filter ended before it could write its summary (``no_summary``).
+    ``lines_recorded`` is what the launcher says it kept (the summary), or the lines found when there is no summary; a gap between the two
+    is ``lines_not_found`` (a line written before the launcher knew the pid, or cut by the file's trim). ``pid_only_match`` says the
+    boot id was unknown on one side, so the pid is all that ties the record to the session."""
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        return None
+    try:
+        all_rows, unparsed = _json_rows(_tail_text(_diag_dir() / LAUNCHER_STDERR, _STDERR_READ_BYTES))
+    except OSError:
+        return None
+    from src.monitoring.secret_scrub import scrubbed
+
+    entries: list[tuple[str, int, str]] = []  # (the row's own stamp, its place in the file, the line): a row handed on by a launcher that could not get the lock in time can land after later rows (R174), so the order is the rows' own time, the place in the file only breaks a tie
+    summary: dict[str, Any] | None = None
+    found = rejected = 0
+    pid_only = False
+    for rec in all_rows:
+        if type(rec.get("pid")) is not int or rec["pid"] != pid or not _same_boot(rec.get("boot_id"), boot_id):
+            continue
+        if not isinstance(rec.get("boot_id"), str) or not isinstance(boot_id, str):
+            # pid is all that ties it: a row written well before this session began (the slack covers an abort before the sentinel stamp)
+            # belongs to an earlier process that had the same pid
+            if _ended_before(rec.get("at"), session_started, _STDERR_START_SLACK_S):
+                continue
+            pid_only = True
+        if rec.get("summary") is True:
+            summary = rec
+            continue
+        text = rec.get("line")
+        if not accepted_abort_line(text):
+            rejected += 1
+            continue
+        found += 1
+        entries.append((rec["at"] if isinstance(rec.get("at"), str) else "", found, scrubbed(str(text))))
+    shown = [x[2] for x in sorted(entries, key=lambda e: (e[0], e[1]))]
+    if summary is None and not shown and not rejected:
+        if not all_rows and unparsed:
+            # the file holds lines and none is a row: unreadable, which is not 'nothing recorded for this pid'
+            return {"lines": [], "lines_recorded": None, "unreadable": True, "unparsed_lines": unparsed}
+        return None
+    kept = _count(summary.get("kept_lines")) if summary else None
+    recorded = max(found, kept) if kept is not None else found
+    # newest first; libmalloc's closing "set a breakpoint" line only repeats that malloc stopped the process, so it yields to a line that says what
+    chosen: list[str] = []
+    used = 0
+    pool = [x for x in shown if "set a breakpoint in malloc_error_break" not in x] or shown
+    for x in reversed(pool[-STDERR_LINES_SHOWN:]):
+        if used + len(x) <= STDERR_SHOWN_CHARS:
+            chosen.insert(0, x)
+            used += len(x)
+    out: dict[str, Any] = {"lines": chosen, "lines_recorded": _shown(recorded)}
+    cut = len(pool[-STDERR_LINES_SHOWN:]) - len(chosen)
+    if cut > 0:
+        out["lines_cut"] = cut
+    if recorded > found:
+        out["lines_not_found"] = _shown(recorded - found)
+    out["dropped_lines"] = _shown(_count(summary.get("dropped_lines"))) if summary else None
+    over = _count(summary.get("over_cap_lines")) if summary else None
+    if over:
+        out["over_cap_lines"] = _shown(over)
+    if rejected:
+        out["rejected_lines"] = _shown(rejected)
+    if summary is None:
+        out["no_summary"] = True
+    if pid_only:
+        out["pid_only_match"] = True
+    if unparsed:
+        out["unparsed_lines"] = unparsed
+    return out
+
+
+#: Signal numbers with one meaning on Linux and macOS. SIGBUS (7 on Linux, 10 on macOS), SIGUSR and the rest are left out: the number alone would name the wrong one.
+_SHELL_SIGNALS = {1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 6: "SIGABRT", 9: "SIGKILL", 11: "SIGSEGV", 13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM"}
+
+
+_SIG_NAME_RE = re.compile(r"SIG[A-Z0-9]{1,10}")
+_STAMP_LOOSE_RE = re.compile(r"[0-9TZ:.+-]{1,32}")
+
+
+def _stamp_or_none(v: Any) -> str | None:
+    return v if isinstance(v, str) and _STAMP_LOOSE_RE.fullmatch(v) else None
 
 
 def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
     """A launcher record put into words. The status is the fact; ``meaning`` is the
     textbook reading of it, stated as such."""
+    # The record is a file on disk; each field is checked at entry and a value of another shape is dropped (null), never copied: a status is a
+    # bounded integer, a signal a name of the form SIGxxx, a stamp only digits and punctuation.
     status = rec.get("status")
+    status = status if isinstance(status, int) and not isinstance(status, bool) and -(2**32) <= status <= 2**32 else None
     sig = rec.get("signal")
+    sig = sig if isinstance(sig, str) and _SIG_NAME_RE.fullmatch(sig) else None
     out: dict[str, Any] = {
         "seen_by": "the launcher (scripts/launch.sh), the process's parent",
-        "at": rec.get("at"),
-        "started_at": rec.get("started_at"),
+        "at": _stamp_or_none(rec.get("at")),
+        "started_at": _stamp_or_none(rec.get("started_at")),
         "status": status,
         "signal": sig,
     }
@@ -201,12 +591,18 @@ def describe_exit(rec: dict[str, Any]) -> dict[str, Any]:
         out["kind"], out["meaning"] = _SIGNAL_MEANING[sig]
     elif isinstance(sig, str) and sig:
         out["kind"], out["meaning"] = "signalled", f"ended by {sig}"
+    elif isinstance(status, int) and not isinstance(status, bool) and (status & 0xFFFFFFFF) in _NT_STATUS_MEANING and (status < 0 or status > 0xFFFF):
+        out["kind"], out["meaning"] = _NT_STATUS_MEANING[status & 0xFFFFFFFF]
     elif isinstance(status, int) and 0 < status <= 128:
         out["kind"] = "exited"
         out["meaning"] = (
             f"the process exited on its own with status {status}: the app stopped with "
             "an error, and its last messages went to the launcher window"
         )
+    elif isinstance(status, int) and not isinstance(status, bool) and (status - 128) in _SHELL_SIGNALS:
+        # The launcher's own shell gave no name (its ``kill -l`` is not the same everywhere); a shell reports death by signal N as 128+N.
+        # Inferred, so the ``signal`` field stays null and the words say so. Only the numbers that mean the same on Linux and macOS.
+        out["kind"], out["meaning"] = "signalled", f"status {status} is 128+{status - 128}: {_SHELL_SIGNALS[status - 128]}"
     else:
         out["kind"] = "unknown"
         out["meaning"] = f"an exit status the launcher could not name ({status!r})"
@@ -280,6 +676,67 @@ def running_killers() -> dict[str, Any]:
     }
 
 
+def _jlen(text: str) -> int:
+    """Serialised bytes of one list member: the JSON string, its quotes and the comma after it."""
+    return len(json.dumps(text, ensure_ascii=False).encode("utf-8")) + 1
+
+
+def coredump_stack(text: str, pid: int | None) -> dict[str, Any] | None:
+    """The stack systemd-coredump logged for process ``pid``, cut to :data:`COREDUMP_STACK_BYTES` from the front, or None.
+
+    In ``journalctl -o short-iso`` only the first line of a core-dump entry names the process; the thread headers and the frames
+    (``Stack trace of thread N:`` / ``#0  0x... name (lib + 0x...)``) are INDENTED CONTINUATION lines that name no pid, so they are
+    read here from the entry that follows a header naming the pid. The whole block is taken through the passphrase scrub BEFORE it is
+    cut. Lines are kept in the order the journal wrote them (thread by thread, ``#0`` upward) until the next whole line would pass the
+    budget; the rest is counted, not stored: ``frames_dropped`` (``#n`` lines) and ``bytes_dropped`` (serialised bytes of every line
+    left out). Module lists and other continuation lines are ignored and not counted. Tested on the documented systemd-coredump format
+    only; it has not been run against a real journal."""
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        return None
+    block: list[str] | None = None
+    current: list[str] | None = None
+    for line in text.splitlines():
+        m = _COREDUMP_HEAD.search(line)
+        if m and not line[:1].isspace():
+            current = [] if int(m.group(1)) == pid else None
+            if current is not None:
+                block = current
+            continue
+        if current is not None:
+            if line[:1] in (" ", "\t"):
+                current.append(line.strip())
+            else:
+                current = None
+    if block is None:
+        return None
+    from src.monitoring.secret_scrub import scrubbed
+
+    kept_src = [ln for ln in scrubbed("\n".join(block)).split("\n") if _COREDUMP_KEEP.match(ln)]
+    if not kept_src:
+        return {"result": "no-stack-in-entry"}
+    overhead = len(json.dumps({"result": "stack", "lines": [], "frames_dropped": 10**9, "bytes_dropped": 10**9}, separators=(",", ":")))
+    room = COREDUMP_STACK_BYTES - overhead
+    kept: list[str] = []
+    used = 0
+    cut = False
+    frames_dropped = bytes_dropped = 0
+    for ln in kept_src:
+        n = _jlen(ln)
+        if not cut and used + n <= room:
+            kept.append(ln)
+            used += n
+            continue
+        cut = True
+        bytes_dropped += n
+        if _COREDUMP_FRAME.match(ln):
+            frames_dropped += 1
+    out: dict[str, Any] = {"result": "stack", "lines": kept}
+    if cut:
+        out["frames_dropped"] = frames_dropped
+        out["bytes_dropped"] = bytes_dropped
+    return out
+
+
 def read_userspace_killers(
     pid: int | None, *, since: str | None = None, boot: str | None = None, cgroup: str | None = None
 ) -> dict[str, Any]:
@@ -340,9 +797,13 @@ def read_userspace_killers(
         return out
     lines = _kernel_lines(text)
     matched = [ln for ln in lines if _names_us(ln, pid, cgroup)]
-    out["lines"] = matched[-20:]
+    out["lines"] = published_lines(matched, 20)
     if matched:
         out["verdict"] = _classify_killer(matched)
+        if out["verdict"] == "core-dump":
+            stack = coredump_stack(text, pid)
+            if stack is not None:
+                out["stack"] = stack
         return out
     out["reason"] = (
         "the journal was read and none of these daemons named this app's previous "
@@ -514,7 +975,26 @@ def _trace_line(line: str) -> str:
         line = line[: _TRACE_LINE_CHARS - 1] + "\u2026"
     if len(line.encode("utf-8")) > _TRACE_LINE_BYTES:
         line = line.encode("utf-8")[: _TRACE_LINE_BYTES - 3].decode("utf-8", "ignore") + "\u2026"
-    return line
+    return _within_json_bytes(line)
+
+
+def _within_json_bytes(line: str) -> str:
+    """``line`` cut so that it takes at most ``_TRACE_LINE_BYTES`` bytes AS WRITTEN IN THE MEMBER (JSON, UTF-8, not ASCII-escaped).
+    Escaping multiplies a quote or a backslash by two and a control character by six, so a hostile line that fits the raw cap could
+    take 1,199 bytes; counting the written bytes makes the member's worst case the line count times one figure, whatever the text."""
+    import json
+
+    if len(json.dumps(line, ensure_ascii=False).encode("utf-8")) - 2 <= _TRACE_LINE_BYTES:
+        return line
+    ellipsis = "\u2026"
+    used, out = len(ellipsis.encode("utf-8")), []
+    for ch in line:
+        w = len(json.dumps(ch, ensure_ascii=False).encode("utf-8")) - 2
+        if used + w > _TRACE_LINE_BYTES:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + ellipsis
 
 
 def _read_log(path: Path) -> tuple[list[str], bool]:
@@ -535,12 +1015,23 @@ def _read_log(path: Path) -> tuple[list[str], bool]:
 _NOT_UTF8 = "<text withheld, the trace log is not valid UTF-8 and could not be checked for the passphrase>"
 
 
+#: ``crashing_thread_kind``: what the dump says about the thread that aborted. DERIVED from the first faulthandler block, nothing more.
+#: ``python``: a block labelled "Current thread" exists (a thread with a Python thread state, such as a collect worker inside lxml).
+#: ``non-python``: thread blocks exist and none is labelled "Current thread": faulthandler labels only a thread it holds a Python thread
+#: state for, so the abort ran on a thread Python did not create (a native pool thread) -- an INFERENCE from how faulthandler labels,
+#: not read from the dump. ``not-in-dump``: no thread block at all (an uncaught exception, or a header with nothing under it).
+#: ``withheld`` / ``no-trace`` are the two cases with no readable dump (``why_no_trace`` says why on a row).
+KIND_PYTHON, KIND_NON_PYTHON, KIND_NOT_IN_DUMP = "python", "non-python", "not-in-dump"
+KIND_WITHHELD, KIND_NO_TRACE = "withheld", "no-trace"
+
+
 def _withheld(body: list[str], source: Path, why: str | None = None) -> dict[str, Any]:
     from src.monitoring.diagnostics_runs import WITHHELD
 
     return {
         "summary": why or WITHHELD, "lines": [], "lines_total": len(body), "source": Path(source).name,
         "withheld": True,
+        "crashing_thread_kind": KIND_WITHHELD,
     }
 
 
@@ -563,6 +1054,71 @@ def _without_torn_starts(body: list[str]) -> list[str] | None:
         if n + 1 < len(starts):
             out.append(body[end])
     return out
+
+
+def _fair_lines(ordered: list[str], max_lines: int, crashing: bool = True) -> tuple[list[str], dict[str, Any] | None]:
+    """The lines a report keeps of a dump (``ordered`` has the crashing thread's block first) and, when it cut anything, the counts and
+    the rule of the cut. A dump that fits is kept whole. Otherwise: whatever precedes the first thread, then the crashing thread's block
+    (whole while it fits in the room), then every other thread to its first lines (its top frames), so a dump of 50 workers shows what
+    each was doing and not only the first few. Threads the room cannot reach are COUNTED as not listed. The cut shrinks what is printed,
+    never what is counted (``lines_total`` is the log's own). ``crashing`` is False when the dump labels no thread "Current thread": then
+    NO block is called the crashing one, and every thread shares the room alike."""
+    if len(ordered) <= max_lines:
+        return ordered, None
+    heads = [i for i, ln in enumerate(ordered) if _THREAD_HEAD.match(ln)]
+    if not heads:
+        kept = ordered[:max_lines]
+        return kept, {
+            "lines_kept": len(kept),
+            "cut_note": f"the first {len(kept)} of {len(ordered)} lines are kept (the dump has no thread blocks to share the room between)",
+        }
+    pre = ordered[: heads[0]]
+    ends = heads[1:] + [len(ordered)]
+    blocks = [ordered[h:e] for h, e in zip(heads, ends, strict=True)]
+    pre_cut = 0
+    # the lines before the first thread get at most a quarter of the room, and less when the crashing block needs it whole
+    pre_room = max(min(max_lines // 4, max_lines - (len(blocks[0]) if crashing else 0)), 2)
+    if len(pre) > pre_room:
+        # an escaped exception can precede the dump: its first lines and its LAST (the exception itself), never the room the threads need
+        pre_cut = len(pre) - pre_room
+        pre = pre[: pre_room // 2] + pre[len(pre) - (pre_room - pre_room // 2) :]
+    if crashing:
+        kept = pre + blocks[0][: max(max_lines - len(pre), 0)]
+        rest = blocks[1:]
+    else:
+        kept, rest = list(pre), blocks
+    room = max_lines - len(kept)
+    takes: list[int] = []
+    if rest and room > 0:
+        share = max(room // len(rest), 2)  # a head line and one frame at least, while the room lasts
+        for blk in rest:
+            if room < 2:
+                break
+            take = min(len(blk), share, room)
+            takes.append(take)
+            room -= take
+        # what the shares left over (a short thread gave some back) goes to the threads that were cut, one line at a time round the
+        # list, so that no thread is given the whole of it
+        grown = True
+        while room > 0 and grown:
+            grown = False
+            for i, blk in enumerate(rest[: len(takes)]):
+                if room > 0 and takes[i] < len(blk):
+                    takes[i] += 1
+                    room -= 1
+                    grown = True
+    for blk, take in zip(rest, takes, strict=False):
+        kept += blk[:take]
+    listed = len(takes)
+    omitted = len(rest) - listed
+    note = (
+        f"{len(kept)} of {len(ordered)} lines are kept: "
+        + ("the crashing thread's block first, then each other thread's first lines (its top frames); " if crashing
+           else "no thread is marked as the crashing one, so every thread's first lines (its top frames) are kept alike; ")
+        + (f"{omitted} of {len(rest)} {'other ' if crashing else ''}threads are not listed" if omitted else "every thread is listed")
+        + (f"; {pre_cut} lines before the first thread are cut from the middle" if pre_cut else "")
+    )
+    return kept, {"lines_kept": len(kept), "threads_total": len(blocks), "threads_not_listed": omitted, "cut_note": note}
 
 
 def _trace_report(
@@ -589,12 +1145,28 @@ def _trace_report(
         (ln.strip() for ln in body if ln.startswith(("Fatal Python error", "Uncaught exception"))),
         body[0].strip(),
     )
-    return {
+    current = next((ln for ln in body if _THREAD_HEAD.match(ln) and ln.startswith("Current thread")), None)
+    kept, cut = _fair_lines(ordered, max_lines, crashing=current is not None)
+    out: dict[str, Any] = {
         "summary": _trace_line(head),
-        "lines": [_trace_line(ln) for ln in ordered[:max_lines]],
+        "lines": [_trace_line(ln) for ln in kept],
         "lines_total": len(body),
         "source": Path(source).name,
     }
+    # Which thread aborted is what faulthandler labels "Current thread"; without that label nothing says, and the busiest thread is
+    # never offered in its place (an earlier reading took it for the one that aborted).
+    has_blocks = any(_THREAD_HEAD.match(ln) for ln in body)
+    out["crashing_thread_kind"] = KIND_PYTHON if current is not None else (KIND_NON_PYTHON if has_blocks else KIND_NOT_IN_DUMP)
+    if current is not None:
+        out["crashing_thread"] = _trace_line(current.strip())
+    else:
+        out["crashing_thread"] = None
+        out["crashing_thread_reason"] = (
+            "the dump marks no thread as the current one (an uncaught exception, or a dump without that label), so none is named"
+        )
+    if cut:
+        out.update(cut)
+    return out
 
 
 def previous_trace(
@@ -622,16 +1194,17 @@ def previous_trace(
 #  3b. The traces of the EARLIER unclean ends (finding D, 2026-10-01)
 # --------------------------------------------------------------------------- #
 
-#: How many earlier unclean ends the report carries, newest first. 10 ends of 60 lines of at most
-#: ``_TRACE_LINE_BYTES`` bytes of UTF-8 is 10 x 60 x 202 = 121,200 bytes, about 125 KB of JSON worst case in
-#: any script (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that): the
-#: member's slot in the redesign's slot table (R119) is sized from that worst case. Where a part ends is the
-#: volume writer's business. A machine that crashed 9 times in 5 hours is the case that prompted it, and an
+#: How many earlier unclean ends the report carries, newest first. The newest end keeps ``NEWEST_EARLIER_TRACE_LINES`` and the others
+#: ``EARLIER_TRACE_LINES`` of at most ``_TRACE_LINE_BYTES`` bytes of UTF-8 each: (400 + 9 x 120) x 206 = about 305 KB whatever the text holds (every line is cut to 202 bytes AS WRITTEN, escapes counted; 4 more for its quotes and separator)
+#: (a trace line is about 100 characters of ASCII, so a real crash is nearer half of that). Where a part ends is the volume writer's business. A machine that crashed 9 times in 5 hours is the case that prompted it, and an
 #: older end is still in the ledger and the chronology.
 EARLIER_ENDS_LIMIT = 10
-#: Lines of trace kept per earlier end. 60 is the fatal-error header and the crashing thread's stack,
-#: which faulthandler writes first; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (120).
-EARLIER_TRACE_LINES = 60
+#: Lines of trace kept per earlier end: the fatal-error header, the crashing thread's block (about 103 lines at faulthandler's 100-frame
+#: cap) and the top of the other threads; the one PREVIOUS session keeps ``_TRACE_REPORT_LINES`` (400).
+EARLIER_TRACE_LINES = 120
+#: Lines kept of the NEWEST earlier end: the one a reader opens first, and a real crash (50 collect workers, 1,336 lines) did not fit in 60.
+#: Worst case of the member: (400 + 9 x 120) x 206 bytes as written = about 305 KB, whatever the text holds, against the +125 KB the plan's estimate holds for it.
+NEWEST_EARLIER_TRACE_LINES = 400
 #: Signals a process can leave a faulthandler trace for. SIGKILL is not among them: nothing runs after it.
 _NATIVE_FAULT_SIGNALS = ("SIGSEGV", "SIGABRT", "SIGBUS", "SIGILL", "SIGFPE")
 
@@ -642,6 +1215,13 @@ def _why_no_trace(exit_seen: dict[str, Any] | None, header_found: bool) -> str:
     launcher's record of the end, or None when it holds none."""
     signal_name = (exit_seen or {}).get("signal")
     signal_name = signal_name if isinstance(signal_name, str) and signal_name else None
+    status0 = (exit_seen or {}).get("status")
+    if signal_name is None and isinstance(status0, int) and not isinstance(status0, bool) and (status0 - 128) in _SHELL_SIGNALS:
+        signal_name = _SHELL_SIGNALS[status0 - 128]  # the launcher's shell gave no name; describe_exit reads 128+N the same way
+    nt_fault = (
+        signal_name is None and (exit_seen or {}).get("kind") == "crashed" and isinstance(status0, int) and not isinstance(status0, bool)
+        and (status0 < 0 or status0 > 0xFFFF)
+    )
     held = (
         "the trace log holds this session's header with nothing under it"
         if header_found
@@ -659,6 +1239,11 @@ def _why_no_trace(exit_seen: dict[str, Any] | None, header_found: bool) -> str:
             f"ended by {signal_name}, which leaves a trace, and the trace log holds no header for this "
             "pid and boot: it was rotated away (one older generation is kept), the run predates the "
             "trace, or OO_CRASH_TRACE=0 was set"
+        )
+    if nt_fault:
+        return (
+            f"ended by Windows status {status0}, a native fault, which faulthandler traces; "
+            f"{held}"
         )
     if signal_name:
         return f"ended by {signal_name}, which is not a fault signal: no trace is expected"
@@ -726,13 +1311,16 @@ def earlier_unclean_ends(
     out: dict[str, Any] = {
         "method": (
             "The session ledger's unclean ends before the previous session, newest first, each looked "
-            f"up in the crash trace log by the pid and machine boot its boot record carries (the first "
-            f"{max_lines} lines of its trace). A session with no trace says why, by what it ended by; "
+            f"up in the crash trace log by the pid and machine boot its boot record carries (up to "
+            f"{max_lines} lines of its trace, {max(max_lines, NEWEST_EARLIER_TRACE_LINES) if max_lines == EARLIER_TRACE_LINES else max_lines} for the newest: the crashing thread whole, then the top of "
+            "every other thread; a trace that is cut says how many lines and threads it kept). A session with no trace says why, by what it ended by; "
             "a SIGKILL cannot leave one. The log keeps one rotated generation, so an old end may have "
-            "lost its trace to rotation."
+            "lost its trace to rotation. 'launcher_stderr' is the C library's abort message the launcher filter recorded for that pid "
+            "and boot for the newest " f"{STDERR_ROWS_SHOWN} ends only (null: the launcher left no record for it; absent: an older end, not looked up)."
         ),
         "limit": limit,
         "lines_per_trace": max_lines,
+        "lines_newest_trace": max(max_lines, NEWEST_EARLIER_TRACE_LINES) if max_lines == EARLIER_TRACE_LINES else max_lines,
         "unclean_ends_in_ledger": len(ends),
         "shown": 0,
         "older_not_shown": 0,
@@ -749,7 +1337,8 @@ def earlier_unclean_ends(
                 reads[p] = None
         return reads[p]
 
-    for end in ends[:limit]:
+    for n_end, end in enumerate(ends[:limit]):
+        end_lines = max(max_lines, NEWEST_EARLIER_TRACE_LINES) if n_end == 0 and max_lines == EARLIER_TRACE_LINES else max_lines
         sid = str(end.get("session_id"))
         b = boots.get(sid)
         pid = (b or {}).get("pid")
@@ -760,17 +1349,20 @@ def earlier_unclean_ends(
         exit_seen = end.get("exit") if isinstance(end.get("exit"), dict) else None
         if exit_seen is None and isinstance(pid, int):
             try:
-                exit_seen = launcher_exit(pid, boot if isinstance(boot, str) else None)
+                exit_seen = launcher_exit(pid, boot if isinstance(boot, str) else None, row["started_at"])
             except Exception:  # noqa: BLE001
                 exit_seen = None
         signal_name = (exit_seen or {}).get("signal")
         row["signal"] = signal_name
-        if exit_seen and not signal_name:
+        if exit_seen and exit_seen.get("kind") == "stop asked":
+            row["kind"] = "stop asked"  # the signal above is the one asked for, not one that ended the process
+        elif exit_seen and not signal_name:
             # An exit by status (an error exit) has no signal to show: say what the launcher saw.
             row["status"], row["kind"] = exit_seen.get("status"), exit_seen.get("kind")
         if not isinstance(pid, int):
             row["trace"] = None
             row["why_no_trace"] = "the ledger no longer holds this session's boot record, so its pid is unknown"
+            row["crashing_thread_kind"] = KIND_NO_TRACE
             out["sessions"].append(row)
             continue
         found_any = False
@@ -783,11 +1375,14 @@ def earlier_unclean_ends(
             if found:
                 found_any = True
                 if body:
-                    trace = _trace_report(body, cand, max_lines, decodable=read[1])
+                    trace = _trace_report(body, cand, end_lines, decodable=read[1])
                 break
         row["trace"] = trace
+        if n_end < STDERR_ROWS_SHOWN:
+            row["launcher_stderr"] = launcher_stderr(pid, boot if isinstance(boot, str) else None, row["started_at"])
         if trace is None:
             row["why_no_trace"] = _why_no_trace(exit_seen, found_any)
+            row["crashing_thread_kind"] = KIND_NO_TRACE
         out["sessions"].append(row)
     out["shown"] = len(out["sessions"])
     out["older_not_shown"] = max(0, len(ends) - out["shown"])
@@ -850,7 +1445,9 @@ def how_it_ended(
         parts.append("systemd-coredump logged a core dump of this process")
     if kverdict == "native-fatal":
         parts.append("the kernel log records a native fault in this process")
-    if launcher:
+    if launcher and launcher.get("kind") == "stop asked":
+        parts.append(f"a stop was asked of the launcher ({launcher.get('signal')}) and the shutdown did not complete: stop requested, teardown incomplete, not a crash")
+    elif launcher:
         sig = launcher.get("signal")
         parts.append(
             f"the launcher saw it end by {sig}" if sig else f"the launcher saw it exit with status {launcher.get('status')}"

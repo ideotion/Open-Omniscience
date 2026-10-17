@@ -36,7 +36,10 @@ OFF = {"engaged": False, "since": None, "reason": None, "engagements": 1}
 
 @pytest.fixture
 def no_heavy(monkeypatch):
-    """The heavy triggers' line moved out of reach, so a test sees the light one alone."""
+    """The heavy triggers' line moved out of reach, so a test sees the light one alone. The light trigger that reads the SAME line
+    (available memory below 15% of the RAM read now, ``_light_near``) is moved out of reach with it, which is why the tests that use this
+    fixture and read 380 MB of 5,000 see only the guard's reasons: in production both fire, and ``test_available_memory_below_the_pressure_line``
+    pins the line one."""
     monkeypatch.setattr(session_hwm, "_PRESSURE_AVAIL_SHARE", 0.0)
     monkeypatch.setattr(session_hwm, "_BURST_BLOCKS", 10**15)
 
@@ -621,9 +624,9 @@ def test_the_real_guard_line_is_read_from_the_memory_guards_own_attributes(monke
     guard = memguard.MemoryGuard(avail_floor_mb=300, rss_pct=70)
     monkeypatch.setattr(memguard, "memory_guard", guard)
     assert session_hwm._guard_line() == (300.0, 70.0)
-    near = session_hwm._light_near({"avail_mb": 440.0, "total_mb": 5000.0, "rss_mb": 100.0}, None)
+    near = session_hwm._light_near({"avail_mb": 440.0, "total_mb": 2000.0, "rss_mb": 100.0}, None)
     assert near == "available memory near the guard's floor", "1.5 x 300 MB is 450 MB, so 440 MB is near it"
-    assert session_hwm._light_near({"avail_mb": 460.0, "total_mb": 5000.0, "rss_mb": 100.0}, None) is None
+    assert session_hwm._light_near({"avail_mb": 460.0, "total_mb": 2000.0, "rss_mb": 100.0}, None) is None
     monkeypatch.setattr(guard, "avail_floor_mb", None)  # unreadable is None, never a zero line
     monkeypatch.setattr(guard, "rss_pct", 0)
     assert session_hwm._guard_line() == (None, None)
@@ -683,3 +686,118 @@ def test_the_member_never_raises_and_a_boot_with_no_record_is_said_not_blank(mon
     assert "omitted" in session_hwm.diagnostics_member(-5), "a nonsense budget is named, not an error"
     monkeypatch.setattr(session_hwm, "current", lambda: (_ for _ in ()).throw(RuntimeError("boom\nsecond line")))
     assert session_hwm.diagnostics_member(50_000) == {"error": "RuntimeError"}
+
+
+# --- the triggers that read THIS tick's memory, not the boot-time budget the guard's line comes from ---
+def test_swap_in_use_with_ram_headroom_takes_a_light_snapshot(rig, no_heavy):
+    """The October VM: swap full for hours, available memory comfortable by the boot numbers, no snapshot ever taken.
+    MUTATION TARGET: remove the swap trigger and this takes nothing."""
+    headroom = dict(HEALTHY, avail_mb=0.6 * TOTAL, rss_mb=0.1 * TOTAL, swap_used_mb=0.3 * TOTAL)
+    assert session_hwm._light_near(headroom, None) == "swap in use"
+    assert _whys(rig(5.0, readings=headroom)) == ["swap in use"]
+
+
+def test_a_little_swap_on_a_healthy_machine_is_not_a_trigger(rig, no_heavy):
+    """The kernel parks idle pages for days: below max(256 MB, 5% of the RAM read now) nothing is taken."""
+    floor = max(session_hwm._LIGHT_SWAP_MIN_MB, session_hwm._LIGHT_SWAP_SHARE * TOTAL)
+    ok = dict(HEALTHY, avail_mb=0.6 * TOTAL, rss_mb=0.1 * TOTAL)
+    assert rig(5.0, readings=dict(ok, swap_used_mb=floor - 1.0)) == []
+    assert _whys(rig(5.0, readings=dict(ok, swap_used_mb=floor))) == ["swap in use"]
+    assert session_hwm._light_near(dict(ok), None) is None, "no swap reading is no trigger, never a zero"
+
+
+def test_the_swap_floor_follows_the_ram_read_now_not_a_boot_number():
+    big = {"avail_mb": 9000.0, "total_mb": 32000.0, "rss_mb": 100.0}
+    assert session_hwm._light_near(dict(big, swap_used_mb=1500.0), None) is None, "5% of 32 GB is 1,600 MB"
+    assert session_hwm._light_near(dict(big, swap_used_mb=1600.0), None) == "swap in use"
+
+
+def test_available_memory_below_the_pressure_line_of_the_ram_read_now_is_near(monkeypatch):
+    monkeypatch.setattr(session_hwm, "_guard_line", lambda: (None, None))  # the guard's own numbers unreadable: still fires
+    line = session_hwm._pressure_line_mb(8000.0)
+    assert session_hwm._light_near({"avail_mb": line, "total_mb": 8000.0, "rss_mb": 100.0}, None) == (
+        "available memory below the pressure line of the RAM read now")
+    assert session_hwm._light_near({"avail_mb": line + 1.0, "total_mb": 8000.0, "rss_mb": 100.0}, None) is None
+    # the same available memory is fine on a bigger machine: the line is a share of the total read now
+    assert session_hwm._light_near({"avail_mb": line, "total_mb": 2000.0, "rss_mb": 100.0}, None) is None
+
+
+def test_parked_swap_does_not_rewrite_the_light_file_every_fifteen_seconds(rig, no_heavy):
+    """Swap is a level: one spike and it sits at the same figure all day. MUTATION TARGET: the episode gate in `_light_due`."""
+    parked = dict(HEALTHY, avail_mb=0.6 * TOTAL, rss_mb=0.1 * TOTAL, swap_used_mb=0.3 * TOTAL)
+    taken = [len(rig(15.0, readings=parked)) for _ in range(20)]  # 300 s of ticks 15 s apart
+    assert taken[0] == 1 and taken[-1] <= 2, taken  # the crossing, then at most the plateau one
+    grown = dict(parked, swap_used_mb=parked["swap_used_mb"] + session_hwm._LIGHT_SWAP_STEP_MB)
+    assert len(rig(15.0, readings=grown)) == taken[-1] + 1, "growth by a step earns another"
+    back = dict(parked, swap_used_mb=1.0)
+    rig(15.0, readings=back)
+    assert len(rig(15.0, readings=parked)) == taken[-1] + 2, "back under the floor and over it again is a new episode"
+
+
+def test_a_machine_short_of_memory_with_swap_is_named_for_the_memory():
+    both = {"avail_mb": 300.0, "total_mb": 8000.0, "rss_mb": 100.0, "swap_used_mb": 4000.0}
+    got = session_hwm._light_near(both, None)
+    assert got is not None and "available memory" in got, "memory is named before swap"
+
+
+# --- an empty ring explains itself: what the sampler WATCHED (2026-10-16 field diagnostics: taken null, nobody could tell why) ------------
+
+
+def test_an_empty_ring_carries_what_was_watched_so_never_near_the_line_reads_as_that(rig):
+    """The October zips: the member said ``taken: null`` with no snapshots, which reads the same as a dead sampler. MUTATION TARGETS:
+    drop the check count, the lowest-available mark, the RSS share or the lines in force from the member and this goes red."""
+    lower = dict(HEALTHY, avail_mb=2500.0, rss_mb=1000.0, swap_used_mb=10.0)
+    rig.state["readings"] = dict(HEALTHY)
+    for _ in range(5):
+        rig(5.0)
+    rig(5.0, readings=lower)
+    got = rig(5.0, readings=dict(HEALTHY))
+    out = session_hwm.diagnostics_member(200_000)
+    assert got == [] and out["this_session"]["taken"] is None and out["this_session"]["snapshots"] == []
+    w = out["this_session"]["watched"]
+    assert w["liveness_checks"] == 7
+    assert w["lowest_available_mb"] == 2500.0 and w["lowest_available_at"]
+    assert w["highest_swap_mb"] == 10.0 and w["highest_swap_at"]
+    assert w["highest_rss_mb"] == 1000.0 and w["highest_rss_share_pct"] == 20.0 and w["highest_rss_share_at"]
+    # the lines the readings were compared with, each from this tick's RAM or the guard's numbers
+    assert w["lines_at_last_check"] == {
+        "total_mb": TOTAL,
+        "heavy_avail_below_mb": 750.0,  # 15% of 5,000
+        "light_avail_within_mb": 384.0,  # 1.5 x the 256 MB floor
+        "light_rss_share_pct": 56.7,  # 85% / 1.5
+        "swap_at_least_mb": 256.0,  # max(256, 5% of 5,000 = 250)
+    }
+
+
+def test_only_the_liveness_tick_counts_as_a_check_and_an_unreadable_reading_is_none_not_zero(rig):
+    sparse = {"rss_mb": 900.0, "avail_mb": 3000.0}  # no RAM total, no swap reading
+    rig.state["readings"] = dict(sparse)
+    session_hwm.observe()  # the collector's reading: marks, but not a check of the sampler
+    assert session_hwm.diagnostics_member(200_000)["this_session"]["watched"]["liveness_checks"] is None
+    rig(5.0)
+    w = session_hwm.diagnostics_member(200_000)["this_session"]["watched"]
+    assert w["liveness_checks"] == 1
+    assert w["highest_swap_mb"] is None and w["highest_rss_share_pct"] is None, "a reading that could not be taken is absent"
+    assert w["lines_at_last_check"]["heavy_avail_below_mb"] is None and w["lines_at_last_check"]["swap_at_least_mb"] is None
+
+
+def test_the_previous_sessions_watch_rides_the_member_too(rig, no_heavy, dd, monkeypatch):
+    for _ in range(3):
+        rig(5.0)
+    session_hwm.flush()
+    session_hwm._PREV_LOADED, session_hwm._PREV = False, None
+    session_hwm.capture_previous()
+    previous_identity.claim(monkeypatch)
+    out = session_hwm.diagnostics_member(200_000)
+    prev = out["previous_session"]["watched"]
+    assert prev["liveness_checks"] == 3 and prev["lowest_available_mb"] == 3000.0
+    assert out["this_session"]["watched"]["liveness_checks"] is None, "a new process has checked nothing yet"
+
+
+def test_what_the_watch_adds_to_the_member_is_small(rig):
+    """The fixed part grows by the two ``watched`` blocks; the slot's 40,000 bytes are cut from the rings, never the other way."""
+    for _ in range(3):
+        rig(5.0)
+    out = session_hwm.diagnostics_member(10**7)
+    added = _compact(out["this_session"]["watched"]) + _compact(out["previous_session"]["watched"])
+    assert added < 1_000, added

@@ -40,6 +40,8 @@ import shutil
 import subprocess  # nosec B404 - reads the local kernel log; never a network call
 from typing import Any
 
+from src.monitoring.secret_scrub import scrubbed
+
 _LOG = logging.getLogger(__name__)
 
 # The kernel stores a task's name in comm[TASK_COMM_LEN] with TASK_COMM_LEN = 16, so
@@ -160,6 +162,13 @@ def _kernel_lines(text: str) -> list[str]:
             continue
         out.append(stripped)
     return out
+
+
+def published_lines(lines: list[str], keep: int) -> list[str]:
+    """The last ``keep`` of ``lines``, each checked whole for the held passphrase. These are lines the OS wrote (an audit record carries a
+    process's argv), they leave this module in the route, the text download and the bundle, and a line is chosen whole, never cut, so the
+    check does not depend on where the selection falls. Classification runs on the lines as read; only what is PUBLISHED is checked."""
+    return [scrubbed(ln) for ln in lines[-keep:]]
 
 
 def _mentions_us(line: str, pid: int | None) -> bool:
@@ -336,7 +345,7 @@ def read_kernel_evidence(
             if _mentions_us(line, previous_pid):
                 matched.append(line)
 
-    out["lines"] = matched[-40:]
+    out["lines"] = published_lines(matched, 40)
     if reasons:
         # Kept on EVERY verdict (2026-09-26). They used to be dropped as soon as any
         # other read succeeded, so "this boot could not be read" vanished behind a
@@ -421,7 +430,7 @@ def _read_kern_log_fallback(previous_pid: int | None) -> dict[str, Any] | None:
     if matched:
         return {
             "verdict": kind or "kernel-lines-found",
-            "lines": matched[-40:],
+            "lines": published_lines(matched, 40),
             "source": path,
         }
     return {

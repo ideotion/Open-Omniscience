@@ -49,8 +49,22 @@ rem Wait for the server to answer, then open the browser. Up to ~2 minutes, whic
 rem first-run database preparation can genuinely need.
 start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%URL%'; for ($i=0; $i -lt 240; $i++) { try { $null = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2; Start-Process $u; break } catch { Start-Sleep -Milliseconds 500 } }"
 
+rem Run the server through scripts\launch_server.ps1 when it is there: the window still shows every line the server prints, and the wrapper
+rem records the server's fatal-error headers and how it ended for the app's next boot to read. It leaves a marker file once it has STARTED
+rem the server; no marker means the wrapper itself could not run (PowerShell missing or blocked), and the server is then started plainly,
+rem exactly as before.
+set "MARK=%TEMP%\oo-launch-%RANDOM%-%RANDOM%.started"
+if not exist "%~dp0launch_server.ps1" goto plain
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch_server.ps1" -App "%APP%" -Marker "%MARK%"
+if exist "%MARK%" (
+  del "%MARK%" >nul 2>&1
+  goto stopped
+)
+
+:plain
 "%APP%"
 
+:stopped
 echo.
 echo   Open Omniscience has stopped. Press any key to close.
 pause >nul

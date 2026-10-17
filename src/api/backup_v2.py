@@ -111,6 +111,14 @@ def import_reports_download(filename: str, format: str = Query("json")) -> Respo
         report = read_import_report(filename)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="report not found") from exc
+    except ValueError as exc:  # a report that is not valid JSON (a torn write, or a copy that was damaged)
+        raise HTTPException(status_code=422, detail="report is not readable as JSON") from exc
+    # A report an older build wrote (or a backup of one, restored) can hold a passphrase an engine quoted: checked as it is served.
+    from src.monitoring.secret_scrub import scrubbed_value
+
+    report = scrubbed_value(report)
+    if not isinstance(report, dict):
+        raise HTTPException(status_code=422, detail="report could not be checked for the passphrase, so it is not served")
     if format == "md":
         return Response(
             render_import_report_markdown(report),

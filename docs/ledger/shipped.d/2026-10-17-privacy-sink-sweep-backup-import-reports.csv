@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,privacy,Single-file backup stages import reports through the scrub,shipped,PR #1444,src/backup/artifact.py;tests/test_log_member_scrub.py,"import_reports/*.json from an older build could carry a passphrase an engine quoted into an unencrypted backup; they are now copied line by line through scrubbed_copy before size and sha are taken, and the live report is not rewritten."

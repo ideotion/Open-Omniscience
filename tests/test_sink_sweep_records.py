@@ -234,7 +234,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('statement_deadline', ') from exc'): 2,
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = deadline_at'): 1,
         ('statement_deadline', 'prev_deadline = session.info.get(_DEADLINE_KEY)'): 1,
-        ('deadline_expired', 'at = session.info.get(_DEADLINE_KEY)'): 1,
+        ('deadline_left_s', 'at = session.info.get(_DEADLINE_KEY)'): 1,
         ('statement_deadline', 'session.info[_DEADLINE_KEY] = prev_deadline'): 1,
         ('statement_deadline', 'session.info.pop(_DEADLINE_KEY, None)'): 1,
     },
@@ -569,7 +569,7 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('set_startup', '_state["error"] = error'): 1,
     },
     'src/api/wiki_lane.py': {
-        ('lane_status', 'return _unreadable("status", exc)'): 1,
+        ('_read_status', 'return _unreadable("status", exc)'): 1,
         ('lane_analytics', 'return _unreadable("analytics", exc)'): 1,
         ('lane_divergence', 'return _unreadable("divergence", exc)'): 1,
         ('lane_attention', 'return _unreadable("attention", exc)'): 1,

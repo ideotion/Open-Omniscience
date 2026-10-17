@@ -259,3 +259,15 @@ def test_reading_a_huge_journal_does_not_materialise_it(tmp_path) -> None:
         f"streaming a 24 MB journal allocated {peak / 1e6:.1f} MB — it is being held, "
         "not streamed"
     )
+
+
+def test_the_beat_checks_the_statement_label_for_the_held_passphrase(rl, monkeypatch) -> None:
+    """The label was cut by the merge before it gets here, so a key it holds whole is taken out at the beat. MUTATION TARGET: the check on
+    ``rec["sql"]`` in ``_beat``."""
+    from src.database import connect
+    from src.monitoring import secret_scrub as ss
+
+    monkeypatch.setattr(connect, "_passphrase", "label-key-Zq7!rt")
+    ss.forget_held()
+    rl.statement("ATTACH 'x' AS m KEY 'label-key-Zq7!rt'")
+    assert "label-key-Zq7!rt" not in json.dumps(rl._beat({}))
