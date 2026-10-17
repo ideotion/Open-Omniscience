@@ -58,6 +58,8 @@ from sqlalchemy import event
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.pool import QueuePool
 
+from src.utils.interrupts import wait as _wait
+
 _ROLE = threading.local()
 _KEYS = itertools.count(1)
 
@@ -105,7 +107,7 @@ class _Slots:
                 left = deadline - time.monotonic()
                 if left <= 0:
                     return False
-                self._cond.wait(left)
+                _wait(self._cond, self._lock, left)
             self._held[key] = threading.current_thread()
             return True
 
@@ -228,27 +230,30 @@ class ReservingQueuePool(QueuePool):
             self._reserve.note_nested()
             return super().connect()
         key = next(_KEYS)
-        if not self._reserve.acquire(key, float(self._timeout)):
-            raise PoolTimeoutError(
-                "QueuePool limit reached for the collector: it may not take the last "
-                f"{self._api_margin} connections, which stay free for the app "
-                f"(collector ceiling {self._reserve.limit}); "
-                f"connection timed out, timeout {self._timeout:.2f}"
-            )
+        # The try opens BEFORE the slot is taken and releases by key, which is idempotent: an interrupt that lands after the slot is
+        # taken but before the caller sees it (or before it is recorded against the connection) gives the slot back instead of
+        # leaking it, and one that lands before it was taken releases a key that was never held.
         try:
+            if not self._reserve.acquire(key, float(self._timeout)):
+                raise PoolTimeoutError(
+                    "QueuePool limit reached for the collector: it may not take the last "
+                    f"{self._api_margin} connections, which stay free for the app "
+                    f"(collector ceiling {self._reserve.limit}); "
+                    f"connection timed out, timeout {self._timeout:.2f}"
+                )
             fairy = super().connect()
+            record = getattr(fairy, "_connection_record", None)
+            if record is None:
+                # Cannot be tracked, so it cannot be returned by the events: give the slot
+                # back NOW. An unreserved connection is a smaller failure than a leaked slot.
+                self._reserve.release(key)
+                return fairy
+            with self._slot_lock:
+                self._slot_key[id(record)] = key
+            return fairy
         except BaseException:
             self._reserve.release(key)
             raise
-        record = getattr(fairy, "_connection_record", None)
-        if record is None:
-            # Cannot be tracked, so it cannot be returned by the events: give the slot
-            # back NOW. An unreserved connection is a smaller failure than a leaked slot.
-            self._reserve.release(key)
-            return fairy
-        with self._slot_lock:
-            self._slot_key[id(record)] = key
-        return fairy
 
     def _on_return(self, _dbapi_connection, record=None) -> None:
         if record is None:

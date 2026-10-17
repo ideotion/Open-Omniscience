@@ -93,6 +93,7 @@ from contextlib import contextmanager, suppress
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure, scrubbed_name
+from src.utils.interrupts import wait as _wait
 
 _LOG = logging.getLogger("database.writer")
 
@@ -233,13 +234,14 @@ class WriterGate:
                         granted = True
                         break
                     if deadline is None:
-                        cv.wait()
+                        _wait(cv, self._lock)
                     else:
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
                             break
-                        cv.wait(remaining)
+                        _wait(cv, self._lock, remaining)
             finally:
+                # Under the lock whatever interrupted the wait: this block edits the queue and the counters (see src.utils.interrupts)
                 self._waiters -= 1
                 waited = time.monotonic() - start
                 self._total_wait_s += waited
@@ -331,6 +333,12 @@ class WriterGate:
     def held_by_current_thread(self) -> bool:
         with self._lock:
             return self._owner == threading.get_ident()
+
+    def depth_of_current_thread(self) -> int:
+        """How many levels of the window THIS thread holds (0 when it does not): the reading a caller takes before an acquire, so that
+        an exception that lands after the window was taken but before the caller knows it can still give back exactly that level."""
+        with self._lock:
+            return self._depth if self._owner == threading.get_ident() else 0
 
     def waiters(self) -> int:
         """Threads blocked RIGHT NOW waiting to write: the one number a long holder needs to know whether to let go.
@@ -479,17 +487,22 @@ def write_lock(timeout: float | None = None) -> Iterator[None]:
     if not gate_enabled():
         yield
         return
-    if not write_gate.acquire(timeout=timeout):
-        s = write_gate.stats()
-        raise WriteGateBusy(
-            f"write gate busy after {timeout}s "
-            f"(holder={s.get('holder')!r}, held_for_s={s.get('held_for_s')}, "
-            f"queued={s.get('queued')})"
-        )
+    # The try opens BEFORE the acquire and the release is decided by what this thread holds, not by what acquire returned: an exception
+    # (a KeyboardInterrupt) that lands after the window was taken and before the caller saw the answer would otherwise leave it held
+    # for ever. The depth makes it exact for a nested call: only the level THIS call took is given back.
+    before = write_gate.depth_of_current_thread()
     try:
+        if not write_gate.acquire(timeout=timeout):
+            s = write_gate.stats()
+            raise WriteGateBusy(
+                f"write gate busy after {timeout}s "
+                f"(holder={s.get('holder')!r}, held_for_s={s.get('held_for_s')}, "
+                f"queued={s.get('queued')})"
+            )
         yield
     finally:
-        write_gate.release()
+        if write_gate.depth_of_current_thread() > before:
+            write_gate.release()
 
 
 def write_gate_stats() -> dict:
@@ -770,6 +783,24 @@ def start_write_gate_watchdog() -> bool:
     return True
 
 
+def _take_for_session(session) -> None:
+    """Take the window for ``session``'s transaction and mark the session, as ONE step an exception cannot split.
+
+    ``acquire()`` then ``session.info[flag] = True`` left a gap: an exception (a KeyboardInterrupt) between them held the window with
+    no flag, so nothing ever released it (``release_if_held`` and the transaction-end event both look at the flag). On an exception
+    here the level this call took is given back and the flag is cleared; on success the flag is the session's record that it holds one.
+    """
+    before = write_gate.depth_of_current_thread()
+    try:
+        write_gate.acquire()
+        session.info[_SESSION_FLAG] = True
+    except BaseException:
+        if write_gate.depth_of_current_thread() > before:
+            write_gate.release()
+        session.info.pop(_SESSION_FLAG, None)
+        raise
+
+
 def release_if_held(session) -> None:
     """Belt-and-braces release for a session that may still hold the gate.
 
@@ -804,8 +835,7 @@ def hold_write_window(session) -> bool:
             # Only a transaction's END releases the window, so there must be one to end: begin it
             # (the read that follows would have).
             session.connection()
-        write_gate.acquire()
-        session.info[_SESSION_FLAG] = True
+        _take_for_session(session)
     return True
 
 
@@ -851,8 +881,7 @@ def _on_before_flush(session, _flush_context, _instances) -> None:
     # First write of this session's transaction is about to hit the file —
     # take the write window. Idempotent within the transaction via the flag.
     if not session.info.get(_SESSION_FLAG):
-        write_gate.acquire()
-        session.info[_SESSION_FLAG] = True
+        _take_for_session(session)
 
 
 _SQL_LEADING = re.compile(r"(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)*", re.DOTALL)
@@ -895,8 +924,7 @@ def _on_orm_execute(orm_execute_state) -> None:
         return
     session = orm_execute_state.session
     if not session.info.get(_SESSION_FLAG):
-        write_gate.acquire()
-        session.info[_SESSION_FLAG] = True
+        _take_for_session(session)
 
 
 def _on_after_transaction_end(session, transaction) -> None:

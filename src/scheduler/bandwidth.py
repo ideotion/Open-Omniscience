@@ -36,6 +36,8 @@ from __future__ import annotations
 import threading
 import time
 
+from src.utils.interrupts import wait as _wait
+
 # Default seed concurrency for target mode (maintainer's estimate: ~25 workers
 # reach ~500 kbps). Only a STARTING point — the controller measures and adapts.
 DEFAULT_SEED = 25
@@ -67,7 +69,7 @@ class _AdjustableSemaphore:
     def acquire(self) -> None:
         with self._lock:
             while self._active >= self._permits:
-                self._cond.wait()
+                _wait(self._cond, self._lock)
             self._active += 1
 
     def release(self) -> None:

@@ -51,6 +51,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import FrameType
 
+from src.utils.interrupts import wait as _wait
+
 _LOG = logging.getLogger(__name__)
 
 TABLE = "app_state"
@@ -109,9 +111,15 @@ _hold_by: int | None = None  # ident of the thread holding settings writes (a re
 #: for a token that was never added), then the lock is taken only to wake a waiting hold. A KeyboardInterrupt landing in a release that took the
 #: lock first used to arrive before the decrement and leave the write counted for ever (about 5 % of interrupted writes with real signals on
 #: CPython 3.13), so every later hold refused to start until a restart; the lock-free ``remove`` closes that, and ``_hold_lock`` above closes
-#: the same hazard for the lock itself. One residual stays: an interrupt inside ``Condition.wait``'s Python code can surface as a
-#: ``RuntimeError`` ("cannot release un-acquired lock") in place of the KeyboardInterrupt (0.27 % of interrupted waits, nothing left held).
+#: the same hazard for the lock itself. The residual that stayed (an interrupt inside ``Condition.wait``'s Python code surfacing as a
+#: ``RuntimeError`` ("cannot release un-acquired lock") in place of the KeyboardInterrupt, 0.27 % of interrupted waits) is closed by ``_wait_hold``.
 _inflight: set[object] = set()
+
+
+def _wait_hold(timeout: float) -> None:
+    """Wait on the hold (the caller holds ``_hold_lock`` once); an interrupt of the wait stays the interrupt (see ``src.utils.interrupts``)."""
+    _wait(_hold, _hold_lock, timeout)
+
 
 
 def _caller_of_the_write() -> str:
@@ -163,7 +171,7 @@ def _write_slot() -> Iterator[int]:
                     left = deadline - time.monotonic()
                     if left <= 0:
                         raise KvWriteRefused(_REFUSED_TEXT)
-                    _hold.wait(left)
+                    _wait_hold(left)
             if not passthrough:
                 _inflight.add(token)  # the one statement that counts this write
         with _lock:
@@ -207,7 +215,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
                 left = deadline - time.monotonic()
                 if left <= 0:
                     raise KvWriteBusy("a settings save was still in flight")
-                _hold.wait(left)
+                _wait_hold(left)
         yield
     finally:  # on every exit, a KeyboardInterrupt in the drain included: a hold left set refuses every later save
         if held:  # never clears another thread's hold (the "already held" refusal above)
