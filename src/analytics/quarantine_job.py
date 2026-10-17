@@ -502,6 +502,7 @@ class QuarantineJobManager:
                 # manager, so a tally could never be read back against the scope it was
                 # agreed under.
                 "include_prose_gate": self._include_prose_gate,
+                "include_stubs": self._include_stubs,
                 "index_page_tiers": sorted(self._index_page_tiers),
             }
 

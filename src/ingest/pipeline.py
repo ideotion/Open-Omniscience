@@ -179,13 +179,15 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
             fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="no article body extracted"
         )
 
-    # Drop ad-placeholder and app-banner paragraphs before judging and hashing, so the stored
-    # body (and its content hash) is the article, not the page furniture. No-op when none.
-    doc.text, _ = strip_furniture(doc.text)
-    if not doc.text.strip():
-        return IngestOutcome(
-            fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="body was only page furniture"
-        )
+    # Drop ad-placeholder and app-banner LINES before judging and hashing, so the stored body (and
+    # its content hash, which fixity re-computes from the stored text) is the article, not the page
+    # furniture. Only matched lines go; no-op when none. Off with OO_SKIP_NON_ARTICLES=0.
+    if skip_non_articles_enabled():
+        doc.text, _ = strip_furniture(doc.text)
+        if not doc.text.strip():
+            return IngestOutcome(
+                fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="body was only page furniture"
+            )
 
     # Stop non-articles (nav / index / tag / tool / consent-wall pages) at the door — the
     # source-quality recall-gap fix. High-precision + reversible (OO_SKIP_NON_ARTICLES=0 disables);

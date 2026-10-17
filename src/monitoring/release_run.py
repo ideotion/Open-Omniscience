@@ -1006,7 +1006,7 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
             # from the first article -- but only if it is THIS run's mode; another paused
             # run is the operator's, and is refused by name rather than overwritten.
             if prior.get("dry_run") is False and prior.get("include_prose_gate") is False \
-                    and not prior.get("index_page_tiers"):
+                    and not prior.get("index_page_tiers") and not prior.get("include_stubs"):
                 out["quarantine_started"] = qm.resume()
                 out["quarantine_continued_from"] = prior.get("articles_done")
             else:
@@ -1019,7 +1019,10 @@ def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
         st = _wait_job(ctx, run, "quarantine", qm, out)
         out["quarantine_final"] = st
         # §7.1 step 2: a run under the wrong criteria reports a tally that looks legitimate.
-        out["mode_ok"] = (st.get("dry_run") is False) and (st.get("include_prose_gate") is False)
+        out["mode_ok"] = (
+            (st.get("dry_run") is False) and (st.get("include_prose_gate") is False)
+            and not st.get("include_stubs")
+        )
         if ctx.stopping or st.get("stalled") or st.get("state") == "paused":
             return out
         if st.get("state") != "done":

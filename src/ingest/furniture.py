@@ -6,15 +6,17 @@ a page whose whole "body" was the site menu plus a login prompt, and real teaser
 ad-placeholder paragraphs ("Annons") and an app-update banner. This module adds two things, both
 EXPLICIT rules with a disclosed reason, never a score:
 
-* :func:`strip_furniture` removes paragraphs that are, in full, a known ad placeholder or app
-  banner. It never touches a paragraph that merely contains such a word.
+* :func:`strip_furniture` removes lines that are, in full, a known ad placeholder or a
+  language-specific app banner. It never touches a line that merely contains such a word, and it
+  leaves every other byte of the body exactly as extracted.
 * :func:`stub_verdict` names a THIN body (under ``non_article._ARTICLE_MIN_WORDS`` words after
-  stripping) as a ``menu_stub`` (nearly every paragraph is a short unpunctuated menu line) or a
-  ``paywall_stub`` (a subscriber prompt in a language the English wall phrases miss).
+  stripping) as a ``menu_stub`` (nearly every line is a short, unpunctuated, digit-free menu entry)
+  or a ``paywall_stub`` (a short line that is a subscriber prompt).
 
-Precision first, like its caller: a false positive hides a real article. Callers MARK (the
-quarantine stamp is reversible), they never delete. What this does NOT see: a teaser of real
-prose with no prompt in the text itself (the paywall link was outside the extracted body).
+Precision first: a false positive hides a real article. The stub verdict is used ONLY by the
+quarantine job, and only when asked for (``include_stubs``): it MARKS, the operator sees dry-run
+counts first, nothing is dropped at ingest and nothing is deleted. What this does NOT see: a teaser
+of real prose whose paywall prompt was outside the extracted body.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -25,27 +27,28 @@ from __future__ import annotations
 import re
 
 # A paragraph that is, in full, one of these (casefolded, edge punctuation dropped) is an ad slot.
+# Words that are also ordinary section headings (advertising, Werbung, Reklame, Publicidad,
+# Annonser ...) are deliberately NOT here: only labels that name a single ad slot.
 AD_PLACEHOLDERS = frozenset({
-    "annons", "annonser", "annonse", "annonsørinnhold", "annonce", "reklam", "reklame",
-    "mainos", "mainokset", "advertisement", "advertising", "advertorial", "anzeige", "werbung",
-    "publicité", "publicidad", "pubblicità", "publicidade", "advertentie", "reclame", "реклама",
+    "annons", "annonse", "annonce", "mainos", "mainokset", "advertisement", "anzeige",
+    "publicité", "pubblicità", "publicidade", "advertentie", "реклама",
 })
 # A SHORT paragraph containing one of these is an app/update banner, not article text.
 APP_BANNER_PHRASES = (
     "för att din app ska fortsätta fungera",
     "for at din app skal fortsette å fungere",
-    "jotta sovellus toimii",
-    "to keep your app working, update",
 )
 _BANNER_MAX_WORDS = 40
 
 # Subscriber prompts that sit INSIDE a thin extracted body (the English set lives in non_article).
+# Matched as WHOLE WORDS inside a SHORT line (<= _PROMPT_MAX_WORDS): a prompt is its own line.
 PAYWALL_PHRASES = (
-    "allerede abonnent", "allerede abonnent?", "redan prenumerant", "redan prenumerant?",
-    "jo tilaaja", "olet jo tilaaja", "bli abonnent", "bli prenumerant", "tilaa lukeaksesi",
-    "kirjaudu sisään lukeaksesi", "prenumerera för att läsa", "abonner for å lese",
-    "abonner for at læse", "bereits abonnent", "déjà abonné",
+    "allerede abonnent", "redan prenumerant", "olet jo tilaaja", "bli abonnent",
+    "bli prenumerant", "tilaa lukeaksesi", "kirjaudu sisään lukeaksesi",
+    "prenumerera för att läsa", "abonner for å lese", "abonner for at læse",
+    "bereits abonnent", "déjà abonné",
 )
+_PROMPT_MAX_WORDS = 8
 
 MENU_MIN_PARAGRAPHS = 12
 MENU_SHORT_WORDS = 6       # a menu entry; the page's own headline (9 words) may exceed it
@@ -71,13 +74,26 @@ def is_furniture(paragraph: str) -> bool:
 
 
 def strip_furniture(text: str) -> tuple[str, int]:
-    """``(text without furniture paragraphs, how many were removed)``. Unchanged text comes back
-    byte-identical, so a page with none changes neither its stored body nor its content hash."""
-    paragraphs = _paragraphs(text)
-    kept = [p for p in paragraphs if not is_furniture(p)]
-    if len(kept) == len(paragraphs):
+    """``(text without furniture lines, how many were removed)``. Only the matched lines go (plus
+    one blank separator line after each); every other byte is kept, so text without furniture
+    comes back identical and text with some is not reformatted."""
+    lines = (text or "").splitlines(keepends=True)
+    kept: list[str] = []
+    removed = 0
+    skip_blank = False
+    for line in lines:
+        if skip_blank and not line.strip():
+            skip_blank = False
+            continue
+        skip_blank = False
+        if line.strip() and is_furniture(line.strip()):
+            removed += 1
+            skip_blank = True
+            continue
+        kept.append(line)
+    if not removed:
         return text, 0
-    return "\n\n".join(kept), len(paragraphs) - len(kept)
+    return "".join(kept), removed
 
 
 def is_menu_like(text: str) -> bool:
@@ -87,11 +103,25 @@ def is_menu_like(text: str) -> bool:
     counts = [len(p.split()) for p in paragraphs]
     if max(counts) > MENU_MAX_WORDS:
         return False
+    # A digit means data (a result table, a listing), not a menu entry: such a page is not judged.
+    if any(ch.isdigit() for p in paragraphs for ch in p):
+        return False
     menu = sum(
         1 for p, n in zip(paragraphs, counts, strict=True)
         if n <= MENU_SHORT_WORDS and not p.endswith(tuple(_END_PUNCT))
     )
     return menu / len(paragraphs) >= MENU_SHARE
+
+
+def _has_prompt(paragraphs: list[str]) -> str | None:
+    for p in paragraphs:
+        if len(p.split()) > _PROMPT_MAX_WORDS:
+            continue
+        low = p.casefold()
+        for phrase in PAYWALL_PHRASES:
+            if re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", low):
+                return phrase
+    return None
 
 
 def stub_verdict(text: str | None) -> tuple[str, str] | None:
@@ -101,10 +131,9 @@ def stub_verdict(text: str | None) -> tuple[str, str] | None:
         return None
     body, _ = strip_furniture(text)
     if is_menu_like(body):
-        return ("menu_stub", "body is site-menu lines, not article text: nearly every paragraph "
+        return ("menu_stub", "body is site-menu lines, not article text: nearly every line "
                 "is a short unpunctuated entry")
-    low = body.casefold()
-    for phrase in PAYWALL_PHRASES:
-        if phrase in low:
-            return ("paywall_stub", f"subscriber prompt in a thin body: '{phrase}'")
+    phrase = _has_prompt(_paragraphs(body))
+    if phrase:
+        return ("paywall_stub", f"subscriber prompt line in a thin body: '{phrase}'")
     return None

@@ -66,16 +66,45 @@ HBL_BANNER = (
 )
 
 
-def test_fjordabladet_menu_body_is_a_menu_stub():
+def test_fjordabladet_menu_body_is_a_menu_stub_but_never_dropped_at_the_ingest_door():
     assert is_menu_like(FJORD)
-    verdict = classify_non_article(FJORD_URL, text=FJORD, word_count=len(FJORD.split()), language="no")
-    assert verdict is not None and verdict.signal == "menu_stub"
+    assert stub_verdict(FJORD)[0] == "menu_stub"
+    # The stub signal marks (quarantine job, opt-in); the ingest classifier does not use it.
+    assert classify_non_article(FJORD_URL, text=FJORD, word_count=len(FJORD.split()), language="no") is None
 
 
 def test_swedish_prenumerant_prompt_is_a_paywall_stub():
-    text = "Rubriken\n\nRedan prenumerant? Logga in för att läsa vidare."
+    text = "Rubriken\n\nRedan prenumerant?\n\nLogga in"
     signal, _ = stub_verdict(text)
     assert signal == "paywall_stub"
+
+
+def test_inflected_or_embedded_subscriber_words_in_real_prose_are_not_a_prompt():
+    for text in (
+        "Lokalavisa har vokse kraftig i år. Over 2000 nye lesarar valde å bli abonnentar hos oss i fjor, "
+        "seier redaktøren.",
+        "Det er allerede abonnenter nok.",
+    ):
+        assert stub_verdict(text) is None
+
+
+def test_a_short_list_article_with_figures_is_not_a_menu():
+    text = ("Valresultat i Volda kommune\nAp 25,3\nH 20,1\nSp 15,2\nFrP 12,0\nSV 6,1\nKrF 5,9\nV 4,2\n"
+            "MDG 3,1\nR 2,8\nRaudt 1,0\nPp 0,5\nAndre 3,8\nOppmøtet var 71,2 prosent, opp frå førre val.")
+    assert stub_verdict(text) is None
+
+
+def test_ordinary_sentences_and_section_headings_are_not_furniture():
+    keep = "Brukaren må gje løyve, jotta sovellus toimii oikein.\n\nMer tekst."
+    assert strip_furniture(keep) == (keep, 0)
+    heading = "Revenue grew.\n\nAdvertising\n\nAd sales fell 3%."
+    assert strip_furniture(heading) == (heading, 0)
+
+
+def test_stripping_leaves_every_other_byte_alone():
+    text = "Rubrik\r\n  indrag kvar\nAnnons\n\nSlutt.\nTo linjer."
+    cleaned, removed = strip_furniture(text)
+    assert removed == 1 and cleaned == "Rubrik\r\n  indrag kvar\nSlutt.\nTo linjer."
 
 
 def test_ad_placeholders_and_app_banner_are_stripped_from_teasers():
@@ -198,3 +227,19 @@ def test_the_job_carries_include_stubs_through_start(tmp_path):
     mgr = run(True)
     assert seen[-1] == {"include_stubs": True}
     assert mgr._include_stubs is True
+
+
+def test_a_release_run_never_resumes_a_paused_stub_run_as_its_own():
+    from pathlib import Path
+
+    src = Path("src/monitoring/release_run.py").read_text(encoding="utf-8")
+    assert 'not prior.get("include_stubs")' in src and 'not st.get("include_stubs")' in src
+
+
+def test_the_manager_status_reports_include_stubs(tmp_path):
+    from src.analytics.quarantine_job import QuarantineJobManager
+
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    assert mgr.status()["include_stubs"] is False
+    mgr._include_stubs = True
+    assert mgr.status()["include_stubs"] is True
