@@ -262,7 +262,7 @@ def _serve_fallbacks() -> dict:
 #: against the budget. Free text of the engine is never among them.
 _DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
                   "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split",
-                  "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib")
+                  "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib", "engine_error_class")
 
 
 def decline_detail() -> dict:
@@ -1120,7 +1120,7 @@ def _build_and_swap() -> str:
                     "mentions_count": stopped.get("mentions_count"),
                     "shards": stopped.get("shards"), "shard": stopped.get("shard"), "split": stopped.get("split"),
                     "query": stopped.get("query"), "peak_mib": stopped.get("peak_mib"),
-                    "resident_mib": stopped.get("resident_mib"),
+                    "resident_mib": stopped.get("resident_mib"), "engine_error_class": stopped.get("engine_error_class"),
                     "offload_allowed": _build_budget().get("offload_allowed"),
                 })
                 _LOG.warning(

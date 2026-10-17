@@ -937,6 +937,27 @@ class BuildDeclined(Exception):
         self.detail = detail or {}
 
 
+def _read_mib(con) -> float | None:
+    """DuckDB's own total of what it holds, MiB; ``None`` when it cannot be read (a diagnostics reading, never a reason to fail)."""
+    try:
+        return float(con.execute("SELECT sum(memory_usage_bytes) / 1048576.0 FROM duckdb_memory()").fetchone()[0])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class _EngineWall(Exception):
+    """DuckDB reached its memory limit as a FATAL error. Carries nothing: the engine's own words are matched once, where
+    it was raised, and never kept, logged or chained (``raise ... from None``)."""
+
+
+#: At the very edge of its limit DuckDB can fail a checkpoint with ``FatalException`` ("could not allocate block ...")
+#: instead of ``OutOfMemoryException`` (2026-10-17: two of three 20 M builds at 1,004 MB). It is the same wall, and a fatal
+#: invalidates the instance, so nothing can be retried or halved: the build is declined as the limit. Matched on the class
+#: name plus this ONE fixed phrase; any other ``FatalException`` stays a plain failure.
+_ALLOCATION_FATAL_CLASS = "FatalException"
+_ALLOCATION_FATAL_PHRASE = "could not allocate"
+
+
 def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> int:
     """Insert ``rows`` into ``table`` in ONE statement, columns passed as JSON arrays.
 
@@ -961,6 +982,8 @@ def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> 
             [json.dumps(c) for c in columns],
         )
     except Exception as exc:  # noqa: BLE001 - a JSON-path refusal -> the slow path for this batch only
+        if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):
+            raise _EngineWall from None  # the instance is invalid: no slow path, and the engine's text goes no further
         if type(exc).__name__ in _NEVER_RETRIED:
             raise  # the engine's own limit or an interrupt: the slow path would only reach it hours later
         marks = ", ".join("?" for _ in types)
@@ -1258,6 +1281,23 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                         f"article_id {id_type} NOT NULL)")
         streamed = 0
         max_streamed_id = 0
+        # DuckDB's total at the batches' boundaries: the last reading and the largest. A FATAL error invalidates the
+        # instance, so what a stop can say about memory is what was read BEFORE it (a lower bound on the peak).
+        seen_mib: dict = {"last": None, "peak": None}
+
+        def _note_mib() -> None:
+            now_mib = _read_mib(con)
+            if now_mib is not None:
+                seen_mib["last"] = now_mib
+                seen_mib["peak"] = now_mib if seen_mib["peak"] is None else max(seen_mib["peak"], now_mib)
+
+        def _wall_stop(stage: str, **extra) -> BuildDeclined:
+            """The limit stop for a FATAL allocation error: the stage it was in and the sizes read before it. Class name only."""
+            return BuildDeclined("duckdb-limit", {
+                "stage": stage, "rows_done": streamed, "duckdb_limit_mb": limit_mb, "shards": shards,
+                "engine_error_class": _ALLOCATION_FATAL_CLASS,
+                "peak_mib": None if seen_mib["peak"] is None else round(seen_mib["peak"], 1),
+                "resident_mib": None if seen_mib["last"] is None else round(seen_mib["last"], 1), **extra})
 
         def _absorb(chunk: list) -> None:
             """Stage one batch and advance the watermark. Shared by both phases."""
@@ -1266,14 +1306,18 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                 (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
                 for r in chunk if r[2] is not None
             ]
-            if shards == 1:
-                _bulk_insert(con, stage_names[0], stage_types, dated_rows)
-            else:
-                parts: list[list] = [[] for _ in range(shards)]
-                for row in dated_rows:
-                    parts[row[0] % shards].append(row)
-                for name, part in zip(stage_names, parts, strict=True):
-                    _bulk_insert(con, name, stage_types, part)
+            try:
+                if shards == 1:
+                    _bulk_insert(con, stage_names[0], stage_types, dated_rows)
+                else:
+                    parts: list[list] = [[] for _ in range(shards)]
+                    for row in dated_rows:
+                        parts[row[0] % shards].append(row)
+                    for name, part in zip(stage_names, parts, strict=True):
+                        _bulk_insert(con, name, stage_types, part)
+            except _EngineWall:
+                raise _wall_stop("stage-insert") from None
+            _note_mib()
             streamed += len(dated_rows)
             # The watermark tracks the MAX id seen across the WHOLE batch (dated or
             # not) -- ordering is by (created_at, id), so the LAST row in a batch is
@@ -1353,6 +1397,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             try:
                 splits += _aggregate_stage(con, name, shards, 1, 0)
             except Exception as exc:  # noqa: BLE001 - only the engine's limit becomes a decline
+                if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):
+                    raise _wall_stop("aggregate", shard=j) from None
                 if type(exc).__name__ != "OutOfMemoryException":
                     raise
                 raise BuildDeclined("duckdb-limit", {
@@ -1401,13 +1447,16 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         result.close()
         if not chunk:
             break
-        meta_rows += _bulk_insert(
-            con, "keyword_meta", _META_TYPES,
-            [
-                (int(r[0]), r[1], r[2], kind_from(r[3], r[4]), bool(r[3]), r[4], r[5])
-                for r in chunk
-            ],
-        )
+        try:
+            meta_rows += _bulk_insert(
+                con, "keyword_meta", _META_TYPES,
+                [
+                    (int(r[0]), r[1], r[2], kind_from(r[3], r[4]), bool(r[3]), r[4], r[5])
+                    for r in chunk
+                ],
+            )
+        except _EngineWall:
+            raise _wall_stop("keywords") from None
         cursor_id = int(chunk[-1][0])
         session.commit()
         if on_batch is not None:

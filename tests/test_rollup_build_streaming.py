@@ -1384,3 +1384,158 @@ def test_a_served_query_the_engine_refuses_is_counted_by_query_and_error_class_i
     assert {(r["query"], r["error"], r["count"]) for r in got["fallbacks"]} == {
         ("top-terms", "OutOfMemoryException", 2), ("term-counts", "OutOfMemoryException", 1)}
     columnar._SERVE_FALLBACKS.clear()
+
+
+# --------------------------------------------------------------------------- #
+# R160: DuckDB's FATAL "could not allocate" at the edge of its limit is the memory wall, not a plain failure
+# --------------------------------------------------------------------------- #
+
+_FATAL_WORDS = "FATAL Error: Failed to create checkpoint because of error: could not allocate block of size 256.0 KiB (957.3 MiB/957.4 MiB used)"
+
+
+class FatalException(Exception):  # noqa: N818 - the engine's own class name
+    pass
+
+
+class _FatalAt:
+    """The real connection with one statement family made to fail with DuckDB's FATAL error (after ``after`` earlier ones passed)."""
+
+    def __init__(self, real, prefix, words=_FATAL_WORDS, after=0):
+        self._real, self._prefix, self._words, self._after = real, prefix, words, after
+        self.fired = 0
+
+    def execute(self, sql, *a, **k):
+        if sql.lstrip().startswith(self._prefix):
+            if self._after > 0:
+                self._after -= 1
+            else:
+                self.fired += 1
+                raise FatalException(self._words)
+        return self._real.execute(sql, *a, **k)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+@pytest.fixture()
+def fatal_at(monkeypatch):
+    real_connect = columnar.connect
+    made: list = []
+
+    def arm(prefix, **kw):
+        monkeypatch.setattr(columnar, "connect", lambda **ckw: made.append(_FatalAt(real_connect(**ckw), prefix, **kw)) or made[-1])
+        return made
+
+    return arm
+
+
+def _text_everywhere(stopped):
+    import json
+
+    from src.analytics import rollup_hold
+
+    kept = rollup_hold.read() or {}
+    blob = json.dumps([stopped, rollup_serve.status().get("stopped"), rollup_serve.status().get("last_decline"),
+                       rollup_serve.status().get("last_skip"), kept], default=str)
+    return blob
+
+
+@pytest.mark.parametrize("prefix,stage", [("INSERT INTO keyword_daily_stage", "stage-insert"),
+                                          ("INSERT INTO keyword_daily_building", "aggregate"),
+                                          ("INSERT INTO keyword_meta", "keywords")])
+def test_a_fatal_allocation_error_is_a_duckdb_limit_stop_at_the_stage_it_was_in_with_no_engine_text(
+        serve_env, session, fatal_at, prefix, stage):
+    _seed(session, keywords=30, mentions_per=4)
+    made = fatal_at(prefix)
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert made[0].fired == 1, "the fatal fired once and nothing was retried on the invalid instance"
+    assert stopped["reason"] == "duckdb-limit" and stopped["stage"] == stage
+    assert stopped["engine_error_class"] == "FatalException"
+    assert stopped["duckdb_limit_mb"] > 0 and stopped["rows_done"] >= 0
+    assert stage == "stage-insert" or isinstance(stopped["peak_mib"], float), "the sizes read before the fatal"
+    assert rollup_serve._STATE["con"] is previous, "nothing swapped in"
+    assert rollup_marker.read() is None
+    assert "allocate" not in repr(stopped) and "957" not in repr(stopped)
+
+
+def test_the_stop_is_kept_released_by_the_existing_rules_and_carries_no_engine_text_into_status_or_the_file(
+        serve_env, session, fatal_at, monkeypatch):
+    from src.analytics import rollup_hold
+
+    _seed(session, keywords=30, mentions_per=4)
+    fatal_at("INSERT INTO keyword_daily_building")
+    for name in ("_boot_order_verdict", "_memory_verdict", "_last_build_verdict", "_affordability_verdict"):
+        monkeypatch.setattr(rollup_serve, name, lambda: None)
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
+    monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", True)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    blob = _text_everywhere(rollup_serve.status()["last_skip"])
+    assert "allocate" not in blob and "957.3" not in blob and "Failed to create checkpoint" not in blob
+    kept = rollup_hold.read()
+    assert kept["stage"] == "aggregate" and kept["engine_error_class"] == "FatalException"
+    assert rollup_serve.status()["stopped"]["engine_error_class"] == "FatalException"
+    assert rollup_serve.decline_detail()["engine_error_class"] == "FatalException"
+    # held: the next serve request does not start the scan again ...
+    assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit"
+    # ... and a larger limit releases it, as for any duckdb-limit stop
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 100_000.0)
+    assert rollup_serve._stopped_build_verdict() is None
+
+
+def test_a_fatal_error_without_the_phrase_is_still_a_plain_failure(serve_env, session, fatal_at):
+    _seed(session, keywords=30, mentions_per=4)
+    made = fatal_at("INSERT INTO keyword_daily_building", words="FATAL Error: database has been invalidated")
+    with pytest.raises(FatalException):
+        rollup_serve._build_inmemory_and_swap()
+    assert made[0].fired == 1
+    assert rollup_marker.read() is None
+
+
+def test_the_fatal_allocation_error_never_reaches_the_slow_path_and_leaves_no_chain():
+    class Con:
+        def __init__(self):
+            self.slow = 0
+
+        def execute(self, *a, **k):
+            raise FatalException(_FATAL_WORDS)
+
+        def executemany(self, *a, **k):
+            self.slow += 1
+
+    con = Con()
+    with pytest.raises(columnar._EngineWall) as got:
+        columnar._bulk_insert(con, "t", ("BIGINT",), [(1,)])
+    assert con.slow == 0, "the slow path would only repeat it on an invalid instance"
+    assert got.value.__cause__ is None and got.value.__suppress_context__ is True and not got.value.args
+
+
+def test_a_fatal_error_without_the_phrase_still_takes_the_slow_path():
+    class Con:
+        def __init__(self):
+            self.slow = 0
+
+        def execute(self, *a, **k):
+            raise FatalException("something else")
+
+        def executemany(self, *a, **k):
+            self.slow += 1
+
+    con = Con()
+    assert columnar._bulk_insert(con, "t", ("BIGINT",), [(1,)]) == 1 and con.slow == 1
+
+
+def test_the_stop_names_the_sizes_read_before_the_fatal_batch(session):
+    """The instance is invalid after the fatal, so the sizes are the last readings taken at batch boundaries (a lower bound)."""
+    _seed(session, keywords=30, mentions_per=4)
+    con = _FatalAt(columnar.connect(passphrase=None, spill=""), "INSERT INTO keyword_daily_stage", after=2)
+    with pytest.raises(columnar.BuildDeclined) as got:
+        columnar.build_keyword_daily(con, session, batch_size=30, snapshot=columnar.budget_snapshot())
+    d = got.value.detail
+    assert got.value.reason == "duckdb-limit" and d["stage"] == "stage-insert" and d["engine_error_class"] == "FatalException"
+    assert d["rows_done"] > 0 and d["resident_mib"] > 0 and d["peak_mib"] >= d["resident_mib"]
+    assert got.value.__cause__ is None and "allocate" not in repr(d)

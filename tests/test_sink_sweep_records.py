@@ -796,6 +796,12 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('run_progressive_triage_job', 'if is_context_overflow(exc) and working_batch > 1:'): 1,
     },
+    'src/analytics/columnar.py': {
+        # R160: read for ONE fixed phrase to CLASSIFY DuckDB's FATAL allocation error as the memory wall; the text goes nowhere
+        # (the class is raised as an empty _EngineWall / BuildDeclined `from None`, and the stop names the class only)
+        ('_bulk_insert', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+        ('build_keyword_daily', 'if type(exc).__name__ == _ALLOCATION_FATAL_CLASS and _ALLOCATION_FATAL_PHRASE in str(exc):'): 1,
+    },
     'src/analytics/equivalence.py': {
         # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
         ('QueryExpander.cap_facts', 'rec = self._capped.get(e.normalized)'): 1,

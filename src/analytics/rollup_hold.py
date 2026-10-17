@@ -58,6 +58,8 @@ _FIELDS: dict[str, tuple[type, ...]] = {
     "query": (str,),
     "peak_mib": (int, float),
     "resident_mib": (int, float),
+    # the class NAME of the engine error that stopped it (never its text)
+    "engine_error_class": (str,),
     # whether DuckDB could spill when it stopped (False: the limit was a wall); a later process where it may releases
     "offload_allowed": (bool,),
     # which code stopped it: a record is evidence about THAT build only (see ``rollup_serve.BUILD_CODE_VERSION``)
