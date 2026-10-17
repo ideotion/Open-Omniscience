@@ -1162,6 +1162,7 @@ def _build_and_swap() -> str:
 
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
     outcome = "failed"
+    _LAST_STAGE["value"] = None  # a decline of an earlier build left its stage here: this build reports its own or none
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
         # `last_skip` always names the condition that actually stopped this build rather

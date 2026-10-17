@@ -179,3 +179,48 @@ def test_a_failure_run_and_a_duckdb_limit_hold_are_never_in_one_report(monkeypat
     rollup_serve._keep_stopped({"reason": "duckdb-limit", "at": 1.0, "stage": "keywords", "duckdb_limit_mb": 1004.0})
     st = rollup_serve.status()
     assert "consecutive_failures" not in st and st["stopped"]["reason"] == "duckdb-limit"
+
+
+def test_a_stage_left_by_an_earlier_decline_is_not_the_stage_of_a_build_that_failed_before_it_reported_one(monkeypatch):
+    rollup_serve._LAST_STAGE["value"] = "mentions"  # what a build that DECLINED at that stage leaves behind
+
+    def build():
+        raise ValueError("x")  # fails before the build reports any stage
+
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", build)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "failed"
+    hold = rollup_serve._STATE["stopped"]
+    assert "stage" not in hold and hold["stage_why"] == "not-recorded"
+
+
+def test_the_stage_a_real_build_had_reached_is_the_failure_holds_stage(monkeypatch):
+    """Through the real ``_build_inmemory_and_swap``: the build reports ``aggregate`` and then raises."""
+    from contextlib import contextmanager
+
+    import src.database.session as dbs
+    from src.analytics import columnar, rollup_marker, serve_gate
+
+    class Con:
+        def close(self):
+            pass
+
+    @contextmanager
+    def scope():
+        yield object()
+
+    def build(con, s, *, on_batch=None, snapshot=None):
+        on_batch("aggregate", 1)
+        raise ValueError("x")
+
+    monkeypatch.setattr(columnar, "budget_snapshot", lambda: {"duckdb_limit_mb": 1004.0, "duckdb_threads": 2, "total_mb": 6000.0, "read_at": 0.0})
+    monkeypatch.setattr(columnar, "connect", lambda **kw: Con())
+    monkeypatch.setattr(columnar, "build_keyword_daily", build)
+    monkeypatch.setattr(dbs, "session_scope", scope)
+    monkeypatch.setattr(serve_gate, "change_token", lambda s: ("t", 1))
+    monkeypatch.setattr(rollup_marker, "begin", lambda **kw: None)
+    monkeypatch.setattr(rollup_marker, "clear", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_spill_setting", lambda: "")
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "failed"
+    assert rollup_serve._STATE["stopped"]["stage"] == "aggregate"
