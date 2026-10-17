@@ -24,6 +24,8 @@ import trafilatura
 from dateutil import parser as date_parser
 from trafilatura.settings import Document, set_date_params
 
+from src.ingest import lock_stats
+
 
 @dataclass
 class ExtractedDoc:
@@ -101,16 +103,26 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
     """Extract an article from raw HTML, or return ``None`` if there isn't one.
 
     ``url`` improves trafilatura's metadata resolution (e.g. canonical link). One extraction runs
-    at a time in the process (:data:`_LXML_LOCK`), whatever the number of collect workers.
+    at a time in the process (:data:`_LXML_LOCK`), whatever the number of collect workers; how long
+    each waited and held is counted per pass in :mod:`src.ingest.lock_stats`.
     """
     if not html or not html.strip():
         return None
-    with _LXML_LOCK:
-        try:
-            return _extract_locked(html, url=url)
-        except BaseException as exc:
-            _release_frames(exc)
-            raise
+    asked = lock_stats.now()
+    got = released = None
+    try:
+        with _LXML_LOCK:
+            got = lock_stats.now()
+            try:
+                return _extract_locked(html, url=url)
+            except BaseException as exc:
+                _release_frames(exc)
+                raise
+            finally:
+                released = lock_stats.now()
+    finally:
+        # After the lock is given up, so the statistic adds nothing to a hold; numbers only, never the URL.
+        lock_stats.record(asked=asked, got=got, released=released, html=html)
 
 
 def _release_frames(exc: BaseException) -> None:

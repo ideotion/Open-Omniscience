@@ -427,6 +427,13 @@ class CollectionMonitor:
 
     def start(self) -> None:
         _trim_jsonl()
+        # The extraction lock's wait/hold window is this pass (see ``_extraction_lock``).
+        try:
+            from src.ingest import lock_stats
+
+            lock_stats.reset()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            log_failure(_LOG, "extraction lock window could not be reset", exc, level=logging.DEBUG)
         self._prev_bytes = self._bytes_total()
         self._prev_mono = time.monotonic()
         try:  # prime psutil's since-last-call counters so the first reading is real
@@ -1056,6 +1063,17 @@ class CollectionMonitor:
             # was nothing to read" are different facts.
             return {"unavailable": record_text(exc, limit=200, typed=True)}
 
+    @staticmethod
+    def _extraction_lock() -> dict:
+        """``lock_stats.snapshot()``, or the class of the failure that kept it from being read."""
+        try:
+            from src.ingest import lock_stats
+
+            return lock_stats.snapshot()
+        except Exception as exc:  # noqa: BLE001 - the summary is written without it, saying so
+            log_failure(_LOG, "extraction lock statistics unreadable", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:
             return None
@@ -1080,6 +1098,11 @@ class CollectionMonitor:
             # connections held at once — and it is the one that says whether
             # workers were holding connections across their fetches.
             "db_memory": self._db_memory(),
+            # What the process-wide extraction lock cost this pass: how many extractions, the longest
+            # and total wait for it and hold of it, and the size of the page behind the longest hold.
+            # One page that takes long holds every other extraction (no timeout), and from outside that
+            # looks like a stalled collector; this is the line that tells the two apart.
+            "extraction_lock": self._extraction_lock(),
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")
