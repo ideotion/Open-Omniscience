@@ -1,8 +1,9 @@
 """The first-install refresh in ``seed_sources`` (row J, R170): one SELECT after the commit that created rows, not one per row.
 
-The commit expires every row the session holds; each is then re-read with its own SELECT the first time a later step
-touches it (13,759 of them, 5-6 s, on a first install of the shipped catalogue). ``seed_sources`` therefore reads the table
-once, right after a commit that created rows, and only then: a steady boot creates nothing, has nothing expired, and must
+A commit expires every row the session holds; each is then re-read with its own SELECT the first time a later step
+touches it (13,837 of them on a first install of the shipped catalogue). ``seed_sources`` therefore reads the table
+once, right after each commit that follows a creation (the one that creates the rows and the one that records the merged
+feed-less tags), and only in a call that created rows: a steady boot creates nothing, has nothing expired, and must
 not pay for a table read it does not need. The refresh must also change no row: the same seed, with the refresh turned off,
 produces the same rows.
 """
@@ -123,3 +124,4 @@ def test_a_reseed_after_the_refresh_matches_a_cold_run(second):
     assert _digest(session) == _digest(cold)
     if second == "same":
         assert _digest(session) == before
+
