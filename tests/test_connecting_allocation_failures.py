@@ -240,14 +240,14 @@ def test_a_threads_record_holds_its_count_from_the_first_read_so_the_take_replac
 
     def other() -> None:
         lock = real._Lock()
-        seen["before_any_read"] = dict(vars(lock._mine))  # the record is made at the thread's first use of it
+        seen["at_first_use"] = dict(vars(lock._mine))  # looking at the record is the thread's first use of it, so its initialiser has run
         lock.shared_held_here()
         seen["after_the_read"] = dict(vars(lock._mine))
 
     t = threading.Thread(target=other)
     t.start()
     t.join(5)
-    assert seen["after_the_read"] == {"n": 0}, f"a thread's record is empty after its first read, so the take makes an entry: {seen}"
+    assert seen["at_first_use"] == seen["after_the_read"] == {"n": 0}, f"a thread's record is empty at its first use, so the take makes an entry: {seen}"
 
 
 def test_a_thread_that_never_opened_a_connection_holds_no_level_and_the_pieces_still_pair_up():
