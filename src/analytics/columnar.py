@@ -1285,11 +1285,12 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         # instance, so what a stop can say about memory is what was read BEFORE it (a lower bound on the peak).
         seen_mib: dict = {"last": None, "peak": None}
 
-        def _note_mib() -> None:
+        def _note_mib() -> float | None:
             now_mib = _read_mib(con)
             if now_mib is not None:
                 seen_mib["last"] = now_mib
                 seen_mib["peak"] = now_mib if seen_mib["peak"] is None else max(seen_mib["peak"], now_mib)
+            return now_mib
 
         def _wall_stop(stage: str, **extra) -> BuildDeclined:
             """The limit stop for a FATAL allocation error: the stage it was in and the sizes read before it. Class name only."""
@@ -1385,10 +1386,8 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         observed_mib = 0.0
 
         def _observe_mib() -> float:
-            try:
-                return float(con.execute("SELECT sum(memory_usage_bytes) / 1048576.0 FROM duckdb_memory()").fetchone()[0])
-            except Exception:  # noqa: BLE001 - a diagnostics reading, never a reason to fail the build
-                return 0.0
+            read = _note_mib()  # also the reading a later stop names (the aggregate is the build's peak)
+            return 0.0 if read is None else read
 
         observed_mib = _observe_mib()  # all stages resident: the first of the two peaks
         con.execute(_KEYWORD_DAILY_BUILDING_DDL)
@@ -1459,6 +1458,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             raise _wall_stop("keywords") from None
         cursor_id = int(chunk[-1][0])
         session.commit()
+        _note_mib()
         if on_batch is not None:
             on_batch("keywords", meta_rows)
 

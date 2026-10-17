@@ -1656,3 +1656,17 @@ def test_a_build_whose_serve_check_found_the_instance_unusable_serves_nothing_an
     with pytest.raises(RuntimeError, match="unusable"):
         rollup_serve._build_inmemory_and_swap()
     assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["stopped"] is None and rollup_marker.read() is None
+
+
+def test_a_stop_after_the_aggregate_names_the_sizes_read_during_it_not_the_stale_ones_from_the_first_batches(session, monkeypatch):
+    """The first end-to-end 20 M run: a fatal in the keywords stage reported 241 MiB (the first batches' reading) as its peak."""
+    _seed(session, keywords=30, mentions_per=4)
+    calls: list[int] = []
+    monkeypatch.setattr(columnar, "_read_mib", lambda con: float(len(calls.append(1) or calls)))  # 1.0, 2.0, 3.0 ...
+    con = _FatalAt(columnar.connect(passphrase=None, spill=""), "INSERT INTO keyword_meta")
+    with pytest.raises(columnar.BuildDeclined) as got:
+        columnar.build_keyword_daily(con, session, snapshot=columnar.budget_snapshot())
+    d = got.value.detail
+    assert d["stage"] == "keywords"
+    assert d["resident_mib"] == float(len(calls)) == d["peak_mib"], "the last reading taken, which the aggregate's readings advanced"
+    assert d["resident_mib"] > 2.0, "more than the stage inserts' own readings"
