@@ -88,6 +88,9 @@
          border-bottom: 1px solid var(--line, #1c2029); }
   .job .label { font-size: 13px; font-weight: 600; }
   .job .detail { font-size: 11px; opacity: .6; flex-basis: 100%; }
+  /* The pass counts of an errored run carry the basis word, which is a caveat: a real colour, not opacity (see a11y-tm-muted-by-opacity below). */
+  .job .detail.counts { opacity: 1; color: var(--muted, #8c95a6); }
+  .job .detail.counts .basis { color: var(--fg, #e7e9ee); }
   .job .acts { margin-inline-start: auto; display: flex; gap: 4px; }
   .tbtn { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
           border: 1px solid var(--line, #2a2f3a); background: var(--panel2, #1b1f27); color: var(--fg, #e7e9ee); }

@@ -40,6 +40,8 @@ import threading
 import time
 from pathlib import Path, PurePath, PureWindowsPath
 
+from src.database import open_stats
+
 _LOG = logging.getLogger("database.connect")
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -424,9 +426,13 @@ def _connect(
         first_error: list = []
         past_page_one: list = []
         for candidate in candidates:
+            # Each attempt pays one key derivation: counted for the pass summary (``open_stats``; numbers only, it is
+            # handed the path and whether the file opened, never the key or the exception).
+            counted = open_stats.begin()
             conn = _try_open_encrypted(
                 p, use_key, check_same_thread, timeout, candidate, last_error=last_error, read_only=read_only
             )
+            open_stats.end(counted, p, conn is not None)
             if conn is not None:
                 winning_candidate = candidate
                 break

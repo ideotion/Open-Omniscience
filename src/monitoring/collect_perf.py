@@ -305,16 +305,54 @@ def _append_jsonl(record: dict) -> None:
         log_failure(_LOG, "collect_perf append failed", exc, level=logging.DEBUG)
 
 
+def _remove_dead_trim_copies(path) -> None:
+    """Remove the cut copies a killed process left beside the log (``<log>.<pid>.<thread>.part``) once that process is gone.
+    A pid that a live process now holds keeps its copy until that one ends; with no way to tell live from dead nothing is removed."""
+    try:
+        import psutil
+    except ImportError:
+        return
+    prefix = path.name + "."
+    try:
+        for child in path.parent.iterdir():
+            if not (child.name.startswith(prefix) and child.name.endswith(".part")):
+                continue
+            pid_text = child.name[len(prefix) :].split(".", 1)[0]
+            if pid_text.isdigit() and int(pid_text) != os.getpid() and not psutil.pid_exists(int(pid_text)):
+                child.unlink(missing_ok=True)
+    except OSError:
+        return  # a copy that cannot be removed is left; it must never stop the cut
+
+
 def _trim_jsonl() -> None:
+    """Cut the log back to its newest ``_CAP_LINES`` rows, written to a copy beside it and swapped in whole.
+
+    The file holds the last samples crash forensics reads. The in-place ``write_text`` this replaces truncated the log first, so a
+    process killed before the rows were written back left it EMPTY. A kill, an error or a full disk now leaves the old log whole.
+    The copy is named for the process and the thread, so two processes cutting at once never write one file; it is synced before
+    the swap and removed if the swap fails. Rows are the same bytes as before. A row another process appends between the read and
+    the swap is still lost: no lock covers that (it needs the ruling on overlapping processes), and none ever did."""
+    part = None
     try:
         path = _log_path()
         if not path.exists():
             return
         lines = path.read_text(encoding="utf-8").splitlines()
         if len(lines) > _CAP_LINES:
-            path.write_text("\n".join(lines[-_CAP_LINES:]) + "\n", encoding="utf-8")
+            _remove_dead_trim_copies(path)
+            part = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.part")
+            with part.open("w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines[-_CAP_LINES:]) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(part, path)
+            part = None
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "collect_perf trim failed", exc, level=logging.DEBUG)
+    finally:
+        if part is not None:
+            with suppress(OSError):
+                part.unlink()
 
 
 class CollectionMonitor:
@@ -427,6 +465,20 @@ class CollectionMonitor:
 
     def start(self) -> None:
         _trim_jsonl()
+        # The extraction lock's wait/hold window is this pass (see ``extraction_lock_block``).
+        try:
+            from src.ingest import lock_stats
+
+            lock_stats.reset()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            log_failure(_LOG, "extraction lock window could not be reset", exc, level=logging.DEBUG)
+        # So is the window of the encrypted opens (see ``encrypted_opens_block``).
+        try:
+            from src.database import open_stats
+
+            open_stats.reset()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            log_failure(_LOG, "encrypted opens window could not be reset", exc, level=logging.DEBUG)
         self._prev_bytes = self._bytes_total()
         self._prev_mono = time.monotonic()
         try:  # prime psutil's since-last-call counters so the first reading is real
@@ -1056,6 +1108,27 @@ class CollectionMonitor:
             # was nothing to read" are different facts.
             return {"unavailable": record_text(exc, limit=200, typed=True)}
 
+    @staticmethod
+    def extraction_lock_block() -> dict:
+        """The extraction lock's wait/hold figures for this pass, or the class of the failure that kept them from being read."""
+        try:
+            from src.ingest import lock_stats
+        except Exception as exc:  # noqa: BLE001 - the summary is written without it, saying so
+            log_failure(_LOG, "extraction lock statistics unavailable", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+        return lock_stats.safe_snapshot()
+
+    @staticmethod
+    def encrypted_opens_block() -> dict:
+        """How often an encrypted file was opened with its key this pass, by file and thread family, and what the opens cost
+        (``src.database.open_stats``), or the class of the failure that kept it from being read."""
+        try:
+            from src.database import open_stats
+        except Exception as exc:  # noqa: BLE001 - the summary is written without it, saying so
+            log_failure(_LOG, "encrypted opens statistics unavailable", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+        return open_stats.safe_snapshot()
+
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:
             return None
@@ -1080,6 +1153,14 @@ class CollectionMonitor:
             # connections held at once — and it is the one that says whether
             # workers were holding connections across their fetches.
             "db_memory": self._db_memory(),
+            # What the process-wide extraction lock cost this pass: how many holds (extractions that took the lock), the longest
+            # and total wait for it and hold of it, and the size of the page behind the longest hold.
+            # One page that takes long holds every other extraction (no timeout), and from outside that
+            # looks like a stalled collector; this is the line that tells the two apart.
+            "extraction_lock": self.extraction_lock_block(),
+            # Every open of an encrypted file re-derives its key (163 ms of thread CPU, median of 20 on one pinned core) and
+            # nothing keeps the result: this is the count, by file and thread family, of what this pass paid.
+            "encrypted_opens": self.encrypted_opens_block(),
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")

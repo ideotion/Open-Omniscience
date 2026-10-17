@@ -159,6 +159,11 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "names the OUTLET (a domain) a source belongs to, so a gate that states independence counts a site's "
         "feeds once; it only reads sources, so an index pass that loads it writes exactly what it wrote before"
     ),
+    "src/database/open_stats.py": (
+        "counts and times the keyed opens of the encrypted database file (a counter connect.py calls around an "
+        "open; numbers and two closed vocabularies only); it sees no keyword row and writes nothing a pass reads, "
+        "so a change here can make no indexed article stale"
+    ),
     "src/database/stand_in.py": (
         "says which row is a salvage copy's PLACE-HOLDER (a lost article's stand-in has no text) so a pass "
         "leaves it out; a real article is written exactly as before, so a change here can make no indexed "

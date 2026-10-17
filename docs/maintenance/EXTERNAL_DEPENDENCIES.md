@@ -145,6 +145,25 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   must not keep; never loosen a test to pass. Then move the pyproject range, the registry `{floor, verified, ceiling, current}`,
   the `urllib3-floor` job in `.github/workflows/ci.yml` if the floor moved, and, if it moved, `requirements.lock` together. The
   weekly freshness run opens the issue when upstream publishes a release past `current`.
+- **trafilatura** (`trafilatura-floor`) — the article extractor. `src/ingest/extract.py` runs every parse of the app's article HTML
+  through it (lxml, htmldate and justext inside it) under one process-wide lock, and `tests/test_extract_lock.py` walks `src/` to keep it
+  the only way in (its docstring names what the walks do not see, among them feedparser's own use of libxml2's SAX driver where the bindings import). `pyproject.toml` carries `trafilatura>=2.1.0`: 2.1.0 is the first release with a body `Element` per `Document` (issue #840,
+  PR #856); there is no ceiling. A new release is run through `tests/test_extract_lock.py`, `tests/test_extract_single_parse.py`,
+  `tests/test_extract_date_bound.py` and `tests/test_collect_extraction_outside_gate.py` (for a release that is not the newest on hand, put its
+  unpacked wheel, and the `htmldate` it needs, first on `PYTHONPATH`); a release that changes how it builds or frees trees is read first.
+  Then move the registry `{verified, current}` together. Record only a release a test run exercised: the `test` job resolves the newest
+  release, no job runs the floor (the lock file pins it; `lockfile-install` only imports the app), so the floor is verified by a hand run
+  and the entry says so.
+- **starlette** (`starlette-gzip-flush`) — fastapi's web layer, named in `pyproject.toml` (`starlette>=1.5.0`) because the app leans on one
+  behaviour of it. The whole API sits behind `GZipMiddleware` (`src/api/main.py`), and the AI token streams are `application/x-ndjson`, which
+  gzip compresses: a release that does not flush the deflate stream per chunk holds a streamed reply back until several kilobytes have piled
+  up (the reply hangs, then arrives at once, with no error anywhere). 1.5.0 is the first release that calls `flush(Z_SYNC_FLUSH)` on every
+  chunk with `more_body`; 1.0.0 to 1.4.1 do not. `tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response`
+  measures it (five chunks in, five decodable chunks out), and `tests/test_external_freshness.py` keeps the pyproject floor, the registry
+  and `requirements.lock` from drifting apart. There is no ceiling. A new release is run through that test and the API route tests (for a
+  release that is not the newest on hand, put its unpacked wheel first on `PYTHONPATH`); then move the registry `{verified}` and
+  `upstream_check.current` together. The floor is verified by a hand run on the 1.5.0 wheel: the `test` job resolves the newest release, and
+  `lockfile-install` only imports the app.
 
 ## Clearing an `on-security` artifact without re-vendoring (`reviewed_through`)
 
