@@ -316,11 +316,17 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     the tuple free list is empty. A failed exit leaves that lock held. The ``with`` form is what the interrupt rules require (R144, R171) and
     nothing runs after an exit that did not run. The cleanup has ONE ``with _STATE:`` section (:func:`_close_window`: the read of
     ``_DISK_CHANGED``, the earlier connections' validity and the window's stamp, in one step), so a failed exit there still lets this swap give
-    the window back and the pool keep serving; ``_STATE`` stays held, and the NEXT swap blocks at its first section with its window held. The
-    three sections that open the window (the reset of ``_DISK_CHANGED``, :func:`bump`, :func:`_open_window`) are the same exits, and a failed
-    one blocks this swap's own ``_close_window``: merging them would move that block to the next swap, not remove it.
+    the window back and the pool serve again; ``_STATE`` stays held, and the NEXT swap blocks at its first section with its window held, which
+    stops the pool again as before.
+
+    NOT fixed: the sections that come BEFORE the cleanup are the same exits, and a failed one blocks this swap's own ``_close_window`` with the
+    window held. They are the reset of ``_DISK_CHANGED``, :func:`bump` and :func:`_open_window` in this function, and :func:`disk_changing` in
+    the body of every swap that gets as far as changing the disk (the restore, the repair and the encrypt). So such a swap passes 5 sections
+    and a failed exit at any of the first 4 blocks it (4 of 5); one that is refused before :func:`disk_changing` passes 4 (3 of 4); before the
+    merge both were 5 of 6. Merging the opening sections into one would cut the sites, not remove the block (the one left still blocks this
+    swap's close); having no ``_STATE`` at all would remove it (every writer already runs inside the exclusive window), and is a separate change.
     ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every other instruction of the cleanup that can allocate and
-    names the call."""
+    names the call, pins the counts above in the source, and fails an exit of each opening section to show the block."""
     global _DISK_CHANGED
     # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
