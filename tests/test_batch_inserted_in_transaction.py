@@ -82,11 +82,16 @@ def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heal
 
     from src.analytics.store import index_article
     from src.database.models import Article, Keyword
-    from src.database.session import session_scope
+    from src.database.session import engine, session_scope
     from tests.test_mention_diff_write import _Ex, _t
 
     _dom, src_id, first = _ingest(monkeypatch, n=3)
     assert first["stored"] == 3
+    primed = [engine.connect() for _ in range(3)]  # three idle connections in the pool afterwards, as a full run leaves it
+    for c in primed:
+        c.exec_driver_sql("SELECT 1")
+    for c in primed:
+        c.close()
     with session_scope() as s:
         orphan = Article(url="https://o.test/orphan", canonical_url="https://o.test/orphan", source_id=src_id, title="T", content="body",
                          hash="orphan-hash", language="en", country=None, created_at=datetime.now(UTC))
@@ -96,14 +101,27 @@ def test_an_id_handed_out_again_over_orphan_rows_is_indexed_the_old_way_and_heal
         index_article(s, orphan, extractor=_Ex([_t("zzorphankeyword", 5)]), country=None, city=None, commit=False)
         s.commit()
         kid = s.execute(select(Keyword.id).where(Keyword.normalized_term == "zzorphankeyword")).scalar_one()
-        try:
-            s.execute(text("PRAGMA foreign_keys=OFF"))  # as a database tool leaves it: the article goes, its mention rows stay
-            s.execute(text("DELETE FROM articles WHERE id = :i"), {"i": orphan_id})
-            s.commit()
-        finally:
-            s.execute(text("PRAGMA foreign_keys=ON"))  # this connection goes back to the pool: never leave it off
-            s.commit()
+        s.commit()  # the read above ends: the delete below does not wait behind it
+        # ONE checked-out connection from OFF to ON. The pragma belongs to the CONNECTION, and the pool hands out its idle ones in turn,
+        # so turning it on through the session after a commit (which gives the connection back) can switch on a different one and leave
+        # this one off for every later test of the process (the Opus read of 32cb12ea0, M1).
+        with s.get_bind().connect() as c:
+            try:
+                c.exec_driver_sql("PRAGMA foreign_keys=OFF")  # as a database tool leaves it: the article goes, its mention rows stay
+                c.execute(text("DELETE FROM articles WHERE id = :i"), {"i": orphan_id})
+                c.commit()
+            finally:
+                c.exec_driver_sql("PRAGMA foreign_keys=ON")
+                c.commit()
         assert s.execute(select(func.count()).select_from(_MT).where(_MT.c.article_id == orphan_id)).scalar() == 1, "ANTI-VACUITY: no orphan row"
+
+    wide = [engine.connect() for _ in range(4)]
+    try:
+        flags = [c.exec_driver_sql("PRAGMA foreign_keys").scalar() for c in wide]
+    finally:
+        for c in wide:
+            c.close()
+    assert flags == [1, 1, 1, 1], f"a pooled connection was left with foreign keys off for every later test of the process: {flags}"
 
     reads = _count_reads(monkeypatch)
     indexed: list[int] = []
