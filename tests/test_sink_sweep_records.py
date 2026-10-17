@@ -58,6 +58,13 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
+    # the extraction lock: ``_release_frames`` clears the FRAMES of a raising extraction (the exception is handed to it and to the
+    # traceback walk, its ``__cause__``/``__context__`` are followed) so the parsed trees die while the lock is held; it reads no text,
+    # stores nothing and logs nothing, and the exception is re-raised unchanged
+    "src/ingest/extract.py": {
+        "the traceback module is imported": 1,
+        "the caught exception 'exc' is used outside a scrubbing call": 2,
+    },
     "src/ingest/fetch_release.py": {
         "getattr reaches name, a way round the scan of the log calls": 2,
         "a ** mapping handed to a log call can carry exc_info": 1,

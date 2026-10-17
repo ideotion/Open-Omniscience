@@ -285,7 +285,7 @@ class ArticleBatch:
     def _flush_batched(self, entries: list[_StagedArticle]) -> None:
         from src.database.models import Article
         from src.ingest.dedup_front import mark_stored
-        from src.ingest.pipeline import _exists, _maybe_record_custody
+        from src.ingest.pipeline import _CustodyBatch, _exists, _maybe_record_custody
 
         to_store: list[tuple[_StagedArticle, Article]] = []
         dups = 0
@@ -325,12 +325,15 @@ class ArticleBatch:
         # recounted by the redo — 3 dispositions for 2 staged articles.
         self.tally["duplicate"] += dups
         self.tally["stored"] += len(to_store)
-        for e, a in to_store:
-            _maybe_record_custody(a)
-            # C12: the store is now CONFIRMED committed -- populate the dedup
-            # front so a near-future re-check of the same content (the
-            # field-measured re-served-feed-item case) skips the DB entirely.
-            mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
+        # One custody log for the whole flush (opening one costs a key derivation, 163 ms of thread CPU); it lives for this
+        # loop and is closed when the block ends, however it ends.
+        with _CustodyBatch() as custody:
+            for e, a in to_store:
+                _maybe_record_custody(a, batch=custody)
+                # C12: the store is now CONFIRMED committed -- populate the dedup
+                # front so a near-future re-check of the same content (the
+                # field-measured re-served-feed-item case) skips the DB entirely.
+                mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
 
     def _precompute(self, to_store: list) -> dict:
         """The DB-free half of ``index_article`` for the whole batch, computed

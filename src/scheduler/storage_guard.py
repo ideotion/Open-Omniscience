@@ -251,8 +251,9 @@ PIN_STACK_DEPTH = 12
 #: A frame in the log is its page plus a header of this many bytes (SQLite's WAL format, fixed by the file format and not a setting):
 #: the figure that turns the pin's count of frames into the bytes the log cannot give back.
 WAL_FRAME_HEADER_BYTES = 24
-#: The write-gate phases (``writer.thread_phase``) in which a legacy-mode checkout is running a statement or ending a transaction:
-#: the only moments such a checkout pins the log, so a holder in one of them is listed before an older one that is idle.
+#: The write-gate phases (``writer.thread_phase``) in which a legacy-mode checkout is certainly running a statement or ending a transaction:
+#: the moments it is using its snapshot, so a holder in one of them is listed before an older one that is idle. A checkout stepping an open
+#: read cursor (a ``fetchmany`` / ``yield_per`` loop) also pins the log and reads as ``python`` here: the ranking is a heuristic, not a census.
 _PIN_STATEMENT_PHASES = frozenset({"execute", "commit"})
 #: Why a pin figure is absent, one fixed sentence each (a key in the report's ``pin_note``, never a message built from the driver).
 _PIN_NOTES = {

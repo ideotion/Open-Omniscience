@@ -182,7 +182,7 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
             "In-session warm-path numbers on your real corpus; timings vary with load and a "
             "concurrent scrape. mentions counts are exact; the distinct-article count is the "
             "disclosed upper bound (equal today under the unique keyword+article index — see "
-            "parity.distinct_gap_total). Read-only; nothing is transmitted. Counts and "
+            "parity.distinct_over_count_total). Read-only; nothing is transmitted. Counts and "
             "milliseconds only, never a score."
         ),
     }

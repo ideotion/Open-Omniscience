@@ -122,10 +122,15 @@ def _norm(term: str) -> str:
 
 
 def _read_yaml(path: Path) -> dict:
+    # The catalogue loader's SAFE class (libyaml when the wheel has it, the pure-Python one when not): the generated
+    # ring file is 566 KB and the pure-Python parse of it cost 0.98 s, against 0.11 to 0.14 s here (read on a first install and a reseed only).
+    # Imported here, not at module level, so this module keeps no import of the ingest layer at load time.
+    from src.ingest.seed_sources import _load_safe_yaml
+
     if not path.exists():
         return {}
     try:
-        return yaml.safe_load(path.read_text("utf-8")) or {}
+        return _load_safe_yaml(path.read_text("utf-8")) or {}
     except (OSError, yaml.YAMLError):
         return {}
 

@@ -15,12 +15,16 @@ explicit extraction failure -- it never fabricates a placeholder article.
 from __future__ import annotations
 
 import os
+import threading
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 
 import trafilatura
 from dateutil import parser as date_parser
 from trafilatura.settings import Document, set_date_params
+
+from src.ingest import lock_stats
 
 
 @dataclass
@@ -77,14 +81,88 @@ def extensive_date_search_enabled() -> bool:
     return os.getenv("OO_EXTENSIVE_DATE_SEARCH", "0") == "1"
 
 
+#: ONE extraction at a time, process-wide. The process aborted (SIGABRT, no Python traceback) inside
+#: ``lxml.html.document_fromstring`` under the collector's pool of ~50 workers, about one boot in
+#: seven (2026-10-14: ``lxml/html/__init__.py:740`` <- ``trafilatura/utils.py:345`` <-
+#: ``extract_article``). Who called ``abort()`` and why is NOT established (``docs/ledger/OPEN_QUEUE.md``,
+#: "THE lxml SIGABRT"): no lxml 5.2-6.1.3, libxml2 2.12-2.15 or trafilatura report names it, and the
+#: one loose match (trafilatura #840, fixed in 2.1.0) is a release older than the one that aborted.
+#: What is known is that every parse, tree walk and tree release of the app's article HTML
+#: (trafilatura, and inside it lxml, htmldate and justext) happens inside this one function's call
+#: tree, so a lock around it makes concurrent use of libxml2 by that extraction impossible, whatever
+#: the fault was. NOT covered: a library that reaches libxml2 on its own, which the walk in
+#: ``tests/test_extract_lock.py`` cannot see. feedparser asks for libxml2's SAX driver first
+#: (``PREFERRED_XML_PARSERS``) and uses it wherever the libxml2 Python bindings import, in every
+#: collector worker and outside this lock: a system or distro Python can have them, a pip venv has
+#: not (OPEN_QUEUE, "THE lxml SIGABRT"). The lock covers the whole call, not only the parse: the
+#: faulting frame may be where an earlier corruption surfaced. The trees die inside it on a return
+#: (the result holds only text, so they go with the call's last local) and on a raise (the
+#: traceback's frames are cleared and an AttributeError's object dropped before the lock is given
+#: up, :func:`_release_frames`). An RLock, so a caller that nests extraction cannot deadlock itself.
+#: COST, said so: one page that takes long (a 10 MiB nav-heavy page measured 85 s) now holds every
+#: other extraction in the process, and nothing can time it out; the OPEN_QUEUE entry has the numbers
+#: and what would change it.
+_LXML_LOCK = threading.RLock()
+
+
 def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None:
     """Extract an article from raw HTML, or return ``None`` if there isn't one.
 
-    ``url`` improves trafilatura's metadata resolution (e.g. canonical link).
+    ``url`` improves trafilatura's metadata resolution (e.g. canonical link). One extraction runs
+    at a time in the process (:data:`_LXML_LOCK`), whatever the number of collect workers; how long
+    each waited and held is counted per pass in :mod:`src.ingest.lock_stats`.
     """
     if not html or not html.strip():
         return None
+    asked = lock_stats.now()
+    got = released = None
+    try:
+        with _LXML_LOCK:
+            got = lock_stats.now()
+            try:
+                return _extract_locked(html, url=url)
+            except BaseException as exc:
+                _release_frames(exc)
+                raise
+            finally:
+                released = lock_stats.now()
+    finally:
+        # After the lock is given up, so the statistic adds nothing to a hold; numbers only, never the URL.
+        lock_stats.record(asked=asked, got=got, released=released, html=html)
 
+
+def _release_frames(exc: BaseException) -> None:
+    """Free what a raising extraction's frames still hold, while the lock is still held.
+
+    An exception carries its traceback, and the traceback keeps every frame it passed through
+    alive WITH its locals: ``bare_extraction``'s parsed trees among them. Left alone they are
+    freed when the caller drops the exception, which is after the lock is given up (a worker's
+    ``except`` clause in ``runner.py``), while another worker may be inside a parse. Clearing the
+    frames drops the locals and keeps the traceback's lines (a ``NameError``'s "Did you mean" hint loses the candidates that came
+    from the frame's locals; those from globals and builtins remain).
+    The chain is walked because the fallback's exception carries the primary's as ``__context__``.
+    An ``AttributeError`` also holds the object it failed on (``obj``, set by the interpreter), so that is dropped too;
+    the message is unchanged, but Python's "Did you mean" hint, which it computes from that object, is no longer computed from the real
+    one: it is not offered for most names, and for a name starting with ``_`` it is computed from ``None``'s attributes.
+    NOT covered: a tree held in an exception's ``args`` or in ``StopIteration.value`` (nothing in the extraction path
+    puts one there; ``tests/test_extract_lock.py`` pins the two cases it does see).
+    """
+    seen: set[int] = set()
+    pending: list[BaseException | None] = [exc]
+    while pending:
+        err = pending.pop()
+        if err is None or id(err) in seen:
+            continue
+        seen.add(id(err))
+        traceback.clear_frames(err.__traceback__)
+        if isinstance(err, AttributeError):
+            # The interpreter sets ``obj`` to the object whose lookup failed: on an lxml element that is the element, which keeps its whole document alive.
+            err.obj = None
+        pending += [err.__cause__, err.__context__]
+
+
+def _extract_locked(html: str, *, url: str | None = None) -> ExtractedDoc | None:
+    """The body of :func:`extract_article`; call it only with :data:`_LXML_LOCK` held."""
     # ONE parse, not two. ``extract`` and ``extract_metadata`` each called ``load_html``
     # on the same string, so every article was parsed twice; ``bare_extraction`` does the
     # metadata pass and the body pass off a single tree, in that order -- metadata first,

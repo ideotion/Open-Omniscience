@@ -571,6 +571,64 @@ def current_progress() -> dict | None:
         return dict(_PROGRESS) if _PROGRESS else None
 
 
+# --- What an ERRORED run record says about how far the pass got ------------------------------------------------- #
+# A run that raises has no ``result`` (the value it never returned), so its record carried only the error's class: all 30 of
+# the recent runs in each field bundle of 2026-10-16 ended in a pool timeout, and not one said whether the pass had processed
+# 40 sources or 4,000, so "the collector is starved" was visible only for the pass in flight. ``run_scrape_once`` notes its
+# three counters here as it ends, however it ends, and ``_do_run`` copies them into the record of a run that raised. Reset
+# before every run, after the run lock is taken (a run that loses the lock race returns before it, so it cannot wipe the counts
+# of the pass that holds it). The key names are the ones the success path uses in ``result``; the record of a run that
+# returned does not repeat them.
+#
+# ``basis`` says which counts these are, and is the reason where they are null:
+#   ``pass_returned``  the collect pass returned and the failure came later, in the pass tail: the pass's own counts;
+#   ``pass_raised``    the collect pass raised. The counts are every source whose worker returned a result by the time the pass
+#                      ended: in a pool pass the sources still queued when the failure surfaced run to their end (the executor's
+#                      exit waits and does not cancel), and ``run_scrape_once`` reads their results before it notes the counts.
+#                      A source whose worker RAISED processed nothing and is in no count, so ``sources_total`` minus the
+#                      processed count is the sources that failed, never ran or were deferred;
+#   ``not_reported``   the failure came before the pass counted anything (the session, the choice of sources) or the run
+#                      function did not report: the three counts are null, never 0.
+COUNTS_COMPLETE = "pass_returned"
+COUNTS_PARTIAL = "pass_raised"
+COUNTS_UNREPORTED = "not_reported"
+_PASS_COUNTS_LOCK = threading.Lock()
+_PASS_COUNTS: dict | None = None
+
+
+def _pass_counts_reset() -> None:
+    global _PASS_COUNTS
+    with _PASS_COUNTS_LOCK:
+        _PASS_COUNTS = None
+
+
+def _pass_counts_note(basis: str, *, sources_total: int, sources_processed: int, articles_stored: int) -> None:
+    """The collect pass's counters at the moment it ends (``sources_total``: the sources the pass chose to run, after the
+    backoff and pacing filters)."""
+    global _PASS_COUNTS
+    with _PASS_COUNTS_LOCK:
+        _PASS_COUNTS = {
+            "articles_stored": articles_stored,
+            "basis": basis,
+            "sources_processed": sources_processed,
+            "sources_total": sources_total,
+        }
+
+
+def _pass_counts_for_error() -> dict:
+    """The ``pass_counts`` member of the record of a run that raised: what the pass noted, else three nulls and the reason."""
+    with _PASS_COUNTS_LOCK:
+        noted = dict(_PASS_COUNTS) if _PASS_COUNTS else None
+    if noted is not None:
+        return noted
+    return {
+        "articles_stored": None,
+        "basis": COUNTS_UNREPORTED,
+        "sources_processed": None,
+        "sources_total": None,
+    }
+
+
 # Coarse PHASE of the in-flight pass, independent of the detailed per-source
 # _PROGRESS (which run_scrape_once owns and clears at the end of the scrape).
 # This survives the whole pass so the task manager can honestly say WHAT the
@@ -910,6 +968,11 @@ def run_scrape_once(
     # ``:memory:`` hands each thread a SEPARATE database) runs sequentially on that
     # same session — correct on any engine, parallel only where it is safe.
     use_pool = w_max > 1 and len(sources) > 1
+    # What the process-wide extraction lock cost this pass (``src.ingest.lock_stats``): set where the pass's monitor
+    # writes its summary, so the run report carries the same block as ``collect_perf.jsonl``.
+    extraction_lock: dict | None = None
+    # The same for the encrypted opens (``src.database.open_stats``).
+    encrypted_opens: dict | None = None
     if use_pool:
         try:
             from src.database.session import engine as _global_engine
@@ -1000,13 +1063,17 @@ def run_scrape_once(
                     governor.release()
 
             done = 0
+            futures: list = []
+            read_futures: set = set()
             monitor.start()
             try:
                 with ThreadPoolExecutor(
                     max_workers=w_max, thread_name_prefix="oo-collect"
                 ) as pool:
-                    futures = [pool.submit(_worker, s, s.id) for s in sources]
+                    for s in sources:
+                        futures.append(pool.submit(_worker, s, s.id))
                     for fut in as_completed(futures):
+                        read_futures.add(fut)
                         tally, pages, processed = fut.result()
                         _add(tally)
                         pages_fetched += pages
@@ -1019,6 +1086,21 @@ def run_scrape_once(
                             permits=governor.permits,
                         )
             finally:
+                # A worker's failure surfaces through ``fut.result()`` above and leaves the loop; the pool's exit then ran every
+                # source still queued to its end (``shutdown(wait=True)`` does not cancel), and none of those results was read.
+                # Read them now, so the counts the monitor and the run record carry are every source that returned a result:
+                # a pass that fails at its first worker does not report 0 sources for the 19 that ran. A future that raised
+                # processed nothing and is in no count.
+                for fut in futures:
+                    if fut in read_futures or not fut.done() or fut.cancelled():
+                        continue
+                    try:
+                        tally, pages, processed = fut.result()
+                    except Exception:  # noqa: BLE001 - a worker that raised processed nothing, and the first failure is already on its way out
+                        continue
+                    _add(tally)
+                    pages_fetched += pages
+                    sources_processed += processed
                 summary = monitor.stop(
                     result={
                         "articles_stored": agg.get("stored", 0),
@@ -1026,6 +1108,13 @@ def run_scrape_once(
                         "pages_fetched": pages_fetched,
                     }
                 )
+                # The summary is not written for a pass shorter than one monitor tick; the figures exist all the same.
+                extraction_lock = summary.get("extraction_lock") if summary else None
+                if extraction_lock is None:
+                    extraction_lock = monitor.extraction_lock_block()
+                encrypted_opens = summary.get("encrypted_opens") if summary else None
+                if encrypted_opens is None:
+                    encrypted_opens = monitor.encrypted_opens_block()
                 if summary:
                     _LOG.info(
                         "collect perf: bottleneck=%s",
@@ -1086,6 +1175,16 @@ def run_scrape_once(
                 _add(tally)
                 pages_fetched += pages
                 sources_processed += processed
+    except Exception:
+        # The pass failed (a worker's pool timeout surfaces here through ``fut.result()``): say how far it had got, for the
+        # record of the run that raises (``_pass_counts_for_error``).
+        _pass_counts_note(
+            COUNTS_PARTIAL,
+            sources_total=len(sources),
+            sources_processed=sources_processed,
+            articles_stored=agg.get("stored", 0),
+        )
+        raise
     finally:
         _progress_set(_clear=True)
         # Record deferrals in the FINALLY (skeptic-hardened): even if the pool
@@ -1118,6 +1217,14 @@ def run_scrape_once(
     if deferred_sources:
         out["recycled"] = recycled
         out["deferred_next_pass"] = len(deferred_sources)
+    if extraction_lock is not None:
+        out["extraction_lock"] = extraction_lock
+    if encrypted_opens is not None:
+        out["encrypted_opens"] = encrypted_opens
+    # The tail after the pass can still fail; the record of that run carries the pass's own counts.
+    _pass_counts_note(
+        COUNTS_COMPLETE, sources_total=len(sources), sources_processed=sources_processed, articles_stored=agg.get("stored", 0)
+    )
     return out
 
 
@@ -1934,6 +2041,7 @@ class BackgroundScheduler:
         report: dict = {"started_at": started.isoformat(timespec="seconds")}
         # Q1020 = a: every run is the press lane; there is no per-run mode to read.
         report["lane"] = "press"
+        _pass_counts_reset()
         try:
             result = self._run_once_fn()
             with self._state_lock:
@@ -1952,6 +2060,7 @@ class BackgroundScheduler:
                 self._last_error = type(exc).__name__
             report["ok"] = False
             report["error"] = type(exc).__name__
+            report["pass_counts"] = _pass_counts_for_error()
         finally:
             # Between-pass memory hygiene (P0.3 E1): release per-pass state at
             # the run boundary — never mid-worker; the pool is joined and the

@@ -760,9 +760,9 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     newest_earlier = getattr(ee, "NEWEST_EARLIER_TRACE_LINES", ee.EARLIER_TRACE_LINES)
     crash_trace = (newest_earlier + (ee.EARLIER_ENDS_LIMIT - 1) * ee.EARLIER_TRACE_LINES + ee._TRACE_REPORT_LINES) * line + 10_000
     assert crash_trace <= 400_000, f"the crash trace export's worst case is {crash_trace:,} bytes; the slot counts 400,000: measure again"
-    # ...plus the three readings the crash-evidence change added to the same member, each at its measured worst case
-    oom_counters, native_libs, can_answer = 2_145, 6_437, 1_747
-    assert oom_counters + native_libs + can_answer == 10_329
+    # ...plus the three readings the crash-evidence change added to the same member, each at its measured worst case: 2,145 (OOM counters)
+    # + 6,437 (native libraries) + 1,747 (can-answer) = 10,329 bytes. The sum is not asserted from typed copies of its own parts (that could
+    # not fail); the constant below is what binds.
     assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000 + 10_329
     assert free == 1_502_415, "the comment on the table states the free room; move them together"
 

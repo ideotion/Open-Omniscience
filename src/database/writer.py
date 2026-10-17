@@ -290,16 +290,21 @@ class WriterGate:
                 return
             self._depth -= 1
             if self._depth == 0:
-                held = None
                 holder = self._holder
                 started = self._held_since
                 usage0 = self._hold_usage
                 self._hold_usage = None
                 breakdown: dict[str, float] | None = None
-                if self._held_since is not None:
-                    held = time.monotonic() - self._held_since
-                    if held >= HOLD_RECORD_S:  # a hold the journal keeps: where its seconds went, while the ledger is still this hold's
-                        breakdown = self._breakdown_locked(held)
+                # The gate is freed and its next waiter woken FIRST: a KeyboardInterrupt or a MemoryError in the measuring below (the clock, the
+                # sums, the per-holder row, the breakdown's loops) must not leave the gate owned with its depth at 0, where a second release
+                # returns at the depth check and every other writer queues for ever. It is all still under the lock, so the woken head cannot
+                # take the gate, or reset the ledger, before it is done.
+                self._owner = None
+                self._holder = None
+                self._held_since = None
+                self._wake_head()
+                if started is not None:
+                    held = time.monotonic() - started
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
                     # is counted once rather than once per level.
                     self._total_held_s += held
@@ -307,21 +312,17 @@ class WriterGate:
                         self._max_hold_s = held
                         # Retained AFTER release on purpose: the peak hold is
                         # useless without the name of what held it.
-                        self._max_hold_holder = self._holder
+                        self._max_hold_holder = holder
                     self._account_holder_locked(holder, held)
-                self._owner = None
-                self._holder = None
-                self._held_since = None
-                self._wake_head()
-                # AFTER the gate is free and the next waiter woken: this bookkeeping can never
-                # leave the gate held, whatever it does.
-                if held is not None:
-                    released = (holder, held, started, usage0, breakdown)
                     watched = self._watched.get(me)
                     if watched is not None:
                         watched["held_s"] += held
                         if held > watched["longest_s"]:
                             watched["longest_s"] = held
+                    # last, so a failure in the loops over the ledger does not drop the figures above
+                    if held >= HOLD_RECORD_S:  # a hold the journal keeps: where its seconds went
+                        breakdown = self._breakdown_locked(held, started)
+                    released = (holder, held, started, usage0, breakdown)
         # OUTSIDE the lock: a log handler that blocks (a full pipe, a slow terminal) must not hold the gate's lock, and the gate is
         # already free and its next waiter woken. The cheap comparison first, so a normal hold (milliseconds) never reads the environment.
         if released is not None:
@@ -382,15 +383,17 @@ class WriterGate:
             self._running = None
             self._spent[running[0]] += time.monotonic() - running[1]
 
-    def _breakdown_locked(self, held: float) -> dict[str, float]:
+    def _breakdown_locked(self, held: float, started: float | None = None) -> dict[str, float]:
         """The hold's ``held`` seconds split by where they went, in seconds to a tenth. Caller holds the lock. Work still running is counted up
         to now; what no measured statement or commit covers is ``between_statements``: Python work, the driver calls the listeners cannot see
         (a raw connection's), waits, and the SQLite work of the rows a SELECT hands back AFTER its first (they are stepped while the caller
-        reads them, after the statement's end event)."""
+        reads them, after the statement's end event). ``started`` is the hold's start when the caller has already cleared ``_held_since``
+        (the release, which frees the gate before it measures); by default the hold in progress's own."""
+        since = self._held_since if started is None else started
         spent = list(self._spent) if self._spent_for == self._grants else [0.0] * len(_SPENT_KINDS)
         running = self._running if self._spent_for == self._grants else None
-        if running is not None and self._held_since is not None:
-            spent[running[0]] += max(0.0, self._held_since + held - running[1])
+        if running is not None and since is not None:
+            spent[running[0]] += max(0.0, since + held - running[1])
         return {
             **{name: round(spent[i], 1) for i, name in enumerate(_SPENT_KINDS)},
             "between_statements": round(max(0.0, held - sum(spent)), 1),
