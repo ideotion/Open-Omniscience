@@ -1703,8 +1703,9 @@ class DamageRegistry:
             for inc in self._incidents:
                 if inc.get("file") != file_key or inc.get("process") == self._process or inc.get("superseded"):
                     continue
-                if str(inc.get("last_at") or inc.get("at") or "") > done_at:
-                    return True
+                if str(inc.get("last_at") or inc.get("at") or "") <= done_at:
+                    continue  # a loop ends in a guard clause, not a bare ``if``: that shape leaves its back-edge outside the ``with`` on CPython 3.13 (R163)
+                return True
         return False
 
     def _repair_notes_locked(self, corpus_latched: bool) -> list[dict[str, Any]]:
@@ -1852,15 +1853,16 @@ class DamageRegistry:
                 if on and st.get("auto_stayed"):
                     # Said beside the damage sentence: why this pause was not read again by itself, and what a start does.
                     out.append({"kind": "damage", "file": key, "frame": FRAME_STAYED, "vars": {}})
-                if on and st.get("check_stopped_after"):
-                    out.append(
-                        {
-                            "kind": "damage",
-                            "file": key,
-                            "frame": FRAME_CHECK_STOPPED,
-                            "vars": {"tries": int(st["check_stopped_after"])},
-                        }
-                    )
+                if not (on and st.get("check_stopped_after")):
+                    continue  # a guard clause, not a bare ``if`` ending the loop (R163; see incident_after_last_check)
+                out.append(
+                    {
+                        "kind": "damage",
+                        "file": key,
+                        "frame": FRAME_CHECK_STOPPED,
+                        "vars": {"tries": int(st["check_stopped_after"])},
+                    }
+                )
             corpus = self._files.get(FILE_CORPUS)
             provisional = bool(corpus and (corpus.get("rechecking") or {}).get("auto"))
             out.extend(self._repair_notes_locked(bool(on and corpus and corpus["latched"] and not provisional)))

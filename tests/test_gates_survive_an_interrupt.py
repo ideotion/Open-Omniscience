@@ -448,14 +448,10 @@ def _event_loop_loops() -> dict:
     R165: they are exempt because uvicorn takes SIGINT and SIGTERM, so no KeyboardInterrupt is raised in them (measured 18 of 18 by
     :data:`_EVENT_LOOP_REPORT`). The exemption holds only while the app is served that way, which tests/test_event_loop_signal_exemption.py pins:
     every reason below names it, so removing it leaves these entries without their precondition."""
-    from src.database import damage
-    from src.monitoring import storage_events, vitals_history
+    from src.monitoring import vitals_history
 
     why = f"event-loop: server handles signals; see {_EVENT_LOOP_REPORT} and tests/test_event_loop_signal_exemption.py"
     return {
-        "damage.DamageRegistry.incident_after_last_check": (damage.DamageRegistry.incident_after_last_check, why + " (lifespan -> owe_at_locked_boot)"),
-        "damage.DamageRegistry.notes": (damage.DamageRegistry.notes, why + " (monitor_requests -> MemoryGuard; reach inferred, see the R163 report)"),
-        "storage_events.record": (storage_events.record, why + " (lifespan -> run_deferred_startup -> note_open)"),
         "vitals_history.start": (vitals_history.start, why + " (lifespan -> record_session_start)"),
     }
 

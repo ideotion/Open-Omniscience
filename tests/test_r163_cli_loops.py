@@ -22,6 +22,8 @@ from tests.test_gates_survive_an_interrupt import _uncovered_loop_heads
 _CONVERTED = (
     ("src/analytics/reindex_parallel.py", "_pool_context", {'for method in ("forkserver", "spawn"):'}),
     ("src/database/damage.py", "_start_recheck", {"for key in recheck:"}),
+    ("src/database/damage.py", "incident_after_last_check", {"for inc in self._incidents:"}),
+    ("src/database/damage.py", "notes", {"for key, st in self._files.items():"}),
     ("src/database/pool_watch.py", "register", {"for k in [k for k, (ref, _l) in _POOL_LABELS.items() if ref() is None]:"}),
     ("src/backup/parity.py", "write_parity", {"for j in range(m):"}),
     ("src/backup/parity.py", "recover_volumes", {"for k in erased_data:"}),
