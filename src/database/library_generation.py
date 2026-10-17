@@ -136,10 +136,17 @@ def _close_window(*, swapped: bool) -> None:
 
 
 class _Levels(threading.local):
-    """The shared levels THIS thread holds. ``n`` has a class default so that reading it is an attribute load, not a ``getattr`` call: the
-    take and the give-back below then have no call between the lock's count and the thread's record of it."""
+    """The shared levels THIS thread holds. ``n`` is set in ``__init__``, which runs at the thread's FIRST read of its record
+    (:func:`connecting` reads :meth:`_Lock.shared_held_here` before it asks for a level, holding nothing): from then on every store to ``n``
+    REPLACES a value, so the take (``self._mine.n += 1``) makes no dict entry. The first store into a thread's empty record allocates, and a
+    failure there after the lock's count was raised left the count up and the record empty, which the give-back cannot see (a level raised
+    until restart). A read is also an attribute load, not a ``getattr`` call, so the take and the give-back have no call between the
+    lock's count and the thread's record of it."""
 
-    n = 0
+    n: int
+
+    def __init__(self) -> None:
+        self.n = 0
 
 
 class _Lock:

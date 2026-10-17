@@ -223,6 +223,25 @@ def test_the_take_has_no_call_between_the_count_and_the_record():
     assert [ins.opname for ins in instructions[count:record] if ins.opname.startswith("CALL")] == []
 
 
+def test_a_threads_record_holds_its_count_from_the_first_read_so_the_take_replaces_a_value():
+    """The first store into a thread's empty record allocates; a failure there after the lock's count was raised left the count at 1 and the
+    record at 0, and ``release_shared_since`` saw nothing to give back (the independent read of #1435's head, finding L1: forced with the
+    allocator, cold free lists, the level stayed raised). ``connecting`` reads the record before it asks for a level, so the record must
+    already hold ``n`` after that read: the take then replaces a value and allocates no entry."""
+    seen: dict = {}
+
+    def other() -> None:
+        lock = real._Lock()
+        seen["before_any_read"] = dict(vars(lock._mine))  # the record is made at the thread's first use of it
+        lock.shared_held_here()
+        seen["after_the_read"] = dict(vars(lock._mine))
+
+    t = threading.Thread(target=other)
+    t.start()
+    t.join(5)
+    assert seen["after_the_read"] == {"n": 0}, f"a thread's record is empty after its first read, so the take makes an entry: {seen}"
+
+
 def test_a_thread_that_never_opened_a_connection_holds_no_level_and_the_pieces_still_pair_up():
     seen: dict = {}
 
