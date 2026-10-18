@@ -188,3 +188,15 @@ def test_the_refresh_rides_the_hourly_recorder_it_reads_from():
     ref = src.index("expedition.refresh(session)")
     assert ref > snap, "the digest must refresh AFTER the snapshot it composes from"
     assert 'get("armed")' in src, "an unarmed machine must write nothing"
+
+
+def test_the_log_is_replaced_through_a_unique_temp(dd, monkeypatch):
+    """R176: two servers on one folder shared one fixed ``.json.tmp``; the temp now carries the pid and thread."""
+    import os
+
+    seen = []
+    real = os.replace
+    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    expedition._write({"k": 1})
+    assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen
+    assert not list(dd.glob("*.tmp*"))
