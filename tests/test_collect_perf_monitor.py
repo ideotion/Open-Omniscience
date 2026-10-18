@@ -237,7 +237,9 @@ def test_writer_saturation_trips_on_wait_rate_not_just_instantaneous_waiters(tmp
     the gate queued 23 deep between ticks, so the governor kept RAMPING. The gate's
     accrued wait RATE must trip saturation and make the governor back off."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    g = BandwidthGovernor(mode="maximum", w_max=15, seed=8)
+    # Target mode: it is the mode that cuts on every saturated tick; maximum mode decides writer saturation once per window
+    # (tests/test_bandwidth_governor.py). What this test pins is the MONITOR's saturation decision, not the cut cadence.
+    g = BandwidthGovernor(mode="target", target_kbps=500, w_max=15, seed=8)
     # waiters reads 1 every tick (below max(2, permits//3)) so the OLD check never
     # trips; but total_wait_s grows 3.0 per 1.5 s tick => wait_rate 2.0 >= 1.0.
     waits = iter([3.0, 6.0, 9.0, 12.0, 15.0, 18.0])
@@ -246,7 +248,7 @@ def test_writer_saturation_trips_on_wait_rate_not_just_instantaneous_waiters(tmp
         pass_id="wr",
         mode="rss",
         interval_s=1.5,
-        rate_fn=lambda: 50.0,  # far below "maximum" ceiling => would ramp if not saturated
+        rate_fn=lambda: 50.0,  # far below the target => would ramp if not saturated
         vitals_fn=lambda: _HEALTHY_VITALS,
         writer_stats_fn=lambda: {"waiters": 1, "total_wait_s": next(waits), "contended": 0, "peak_waiters": 23},
         now_fn=_clock(1.5),
@@ -359,7 +361,7 @@ def test_the_tick_decides_on_the_attribution_not_on_the_system_total(tmp_path, m
     back-off, and must record the attribution it used."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(collect_perf, "_cpu_count", lambda: 4)
-    g = BandwidthGovernor(mode="maximum", w_max=50, min_adjust_interval_s=0.0)
+    g = BandwidthGovernor(mode="target", w_max=50, seed=50, min_adjust_interval_s=0.0)
     ours = {**_HEALTHY_VITALS, "cpu_sys_pct": 99.0, "cpu_proc_pct": 390.0}
     mon = _monitor(governor=g, rate=200.0, vitals=ours, writer=_IDLE_WRITER)
     mon._tick()
@@ -370,8 +372,82 @@ def test_the_tick_decides_on_the_attribution_not_on_the_system_total(tmp_path, m
 
     # The mirror on the same wiring: the same saturated machine, someone else's load.
     theirs = {**_HEALTHY_VITALS, "cpu_sys_pct": 99.0, "cpu_proc_pct": 40.0}
-    g2 = BandwidthGovernor(mode="maximum", w_max=50, min_adjust_interval_s=0.0)
+    g2 = BandwidthGovernor(mode="target", w_max=50, seed=50, min_adjust_interval_s=0.0)
     mon2 = _monitor(governor=g2, rate=200.0, vitals=theirs, writer=_IDLE_WRITER)
     mon2._tick()
     assert recent_samples(limit=1)[-1]["adjust_reason"] == "cpu-saturated"
     assert g2.permits == 49
+
+
+def test_the_governor_is_handed_the_passes_article_and_source_counts_and_the_collectors_rate_beside_the_process_rate(
+    tmp_path, monkeypatch
+):
+    """Maximum mode climbs on the articles STORED in a window (R180), read once the window holds enough source completions. The
+    collector's OWN rate rides along (``window_rate``) for the record and as the fallback: a wiki-dump or OSM download pulling
+    megabytes a second is part of the process figure the governor still receives first, and must not read as 'the rate rose'."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    seen = {}
+
+    class Spy:
+        mode = "maximum"
+        target_kbps = 500
+        permits = 4
+        active = 0
+        last_window = None
+
+        def observe(self, measured_kbps, **kw):
+            seen["measured"] = measured_kbps
+            seen["kw"] = kw
+            return 4, "settling"
+
+    mon = CollectionMonitor(
+        governor=Spy(), pass_id="c", mode="rss", rate_fn=lambda: 7.0, vitals_fn=lambda: _HEALTHY_VITALS,
+        writer_stats_fn=lambda: _IDLE_WRITER, articles_fn=lambda: 31, sources_fn=lambda: 12,
+    )
+    mon._tick()
+    assert seen["kw"]["window_rate"] == 7.0
+    assert seen["kw"]["articles_total"] == 31 and seen["kw"]["sources_total"] == 12
+    # no callback, or a callback that cannot answer, is None and never a guess
+    def _boom():
+        raise RuntimeError("no count yet")
+
+    for kwargs in ({}, {"articles_fn": _boom, "sources_fn": _boom}):
+        mon = CollectionMonitor(
+            governor=Spy(), pass_id="c2", mode="rss", rate_fn=lambda: 7.0, vitals_fn=lambda: _HEALTHY_VITALS,
+            writer_stats_fn=lambda: _IDLE_WRITER, **kwargs,
+        )
+        mon._tick()
+        assert seen["kw"]["articles_total"] is None and seen["kw"]["sources_total"] is None
+
+
+def test_a_window_decision_is_logged_once_on_the_tick_that_closed_it_with_the_articles_stored_so_far(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+
+    class Gov:
+        mode = "maximum"
+        target_kbps = 500
+        permits = 4
+        active = 0
+
+        def __init__(self):
+            self.last_window = None
+            self.n = 0
+
+        def observe(self, measured_kbps, **kw):
+            self.n += 1
+            if self.n == 2:  # the second tick closes a window
+                self.last_window = {"signal": "articles/min", "rate": 5.0, "prev_rate": None, "ticks": 2, "decision": "hill-up"}
+                return 5, "hill-up"
+            return 4, "settling"
+
+    gov = Gov()
+    mon = CollectionMonitor(
+        governor=gov, pass_id="w", mode="rss", rate_fn=lambda: 5.0, vitals_fn=lambda: _HEALTHY_VITALS,
+        writer_stats_fn=lambda: _IDLE_WRITER, articles_fn=lambda: 17,
+    )
+    logged = []
+    for _ in range(4):
+        mon._tick()
+        logged.append(collect_perf.get_latest())
+    assert ["gov_window" in s for s in logged] == [False, True, False, False], "logged on the closing tick only"
+    assert logged[1]["gov_window"]["decision"] == "hill-up" and logged[1]["articles_stored"] == 17

@@ -47,6 +47,26 @@ DEFAULT_MIN_ADJUST_INTERVAL_S = 3.0
 
 VALID_RATE_MODES = ("target", "maximum")
 
+# MAXIMUM MODE: start low, climb while the stored-articles rate rises (R178, R180). Each number names what it protects.
+#: Where a pass with no learned seed starts. The lab count at which the single-writer gate stops queueing on 2 CPUs: a place to climb
+#: from, not the answer (the climb finds the machine's own count). Never above ``w_max``; a learned seed always wins over it.
+MAXIMUM_START = 4
+#: A window is at least this long: the longest clean-lab write-gate hold was 5.2 s, so even the shortest window holds many whole
+#: hold cycles, and the time a fetch spends in flight (the lab's 300 ms, a field Tor circuit's seconds) is a small share of it.
+MAXIMUM_WINDOW_S = 240.0
+#: A window also holds at least this many SOURCE COMPLETIONS before it is read. A stored count moves in lumps (one source returns its
+#: articles together), so the noise of a window's count falls with the number of completions in it and not with its seconds;
+#: this is the number below which two windows at the same permit count differed by more than the margin below.
+#: Measured: see the ledger row "governor reads stored articles" (the lab's fixed-permit cell, window rate against completions).
+MAXIMUM_WINDOW_SOURCES = 100
+#: A window counts as a rise or a fall only beyond this fraction of the previous window's rate: above the noise of a window of the
+#: size above, so that noise neither climbs nor steps back.
+MAXIMUM_MARGIN = 0.10
+#: Writer and CPU saturation are decided per window: a window with at least this share of saturated ticks takes ONE cut in place
+#: of its climb decision. A cut on every tick (about 0.3 s) outran a climb once per window by a hundred to one and held the count
+#: at one permit (lab cell G1: 45 art/min against 58 with the cut folded, G3).
+MAXIMUM_CUT_SHARE = 0.5
+
 
 class _AdjustableSemaphore:
     """A semaphore whose permit count can be changed while threads hold/await it.
@@ -115,6 +135,9 @@ class BandwidthGovernor:
         seed: int | None = None,
         ramp_ceiling: int | None = None,
         min_adjust_interval_s: float = DEFAULT_MIN_ADJUST_INTERVAL_S,
+        window_s: float = MAXIMUM_WINDOW_S,
+        window_sources: int = MAXIMUM_WINDOW_SOURCES,
+        margin: float = MAXIMUM_MARGIN,
     ) -> None:
         self.mode = mode if mode in VALID_RATE_MODES else "target"
         self.target_kbps = max(1, int(target_kbps))
@@ -138,11 +161,24 @@ class BandwidthGovernor:
             # knows something about this machine (see scheduler.capacity), and the
             # old unconditional `maximum` override silently discarded it, which
             # made the learned ceiling a no-op in exactly the mode that needs it.
-            seed = self.w_max if self.mode == "maximum" else min(DEFAULT_SEED, self.w_max)
+            seed = min(MAXIMUM_START, self.w_max) if self.mode == "maximum" else min(DEFAULT_SEED, self.w_max)
         self._sem = _AdjustableSemaphore(max(1, min(int(seed), self.w_max)))
+        self._window_s = max(0.0, float(window_s))
+        self._window_sources = max(0, int(window_sources))
+        self._margin = max(0.0, float(margin))
+        self._win: dict = {}
+        self._reset_window()
+        self._prev_rate: float | None = None
+        self._prev_unit: str | None = None
+        self._climbed = False
+        #: the last window decision, for the perf log: what the rule saw, not only what it did
+        self.last_window: dict | None = None
         self._min_interval = max(0.0, float(min_adjust_interval_s))
         self._last_adjust = 0.0
         self._last_reason = "seed"
+
+    def _reset_window(self) -> None:
+        self._win = {"t0": None, "sum": 0.0, "n": 0, "writer": 0, "cpu": 0, "a0": None, "s0": None}
 
     # -- worker side ------------------------------------------------------- #
 
@@ -171,6 +207,9 @@ class BandwidthGovernor:
         mem_low: bool = False,
         loop_lagging: bool = False,
         now: float | None = None,
+        window_rate: float | None = None,
+        articles_total: int | None = None,
+        sources_total: int | None = None,
     ) -> tuple[int, str]:
         """Adjust the permit count from the measured rate + contention flags.
 
@@ -188,16 +227,21 @@ class BandwidthGovernor:
         """
         now = time.monotonic() if now is None else now
         cur = self._sem.permits
+        maximum = self.mode == "maximum"
 
-        # 1) Contention always wins — reduce immediately, regardless of the rate.
-        if mem_low or writer_saturated or cpu_saturated or loop_lagging:
+        # 1) Contention always wins — reduce immediately, regardless of the rate. In MAXIMUM mode only memory and loop lag are
+        # immediate (the first can kill the machine, the second starves our own API server); writer and CPU saturation are
+        # decided per window (see ``_window_step``).
+        if mem_low or loop_lagging or (not maximum and (writer_saturated or cpu_saturated)):
+            # In maximum mode writer and CPU saturation are not what is acting here (they are decided per window), so a tick that
+            # also carried one of them is named for the flag that IS: memory, or loop lag.
             reason = (
                 "mem-low"
                 if mem_low
                 else "writer-saturated"
-                if writer_saturated
+                if writer_saturated and not maximum
                 else "cpu-saturated"
-                if cpu_saturated
+                if cpu_saturated and not maximum
                 else "loop-lag"
             )
             if mem_low:
@@ -222,8 +266,21 @@ class BandwidthGovernor:
             if new != cur:
                 self._sem.set_permits(new)
                 self._last_adjust = now
+            if maximum:
+                # The window spanned two regimes; its mean and the last window's no longer compare.
+                self._reset_window()
+                self._prev_rate = None
+                self._prev_unit = None
+                self._climbed = False
             self._last_reason = reason
             return new, reason
+
+        if maximum:
+            return self._window_step(
+                float(measured_kbps if window_rate is None else window_rate),
+                articles_total, sources_total,
+                writer_saturated=writer_saturated, cpu_saturated=cpu_saturated, now=now,
+            )
 
         # 2) Rate tracking — damped to one change per interval.
         if now - self._last_adjust < self._min_interval:
@@ -231,51 +288,131 @@ class BandwidthGovernor:
             return cur, "settling"
 
         # The ramp climbs to the SOFT ceiling, never past it. When no ceiling was
-        # learned it IS w_max, so both branches below are unchanged for any machine
+        # learned it IS w_max, so the branches below are unchanged for any machine
         # that has never backed off under memory pressure.
         top = self.ramp_ceiling
         held_by_learned = top < self.w_max
-        if self.mode == "maximum":
-            if cur < top:
-                new = min(top, cur + 2)
-                reason = "ramp-max"
-            else:
-                # Name WHICH ceiling is holding: reporting "at-ceiling" while sitting at
-                # 4 of a configured 50 would read as the operator's setting being met.
-                new = cur
-                reason = "at-learned-ceiling" if held_by_learned else "at-ceiling"
-        else:  # target
-            lo, hi = self.target_kbps * 0.9, self.target_kbps * 1.1
-            if measured_kbps < lo and cur < top:
-                new, reason = min(top, cur + 1), "below-target"
-            elif measured_kbps > hi and cur > 1:
-                new, reason = max(1, cur - 1), "above-target"
-            elif measured_kbps > hi:
-                # THE HIGH-SIDE TWIN of the branch below, which was missing (found
-                # by an adversarial pass on S04-13 S1 and reproduced: at the floor,
-                # 160x over target, this reported "in-band"). Above target AND
-                # unable to cut any further -- "in-band" claims the rate is where it
-                # should be, which is the opposite of what is happening, exactly as
-                # the comment below says for the mirror case.
-                #
-                # It became easy to reach when the governor started observing the
-                # WHOLE PROCESS (Q1012): a bulk download can sit far above the
-                # target for its whole duration, where the collector's own rate
-                # rarely could. The permit count is genuinely at its floor and that
-                # is correct -- the lever has been pulled all the way -- so only the
-                # WORD was wrong, which is the cheaper half to fix and the one a
-                # reader of the perf log acts on.
-                new, reason = cur, "above-target-at-floor"
-            elif measured_kbps < lo and held_by_learned and cur >= top:
-                # Below target AND unable to climb: "in-band" would claim the rate is
-                # where it should be, which is the opposite of what is happening.
-                new, reason = cur, "at-learned-ceiling"
-            else:
-                new, reason = cur, "in-band"
+        # target mode (maximum returned above)
+        lo, hi = self.target_kbps * 0.9, self.target_kbps * 1.1
+        if measured_kbps < lo and cur < top:
+            new, reason = min(top, cur + 1), "below-target"
+        elif measured_kbps > hi and cur > 1:
+            new, reason = max(1, cur - 1), "above-target"
+        elif measured_kbps > hi:
+            # THE HIGH-SIDE TWIN of the branch below, which was missing (found
+            # by an adversarial pass on S04-13 S1 and reproduced: at the floor,
+            # 160x over target, this reported "in-band"). Above target AND
+            # unable to cut any further -- "in-band" claims the rate is where it
+            # should be, which is the opposite of what is happening, exactly as
+            # the comment below says for the mirror case.
+            #
+            # It became easy to reach when the governor started observing the
+            # WHOLE PROCESS (Q1012): a bulk download can sit far above the
+            # target for its whole duration, where the collector's own rate
+            # rarely could. The permit count is genuinely at its floor and that
+            # is correct -- the lever has been pulled all the way -- so only the
+            # WORD was wrong, which is the cheaper half to fix and the one a
+            # reader of the perf log acts on.
+            new, reason = cur, "above-target-at-floor"
+        elif measured_kbps < lo and held_by_learned and cur >= top:
+            # Below target AND unable to climb: "in-band" would claim the rate is
+            # where it should be, which is the opposite of what is happening.
+            new, reason = cur, "at-learned-ceiling"
+        else:
+            new, reason = cur, "in-band"
 
         if new != cur:
             self._sem.set_permits(new)
             self._last_adjust = now
+        self._last_reason = reason
+        return new, reason
+
+    def _window_step(
+        self,
+        collector_kbps: float,
+        articles_total: int | None,
+        sources_total: int | None,
+        *,
+        writer_saturated: bool,
+        cpu_saturated: bool,
+        now: float,
+    ) -> tuple[int, str]:
+        """MAXIMUM mode, one tick: accumulate; at the end of a window take at most ONE step.
+
+        The signal is the articles STORED per minute over the window (``articles_total`` is the pass's running count; R180): the
+        thing the operator wants more of, and not the bytes the permits happen to move. A window is read once it has run
+        ``MAXIMUM_WINDOW_S`` AND seen ``MAXIMUM_WINDOW_SOURCES`` source completions (``sources_total``); until then the reason is
+        ``thin``. With no article count at all (a caller that does not pass one) the signal falls back to the collector's mean
+        bytes rate and the window record says so in ``signal``.
+
+        Start low, climb one permit while the window's rate is above the previous window's by the margin, step back once after a
+        climb that fell by the margin, and let a mostly-saturated window take one cut in place of its climb. The ceiling is the
+        soft ``ramp_ceiling`` (``w_max`` unless a learned one is lower)."""
+        cur = self._sem.permits
+        w = self._win
+        if w["t0"] is None:
+            w["t0"], w["a0"], w["s0"] = now, articles_total, sources_total
+        w["sum"] += collector_kbps
+        w["n"] += 1
+        w["writer"] += 1 if writer_saturated else 0
+        w["cpu"] += 1 if cpu_saturated else 0
+        if now - w["t0"] < self._window_s:
+            self._last_reason = "settling"
+            return cur, "settling"
+        counted = articles_total is not None and w["a0"] is not None
+        completions = None if sources_total is None or w["s0"] is None else max(0, sources_total - w["s0"])
+        if completions is not None and completions < self._window_sources:
+            # Long enough but too few completions to read a count: keep accumulating (the window is NOT reset), and say why.
+            self._last_reason = "thin"
+            return cur, "thin"
+        n = max(1, w["n"])
+        elapsed = max(now - w["t0"], 1e-6)
+        mean_kbps = w["sum"] / n
+        stored = max(0, articles_total - w["a0"]) if counted else None
+        unit = "articles/min" if counted else "collector kbps"
+        rate = stored * 60.0 / elapsed if counted else mean_kbps
+        saturated = max(w["writer"], w["cpu"]) / n
+        prev = self._prev_rate if self._prev_unit == unit else None
+        top = self.ramp_ceiling
+        held_by_learned = top < self.w_max
+        new, reason = cur, "hold"
+        if saturated >= MAXIMUM_CUT_SHARE and cur > 1:
+            new = cur - 1
+            reason = "writer-saturated" if w["writer"] >= w["cpu"] else "cpu-saturated"
+            self._climbed = False
+        elif rate <= 0.0:
+            # Nothing stored in the window: there is no rate to compare, so no climb on it and no baseline taken from it.
+            reason = "no-articles"
+        elif prev is None or rate > prev * (1.0 + self._margin):
+            if cur < top:
+                new, reason = cur + 1, "hill-up"
+                self._climbed = True
+            else:
+                # Name WHICH ceiling is holding: reporting "at-ceiling" while sitting at 4 of a configured 50 would read as the
+                # operator's setting being met.
+                reason = "at-learned-ceiling" if held_by_learned else "at-ceiling"
+        elif rate < prev * (1.0 - self._margin) and self._climbed and cur > 1:
+            new, reason = cur - 1, "hill-back"
+            self._climbed = False
+        self.last_window = {
+            "signal": unit,
+            "rate": round(rate, 1),
+            "prev_rate": None if prev is None else round(prev, 1),
+            "articles": stored,
+            "sources": completions,
+            "elapsed_s": round(elapsed, 1),
+            "collector_kbps": round(mean_kbps, 1),
+            "ticks": w["n"],
+            "writer_saturated_share": round(w["writer"] / n, 2),
+            "cpu_saturated_share": round(w["cpu"] / n, 2),
+            "decision": reason,
+        }
+        if new != cur:
+            self._sem.set_permits(new)
+            self._last_adjust = now
+        if rate > 0.0:
+            self._prev_rate, self._prev_unit = rate, unit
+        self._reset_window()
         self._last_reason = reason
         return new, reason
 
@@ -288,4 +425,5 @@ class BandwidthGovernor:
             "permits": self.permits,
             "active": self.active,
             "last_reason": self._last_reason,
+            "last_window": self.last_window,
         }

@@ -17,7 +17,7 @@ import pathlib
 import pytest
 
 from src.scheduler import capacity
-from src.scheduler.bandwidth import DEFAULT_SEED, BandwidthGovernor
+from src.scheduler.bandwidth import DEFAULT_SEED, MAXIMUM_START, MAXIMUM_WINDOW_S, BandwidthGovernor
 
 
 @pytest.fixture()
@@ -197,21 +197,37 @@ def test_an_explicit_seed_is_honoured_in_maximum_mode(state):
     assert gov.permits == 3
 
 
-def test_no_seed_still_opens_wide_in_maximum_mode_and_eases_in_on_target():
-    assert BandwidthGovernor(mode="maximum", w_max=50).permits == 50
+def _rising(gov, windows, *, rate0=10.0, t0=0.0):
+    """Close ``windows`` maximum-mode windows with a rate that rises by more than the margin each time (two ticks per window: the
+    first opens it, the second, past the window length, closes it). Returns the (permits, reason) each window ended with."""
+    out = []
+    t = t0
+    for i in range(windows):
+        rate = rate0 * (1.3 ** i)
+        gov.observe(rate, now=t)
+        out.append(gov.observe(rate, now=t + MAXIMUM_WINDOW_S + 1.0))
+        t += MAXIMUM_WINDOW_S + 2.0
+    return out
+
+
+def test_no_seed_opens_low_in_maximum_mode_and_eases_in_on_target():
+    """Maximum mode used to open at ``w_max``; since R178 it starts low and climbs while the rate rises."""
+    assert BandwidthGovernor(mode="maximum", w_max=50).permits == MAXIMUM_START
     assert BandwidthGovernor(mode="target", w_max=50).permits == min(DEFAULT_SEED, 50)
 
 
 def test_memory_pressure_halves_while_other_contention_steps_by_one():
     gov = BandwidthGovernor(mode="maximum", w_max=50)
     permits, reason = gov.observe(0.0, mem_low=True)
-    assert (permits, reason) == (25, "mem-low")
+    assert (permits, reason) == (MAXIMUM_START // 2, "mem-low")
 
-    other = BandwidthGovernor(mode="maximum", w_max=50)
+    # Writer and CPU saturation step by one in TARGET mode on every tick; in maximum mode they are decided once per window
+    # (tests/test_bandwidth_governor.py), memory and loop lag stay immediate.
+    other = BandwidthGovernor(mode="target", w_max=50, seed=50)
     permits, reason = other.observe(0.0, writer_saturated=True)
     assert (permits, reason) == (49, "writer-saturated")
 
-    cpu = BandwidthGovernor(mode="maximum", w_max=50)
+    cpu = BandwidthGovernor(mode="target", w_max=50, seed=50)
     permits, reason = cpu.observe(0.0, cpu_saturated=True)
     assert (permits, reason) == (49, "cpu-saturated")
 
@@ -223,7 +239,7 @@ def test_the_descent_under_memory_pressure_reaches_the_floor_in_a_handful_of_tic
     the same descent is 6 ticks here. The exact count is asserted because 'fewer' is
     the entire point of the change.
     """
-    gov = BandwidthGovernor(mode="maximum", w_max=50)
+    gov = BandwidthGovernor(mode="maximum", w_max=50, seed=50)
     seen = [50]
     while seen[-1] > 1:
         seen.append(gov.observe(0.0, mem_low=True)[0])
@@ -242,7 +258,7 @@ def test_an_unmeasured_machine_keeps_its_rate_modes_own_starting_point():
     wide open at 50 instead of easing in from DEFAULT_SEED. Invisible in maximum mode,
     where both values are the same number."""
     assert BandwidthGovernor(mode="target", w_max=50, seed=None).permits == DEFAULT_SEED
-    assert BandwidthGovernor(mode="maximum", w_max=50, seed=None).permits == 50
+    assert BandwidthGovernor(mode="maximum", w_max=50, seed=None).permits == MAXIMUM_START
 
 
 # --------------------------------------------------------------------------- #
@@ -252,19 +268,16 @@ def test_an_unmeasured_machine_keeps_its_rate_modes_own_starting_point():
 
 def test_the_ramp_stops_at_the_learned_ceiling_instead_of_climbing_to_w_max():
     gov = BandwidthGovernor(mode="maximum", w_max=50, seed=2, ramp_ceiling=6)
-    seen = []
-    for i in range(12):
-        seen.append(gov.observe(0.0, now=float(i) * 10.0)[0])
+    seen = [permits for permits, _reason in _rising(gov, 12)]
     assert max(seen) == 6, seen
-    assert gov.observe(0.0, now=500.0) == (6, "at-learned-ceiling")
+    assert seen[-1] == 6 and gov.last_window["decision"] == "at-learned-ceiling"
 
 
 def test_with_no_ceiling_the_ramp_still_reaches_w_max_and_says_at_ceiling():
     gov = BandwidthGovernor(mode="maximum", w_max=8, seed=2)
-    for i in range(12):
-        gov.observe(0.0, now=float(i) * 10.0)
+    out = _rising(gov, 12)
     assert gov.permits == 8
-    assert gov.observe(0.0, now=500.0) == (8, "at-ceiling")
+    assert out[-1] == (8, "at-ceiling")
 
 
 def test_a_ceiling_at_or_above_w_max_is_indistinguishable_from_none():
@@ -272,7 +285,7 @@ def test_a_ceiling_at_or_above_w_max_is_indistinguishable_from_none():
     when nothing is actually being held back."""
     gov = BandwidthGovernor(mode="maximum", w_max=8, seed=8, ramp_ceiling=99)
     assert gov.ramp_ceiling == 8
-    assert gov.observe(0.0, now=500.0) == (8, "at-ceiling")
+    assert _rising(gov, 1)[-1] == (8, "at-ceiling")
 
 
 def test_the_ramp_recovers_within_a_pass_but_only_back_to_the_ceiling():
@@ -280,8 +293,7 @@ def test_the_ramp_recovers_within_a_pass_but_only_back_to_the_ceiling():
     the pass began, and no further."""
     gov = BandwidthGovernor(mode="maximum", w_max=50, seed=8, ramp_ceiling=8)
     assert gov.observe(0.0, mem_low=True, now=1.0)[0] == 4  # pressure halves it
-    for i in range(10):
-        gov.observe(0.0, now=10.0 + i * 10.0)  # pressure gone; ramp back up
+    _rising(gov, 10, t0=10.0)  # pressure gone; the climb resumes while the rate rises
     assert gov.permits == 8
 
 
