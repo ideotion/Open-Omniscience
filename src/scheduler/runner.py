@@ -1064,6 +1064,8 @@ def run_scrape_once(
                 # Per-component memory gauges (P0.3 E1): the fetcher's host
                 # caches are per-pass state; their growth rides every sample.
                 cache_stats_fn=getattr(fetcher, "cache_stats", None),
+                articles_fn=lambda: agg.get("stored", 0),
+                sources_fn=lambda: sources_processed,
             )
 
             def _worker(source, source_id):
