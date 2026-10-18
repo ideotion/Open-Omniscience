@@ -2525,12 +2525,16 @@ def test_two_processes_appending_to_the_start_journal_lose_no_attempt_to_a_trim(
         V._ATTEMPTS_CAP = 20
         for i in range(150):
             V._record_start_attempt({{"probe": "child", "n": i}})
+        open(os.path.join(os.environ["OO_DATA_DIR"], "child.done"), "w").close()
         """
     )
     monkeypatch.setattr(V, "_ATTEMPTS_CAP", 20)
     child = subprocess.Popen([sys.executable, "-c", script])
     n = 0
-    while child.poll() is None:
+    done = tmp_path / "data" / "child.done"
+    # Stop when the child has written its last attempt, not when its process has exited: the exit lags by milliseconds, and a parent this fast writes
+    # more than the whole cap in that time, so the child's rows were all trimmed away by the PARENT and the test failed for a reason it does not test.
+    while not done.exists() and child.poll() is None:
         V._record_start_attempt({"probe": "parent", "n": n})
         n += 1
     child.wait()
