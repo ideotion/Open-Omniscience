@@ -366,7 +366,7 @@ dev = [
     # and a count-over-a-tool ratchet is only meaningful while the rule set is fixed.
     # An unbounded floor lets a new release add rules and redden every PR through no
     # code change. Bump deliberately, re-measuring the ceiling in the same PR.
-    "ruff>=0.16.6,<0.17",
+    "ruff>=0.16.6,<0.18",
     # Pinned: the type-check ratchet count must be deterministic. An unpinned
     # floor let a newer mypy report one extra error (129 > 128) and redden every
     # PR with no code change. Bump deliberately, re-measuring the baseline.
