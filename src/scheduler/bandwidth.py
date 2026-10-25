@@ -375,11 +375,18 @@ class BandwidthGovernor:
         prev = self._prev_rate if self._prev_unit == unit else None
         top = self.ramp_ceiling
         held_by_learned = top < self.w_max
+        # Only the window right AFTER a climb may step back: whatever this window does, the next one is not "after a climb"
+        # unless this one climbed.
+        climbed_before, self._climbed = self._climbed, False
         new, reason = cur, "hold"
-        if saturated >= MAXIMUM_CUT_SHARE and cur > 1:
-            new = cur - 1
-            reason = "writer-saturated" if w["writer"] >= w["cpu"] else "cpu-saturated"
-            self._climbed = False
+        if saturated >= MAXIMUM_CUT_SHARE:
+            if cur > 1:
+                new = cur - 1
+                reason = "writer-saturated" if w["writer"] >= w["cpu"] else "cpu-saturated"
+            else:
+                # The cut REPLACES the climb. At the floor there is nothing to cut, and climbing on a saturated window would
+                # add the permit the next window takes back.
+                reason = "saturated-at-floor"
         elif rate <= 0.0:
             # Nothing stored in the window: there is no rate to compare, so no climb on it and no baseline taken from it.
             reason = "no-articles"
@@ -391,9 +398,8 @@ class BandwidthGovernor:
                 # Name WHICH ceiling is holding: reporting "at-ceiling" while sitting at 4 of a configured 50 would read as the
                 # operator's setting being met.
                 reason = "at-learned-ceiling" if held_by_learned else "at-ceiling"
-        elif rate < prev * (1.0 - self._margin) and self._climbed and cur > 1:
+        elif rate < prev * (1.0 - self._margin) and climbed_before and cur > 1:
             new, reason = cur - 1, "hill-back"
-            self._climbed = False
         self.last_window = {
             "signal": unit,
             "rate": round(rate, 1),
@@ -410,7 +416,10 @@ class BandwidthGovernor:
         if new != cur:
             self._sem.set_permits(new)
             self._last_adjust = now
-        if rate > 0.0:
+        if rate > 0.0 and reason != "hill-back":
+            # A window that fell and was stepped back from is not the baseline: taking its rate would let the permit count that
+            # was just given up beat it by the margin and be climbed to again, and the rule would spend every other window
+            # at the worse count. The better rate stays the baseline until a window at the count it went back to replaces it.
             self._prev_rate, self._prev_unit = rate, unit
         self._reset_window()
         self._last_reason = reason

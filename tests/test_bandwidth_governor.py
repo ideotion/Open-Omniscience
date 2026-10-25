@@ -95,6 +95,37 @@ def test_maximum_mode_steps_back_once_after_a_climb_that_did_not_pay_and_then_ho
     assert got[3] == (start + 1, "hold")  # once: a second fall with no climb behind it does not walk to the floor
 
 
+def test_only_the_window_right_after_a_climb_may_step_back():
+    """A hold, an empty window or a window at the ceiling between the climb and the fall means the fall is not "after a climb"."""
+    g = BandwidthGovernor(mode="maximum", w_max=50)
+    start = g.permits
+    got = _windows(g, [100.0, 130.0, 131.0, 100.0])
+    assert got[2] == (start + 2, "hold")
+    assert got[3] == (start + 2, "hold")  # fell by more than the margin, but the window before it was a hold, not a climb
+    g = BandwidthGovernor(mode="maximum", w_max=50)
+    start = g.permits
+    got = _windows(g, [100.0, 0.0, 60.0])
+    assert got[1] == (start + 1, "no-articles") and got[2] == (start + 1, "hold")
+    g = BandwidthGovernor(mode="maximum", w_max=3, seed=2)
+    got = _windows(g, [100.0, 130.0, 50.0])
+    assert got[1] == (3, "at-ceiling") and got[2] == (3, "hold")  # the climb to the ceiling was window 1; the fall comes after an at-ceiling window
+
+
+def test_a_step_back_leaves_the_better_rate_as_the_baseline_so_the_peak_is_not_climbed_to_every_other_window():
+    g = BandwidthGovernor(mode="maximum", w_max=50)
+    start = g.permits
+    got = _windows(g, [100.0, 130.0, 100.0, 130.0, 130.0, 130.0])
+    assert [r for _, r in got] == ["hill-up", "hill-up", "hill-back", "hold", "hold", "hold"]
+    assert got[-1][0] == start + 1  # settled at the count that paid, not oscillating around it
+
+
+def test_a_saturated_window_at_the_floor_does_not_climb_in_place_of_its_cut():
+    g = BandwidthGovernor(mode="maximum", w_max=50, seed=1)
+    assert _windows(g, [100.0, 150.0, 225.0], writer_saturated=True) == [(1, "saturated-at-floor")] * 3
+    g = BandwidthGovernor(mode="maximum", w_max=50, seed=1)
+    assert _windows(g, [100.0, 150.0], cpu_saturated=True) == [(1, "saturated-at-floor")] * 2
+
+
 def test_maximum_mode_stops_at_the_ceiling_and_names_which_one():
     g = BandwidthGovernor(mode="maximum", w_max=5)
     got = _windows(g, [10.0, 20.0, 40.0, 80.0])

@@ -451,3 +451,16 @@ def test_a_window_decision_is_logged_once_on_the_tick_that_closed_it_with_the_ar
         logged.append(collect_perf.get_latest())
     assert ["gov_window" in s for s in logged] == [False, True, False, False], "logged on the closing tick only"
     assert logged[1]["gov_window"]["decision"] == "hill-up" and logged[1]["articles_stored"] == 17
+
+
+def test_the_runner_counts_every_returned_source_as_a_completion_not_only_the_processed_ones():
+    """``sources_processed`` counts a source only when it was fetched and parsed; a failed, empty or deferred one returns 0. A window
+    read on that count never closes on a pass whose sources mostly error, and the saturation cut waits for the window. The
+    completions are the futures that returned (``done``)."""
+    import inspect
+
+    from src.scheduler import runner
+
+    src = inspect.getsource(runner)
+    assert "sources_fn=lambda: done," in src
+    assert "sources_fn=lambda: sources_processed" not in src
