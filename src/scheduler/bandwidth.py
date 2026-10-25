@@ -359,7 +359,6 @@ class BandwidthGovernor:
         if now - w["t0"] < self._window_s:
             self._last_reason = "settling"
             return cur, "settling"
-        counted = articles_total is not None and w["a0"] is not None
         completions = None if sources_total is None or w["s0"] is None else max(0, sources_total - w["s0"])
         if completions is not None and completions < self._window_sources:
             # Long enough but too few completions to read a count: keep accumulating (the window is NOT reset), and say why.
@@ -368,9 +367,9 @@ class BandwidthGovernor:
         n = max(1, w["n"])
         elapsed = max(now - w["t0"], 1e-6)
         mean_kbps = w["sum"] / n
-        stored = max(0, articles_total - w["a0"]) if counted else None
-        unit = "articles/min" if counted else "collector kbps"
-        rate = stored * 60.0 / elapsed if counted else mean_kbps
+        stored = max(0, articles_total - w["a0"]) if articles_total is not None and w["a0"] is not None else None
+        unit = "articles/min" if stored is not None else "collector kbps"
+        rate = stored * 60.0 / elapsed if stored is not None else mean_kbps
         saturated = max(w["writer"], w["cpu"]) / n
         prev = self._prev_rate if self._prev_unit == unit else None
         top = self.ramp_ceiling
