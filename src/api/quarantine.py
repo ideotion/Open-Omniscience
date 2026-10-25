@@ -163,6 +163,47 @@ def quarantine_samples(
     }
 
 
+@router.get("/raw-id-sources")
+def quarantine_raw_id_sources(limit: int = Query(50, ge=1, le=200)) -> dict:
+    """Stored sources whose NAME is a bare Wikidata identifier (``Q11858063``) and how many articles
+    sit under each. READ-ONLY and local: no request is made and nothing is renamed, marked or
+    quarantined. A bare identifier as a name is a display and attribution defect of the SOURCE row,
+    not a verdict on its articles; naming the label is the separate, consented
+    ``POST /api/sources/resolve-qid-names`` (at most one Wikidata request per 10 s), which also
+    renames nothing without review. Use this first to see how many sources and articles it concerns."""
+    from sqlalchemy import func
+
+    from src.analytics.quarantine_job import _default_session
+    from src.catalog.qid_labels import looks_like_bare_qid
+    from src.database.models import Article, Source
+
+    session = _default_session()
+    try:
+        rows = [(int(i), n, d, e) for i, n, d, e in session.query(Source.id, Source.name, Source.domain, Source.enabled)]
+        flagged = [r for r in rows if looks_like_bare_qid(r[1])]
+        shown = sorted(flagged)[:limit]
+        counts = dict(
+            session.query(Article.source_id, func.count(Article.id))
+            .filter(Article.source_id.in_([r[0] for r in shown])).group_by(Article.source_id)
+        ) if shown else {}
+        return {
+            "examined": len(rows),
+            "raw_id_sources": len(flagged),
+            "shown": len(shown),
+            "rows": [
+                {"source_id": i, "name": n, "domain": d, "enabled": bool(e), "articles": int(counts.get(i, 0))}
+                for i, n, d, e in shown
+            ],
+            "articles_in_shown": sum(int(counts.get(r[0], 0)) for r in shown),
+            "method": (
+                "a source whose whole name is a Wikidata Q-id (the same test the label resolver uses); "
+                "local read, nothing fetched, renamed or marked"
+            ),
+        }
+    finally:
+        session.close()
+
+
 @router.post("/{action}")
 def quarantine_action(action: str) -> dict:
     """Pause / resume / cancel the running background quarantine job. A resume always
