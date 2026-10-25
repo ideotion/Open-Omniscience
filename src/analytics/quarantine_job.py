@@ -188,15 +188,19 @@ def default_quarantine_candidates_batch(
 
     def _classify_rows(rows) -> None:
         nonlocal scanned, already_quarantined, last_id
+        if include_host_mismatch:
+            rows = list(rows)
+            # ONE query per batch for the sources it names (a source id with no row reads as unknown).
+            wanted = sorted({r[7] for r in rows} - source_domains.keys())
+            for i in range(0, len(wanted), _ID_SET_CHUNK):
+                chunk = wanted[i : i + _ID_SET_CHUNK]
+                found = dict(session.query(Source.id, Source.domain).filter(Source.id.in_(chunk)))
+                source_domains.update({sid: found.get(sid) for sid in chunk})
         for aid, url, wc, content, lang, detected, is_quarantined, *rest in rows:
             scanned += 1
             last_id = max(last_id, int(aid))
             if include_host_mismatch:
-                dom = source_domains.get(rest[0])
-                if rest[0] not in source_domains:
-                    srow = session.query(Source.domain).filter(Source.id == rest[0]).first()
-                    dom = source_domains[rest[0]] = srow[0] if srow else None
-                host = check_host(url, dom)
+                host = check_host(url, source_domains.get(rest[0]))
                 if host.state != "same":
                     host_counts[host.state] += 1
                 if host.state == "mismatch":

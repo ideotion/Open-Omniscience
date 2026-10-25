@@ -32,6 +32,10 @@ CASES = [
     ("http://1.2.3.4/a", "1.2.3.4", "unknown"),                       # an IP names no site
     ("https://co.uk/a", "bbc.co.uk", "unknown"),                      # a bare public suffix names no registrant
     ("", "example.com", "unknown"),
+    ("https://xn--mnchen-3ya.de/a", "münchen.de", "same"),            # Unicode vs punycode spelling of one site
+    ("https://münchen.de/a", "xn--mnchen-3ya.de", "same"),
+    ("https://foo.invalidtld/a", "bbc.co.uk", "unknown"),             # a TLD the list has no rule for
+    ("https://a.b.c.local/x", "b.local", "unknown"),
 ]
 
 
@@ -152,3 +156,23 @@ def test_start_forwards_the_option_only_when_asked(monkeypatch):
     c.post("/api/quarantine/start?include_host_mismatch=true")
     assert "include_host_mismatch" not in calls[0]
     assert calls[1]["include_host_mismatch"] is True
+
+
+def test_a_run_that_did_not_ask_reports_not_measured_never_a_zero(world, tmp_path, monkeypatch):
+    mgr = _run(world, tmp_path, write=False, hosts=False)
+    sig = _client(monkeypatch, world, mgr).get("/api/quarantine/samples?signal=host_mismatch").json()[
+        "signals"]["host_mismatch"]
+    assert sig["candidates"] is None and sig["unknown"] is None and "not measured" in sig["note"]
+
+
+def test_the_source_domains_are_read_with_one_query_per_batch(world):
+    from sqlalchemy import event
+
+    session = world()
+    seen: list[str] = []
+    event.listen(session.get_bind(), "before_cursor_execute",
+                 lambda conn, cur, stmt, *a: seen.append(stmt))
+    seen.clear()
+    r = qj.default_quarantine_candidates_batch(session, after_id=0, limit=50, include_host_mismatch=True)
+    assert r["host_mismatch"] == {"mismatch": 2, "unknown": 1}
+    assert sum("FROM sources" in q and "articles" not in q for q in seen) == 1, seen

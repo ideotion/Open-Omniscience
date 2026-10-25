@@ -106,7 +106,8 @@ def quarantine_samples(
 
     mgr = get_quarantine_manager()
     kept = mgr.sample_ids()
-    tally = mgr.status()["tally"]
+    status = mgr.status()
+    tally = status["tally"]
     wanted = {signal: kept.get(signal, [])} if signal else kept
     n = min(limit, SAMPLE_PER_SIGNAL)
     session = _default_session()
@@ -122,12 +123,21 @@ def quarantine_samples(
             } if ids else {}
             host_signal = sig == "host_mismatch"  # report-only: its count is not a "reason:" tally
 
+            measured = not host_signal or bool(status.get("include_host_mismatch"))
             out[sig] = {
-                "candidates": int(tally.get("host:mismatch" if host_signal else f"reason:{sig}", 0)),
+                "candidates": (
+                    int(tally.get("host:mismatch" if host_signal else f"reason:{sig}", 0)) if measured else None
+                ),
                 "shown": len(ids),
                 "rows": [_sample_row(i, rows, host_signal) for i in ids],
             }
-            if host_signal:
+            if host_signal and not measured:
+                out[sig]["unknown"] = None
+                out[sig]["note"] = (
+                    "this run did not ask for host-mismatch (start it with include_host_mismatch=true): "
+                    "the counts are not measured, which is not the same as zero."
+                )
+            elif host_signal:
                 out[sig]["unknown"] = int(tally.get("host:unknown", 0))
                 out[sig]["note"] = (
                     "a page on another site than its source's own is a fact about where it lives, not "

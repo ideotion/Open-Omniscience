@@ -11,9 +11,10 @@ Sites are compared by registrable domain (public suffix plus one label, from the
 Public Suffix List only), so ``www.``/``m.``/``amp.`` hosts and ``news.bbc.co.uk`` vs ``bbc.co.uk``
 are the same site, while ``example.co.uk`` and ``co.uk`` are never confused. Private-suffix hosts
 (``blogspot.com``, ``github.io``) are therefore compared as the platform, which is the conservative
-reading: two blogs on one platform read as the same site, never as a mismatch. UNKNOWN is its own
-answer and is never counted as a mismatch: a missing, empty or malformed domain or URL, an IP
-address, or a host the list cannot reduce.
+reading: two blogs on one platform read as the same site, never as a mismatch. Hosts are compared in
+their ASCII (punycode) form, so a Unicode and a punycode spelling of one site agree. UNKNOWN is its
+own answer and is never counted as a mismatch: a missing, empty or malformed domain or URL, an IP
+address, a top-level domain the list has no rule for, or a host the list cannot reduce.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -33,8 +34,18 @@ class HostCheck(NamedTuple):
     article_site: str | None
 
 
+def _ace(host: str) -> str | None:
+    """``host`` in its ASCII (punycode) form, so the Unicode and punycode spellings of one site agree."""
+    if host.isascii():
+        return host
+    try:
+        return host.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+
+
 def _site(host_or_url: str | None) -> str | None:
-    from src.catalog.publicsuffix import registrable_domain_psl
+    from src.catalog.publicsuffix import _load, registrable_domain_psl
 
     if not host_or_url or not host_or_url.strip():
         return None
@@ -45,6 +56,14 @@ def _site(host_or_url: str | None) -> str | None:
     except ValueError:
         return None
     if not host:
+        return None
+    host = _ace(host)
+    if host is None:
+        return None
+    # A top-level domain the list has no rule for (foo.invalidtld, .local) would otherwise be reduced by
+    # the list's implicit "*" rule and read as a site; it is UNKNOWN, not a site to compare.
+    rules = _load()
+    if not rules.available or host.rsplit(".", 1)[-1] not in rules.icann:
         return None
     return registrable_domain_psl(host, include_private=False)
 
