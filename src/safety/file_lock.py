@@ -100,6 +100,10 @@ def _contended(fault: OSError) -> bool:
     return isinstance(fault, BlockingIOError) or fault.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES, errno.EDEADLK)
 
 
+def _fsync_unsupported(fault: OSError) -> bool:
+    return fault.errno in (errno.EINVAL, errno.ENOTSUP)
+
+
 def _try_os_lock(fd: int, shared: bool) -> None:
     """One non-blocking attempt. Raises a contention ``OSError`` when another process holds it, any other ``OSError`` when the filesystem cannot lock."""
     if sys.platform == "win32":
@@ -283,7 +287,7 @@ def atomic_replace(
                 except OSError as fault:
                     # A filesystem that has no fsync (EINVAL, ENOTSUP) cannot promise it; any other failure (EIO, a full disk reported only here) means the data is
                     # NOT on disk, and renaming it over the good file would replace it with something that may read back empty.
-                    if fault.errno not in (errno.EINVAL, errno.ENOTSUP):
+                    if not _fsync_unsupported(fault):
                         raise
         os.replace(tmp, path)
     except BaseException:
