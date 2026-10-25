@@ -83,8 +83,10 @@ class LibraryBusy(RuntimeError):
 # readers (:func:`current`, :func:`valid`, the stamp in :func:`attach`, :func:`connecting`) never took a lock for them. A lock of their own
 # guarded nothing the window did not already guard, and its one effect was a hazard: a plain ``threading.Lock`` whose ``with`` exit fails (the
 # exit builds a 3-tuple, which allocates on CPython 3.13) stays held for ever, and every later section waits behind it with the window held
-# (tests/test_swap_window_allocation_failures.py). ``tests/test_library_generation_writers_run_in_the_window.py`` pins that every call of a
-# writer, in ``src/``, is made inside the window, so a new writer outside it fails a test and does not race.
+# (tests/test_swap_window_allocation_failures.py). ``tests/test_library_generation_writers_run_in_the_window.py`` is an AST pin over ``src/``: a call of
+# a writer, a reference to one, a store to the four names, or a ``global`` of them, reached from outside the window fails it (and inside
+# :func:`swap_window` only the part that holds the window counts), so a new writer outside it fails a test before it races. It reads the import
+# forms of ``src/``; what it cannot see (a module reached by a computed name) is listed in its docstring.
 _GENERATION = 0
 _VALID: frozenset[int] = frozenset({0})
 _WINDOW_STAMP: int | None = None  # the stamp of a connection the swap itself opens inside its window, while there is one
@@ -319,14 +321,19 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     allocator refuses to start it (natively the ``BEFORE_WITH`` inside it, which makes the bound ``__enter__`` and ``__exit__``). The exit of
     that call's own ``with self._lock:`` is the same kind of site (``__exit__(None, None, None)`` builds a 3-tuple on CPython 3.13 and so
     allocates when the tuple free list is empty); the ``with`` form is what the interrupt rules require (R144, R171) and nothing runs after an
-    exit that did not run.
+    exit that did not run. The window's own ``with self._lock:`` sections (:class:`_Lock`: ``shared``, ``release_shared_since``, ``exclusive``,
+    ``held_here``, ``release_if_held_here``) are sites of the same kind, on the plain lock under the Condition as R144 has it; this change does not
+    touch them.
 
     The swap passes no lock for the module's state. The four names this module writes (:data:`_GENERATION`, :data:`_VALID`, :data:`_WINDOW_STAMP`,
     :data:`_DISK_CHANGED`) are written only here, inside the window, which one thread holds at a time, and they have no lock of their own: a
     plain lock's failed exit stays held, and every later section of the same swap or of the next one would wait behind it with the window held
     (a pool stopped until restart). ``tests/test_swap_window_allocation_failures.py`` forces a MemoryError at every instruction of the cleanup that
-    can allocate and names the call, and pins that the module has no ``with`` section left in a writer; ``tests/test_library_generation_writers_run_in_the_window.py``
-    pins that every call of a writer in ``src/`` is made inside a window."""
+    can allocate and names the call, and pins that the module has no ``with`` section left in a writer (or in a helper a writer calls);
+    ``tests/test_library_generation_writers_run_in_the_window.py`` pins, over ``src/``, that a writer is called, referenced or stored to only from
+    inside a window. In THIS function the window starts after ``_LOCK.exclusive(...)`` returns: the reset of the flag above that call would let a
+    swap that is only WAITING reset the flag of the swap that holds the window, and the earlier connections would be given back after a disk change
+    (that placement is a red-without in the pin, and it is run)."""
     global _DISK_CHANGED
     # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the

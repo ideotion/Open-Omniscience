@@ -243,7 +243,10 @@ class _Scenario:
             if lg._WINDOW_STAMP is not None:  # noqa: SLF001
                 bad.append("window stamp left set")
                 lg._WINDOW_STAMP = None  # noqa: SLF001
-            # (library_generation has no lock of its own for the window's state any more: it is written only inside the window)
+            state = getattr(lg, "_STATE", None)  # trees before the state lock was removed still have one
+            if state is not None and state.locked():
+                bad.append("state lock left taken")
+                state.release()
             return bad
 
         self.call = call

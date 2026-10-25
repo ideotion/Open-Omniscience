@@ -324,22 +324,24 @@ def test_the_release_compares_an_identity_it_already_has_and_calls_nothing_befor
     assert "me" in code.co_varnames[: code.co_argcount], code.co_varnames
 
 
-
-
 @pytest.mark.parametrize("source_present", [True, False], ids=["swap_did_not_happen", "swap_happened"])
 def test_a_memory_error_at_any_instruction_of_the_cleanup_leaves_only_the_new_generation_valid_after_disk_changing(source_present):
     """The swap changed the disk and the cleanup is interrupted by the allocator anywhere: the connections made inside the window, and the ones from
     before it, stay refused, because the files under them had their log names removed. The decision and the write are one step in
     ``_close_window``, so a failure before it lands on the safe side. (The old cleanup read the flag in a section of its own, and a failure
-    between that read and the close revived the window's stamp: found by the independent read of PR 1442, reproduced on main with a stand-in lock.)"""
+    between that read and the close revived the window's stamp: found by the independent read of PR 1442, reproduced on main with a stand-in lock.)
+
+    The flag only matters while the source is still there: with the source gone (``swap_happened``) the swap happened, the close never revives, and
+    that case re-runs the same sites as the ordinary sweep above. It is kept so the claim holds in both states, not because it can fail through the flag."""
     sites, wrong = _sweep(_SOURCE, source_present=source_present, changes_disk=True)
     assert len(sites) >= 6, sites
     assert wrong == [], wrong
 
 
 def test_the_sweep_catches_a_decision_about_the_flag_made_in_a_step_of_its_own():
-    """Red without the one-step close: the cleanup decides whether the disk changed in a statement of its own (a call that can fail), and the close
-    acts on that decision without looking at the flag."""
+    """Red without the one-step close: the cleanup decides whether the disk changed in a statement of its own that can ALLOCATE (here a ``bool(...)``
+    call; a plain read of the flag cannot fail under the MemoryError model, and is not what this catches), and the close acts on that decision
+    without looking at the flag."""
     edits = [
         (
             r"            try:\n                swapped = not source\.exists\(\)\n            except OSError:",
@@ -363,12 +365,27 @@ _WRITERS = ("swap_window", "bump", "_open_window", "_close_window", "disk_changi
 
 
 def _lock_sections(source_text: str) -> dict[str, list[str]]:
-    """What takes a lock where the module's state is written: the ``with`` statements inside each writer, and any module-level
-    ``threading.Lock()`` / ``RLock()`` (the window's own lock is the ``_Lock`` class, built from the ``RLock`` inside its ``__init__``)."""
+    """What takes a lock where the module's state is written: the ``with`` statements inside each writer AND inside any module function a writer
+    calls by name, followed to any depth (a section moved into a helper is still a section in the cleanup), and any module-level
+    ``threading.Lock()`` / ``RLock()`` (the window's own lock is the ``_Lock`` class, built from the ``RLock`` inside its ``__init__``; a call
+    through an attribute, such as ``_LOCK.exclusive(...)``, is not followed: the window's own sections are not this pin's subject)."""
     tree = ast.parse(source_text)
     functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+    def reached(name: str) -> list[ast.FunctionDef]:
+        seen: dict[str, ast.FunctionDef] = {}
+        todo = [name]
+        while todo:
+            current = todo.pop()
+            if current in seen or current not in functions:
+                continue
+            seen[current] = functions[current]
+            todo += [c.func.id for c in ast.walk(functions[current]) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)]
+        return list(seen.values())
+
     found: dict[str, list[str]] = {
-        name: [ast.unparse(item.context_expr) for w in ast.walk(functions[name]) if isinstance(w, ast.With) for item in w.items] for name in _WRITERS
+        name: [ast.unparse(item.context_expr) for fn in reached(name) for w in ast.walk(fn) if isinstance(w, ast.With) for item in w.items]
+        for name in _WRITERS
     }
     found["module"] = [
         ast.unparse(n.value)
@@ -392,14 +409,16 @@ def test_the_pin_sees_a_state_lock_in_a_writer_and_at_module_level():
         "def swap_window(source):\n    pass\n"
         "def bump():\n    with _STATE:\n        pass\n"
         "def _open_window():\n    pass\n"
-        "def _close_window(*, swapped):\n    pass\n"
+        "def _close_window(*, swapped):\n    _helper()\n"
+        "def _helper():\n    _deeper()\n"
+        "def _deeper():\n    with _STATE:\n        pass\n"
         "def disk_changing():\n    with _STATE:\n        pass\n"
     )
     assert _lock_sections(synthetic) == {
         "swap_window": [],
         "bump": ["_STATE"],
         "_open_window": [],
-        "_close_window": [],
+        "_close_window": ["_STATE"],  # a section in a helper of a helper of the writer is still the writer's
         "disk_changing": ["_STATE"],
         "module": ["threading.Lock()"],
     }
