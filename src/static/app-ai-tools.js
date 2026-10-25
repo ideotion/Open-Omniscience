@@ -2419,9 +2419,23 @@
       const el = $("cust-late");
       if (!el) return;
       L = L || {};
-      if (!L.pending && !L.recorded_late) { el.textContent = ""; return; }
-      el.textContent = _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.",
-        { p: L.pending || 0, r: L.recorded_late == null ? "?" : L.recorded_late });
+      // A count that could not be read is said, with the class of the failure the server names; it is not the same as "none" (a zero is a
+      // fact, an unread count is not), and "not requested" is a reader that did not ask, not a failure.
+      const unread = L.recorded_late == null && !!L.recorded_late_reason && L.recorded_late_reason !== "not requested";
+      if (!L.pending && !L.recorded_late && !unread) { el.textContent = ""; return; }
+      const p = L.pending || 0;
+      let text = unread
+        ? _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; how many have been recorded late could not be read ({reason}).",
+          { p, reason: L.recorded_late_reason })
+        : _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.",
+          { p, r: L.recorded_late == null ? "?" : L.recorded_late });
+      // The moment the count was taken (or asked for): nothing here caches it, so a number never reads as a standing fact.
+      if (L.recorded_late_computed_at) {
+        const d = new Date(L.recorded_late_computed_at);
+        const when = isNaN(d.getTime()) ? String(L.recorded_late_computed_at) : d.toLocaleString();
+        text += " " + (unread ? _qualTf("Asked at {time}.", { time: when }) : _qualTf("Counted at {time}.", { time: when }));
+      }
+      el.textContent = text;
     }
     async function _custodyReconcile(body) {
       const d = await api("/api/custody/reconcile", { method: "POST", body: JSON.stringify(body) });
