@@ -5,7 +5,7 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.4.0 (alpha — the living-sources cycle; latest tagged release: `v0.4.0`, a pre-release)
+**Version:** 0.5.0 (alpha — the investigator's-desk cycle; latest tagged release: `v0.5.0`, a pre-release)
 **License:** [GNU GPLv3](LICENSE)
 
 ---
@@ -19,16 +19,27 @@
 > unlock-at-scale) — validated on the maintainer's live corpus and **tagged `v0.2.0`**.
 > The `0.3` cycle, **measured & verified** — the recursive improvement loop,
 > scale-recalibrated analytics, and the browser-verification burn-down — was **tagged
-> `v0.3.0`**, and the `0.4` cycle, **living sources**, was **tagged `v0.4.0`**.
-> `0.4.0` is honest about every limit, not finished; beta and `1.0` still have to be
+> `v0.3.0`**, the `0.4` cycle, **living sources**, was **tagged `v0.4.0`**, and the `0.5`
+> cycle, **the investigator's desk**, was **tagged `v0.5.0`**.
+> `0.5.0` is honest about every limit, not finished; beta and `1.0` still have to be
 > earned. Development cycles were historically named after the version they produce
 > (branch `0.06 → … → 0.09 → 0.1 → 0.2` ⇒ `0.0.6 → … → 0.0.9 → 0.1.0 → 0.2.0`); since
 > 2026-07-15 the default branch is permanently **`main`** and the branch name and version
 > are independent. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.4.0: living sources
+## Status — v0.5.0: the investigator's desk
 
-> **`0.4.0` is the current version** (tagged `v0.4.0`, a pre-release, 2026-09-28). The `0.4`
+> **`0.5.0` is the current version** (tagged `v0.5.0`, a pre-release, 2026-10-XX). The `0.5`
+> cycle is about **working a story**: one advanced search for every search need, a claim followed from
+> a headline to its sources, a place from a news article to its map, and a law or a Wikipedia page
+> through its revisions. Its long second half answered field reports from instances past a million
+> articles: the keyword rollup that crashed them, the write gate, the connection pool and the evidence
+> the app keeps when it ends badly. Every row of the release gate,
+> [`docs/product/RELEASE_0.5_GATE.md`](docs/product/RELEASE_0.5_GATE.md), is built and verified in the
+> sandbox (fixtures, generated stores, Chromium walks); what only a real install can supply is listed
+> there as named open items for `0.5.1`.
+
+> **`v0.4.0` — living sources, tagged 2026-09-28.** The `0.4`
 > cycle made sources that change over time first-class: one versioned-source substrate
 > with an encrypted file per collection lane, collection lanes in place of the single
 > scheduler mode, the Wikipedia lane, the law metadata model and its first adapters, and a
@@ -36,9 +47,7 @@
 > languages, Equal Earth maps with contested borders, a rebuilt import and export, and the
 > interface's remaining strings translated into all twelve languages. The release gate,
 > [`docs/product/RELEASE_0.4_GATE.md`](docs/product/RELEASE_0.4_GATE.md), lists the operator
-> runs that were still open when it was tagged. **The `0.5` cycle is now open** — its board
-> is [`docs/product/RELEASE_0.5_GATE.md`](docs/product/RELEASE_0.5_GATE.md) ("the
-> investigator's desk").
+> runs that were still open when it was tagged.
 
 > **`v0.3.0` — measured & verified, tagged 2026-08-23.** The `0.3` cycle turned the
 > instruments built so far into a standing improvement loop: the recursive SENSE→VERIFY

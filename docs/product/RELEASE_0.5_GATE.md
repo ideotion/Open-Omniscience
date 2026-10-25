@@ -1,6 +1,6 @@
 # Release gate — v0.5.0 · The investigator's desk
 
-**Status: OPEN — written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag.** This is the
+**Status: CLOSED at the `v0.5.0` tag (2026-10-XX) with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
 checkable inventory for closing the `0.5` cycle. It exists now because the maintainer ruled (Q112 = a, Q1204 =
 a) that the gate files for 0.4–0.9 are written in one session from the answered sheet
 ([`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -95,6 +95,54 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 | 9 | C | The **gazetteer artifact build** (S4) | After item 8, the build script on that `osm.db` | Its input is the operator's `osm.db` |
 | 10 | E, L | The **OSM-derived admin-0 / admin-1 artifacts** and the five-map click-through that closes L | `osmium tags-filter` on the planet file, then `scripts/build_admin_boundaries.py` | A planet file (~72 GB) and two tools; the planet host is not allowed from the sandbox |
 | 11 | all | **A person's judgement** of layout, wording and feel (the «awaiting human UX pass» stamps) | Open each built surface | A scripted Chromium walk is done where a row says so; whether it closes the clause is the maintainer's word (`Q1128` = a) |
+
+---
+
+## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-XX, `R185`–`R187`)
+
+`v0.5.0` is tagged with every row built and verified as far as a session can verify it: CI, fixtures, generated stores and
+Chromium walks on an encrypted install (`R126`). A row's closing artifact is the PR it names; the real-install step is a **named
+0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
+real-install step is 0.5.1 open item N (§1c)*. Item numbers are §1c's.
+
+| Row | Stands at the tag | 0.5.1 open item |
+|---|---|---|
+| A | Built, Chromium-verified in en and ar (PR #1198) | The reference-corpus export compare and the typo-table build cost, measured on the operator's corpus; the person's UX pass (item 11) |
+| B | B1–B4 merged; generated-backup evidence (R135, labelled generated) | Item 7: the operator's real restore with the duplicate scan at 0; the real FTS rebuild time |
+| C | Built except S4's artifact | Item 9: the gazetteer build waits on row D's reference run |
+| D | S1–S6 built and fixture-verified; the maximum-mode governor (PR #1455, R178, R180) and the stop-by-name guard (PR #1424) merged | Item 8: the reference-VM ingest numbers (`scripts/osm_reference_run.py`); the slow-network permit count of the governor waits for a field diagnostics archive (R181) |
+| E | Built on a fixture artifact | Item 10: the planet-file build |
+| F | Built and fixture-verified | Items 1–4: the walk run for a stated period on both transports, WARM rows, analytics 4–5 on real rows |
+| G | Built (PR #1203) | Items 5–6: a law's 2019 text on one real source; the CLML adapter has never read a real document, so a `not-found` there is the next fix |
+| H | Closed 2026-09-29 | none |
+| I | Closed on the 2026-10-06 sweep; H3's removal is deferred behind its own test (three named gaps), not a 0.5 condition | none |
+| J | J1–J3 merged, with the outlet integer (PR #1461, R177) | Item 7 |
+| K | Five slices built; the tour's wording stands as written | The person's UX pass; the maintainer's answer on the tour's content |
+| L | Built and Chromium-verified on a fixture | Item 10, and the person's five-map click-through |
+
+**The 0.4 rows carried by `R92` (§1b).** Row R is closed on the 2026-09-27 fix-check walk (`docs/audit/delegated-fixcheck-2026-09-27/`,
+`R37`). Rows M, N and T have their click-through clause met and carry named operator items: M7 (a corpus with a rising Lead), M10
+(online to Wikidata), the keyword clean-up report and the stoplist merge's last surface check; N12 and N13 (the search re-index
+report and the agreement comparison on the reference corpus) and Q515's cost; the weights digest values (the two hosts are
+egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
+H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
+
+**Items added at the tag.**
+
+- **Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
+  race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
+  the Windows locked-folder raw copy (inferred, not observed); the Windows msvcrt polling lock and the NFS/FUSE flock in
+  `src/safety/file_lock.py` (a filesystem that cannot lock runs unlocked with one stderr warning naming the file); the launcher's
+  stderr-filter summary-row exposure (measured 0 to 9 ms idle over 22 launches, no figure under load).
+- **`hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
+  is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
+  a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
+- **The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
+  stay default-off.
+- **PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
+  lock move together or not at all.
+- **The audit** (`R189`): a workflow of agents audits quality, performance and vulnerability after the tag; its report and findings
+  ledger are in the project folder, and a clear defect is fixed under `R185`.
 
 ---
 
@@ -593,4 +641,4 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 - ~~**The four ⛔ questions left blank** — Q823, Q925, Q1009, Q1113 — not decided here, not defaulted anywhere.~~
   All four answered 2026-09-29 (Q823 = a, Q925 = a, Q1009 = a, Q1113 = a; `RULINGS_INDEX.md`).
 - **Article revision tracking** (`RC07` = c, 2026-09-29) — 0.6 or later, release to be named.
-- **The version flip to `0.5.0`.** It follows the `v0.4.0` tag, mechanically.
+- ~~**The version flip to `0.5.0`.** It follows the `v0.4.0` tag, mechanically.~~ Done on the commit `v0.5.0` names (`R186`).

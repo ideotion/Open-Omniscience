@@ -46,11 +46,11 @@ maintainer ruling · 🛠 operational (maintainer runs it — networked machine 
 The `0.4` cycle closed with **`v0.4.0`, living sources** (tagged `v0.4.0`, 2026-09-28):
 versioned sources — Wikipedia, law, maps — became first-class Articles, collection lanes
 replaced the single scheduler mode, the import and export were rebuilt for a large
-multilingual corpus, and keyword search now works across languages. The **`0.5` cycle is
-open** — its board is [`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md); the
-scale work below (§1–§5) remains the standing backlog.
+multilingual corpus, and keyword search now works across languages. The **`0.5` cycle closed with
+`v0.5.0`, the investigator's desk** — its board is [`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md),
+its open items are the named `0.5.1` list there; the scale work below (§1–§5) remains the standing backlog.
 
-- `pyproject` version is **`0.4.0`** (tagged `v0.4.0`, 2026-09-28); the default branch is **`main`** (permanent since
+- `pyproject` version is **`0.5.0`** (tagged `v0.5.0`; `v0.4.0` was tagged 2026-09-28); the default branch is **`main`** (permanent since
   2026-07-15 — branch name and version are independent).
 - The **`v0.4.0` tag is DONE** (2026-09-28 — see `docs/CHANGES.md` 0.4.0 and the gate
   [`docs/product/RELEASE_0.4_GATE.md`](product/RELEASE_0.4_GATE.md)). The `v0.3.0` tag
