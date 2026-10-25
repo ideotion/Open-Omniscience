@@ -5744,7 +5744,8 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
             ) from None
         except KvLockStuck:
             # The settings lock was left held by an operation that ended without letting it go (R144(b)): nothing waits it out, and the
-            # words are fixed (a restore must not quote the lock's own text, which names a thread). Without this the restore ended as a failure.
+            # words are fixed (the lock's own text names an operation, a kind of thread and a time, none of which a restore repeats). Without this
+            # the restore ended as a failure.
             raise RestoreRefused(
                 "the settings lock was left held by an operation that has ended, so settings writes cannot be held for the switch — nothing "
                 "was written to your corpus. Restart Open Omniscience, then import again."
