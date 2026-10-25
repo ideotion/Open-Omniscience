@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -91,7 +92,41 @@ STRICT_VIOLATIONS: list[str] = []
 
 class KvWriteRefused(RuntimeError):
     """A settings write was refused, with nothing written, because a restore is switching the corpus file. The words are fixed
-    and carry nothing from the engine; the API answers them as a 503 with this text as the detail, which the UI shows."""
+    and carry nothing from the engine; the API answers them as a 503 with this text as the detail, which the UI shows.
+
+    ``retry_after_s`` is the whole seconds the API sends as ``Retry-After``, or ``None`` when no figure is true of the refusal (then no
+    header is sent): see :func:`_retry_after_s`."""
+
+    def __init__(self, text: str, retry_after_s: int | None = None) -> None:
+        super().__init__(text)
+        self.retry_after_s = retry_after_s
+
+
+#: What the ``Retry-After`` of a save refused AT ONCE during a restore's hold is made of (a thread that holds the single-writer gate cannot wait, so it
+#: is refused while the hold is mid-flight): a base for the hold's fixed work, plus a rate per GiB of the live file, because the hold ends with
+#: an ``os.replace`` that frees the OLD file's blocks. Measured 2026-10-17 on ext4 on a virtual disk (7 runs per cell, plain and SQLCipher, 65 MB to
+#: 1 GB: the whole hold 0.04 to 1.95 s, the replace about 0.5 s per GiB; ``fix-source-qualification/restore-hold-2026-10-17/REPORT.md`` in the
+#: project files). NOT measured: any store above 1 GB (the rate is extrapolated there), Windows (the replace waits for a handle another process
+#: holds, up to 300 s), a store with a large ``-wal``, any real store. A save that waited the full :data:`KV_WRITE_WAIT_S` and was then refused sends no
+#: ``Retry-After`` at all: the hold has already outlasted every figure measured, so how much remains is unknown.
+RETRY_AFTER_BASE_S = 1.0
+RETRY_AFTER_PER_GIB_S = 0.5
+
+
+def _retry_after_s(file_bytes: int | None) -> int | None:
+    """Whole seconds to tell a save refused at once to wait: ``ceil(base + rate x GiB)``; ``None`` (no header) when the live file's size was not read."""
+    if file_bytes is None:
+        return None
+    return math.ceil(RETRY_AFTER_BASE_S + RETRY_AFTER_PER_GIB_S * file_bytes / 2**30)
+
+
+def _live_file_bytes() -> int | None:
+    """The live corpus file's size, or ``None`` (a non-SQLite URL, or a file that cannot be read): then the refusal carries no ``Retry-After``."""
+    try:
+        path = _db_path()
+        return os.stat(path).st_size if path else None
+    except OSError:
+        return None
 
 
 class KvLockStuck(KvWriteRefused):
@@ -129,6 +164,7 @@ class KvWriteBusy(RuntimeError):
 _hold_lock = threading.RLock()
 _hold = threading.Condition(_hold_lock)  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
+_hold_file_bytes: int | None = None  # size of the live file when the hold started (None: unread), for the refusal's Retry-After
 #: One token per settings write between its start and its end (they may be waiting for the gate). A SET and not a count: a write is
 #: counted by ONE call (``add``, under ``_hold_lock``, with the hold check) and released by ONE lock-free call (``remove``; a KeyError, caught,
 #: for a token that was never added), then the lock is taken only to wake a waiting hold. A KeyboardInterrupt landing in a release that took the
@@ -258,7 +294,7 @@ def _write_slot() -> Iterator[int]:
                 from src.database.writer import write_gate
 
                 if write_gate.held_by_current_thread():  # waiting here would make the restore wait for this thread's connection: refuse now
-                    raise KvWriteRefused(_REFUSED_TEXT)
+                    raise KvWriteRefused(_REFUSED_TEXT, _retry_after_s(_hold_file_bytes))
                 deadline = time.monotonic() + KV_WRITE_WAIT_S
                 # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
                 while True:
@@ -297,11 +333,12 @@ def hold_writes(timeout: float) -> Iterator[None]:
     written. Waits, up to ``timeout``, for the writes already in flight to finish; raises :class:`KvWriteBusy` (and holds nothing)
     when they do not. ``0`` does not wait: it holds only if no settings write is in flight. Not reentrant, and it takes no lock
     the single-writer gate or the corpus knows about."""
-    global _hold_by
+    global _hold_by, _hold_file_bytes
     me = threading.get_ident()
     deadline = time.monotonic() + max(0.0, timeout)
     held = False
     try:  # the hold is set INSIDE the try: an interrupt that lands as the first block ends must not leave it set
+        file_bytes = _live_file_bytes()  # read before any lock is taken: the hold lock is bookkeeping only, never across file I/O
         _note_section("restore hold")
         _refuse_if_stuck()
         with _hold_lock:
@@ -309,6 +346,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
                 raise RuntimeError("settings writes are already held")
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
+            _hold_file_bytes = file_bytes
         _note_section("restore hold drain")
         with _hold_lock:
             # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
@@ -325,6 +363,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
             with _hold_lock:  # no call before this take: a KeyboardInterrupt arriving at a call in this finally would leave the hold set for good
                 if _hold_by == me:  # held is set one statement before the hold: another thread may own it by now
                     _hold_by = None
+                    _hold_file_bytes = None
                 _note_section("restore hold release")  # after the clear, for the same reason; names a leak of THIS lock by its last entry
                 _hold.notify_all()
 

@@ -20,6 +20,8 @@ work only, no network -- never airplane/consent-gated (mirrors the reindex job's
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 
 from src.monitoring.secret_scrub import http_detail
@@ -52,7 +54,7 @@ def quarantine_start(
 
     try:
         # Forwarded only when asked for, so the manager is called exactly as before otherwise.
-        extra = {"include_stubs": True} if include_stubs else {}
+        extra: dict[str, Any] = {"include_stubs": True} if include_stubs else {}
         return get_quarantine_manager().start(
             write=write, include_prose_gate=include_prose_gate, **extra
         )
