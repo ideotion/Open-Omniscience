@@ -419,6 +419,12 @@ class Source(Base):
     # half of the identity. server_default '' so a raw INSERT that omits it names a feed-less source
     # honestly rather than failing NOT NULL.
     feed_key: Mapped[str] = mapped_column(String(500), nullable=False, default="", server_default="")
+    # The OUTLET as an integer (R177): the lowest id among the sources of this row's domain, so a gate that counts outlets
+    # counts ``coalesce(sources.outlet_id, mentions.source_id)`` instead of hashing a text domain per scanned row. DERIVED, never
+    # set by hand and never carried by a backup: three SQLite triggers on this table (``SOURCE_OUTLET_ID_TRIGGERS`` below,
+    # created with the table and by the boot step ``ensure_source_outlet_id``) keep it right for every writer, inside that
+    # writer's own transaction. NULL only on a row written before the boot step reached it.
+    outlet_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rate_limit_ms: Mapped[int | None] = mapped_column(Integer, default=2000)
     enabled: Mapped[bool | None] = mapped_column(Boolean, default=True)
     priority: Mapped[int | None] = mapped_column(Integer, default=2)
@@ -541,6 +547,44 @@ def _derive_source_feed_key(mapper, connection, target: "Source") -> None:
     from src.database.feed_key import feed_key
 
     target.feed_key = feed_key(target.rss_url)
+
+
+def _outlet_id_recompute(domain_ref: str) -> str:
+    """The one statement that makes ``outlet_id`` right for every row of the domain ``domain_ref`` names. Only rows that are
+    wrong are written (``IS NOT`` is NULL-safe), so the trigger of a source that joins an existing outlet changes nothing
+    when the outlet's id is already right."""
+    return (
+        "UPDATE sources SET outlet_id = (SELECT MIN(s2.id) FROM sources s2 WHERE s2.domain = sources.domain)"  # noqa: S608  # nosec B608 - {domain_ref} is NEW.domain or OLD.domain, a literal of this module
+        f" WHERE domain = {domain_ref} AND outlet_id IS NOT (SELECT MIN(s3.id) FROM sources s3 WHERE s3.domain = {domain_ref});"
+    )
+
+
+#: R177: name -> CREATE TRIGGER. A trigger rather than a call at each writer, for the reason the ``feed_key`` listener above is a
+#: model event: the seeder, the CSV/YAML import, ``POST /sources``, discovery and the restore merge's raw ``INSERT INTO sources``
+#: all write this table and none may be able to forget. The ``AFTER DELETE`` rule is what keeps an outlet's id the id of a row
+#: that EXISTS: SQLite re-uses the largest rowid, so siblings left pointing at a deleted oldest feed could later share an id with
+#: an unrelated source and merge two outlets into one, which would manufacture agreement. ``UPDATE OF domain, id`` recomputes both
+#: the domain the row left and the one it joined, and a changed id repairs the siblings that pointed at the old one. An UPDATE
+#: that writes only ``outlet_id`` fires neither. NOT COVERED: ``INSERT OR REPLACE`` that replaces a row of ANOTHER domain, because
+#: the implicit delete fires DELETE triggers only under ``PRAGMA recursive_triggers`` and this repo never sets it; nothing in
+#: ``src/`` writes ``sources`` that way (``tests/test_source_outlet_id.py`` scans for it) and the next boot's heal repairs it.
+SOURCE_OUTLET_ID_TRIGGERS: dict[str, str] = {
+    "trg_sources_outlet_id_ai": (
+        "CREATE TRIGGER IF NOT EXISTS trg_sources_outlet_id_ai AFTER INSERT ON sources BEGIN "
+        + _outlet_id_recompute("NEW.domain") + " END"
+    ),
+    "trg_sources_outlet_id_au": (
+        "CREATE TRIGGER IF NOT EXISTS trg_sources_outlet_id_au AFTER UPDATE OF domain, id ON sources BEGIN "
+        + _outlet_id_recompute("OLD.domain") + " " + _outlet_id_recompute("NEW.domain") + " END"
+    ),
+    "trg_sources_outlet_id_ad": (
+        "CREATE TRIGGER IF NOT EXISTS trg_sources_outlet_id_ad AFTER DELETE ON sources BEGIN "
+        + _outlet_id_recompute("OLD.domain") + " END"
+    ),
+}
+
+for _trigger_sql in SOURCE_OUTLET_ID_TRIGGERS.values():
+    event.listen(Source.__table__, "after_create", DDL(_trigger_sql).execute_if(dialect="sqlite"))
 
 
 class FeedFetchState(Base):

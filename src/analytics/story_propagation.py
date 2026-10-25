@@ -34,7 +34,7 @@ from sqlalchemy import distinct, func
 
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Keyword, Source
-from src.database.outlet import OutletMap, outlet_expr
+from src.database.outlet import OutletMap, outlet_expr, outlets_unhealed
 from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ def find_story_propagation(
     # Candidate terms: mentioned across >= min_sources distinct OUTLETS in the window (two feeds of one site are one
     # voice: row J, R146).
     outlets = OutletMap(session)
-    n_outlets = func.count(distinct(outlet_expr(KeywordMentionRead.source_id, Source.domain)))
+    n_outlets = func.count(distinct(outlet_expr(KeywordMentionRead.source_id, Source.outlet_id, unhealed=outlets_unhealed(session))))
     cand_rows = (
         session.query(KeywordMentionRead.keyword_id, n_outlets.label("n_src"))
         .outerjoin(Source, Source.id == KeywordMentionRead.source_id)
