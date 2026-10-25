@@ -34,6 +34,7 @@ def quarantine_start(
     write: bool = Query(False),
     include_prose_gate: bool = Query(True),
     include_stubs: bool = Query(False),
+    include_host_mismatch: bool = Query(False),
 ) -> dict:
     """Start the retroactive quarantine job. ``write=False`` (default): pure detection,
     no database mutation. ``write=True``: additionally stamps each detected candidate,
@@ -49,12 +50,18 @@ def quarantine_start(
     or an app restart continues under the SAME criteria, never a silently different set.
 
     ``include_stubs`` (default False) adds the thin-body menu / subscriber-prompt signals. Run it
-    with ``write=False`` first: that is the per-signal count the operator reviews before a write."""
+    with ``write=False`` first: that is the per-signal count the operator reviews before a write.
+
+    ``include_host_mismatch`` (default False) also COUNTS and SAMPLES articles stored on a site other
+    than their source's own. It is report-only: it is a fact about where a page lives, not a verdict,
+    so it marks nothing even with ``write=true`` (see :mod:`src.ingest.host_mismatch`)."""
     from src.analytics.quarantine_job import get_quarantine_manager
 
     try:
         # Forwarded only when asked for, so the manager is called exactly as before otherwise.
         extra: dict[str, Any] = {"include_stubs": True} if include_stubs else {}
+        if include_host_mismatch:
+            extra["include_host_mismatch"] = True
         return get_quarantine_manager().start(
             write=write, include_prose_gate=include_prose_gate, **extra
         )
@@ -70,6 +77,21 @@ def quarantine_status() -> dict:
     return get_quarantine_manager().status()
 
 
+def _sample_row(article_id: int, rows: dict, host_signal: bool) -> dict:
+    """One sampled article: id, title, URL and whether it is already marked; for the host-mismatch
+    signal also its source's domain and the two registrable sites that were compared."""
+    from src.ingest.host_mismatch import check_host
+
+    if article_id not in rows:
+        return {"id": article_id, "present": False}
+    r = rows[article_id]
+    row = {"id": article_id, "title": r[1], "url": r[2], "already_marked": bool(r[3])}
+    if host_signal:
+        pair = check_host(r[2], r[4])
+        row |= {"source_domain": r[4], "source_site": pair.source_site, "article_site": pair.article_site}
+    return row
+
+
 @router.get("/samples")
 def quarantine_samples(
     signal: str | None = Query(None), limit: int = Query(20, ge=1)
@@ -80,7 +102,7 @@ def quarantine_samples(
     is the candidates with the smallest hash of (signal, id), so the same corpus gives the same rows;
     it is a spot-check, not an error rate. ``limit`` above the kept sample is clamped, and says so."""
     from src.analytics.quarantine_job import SAMPLE_PER_SIGNAL, _default_session, get_quarantine_manager
-    from src.database.models import Article
+    from src.database.models import Article, Source
 
     mgr = get_quarantine_manager()
     kept = mgr.sample_ids()
@@ -94,18 +116,25 @@ def quarantine_samples(
             ids = ids[:n]
             rows = {
                 int(r[0]): r
-                for r in session.query(Article.id, Article.title, Article.url, Article.quarantined)
-                .filter(Article.id.in_(ids))
+                for r in session.query(
+                    Article.id, Article.title, Article.url, Article.quarantined, Source.domain
+                ).outerjoin(Source, Source.id == Article.source_id).filter(Article.id.in_(ids))
             } if ids else {}
+            host_signal = sig == "host_mismatch"  # report-only: its count is not a "reason:" tally
+
             out[sig] = {
-                "candidates": int(tally.get(f"reason:{sig}", 0)),
+                "candidates": int(tally.get("host:mismatch" if host_signal else f"reason:{sig}", 0)),
                 "shown": len(ids),
-                "rows": [
-                    {"id": i, "title": rows[i][1], "url": rows[i][2], "already_marked": bool(rows[i][3])}
-                    if i in rows else {"id": i, "present": False}
-                    for i in ids
-                ],
+                "rows": [_sample_row(i, rows, host_signal) for i in ids],
             }
+            if host_signal:
+                out[sig]["unknown"] = int(tally.get("host:unknown", 0))
+                out[sig]["note"] = (
+                    "a page on another site than its source's own is a fact about where it lives, not "
+                    "a verdict: it may be a syndicated item, a redirect or a wire feed. Nothing is marked "
+                    "for it, even with write=true. 'unknown' counts articles whose source or URL has no "
+                    "readable site and are not counted as mismatches."
+                )
     finally:
         session.close()
     return {

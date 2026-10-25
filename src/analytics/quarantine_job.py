@@ -107,6 +107,7 @@ def default_quarantine_candidates_batch(
     limit: int = _BATCH,
     include_prose_gate: bool = True,
     include_stubs: bool = False,
+    include_host_mismatch: bool = False,
     write: bool = False,
     criteria_version: str | None = None,
     article_ids: list[int] | None = None,
@@ -123,6 +124,13 @@ def default_quarantine_candidates_batch(
     (``< _ARTICLE_MIN_WORDS``) for the menu-line / subscriber-prompt stub signals of
     :mod:`src.ingest.furniture`. Only a caller that asks (the dry run that produces the
     operator's counts) turns it on. ``store_fetched`` does NOT apply these signals to new ingest.
+
+    ``include_host_mismatch`` (default OFF): also REPORT, per batch, how many articles sit on a site
+    other than their source's own (:mod:`src.ingest.host_mismatch`), under the result's
+    ``host_mismatch`` key (``mismatch`` / ``unknown`` counts) and, with ``collect_ids``, the ids under
+    ``ids_by_reason["host_mismatch"]``. It is a fact about where a page lives, not a verdict, so it is
+    NEVER a quarantine signal: it adds nothing to ``by_reason``/``quarantined_ids`` and nothing is
+    stamped for it even with ``write=True``.
 
     ``write=False`` (the default): DRY-RUN, no database mutation -- "quarantining" here means
     reporting a candidate's id in ``quarantined_ids``, exactly the original scaffold's behaviour.
@@ -156,8 +164,9 @@ def default_quarantine_candidates_batch(
     signal) for the job's spot-check sample. Only the job asks; the import-time callers store this
     function's whole result in their saved reports and must not gain an unbounded key."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
-    from src.database.models import Article
+    from src.database.models import Article, Source
     from src.ingest.furniture import stub_verdict
+    from src.ingest.host_mismatch import check_host
     from src.ingest.non_article import (
         _ARTICLE_MIN_WORDS,
         classify_index_page,
@@ -171,15 +180,27 @@ def default_quarantine_candidates_batch(
     by_reason: dict[str, int] = {}
     ids_by_reason: dict[str, list[int]] = {}  # this batch's candidates per signal (ids only)
     to_write: dict[int, str] = {}  # id -> signal, for rows NOT already quarantined
+    host_counts = {"mismatch": 0, "unknown": 0}
+    source_domains: dict[int, str | None] = {}  # source id -> domain, read once per batch
     already_quarantined = 0
     scanned = 0
     last_id = after_id
 
     def _classify_rows(rows) -> None:
         nonlocal scanned, already_quarantined, last_id
-        for aid, url, wc, content, lang, detected, is_quarantined in rows:
+        for aid, url, wc, content, lang, detected, is_quarantined, *rest in rows:
             scanned += 1
             last_id = max(last_id, int(aid))
+            if include_host_mismatch:
+                dom = source_domains.get(rest[0])
+                if rest[0] not in source_domains:
+                    srow = session.query(Source.domain).filter(Source.id == rest[0]).first()
+                    dom = source_domains[rest[0]] = srow[0] if srow else None
+                host = check_host(url, dom)
+                if host.state != "same":
+                    host_counts[host.state] += 1
+                if host.state == "mismatch":
+                    ids_by_reason.setdefault("host_mismatch", []).append(int(aid))
             verdict = classify_non_article(url or "", word_count=wc)  # URL-shape rules (text=None)
             signal: str | None = verdict.signal if verdict is not None else None
             if signal is None and index_page_tiers:
@@ -206,7 +227,7 @@ def default_quarantine_candidates_batch(
     cols = (
         Article.id, Article.url, Article.word_count, Article.content,
         Article.language, Article.detected_language, Article.quarantined,
-    )
+    ) + ((Article.source_id,) if include_host_mismatch else ())
     if article_ids is not None:
         last_id = 0
         for i in range(0, len(article_ids), _ID_SET_CHUNK):
@@ -254,7 +275,9 @@ def default_quarantine_candidates_batch(
         "last_id": last_id,
         "done": done,
         "write": write,
-    } | ({"ids_by_reason": ids_by_reason} if collect_ids else {})
+    } | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
+        {"host_mismatch": host_counts} if include_host_mismatch else {}
+    )
 
 
 class QuarantineJobManager:
@@ -279,6 +302,7 @@ class QuarantineJobManager:
         self._index_page_tiers: frozenset[int] = frozenset()
         self._include_prose_gate = True  # the nav-soup gate over >= _ARTICLE_MIN_WORDS bodies
         self._include_stubs = False  # thin-body menu / subscriber-prompt stubs (opt-in)
+        self._include_host_mismatch = False  # report-only count + sample (opt-in; never a quarantine signal)
         self._write = False  # dry-run by default; fixed for a run's lifetime, persisted across resumes
         self._error: str | None = None
         self._pool_timeout = False  # classified where it happens: a driver error keeps no words for a reader to find
@@ -312,6 +336,7 @@ class QuarantineJobManager:
                     # different criteria and report both halves under one run's name.
                     "include_prose_gate": self._include_prose_gate,
                     "include_stubs": self._include_stubs,
+                    "include_host_mismatch": self._include_host_mismatch,
                     "index_page_tiers": sorted(self._index_page_tiers),
                 }),
                 encoding="utf-8",
@@ -346,6 +371,7 @@ class QuarantineJobManager:
         # value that start() itself defaults to, so an older file resumes as it would have.
         self._include_prose_gate = bool(d.get("include_prose_gate", True))
         self._include_stubs = bool(d.get("include_stubs", False))
+        self._include_host_mismatch = bool(d.get("include_host_mismatch", False))
         self._index_page_tiers = frozenset(int(x) for x in (d.get("index_page_tiers") or ()))
         self._state = "paused"
 
@@ -371,6 +397,7 @@ class QuarantineJobManager:
         index_page_tiers: frozenset[int] | set[int] | None = None,
         include_prose_gate: bool = True,
         include_stubs: bool = False,
+        include_host_mismatch: bool = False,
     ) -> dict:
         """Launch the worker. RuntimeError if already running. ``_work_fn`` overrides the default
         batch function (a test seam). ``write`` (default False, dry-run detection only) is fixed
@@ -405,6 +432,7 @@ class QuarantineJobManager:
             self._index_page_tiers = frozenset(index_page_tiers or ())
             self._include_prose_gate = bool(include_prose_gate)
             self._include_stubs = bool(include_stubs)
+            self._include_host_mismatch = bool(include_host_mismatch)
             self._error = None
             self._pool_timeout = False
             self._started_at = time.monotonic()
@@ -428,6 +456,7 @@ class QuarantineJobManager:
                     tiers = self._index_page_tiers
                     prose_gate = self._include_prose_gate
                     stubs = self._include_stubs
+                    hosts = self._include_host_mismatch
                     self._save()
                 while True:
                     if self._stop.is_set():
@@ -442,6 +471,8 @@ class QuarantineJobManager:
                         break
                     with corpus_lease("quarantine"):
                         extra: dict[str, Any] = {"include_stubs": True} if stubs else {}
+                        if hosts:
+                            extra["include_host_mismatch"] = True
                         if work is default_quarantine_candidates_batch:
                             extra["collect_ids"] = True  # the sample; a test seam keeps its own signature
                         r = work(session, after_id=after, limit=_BATCH, write=write,
@@ -461,6 +492,8 @@ class QuarantineJobManager:
                         )
                         for sig, cnt in (r.get("by_reason") or {}).items():
                             self._tally[f"reason:{sig}"] = self._tally.get(f"reason:{sig}", 0) + int(cnt)
+                        for key, cnt in (r.get("host_mismatch") or {}).items():
+                            self._tally[f"host:{key}"] = self._tally.get(f"host:{key}", 0) + int(cnt)
                         self._samples = merge_samples(self._samples, r.get("ids_by_reason") or {})
                         self._done += int(r.get("scanned", 0))
                         self._cursor = after
@@ -500,9 +533,10 @@ class QuarantineJobManager:
             tiers = self._index_page_tiers  # ...and every other part of that mode
             gate = self._include_prose_gate
             stubs = self._include_stubs
+            hosts = self._include_host_mismatch
         out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done,
                          write=w, index_page_tiers=tiers, include_prose_gate=gate,
-                         include_stubs=stubs)
+                         include_stubs=stubs, include_host_mismatch=hosts)
         # No copy-back of the tally (or the sample): start() keeps both when the cursor is past 0, and
         # a write-back of what was read before start() erased any chunk the worker merged meanwhile.
         return out
@@ -549,6 +583,7 @@ class QuarantineJobManager:
                 # agreed under.
                 "include_prose_gate": self._include_prose_gate,
                 "include_stubs": self._include_stubs,
+                "include_host_mismatch": self._include_host_mismatch,
                 "index_page_tiers": sorted(self._index_page_tiers),
             }
 
