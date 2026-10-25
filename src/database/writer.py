@@ -103,6 +103,21 @@ _LOG = logging.getLogger("database.writer")
 # rollback — and never by a session/event that did not take it.
 _SESSION_FLAG = "_oo_write_gate_held"
 
+#: THE LONGEST EXTRA DELAY A LOST WAKE-UP CAN ADD TO A WAITING WRITER, not a timeout. A writer waits for the gate in steps of this many seconds and
+#: looks again after each, so an acquire without a timeout still waits as long as the gate is held; what the step bounds is a wake-up that never
+#: came. The gate is freed by clearing the owner and THEN waking the head of the queue (``release``, and the ``finally`` of an acquire that gave
+#: up); a KeyboardInterrupt or a MemoryError inside ``_wake_head`` (forced in ``tests/test_write_gate_lost_wakeup.py``) leaves the gate free and
+#: the head asleep on a condition nobody will notify, and every later writer queues behind it. WHAT IT PROTECTS: a writer that waits behind a
+#: free gate for at most one step against one that waits for ever.
+#: THE COST IT IS CHOSEN AGAINST, MEASURED: 49 writers queued behind a gate held for 20 s used 0.0366 s of CPU with this step and 0.0002 s without
+#: it, i.e. 980 wake-ups of about 37 us each; the cost is ONE EXTRA WAKE-UP PER WAITER PER STEP (one per second per queued writer), 0.18 % of one core at 49 waiters. A smaller or
+#: larger step trades those two figures one for one: 0.25 s would add at most a quarter of a second to a lost wake-up and cost four times as
+#: much (about 0.7 % of a core at 49 waiters), 2 s would add up to two seconds and cost half (about 0.09 %). NOTHING MEASURED ARGUES FOR 1.0 OVER
+#: 0.25 OR 2: it was chosen, not tuned, and equals the library lock's step (``_RECHECK_S`` in ``library_generation.py``) so that one number is
+#: explained once. The only argument is scale: writers already wait seconds to minutes (the 10-16 diagnostics record holds of 917 s and 977 s, and a writer queued behind one waits as long), so a second is
+#: noticed but not material. The failure itself has been seen only when forced.
+_WAKE_STEP_S = 1.0
+
 
 class WriterGate:
     """A reentrant, observable serialisation gate for database writers.
@@ -257,12 +272,12 @@ class WriterGate:
                         granted = True
                         break
                     if deadline is None:
-                        _wait(cv, self._lock)
+                        _wait(cv, self._lock, _WAKE_STEP_S)  # a step, not a timeout: see _WAKE_STEP_S
                     else:
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
                             break
-                        _wait(cv, self._lock, remaining)
+                        _wait(cv, self._lock, min(remaining, _WAKE_STEP_S))
             finally:
                 # Under the lock whatever interrupted the wait: this block edits the queue and the counters (see src.utils.interrupts)
                 waited = time.monotonic() - start
