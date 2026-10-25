@@ -524,12 +524,14 @@ def test_the_slim_bundle_names_the_members_it_does_not_repeat_and_does_not_build
 def test_the_slim_bundle_keeps_collect_perf_to_its_newest_ticks(db, monkeypatch):
     import src.monitoring.collect_perf as cp
 
-    asked = []
+    asked, windows = [], []
     monkeypatch.setattr(cp, "recent_samples", lambda limit=200: asked.append(limit) or [])
+    monkeypatch.setattr(cp, "window_history", lambda limit=None: windows.append(limit) or [])
     _bundle(db, True)
     _bundle(db, False)
-    assert d._DEBUG_BUNDLE_SLIM_PERF_TICKS == 20
-    assert asked == [20, 200], "the slim bundle asks for 20 ticks, the whole bundle for the log's own default"
+    assert d._DEBUG_BUNDLE_SLIM_PERF_TICKS == 17 and d._DEBUG_BUNDLE_PERF_TICKS == 192
+    assert asked == [17, 192], "each copy asks for the ticks that are left once the window rows are paid for"
+    assert windows == [12, 31], "the slim copy asks for its newest 12 closed windows, the whole bundle for all the log can hold"
 
 
 def test_only_an_explicit_true_slims_the_bundle(db):

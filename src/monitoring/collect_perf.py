@@ -1212,6 +1212,43 @@ class CollectionMonitor:
         return summary
 
 
+#: What a closed governor window keeps in the diagnostics: the window's own record (``gov_window``) with the permit count it
+#: ended at and moved to, and the running stored count. Every key is a field the log row already carries, under the same name.
+_WINDOW_ROW_TICK_KEYS = ("ts", "pass_id", "permits", "permits_next", "articles_stored", "download_rate_kbps")
+
+
+def window_history(limit: int | None = None) -> list[dict]:
+    """Every closed governor window the log still holds (``limit``: the newest that many), oldest first, one compact row each.
+
+    The log has one row per 1.5 s tick and the window record rides the one tick that closed a window (about one in a hundred),
+    so a diagnostics copy that keeps the newest 200 ticks, or the 17 of the quick one, shows one window or none: not the
+    staircase of permit counts and rates a pass walked, which is what says where a machine settled and what each count paid.
+    This reads the whole file (the cap is ``_CAP_LINES`` rows) and parses only the rows that closed a window. Best-effort:
+    an unreadable or missing log is an empty list, a damaged row is skipped."""
+    try:
+        path = _log_path()
+        if not path.exists():
+            return []
+        rows: list[dict] = []
+        with open(path, encoding="utf-8") as fh:
+            for ln in fh:
+                if '"gov_window"' not in ln:
+                    continue
+                try:
+                    row = json.loads(ln)
+                except ValueError:
+                    continue
+                window = row.get("gov_window")
+                if not isinstance(window, dict):
+                    continue
+                out = {k: row.get(k) for k in _WINDOW_ROW_TICK_KEYS}
+                out.update(window)
+                rows.append(out)
+        return rows if limit is None else rows[-limit:] if limit > 0 else []
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def recent_samples(limit: int = 200) -> list[dict]:
     """The newest perf log lines (for the debug bundle). Best-effort."""
     try:

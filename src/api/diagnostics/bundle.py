@@ -167,7 +167,19 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: How many of the newest collection-performance ticks the SLIM bundle keeps. The log is one line per
 #: tick and covers about five minutes in 330 KB (the Lenovo bundle); the hours and days are
 #: ``vitals.json``'s, so what the bundle keeps is the last minutes of the collector itself.
-_DEBUG_BUNDLE_SLIM_PERF_TICKS = 20
+#: It was 20 and the whole bundle's 200 (``recent_samples``' default); each gave up the ticks that pay for the window rows
+#: below: a window row is at most 401 bytes at its widest shape (377 was the largest the 18 Oct lab runs wrote; the test pins
+#: the widest) and a tick row at least 1,650 (the Lenovo bundle's 330 KB over 200), so 12 windows (4,812 B) cost 3 ticks
+#: (4,950 B) and 31 windows (12,431 B) cost 8 (13,200 B).
+_DEBUG_BUNDLE_SLIM_PERF_TICKS = 17
+_DEBUG_BUNDLE_PERF_TICKS = 192
+
+#: How many of the newest closed governor windows each copy keeps (``collect_perf.window_history``). A window is read only
+#: after 240 s, which is 160 ticks of 1.5 s, and the log holds 5,000 rows, so it holds at most 31 windows: the whole bundle
+#: keeps all of them. The slim one keeps the newest 12 (at least 48 minutes of a pass), the staircase of permit counts
+#: and rates that a handful of ticks cannot show.
+_DEBUG_BUNDLE_SLIM_PERF_WINDOWS = 12
+_DEBUG_BUNDLE_PERF_WINDOWS = 31
 
 #: The storage guard's state carries the damage record whole (``database_damage``: incidents, notes, the last
 #: incident), and ``database-damage.json`` is that same record as a member of the archive in its own right. Where
@@ -246,6 +258,7 @@ def debug_bundle(
     from src.events.feeds import load_imports, load_verdicts
     from src.monitoring import feed_preflight
     from src.monitoring.collect_perf import recent_samples as _collect_perf_samples
+    from src.monitoring.collect_perf import window_history as _collect_perf_windows
     from src.monitoring.errorlog import recent_errors
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
@@ -466,8 +479,15 @@ def debug_bundle(
         # The bandwidth governor's own log — what to read when collection is slow.
         "collect_perf": _member(
             "collect_perf",
-            (lambda: _collect_perf_samples(limit=_DEBUG_BUNDLE_SLIM_PERF_TICKS))
-            if slim else _collect_perf_samples,
+            lambda: _collect_perf_samples(limit=_DEBUG_BUNDLE_SLIM_PERF_TICKS if slim else _DEBUG_BUNDLE_PERF_TICKS),
+        ),
+        # One compact row per closed governor window (permits, the stored-articles rate it read, what it decided): the
+        # staircase the newest ticks above cannot show. Paid for by the ticks those members no longer keep.
+        "collect_perf_windows": _member(
+            "collect_perf_windows",
+            lambda: _collect_perf_windows(
+                limit=_DEBUG_BUNDLE_SLIM_PERF_WINDOWS if slim else _DEBUG_BUNDLE_PERF_WINDOWS
+            ),
         ),
         # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
@@ -537,6 +557,7 @@ def debug_bundle(
                 for key, member in _DEBUG_BUNDLE_STANDS_ALONE.items()
             },
             "collect_perf_newest_ticks": _DEBUG_BUNDLE_SLIM_PERF_TICKS,
+            "collect_perf_newest_windows": _DEBUG_BUNDLE_SLIM_PERF_WINDOWS,
             "why": (
                 "this copy is the one inside the Diagnostics archive: a section that is a member of "
                 "the archive in its own right is named here (`see`), not written twice, and the "
