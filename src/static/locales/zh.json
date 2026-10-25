@@ -2082,6 +2082,7 @@
   "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "来源目录覆盖多少个国家（按每个来源的所在国，对照 ISO 3166 评定）。根据数据测得；实时刷新。",
   "How many distinct matched articles cite this link — an exact count, never a score.": "匹配文章中有多少篇不同的文章引用了此链接——精确计数，绝非评分。",
   "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "这些引用文章来自多少个不同的来源。这是这些引用可能代表的独立路径数量的上限。",
+  "How many ingest entries have been recorded late could not be read ({reason}).": "已补录多少条采集条目无法读取（{reason}）。",
   "How many source articles to draw. Small on purpose: this file is read by a person, and a long file is not read.": "抽取多少篇源文章。刻意取少：这个文件是给人读的，而过长的文件不会被读完。",
   "How much disk this lane may come to hold, in total. When it is spent the app keeps recording WHAT changed and stops storing the text — it says so rather than going quiet.": "这条通道最终总共可能占用多少磁盘空间。预算耗尽后，应用仍会继续记录发生了什么变化，但不再存储正文——它会明确说明这一点，而不是悄然无声。",
   "How much should the app show at once?": "应用一次应显示多少内容？",

@@ -2424,15 +2424,20 @@
       const unread = L.recorded_late == null && !!L.recorded_late_reason && L.recorded_late_reason !== "not requested";
       if (!L.pending && !L.recorded_late && !unread) { el.textContent = ""; return; }
       const p = L.pending || 0;
+      // With nothing queued the frame must not open with "0 ... are queued": an unread count is then said on its own.
       let text = unread
-        ? _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; how many have been recorded late could not be read ({reason}).",
-          { p, reason: L.recorded_late_reason })
+        ? (p
+          ? _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; how many have been recorded late could not be read ({reason}).",
+            { p, reason: L.recorded_late_reason })
+          : _qualTf("How many ingest entries have been recorded late could not be read ({reason}).", { reason: L.recorded_late_reason }))
         : _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.",
           { p, r: L.recorded_late == null ? "?" : L.recorded_late });
-      // The moment the count was taken (or asked for): nothing here caches it, so a number never reads as a standing fact.
+      // The moment the count was taken (or asked for): nothing here caches it, so a number never reads as a standing fact. The time is
+      // written in the app language (fmtDateTime), not the browser's; where that formatter is absent the browser's own form is used.
       if (L.recorded_late_computed_at) {
         const d = new Date(L.recorded_late_computed_at);
-        const when = isNaN(d.getTime()) ? String(L.recorded_late_computed_at) : d.toLocaleString();
+        const when = isNaN(d.getTime()) ? String(L.recorded_late_computed_at)
+          : ((typeof fmtDateTime === "function" && fmtDateTime(L.recorded_late_computed_at)) || d.toLocaleString());
         text += " " + (unread ? _qualTf("Asked at {time}.", { time: when }) : _qualTf("Counted at {time}.", { time: when }));
       }
       el.textContent = text;

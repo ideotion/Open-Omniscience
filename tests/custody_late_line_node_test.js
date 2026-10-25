@@ -30,15 +30,17 @@ function extract(name) {
 }
 
 const el = { textContent: "x" };
+const FMT = { fn: null };
 const src =
   "var window = {};\n" +
+  "var fmtDateTime = (iso) => FMT.fn ? FMT.fn(iso) : '';\n" +
   "const $ = (id) => id === 'cust-late' ? EL : null;\n" +
   extract("_qualTf") + "\n" +
   extract("_renderCustodyLate") + "\n" +
   "module.exports = { _renderCustodyLate };";
 const { _renderCustodyLate } = (() => {
   const m = { exports: {} };
-  new Function("module", "exports", "EL", src)(m, m.exports, el);
+  new Function("module", "exports", "EL", "FMT", src)(m, m.exports, el, FMT);
   return m.exports;
 })();
 const draw = (L) => { el.textContent = "x"; _renderCustodyLate(L); return el.textContent; };
@@ -62,6 +64,13 @@ assert.strictEqual(draw(null), "");
   assert.ok(!/have been recorded late, each/.test(out), "a count was claimed that was never read: " + out);
 }
 
+// --- unread with NOTHING queued: the frame does not open with "0 ... are queued" - //
+{
+  const out = draw({ pending: 0, recorded_late: null, recorded_late_reason: "DatabaseLockedError" });
+  assert.ok(/^How many ingest entries have been recorded late could not be read \(DatabaseLockedError\)\./.test(out), out);
+  assert.ok(!/are queued/.test(out) && !/^0 /.test(out), "an unread count opened with a queue of zero: " + out);
+}
+
 // --- a read count is drawn as a number, and a zero stays a zero ------------- //
 {
   const out = draw({ pending: 1, recorded_late: 0 });
@@ -81,6 +90,14 @@ assert.strictEqual(draw(null), "");
   assert.ok(/Asked at /.test(asked) && !/Counted at/.test(asked), asked);
   const bad = draw({ pending: 0, recorded_late: 7, recorded_late_computed_at: "not a date" });
   assert.ok(bad.includes("Counted at not a date"), "an unparseable time was dropped or garbled: " + bad);
+  // The app's own formatter is used when present (the app language, not the browser's); where it returns nothing the browser's form is used.
+  FMT.fn = () => "25 octobre 2026, 21:00";
+  const fr = draw({ pending: 0, recorded_late: 7, recorded_late_computed_at: at });
+  assert.ok(fr.includes("Counted at 25 octobre 2026, 21:00."), "the app formatter was not used: " + fr);
+  FMT.fn = () => "";
+  const fb = draw({ pending: 0, recorded_late: 7, recorded_late_computed_at: at });
+  assert.ok(fb.includes("Counted at ") && !fb.includes("octobre"), "no fallback when the formatter answers nothing: " + fb);
+  FMT.fn = null;
   const none = draw({ pending: 0, recorded_late: 7 });
   assert.ok(!/Counted at|Asked at/.test(none), "a time was invented: " + none);
 }

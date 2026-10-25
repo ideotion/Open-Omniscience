@@ -2082,6 +2082,7 @@
   "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "情報源カタログが到達する国の数（各情報源の国別に、ISO 3166 と照合して評価）。データから計測し、リアルタイムで更新されます。",
   "How many distinct matched articles cite this link — an exact count, never a score.": "一致した記事のうち何件がこのリンクを引用しているか — 正確な件数であり、スコアではありません。",
   "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "それらの引用記事が何件の異なる情報源から来ているか。引用が表しうる独立した経路数の上限です。",
+  "How many ingest entries have been recorded late could not be read ({reason}).": "遅れて記録された取り込みエントリの件数は読み取れませんでした（{reason}）。",
   "How many source articles to draw. Small on purpose: this file is read by a person, and a long file is not read.": "取り出す元記事の件数。意図的に少なくしています。このファイルは人が読むものであり、長いファイルは読まれないからです。",
   "How much disk this lane may come to hold, in total. When it is spent the app keeps recording WHAT changed and stops storing the text — it says so rather than going quiet.": "このレーンが合計で保持することになりうるディスク量です。予算を使い切ると、アプリは何が変わったかの記録は続けつつ、本文の保存を停止します — 黙って止まるのではなく、その旨を伝えます。",
   "How much should the app show at once?": "アプリに一度にどれだけ表示させますか？",

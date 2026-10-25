@@ -2082,6 +2082,7 @@
   "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "উৎস তালিকা কতগুলি দেশে পৌঁছায় (প্রতিটি উৎসের দেশ অনুসারে, ISO 3166-এর বিপরীতে মূল্যায়িত)। ডেটা থেকে পরিমাপ করা; লাইভভাবে রিফ্রেশ হয়।",
   "How many distinct matched articles cite this link — an exact count, never a score.": "মিলে যাওয়া কতগুলি পৃথক নিবন্ধ এই লিঙ্কটি উদ্ধৃত করে — একটি সঠিক গণনা, কখনও স্কোর নয়।",
   "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "সেই উদ্ধৃতকারী নিবন্ধগুলি কতগুলি পৃথক উৎস থেকে এসেছে। উদ্ধৃতিগুলি সর্বোচ্চ কতগুলি স্বাধীন পথের প্রতিনিধিত্ব করতে পারে, এটি তারই ঊর্ধ্বসীমা।",
+  "How many ingest entries have been recorded late could not be read ({reason}).": "কতগুলি ইনজেস্ট এন্ট্রি বিলম্বে লিপিবদ্ধ হয়েছে তা পড়া যায়নি ({reason})।",
   "How many source articles to draw. Small on purpose: this file is read by a person, and a long file is not read.": "কতগুলি উৎস নিবন্ধ নেওয়া হবে। ইচ্ছাকৃতভাবে অল্প: এই ফাইলটি একজন মানুষ পড়েন, আর লম্বা ফাইল পড়া হয় না।",
   "How much disk this lane may come to hold, in total. When it is spent the app keeps recording WHAT changed and stops storing the text — it says so rather than going quiet.": "এই লেন মোট কতটা ডিস্ক দখল করতে পারে। বাজেট শেষ হয়ে গেলে অ্যাপ কী পরিবর্তিত হয়েছে তা লিপিবদ্ধ করতে থাকে, কিন্তু লেখা সংরক্ষণ বন্ধ করে দেয় — চুপ করে থাকার বদলে এটি স্পষ্ট জানিয়ে দেয়।",
   "How much should the app show at once?": "অ্যাপ একসঙ্গে কতটা দেখাবে?",

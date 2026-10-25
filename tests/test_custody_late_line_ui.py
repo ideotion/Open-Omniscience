@@ -19,6 +19,7 @@ _LOCALES = _ROOT / "src" / "static" / "locales"
 _LATE_STRINGS = [
     "{p} ingest entries could not be written when their articles were stored and are queued; "
     "how many have been recorded late could not be read ({reason}).",
+    "How many ingest entries have been recorded late could not be read ({reason}).",
     "Asked at {time}.",
     "Counted at {time}.",
 ]
