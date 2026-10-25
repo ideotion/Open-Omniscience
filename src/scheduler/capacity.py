@@ -46,7 +46,7 @@ import logging
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
-from src.safety.file_lock import atomic_replace
+from src.safety.file_lock import atomic_replace, file_lock
 
 _LOG = logging.getLogger(__name__)
 
@@ -146,6 +146,30 @@ def seed_for(w_max: int, state_path: Path | None = None) -> int | None:
 
 
 def record_pass(
+    *,
+    w_max: int,
+    mem_low_ticks: int | None,
+    mem_low_min_permits: int | None,
+    samples: int | None = None,
+    guard_pressure_ticks: int | None = None,
+    guard_pressure_min_permits: int | None = None,
+    state_path: Path | None = None,
+) -> int | None:
+    """:func:`_record_pass` as one section under the file's cross-process lock (R176): it reads the stored ceiling, decides from it and writes the new one, so a
+    second server folding its own pass in between would have its ceiling written back over by this one's older reading."""
+    with file_lock(state_path or _default_state_path()):
+        return _record_pass(
+            w_max=w_max,
+            mem_low_ticks=mem_low_ticks,
+            mem_low_min_permits=mem_low_min_permits,
+            samples=samples,
+            guard_pressure_ticks=guard_pressure_ticks,
+            guard_pressure_min_permits=guard_pressure_min_permits,
+            state_path=state_path,
+        )
+
+
+def _record_pass(
     *,
     w_max: int,
     mem_low_ticks: int | None,

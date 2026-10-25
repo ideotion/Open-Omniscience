@@ -514,3 +514,22 @@ def test_machine_floor_shares_the_same_tolerance():
     # the boundary, because that would invent headroom the machine does not have.
     starved = machine_floor(total_mb=8192, available_mb=1020, override=False)
     assert starved["below"] is True
+
+
+def test_recording_a_pass_waits_for_the_state_files_lock(tmp_path):
+    """R176: the ceiling is read, decided on and written back; a second server's pass must not fall between the read and the write."""
+    import threading
+
+    from src.safety.file_lock import file_lock
+    from src.scheduler import capacity
+
+    state = tmp_path / "capacity.json"
+    finished = threading.Event()
+    with file_lock(state):
+        threading.Thread(
+            target=lambda: (capacity.record_pass(w_max=50, mem_low_ticks=900, mem_low_min_permits=1, samples=1000, state_path=state), finished.set()),
+            daemon=True,
+        ).start()
+        assert not finished.wait(0.5), "the pass was folded in without the file's lock"
+    assert finished.wait(10)
+    assert capacity.load_ceiling(state) == 1

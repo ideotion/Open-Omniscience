@@ -52,7 +52,6 @@ class _Local:
     """What this process knows of one lock file: how many hold it and in which mode."""
 
     cond: threading.Condition
-    readers: int = 0
     writer: int | None = None  # thread ident of the exclusive holder
     reader_threads: set[int] | None = None
 
@@ -166,27 +165,26 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
     loc: _Local | None = None
     fd: int | None = None
     held: Held | None = None
-    in_local = False
+    entering = False  # set before this thread's mark goes into the gate; what to give back is read from the gate itself, so no line between can strand it
     began = time.perf_counter()
     got_at = began
     try:
         sidecar = path.with_name(path.name + _SIDECAR)
-        loc = _local(str(sidecar))
+        loc = _local(os.path.abspath(sidecar))  # one key per file, whatever spelling of its path a caller used
         held = Held(locked=False, reason="not taken")
         with loc.cond:
             while True:
                 if loc.writer == me or (loc.reader_threads is not None and me in loc.reader_threads):
                     raise RuntimeError("file_lock is not re-entrant: this thread already holds it")
-                if loc.writer is None and (shared or loc.readers == 0):
+                if loc.writer is None and (shared or not loc.reader_threads):
                     break
                 loc.cond.wait(_POLL_S)
+            entering = True
             if shared:
-                loc.readers += 1
                 assert loc.reader_threads is not None
                 loc.reader_threads.add(me)
             else:
                 loc.writer = me
-            in_local = True
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(sidecar, os.O_RDWR | os.O_CREAT, 0o600)  # not inheritable (PEP 446)
@@ -209,22 +207,23 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
         _note(path.name, "max_wait_s", got_at - began)
         yield held
     finally:
-        _note(path.name, "max_hold_s", time.perf_counter() - got_at)
-        if fd is not None:
-            if held is not None and held.locked:
+        # Give back first, count after: the count takes the registry lock and allocates, and an interrupt there must not be able to leave a lock held.
+        try:
+            if fd is not None:
+                if held is not None and held.locked:
+                    with contextlib.suppress(OSError):
+                        _release_os_lock(fd)
                 with contextlib.suppress(OSError):
-                    _release_os_lock(fd)
-            with contextlib.suppress(OSError):
-                os.close(fd)
-        if in_local and loc is not None:
-            with loc.cond:
-                if shared:
-                    loc.readers -= 1
-                    assert loc.reader_threads is not None
-                    loc.reader_threads.discard(me)
-                else:
-                    loc.writer = None
-                loc.cond.notify_all()
+                    os.close(fd)
+        finally:
+            if entering and loc is not None:
+                with loc.cond:
+                    if loc.writer == me:
+                        loc.writer = None
+                    if loc.reader_threads is not None:
+                        loc.reader_threads.discard(me)
+                    loc.cond.notify_all()
+        _note(path.name, "max_hold_s", time.perf_counter() - got_at)
 
 
 def temp_name(path: Path) -> Path:
@@ -279,8 +278,13 @@ def atomic_replace(
             f.write(data)
             f.flush()
             if fsync:
-                with contextlib.suppress(OSError):
+                try:
                     os.fsync(f.fileno())
+                except OSError as fault:
+                    # A filesystem that has no fsync (EINVAL, ENOTSUP) cannot promise it; any other failure (EIO, a full disk reported only here) means the data is
+                    # NOT on disk, and renaming it over the good file would replace it with something that may read back empty.
+                    if fault.errno not in (errno.EINVAL, errno.ENOTSUP):
+                        raise
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)

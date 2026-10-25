@@ -300,3 +300,105 @@ def test_the_registry_section_is_reentrant_for_the_same_thread():
         with fl._registry():
             assert fl._local("x.lock") is fl._local("x.lock")
     assert fl._STATS["held.jsonl"]["max_wait_s"] == 1.5
+
+
+# --- the folds of the independent read (25 Oct) ----------------------------------------------------------------------------------------------------
+
+
+def _another_thread_takes_it(target: Path) -> bool:
+    """True when a second thread gets the lock within 10 s (a daemon thread, so a stuck lock fails this test and does not hang the suite)."""
+    got = threading.Event()
+
+    def run() -> None:
+        with lock(target):
+            got.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    return got.wait(10)
+
+
+def test_an_interrupt_in_the_hold_statistic_after_the_section_leaves_nothing_held(tmp_path, monkeypatch):
+    """The count at the end of a section takes the registry lock and allocates: an interrupt there used to skip the release that came after it."""
+    fcntl = pytest.importorskip("fcntl")
+    target = tmp_path / "f"
+    real = file_lock._note
+
+    def interrupted(name, field, seconds):
+        if field == "max_hold_s":
+            raise KeyboardInterrupt
+        real(name, field, seconds)
+
+    monkeypatch.setattr(file_lock, "_note", interrupted)
+    with pytest.raises(KeyboardInterrupt), lock(target):
+        pass
+    monkeypatch.setattr(file_lock, "_note", real)
+    assert _another_thread_takes_it(target), "the in-process gate stayed held"
+    with open(tmp_path / "f.lock", "a+b") as other:
+        fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if this process still holds the operating-system lock
+
+
+def test_an_interrupt_between_the_gate_marks_and_the_end_of_the_gate_leaves_nothing_held(tmp_path, monkeypatch):
+    """The reader mark goes in and an interrupt lands right after it: what to give back is read from the gate, not from a flag set a line later."""
+
+    class MarkThenInterrupt(set):
+        armed = True
+
+        def add(self, item):
+            super().add(item)
+            if MarkThenInterrupt.armed:
+                MarkThenInterrupt.armed = False
+                raise KeyboardInterrupt
+
+    target = tmp_path / "f"
+    real = file_lock._local
+
+    def local(key):
+        got = real(key)
+        if not isinstance(got.reader_threads, MarkThenInterrupt):
+            got.reader_threads = MarkThenInterrupt(got.reader_threads or ())
+        return got
+
+    monkeypatch.setattr(file_lock, "_local", local)
+    with pytest.raises(KeyboardInterrupt), lock(target, shared=True):
+        pytest.fail("the body must not run")
+    assert _another_thread_takes_it(target), "an exclusive take waits for ever on a reader that is not there"
+
+
+def test_one_file_under_two_spellings_of_its_path_raises_instead_of_deadlocking(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    outcome: list[BaseException | str] = []
+
+    def run() -> None:
+        with lock(tmp_path / "a.json"):
+            try:
+                with lock(Path("a.json")):
+                    outcome.append("took it twice")
+            except RuntimeError as fault:
+                outcome.append(fault)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(10)
+    assert not t.is_alive(), "the second spelling waited for ever on the operating-system lock this thread holds"
+    assert isinstance(outcome[0], RuntimeError)
+
+
+def test_a_failed_fsync_keeps_the_old_file_and_removes_the_temp_but_a_filesystem_without_fsync_still_writes(tmp_path, monkeypatch):
+    target = tmp_path / "marker"
+    target.write_text("good", encoding="utf-8")
+
+    def eio(fd):
+        raise OSError(errno.EIO, "input/output error")
+
+    monkeypatch.setattr(file_lock.os, "fsync", eio)
+    with pytest.raises(OSError):
+        atomic_replace(target, "new")
+    assert target.read_text(encoding="utf-8") == "good", "data that never reached the disk was renamed over the good file"
+    assert [p.name for p in tmp_path.iterdir() if ".tmp" in p.name] == []
+
+    def einval(fd):
+        raise OSError(errno.EINVAL, "no fsync here")
+
+    monkeypatch.setattr(file_lock.os, "fsync", einval)
+    atomic_replace(target, "new")
+    assert target.read_text(encoding="utf-8") == "new"
