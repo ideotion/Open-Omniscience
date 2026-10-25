@@ -528,22 +528,23 @@ class QuarantineJobManager:
         self._stop.set()
 
     def resume(self) -> dict:
+        # The lock is held from the state check THROUGH start() (it is re-entrant): with a gap between
+        # them, two callers (this endpoint and the task manager's jobs endpoint both reach here) could
+        # both read "paused" at one cursor, and the second would restart a run that had already moved
+        # on, counting the same articles twice. Now the second sees the run no longer paused.
         with self._lock:
             if self._state not in ("paused", "error", "cancelled"):
                 raise RuntimeError("Nothing paused to resume.")
-            sf, wf = self._session_factory, self._work_fn
-            cur, tot, done = self._cursor, self._total, self._done
-            w = self._write  # ALWAYS preserve the mode the paused run was in
-            tiers = self._index_page_tiers  # ...and every other part of that mode
-            gate = self._include_prose_gate
-            stubs = self._include_stubs
-            hosts = self._include_host_mismatch
-        out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done,
-                         write=w, index_page_tiers=tiers, include_prose_gate=gate,
-                         include_stubs=stubs, include_host_mismatch=hosts)
-        # No copy-back of the tally (or the sample): start() keeps both when the cursor is past 0, and
-        # a write-back of what was read before start() erased any chunk the worker merged meanwhile.
-        return out
+            # No copy-back of the tally (or the sample) afterwards: start() keeps both when the cursor
+            # is past 0, and a write-back of what was read earlier erased any chunk the worker merged.
+            return self.start(
+                _session_factory=self._session_factory, _work_fn=self._work_fn, _cursor=self._cursor,
+                _total=self._total, _done=self._done,
+                write=self._write,  # ALWAYS preserve the mode the paused run was in
+                index_page_tiers=self._index_page_tiers,  # ...and every other part of that mode
+                include_prose_gate=self._include_prose_gate, include_stubs=self._include_stubs,
+                include_host_mismatch=self._include_host_mismatch,
+            )
 
     def sample_ids(self) -> dict[str, list[int]]:
         """The sampled article ids per signal of the current run (a copy; ids only)."""
