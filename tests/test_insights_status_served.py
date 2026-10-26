@@ -261,7 +261,7 @@ def test_the_scans_are_the_only_statements_under_the_statement_deadline(monkeypa
     _poll()
     _idle()
     assert seen == [insights._STATUS_SCAN_DEADLINE_S] * 2
-    assert insights._STATUS_SCAN_DEADLINE_S == 400.0 and insights._STATUS_SCAN_DUTY_FACTOR == 10
+    assert insights._STATUS_SCAN_DEADLINE_S == 500.0 and insights._STATUS_SCAN_DUTY_FACTOR == 10
 
 
 def test_scans_made_over_one_database_are_never_carried_to_another(tmp_path):

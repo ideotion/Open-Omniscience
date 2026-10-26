@@ -902,17 +902,17 @@ _STATUS_KEY = "insights:status"
 #: measured 1.2 to 1.4 times ``count(id)`` cold on a synthetic 12 M-row PLAINTEXT index (2026-10-26), and 1.2 to 1.7 times on
 #: RC2's SQLCipher indexes at 12 M and 36 M rows (``rc-diagnostics/remeasure-a002-2026-10-26.md``; ratios transfer, its absolute
 #: seconds do not). So its worst on the field box is INFERRED at 1.4 x 182 = 255 s (310 s at the 1.7 worst ratio): a floor-ish
-#: estimate, not a bound. 400 s is 1.6 times 255 s and 1.3 times 310 s. A scan that passes it is a named, retried failure, not
-#: a wrong number. ``OO_STATUS_SCAN_DEADLINE_S`` changes it; 0 disables it.
-_STATUS_SCAN_DEADLINE_S = 400.0
+#: estimate, not a bound. 500 s is 1.6 times 310 s (the worst measured ratio) and 2.0 times 255 s. A scan that passes it is a
+#: named, retried failure, not a wrong number. ``OO_STATUS_SCAN_DEADLINE_S`` changes it; 0 disables it.
+_STATUS_SCAN_DEADLINE_S = 500.0
 
 #: A finished pair of scans is carried, not repeated, for this many times its own measured duration: the same factor #1439 gave the
 #: figures count (``_FIGURES_COUNT_DUTY_FACTOR``), which caps the scans at 1/10 of one core, what the collectors on a 2-core box
 #: need. The window is shorter than ``_STATUS_TTL_S`` only when the scans take under 1.5 s, where they simply repeat.
 _STATUS_SCAN_DUTY_FACTOR = 10
 
-#: How long a scan that failed is NOT retried, in seconds: three deadlines, as for the figures (``_FIGURES_FAILURE_WINDOW_S``), so a
-#: corpus whose scans cannot finish holds a connection and a snapshot for at most one deadline in four.
+#: How long a scan that failed is NOT retried, in seconds: 1,200 s, which the 500 s deadline does not outgrow (a failing corpus holds
+#: a connection and a snapshot for at most 500 s in every 1,700 s). The figures use 900 s for their 300 s deadline.
 _STATUS_FAILURE_WINDOW_S = 1200
 
 _STATUS_MEMO_LOCK = _threading.Lock()
