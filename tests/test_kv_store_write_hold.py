@@ -790,3 +790,15 @@ def test_a_hold_that_could_not_read_the_file_size_refuses_at_once_without_a_figu
 
 def test_the_live_file_size_is_its_size_on_disk(store):
     assert kv_store._live_file_bytes() == store.stat().st_size
+
+
+def test_a_refused_second_hold_leaves_the_first_holds_size_alone(store, monkeypatch):
+    """The size the Retry-After is made from belongs to the hold that is live: a second hold is refused before it can overwrite it."""
+    monkeypatch.setattr(kv_store, "_live_file_bytes", lambda: 3 * GIB)
+    with kv_store.hold_writes(0):
+        assert kv_store._hold_file_bytes == 3 * GIB
+        monkeypatch.setattr(kv_store, "_live_file_bytes", lambda: 7 * GIB)
+        with pytest.raises(RuntimeError, match="already held"), kv_store.hold_writes(0):
+            pass
+        assert kv_store._hold_file_bytes == 3 * GIB, "the refused second hold replaced the live hold's size"
+    assert kv_store._hold_file_bytes is None
