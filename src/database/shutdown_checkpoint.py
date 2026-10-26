@@ -14,27 +14,32 @@ checked out, idle or inside a read, 100 % of the log left, plain and encrypted. 
 
 WHAT THIS DOES. One ``PRAGMA wal_checkpoint(TRUNCATE)`` through ``execute`` (which releases the GIL, where sqlcipher3's ``close()`` holds it
 for the whole checkpoint it runs on the last connection) from a connection opened here, with the busy timeout at 0 first, so it NEVER waits
-for a reader. MEASURED, same harness: a straggler that is idle, the log is emptied in 2.24 s (300 MiB, encrypted). A straggler INSIDE a read
-gives one of two answers, and which one depends on where the reader's snapshot lies (26 Oct 2026, plain store, SQLite 3.45.1):
+for a reader. MEASURED, same harness: a straggler that is idle, the log is emptied in 2.24 s (300 MiB, encrypted). TRUNCATE copies the frames up
+to the oldest reader's snapshot and answers ``busy`` when anything still holds the log after that, so a straggler INSIDE a read gives one of three answers, which depend on where its snapshot lies (26 Oct 2026, a 204-frame log
+of 840 KB, SQLite 3.45.1 and sqlcipher3 0.6.2 / SQLite 3.51.1 alike; the 214 MB case below is the larger measurement of the same shapes):
 
-* its snapshot is OLDER than every frame (the reader began before the writes): nothing is safe to copy, ``(busy 1, n, 3)`` comes back at
-  once (214 MB of log, 0.00 s) and the log is as it was;
-* its snapshot is NEWER than the frames (a pass that began its read after the writes, the common shape): TRUNCATE first copies every frame
-  the reader does not need and only then finds the reader, so the whole write-back runs (``(1, n, n)``, 214 MB in 1.1 to 1.4 s) and the
-  answer is still ``busy``. The file keeps its size, and its contents are in the database. The reader's close as the LAST connection then
-  has nothing left to copy and removes the log (107 MB: 0.07 s against the step's 0.68 s); a kill before that close leaves the log, and the
-  next open's recovery is expected to copy it again (not measured). ``copied_all`` tells the two apart and the record carries it.
+* the snapshot is OLDER than every frame (the reader began before the writes): only the frames up to its mark are safe to copy, ``(1, 204, 2)``
+  comes back at once (0.00 s, also at 214 MB of log) and the log is as it was;
+* the snapshot lies BETWEEN the writes: a part is copied, ``(1, 206, 104)``, as fast as that copy runs, and the answer is ``busy``;
+* the snapshot is NEWER than every frame (a pass that began its read after the writes, the common shape): every frame is safe to copy, so
+  the whole write-back runs (``(1, n, n)``, 214 MB in 1.1 to 1.4 s) and only then the step finds the reader: the answer is still ``busy``,
+  the file keeps its size and its contents are in the database. The reader's close as the LAST connection then has nothing left to copy and
+  removes the log (107 MB: 0.07 s against the step's 0.68 s); a kill before that close leaves the log, and the next open's recovery is
+  expected to copy it again (not measured). ``copied_all`` separates this shape from the other two, and the record carries it.
 
-``busy`` is therefore "a reader, a writer or another checkpoint held the log", not "a reader held it and nothing was written": a writer
-caught mid-write, or a storage-guard drain still running on the checkpoint lock, gives it too (the last number of the answer is then -1,
-the checkpoint lock being what was busy). The answer is recorded either way (``storage_events`` ``checkpoint`` / ``shutdown``, and the
-facts the sentinel carries, ``forensics.dispose_facts``): a log that is left is a recorded fact, and a ``clean`` sentinel never stands for a
-clean log.
+``busy`` is therefore "something held the log", and the row cannot say what. A WRITER caught mid-write answers exactly as a reader with a
+recent snapshot does (``(1, n, n)`` over a log of ``n`` committed frames: TRUNCATE falls back to a passive checkpoint, copies every committed
+frame and reports busy; measured, 840 KB, and the log grew again when the writer committed), so ``copied`` does not say that nothing is
+left to copy, only that every frame there WAS at the step was copied. Only a held CHECKPOINT lock (another checkpoint, such as a
+storage-guard drain still running) answers ``(1, -1, -1)``: then nothing was copied by this step, and whether the other checkpoint finished
+is not known from the answer (measured: it had emptied the log). The answer is recorded either way (``storage_events`` ``checkpoint`` /
+``shutdown``, and the facts the sentinel carries, ``forensics.dispose_facts``): a log that is left is a recorded fact, and a ``clean``
+sentinel never stands for a clean log.
 
 NO TIME CAP (ruled 17 Oct, D1): the step takes as long as the write-back (about 90 s for 1.4 GB on the field disk), because the next open
 pays the same time anyway and a kill in the middle is safe, SQLite recovers from the start and it is never worse than skipping except for
-the wait at exit. NO WAIT FOR A STRAGGLER (D2): a connection inside a read leaves the log (or, with a recent snapshot, leaves it written
-back and not truncated) and the record says so; a wait would be a number invented before the first bundle says how often that happens.
+the wait at exit. NO WAIT FOR A STRAGGLER (D2): a connection inside a read leaves the log (or, with a recent snapshot or a writer mid-write,
+leaves it written back and not truncated) and the record says so; a wait would be a number invented before the first bundle says how often that happens.
 
 THE CONNECTION IS NOT THE POOL'S. A checkout would wait ``pool_timeout`` behind the very workers that are the reason for the step; this one
 is opened by the connection factory, which the unlock path's verify connection already uses, and closed here. It is opened only for a store
@@ -90,11 +95,12 @@ def _store_path() -> tuple[Path | None, str | None]:
 def checkpoint_before_dispose(path: Path | str | None = None) -> dict[str, Any]:
     """Write the log back into the database without waiting for anyone, and say what happened.
 
-    ``outcome`` is ``done`` (the TRUNCATE ran and nothing held the log), ``busy`` (a reader, a writer or another checkpoint held it: see
-    ``copied_all``), ``failed`` (``error`` is the exception class) or ``skipped`` (``why`` is a short code: ``not sqlite``, ``no file``,
+    ``outcome`` is ``done`` (the TRUNCATE ran and nothing held the log), ``busy`` (a reader, a writer or another checkpoint held it, and the
+    row cannot say which: see ``copied_all``), ``failed`` (``error`` is the exception class) or ``skipped`` (``why`` is a short code: ``not sqlite``, ``no file``,
     ``locked``, ``fresh``). ``truncate`` is the three numbers the PRAGMA answered (busy, log frames, checkpointed; the last two are -1
     when the checkpoint lock itself was busy); ``copied_all`` is, for ``busy``, whether every frame of the log was written back anyway
-    (the reader's snapshot was newer than the frames) and ``None`` otherwise. ``wal_bytes_before`` / ``wal_bytes_after`` are the file's size
+    (a reader's snapshot newer than the frames, or a writer mid-write: it says nothing about frames committed after the step) and ``None``
+    otherwise. ``wal_bytes_before`` / ``wal_bytes_after`` are the file's size
     around the step, ``None`` when unreadable. ``path`` defaults to the engine's file; ``wal_path`` is the log of the file the step looked
     at, so the facts that follow read the same one."""
     out: dict[str, Any] = {

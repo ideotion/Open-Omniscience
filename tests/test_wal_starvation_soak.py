@@ -76,9 +76,20 @@ most of the scan), the round is INCONCLUSIVE for the bytes, is printed as such w
 numbers, and no round is passed as a byte check it could not have failed. The measured
 tables and the probes are in the lane folder's soak-failure-2026-10-26 report and the
 independent read's folder; the lesson fragment carries the rule.
+
+WHY TWO TESTS OVER ONE SET OF ROUNDS (delta read of 26 Oct): the first version asserted the property
+and the bytes in ONE test and could only skip for the property, so a runner whose writer averaged
+under about 6.8 MB/s (every round bytes-inconclusive) got a GREEN test that had asserted nothing about
+the bytes, with the notice in a ``print`` that ``pytest -q`` throws away for a passing test. The rounds
+now run once (a module fixture) and the property and the bytes are asserted by a test each: a test
+whose check could not fail in any round SKIPS, with the numbers, so the status itself says it.
+``bytes_possible`` is an upper bound built from the measured cost of a row in the log (``_WRITER_ROW_WAL_BYTES``,
+frames of ``page_size + 24``, pinned by a test against this SQLite), the seed's own measured log and the rows
+the counter can lag by, not the row's payload times a guessed 1.02 (the log ended 3.4-3.9 % above that).
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 from pathlib import Path
@@ -113,6 +124,15 @@ _MAX_DURING_WINDOW_MULTIPLE = 6
 # One writer row: the blob it inserts. The writer's rate is these bytes per
 # second of the round, measured (not assumed) from the rows it committed.
 _WRITER_ROW_BYTES = 262144
+# What one such row costs in the -wal, as an UPPER bound built from SQLite's own layout: the blob spills into overflow pages of
+# ``page_size - 4`` payload bytes each, plus the leaf and the page that points at it, each page logged as one frame of ``page_size + 24``
+# bytes. Measured on SQLite 3.45.1: 272,538 B per row (66.15 frames), against this 276,040 B (67 frames). A test pins both directions.
+_PAGE_SIZE = 4096
+_FRAME_BYTES = _PAGE_SIZE + 24
+_WRITER_ROW_WAL_BYTES = (math.ceil(_WRITER_ROW_BYTES / (_PAGE_SIZE - 4)) + 2) * _FRAME_BYTES
+# The writer's row counter is bumped AFTER its commit and read BEFORE the log's size: the count can lag the log by the row whose commit
+# finished but was not yet counted and by the row committed between the two reads.
+_ROWS_THE_COUNT_CAN_LAG_BY = 2
 
 # The scan in this test lasts ~0.8 s. Production's release throttle
 # (registry._WAL_GUARD_MIN_RELEASE_INTERVAL_S) is 30 s, and its own comment
@@ -227,6 +247,7 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
     db_path = tmp_path / f"wal_soak_round_{round_i}.db"
     eng = _wal_engine(db_path, seed_rows=_SEED_ROWS, monkeypatch=monkeypatch)
     wal_path = Path(str(db_path) + "-wal")
+    seed_wal_bytes = wal_path.stat().st_size if wal_path.exists() else 0  # measured, not estimated: the log the seeding itself left
     Session = sessionmaker(bind=eng, future=True)
 
     stop_writer = threading.Event()
@@ -287,7 +308,7 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
     return {
         "wal_bytes_during_window": wal_bytes_during_window,
         "writer_bytes_per_s": rows_at_end * _WRITER_ROW_BYTES / scan_seconds if scan_seconds else 0.0,
-        "bytes_possible": int((rows_at_end * _WRITER_ROW_BYTES + _SEED_ROWS * 4096) * 1.02),
+        "bytes_possible": seed_wal_bytes + (rows_at_end + _ROWS_THE_COUNT_CAN_LAG_BY) * _WRITER_ROW_WAL_BYTES,
         "longest_attempt_s": max((a["ended"] - a["began"] for a in attempts), default=0.0),
         "longest_attempt_in_scan_s": longest_in_scan,
         "in_scan_success": any(a["busy"] == 0 for a in in_scan),
@@ -330,16 +351,24 @@ def _round_verdict(r: dict) -> dict:
     bytes_conclusive = allowed["total"] < r["bytes_possible"]
     judged = r["attempts_in_scan"] >= _MIN_ATTEMPTS_TO_JUDGE
     property_conclusive = r["in_scan_success"] or judged
-    red = []
+    red_property = []
     if judged and not r["in_scan_success"]:
-        red.append("no checkpoint finished inside the scan with its busy flag clear")
+        red_property.append("no checkpoint finished inside the scan with its busy flag clear")
     if r["checkpoint_attempts"] == 0:
-        red.append("no checkpoint attempt recorded at all")
+        red_property.append("no checkpoint attempt recorded at all")
     if r["wal_releases"] < _MIN_RELEASES_PER_ROUND:
-        red.append(f"{r['wal_releases']} WAL releases, fewer than {_MIN_RELEASES_PER_ROUND}")
+        red_property.append(f"{r['wal_releases']} WAL releases, fewer than {_MIN_RELEASES_PER_ROUND}")
+    red_bytes = []
     if bytes_conclusive and r["wal_bytes_during_window"] > allowed["total"]:
-        red.append(f"the WAL held {r['wal_bytes_during_window']} B at the end of the scan, over {allowed['total']:.0f} B")
-    return {"red": red, "property_conclusive": property_conclusive, "bytes_conclusive": bytes_conclusive, "allowed": allowed}
+        red_bytes.append(f"the WAL held {r['wal_bytes_during_window']} B at the end of the scan, over {allowed['total']:.0f} B")
+    return {
+        "red": red_property + red_bytes,
+        "red_property": red_property,
+        "red_bytes": red_bytes,
+        "property_conclusive": property_conclusive,
+        "bytes_conclusive": bytes_conclusive,
+        "allowed": allowed,
+    }
 
 
 def _unclosed_fetchmany(commit: bool):
@@ -361,25 +390,16 @@ def _unclosed_fetchmany(commit: bool):
     return fetchmany
 
 
-def test_the_checkpoint_progress_guarantee_holds_reliably_across_repeated_rounds(
-    tmp_path, monkeypatch
-):
-    """The fix's core promise -- a checkpoint can succeed WHILE a producer is
-    still mid-scan, instead of every attempt failing for the whole duration
-    (the true unpatched baseline's behaviour, per
-    tests/test_wal_reader_starvation.py) -- must hold on EVERY one of several
-    repeated, independent rounds within the SAME process, not just the
-    first. And even while legitimately busy, the WAL must stay within a
-    bounded multiple of its configured ceiling on every round whose byte check
-    can fail -- never an unbounded, ever-worsening growth as more rounds
-    accumulate. A round whose byte check could not fail is printed as
-    inconclusive with its numbers, never passed as a byte check.
-    """
-    per_round: list[dict] = []
-    for round_i in range(_ROUNDS):
-        per_round.append(_run_one_round(tmp_path, round_i, monkeypatch))
+@pytest.fixture(scope="module")
+def soak_rounds(tmp_path_factory):
+    """The ``_ROUNDS`` independent rounds, run ONCE for the two tests that judge them (the property and the bytes). A module fixture cannot use
+    the function-scoped ``monkeypatch``, so the patches live in a context of their own and are undone when the rounds are done."""
+    with pytest.MonkeyPatch.context() as mp:
+        per_round = [_run_one_round(tmp_path_factory.mktemp(f"soak{i}"), i, mp) for i in range(_ROUNDS)]
+    return per_round, [_round_verdict(r) for r in per_round]
 
-    verdicts = [_round_verdict(r) for r in per_round]
+
+def _print_inconclusive(per_round: list[dict], verdicts: list[dict]) -> None:
     for i, (r, v) in enumerate(zip(per_round, verdicts, strict=True)):
         if not v["property_conclusive"]:
             print(
@@ -391,16 +411,51 @@ def test_the_checkpoint_progress_guarantee_holds_reliably_across_repeated_rounds
                 f"SOAK ROUND {i} INCONCLUSIVE FOR THE BYTE BOUND: allowed {v['allowed']['total']:.0f} B >= the {r['bytes_possible']} B the round could "
                 f"have written (headroom {v['allowed']['headroom']}, in flight {v['allowed']['in_flight']:.0f})"
             )
-    red_rounds = [(i, v["red"]) for i, v in enumerate(verdicts) if v["red"]]
+
+
+def _judge(per_round: list[dict], verdicts: list[dict], *, red_key: str, conclusive_key: str, what: str, numbers) -> None:
+    """Fail on a red round; SKIP, with the numbers, when no round could have failed. A check that could not fail in any round is not a pass."""
+    _print_inconclusive(per_round, verdicts)
+    red_rounds = [(i, v[red_key]) for i, v in enumerate(verdicts) if v[red_key]]
     assert not red_rounds, (
-        "the checkpoint-succeeds-while-busy property or the bytes failed on round(s) (index, reasons) "
-        f"{red_rounds} of {_ROUNDS} -- it must hold on EVERY round, not just the first: {per_round} {verdicts}"
+        f"the {what} failed on round(s) (index, reasons) {red_rounds} of {len(verdicts)} -- it must hold on EVERY round, not just the first: "
+        f"{per_round} {verdicts}"
     )
-    if not any(v["property_conclusive"] for v in verdicts):
-        pytest.skip(
-            f"every one of the {_ROUNDS} rounds was inconclusive for the property (too few checkpoint attempts answered inside the scan, none cleared): "
-            f"{[(r['attempts_in_scan'], round(r['longest_attempt_in_scan_s'], 3)) for r in per_round]} (attempts in scan, slowest in-scan seconds)"
-        )
+    if not any(v[conclusive_key] for v in verdicts):
+        pytest.skip(f"every one of the {len(verdicts)} rounds was inconclusive for the {what}, so nothing was checked: {numbers(per_round, verdicts)}")
+
+
+def test_the_checkpoint_progress_guarantee_holds_reliably_across_repeated_rounds(soak_rounds):
+    """The fix's core promise -- a checkpoint can succeed WHILE a producer is still mid-scan, instead of every attempt failing for the whole
+    duration (the true unpatched baseline's behaviour, per tests/test_wal_reader_starvation.py) -- must hold on EVERY one of several repeated,
+    independent rounds within the SAME process, not just the first. A round too slow to judge is inconclusive for the property, never passed
+    as one; when every round is, the test skips with the numbers."""
+    per_round, verdicts = soak_rounds
+    _judge(
+        per_round,
+        verdicts,
+        red_key="red_property",
+        conclusive_key="property_conclusive",
+        what="checkpoint-succeeds-while-busy property",
+        numbers=lambda rs, _vs: [(r["attempts_in_scan"], round(r["longest_attempt_in_scan_s"], 3)) for r in rs] + ["(attempts in scan, slowest in-scan seconds)"],
+    )
+
+
+def test_the_log_stays_within_its_bound_while_a_writer_commits_and_checkpoints_run(soak_rounds):
+    """Even while a checkpoint is legitimately busy, the WAL stays within a bounded multiple of its configured ceiling plus what the writer
+    appends during the slowest attempt, on every round whose byte check CAN fail. A round whose allowance already reaches every byte it could
+    have written is inconclusive for the bytes; when every round is, this test SKIPS (the first version passed, printing a notice that CI never
+    shows)."""
+    per_round, verdicts = soak_rounds
+    _judge(
+        per_round,
+        verdicts,
+        red_key="red_bytes",
+        conclusive_key="bytes_conclusive",
+        what="byte bound",
+        numbers=lambda rs, vs: [(round(v["allowed"]["total"]), r["bytes_possible"], r["wal_bytes_during_window"]) for r, v in zip(rs, vs, strict=True)]
+        + ["(allowed, possible, ended at: bytes)"],
+    )
 
 
 @pytest.mark.parametrize("commit", [False, True], ids=["never-closes", "commit-without-close"])
@@ -411,6 +466,8 @@ def test_a_scan_that_never_releases_its_snapshot_is_red_when_the_attempts_can_ju
     monkeypatch.setattr(registry._WalGuardResult, "fetchmany", _unclosed_fetchmany(commit))
     r = _run_one_round(tmp_path, 0, monkeypatch)
     v = _round_verdict(r)
+    # these are the rounds whose log really grows (4.5 to 6.4 MB): the one place the "could not have failed" bound meets a large real log
+    assert r["wal_bytes_during_window"] <= r["bytes_possible"], ("bytes_possible is not an upper bound on what a round can put in the log", r)
     assert not r["in_scan_success"], ("a scan that holds its snapshot cannot be checkpointed inside it", r)
     if not v["property_conclusive"]:
         pytest.skip(f"a disk this slow answered {r['attempts_in_scan']} attempt(s) inside the scan, too few to call it (the round is inconclusive, never green)")
@@ -444,6 +501,55 @@ def test_an_attempt_that_finishes_after_the_scan_is_not_evidence_and_its_bytes_a
     # says so instead of passing a check it could not have failed.
     assert not v["bytes_conclusive"], (r, v)
     print(f"SOAK slow-attempt round INCONCLUSIVE FOR THE BYTE BOUND: allowed {v['allowed']['total']:.0f} B, possible {r['bytes_possible']} B")
+
+
+def test_a_check_that_could_not_fail_in_any_round_skips_and_a_red_round_still_fails():
+    """The decision the two tests above end in, on synthetic rounds, so it does not depend on timing: red fails, a check that no round could
+    have failed SKIPS (it is not a pass), and one conclusive round is enough to pass."""
+    ok = {"writer_bytes_per_s": 12_500_000.0, "bytes_possible": 11_000_000, "in_scan_success": True, "checkpoint_attempts": 9,
+          "attempts_in_scan": 8, "wal_releases": 9, "longest_attempt_in_scan_s": 0.02, "wal_bytes_during_window": 800_000}
+    slow = ok | {"longest_attempt_in_scan_s": 0.6, "wal_bytes_during_window": 9_000_000}  # the byte check cannot fail here
+
+    def judge(rounds, red_key, conclusive_key):
+        _judge(rounds, [_round_verdict(r) for r in rounds], red_key=red_key, conclusive_key=conclusive_key, what="x", numbers=lambda *_: "numbers")
+
+    with pytest.raises(pytest.skip.Exception):
+        judge([slow, slow, slow], "red_bytes", "bytes_conclusive")
+    judge([slow, slow, slow], "red_property", "property_conclusive")  # the same rounds DO check the property
+    judge([slow, ok, slow], "red_bytes", "bytes_conclusive")  # one round that could fail, and did not
+    with pytest.raises(AssertionError):
+        judge([ok | {"wal_bytes_during_window": 9_000_000}, slow, slow], "red_bytes", "bytes_conclusive")
+    with pytest.raises(pytest.skip.Exception):
+        judge([ok | {"in_scan_success": False, "attempts_in_scan": 1}] * 3, "red_property", "property_conclusive")
+    with pytest.raises(AssertionError):
+        judge([ok | {"in_scan_success": False}, ok, ok], "red_property", "property_conclusive")
+
+
+def test_the_cost_of_a_writer_row_in_the_log_is_bounded_by_the_frame_arithmetic_and_the_bound_is_tight(tmp_path):
+    """``bytes_possible`` is an UPPER bound only if the per-row cost is. Measured here on this SQLite, one commit at a time with no checkpoint:
+    no row costs more than ``_WRITER_ROW_WAL_BYTES`` (the first version's payload x 1.02 was exceeded by every round's log, by 3.4-3.9 %), and
+    the bound is not loose by more than 10 %, so an inconclusive round is not made inconclusive by an inflated number."""
+    import sqlite3
+
+    db = tmp_path / "row-cost.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        assert conn.execute("PRAGMA page_size").fetchone()[0] == _PAGE_SIZE, "the frame arithmetic is for this page size"
+        conn.execute("CREATE TABLE t(x)")
+        conn.commit()
+        wal = Path(str(db) + "-wal")
+        costs = []
+        for _ in range(4):
+            before = wal.stat().st_size
+            conn.execute(f"INSERT INTO t VALUES (randomblob({_WRITER_ROW_BYTES}))")
+            conn.commit()
+            costs.append(wal.stat().st_size - before)
+    finally:
+        conn.close()
+    assert max(costs) <= _WRITER_ROW_WAL_BYTES, (costs, _WRITER_ROW_WAL_BYTES)
+    assert min(costs) >= 0.9 * _WRITER_ROW_WAL_BYTES, (costs, _WRITER_ROW_WAL_BYTES)
 
 
 def test_a_round_is_inconclusive_exactly_when_it_could_not_have_failed():

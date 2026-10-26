@@ -11,10 +11,10 @@ and with a straggler inside a read, gone with every connection back in the pool.
 
 WHAT IS PINNED. (1) The premise, as a test of its own: the disposal alone leaves the log with a straggler (if SQLite ever stops doing
 that, this fails and the step is redundant). (2) The step empties the log with an idle straggler. With a straggler inside a read it
-answers ``busy`` WITHOUT the wait the connection factory's own 30 s timeout would cost, in TWO shapes that depend on where the reader's
-snapshot lies: older than every frame (nothing is safe to copy, the log is as it was) and newer than the frames (every frame is copied
-first, the answer is still ``busy``, the file keeps its size and the straggler's close then removes it). Both on a plain and on an
-encrypted store. (3) It opens nothing it should not (a locked or missing store), names a failure by CLASS, never raises, and holds the
+answers ``busy`` WITHOUT the wait the connection factory's own 30 s timeout would cost, in shapes that depend on where the reader's
+snapshot lies: older than every frame (only the frames up to its mark are copied, the log is as it was) and newer than the frames (every
+frame is copied, the answer is still ``busy``, the file keeps its size and the straggler's close then removes it); a WRITER caught mid-write
+answers like the second, and the record cannot tell the two apart. All on a plain and on an encrypted store. (3) It opens nothing it should not (a locked or missing store), names a failure by CLASS, never raises, and holds the
 library swap lock across the whole step: a swap that arrives mid-step is refused with ``LibraryBusy`` and a step that arrives mid-swap
 waits. (4) ``dispose_engine`` and the pool count say what they saw, with ``None`` and a reason where they cannot (never 0), including
 after an EARLIER disposal replaced the pool. (5) The sentinel carries the log the disposal left as ONE ``dispose`` record and the
@@ -164,8 +164,9 @@ def test_the_step_writes_the_log_back_with_an_idle_straggler_and_the_disposal_th
     assert kw["outcome"] == "done" and kw["wal_before"] == before and kw["wal_after"] == 0
 
 
-def test_a_reader_whose_snapshot_predates_the_log_makes_the_step_say_busy_at_once_with_nothing_written_back(store, journal):
-    """SHAPE A. The reader began before the writes, so no frame is safe to copy and nothing is: the answer is instant and the log is as it was."""
+def test_a_reader_whose_snapshot_predates_the_log_makes_the_step_say_busy_at_once_with_only_its_own_frames_written_back(store, journal):
+    """SHAPE A. The reader began before the writes, so only the frames up to its mark are safe to copy: the answer is instant, the checkpointed
+    count is far under the log's, and the log is as it was."""
     store.grow_log()  # the pinning reader IS the straggler, inside its read, and its snapshot is older than every frame
     before = store.wal_bytes()
     assert before >= _TARGET
@@ -182,8 +183,9 @@ def test_a_reader_whose_snapshot_predates_the_log_makes_the_step_say_busy_at_onc
 
 def test_a_reader_whose_snapshot_is_newer_than_the_log_gets_the_whole_log_written_back_and_the_answer_is_still_busy(store, journal):
     """SHAPE B, the common one (a pass that began its read after the writes), and the one the first version of this module's text got wrong:
-    TRUNCATE copies every frame the reader does not need BEFORE it finds the reader, so the whole write-back runs and only then comes ``busy``;
-    the file keeps its size. The record has to tell this from shape A, and the straggler's close then has nothing left to copy."""
+    TRUNCATE copies the frames up to the reader's snapshot, which here is every frame, BEFORE it finds the reader, so the whole write-back runs
+    and only then comes ``busy``; the file keeps its size. The record has to tell this from shape A, and the straggler's close then has
+    nothing left to copy."""
     store.grow_log(reader_after_writes=True)
     before = store.wal_bytes()
     assert before >= _TARGET, "ANTI-VACUITY: no log to write back"
@@ -202,6 +204,37 @@ def test_a_reader_whose_snapshot_is_newer_than_the_log_gets_the_whole_log_writte
     store.straggler = None
     store.eng.dispose()
     assert store.wal_bytes() == 0, "the last close should have removed a log that was already written back"
+
+
+def test_a_writer_caught_mid_write_answers_like_a_recent_reader_so_copied_does_not_mean_nothing_is_left(store, journal):
+    """SHAPE C (the delta read of 26 Oct). The scheduler's stop gives up on a pass that is INSIDE a write transaction: TRUNCATE then falls back to
+    a passive checkpoint, copies every committed frame and answers ``(1, n, n)``, exactly as it does for a reader whose snapshot is newer than
+    the frames. The row cannot tell the two apart, so the record says ``copied`` for both, its words must not blame a reader alone, and the
+    writer's own commit afterwards puts frames in the log that this step never wrote back."""
+    store.grow_log(reader_after_writes=True)
+    store.straggler_idle()  # no reader: the only thing holding the log is the writer below
+    before = store.wal_bytes()
+    assert before >= _TARGET, "ANTI-VACUITY: no log to write back"
+    writer = store.eng.raw_connection()
+    try:
+        cur = writer.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+        cur.execute("INSERT INTO t (b) VALUES (?)", (b"y" * 4096,))
+        out = sc.checkpoint_before_dispose(store.db)
+        assert out["outcome"] == "busy" and out["truncate"][0] != 0, out
+        log, copied = out["truncate"][1], out["truncate"][2]
+        assert log > 0 and copied == log, f"a busy writer lock must not stop the committed frames being copied: {out['truncate']}"
+        assert out["copied_all"] is True, out
+        assert store.wal_bytes() == before, "the file keeps its size: a busy TRUNCATE does not truncate"
+        writer.commit()
+        assert store.wal_bytes() > before, "ANTI-VACUITY: the writer's commit put no frame in the log, so there is nothing the step did not write back"
+    finally:
+        writer.close()
+    step = forensics.dispose_facts({"checked_out": 1}, out)["dispose"]["step"]
+    words = forensics.DISPOSE_STEP_WORDS[step]
+    assert step == "copied" and "a reader" in words and "a writer in the middle of a write" in words, (
+        f"the words for a row both a reader and a writer give must name both as the holder: {words}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -247,9 +280,9 @@ class _Answers:
     ("row", "outcome", "copied_all", "step"),
     [
         ((0, 5, 5), "done", None, "done"),
-        ((1, 7, 7), "busy", True, "copied"),  # a snapshot newer than the frames: every frame written back, a reader still held the file
+        ((1, 7, 7), "busy", True, "copied"),  # a snapshot newer than the frames, or a writer mid-write: every frame written back, the log still held
         ((1, 7, 3), "busy", False, "busy"),  # a snapshot older than the frames: not all of it
-        ((1, -1, -1), "busy", False, "busy"),  # the checkpoint lock itself was busy (a writer or another checkpoint): nothing is known to be copied
+        ((1, -1, -1), "busy", False, "busy"),  # the CHECKPOINT lock itself was busy (another checkpoint): this step copied nothing, the answer is silent on the rest
         ((1, 0, 0), "busy", False, "busy"),  # an empty log answered busy: there was nothing to copy, so it was not "all copied"
     ],
 )
@@ -290,6 +323,22 @@ class _HeldAtCheckpoint:
         return self._c.close()
 
 
+class _HeldAtClose:
+    """A stand-in for the step's connection that stops at ITS CLOSE until the test lets it go. The close is the hazard the swap lock is for: as
+    the last connection on the old file it removes the ``-wal`` and ``-shm`` BY NAME."""
+
+    def __init__(self, conn, at_close: threading.Event, let_go: threading.Event) -> None:
+        self._c, self._at, self._go = conn, at_close, let_go
+
+    def execute(self, sql, *args):
+        return self._c.execute(sql, *args)
+
+    def close(self):
+        self._at.set()
+        assert self._go.wait(30), "the test never let the step go"
+        return self._c.close()
+
+
 def _run_step_in_a_thread(db: Path) -> tuple[threading.Thread, dict]:
     result: dict = {}
     t = threading.Thread(target=lambda: result.update(out=sc.checkpoint_before_dispose(db)), daemon=True)
@@ -318,6 +367,30 @@ def test_a_swap_that_arrives_in_the_middle_of_the_step_is_refused_and_the_file_i
         thread.join(30)
     assert result["out"]["outcome"] in ("done", "busy"), result
     with lg.swap_window(tmp_path / "later.db"):  # the lock is given back: a swap after the step gets its window at once
+        pass
+
+
+def test_a_swap_that_arrives_while_the_step_is_closing_its_connection_is_refused(store, monkeypatch, tmp_path):
+    """The delta read of 26 Oct: the test above stops the step at its checkpoint, so a later edit that moved ``conn.close()`` out of the lock
+    passed it. The close is where the last connection on the file removes the log by name, so the lock must still be held there."""
+    at_close, let_go = threading.Event(), threading.Event()
+    real = connect_mod.connect
+    monkeypatch.setattr(connect_mod, "connect", lambda *a, **k: _HeldAtClose(real(*a, **k), at_close, let_go))
+    thread, result = _run_step_in_a_thread(store.db)
+    try:
+        assert at_close.wait(30), "the step never reached its close"
+        generation = lg.current()
+        incoming = tmp_path / "incoming.db"
+        incoming.write_bytes(b"a library about to be switched in")
+        with pytest.raises(lg.LibraryBusy), lg.swap_window(incoming, timeout=0.2):
+            pytest.fail("the swap window was granted while the step's connection was still open")
+        assert lg.current() == generation, "the generation moved though the swap was refused"
+        assert incoming.exists(), "the refused swap must leave the incoming file where it was"
+    finally:
+        let_go.set()
+        thread.join(30)
+    assert result["out"]["outcome"] in ("done", "busy"), result
+    with lg.swap_window(tmp_path / "later.db"):  # given back once the connection is closed
         pass
 
 
@@ -470,7 +543,7 @@ def test_dispose_facts_read_the_log_now_and_never_turn_unknown_into_zero(dd):
         assert got["step"] == code, (why, got)
     # every code the facts can carry has its words
     assert set(forensics.DISPOSE_OUT_WORDS) == {"earlier", "unknown", "unasked"} and set(forensics.DISPOSE_WAL_WORDS) == {"unreadable"}
-    assert set(forensics.DISPOSE_STEP_WORDS) == {"done", "busy", "copied", "failed", "locked", "fresh", "no db", "not run"}
+    assert set(forensics.DISPOSE_STEP_WORDS) == {"done", "busy", "copied", "failed", "locked", "fresh", "no db", "not run", "unknown"}
 
 
 def test_the_facts_read_the_log_of_the_file_the_step_looked_at(dd, tmp_path):
@@ -576,7 +649,10 @@ def test_a_damaged_sentinel_cannot_widen_the_report(dd):
     forensics._write_state(state)
     forensics.record_clean_shutdown()
     member = _next_boot()["dispose"]
-    assert {k: member[k] for k in ("wal", "out", "step")} == {"wal": "unreadable", "out": "unknown", "step": "not run"}, member
+    assert {k: member[k] for k in ("wal", "out", "step")} == {"wal": "unreadable", "out": "unknown", "step": "unknown"}, member
+    assert "not run" not in forensics.DISPOSE_STEP_WORDS["unknown"] and "did not run" not in forensics.DISPOSE_STEP_WORDS["unknown"], (
+        "a step code this build does not know must not read as a step that never ran"
+    )
     assert set(member) <= {"wal", "out", "step", "took"}, member
     # a number past its cut is not a measurement; a code the tables do not know is not carried
     state = forensics._read_state()

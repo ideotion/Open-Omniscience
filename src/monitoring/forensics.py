@@ -512,8 +512,9 @@ DISPOSE_TOOK_MAX_S = 3600
 #: What each code of the ``dispose`` member says in words (the stored record carries the short code; the text maps it back, as
 #: :data:`DIED_REASON_WORDS` does for ``died_into_phase``). A code stands IN PLACE of a number it could not give, so an unknown is never a
 #: ``0`` and its reason costs no field of its own: ``wal`` is a byte count or ``unreadable``; ``out`` a count or one of ``earlier`` · ``unknown``
-#: · ``unasked``; ``step`` one of the outcomes below. ``copied`` is a ``busy`` answer after every frame of the log was written back. THE CODES ARE
-#: SEVEN CHARACTERS AT MOST because the member's worst case is paid out of the 2,415 B room (tests/test_session_forensics_budget.py builds it).
+#: · ``unasked``; ``step`` one of the outcomes below. ``copied`` is a ``busy`` answer after every frame of the log was written back. THE ``out`` AND
+#: ``step`` CODES ARE SEVEN CHARACTERS AT MOST, and ``unreadable`` (ten) is the one ``wal`` code, because the member's worst case is paid out
+#: of the 2,415 B room (tests/test_session_forensics_budget.py builds it from these tables, every code at every cut).
 DISPOSE_WAL_WORDS = {"unreadable": "the -wal's size could not be read"}
 DISPOSE_OUT_WORDS = {
     "earlier": "an earlier disposal replaced the pool",
@@ -522,13 +523,15 @@ DISPOSE_OUT_WORDS = {
 }
 DISPOSE_STEP_WORDS = {
     "done": "the log was written back and truncated",
-    "busy": "a reader, a writer or another checkpoint held the log, and not all of it was written back",
-    "copied": "every frame was written back, but a reader still held the file so it was not truncated and keeps its size",
+    "busy": "a reader, a writer or another checkpoint held the log, and the answer did not show all of it written back",
+    "copied": "every frame was written back, but a reader with a recent snapshot or a writer in the middle of a write still held the log, "
+    "so it was not truncated and keeps its size (what a writer commits afterwards is not written back)",
     "failed": "the write-back failed (its exception class is in the storage journal)",
     "locked": "the write-back did not run: the store is locked, this process never opened it",
     "fresh": "the write-back did not run: the store is new, this process never opened it",
     "no db": "the write-back did not run: there is no SQLite database file to write back into",
     "not run": "the write-back step did not run",
+    "unknown": "the sentinel names a write-back result this build does not know",
 }
 #: A step ``why`` the write-back step reports, as the code the member keeps (``locked`` / ``fresh``; anything else, a missing file or another
 #: backend, is ``no db``).
@@ -582,7 +585,8 @@ def dispose_facts(disposed: dict[str, Any] | None, checkpoint: dict[str, Any] | 
 def _clean_dispose(raw: Any, took: int | None) -> dict[str, Any] | None:
     """The sentinel's ``dispose`` record as the report carries it, rebuilt field by field: the file is on disk and anything may have written
     it, so a number is kept only inside its cut (:data:`DISPOSE_WAL_MAX_BYTES`, :data:`DISPOSE_OUT_MAX`), a code only when it is one the tables
-    know, and anything else becomes the code that says the reading was unusable. ``took`` (seconds from the teardown's first step to the
+    know, and anything else becomes the code that says the reading was unusable (``unreadable`` / ``unknown``: for ``step`` that is
+    ``unknown``, never ``not run``, which would claim the step did not run). ``took`` (seconds from the teardown's first step to the
     session's end, computed by the caller) is added when it is a credible duration. ``None`` when the sentinel holds no such record (a
     build before this one): the report then says nothing."""
     if not isinstance(raw, dict):
@@ -599,7 +603,7 @@ def _clean_dispose(raw: Any, took: int | None) -> dict[str, Any] | None:
     if "out" in raw:
         out["out"] = number(raw["out"], DISPOSE_OUT_MAX, DISPOSE_OUT_WORDS, "unknown")
     if "step" in raw:
-        out["step"] = raw["step"] if isinstance(raw["step"], str) and raw["step"] in DISPOSE_STEP_WORDS else "not run"
+        out["step"] = raw["step"] if isinstance(raw["step"], str) and raw["step"] in DISPOSE_STEP_WORDS else "unknown"
     if isinstance(took, int) and 0 <= took <= DISPOSE_TOOK_MAX_S:
         out["took"] = took
     return out
