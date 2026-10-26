@@ -88,6 +88,21 @@ def test_context_manager_counts_and_does_not_swallow(_data):
     assert ni.read_record(bytes(ni._STATE["map"][:]))["slots"][1] == (0, 1)
 
 
+def test_an_interrupt_between_the_bump_and_the_return_does_not_leave_the_slot_in_flight(_data, monkeypatch):
+    """``__exit__`` never runs for an entry that raised, so a Ctrl-C landing after the bump would read "in flight" until restart."""
+    real = ni._bump
+
+    def bump_then_interrupt(slot, delta):
+        real(slot, delta)
+        if delta > 0:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(ni, "_bump", bump_then_interrupt)
+    with pytest.raises(KeyboardInterrupt), ni.native_call("dns"):
+        raise AssertionError("the body must not run")
+    assert ni.read_record(bytes(ni._STATE["map"][:]))["slots"][0] == (0, 1), "entered once, nothing left in flight"
+
+
 def test_unknown_slot_and_unavailable_file_are_noops(_data, monkeypatch):
     with ni.native_call("nope"):
         pass
