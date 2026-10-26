@@ -103,7 +103,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 `v0.5.0` is tagged with every row built and verified as far as a session can verify it: CI, fixtures, generated stores and
 Chromium walks on an encrypted install (`R126`). A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Item numbers are §1c's.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–20 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -127,28 +127,37 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag.**
+**Items added at the tag (12–20).**
 
-- **Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
+- **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
   the Windows locked-folder raw copy (inferred, not observed); the Windows msvcrt polling lock and the NFS/FUSE flock in
   `src/safety/file_lock.py` (a filesystem that cannot lock runs unlocked with one stderr warning naming the file); the launcher's
   stderr-filter summary-row exposure (measured 0 to 9 ms idle over 22 launches, no figure under load).
-- **`hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
+- **13. `hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
   is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
   a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
-- **A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
+- **14. A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
   only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
   bodies have one version.
-- **The all-history top-terms query at 28 M mentions** (PR #1467): the built-code cell was lost to container recycles three times, so
+- **15. The all-history top-terms query at 28 M mentions** (PR #1467): the built-code cell was lost to container recycles three times, so
   the query is measured through the built serve path at 20 M and 24 M, and at 28 M only by the standalone run of the same shape
   (polled peak 914.7 MiB, 43 MiB spare). The built 28 M cell is the open item.
-- **The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
+- **16. The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
   stay default-off.
-- **PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
+- **17. PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
   lock move together or not at all.
-- **The audit** (`R189`): a workflow of agents audits quality, performance and vulnerability after the tag; its report and findings
-  ledger are in the project folder, and a clear defect is fixed under `R185`.
+- **18. The audit** (`R189`): a workflow of agents audits quality, performance and vulnerability after the tag; its report and findings
+  ledger are in the project folder, and a clear defect is fixed under `R185`. Known leads handed to it:
+  `audit-0.5.0/inputs/open-items.md` section E (E3, the Ed25519 signing key written unencrypted, `src/reporting/evidence.py:62-72`, and E4,
+  an unbounded `.eml` read in `POST /api/newsletters/import`, first; E7, the Origin port compare, is the first fix candidate).
+- **19. Not browser-verified**: the custody late-entries line (PR #1462) and the null-Origin refusal (PR #1469); built and
+  test-verified, the real-browser step is open item 19.
+- **20. Limits stated in PR bodies**: #1455 (the governor climb was not exercised in the measured pass, the 240 s and 100-completion
+  constants are not measured on real sources, the slow-network limit is from simulation); #1446 and #1449 (the stuck-lock detector
+  checks only the first take of each section, the Retry-After figure was measured to 1 GB on one ext4 disk, Windows unmeasured); #1453
+  (the gauge with the lock off, and other core counts, are not measured). Full text in `audit-0.5.0/inputs/open-items.md` section C,
+  items B2–B3.
 
 ---
 
