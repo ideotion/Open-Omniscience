@@ -74,8 +74,9 @@ def test_top_terms_over_a_rollup_that_runs_out_of_memory_is_the_live_answer_not_
     live = queries.top_terms(serving, days=400, limit=5)
     assert live["terms"], "the seeded corpus (March 2026) is inside a 400-day window"
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
-    _break_serving("SELECT m.term", words="Out of Memory Error", exc_cls=OutOfMemoryException)
+    proxy = _break_serving("SELECT m.term", words="Out of Memory Error", exc_cls=OutOfMemoryException)
     got = queries.top_terms(serving, days=400, limit=5)
+    assert proxy.fired == 1, "the served query really ran and failed; the live answer is not just the serve being off"
     assert got["terms"] == live["terms"], "empty before R194"
 
 

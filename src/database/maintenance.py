@@ -339,9 +339,10 @@ def ensure_feed_backoff_columns(engine: Engine) -> list[str]:
             r[1] for r in conn.execute(text("PRAGMA table_info(feed_fetch_state)")).fetchall()
         }
         for name, ddl in _FEED_BACKOFF_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added feed_fetch_state backoff column(s): {', '.join(added)}")
     return added
@@ -373,9 +374,10 @@ def ensure_article_analysis_columns(engine: Engine) -> list[str]:
             r[1] for r in conn.execute(text("PRAGMA table_info(article_analyses)")).fetchall()
         }
         for name, ddl in _ARTICLE_ANALYSIS_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added article_analyses column(s): {', '.join(added)}")
     return added
@@ -418,9 +420,10 @@ def ensure_merge_batch_source_digest(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(merge_batches)")).fetchall()}
         for name, ddl in _MERGE_BATCH_SOURCE_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
         conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_merge_batches_source_digest"
@@ -453,9 +456,10 @@ def ensure_article_identity_columns(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_IDENTITY_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         with engine.begin() as conn:
             if "content_multihash" in added:
@@ -503,9 +507,10 @@ def ensure_article_ip_columns(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_IP_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles source-IP column(s): {', '.join(added)}")
     return added
@@ -539,9 +544,10 @@ def ensure_article_quarantine_columns(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_QUARANTINE_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles quarantine column(s): {', '.join(added)}")
     return added
@@ -586,9 +592,10 @@ def ensure_article_keyword_indexed_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_KEYWORD_INDEXED_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles column(s): {', '.join(added)}")
     return added
@@ -611,9 +618,10 @@ def ensure_article_top_keyword_columns(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_TOP_KEYWORD_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles top-keyword column(s): {', '.join(added)}")
     return added
@@ -641,9 +649,10 @@ def ensure_article_detected_language_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_DETECTED_LANG_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles deduced-language column(s): {', '.join(added)}")
     return added
@@ -669,9 +678,10 @@ def ensure_watch_filters_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(watches)")).fetchall()}
         for name, ddl in _WATCH_FILTERS_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added watches column(s): {', '.join(added)}")
     return added
@@ -697,9 +707,10 @@ def ensure_external_source_discovery_columns(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(external_sources)")).fetchall()}
         for name, ddl in _EXTERNAL_SOURCE_DISCOVERY_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added external_sources discovery column(s): {', '.join(added)}")
     return added
@@ -730,17 +741,19 @@ def ensure_law_text_columns(engine: Engine) -> list[str]:
         ).fetchone():
             existing = {r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()}
             for name, ddl in _LAW_DOCUMENT_TEXT_COLUMNS.items():
-                if name not in existing:
-                    conn.execute(text(ddl))
-                    added.append(f"law_documents.{name}")
+                if name in existing:
+                    continue
+                conn.execute(text(ddl))
+                added.append(f"law_documents.{name}")
         if conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_revisions'")
         ).fetchone():
             existing = {r[1] for r in conn.execute(text("PRAGMA table_info(law_revisions)")).fetchall()}
             for name, ddl in _LAW_REVISION_TEXT_COLUMNS.items():
-                if name not in existing:
-                    conn.execute(text(ddl))
-                    added.append(f"law_revisions.{name}")
+                if name in existing:
+                    continue
+                conn.execute(text(ddl))
+                added.append(f"law_revisions.{name}")
     if added:
         _LOG.info(f"added law versioned-text column(s): {', '.join(added)}")
     return added
@@ -768,9 +781,10 @@ def ensure_law_document_language_columns(engine: Engine) -> list[str]:
         ).fetchone():
             existing = {r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()}
             for name, ddl in _LAW_DOCUMENT_LANGUAGE_COLUMNS.items():
-                if name not in existing:
-                    conn.execute(text(ddl))
-                    added.append(f"law_documents.{name}")
+                if name in existing:
+                    continue
+                conn.execute(text(ddl))
+                added.append(f"law_documents.{name}")
     if added:
         _LOG.info(f"added law_documents language column(s): {', '.join(added)}")
     return added
@@ -808,9 +822,10 @@ def ensure_law_l0_columns(engine: Engine) -> list[str]:
                 r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()
             }
             for name, ddl in _LAW_DOCUMENT_DATE_COLUMNS.items():
-                if name not in existing:
-                    conn.execute(text(ddl))
-                    added.append(f"law_documents.{name}")
+                if name in existing:
+                    continue
+                conn.execute(text(ddl))
+                added.append(f"law_documents.{name}")
         if conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_revisions'")
         ).fetchone():
@@ -818,9 +833,10 @@ def ensure_law_l0_columns(engine: Engine) -> list[str]:
                 r[1] for r in conn.execute(text("PRAGMA table_info(law_revisions)")).fetchall()
             }
             for name, ddl in _LAW_REVISION_BASIS_COLUMNS.items():
-                if name not in existing:
-                    conn.execute(text(ddl))
-                    added.append(f"law_revisions.{name}")
+                if name in existing:
+                    continue
+                conn.execute(text(ddl))
+                added.append(f"law_revisions.{name}")
     if added:
         _LOG.info(f"added law L0 column(s): {', '.join(added)}")
     return added
@@ -853,9 +869,10 @@ def _add_missing_columns(conn, table: str, ddl_by_name: dict[str, str]) -> list[
     existing = {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}  # noqa: S608
     added: list[str] = []
     for name, ddl in ddl_by_name.items():
-        if name not in existing:
-            conn.execute(text(ddl))
-            added.append(f"{table}.{name}")
+        if name in existing:
+            continue
+        conn.execute(text(ddl))
+        added.append(f"{table}.{name}")
     return added
 
 
@@ -1133,9 +1150,10 @@ def ensure_source_qualification_columns(engine: Engine) -> list[str]:
             return []
         cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
         for name, ddl in _SOURCE_QUALIFICATION_COLUMNS.items():
-            if name not in cols:
-                conn.execute(text(ddl))
-                added.append(f"sources.{name}")
+            if name in cols:
+                continue
+            conn.execute(text(ddl))
+            added.append(f"sources.{name}")
         if "sources.status" in added:
             # Pass 1: a recorded verdict wins. Guarded on the attempts table actually
             # existing -- a hand-built legacy store (or one whose self-heal chain has not
@@ -1191,9 +1209,10 @@ def ensure_source_last_crawled_column(engine: Engine) -> list[str]:
             return []
         cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
         for name, ddl in _SOURCE_LAST_CRAWLED_COLUMN.items():
-            if name not in cols:
-                conn.execute(text(ddl))
-                added.append(f"sources.{name}")
+            if name in cols:
+                continue
+            conn.execute(text(ddl))
+            added.append(f"sources.{name}")
         # Idempotent (IF NOT EXISTS) and unconditional so a store that already has the
         # column from a partial/earlier self-heal run (added is empty) still gets the
         # index repaired on this boot.
@@ -1223,9 +1242,10 @@ def ensure_source_counter_columns(engine: Engine) -> list[str]:
             return []
         cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
         for name, ddl in _SOURCE_COUNTER_COLUMNS.items():
-            if name not in cols:
-                conn.execute(text(ddl))
-                added.append(f"sources.{name}")
+            if name in cols:
+                continue
+            conn.execute(text(ddl))
+            added.append(f"sources.{name}")
         if "sources.article_count" in added:  # just created -> make it true at once
             conn.execute(text(_SOURCE_COUNTER_BACKFILL))
     if added:
@@ -1282,9 +1302,10 @@ def ensure_keyword_counter_columns(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(keywords)")).fetchall()}
         for name, ddl in _KEYWORD_COUNTER_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
         # The ordered top-N scan index (depends on the column existing, so it is
         # created here rather than in HOT_INDEXES). F7: now COMPOSITE with
         # `last_reconciled_at`, so `counter_envelope`'s `min(last_reconciled_at) WHERE
@@ -1345,9 +1366,10 @@ def ensure_keyword_extractor_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(keywords)")).fetchall()}
         for name, ddl in _KEYWORD_EXTRACTOR_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added keywords column(s): {', '.join(added)}")
     return added
@@ -1398,9 +1420,10 @@ def ensure_wiki_text_columns(engine: Engine) -> list[str]:
                 r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
             }
             for name, ddl in columns.items():
-                if name not in existing:
-                    conn.execute(text(ddl))
-                    added.append(f"{table}.{name}")
+                if name in existing:
+                    continue
+                conn.execute(text(ddl))
+                added.append(f"{table}.{name}")
     if added:
         _LOG.info(f"added wiki column(s): {', '.join(added)}")
     return added
@@ -1438,9 +1461,10 @@ def ensure_supergroup_ring_column(engine: Engine) -> list[str]:
             ).fetchall()
         }
         for name, ddl in _SUPERGROUP_MEMBER_COLUMNS.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added keyword_supergroup_members column(s): {', '.join(added)}")
     return added
@@ -1475,9 +1499,10 @@ def ensure_article_source_revision_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_SOURCE_REVISION_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles version-anchor column(s): {', '.join(added)}")
     return added
@@ -1512,9 +1537,10 @@ def ensure_article_newsletter_list_id_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_NEWSLETTER_LIST_ID_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles newsletter-provenance column(s): {', '.join(added)}")
     return added
@@ -1548,9 +1574,10 @@ def ensure_article_newsletter_attach_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
         for name, ddl in _ARTICLE_NEWSLETTER_ATTACH_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added articles newsletter-attach column(s): {', '.join(added)}")
     return added
@@ -1583,9 +1610,10 @@ def ensure_source_catalog_baseline_column(engine: Engine) -> list[str]:
             return []
         existing = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
         for name, ddl in _SOURCE_CATALOG_BASELINE_COLUMN.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                added.append(name)
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
     if added:
         _LOG.info(f"added sources catalogue-baseline column(s): {', '.join(added)}")
     return added
