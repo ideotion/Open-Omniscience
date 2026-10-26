@@ -1,10 +1,12 @@
 """A rebuild of ``sources`` that refuses or fails leaves the store exactly as it found it, the derived view included (audit 0.5.0 A-012,
 routing 11).
 
-``upgrade_sources_to_composite_key`` used to drop ``keyword_mentions_all`` first and decide its refusals afterwards, so a store holding a
-column this build does not know was refused with the view gone, and ``ensure_source_composite_key`` recreates the view only after a
-success: every query on the view failed until the next boot. The schema refusals are now decided before the first change, and the drop
-sits inside the transaction, where a failure rolls it back.
+``upgrade_sources_to_composite_key`` used to drop ``keyword_mentions_all`` first and decide its schema refusals afterwards, so a store
+holding a column this build does not know was refused with the view gone, and ``ensure_source_composite_key`` recreates the view only after
+a success: ``init_db`` put it back a few steps later, but the steps in between, and any direct caller, ran without it. The schema refusals
+are now decided before the first change, and the drop sits inside the transaction, where a failure rolls it back. The interrupt paths are
+pinned too: an interrupt that keeps the ROLLBACK from reaching the driver must not let the ``finally`` commit a half-finished rebuild, and
+one that lands after the COMMIT must stay the interrupt.
 """
 from __future__ import annotations
 
@@ -86,14 +88,82 @@ def test_a_successful_rebuild_still_ends_with_the_view_recreated(legacy_with_vie
         assert source_identity_state(c) == "composite"
 
 
-def test_the_feed_key_column_is_counted_as_present_when_the_requirement_check_runs(tmp_path):
-    """The required-column refusal is decided before ``feed_key`` is added, so it must count it; a legacy table lacking ONLY ``feed_key``
-    is the ordinary upgrade and must not be refused for it."""
-    engine = _legacy_engine(tmp_path)
-    try:
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            assert "feed_key" not in [r[1] for r in conn.exec_driver_sql('PRAGMA table_info("sources")').fetchall()]
-            assert upgrade_sources_to_composite_key(conn)["state"] == "rebuilt"
-    finally:
-        engine.dispose()
+def test_a_column_added_by_another_process_during_the_rebuild_is_refused_not_dropped(legacy_with_view, monkeypatch):
+    """The refusal is decided from the schema read before the first change AND again from the read that decides what is copied, so a column
+    that appears in between (a second process, an older build) is named and refused instead of silently left out of the copy."""
+    import src.database.source_identity as si
 
+    real = si.backfill_feed_keys
+
+    def _late(conn):
+        conn.exec_driver_sql("ALTER TABLE sources ADD COLUMN late_note TEXT")
+        return real(conn)
+
+    monkeypatch.setattr(si, "backfill_feed_keys", _late)
+    with legacy_with_view.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, pytest.raises(
+        SourceIdentityRefused, match="late_note"
+    ):
+        upgrade_sources_to_composite_key(conn)
+    assert _view_present(legacy_with_view)
+    with legacy_with_view.connect() as c:
+        assert source_identity_state(c) == "legacy"
+        assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+
+class _Interrupting:
+    """A connection whose ``exec_driver_sql`` raises ``KeyboardInterrupt`` at one statement, either before it reaches the driver
+    (``after=False``: the statement never runs) or just after it ran (``after=True``), and only once ``once_seen`` has gone by (the backfill
+    before the rebuild runs a COMMIT of its own)."""
+
+    def __init__(self, conn, statement: str, *, after: bool, once_seen: str = ""):
+        self._conn, self._statement, self._after, self._once_seen = conn, statement, after, once_seen
+        self._armed = not once_seen
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def exec_driver_sql(self, statement, *args, **kwargs):
+        if self._once_seen and self._once_seen in statement.upper():
+            self._armed = True
+        if not self._armed or statement.strip().upper() != self._statement:
+            return self._conn.exec_driver_sql(statement, *args, **kwargs)
+        if not self._after:
+            raise KeyboardInterrupt
+        self._conn.exec_driver_sql(statement, *args, **kwargs)
+        raise KeyboardInterrupt
+
+
+def test_an_interrupt_that_keeps_the_rollback_from_the_driver_does_not_commit_a_half_finished_rebuild(legacy_with_view, monkeypatch):
+    """Setting ``isolation_level`` on Python 3.13 COMMITS an open transaction, so a ``finally`` that restores it with the transaction
+    still open would commit whatever the rebuild had done by then. Here the copy fails, and the interrupt lands before the ROLLBACK."""
+    import src.database.source_identity as si
+
+    class _Fake:
+        def __init__(self, table):
+            self._t = table
+
+        def compile(self, dialect=None):
+            return "CREATE TABLE sources_composite_new (id INTEGER PRIMARY KEY, domain TEXT)"
+
+    monkeypatch.setattr(si, "CreateTable", _Fake)
+    with legacy_with_view.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        with pytest.raises(KeyboardInterrupt):
+            upgrade_sources_to_composite_key(_Interrupting(conn, "ROLLBACK", after=False))
+        assert not conn.connection.dbapi_connection.in_transaction
+    assert _view_present(legacy_with_view)
+    with legacy_with_view.connect() as c:
+        assert source_identity_state(c) == "legacy"
+        assert c.exec_driver_sql("SELECT COUNT(*) FROM sqlite_master WHERE name='sources_composite_new'").scalar_one() == 0
+        assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+
+def test_an_interrupt_after_the_commit_stays_the_interrupt(legacy_with_view):
+    """It used to meet ``began`` still True, send a ROLLBACK, and have SQLite answer "no transaction is active": an OperationalError
+    that replaced the interrupt and that boot then swallowed as an ordinary refusal."""
+    with legacy_with_view.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        with pytest.raises(KeyboardInterrupt):
+            upgrade_sources_to_composite_key(_Interrupting(conn, "COMMIT", after=True, once_seen="RENAME TO SOURCES"))
+        assert not conn.connection.dbapi_connection.in_transaction
+    with legacy_with_view.connect() as c:
+        assert source_identity_state(c) == "composite"
+        assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1

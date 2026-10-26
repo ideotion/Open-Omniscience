@@ -134,6 +134,17 @@ def _required_columns_without_default(new_table: Table, old_cols: list[str]) -> 
             if c.name not in old_cols and not c.nullable and c.server_default is None and c.default is None]
 
 
+def _refuse_if_unfit(new_table: Table, cols: list[str]) -> None:
+    """Refuse, naming it, a ``sources`` whose columns the rebuild cannot carry: one this build does not know (copying only the shared
+    columns would drop it silently, and local data never gives way, R100) or one the new table needs and ``cols`` lacks."""
+    unknown = _names_not_in(cols, [c.name for c in new_table.columns])
+    if unknown:
+        raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
+    missing = _required_columns_without_default(new_table, cols)
+    if missing:
+        raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
+
+
 def _extra_schema_objects(conn: Connection) -> list[tuple[str, str]]:
     """The indexes and triggers of ``sources`` the model does not declare, to be recreated after the rebuild, for the same reason as
     :func:`_names_not_in`."""
@@ -173,14 +184,7 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
     # pragma untouched, and a refused store is exactly as it was found. ``feed_key`` is added below, so it is counted as present now.
     new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
     new_cols = [c.name for c in new_table.columns]
-    before_cols = _columns(conn, "sources")
-    unknown = _names_not_in(before_cols, new_cols)
-    if unknown:
-        # Copying only the shared columns would drop these silently, and local data never gives way (R100).
-        raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
-    missing = _required_columns_without_default(new_table, [*before_cols, "feed_key"])
-    if missing:
-        raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
+    _refuse_if_unfit(new_table, [*_columns(conn, "sources"), "feed_key"])
     extra = _extra_schema_objects(conn)
     dbapi.create_function("oo_feed_key", 1, feed_key, deterministic=True)
     # Python's sqlite3 opens a transaction on its own before a DML statement; the rebuild owns its BEGIN/COMMIT,
@@ -198,6 +202,7 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         add_feed_key_column(conn)
         backfill_feed_keys(conn)
         old_cols = _columns(conn, "sources")  # the one read that must follow the column being added: it decides what is copied
+        _refuse_if_unfit(new_table, old_cols)  # and it is judged again, so a column another process added meanwhile is refused, not dropped
         copy = _names_in(new_cols, old_cols)
         conn.exec_driver_sql("BEGIN IMMEDIATE")
         began = True
@@ -224,10 +229,16 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         conn.exec_driver_sql("COMMIT")
         began = False
     except BaseException:
-        if began:
+        # ``in_transaction`` as well as ``began``: after a COMMIT that an interrupt followed there is nothing to roll back, and a ROLLBACK
+        # answering "no transaction is active" would replace the interrupt with an OperationalError that boot swallows.
+        if began and dbapi.in_transaction:
             conn.exec_driver_sql("ROLLBACK")
         raise
     finally:
+        if began and dbapi.in_transaction:
+            # The ROLLBACK above never reached the driver (an interrupt landed first). Leaving it open is not neutral: setting
+            # ``isolation_level`` below COMMITS an open transaction on Python 3.13, which would commit a half-finished rebuild.
+            dbapi.execute("ROLLBACK")
         conn.exec_driver_sql("PRAGMA foreign_keys=ON")
         dbapi.isolation_level = prior_isolation
     return {"state": "rebuilt", "rows_before": before, "rows_after": after}
