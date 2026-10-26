@@ -48,6 +48,11 @@ if os.environ["OO_DATA_DIR"] == _ISOLATED and not os.environ.get("PYTEST_XDIST_W
 # The directory this process was started on. ``src.database.session`` binds its engine to ``OO_DATA_DIR`` at its first import, so
 # ``_engine_binds_to_the_suite_directory`` below compares what it bound to against THIS, not against the variable (a test moves that).
 _SUITE_DATA_DIR = os.environ["OO_DATA_DIR"]
+# Starlette's TestClient stamps ``Host: testserver`` on every request. The app does not serve that name by default (a name nobody owns
+# is a DNS-rebinding target on a LAN, R226), so the suite lists it the way an operator lists a name: ``OO_ALLOWED_HOSTS`` is read per
+# request (an operator's own value in the shell is kept and ``testserver`` added to it), a test that sets it replaces this value, and
+# ``tests/test_host_header_guard.py`` pins the app refusing the name without it.
+os.environ["OO_ALLOWED_HOSTS"] = ",".join(x for x in (os.environ.get("OO_ALLOWED_HOSTS", ""), "testserver") if x)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
 # Never start the offline-maintenance timer either: the boot-upkeep tests that unset

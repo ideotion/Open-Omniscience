@@ -5,6 +5,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Usage: ``python scripts/signal_leak_probe.py {condition|raw|raw_notify|wait} [seconds]``
        ``python scripts/signal_leak_probe.py {gate_writer|gate_writer_bounded|gate_pool|gate_governor|gate_hold|gate_library|gate_library_swap|gate_swap_window} [seconds] [--plain]``
+       ``python scripts/signal_leak_probe.py {gate_file_lock|gate_file_lock_contended} [seconds] [--plain]``
 
 A SIGALRM handler raises KeyboardInterrupt at 0.3 ms intervals while the main thread loops ``with <lock>: <body>``; after each interrupt it
 asks whether the lock is still owned (a leak) and releases it so the loop can go on. Variants:
@@ -38,7 +39,7 @@ _INTERVAL_S = 0.0003
 
 
 GATES = ("gate_writer", "gate_writer_bounded", "gate_pool", "gate_governor", "gate_hold", "gate_library", "gate_library_swap", "gate_swap_window",
-         "gate_corpus_lease", "gate_user_batch_hold", "gate_inflight", "gate_pass_in_flight")
+         "gate_corpus_lease", "gate_user_batch_hold", "gate_inflight", "gate_pass_in_flight", "gate_file_lock", "gate_file_lock_contended")
 
 
 def _plain_wait(cond, lock, timeout=None):  # noqa: ARG001 - the signature of src.utils.interrupts.wait
@@ -323,6 +324,59 @@ class _Scenario:
             return ["pass file left named"]
 
         self._cm(call, damage)
+
+    def _gate_file_lock_common(self, contended: bool) -> None:
+        """The per-file gate of ``src/safety/file_lock.py`` around a REAL sidecar file. Free: the interrupt lands anywhere from the first statement to the give-back.
+        Contended: another thread holds the file, the main thread waits in the gate's own wait (50 ms polls) and the interrupt is what ends it."""
+        import tempfile
+        from pathlib import Path
+
+        from src.safety import file_lock as fl
+
+        target = Path(tempfile.mkdtemp(prefix="oo-filelock-probe-")) / "probe.txt"
+        key = os.path.realpath(target.with_name(target.name + ".lock"))
+        loc = fl._local(key)  # noqa: SLF001
+        self.patch_modules = [fl]
+        # the lock under the Condition: ``Condition._lock`` is it on a tree from before the gate had a name for it, and ``loc.lock`` after
+        self.lock, self.cond = loc.cond._lock, loc.cond  # noqa: SLF001
+        me = threading.get_ident()
+
+        if contended:
+            ready = threading.Event()
+
+            def hold() -> None:
+                with fl.file_lock(target):
+                    ready.set()
+                    self.stop.wait()
+
+            t = threading.Thread(target=hold, daemon=True)
+            t.start()
+            self.threads.append(t)
+            assert ready.wait(5), "the helper thread did not take the file"
+
+        def call() -> None:
+            with fl.file_lock(target):
+                pass
+
+        def damage() -> list[str]:
+            bad = []
+            if loc.writer == me:
+                bad.append("writer mark left set")
+                loc.writer = None
+            if loc.reader_threads and me in loc.reader_threads:
+                bad.append("reader mark left listed")
+                loc.reader_threads.discard(me)
+            return bad
+
+        self.call = call
+        self.damage = damage
+        self.stale = lambda: 0
+
+    def _gate_file_lock(self) -> None:
+        self._gate_file_lock_common(False)
+
+    def _gate_file_lock_contended(self) -> None:
+        self._gate_file_lock_common(True)
 
     def close(self) -> None:
         self.stop.set()

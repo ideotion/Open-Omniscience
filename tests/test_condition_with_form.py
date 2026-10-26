@@ -20,10 +20,14 @@ This reads ``src`` and FAILS on a ``with`` whose context is a name assigned from
 different primitive). One module still uses the form (held behind the run-records PR) and is pinned by its count of sites, so a NEW site there fails, and a conversion makes
 the failure say the entry should go.
 
-NOT READ (none occurs in ``src`` today; each would need a person to see it): a Condition kept in a dict or list (``with self._conds[k]:``), made by a
-factory (``_c = make()``), a subclass of ``threading.Condition``, entered by hand (``_c.__enter__()``) or through ``ExitStack.enter_context``,
-reached as ``with other._cond:`` through another object or ``with getattr(self, "_cond"):``, and a name held by a second class that reuses the
-spelling of a Condition's name (flagged: names are matched module-wide). Tests are not scanned.
+A Condition handed to a class as an ARGUMENT (``_Local(cond=threading.Condition(lock), ...)``, by keyword, or by position to a class of this module whose
+fields or ``__init__`` parameters are named) and entered through an attribute (``with loc.cond:``) is read too: ``src/safety/file_lock.py`` was written that way
+after R144 and passed this test for want of a reader (audit 0.5.0 A-005). The attribute name is matched module-wide, like the names above.
+
+NOT READ (each would need a person to see it): a Condition kept in a dict or list (``with self._conds[k]:``), made by a factory (``_c = make()``) or
+received as a parameter and stored, a subclass of ``threading.Condition``, entered by hand (``_c.__enter__()``) or through ``ExitStack.enter_context``,
+or ``with getattr(self, "_cond"):``, and a name held by a second class that reuses the spelling of a Condition's name (flagged: names are matched
+module-wide). Tests are not scanned.
 """
 
 from __future__ import annotations
@@ -79,14 +83,54 @@ def _condition_names(tree: ast.AST) -> set[str]:
     return names
 
 
+def _class_parameters(tree: ast.AST) -> dict[str, list[str]]:
+    """For each class defined in this module, the names a positional argument lands on: its annotated fields (a dataclass) in order, else its ``__init__``
+    parameters after ``self``."""
+    out: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        fields = [stmt.target.id for stmt in node.body if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)]
+        init = next((stmt for stmt in node.body if isinstance(stmt, ast.FunctionDef) and stmt.name == "__init__"), None)
+        if init is not None:
+            fields = [a.arg for a in init.args.args[1:]]
+        out[node.name] = fields
+    return out
+
+
+def _condition_attributes(tree: ast.AST) -> set[str]:
+    """The names under which a Condition is handed to a call of a class of this module (``K(cond=Condition(...))``, ``K(Condition(...), ...)``), which a
+    ``with <object>.<name>:`` then enters through an attribute."""
+    spellings = _threading_spellings(tree)
+    parameters = _class_parameters(tree)
+    names: set[str] = set()
+
+    def is_one(value: ast.AST | None) -> bool:
+        return isinstance(value, ast.Call) and _is_condition(value.func, spellings)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        names |= {kw.arg for kw in node.keywords if kw.arg is not None and is_one(kw.value)}
+        if isinstance(node.func, ast.Name) and node.func.id in parameters:
+            names |= {parameters[node.func.id][i] for i, arg in enumerate(node.args) if is_one(arg) and i < len(parameters[node.func.id])}
+    return names
+
+
 def _with_sites(source: str) -> list[int]:
-    """Line numbers of the ``with`` statements whose context is a name this module assigned from ``Condition(...)``."""
+    """Line numbers of the ``with`` statements whose context is a name this module assigned from ``Condition(...)``, or an attribute a Condition was handed
+    to a class under."""
     tree = ast.parse(source)
     names = _condition_names(tree)
+    attributes = _condition_attributes(tree)
+
+    def is_condition(expr: ast.expr) -> bool:
+        return ast.unparse(expr) in names or (isinstance(expr, ast.Attribute) and expr.attr in attributes)
+
     return sorted(
         node.lineno
         for node in ast.walk(tree)
-        if isinstance(node, (ast.With, ast.AsyncWith)) and any(ast.unparse(item.context_expr) in names for item in node.items)
+        if isinstance(node, (ast.With, ast.AsyncWith)) and any(is_condition(item.context_expr) for item in node.items)
     )
 
 
@@ -153,9 +197,27 @@ def test_the_converted_modules_build_the_condition_on_a_plain_lock_and_enter_the
     assert _with_sites(source) == []
 
 
+def test_file_lock_builds_its_condition_on_a_lock_it_enters_and_waits_through_the_helper():
+    """Non-vacuity for the one module the scan used to pass for want of a reader (audit 0.5.0 A-005): the Condition is a dataclass argument entered
+    through an attribute, so the pin is on the attribute the reader finds and on the two sites that enter the plain lock instead."""
+    path = _SRC / "safety" / "file_lock.py"
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert _condition_attributes(tree) == {"cond"}, "file_lock no longer hands a Condition to _Local: this pin has nothing to read"
+    assert _with_sites(source) == []
+    entered = [n for n in ast.walk(tree) if isinstance(n, ast.With) and any(ast.unparse(i.context_expr) == "loc.lock" for i in n.items)]
+    assert len(entered) == 2, f"file_lock enters the plain lock {len(entered)} times (the take and the give-back)"
+    assert "_wait(loc.cond, loc.lock, _POLL_S)" in source and "loc.cond.wait(" not in source
+
+
 @pytest.mark.parametrize(
     "snippet",
     [
+        # a Condition handed to a class and entered through an attribute (src/safety/file_lock.py before audit 0.5.0 A-005)
+        "import threading\nfrom dataclasses import dataclass\n@dataclass\nclass L:\n    cond: threading.Condition\n    n: int = 0\n_L = {}\ndef f(k):\n    loc = _L.setdefault(k, L(cond=threading.Condition(threading.RLock()), n=1))\n    with loc.cond:\n        pass",
+        "import threading\nfrom dataclasses import dataclass\n@dataclass\nclass L:\n    cond: threading.Condition\n    n: int = 0\ndef f():\n    loc = L(threading.Condition(), 1)\n    with loc.cond as held:\n        pass",
+        "import threading\nclass L:\n    def __init__(self, n, cv):\n        self.n, self.cv = n, cv\ndef f():\n    loc = L(1, threading.Condition())\n    with loc.cv:\n        pass",
+        "import threading\nclass L:\n    pass\ndef f(loc, lock):\n    loc.cond = threading.Condition(lock)\n    with loc.cond:\n        pass",
         "import threading\nclass A:\n    def __init__(self):\n        self._cond = threading.Condition()\n    def f(self):\n        with self._cond:\n            pass",
         "import threading\n_c = threading.Condition()\ndef f():\n    with _c:\n        pass",
         "from threading import Condition\n_c = Condition()\ndef f():\n    with _c:\n        pass",
@@ -179,6 +241,10 @@ def test_the_reader_finds_every_spelling_of_with_on_a_condition(snippet):
     "snippet",
     [
         "import threading\nclass A:\n    def __init__(self):\n        self._lock = threading.RLock()\n        self._cond = threading.Condition(self._lock)\n    def f(self):\n        with self._lock:\n            self._cond.wait(1)",
+        # the converted shape of file_lock: the lock is entered, the Condition is only waited on
+        "import threading\nfrom dataclasses import dataclass\n@dataclass\nclass L:\n    lock: threading.RLock\n    cond: threading.Condition\ndef f(loc):\n    lock = threading.RLock()\n    loc = L(lock=lock, cond=threading.Condition(lock))\n    with loc.lock:\n        loc.cond.notify_all()",
+        # a positional argument that is not the Condition does not make the attribute at its place one
+        "import threading\nclass L:\n    def __init__(self, a, b):\n        self.a, self.b = a, b\ndef f(lock):\n    loc = L(threading.Condition(lock), lock)\n    with loc.b:\n        pass",
         "import threading\n_c = threading.Condition()\ndef f():\n    _c.acquire()\n    _c.release()",
         "import threading\ndef f(lock):\n    with lock:\n        pass",
         "import threading\n_c = threading.Condition()\ndef g(x):\n    with x:\n        _c.notify_all()",

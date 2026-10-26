@@ -805,7 +805,8 @@ def _endpoints_phase(
 
     from src.api.main import app
 
-    with TestClient(app) as client:
+    # a loopback base URL: TestClient's default Host (``testserver``) is not a name the app serves (R226)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         return endpoint_bench(client, endpoints, repeats=repeats)
 
 
