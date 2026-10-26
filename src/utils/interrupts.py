@@ -21,6 +21,12 @@ interrupts left the pool slots', the governor's, the library lock's and the sett
 for ever. ``while True: if not <wanted>: break`` keeps the jump inside the entry (checked with ``dis``; pinned by
 ``tests/test_gates_survive_an_interrupt.py``). Write every wait loop that way.
 
+A FILTERED COMPREHENSION IS THE SAME LOOP. Since 3.12 a list, dict or set comprehension is compiled INTO the frame that contains it, and its filter's
+``if`` leaves the same back-edge outside the exception-table entry of an enclosing ``with`` or ``try``/``finally``. :func:`kept` and :func:`kept_items` put
+the comprehension in a frame of its own, where no cleanup surrounds it (a generator or a function body is a frame of its own), for the code that runs on the
+main thread before uvicorn takes the signals (audit 0.5.0 A-012; ``tests/test_loop_heads_reach.py``). One function call per item: for a million-item
+list, write a guard-clause loop or a helper of its own instead.
+
 It assumes the lock is held exactly ONCE by the caller (every use here is one ``with self._lock:`` around the wait), which is the only
 level at which restoring ``(1, this thread)`` gives back what the ``with`` expects.
 """
@@ -28,6 +34,8 @@ level at which restoring ``(1, this thread)`` gives back what the ``with`` expec
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 
 
 def wait(cond: threading.Condition, lock: threading.RLock, timeout: float | None = None) -> bool:
@@ -41,3 +49,13 @@ def wait(cond: threading.Condition, lock: threading.RLock, timeout: float | None
             # plain `acquire()` blocked on a contended lock is (a second interrupt would escape without the lock again)
             lock._acquire_restore((1, threading.get_ident()))  # type: ignore[attr-defined]
         raise
+
+
+def kept[T](items: Iterable[T], keep: Callable[[T], Any]) -> list[T]:
+    """``[x for x in items if keep(x)]`` in a frame of its own (see the module docstring)."""
+    return [x for x in items if keep(x)]
+
+
+def kept_items(mapping: Mapping[Any, Any], keep: Callable[[Any, Any], Any]) -> dict[Any, Any]:
+    """``{k: v for k, v in mapping.items() if keep(k, v)}`` in a frame of its own."""
+    return {k: v for k, v in mapping.items() if keep(k, v)}
