@@ -169,7 +169,7 @@
   const GESTURE_ONLY = new Set([
     "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
     "excludeKeyword", "familyResetGroup", "familySplit", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched",
-    "mbRun", "osmPickRemove", "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation",
+    "maintAction", "mbRun", "osmPickRemove", "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation",
     "removeAuthor", "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "runAiCheck", "schedulerStop",
     "secureErase", "sgRemoveMember", "stopVllm", "toggleAiCoordinator", "unattendedStop",
   ]);

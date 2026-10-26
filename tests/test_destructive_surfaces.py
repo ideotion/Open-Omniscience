@@ -353,7 +353,7 @@ def test_the_request_exemptions_are_real_and_not_also_guarded() -> None:
 
 def test_the_functions_the_request_finder_added_to_the_gesture_gate_stay_there() -> None:
     gated = _set_literal("GESTURE_ONLY")
-    for name in ("toggleAiCoordinator", "mbRun", "runAiCheck", "familySplit"):
+    for name in ("toggleAiCoordinator", "mbRun", "runAiCheck", "familySplit", "maintAction"):
         assert name in gated, f"{name} makes a destructive request on an allowlisted binding and must run only for a gesture"
     sites = _request_sites()
     assert "deleteCustomPrompt" in sites and sites["deleteCustomPrompt"][1], "deleteCustomPrompt must ask before it deletes"
