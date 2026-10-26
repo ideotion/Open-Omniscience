@@ -58,7 +58,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 _SIZE_RE = re.compile(r"^\s*([0-9]*\.?[0-9]+)\s*([kmgtKMGT]?)([bB]?)\s*$")
-_CORPUS_ENV = "OO_DB_PASSPHRASE"
+_DB_KEY_ENV_NAME = "OO_DB_PASSPHRASE"
 _UNITS = {"": 1, "k": 1024, "m": 1024**2, "g": 1024**3, "t": 1024**4}
 
 
@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--passphrase-stdin",
         action="store_true",
-        help=f"read the corpus passphrase (SQLCipher) from standard input, one line; else ${_CORPUS_ENV} "
+        help=f"read the corpus passphrase (SQLCipher) from standard input, one line; else ${_DB_KEY_ENV_NAME} "
         "if set; with neither the corpus is a faster plaintext one",
     )
     p.add_argument(
@@ -123,7 +123,7 @@ def _passphrase(args, stdin) -> str | None:
     if args.passphrase_stdin:
         line = stdin.readline().rstrip("\r\n")
         return line or None
-    return os.environ.get(_CORPUS_ENV) or None
+    return os.environ.get(_DB_KEY_ENV_NAME) or None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         # Named and valueless: the value is in the caller's shell history already, and is not printed again here.
         print(
             "error: a passphrase is not accepted on the command line (a process's arguments are readable by other "
-            f"users and land in shell history). Set ${_CORPUS_ENV}, or use --passphrase-stdin. "
+            f"users and land in shell history). Set ${_DB_KEY_ENV_NAME}, or use --passphrase-stdin. "
             "The value you passed was not used.",
             file=sys.stderr,
         )
