@@ -122,7 +122,7 @@ oo_pid_alive() {
 # oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run), 98 when no
 # lock can be made at all (CMD did not run), else CMD's own status. With OO_REC_LOCK_FOREVER=1 the wait has no bound (the deferred child).
 oo_rec_locked() {
-    local f="$1" rc=0 d tries owner wait_s
+    local f="$1" rc=0 d tries owner moved wait_s
     shift
     if command -v flock >/dev/null 2>&1; then
         { : >> "$f.lock"; } 2>/dev/null || return 98
@@ -150,7 +150,13 @@ oo_rec_locked() {
     tries=$(( OO_REC_LOCK_WAIT_MS / 10 + 1 ))
     while :; do
         if mkdir "$d" 2>/dev/null; then
-            printf '%s\n' "${BASHPID:-$$}" > "$d/pid" 2>/dev/null || true
+            # The owner is THIS process, not the launcher it was forked from. bash 4+ has BASHPID; bash 3.2 (macOS) has not, and there $$ is the launcher's pid in every
+            # subshell, so the deferred child would be recorded as its parent and a second launcher would take the lock over the moment the parent exited. A simple
+            # command with a redirect is forked by this very shell (not by a command substitution, which has a subshell of its own), so the sh it starts sees the
+            # pid of this shell as its PPID.
+            if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID" > "$d/pid" 2>/dev/null || true
+            else sh -c 'echo $PPID' > "$d/pid" 2>/dev/null || true
+            fi
             "$@" || rc=$?
             rm -rf "$d" 2>/dev/null || true
             return "$rc"
@@ -159,7 +165,19 @@ oo_rec_locked() {
         case "$owner" in ''|*[!0-9]*) owner="" ;; esac
         # the owner is gone: the lock is taken over. mv is atomic, so of two launchers taking it over only one moves it.
         if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
-            mv "$d" "$d.dead.$$" 2>/dev/null && rm -rf "$d.dead.$$" 2>/dev/null
+            # Between reading the owner and the mv the dead owner's lock may have been released and made again by a LIVE launcher: the mv would then carry off a lock
+            # that is held. So what was moved is read again, and a lock whose owner is not the one judged dead is put back, an empty pid file included (a launcher that
+            # has made the directory and not yet written its pid). A dead but different pid put back is harmless: the next pass takes it over. The put-back is made only
+            # while no lock stands (mv into an existing directory would nest the moved one inside it), and a lock made again in the instant between the test and the
+            # mv is the width of two commands, not of the read-to-mv gap.
+            if mv "$d" "$d.dead.$$" 2>/dev/null; then
+                moved="$(cat "$d.dead.$$/pid" 2>/dev/null || true)"
+                if [ "$moved" != "$owner" ] && [ ! -e "$d" ] && mv "$d.dead.$$" "$d" 2>/dev/null; then
+                    rm -rf "$d/${d##*/}.dead.$$" 2>/dev/null || true
+                else
+                    rm -rf "$d.dead.$$" 2>/dev/null || true
+                fi
+            fi
         fi
         if [ "${OO_REC_LOCK_FOREVER:-}" != 1 ]; then
             tries=$((tries - 1))
@@ -195,7 +213,7 @@ _oo_rec_trim() {
 }
 # The row of a launcher that could not get the lock in time (R174): a detached child waits for the lock with no bound and then does the locked
 # append and the trim. Nothing is written to a file by this function, and the child leaves no file behind. It ignores the signals a closing window
-# sends. (The mkdir lock records the child's own pid where bash has BASHPID; on a bash without it, the pid of the launcher.)
+# sends. (The mkdir lock records the child's own pid, from BASHPID where bash has it and from a one-line sh otherwise.)
 _oo_rec_defer() {
     (
         exec < /dev/null > /dev/null 2>&1; trap '' HUP INT TERM PIPE

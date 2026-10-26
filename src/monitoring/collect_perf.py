@@ -63,6 +63,12 @@ _LOOP_LAG_FRACTION = 0.25  # ...and this much of the window must be, before it c
 # before it, and find no improvement that could possibly be there yet.
 _LOOP_LAG_PATIENCE = 8
 
+#: The keys of ``process_budget.compose``'s answer that a TICK does not repeat, because the same sample already carries each
+#: one under its own name: ``collector_kbps`` is ``download_rate_kbps`` (the collector's own share, rounded and floored at 0 on
+#: the measured path, which is the only path the app runs) and ``mode`` is ``rate_mode``. ``compose`` itself, and the
+#: governor, still see the whole dict.
+_TICK_BUDGET_DUPLICATES = frozenset({"collector_kbps", "mode"})
+
 
 def _log_path():
     from src.paths import data_dir
@@ -236,6 +242,46 @@ def loop_starvation(pressure: dict | None) -> tuple[bool, float | None]:
     return bool(frac >= min_fraction), float(frac)
 
 
+def lock_tick_fields(prev: dict | None, cur: dict) -> dict:
+    """One tick's ``extraction_lock`` block: what the extraction lock did between two readings of its live gauge
+    (``src.ingest.lock_stats.live_reading``). The words that go with it are ``lock_stats.LIVE_METHOD``; they are not written
+    into the log (bytes: a sentence on the pass summary measured +220 to +275 B per slim diagnostics copy once deflated).
+
+    ``held_frac`` is the share of the interval some thread held the lock (outermost holds only), ``wait_rate`` the
+    thread-seconds spent waiting for it per second (a mean queue length, so it can exceed 1). Both are differences of the gauge's
+    own cumulative totals over the gauge's own clock, so an open hold or an open wait is in them; the unrounded differences of
+    consecutive readings add up exactly, the written values do not (two decimals: a 6 ms hold in a 1.5 s interval reads 0.0, as
+    an idle lock does) and a row whose write failed leaves its interval out of the log. The interval is not written: it is this
+    row's ``ts`` minus the previous row's (the first tick's is about one tick interval, from the baseline taken when the monitor
+    starts).
+
+    ``holder_age_s`` is how long the current holder had held the lock at the instant of the reading. It needs no earlier
+    reading, so it is written on every path that has a reading, and the KEY IS ABSENT when nobody held the lock (an absent key
+    says "no hold open"; a ``0.0`` says a hold had just begun).
+
+    ``prev`` of ``None`` (no earlier reading: the baseline failed, or the previous tick's reading did) and an interval of no
+    length give ``null`` rates with a reason, never a zero: a zero would read as "the lock was idle". The two rates are the
+    differences as they are: the gauge's totals only grow and its lock is exclusive, so a value outside 0 to 1 for ``held_frac``
+    would be evidence that an assumption broke, and clamping it would hide that. The numbers say the lock and not the CPU (a held
+    lock can be waiting for the GIL), extractions only, and nothing about which page."""
+    out: dict
+    if prev is None:
+        out = {"held_frac": None, "wait_rate": None, "reason": "no earlier reading"}
+    else:
+        span = cur["now"] - prev["now"]
+        if not span > 0:  # a NaN is not > 0 either
+            out = {"held_frac": None, "wait_rate": None, "reason": "no time between readings"}
+        else:
+            out = {
+                "held_frac": round((cur["occupied_s"] - prev["occupied_s"]) / span, 2),
+                "wait_rate": round((cur["waited_s"] - prev["waited_s"]) / span, 2),
+            }
+    age = cur.get("holder_age_s")
+    if age is not None:
+        out["holder_age_s"] = round(float(age), 1)
+    return out
+
+
 def _proc_handle():
     """One reused psutil.Process for the whole process.
 
@@ -379,6 +425,7 @@ class CollectionMonitor:
         cache_stats_fn=None,
         articles_fn=None,
         sources_fn=None,
+        lock_fn=None,
     ) -> None:
         self._gov = governor
         #: () -> articles stored so far in this pass: the maximum-mode climb's signal (R180), and logged beside each governor window.
@@ -387,6 +434,10 @@ class CollectionMonitor:
         #: count can be.
         self._sources_fn = sources_fn
         self._last_window_seen = None
+        #: () -> the extraction lock's live reading (``lock_stats.live_reading``): the source of each tick's ``extraction_lock``
+        #: block, which is the difference of this reading and the previous tick's (or the baseline taken when the monitor starts, for the first tick).
+        self._lock_fn = lock_fn
+        self._lock_prev: dict | None = None
         self._pass_id = pass_id
         self._mode = mode
         self._now = now_fn or time.monotonic
@@ -487,6 +538,12 @@ class CollectionMonitor:
             open_stats.reset()
         except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
             log_failure(_LOG, "encrypted opens window could not be reset", exc, level=logging.DEBUG)
+        # The first tick's lock delta starts here, when the monitor starts (None when the gauge cannot be read: that tick says so).
+        try:
+            self._lock_prev = self._lock_reading()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            self._lock_prev = None
+            log_failure(_LOG, "extraction lock baseline could not be read", exc, level=logging.DEBUG)
         self._prev_bytes = self._bytes_total()
         self._prev_mono = time.monotonic()
         try:  # prime psutil's since-last-call counters so the first reading is real
@@ -571,6 +628,31 @@ class CollectionMonitor:
         stored = self._count(self._articles_fn)
         if stored is not None:
             out["articles_stored"] = stored
+        return out
+
+    def _lock_reading(self) -> dict:
+        """The extraction lock's live gauge now. Raises when it cannot be read; the callers say so by class. Takes the gauge's
+        private leaf lock for about 2 microseconds (measured, 14 waiters registered), the lock the marks inside every extraction's
+        hold also take, once per tick: it cannot deadlock (nothing is called under it but the clock), and a mark that meets it
+        waits that long."""
+        if self._lock_fn is not None:
+            return self._lock_fn()
+        from src.ingest import lock_stats
+
+        return lock_stats.live_reading()
+
+    def _lock_fields(self) -> dict:
+        """This tick's ``extraction_lock`` block (see :func:`lock_tick_fields`), or ``{"unavailable": <class>}`` when the
+        gauge cannot be read. Never an exception text, never a zero in place of a reading; after a failed reading the next
+        tick has no earlier reading to take a difference from and says so."""
+        try:
+            cur = self._lock_reading()
+            out = lock_tick_fields(self._lock_prev, cur)
+        except Exception as exc:  # noqa: BLE001 - a statistic never breaks a tick
+            self._lock_prev = None
+            log_failure(_LOG, "extraction lock reading failed", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+        self._lock_prev = cur
         return out
 
     def _tick(self) -> None:
@@ -729,14 +811,15 @@ class CollectionMonitor:
         sample = {
             "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
             "pass_id": self._pass_id,
-            "elapsed_s": round(time.time() - self._started_at, 1),
             "mode": self._mode,
             # The collector's OWN share, unchanged: this field has meant "what the
             # fetcher pulled" since it was written, and redefining an existing key
             # would make its own history incomparable with its future. The whole-process
             # figure the governor now acts on is published BESIDE it, under its own name.
             "download_rate_kbps": rate,
-            "process_budget": budget,
+            # Without ``collector_kbps`` and ``mode``: the first is ``download_rate_kbps`` (above) and the second ``rate_mode``
+            # (below), both in this same sample, so a copy of either only costs bytes in every tick of a log that holds 5,000.
+            "process_budget": {k: v for k, v in budget.items() if k not in _TICK_BUDGET_DUPLICATES},
             "target_kbps": getattr(self._gov, "target_kbps", None),
             "rate_mode": getattr(self._gov, "mode", None),
             "permits": permits,
@@ -757,6 +840,9 @@ class CollectionMonitor:
                 "contended_rate": round(contended_rate, 3) if contended_rate is not None else None,
                 "saturated": writer_saturated,
             },
+            # What the extraction lock did since the previous tick (or the monitor's start): the one record of a lock-bound or
+            # killed pass, whose summary line is never written.
+            "extraction_lock": self._lock_fields(),
             "cpu_sys_pct": cpu_sys,
             "cpu_proc_pct": vit.get("cpu_proc_pct"),
             # P4: the share of a saturated machine that is NOT this process -- the

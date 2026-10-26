@@ -20,6 +20,7 @@ nobody touched -- the recorded mypy-pin failure, bought a second time.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -66,6 +67,7 @@ def test_the_verdict_is_growth_only(monkeypatch, capsys, count, ceiling, rc):
     """Equal passes, below passes (and prints the new floor), above fails."""
     mod = _load()
     monkeypatch.setattr(mod, "findings", lambda: [{"code": "I001"}] * count)
+    monkeypatch.setattr(mod, "_ruff_version", lambda: "ruff 9.9.9")
     monkeypatch.setattr(sys, "argv", ["ruff_ratchet.py", "--max", str(ceiling)])
     assert mod.main() == rc
     out = capsys.readouterr()
@@ -87,6 +89,7 @@ def test_the_failure_message_names_the_ruff_version(monkeypatch, capsys):
     assert "ruff 9.9.9" in err and "may only be lowered" in err
 
 
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="ruff is not installed in this interpreter (the dev extra); the script refuses to count without it")
 def test_it_counts_findings_not_output_lines():
     """``ruff check`` prints two SUMMARY lines after the findings ("Found N errors",
     "[*] N fixable"), so a ``wc -l`` implementation over-reports by two and drifts the
@@ -104,3 +107,29 @@ def test_it_counts_findings_not_output_lines():
     # No assertion on the VALUE: it moves with the ruff version, which is the whole
     # reason the ceiling lives in ci.yml and not in this file.
     assert int(m.group(1)) >= 0
+
+
+def test_ruff_that_prints_nothing_is_an_error_not_zero_findings(monkeypatch):
+    """Audit 0.5.0 A-007. A missing module exits 1 with empty stdout (``No module named ruff``), which the old ``or "[]"`` read as a clean tree."""
+    mod = _load()
+    done = subprocess.CompletedProcess([], 1, stdout="", stderr="/usr/bin/python3: No module named ruff\n")
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: done)
+    with pytest.raises(SystemExit) as raised:
+        mod.findings()
+    assert "No module named ruff" in str(raised.value) and "nothing was measured" in str(raised.value)
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, stdout="{}", stderr=""))
+    with pytest.raises(SystemExit):
+        mod.findings()  # not a list
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, stdout="[]", stderr=""))
+    assert mod.findings() == [], "ruff's own literal empty list is still a clean tree"
+
+
+def test_an_unrunnable_ruff_fails_the_gate_and_never_says_the_ratchet_can_be_lowered(monkeypatch, capsys):
+    mod = _load()
+    monkeypatch.setattr(mod, "_ruff_version", lambda: "unknown")
+    monkeypatch.setattr(mod, "findings", lambda: pytest.fail("nothing is measured without a ruff"))
+    monkeypatch.setattr(sys, "argv", ["ruff_ratchet.py", "--max", "417"])
+    assert mod.main() != 0
+    out = capsys.readouterr()
+    assert "lowered" not in out.out and "--max 0" not in out.out
+    assert "nothing was measured" in out.err and "not a clean tree" in out.err

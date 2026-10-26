@@ -656,10 +656,27 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
             "ts": d.get("ts"),
             "rss_mb": d.get("rss_mb"),
             "mem_avail_mb": d.get("mem_avail_mb"),
-            "elapsed_s": d.get("elapsed_s"),
+            "since_pass_start_s": _seconds_between(d.get("pass_id"), d.get("ts")),
             "pass_id": d.get("pass_id"),
         }
     return None
+
+
+def _seconds_between(start: Any, end: Any) -> float | None:
+    """``end`` minus ``start`` in seconds, both ISO-8601 strings, or ``None`` when either is missing, unreadable or the two
+    cannot be compared (never a ``0``, which would read as "the pass had just begun").
+
+    The collect-perf tick used to carry ``elapsed_s`` (seconds since the monitor was built); it no longer does, to pay for the
+    extraction-lock block, and a tick's ``pass_id`` is the pass's own start (``runner.py`` stamps it before the sources are
+    chosen), so the time into the pass is ``ts`` minus ``pass_id``. That is a slightly different quantity from the old
+    ``elapsed_s`` (it includes the seconds the pass spent choosing its sources before the monitor existed), which is why the
+    key is named for what it holds and the old name is gone."""
+    try:
+        a = datetime.fromisoformat(str(start))
+        b = datetime.fromisoformat(str(end))
+        return round((b - a).total_seconds(), 1)
+    except (TypeError, ValueError):
+        return None
 
 
 #: The unlock step that holds the verify connection's recovery and its checkpoint-on-close. The

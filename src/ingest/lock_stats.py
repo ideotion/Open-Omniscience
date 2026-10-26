@@ -113,6 +113,20 @@ METHOD = (
     "extract_article for the longest hold"
 )
 
+#: What the ``extraction_lock`` block of a collect_perf TICK means. NOT written into the log: on the pass summary it measured
+#: +220 to +275 B per slim diagnostics copy once deflated (a copy taken after a pass holds the summary, and the sentence is
+#: unique text), more than the block and the trims net, and the rule is that new diagnostics bytes are net-zero
+#: (``docs/ledger/shipped.d``, the row for the tick block, has the measurement). The tick's field names say what they hold;
+#: these are the words, for the code, the tests and that row.
+LIVE_METHOD = (
+    "extraction_lock in a collect tick: held_frac = share of the tick's wall time some thread held the extraction lock "
+    "(outermost holds only, 0 to 1); wait_rate = thread-seconds spent waiting for it per wall second (a mean queue length, "
+    "can exceed 1); holder_age_s = seconds the current holder had held it at the tick's instant, absent when nobody held it; "
+    "both rates are differences of two readings of one monotonic clock, open holds and open waits included, over the "
+    "interval between this row's ts and the previous row's (the first tick's: about one tick, from the baseline taken when "
+    "the monitor starts); extractions only, the lock and not the CPU, and not which page"
+)
+
 
 def now() -> float:
     """The clock the statistics read (a name of its own so a test can drive it)."""
