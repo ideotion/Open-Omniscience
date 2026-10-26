@@ -572,6 +572,8 @@
       // run in the boot essentials and pull the whole catalogue for a <select>
       // nobody had opened yet (2026-09-09).
       collect:  () => { loadScheduler(); loadSources(); },
+      // The dry run + two reports. Loopback reads only; the status poll stops with the fold.
+      maintenance: () => { loadMaintenance(); },
       // The system prompts and the operator's own extractors (maintainer 2026-08-09:
       // "move the entire Behaviour & prompts section to an AI section in the advanced
       // subtab"). They are a developer surface -- four full prompt textareas and a CRUD

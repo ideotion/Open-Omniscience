@@ -40,6 +40,15 @@ read the counts AND the samples.
   rule lists by hand. Nothing is stripped, marked or learned automatically; a repeated line is not a
   verdict on the articles carrying it.
 
+## The Maintenance section (Settings → Advanced)
+The same dry run and the two reports above can be read without `curl`: Settings → Advanced → Maintenance starts a run
+with `write=false` (and, if ticked, `include_stubs` / `include_host_mismatch`), shows the live state and the tally,
+the per-signal samples (titles and addresses only; a title opens the local reader) and both reports. It uses only
+the routes above, makes no request outside this computer, and offers no way to write: applying a result stays a
+deliberate API or CLI act until the maintainer has read counts and samples from their own corpus and ruled
+(R196). "Stored on a different site" and "site could not be read" are separate rows, and a signal the run did not
+ask for reads "not measured", never zero. Pinned by `tests/test_maintenance_panel.py`.
+
 ## What these numbers are not
 A `reason:*_stub` count is a CANDIDATE count under rules fitted to few specimens, not a measured error
 rate. The thresholds move only after a person has read samples from their own corpus.

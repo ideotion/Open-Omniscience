@@ -307,7 +307,7 @@
     "loadLivingStream", "loadLunar", "loadMap", "loadMarketData", "loadPatternsGate", "loadProfile",
     "loadRevisionAnomalies", "loadRingGaps", "loadSessionForensics", "loadStatFigures",
     "loadSuperGroups", "loadSupergroupCuration", "loadTagCoverage", "loadTrends", "loadWikiChanges",
-    "loadWikiTC", "lookupAnnotations", "lunarSyncDirection", "lunarTestTerm", "mbAnchorGrade",
+    "loadWikiTC", "lookupAnnotations", "lunarSyncDirection", "lunarTestTerm", "maintAction", "maintLoadFurniture", "maintStart", "mbAnchorGrade",
     "mbAnchorKey", "mbAnchorKind", "mbAnchorsLoad", "mbAnchorsSave", "mbBuildBatch", "mbRun",
     "migrateOllamaStore", "mmExpand", "mmLevel", "mmReload", "mmView", "mmWindowChange",
     "onAiActivityToggle", "onFetchModeChange", "onUninstallMode", "ooFolderPicker",
