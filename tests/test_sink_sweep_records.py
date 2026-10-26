@@ -558,6 +558,9 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('bulk_llm._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
     },
     'src/api/main.py': {
+        # the 422 handler reads a validation error's type, loc and msg (the msg through ``scrubbed``) and drops ``input``/``ctx``, the
+        # two keys that carried the request body; the exception itself is stored and logged nowhere
+        ('request_validation_error_handler', 'for item in exc.errors()'): 1,
         ('rate_limit_exceeded_handler', 'retry_after = getattr(exc, "retry_after", None)'): 1,
         ('rate_limit_exceeded_handler', 'limit = getattr(exc, "limit", None)'): 1,
         ('unhandled_exception_handler', 'f"internal error: {exc}",'): 1,

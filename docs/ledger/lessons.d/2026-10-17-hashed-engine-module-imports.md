@@ -9,4 +9,6 @@ The rules it gives:
 2. A hashed module's imports are part of the engine. If it needs something from the ingest layer, move that something into a module with no project imports and hash that module (`src/utils/safe_yaml.py`, which holds the safe YAML loader class choice), rather than exempting the chain: every exemption needs a reason that is true, and "the YAML loader decides how the ring file parses" is not an exemption reason.
 3. A lazy import is not a way to keep a dependency out of a closure measured by running the code.
 
+Two limits of that fix, from the post-merge read: "imports only `yaml`" is a statement about the file (loading `src.utils.safe_yaml` still runs the package `__init__`, which the already-hashed `markup_blocks.py` runs as well), and hashing the file records the selection code, not whether libyaml is installed, so the equality test over the shipped ring files is what pins that the two classes parse alike.
+
 Follow-up PR: the fix (`src/utils/safe_yaml.py`, hashed in `ENGINE_MODULES`). Hashing the new module changes the engine identity for everyone, as any edit to a hashed file does; it is the same change `equivalence.py` itself already made.

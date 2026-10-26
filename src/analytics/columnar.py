@@ -1572,11 +1572,16 @@ def _top_terms_query(start_day, end_day, kind, limit: int) -> tuple[str, list]:
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     kind_sql = _kind_where(kind, params)
     params.append(int(limit))
+    # The day filter sits in the inner query and the kind filter in the join: the parameters keep their order (days, kind, limit).
+    # The inner query sums per keyword_id (an integer key, two sums), so the join and the text grouping above it see one row per keyword and
+    # not one per keyword and day: measured at 1,004 MB (one run per size, generated corpora), the one-step form failed with the engine's memory error at 20, 24 and 28 M mentions and this form answered at all three in a standalone bench (the built serve path was re-run at 20 and 24 M; its 28 M cell was not obtained).
+    # Keywords that share their four text columns still add, as they did when they were grouped by those columns alone.
     sql = (
         "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 - only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
-        "SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
-        "FROM keyword_daily d JOIN keyword_meta m ON m.keyword_id = d.keyword_id"
-        + where_sql + kind_sql
+        "SUM(s.mentions) AS mentions, SUM(s.articles) AS articles "
+        "FROM (SELECT d.keyword_id, SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
+        "FROM keyword_daily d" + where_sql + " GROUP BY d.keyword_id) s "
+        "JOIN keyword_meta m ON m.keyword_id = s.keyword_id" + kind_sql
         + " GROUP BY m.term, m.normalized_term, m.kind, m.language "
         "ORDER BY mentions DESC LIMIT ?"
     )
@@ -1654,8 +1659,8 @@ def windowed_top_terms_raw(
 
 
 #: The one query a finished build is asked before it is served: the 30-day most-mentioned terms, the widest window the
-#: Home and Insights polls ask for first. Measured at the 1,004 MB tier: it needs about 190 MiB over the resident rollup
-#: at 12 M mentions, and it is the first query to fail as the corpus grows (16 M), before the cheaper 7-day one.
+#: Home and Insights polls ask for first. Measured at the 1,004 MB tier (with the one-step grouping the query had then; it now sums per keyword id first, the same text for
+#: serve and canary): it needs about 190 MiB over the resident rollup at 12 M mentions, and it is the first query to fail as the corpus grows (16 M), before the cheaper 7-day one.
 CANARY_QUERY = "top-terms-30d"
 CANARY_DAYS = 30
 CANARY_LIMIT = 80
