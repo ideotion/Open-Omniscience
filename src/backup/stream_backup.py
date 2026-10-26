@@ -74,7 +74,6 @@ import json
 import logging
 import math
 import os
-import platform
 import re
 import secrets
 import shutil
@@ -103,6 +102,7 @@ from src.backup.volumes import (
     verify_volume_set,
 )
 from src.paths import data_dir
+from src.safety import process_owner as _process_owner
 from src.safety.crypto import (
     EncryptionError,
     decrypt_bytes,
@@ -172,19 +172,8 @@ _DESTS_SEQ: dict[str, int] = {}
 
 
 def _machine_tag() -> str | None:
-    """A stable tag of THIS machine, beside its hostname: two machines that share a default name
-    (``raspberrypi``, ``ubuntu``) and one backup folder on a NAS would otherwise judge each other's
-    pids. The machine id is hashed with this app's own label (a raw ``/etc/machine-id`` is meant to
-    stay on the machine, and the marker is written to a drive that may be shared); ``None`` where
-    the system keeps none (Windows, macOS), where the hostname alone applies."""
-    for name in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-        try:
-            raw = Path(name).read_text(encoding="ascii").strip()
-        except (OSError, ValueError):
-            continue
-        if raw:
-            return hashlib.sha256(f"open-omniscience-backup-owner:{raw}".encode()).hexdigest()[:16]
-    return None
+    """This machine's tag (see :func:`src.safety.process_owner.machine_tag`)."""
+    return _process_owner.machine_tag()
 
 
 def _write_owner_marker(staging: Path) -> None:
@@ -194,20 +183,11 @@ def _write_owner_marker(staging: Path) -> None:
     24 h age rule meant a retry within a day was refused for lack of the very space it held.
     Best-effort: a dir without a marker keeps the age rule."""
     try:
-        import psutil
+        from src.safety.file_lock import atomic_replace
 
-        proc = psutil.Process()
-        (staging / _OWNER_MARKER).write_text(
-            json.dumps(
-                {
-                    "pid": proc.pid,
-                    "started": round(proc.create_time(), 3),
-                    "host": platform.node(),
-                    "machine": _machine_tag(),
-                }
-            ),
-            encoding="utf-8",
-        )
+        record = _process_owner.owner_record()
+        if record:
+            atomic_replace(staging / _OWNER_MARKER, json.dumps(record), fsync=False)
     except Exception as exc:  # noqa: BLE001 - the age rule still covers a dir with no marker
         log_failure(_LOG, "backup: could not write the staging owner marker", exc, level=logging.DEBUG)
 
@@ -223,27 +203,9 @@ def _owner_state(staging: Path) -> str:
     predecessor's marker naming the same pid with another start time, and that is a dead owner."""
     try:
         data = json.loads((staging / _OWNER_MARKER).read_text(encoding="utf-8"))
-        pid, started = int(data["pid"]), float(data["started"])
-        host = data.get("host")
-        machine = data.get("machine")
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except (OSError, ValueError):
         return "unknown"
-    if host is not None and str(host) != platform.node():
-        return "unknown"  # another machine's job on a shared drive
-    if machine is not None and machine != _machine_tag():
-        return "unknown"  # the same name on another machine, or a tag this one cannot read
-    try:
-        import psutil
-
-        if pid == os.getpid():
-            if abs(psutil.Process().create_time() - started) < 1.0:
-                return "unknown"  # a live job of this process is protected by the registry, not here
-            return "dead"  # the same pid with another start time: this process's dead predecessor
-        if not psutil.pid_exists(pid):
-            return "dead"
-        return "alive" if abs(psutil.Process(pid).create_time() - started) < 1.0 else "dead"
-    except Exception as exc:  # noqa: BLE001 - psutil.NoSuchProcess is "dead", the rest "unknown"
-        return "dead" if type(exc).__name__ == "NoSuchProcess" else "unknown"
+    return _process_owner.record_state(data, machine=_machine_tag())
 
 
 def remember_snapshot_destination(dest: Path | str) -> None:

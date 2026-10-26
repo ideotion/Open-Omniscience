@@ -167,14 +167,23 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: How many of the newest collection-performance ticks the SLIM bundle keeps. The log is one line per
 #: tick and covers about five minutes in 330 KB (the Lenovo bundle); the hours and days are
 #: ``vitals.json``'s, so what the bundle keeps is the last minutes of the collector itself.
-#: It was 20 and the whole bundle's 200 (``recent_samples``' default); each gave up the ticks that pay for the window rows
-#: below. The budget is serialised bytes of the largest shape: a window row at its widest and a tick row at its least, both
-#: built by tests/test_collect_perf_window_history.py from the real writers (the tick from ``CollectionMonitor._tick`` with no
-#: vitals at all, which is a supported state), plus the member's own envelope. It is uncompressed ``debug-bundle.json`` bytes. Deflated,
-#: a tick row compresses better than a window row (its sentences repeat), and a review measured the slim copy about 700 B
-#: larger of about 2 KB: the claim is "net zero before compression", not "the zip is the same size".
+#: The ticks a copy keeps WHEN THE LOG HOLDS A CLOSED WINDOW: 20 and 200 (``recent_samples``' default) before the window rows, each
+#: giving up the ticks that pay for them. The budget is serialised bytes of the largest shape: a window row at its widest (400 B)
+#: and a tick row at its least, plus the member's own envelope, uncompressed ``debug-bundle.json`` bytes (deflated, a tick row compresses
+#: better than a window row, and a review measured the slim copy about 700 B larger of about 2 KB: the claim is "net zero before
+#: compression", not "the zip is the same size"). The tick figure is a RECORDED CONSTANT, not the tick a test builds today: 1,552 B, the least a maximum-mode tick measured at the
+#: time of the trade (the event-loop watchdog measuring; Export's re-measure of #1464 found production ticks at 1,653 B or more, and
+#: 1,478 B for a target-mode tick with no vitals, which only a log mixing both modes could make the newest ticks given up: that paper
+#: case is not covered by the pin). It is pinned in tests/test_collect_perf_window_history.py. A later trim of the tick only makes the
+#: zip smaller than it was; a pin against the live tick would fail on it. 31 widest windows with their envelope and the two keys that
+#: carry them (about 12,560 B) are paid by 9 ticks (13,968 B), 11 by 3 (4,656 B): so 191 and 17.
 _DEBUG_BUNDLE_SLIM_PERF_TICKS = 17
-_DEBUG_BUNDLE_PERF_TICKS = 192
+_DEBUG_BUNDLE_PERF_TICKS = 191
+
+#: A log that holds no closed window (a pass in target mode closes none) or cannot be read has nothing to pay for, so the copy keeps
+#: the ticks it kept before the window rows and gives up none; the windows member still says why it is empty.
+_DEBUG_BUNDLE_SLIM_PERF_TICKS_NO_WINDOWS = 20
+_DEBUG_BUNDLE_PERF_TICKS_NO_WINDOWS = 200
 
 #: How many of the newest closed governor windows each copy keeps (``collect_perf.window_history``), and the member says how
 #: many the log held and whether it is partial. The count is what the ticks given up pay for, not what the log can hold: a
@@ -451,6 +460,19 @@ def debug_bundle(
     errors_val = _member("errors", lambda: recent_errors(300))
     count = len(errors_val) if isinstance(errors_val, list) else 0
 
+    # One read of the governor's closed windows, shared by the two collect_perf members: whether the log holds any decides how many
+    # ticks the copy keeps (a log with none has nothing to pay for, so it gives none up).
+    perf_windows = _member(
+        "collect_perf_windows",
+        lambda: _collect_perf_windows(limit=_DEBUG_BUNDLE_SLIM_PERF_WINDOWS if slim else _DEBUG_BUNDLE_PERF_WINDOWS),
+    )
+    has_windows = isinstance(perf_windows, dict) and bool(perf_windows.get("windows"))
+    perf_ticks = (
+        (_DEBUG_BUNDLE_SLIM_PERF_TICKS if slim else _DEBUG_BUNDLE_PERF_TICKS)
+        if has_windows
+        else (_DEBUG_BUNDLE_SLIM_PERF_TICKS_NO_WINDOWS if slim else _DEBUG_BUNDLE_PERF_TICKS_NO_WINDOWS)
+    )
+
     # DB members run INLINE (threaded=False — the shared connection is unsafe on a worker
     # thread); the non-self-bounding ones are wrapped in _bounded (a statement deadline).
     # corpus_integrity/storage_composition/slow_queries open their OWN deadline internally,
@@ -480,18 +502,10 @@ def debug_bundle(
         # Collection-performance timeline + end-of-pass bottleneck classification
         # (download rate, in-flight fetches, writer-gate contention, CPU/memory).
         # The bandwidth governor's own log — what to read when collection is slow.
-        "collect_perf": _member(
-            "collect_perf",
-            lambda: _collect_perf_samples(limit=_DEBUG_BUNDLE_SLIM_PERF_TICKS if slim else _DEBUG_BUNDLE_PERF_TICKS),
-        ),
+        "collect_perf": _member("collect_perf", lambda: _collect_perf_samples(limit=perf_ticks)),
         # One compact row per closed governor window (permits, the stored-articles rate it read, what it decided): the
         # staircase the newest ticks above cannot show. Paid for by the ticks those members no longer keep.
-        "collect_perf_windows": _member(
-            "collect_perf_windows",
-            lambda: _collect_perf_windows(
-                limit=_DEBUG_BUNDLE_SLIM_PERF_WINDOWS if slim else _DEBUG_BUNDLE_PERF_WINDOWS
-            ),
-        ),
+        "collect_perf_windows": perf_windows,
         # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
         # opt-out. Will be removed when the cycle ends.
@@ -559,7 +573,7 @@ def debug_bundle(
                 )
                 for key, member in _DEBUG_BUNDLE_STANDS_ALONE.items()
             },
-            "collect_perf_newest_ticks": _DEBUG_BUNDLE_SLIM_PERF_TICKS,
+            "collect_perf_newest_ticks": perf_ticks,
             "collect_perf_newest_windows": _DEBUG_BUNDLE_SLIM_PERF_WINDOWS,
             "why": (
                 "this copy is the one inside the Diagnostics archive: a section that is a member of "

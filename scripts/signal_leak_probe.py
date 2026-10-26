@@ -243,9 +243,10 @@ class _Scenario:
             if lg._WINDOW_STAMP is not None:  # noqa: SLF001
                 bad.append("window stamp left set")
                 lg._WINDOW_STAMP = None  # noqa: SLF001
-            if lg._STATE.locked():  # noqa: SLF001
+            state = getattr(lg, "_STATE", None)  # trees before the state lock was removed still have one
+            if state is not None and state.locked():
                 bad.append("state lock left taken")
-                lg._STATE.release()  # noqa: SLF001
+                state.release()
             return bad
 
         self.call = call

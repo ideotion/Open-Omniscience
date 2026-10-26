@@ -1,6 +1,6 @@
 # Release gate — v0.5.0 · The investigator's desk
 
-**Status: OPEN — written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag.** This is the
+**Status: CLOSED at the `v0.5.0` tag (2026-10-26) with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
 checkable inventory for closing the `0.5` cycle. It exists now because the maintainer ruled (Q112 = a, Q1204 =
 a) that the gate files for 0.4–0.9 are written in one session from the answered sheet
 ([`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -55,6 +55,9 @@ at the tag moved onto this gate's list** — §1b names them, and 0.5 is not tag
 **The exit.** `v0.5.0` is tagged when rows A–L are CLOSED on named artifacts, the 0.4 rows of §1b are CLOSED on
 theirs (`R92`), the three i18n gates and the
 whole-tree guards are green on the tagged tree, and the release notes carry the no-telemetry re-check (Q111).
+**Amended 2026-10-26 (`R186`, `R187`):** «CLOSED» means built and verified as far as a session can verify it, with each real-install
+step carried as a named 0.5.1 open item (§1d); the board's OPEN headings keep the wording of the day each row was built, and `R92`'s
+«not tagged until they are done» is read the same way for the §1b rows.
 ~~Row D closes with OSM rows INSIDE the machine only: until Q823 ⛔ is ruled, no OSM-derived row enters an export,
 a bulletin or an evidence ZIP (today's state, not a decision).~~ **Q823 = a (2026-09-29):** OSM-derived rows may
 enter exports, bulletins, evidence ZIPs and backups, each carrying OSM's credit and the ODbL share-alike line
@@ -95,6 +98,84 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 | 9 | C | The **gazetteer artifact build** (S4) | After item 8, the build script on that `osm.db` | Its input is the operator's `osm.db` |
 | 10 | E, L | The **OSM-derived admin-0 / admin-1 artifacts** and the five-map click-through that closes L | `osmium tags-filter` on the planet file, then `scripts/build_admin_boundaries.py` | A planet file (~72 GB) and two tools; the planet host is not allowed from the sandbox |
 | 11 | all | **A person's judgement** of layout, wording and feel (the «awaiting human UX pass» stamps) | Open each built surface | A scripted Chromium walk is done where a row says so; whether it closes the clause is the maintainer's word (`Q1128` = a) |
+
+---
+
+## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-26, `R185`–`R187`)
+
+`v0.5.0` is tagged with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
+Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
+that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
+0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+
+| Row | Stands at the tag | 0.5.1 open item |
+|---|---|---|
+| A | Built, Chromium-verified in en and ar (PR #1198) | The reference-corpus export compare and the typo-table build cost, measured on the operator's corpus; the person's UX pass (item 11) |
+| B | B1–B4 merged; generated-backup evidence (R135, labelled generated) | Item 7: the operator's real restore with the duplicate scan at 0; the real FTS rebuild time |
+| C | Built except S4's artifact | Item 9: the gazetteer build waits on row D's reference run |
+| D | S1–S6 built and fixture-verified; the maximum-mode governor (PR #1455, R178, R180) and the stop-by-name guard (PR #1424) merged | Item 8: the reference-VM ingest numbers (`scripts/osm_reference_run.py`); the slow-network permit count of the governor waits for a field diagnostics archive (R181), and the climb was not exercised in the measured pass (item 20) |
+| E | Built and Chromium-verified on a fixture artifact; the real artifact is not built | Item 10: the OSM-derived admin-0 / admin-1 artifacts, and the person's five-map click-through |
+| F | Built; PARTIAL from real machines (2026-10-06 log, #1314): the 72 h clause read as met on 11 of 13 machines | Items 1–4: the walk clause on both transports, WARM rows from a real stream, analytics 4–5 on real rows |
+| G | Built (PR #1203) | Item 5: a law's 2019 text on one real source; item 6: a fetched CLML document round-trips (the CLML adapter has never read a real document, so a `not-found` there is the next fix) |
+| H | Closed 2026-09-29 | none |
+| I | Closed on the 2026-10-06 sweep; H3's removal is deferred behind its own test (three named gaps), not a 0.5 condition | none |
+| J | J1–J3 merged, with the outlet integer (PR #1461, R177) | Item 7 |
+| K | Five slices built; the tour's wording stands as written | The person's UX pass; the maintainer's answer on the tour's content |
+| L | Built and Chromium-verified on a fixture | Item 10, and the person's five-map click-through |
+
+**The 0.4 rows carried by `R92` (§1b).** Row R is closed on the 2026-09-27 fix-check walk (`docs/audit/delegated-fixcheck-2026-09-27/`,
+`R37`). Rows M, N and T have their click-through clause met and carry named operator items: M7 (a corpus with a rising Lead), M10
+(online to Wikidata), the keyword clean-up report and the stoplist merge's last surface check; N12 and N13 (the search re-index
+report and the agreement comparison on the reference corpus) and Q515's cost; the weights digest values (the two hosts are
+egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
+H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
+
+**Items added at the tag (12–23).**
+
+- **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
+  race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
+  the Windows locked-folder raw copy (inferred, not observed); the Windows msvcrt polling lock and the NFS/FUSE flock in
+  `src/safety/file_lock.py` (a filesystem that cannot lock runs unlocked with one stderr warning naming the file); the launcher's
+  stderr-filter summary-row exposure (measured 0 to 9 ms idle over 22 launches, no figure under load).
+- **13. `hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
+  is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
+  a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
+- **14. A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
+  only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
+  bodies have one version.
+- **15. The all-history top-terms query on the shipped code** (PR #1467): the built-path runs at 20 M and 24 M were made on the first
+  version of the change, which a container restart lost, and the query was rebuilt from the same source and not re-run on it; the
+  28 M built-code cell was lost to container recycles three times, and at 28 M only the standalone run of the same shape answered
+  (polled peak 914.7 MiB, 43 MiB spare). Re-measuring all three sizes on the shipped code is the open item.
+- **16. The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
+  stay default-off.
+- **17. PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
+  lock move together or not at all.
+- **18. The audit** (`R189`): a workflow of agents audits quality, performance and vulnerability after the tag; its report and findings
+  ledger are in the project folder, and a clear defect is fixed under `R185`. Known leads handed to it:
+  `audit-0.5.0/inputs/open-items.md` section E (E3, the Ed25519 signing key written unencrypted, `src/reporting/evidence.py:62-72`, and E4,
+  an unbounded `.eml` read in `POST /api/newsletters/import`, first; E7, the Origin port compare, is the first fix candidate).
+- **19. Not browser-verified**: the custody late-entries line (PR #1462) and the null-Origin refusal (PR #1469); built and
+  test-verified, the real-browser step is open item 19.
+- **20. Limits stated in PR bodies**: #1455 (the governor climb was not exercised in the measured pass, the 240 s and 100-completion
+  constants are not measured on real sources, the slow-network limit is from simulation); #1446 and #1449 (the stuck-lock detector
+  checks only the first take of each section, the Retry-After figure was measured to 1 GB on one ext4 disk, Windows unmeasured); #1453
+  (the gauge with the lock off, and other core counts, are not measured). Full text in `audit-0.5.0/inputs/open-items.md` section C,
+  items B2–B3.
+- **21. The per-release encrypted click-through, run and passed** (`CLAUDE.md`, ruled 2026-09-15, Q1149 = a; `R197`): run by the
+  qualification lane on `21a888c42` with `OO_UIWALK_ENCRYPTED_PASS=… scripts/ui_clickthrough_run.py --require-encrypted`. Both seeded
+  states walked in through the real unlock screen and measured encrypted at rest by the app's own header read. 174 coverage rows: 149
+  verified, 14 partial, 11 blocked; nothing found was caused by encryption. Evidence:
+  `qualification/encrypted-walk-21a888c42/` in the project folder. Closed; items 22 and 23 are what the walk found in the product.
+- **22. A right-to-left date renders reordered** (found by the item 21 walk): under Arabic the Home date `2025-12-14` is drawn with its
+  characters reordered. A possible product defect (the walk rated it P1): the date inside the RTL probe lacks the U+2068 … U+2069 bidi
+  isolates the recorded lesson calls for. Not caused by encryption as far as the walk can tell, but it was not re-run on a plaintext
+  store to confirm. Owner: the qualification lane, after the tag.
+- **23. The world-map lenses request files that do not ship** (found by the item 21 walk): switching a lens fetches
+  `osm_admin0.json`, `osm_admin1.json`, `osm_borders/admin0.world.json` and `osm_borders/admin1.world.json` (`app-map.js:364,369`),
+  none of which ship, so a fresh install logs four console 404s per switch. Low severity (P3); the files are generated from an OSM import, so this is row
+  E's unbuilt admin-boundary artifact showing through.
 
 ---
 
@@ -593,4 +674,4 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 - ~~**The four ⛔ questions left blank** — Q823, Q925, Q1009, Q1113 — not decided here, not defaulted anywhere.~~
   All four answered 2026-09-29 (Q823 = a, Q925 = a, Q1009 = a, Q1113 = a; `RULINGS_INDEX.md`).
 - **Article revision tracking** (`RC07` = c, 2026-09-29) — 0.6 or later, release to be named.
-- **The version flip to `0.5.0`.** It follows the `v0.4.0` tag, mechanically.
+- ~~**The version flip to `0.5.0`.** It follows the `v0.4.0` tag, mechanically.~~ Done on the commit `v0.5.0` names (`R186`).

@@ -10,23 +10,28 @@ binary operation that makes a new object, an iterator), never between two statem
 puts a MemoryError where none can happen. So the module's frames are traced instruction by instruction, and once the body of the window is over a
 MemoryError is raised BEFORE the Nth instruction that can allocate (the instruction does not run: the allocation it needed failed), for every N.
 Left out on purpose: attribute loads, truth tests, comparisons (they return the two singletons), stores, jumps, pops, loads of locals and
-globals, and the enter and exit of every ``with <lock>:`` (a harness cannot inject at the exits of the non-reentrant ``_STATE`` without deadlocking on its own lock, and nothing can protect any of them:
-the enter is a ``BEFORE_WITH`` making the bound ``__enter__`` and ``__exit__``, and the exit calls ``__exit__(None, None, None)``, which builds a 3-tuple on
-CPython 3.13 and so DOES allocate when the tuple free list is empty; a failure there leaves the lock held, measured with the allocator).
+globals, and the enter and exit of every ``with <lock>:`` (nothing can protect them: the enter is a ``BEFORE_WITH`` making the bound ``__enter__``
+and ``__exit__``, and the exit calls ``__exit__(None, None, None)``, which builds a 3-tuple on CPython 3.13 and so DOES allocate when the tuple free
+list is empty; a failure there leaves a plain lock held, measured with the allocator, which is why the module's state has no lock of its own, see the
+last part of this file).
 A call into the standard library is ONE instruction at its call site: "the call could not start", not "it failed half way".
 
 WHAT IT PROVES, AND THE ONE SITE IT NAMES. At every such instruction: the lock is given back, a thread that was already waiting for a
 connection got through, and one that arrived afterwards did, and the write gate is free again. The single exception it models is the call of
 ``release_if_held_here`` itself: if the allocator refuses to start THAT call, no code that runs after it can help (natively the site is the
 ``BEFORE_WITH`` inside it), so it is named here, in the docstring of ``swap_window`` and in the report, not hidden. The test allows that site to
-leave the lock held and no other. The exit of a ``with <lock>:`` is a second residual the sweep does not model (see above), named in the same
-places.
+leave the lock held and no other. The exit of the ``with self._lock:`` inside that call is a second residual the sweep does not model (see above), named in the
+same places.
 
-THE MUTANTS. A sweep that finds nothing proves nothing until it is seen to find something, so the module's own source is rewritten three ways
+THE VALID SET. The cleanup also decides which connections may run again, and a failure in it must land on the safe side: with a second sweep whose
+body calls ``disk_changing()`` (as every restore, repair and encrypt does), at every instruction of the cleanup, the only connections valid afterwards
+are the new generation's, never the window's own or an earlier one, whose files had their log names removed.
+
+THE MUTANTS. A sweep that finds nothing proves nothing until it is seen to find something, so the module's own source is rewritten four ways
 (each undoes one thing this fix or ``#1426`` did) and the sweep must report the defect each time: the release that asks for the thread
-identity, the cleanup whose second statement is skipped when the first fails, and the wait with no step. The sections of ``_STATE`` the cleanup
-passes (the last part of this file) have their own rewrite of the source, back to the cleanup that passed three of them, for the pin that counts
-them and for the stand-in lock that fails an exit.
+identity, the cleanup whose second statement is skipped when the first fails, the wait with no step, and the decision about the flag made in
+a step of its own before the close (the shape that revived the window's connections after ``disk_changing``). The last part of this file pins
+that the module's state has no lock of its own, with a synthetic source that does.
 """
 
 from __future__ import annotations
@@ -93,10 +98,13 @@ class Run:
         self.later_through: bool | None = None
         self.gate_held_here: bool | None = None
         self.gate_taken_by_another: bool | None = None
+        self.valid_after: frozenset[int] | None = None
+        self.generation: int | None = None
 
 
-def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
-    """One window. ``mode``: ``count`` (list the allocating instructions of the cleanup), ``fail`` (raise before the nth)."""
+def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0, changes_disk: bool = False) -> Run:
+    """One window. ``mode``: ``count`` (list the allocating instructions of the cleanup), ``fail`` (raise before the nth). ``changes_disk``: the
+    body calls ``disk_changing()`` first, as every restore, repair and encrypt does before it moves the file."""
     from src.database.writer import write_gate, write_lock
 
     lg = _load(path)
@@ -152,6 +160,8 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
             threads.append(threading.Thread(target=waiting, daemon=True))
             threads[-1].start()
             threading.Event().wait(0.05)  # let it reach the lock's wait
+            if changes_disk:
+                lg.disk_changing()
             state["armed"] = True  # the body is over: what runs from here is the cleanup
     except MemoryError:
         out.raised = "MemoryError"
@@ -160,6 +170,7 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
     finally:
         sys.settrace(previous)
     out.lock_held = lg._LOCK._holder is not None
+    out.valid_after, out.generation = lg._VALID, lg._GENERATION
     out.gate_held_here = write_gate.held_by_current_thread()
     got = threading.Event()
 
@@ -193,15 +204,19 @@ def _run(path: Path, *, source_present: bool, mode: str, nth: int = 0) -> Run:
     return out
 
 
-def _sweep(path: Path, *, source_present: bool) -> tuple[list[str], list[str]]:
-    """Every allocating instruction of the cleanup, and the ones whose failure leaves something wrong (the named release call apart)."""
-    listed = _run(path, source_present=source_present, mode="count")
+def _sweep(path: Path, *, source_present: bool, changes_disk: bool = False) -> tuple[list[str], list[str]]:
+    """Every allocating instruction of the cleanup, and the ones whose failure leaves something wrong (the named release call apart).
+    With ``changes_disk`` a failure must also leave ONLY the new generation valid: a connection from before the swap, or the window's own, opens
+    a file whose log names were removed."""
+    listed = _run(path, source_present=source_present, mode="count", changes_disk=changes_disk)
     assert listed.raised is None, f"the unforced window ended in {listed.raised}"
     wrong: list[str] = []
     for n in range(1, len(listed.sites) + 1):
-        r = _run(path, source_present=source_present, mode="fail", nth=n)
+        r = _run(path, source_present=source_present, mode="fail", nth=n, changes_disk=changes_disk)
         assert r.raised == "MemoryError", f"site {n} ({r.where}) did not surface the error: {r.raised}"
         problems = []
+        if changes_disk and (r.generation is None or r.valid_after != frozenset({r.generation})):
+            problems.append(f"after disk_changing the valid set is {sorted(r.valid_after or ())}, not only the new generation {r.generation}")
         if r.lock_held and not r.where_is_the_release_call:
             problems.append("the library lock is still held")
         if r.waiter_through is False:
@@ -309,264 +324,101 @@ def test_the_release_compares_an_identity_it_already_has_and_calls_nothing_befor
     assert "me" in code.co_varnames[: code.co_argcount], code.co_varnames
 
 
-# --- the sections of ``_STATE`` a swap passes ------------------------------------------------------------------------------------------------
-#
-# THE SECOND PROPERTY (after the lock is given back): a failed EXIT of ``with _STATE:`` leaves that plain lock held (measured with the allocator
-# on 3.13), and every later ``with _STATE:`` then blocks for ever. A swap passes the sections that open the window (the reset of
-# ``_DISK_CHANGED``, ``bump``, ``_open_window``), ``disk_changing`` in the body of one that changes the disk, and the cleanup's. The cleanup used
-# to pass three (the read of ``_DISK_CHANGED``, the revive, the close), so a failure at the first two blocked the cleanup's own next section with
-# the window held; it now passes ONE. The sweep cannot see any of this (it never injects at an exit), so the pin counts the sections in the
-# source and the stand-in below fails an exit, or an enter, the way the allocator does.
+@pytest.mark.parametrize("source_present", [True, False], ids=["swap_did_not_happen", "swap_happened"])
+def test_a_memory_error_at_any_instruction_of_the_cleanup_leaves_only_the_new_generation_valid_after_disk_changing(source_present):
+    """The swap changed the disk and the cleanup is interrupted by the allocator anywhere: the connections made inside the window, and the ones from
+    before it, stay refused, because the files under them had their log names removed. The decision and the write are one step in
+    ``_close_window``, so a failure before it lands on the safe side. (The old cleanup read the flag in a section of its own, and a failure
+    between that read and the close revived the window's stamp: found by the independent read of PR 1442, reproduced on main with a stand-in lock.)
+
+    The flag only matters while the source is still there: with the source gone (``swap_happened``) the swap happened, the close never revives, and
+    that case re-runs the same sites as the ordinary sweep above. It is kept so the claim holds in both states, not because it can fail through the flag."""
+    sites, wrong = _sweep(_SOURCE, source_present=source_present, changes_disk=True)
+    assert len(sites) >= 6, sites
+    assert wrong == [], wrong
 
 
-def _state_sections(source_text: str) -> dict[str, int]:
-    """How many ``with _STATE:`` sections each stage of a swap passes, counted in the source: ``opening`` (``swap_window`` outside its ``finally``
-    blocks), ``cleanup`` (inside them) and ``disk_changing`` (what a call of it in the body passes). A call of a module function counts what that
-    function passes, followed to any depth (a section moved into a helper, or into a helper of a helper, is still a section); a ``finally`` nested
-    in another is counted once; a function reached again while it is being counted adds nothing the second time."""
-    tree = ast.parse(source_text)
-    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-
-    def is_section(node: ast.AST) -> bool:
-        return isinstance(node, ast.With) and any(isinstance(i.context_expr, ast.Name) and i.context_expr.id == "_STATE" for i in node.items)
-
-    def passed(nodes: list[ast.AST], seen: tuple[str, ...]) -> int:
-        total = 0
-        for node in nodes:
-            if is_section(node):
-                total += 1
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in functions and node.func.id not in seen:
-                total += passed(list(ast.walk(functions[node.func.id])), seen + (node.func.id,))
-        return total
-
-    swap = functions["swap_window"]
-    in_a_finally = {id(n) for t in ast.walk(swap) if isinstance(t, ast.Try) for stmt in t.finalbody for n in ast.walk(stmt)}
-    everything = list(ast.walk(swap))
-    return {
-        "opening": passed([n for n in everything if id(n) not in in_a_finally], ("swap_window",)),
-        "cleanup": passed([n for n in everything if id(n) in in_a_finally], ("swap_window",)),
-        "disk_changing": passed(list(ast.walk(functions["disk_changing"])), ("disk_changing",)),
-    }
-
-
-def test_the_cleanup_passes_one_section_of_the_state_lock_and_revive_is_gone():
-    assert _state_sections(_SOURCE.read_text(encoding="utf-8"))["cleanup"] == 1
-    assert not hasattr(real, "_revive"), "the revive is a section of its own again: it belongs inside _close_window"
-
-
-def test_the_counts_of_swap_windows_docstring_are_these_counts():
-    """``swap_window`` says a swap that changes the disk passes 5 sections (4 of 5 block its close) and one refused before that passes 4 (3 of 4).
-    Those words are this count: 3 opening, 1 for ``disk_changing``, 1 for the cleanup."""
-    counts = _state_sections(_SOURCE.read_text(encoding="utf-8"))
-    assert counts == {"opening": 3, "cleanup": 1, "disk_changing": 1}, counts
-
-
-def test_the_pin_sees_the_cleanup_that_passed_three_sections(tmp_path):
-    path = _three_section_cleanup(tmp_path)
-    assert _state_sections(path.read_text(encoding="utf-8")) == {"opening": 3, "cleanup": 3, "disk_changing": 1}
-
-
-def test_the_pin_follows_helpers_to_any_depth_and_counts_a_nested_finally_once():
-    synthetic = (
-        "def swap_window(source):\n    with _STATE:\n        pass\n    try:\n        pass\n    finally:\n        try:\n            _close(1)\n"
-        "        finally:\n            with _STATE:\n                pass\n            with _STATE:\n                pass\n"
-        "def _close(x):\n    _helper()\n\ndef _helper():\n    with _STATE:\n        pass\n\ndef disk_changing():\n    with _STATE:\n        pass\n"
-    )
-    # one section before the try; in the cleanup: the helper's (reached through _close) and the two written in the inner finally, each once
-    assert _state_sections(synthetic) == {"opening": 1, "cleanup": 3, "disk_changing": 1}
-
-
-def _three_section_cleanup(tmp_path: Path, *, close_reads_the_flag: bool = True) -> Path:
-    """The module with the cleanup it had before the merge: a read of ``_DISK_CHANGED``, ``_revive`` and ``_close_window``, three sections.
-    ``close_reads_the_flag=False`` also takes the read of ``_DISK_CHANGED`` out of ``_close_window``, as it was then: the decision to revive
-    was the cleanup's own, made in the section before."""
+def test_the_sweep_catches_a_decision_about_the_flag_made_in_a_step_of_its_own():
+    """Red without the one-step close: the cleanup decides whether the disk changed in a statement of its own that can ALLOCATE (here a ``bool(...)``
+    call; a plain read of the flag cannot fail under the MemoryError model, and is not what this catches), and the close acts on that decision
+    without looking at the flag."""
     edits = [
         (
             r"            try:\n                swapped = not source\.exists\(\)\n            except OSError:",
-            "            try:\n                swapped = not source.exists()\n                with _STATE:\n                    changed = _DISK_CHANGED\n"
-            "                if not swapped and not changed:\n                    _revive(earlier)\n                swapped = swapped or changed\n            except OSError:",
+            "            try:\n                swapped = not source.exists()\n                changed = bool(_DISK_CHANGED)\n                swapped = swapped or changed\n            except OSError:",
         ),
-        (
-            r"def _open_window\(\) -> None:",
-            "def _revive(earlier: frozenset[int]) -> None:\n    global _VALID\n    with _STATE:\n        _VALID = frozenset(earlier | _VALID)\n\n\ndef _open_window() -> None:",
-        ),
+        (r"if not swapped and not _DISK_CHANGED:", "if not swapped:"),
     ]
-    if not close_reads_the_flag:
-        edits.append((r"if not swapped and not _DISK_CHANGED:", "if not swapped:"))
-    return _mutant_of(tmp_path, edits, "three_sections" if close_reads_the_flag else "three_sections_old_close")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _mutant_of(Path(tmp), edits, "flag_decided_apart")
+        _, wrong = _sweep(path, source_present=True, changes_disk=True)
+    assert any(w.startswith("swap_window:") and "the valid set" in w for w in wrong), wrong
 
 
-class _StateWhoseSectionFails:
-    """Stands in for ``_STATE``. With ``at="exit"`` the Nth exit of the phase raises MemoryError and leaves the real lock held, which is what a
-    failed ``__exit__(None, None, None)`` does on 3.13; a later section then waits for ever, and the stand-in says so. With ``at="enter"`` the Nth
-    enter raises MemoryError BEFORE the lock is taken (the ``BEFORE_WITH`` of the section could not allocate), and nothing is left held. ``phase``
-    is ``open`` for every section passed before the body of the window is over (the three that open it, and ``disk_changing`` when the body calls
-    it) and ``cleanup`` for the ones after it; ``nth`` counts the sections of that phase."""
+# --- the module's state has no lock of its own ---------------------------------------------------------------------------------------------
+#
+# A plain lock whose ``with`` exit fails stays held (measured with the allocator on 3.13), and every later section waits behind it. The four names
+# the swap writes are written only inside the exclusive window, so a lock of their own guarded nothing; it was removed, and these pins keep it
+# from coming back in a writer. That every CALL of a writer is made inside a window is pinned in ``test_library_generation_writers_run_in_the_window.py``.
 
-    def __init__(self, *, phase: str, nth: int, settled: threading.Event, at: str = "exit") -> None:
-        self._lock = threading.Lock()
-        self._settled = settled
-        self.phase = phase
-        self.nth = nth
-        self.at = at
-        self.body_is_over = False
-        self.counts = {"open": 0, "cleanup": 0}
-        self.failed = False
-        self.blocked = threading.Event()
-
-    def _this_one_fails(self) -> bool:
-        phase = "cleanup" if self.body_is_over else "open"
-        self.counts[phase] += 1
-        if not self.failed and phase == self.phase and self.counts[phase] == self.nth:
-            self.failed = True
-            return True
-        return False
-
-    def __enter__(self):
-        if self.at == "enter":
-            if self._this_one_fails():
-                raise MemoryError
-        elif self.failed:  # a section is waiting behind an exit that failed: it will not get the lock
-            self.blocked.set()
-            self._settled.set()
-        self._lock.acquire()
-        return self
-
-    def __exit__(self, *exc):
-        if self.at == "exit" and self._this_one_fails():
-            raise MemoryError
-        self._lock.release()
-        return False
+_WRITERS = ("swap_window", "bump", "_open_window", "_close_window", "disk_changing")
 
 
-class _Swap:
-    def __init__(self) -> None:
-        self.raised: str | None = None
-        self.blocked = False
-        self.window_held = False
-        self.pool_serves: bool | None = None
-        self.failed = False
-        self.valid_after: frozenset[int] | None = None
-        self.generation: int | None = None
+def _lock_sections(source_text: str) -> dict[str, list[str]]:
+    """What takes a lock where the module's state is written: the ``with`` statements inside each writer AND inside any module function a writer
+    calls by name, followed to any depth (a section moved into a helper is still a section in the cleanup), and any module-level
+    ``threading.Lock()`` / ``RLock()`` (the window's own lock is the ``_Lock`` class, built from the ``RLock`` inside its ``__init__``; a call
+    through an attribute, such as ``_LOCK.exclusive(...)``, is not followed: the window's own sections are not this pin's subject)."""
+    tree = ast.parse(source_text)
+    functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+    def reached(name: str) -> list[ast.FunctionDef]:
+        seen: dict[str, ast.FunctionDef] = {}
+        todo = [name]
+        while todo:
+            current = todo.pop()
+            if current in seen or current not in functions:
+                continue
+            seen[current] = functions[current]
+            todo += [c.func.id for c in ast.walk(functions[current]) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)]
+        return list(seen.values())
+
+    found: dict[str, list[str]] = {
+        name: [ast.unparse(item.context_expr) for fn in reached(name) for w in ast.walk(fn) if isinstance(w, ast.With) for item in w.items]
+        for name in _WRITERS
+    }
+    found["module"] = [
+        ast.unparse(n.value)
+        for n in tree.body
+        if isinstance(n, (ast.Assign, ast.AnnAssign))
+        and isinstance(n.value, ast.Call)
+        and ast.unparse(n.value.func) in ("threading.Lock", "threading.RLock", "Lock", "RLock")
+    ]
+    return found
 
 
-def _swap_whose_state_fails(
-    path: Path, workdir: Path, *, phase: str, nth: int, at: str = "exit", changes_disk: bool = False, moves_source: bool = False
-) -> _Swap:
-    """One swap whose Nth ``_STATE`` section of the phase fails. ``changes_disk``: the body calls ``disk_changing()`` (as every restore, repair and
-    encrypt does before it moves the file); ``moves_source``: the body removes the source (the swap happened). It runs in a thread: a block is an
-    answer, and the teardown gives every lock and thread back whatever the assertions found."""
-    lg = _load(path)
-    settled = threading.Event()
-    stand_in = _StateWhoseSectionFails(phase=phase, nth=nth, settled=settled, at=at)
-    lg._STATE = stand_in
-    source = workdir / "working.db"
-    source.write_bytes(b"x")
-    out = _Swap()
-    threads: list[threading.Thread] = []
-
-    def swap() -> None:
-        try:
-            with lg.swap_window(source, timeout=GET_THROUGH_S):
-                if changes_disk:
-                    lg.disk_changing()
-                if moves_source:
-                    source.unlink()
-                stand_in.body_is_over = True
-        except BaseException as exc:  # noqa: BLE001 - reported
-            out.raised = type(exc).__name__
-        finally:
-            settled.set()
-
-    try:
-        threads.append(threading.Thread(target=swap, daemon=True))
-        threads[-1].start()
-        assert settled.wait(GET_THROUGH_S), "the swap neither ended nor blocked"
-        out.blocked = stand_in.blocked.is_set()
-        out.failed = stand_in.failed
-        out.window_held = lg._LOCK._holder is not None
-        out.valid_after, out.generation = lg._VALID, lg._GENERATION
-        if not out.window_held:
-            opened = threading.Event()
-
-            def opener() -> None:
-                with lg.connecting():
-                    pass
-                opened.set()
-
-            threads.append(threading.Thread(target=opener, daemon=True))
-            threads[-1].start()
-            out.pool_serves = opened.wait(GET_THROUGH_S)
-    finally:
-        # give everything back so no thread outlives the run: the failed exit left the stand-in's lock held, which is what the blocked section waits on
-        if stand_in._lock.locked():
-            stand_in._lock.release()
-        threads[0].join(GET_THROUGH_S)
-        if lg._LOCK._holder is not None:
-            lg._LOCK.release_exclusive()
-        for thread in threads[1:]:
-            thread.join(GET_THROUGH_S)
-        sys.modules.pop(lg.__name__, None)
-    return out
+def test_the_modules_state_has_no_lock_and_no_writer_takes_one():
+    found = _lock_sections(_SOURCE.read_text(encoding="utf-8"))
+    assert found == {name: [] for name in (*_WRITERS, "module")}, found
+    assert not hasattr(real, "_STATE") and not hasattr(real, "_revive")
 
 
-def test_a_failed_exit_of_the_cleanups_one_section_still_gives_the_window_back(tmp_path):
-    """What is left after the merge, said exactly: the error surfaces, the window is given back, the pool serves again. ``_STATE`` stays held, so
-    the NEXT swap blocks at its first section with its window held and the pool stops again (said in ``swap_window``'s docstring); that is not
-    tested here because it needs a second swap."""
-    r = _swap_whose_state_fails(_SOURCE, tmp_path, phase="cleanup", nth=1)
-    assert r.failed, "the exit was never failed: the test proved nothing"
-    assert (r.raised, r.blocked, r.window_held, r.pool_serves) == ("MemoryError", False, False, True), vars(r)
-
-
-def test_the_same_failed_exit_blocked_the_cleanup_that_passed_three_sections(tmp_path):
-    """Red without the merge: the first section's exit fails, the second section waits for ever, and the window is still held."""
-    r = _swap_whose_state_fails(_three_section_cleanup(tmp_path), tmp_path, phase="cleanup", nth=1)
-    assert r.failed
-    assert (r.blocked, r.window_held) == (True, True), vars(r)
-
-
-#: Every section a swap passes before its cleanup, in order: (nth in the ``open`` phase, whether the body changes the disk and moves the file, id).
-_BEFORE_THE_CLOSE = [
-    (1, False, "reset_the_flag"),
-    (2, False, "bump"),
-    (3, False, "open_the_stamp"),
-    (4, True, "disk_changing_in_the_body"),
-]
-
-
-@pytest.mark.parametrize(("nth", "completed", "name"), _BEFORE_THE_CLOSE, ids=[c[2] for c in _BEFORE_THE_CLOSE])
-def test_a_failed_exit_of_a_section_before_the_close_still_blocks_the_close_the_named_residual(tmp_path, nth, completed, name):
-    """Not fixed, on purpose, and pinned in the one direction a test can see: a failed exit of any section before the close (the three that open
-    the window, and ``disk_changing`` in the body of a swap that changes the disk) blocks this swap's own ``_close_window`` with the window held.
-    Merging the opening sections into one would leave one such exit and the same block, so it would cut the sites, not remove them; only having no
-    ``_STATE`` removes it (a separate change). These tests assert the worst outcome, so a change that fixes a site fails them and the docstring of
-    ``swap_window`` and the lesson change with it; a change that makes it worse (one more section before the close) is seen by the count test
-    above and by the case-count test below, not here."""
-    r = _swap_whose_state_fails(_SOURCE, tmp_path, phase="open", nth=nth, changes_disk=completed, moves_source=completed)
-    assert r.failed, f"{name}: the exit was never failed"
-    assert (r.blocked, r.window_held) == (True, True), vars(r)
-
-
-def test_the_residual_cases_cover_every_section_before_the_close():
-    counts = _state_sections(_SOURCE.read_text(encoding="utf-8"))
-    assert len(_BEFORE_THE_CLOSE) == counts["opening"] + counts["disk_changing"], counts
-
-
-def test_a_failure_before_the_cleanups_section_never_makes_the_window_valid_again_after_disk_changing(tmp_path):
-    """The swap changed the disk (``disk_changing``) and its file did not move; the allocator refuses the cleanup's section before it takes the
-    lock. The connections made inside the window must stay refused. The cleanup that read the flag in a section of its own left ``swapped``
-    false in this case and revived the window's stamp, which opens a file whose log names were removed (found by the independent read of this
-    change, reproduced here); the merged section decides and acts in one place and cannot be there."""
-    r = _swap_whose_state_fails(_SOURCE, tmp_path, phase="cleanup", nth=1, at="enter", changes_disk=True)
-    assert r.failed, "the section was never failed: the test proved nothing"
-    assert (r.raised, r.blocked, r.window_held) == ("MemoryError", False, False), vars(r)
-    assert r.generation is not None and r.valid_after == frozenset({r.generation}), vars(r)
-
-
-def test_the_cleanup_that_read_the_flag_in_its_own_section_did_make_the_window_valid_again(tmp_path):
-    """Red without the merge: the old cleanup (a read section, a revive, then a close that did not look at the flag) in the same case."""
-    path = _three_section_cleanup(tmp_path, close_reads_the_flag=False)
-    r = _swap_whose_state_fails(path, tmp_path, phase="cleanup", nth=1, at="enter", changes_disk=True)
-    assert r.failed
-    assert r.generation is not None and r.valid_after is not None and -r.generation in r.valid_after, vars(r)
+def test_the_pin_sees_a_state_lock_in_a_writer_and_at_module_level():
+    synthetic = (
+        "import threading\n_STATE = threading.Lock()\n_LOCK = _Lock()\n"
+        "def swap_window(source):\n    pass\n"
+        "def bump():\n    with _STATE:\n        pass\n"
+        "def _open_window():\n    pass\n"
+        "def _close_window(*, swapped):\n    _helper()\n"
+        "def _helper():\n    _deeper()\n"
+        "def _deeper():\n    with _STATE:\n        pass\n"
+        "def disk_changing():\n    with _STATE:\n        pass\n"
+    )
+    assert _lock_sections(synthetic) == {
+        "swap_window": [],
+        "bump": ["_STATE"],
+        "_open_window": [],
+        "_close_window": ["_STATE"],  # a section in a helper of a helper of the writer is still the writer's
+        "disk_changing": ["_STATE"],
+        "module": ["threading.Lock()"],
+    }

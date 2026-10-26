@@ -1,7 +1,7 @@
 # Ethical Guidelines for Open Omniscience
 
 > **Status (re-checked 2026-10-08):** the software is a working, tested **alpha**
-> (`v0.4.0` — see the repo README for what works today; the 0.0.9-era wording below is
+> (`v0.5.0` — see the repo README for what works today; the 0.0.9-era wording below is
 > kept as the historical record of when these guidelines came into force). Early releases carried a
 > "not functional" banner here; that stopped being true and was removed —
 > these guidelines are **in force now**, not a future reference.

@@ -7957,7 +7957,7 @@ def run_restore(
             # would commit anyway -- ruling item 15 says a pre-swap Stop aborts NOW. The
             # re-check must come BEFORE the still_held refusal, or a user who stopped is
             # told "another job is writing", which is the wrong cause.
-            from src.database.corpus_lease import wait_for_quiescence
+            from src.database.corpus_lease import foreign_note, wait_for_quiescence
 
             still_held = wait_for_quiescence(_SWAP_QUIESCE_S, should_stop=should_stop)
             _abort_point("swap")
@@ -7967,6 +7967,7 @@ def run_restore(
                     + ", ".join(still_held)
                     + f") after waiting {_SWAP_QUIESCE_S:.0f}s — nothing was written to "
                     "your corpus. Stop that job, or let it finish, and import again."
+                    + foreign_note(still_held)
                 )
             target = live_db_path()
             # Empty the live WAL BEFORE letting go of the engine. Two reasons, and

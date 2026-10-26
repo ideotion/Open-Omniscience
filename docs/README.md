@@ -103,6 +103,8 @@ one that matches what you need.
 - **[CHANGES.md](CHANGES.md)** — the changelog.
 - **[HISTORY.md](HISTORY.md)** — a consolidated archive of audits, the security proof
   trail, quality check-ups, the salvage map, and the early phase/optimization reports.
+- **[QUALIFICATION.md](QUALIFICATION.md)** — the quarantine dry run and the read-only reports (samples,
+  host mismatch, raw-ID source names, per-source repeated lines): how to run and read them.
 - **[QUARANTINE_ARCHIVE.md](QUARANTINE_ARCHIVE.md)** — the permanent record of the removed
   six-pillar/fabricated-module tree (never wired into the running app; preserved on the
   `quarantine-archive` branch).
