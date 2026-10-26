@@ -344,14 +344,18 @@ def test_a_tls_proxy_that_forwards_the_scheme_is_the_documented_route(client, mo
     assert behind_proxy.post("/api/briefing/refresh", headers={"Origin": "https://myhost.lan"}).status_code in (403, 421)
 
 
-def test_the_test_clients_own_host_name_is_not_a_name_an_origin_may_carry(client, monkeypatch):
-    """The Host guard serves ``testserver`` (Starlette's TestClient stamps it). An Origin may not carry it: a page served from a
-    name that resolves to an attacker and is then rebound to loopback would otherwise pass this check as well as the Host guard."""
+def test_the_test_clients_own_host_name_is_served_only_when_the_operator_lists_it(client, monkeypatch):
+    """R226: ``testserver`` (Starlette's TestClient name) is not served by default, as a Host or as an Origin: a page served from a
+    name that resolves to an attacker and is then rebound to loopback would pass both checks. ``tests/conftest.py`` lists it the way
+    an operator lists a name, which is the only way either check takes it."""
+    monkeypatch.delenv("OO_ALLOWED_HOSTS")
     assert _from(client, origin="http://testserver:8000", host="testserver:8000").status_code == 403
     assert _from(client, origin="http://testserver", host="testserver").status_code == 403
-    # an operator who lists the name themselves has said they serve it
+    assert _from(client, origin="http://testserver:8000", host="localhost:8000").status_code == 403
+    assert client.get("/api/health", headers={"Host": "testserver"}).status_code == 421
     monkeypatch.setenv("OO_ALLOWED_HOSTS", "testserver")
     assert _from(client, origin="http://testserver:8000", host="testserver:8000").status_code == 200
+    assert client.get("/api/health", headers={"Host": "testserver"}).status_code == 200
 
 
 def test_an_over_long_port_in_the_host_header_is_refused_not_a_server_error(client):

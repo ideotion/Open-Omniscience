@@ -843,13 +843,12 @@ app.add_middleware(
 # loopback name; OO_ALLOWED_HOSTS (comma-separated hostnames) is the explicit escape
 # hatch for LAN self-hosters who serve the app under another name.
 _LOOPBACK_HOST_NAMES = {"127.0.0.1", "localhost", "::1", "[::1]"}
-# Starlette's TestClient stamps Host: testserver on every request. It calls the
-# ASGI app in-process — no network socket is ever opened — so allowing it in the HOST guard cannot
-# widen real-world exposure, and the test suite keeps working unmodified. It is NOT a name an Origin may
-# carry (see ``_origin_hosts``): a page served from a name that resolves to an attacker and is rebound to
-# loopback would otherwise pass the CSRF check as well.
-_TEST_CLIENT_HOST_NAMES = {"testserver"}
-_ALLOWED_HOST_NAMES = _LOOPBACK_HOST_NAMES | _TEST_CLIENT_HOST_NAMES
+# Nothing else is served by default: NOT ``testserver``, the name Starlette's TestClient stamps on every request. A single-label name
+# that no one owns can be answered by whoever answers first on a LAN (LLMNR, NetBIOS: name resolution that is not DNS), so a same-LAN
+# attacker could answer ``testserver``, lure the user to ``http://testserver:8000`` and rebind it to 127.0.0.1: the page would be
+# same-origin with this API and pass every Host check (audit 0.5.0, R226; read from the code, not reproduced). The test suite lists the
+# name itself through ``OO_ALLOWED_HOSTS`` in ``tests/conftest.py``; the two in-process operator tools (``src/testing/scale_bench.py``,
+# ``scripts/perf_harness.py``) build their client on a loopback base URL.
 
 
 def _host_without_port(host_header: str) -> str:
@@ -878,12 +877,7 @@ def _operator_hosts() -> set[str]:
 
 
 def _allowed_hosts() -> set[str]:
-    """The names the Host guard serves: the loopback defaults, the test client's own name and the operator's entries."""
-    return _ALLOWED_HOST_NAMES | _operator_hosts()
-
-
-def _origin_hosts() -> set[str]:
-    """The names an Origin or Referer may carry: the loopback defaults and the operator's entries, never the test client's."""
+    """The names the Host guard serves, and the names an Origin or Referer may carry: the loopback defaults and the operator's entries."""
     return _LOOPBACK_HOST_NAMES | _operator_hosts()
 
 
@@ -975,7 +969,7 @@ def _foreign_origin(request: Request, sent: str) -> bool:
     A browser tells apart two pages by (scheme, host, port); checking the hostname alone let any other loopback web app
     (a dev server, a notebook, another local UI on ``localhost:9999``) post here with a loopback Origin (audit 0.5.0
     A-001). So the hostname AND the effective port must be the Host header's, and the hostname one this server answers to
-    (``_origin_hosts``: the loopback names and ``OO_ALLOWED_HOSTS``, so a LAN self-hoster who serves the app under another
+    (``_allowed_hosts``: the loopback names and ``OO_ALLOWED_HOSTS``, so a LAN self-hoster who serves the app under another
     name is not refused at their own UI, A-017). This middleware is the OUTER one: it runs before the DNS-rebinding guard
     and does not rely on it, which is why the hostname is checked here and not assumed. The scheme is not compared: the
     Host header carries none, and a port that differs is what tells two servers apart."""
@@ -984,7 +978,7 @@ def _foreign_origin(request: Request, sent: str) -> bool:
     if origin is None or here is None:
         return True
     name = origin[0]
-    hosts = _origin_hosts()
+    hosts = _allowed_hosts()
     # the Host guard reads a bracketed IPv6 Host header whole (``[fe80::1]``), urlparse strips the brackets: take either spelling
     listed = name in hosts or (":" in name and f"[{name}]" in hosts)
     return origin != here or not listed
