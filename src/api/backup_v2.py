@@ -237,6 +237,15 @@ def restore_legacy_path(
         except MergeError as exc:
             storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="memory")
             raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
+        # The cap is checked on the size the file system reports BEFORE a byte is read: read_bytes() of a larger file would hold all of it in memory first and
+        # _stage_upload's own check would only refuse it afterwards (audit 0.5.0 A-016). WHAT THE CAP PROTECTS: this process's memory (one AES-GCM call takes
+        # at most 2 GiB, which is also what the legacy single-file format ever held).
+        try:
+            size = p.stat().st_size
+        except OSError as exc:
+            raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
+        if size > _MAX_RESTORE_BYTES:
+            raise HTTPException(status_code=413, detail="the file exceeds the 2 GiB legacy restore cap; restore it as a volume set")
         try:
             data = p.read_bytes()
         except OSError as exc:

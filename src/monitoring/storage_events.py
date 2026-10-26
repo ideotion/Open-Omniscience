@@ -797,7 +797,7 @@ def note_checkpoint(
     extra: dict[str, Any] | None = None,
 ) -> None:
     """One checkpoint of the live store. ``trigger`` names who asked (``boundary``, ``guard``, ``forced`` for the restore's checkpoint
-    before the swap, ``backup``, ``unlock``, ``snapshot``); ``passive`` and ``truncate`` are the rows the PRAGMAs answered; ``readers`` is the pool's oldest-checkout snapshot
+    before the swap, ``backup``, ``unlock``, ``snapshot``, ``shutdown`` for the write-back before the pool is disposed); ``passive`` and ``truncate`` are the rows the PRAGMAs answered; ``readers`` is the pool's oldest-checkout snapshot
     when the site has it (hygiene does); ``outcome`` is ``done``, ``skipped`` (the gate was busy), or ``failed`` with ``error`` the
     exception CLASS. A busy TRUNCATE, a refusal, a failure or a slow one is also kept in ``checkpoint_notable``."""
     try:

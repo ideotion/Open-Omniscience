@@ -714,11 +714,31 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - best-effort shutdown
         log_failure(logger, "Error stopping the storage guard on shutdown", exc, level=logging.WARNING)
 
-    dispose_engine()
+    # Write the log back into the database BEFORE the pool is disposed: the disposal closes only the connections that are IN the pool,
+    # and SQLite writes the log back when the LAST connection on the file closes, so one still checked out (a pass the scheduler's
+    # stop gave up on) leaves the whole log for the next open to pay for (measured: 100 % left, plain and encrypted). Never waits for
+    # a reader, takes no time cap, and records what it did either way (``src/database/shutdown_checkpoint.py``).
+    shutdown_checkpoint: dict | None = None
     try:
+        # its own phase: the step can take as long as the write-back (about 90 s for 1.4 GB, where a service manager's stop timeout is about
+        # as long), and a death inside it must not read as a death "during shutdown" with the previous step as its last word
         from src.monitoring.forensics import record_shutdown_phase
 
-        record_shutdown_phase("dispose-done")
+        record_shutdown_phase("writing-back")
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not stamp the write-back phase", exc, level=logging.DEBUG)
+    try:
+        from src.database.shutdown_checkpoint import checkpoint_before_dispose
+
+        shutdown_checkpoint = checkpoint_before_dispose()
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown; the disposal below runs whatever this did
+        log_failure(logger, "Error writing the log back before the shutdown disposal", exc, level=logging.WARNING)
+
+    disposed = dispose_engine()
+    try:
+        from src.monitoring.forensics import dispose_facts, record_shutdown_phase
+
+        record_shutdown_phase("dispose-done", facts=dispose_facts(disposed, shutdown_checkpoint))
     except Exception as exc:  # noqa: BLE001 - best-effort
         log_failure(logger, "could not stamp the dispose phase", exc, level=logging.DEBUG)
     try:

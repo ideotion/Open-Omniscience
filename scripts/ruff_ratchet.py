@@ -80,13 +80,20 @@ def findings() -> list[dict]:
         text=True,
     )
     # ruff exits 1 when it has findings, which is the normal case here; only a
-    # crash (2) or unparseable output is an error worth refusing on.
+    # crash (2), no output or unparseable output is an error worth refusing on.
     if proc.returncode not in (0, 1):
         raise SystemExit(f"ruff failed (rc={proc.returncode}):\n{proc.stderr.strip()}")
+    # Empty output is NEVER "no findings": ruff prints a literal ``[]`` for a clean tree, and a missing module (``No module named ruff``, the interpreter that
+    # runs this script is not the one ruff was installed into) exits 1 with nothing on stdout, which read as zero findings and a "can be lowered to 0" instruction.
+    if not proc.stdout.strip():
+        raise SystemExit(f"ruff produced no output (rc={proc.returncode}), so nothing was measured:\n{proc.stderr.strip() or '(no stderr)'}")
     try:
-        return json.loads(proc.stdout or "[]")
+        parsed = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         raise SystemExit(f"could not parse ruff JSON output: {exc}") from exc
+    if not isinstance(parsed, list):
+        raise SystemExit(f"ruff's JSON output is not a list of findings ({type(parsed).__name__}); nothing was measured")
+    return parsed
 
 
 def main() -> int:
@@ -104,9 +111,17 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    # The version first: "unknown" means this interpreter has no working ruff, and a count taken without one is not a count.
+    version = _ruff_version()
+    if version == "unknown":
+        print(
+            f"FAIL: ruff is not runnable as '{sys.executable} -m ruff', so nothing was measured. Install the dev extra into this interpreter "
+            f'(pip install -e ".[dev]") and run again; a missing tool is not a clean tree.',
+            file=sys.stderr,
+        )
+        return 2
     found = findings()
     n = len(found)
-    version = _ruff_version()
     print(f"ruff advisory findings: {n} (ceiling {args.max}, {version})")
 
     if args.show_composition:

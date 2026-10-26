@@ -480,6 +480,18 @@ def record_path() -> Path:
 # --- the registry ------------------------------------------------------------------------------
 
 
+def _table_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """The per-table records of a verification entry that are records. A function of its own because a comprehension is inlined into its
+    caller on CPython 3.13 and the back-edge of its filter-skip then sits outside the exception table of the ``with self._lock`` in
+    ``DamageRegistry.confirmed_damage`` (R205): an interrupt there would skip the lock's release."""
+    return [t for t in entry.get("tables") or [] if isinstance(t, dict)]
+
+
+def _damaged_table_names(tables: list[dict[str, Any]]) -> list[str]:
+    """The names of the tables read as damaged, for the same reason as :func:`_table_records`."""
+    return [str(t.get("table")) for t in tables if t.get("verdict") == VERDICT_DAMAGED]
+
+
 class DamageRegistry:
     """The per-file latch and the incident record. Thread-safe; every method that an observer reaches
     never raises."""
@@ -1602,9 +1614,9 @@ class DamageRegistry:
                 or entry.get("verdict") != VERDICT_DAMAGED
             ):
                 return None
-            tables = [t for t in entry.get("tables") or [] if isinstance(t, dict)]
+            tables = _table_records(entry)
             return {
-                "tables": [str(t.get("table")) for t in tables if t.get("verdict") == VERDICT_DAMAGED],
+                "tables": _damaged_table_names(tables),
                 "file_name": entry.get("file_name"),
                 # Pages the DRIVE could not read during the check (the page pass counts them apart from damage): a drive that failed to
                 # read the file once is a drive to look at, and a copy the repair keeps is never removed on the strength of a file

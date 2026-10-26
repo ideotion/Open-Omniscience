@@ -229,6 +229,19 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     return eng
 
 
+def _other_engines_of(kind: str, key: tuple[str, str]) -> list[tuple[str, str]]:
+    """The cached engines of ``kind`` under another file than ``key`` (call it with ``_lock`` held). A function of its own because a
+    comprehension is inlined into its caller on CPython 3.13 and the back-edge of its filter-skip then sits outside the exception table of
+    the ``with _lock`` in ``lane_engine`` (R205): an interrupt there would skip the lock's release."""
+    return [k for k in _engines if k[0] == kind and k != key]
+
+
+def _keys_of(kind: str) -> list[tuple[str, str]]:
+    """The cached engine keys of ``kind`` (call it with ``_lock`` held), for the same reason as :func:`_other_engines_of`: the
+    ``with _lock`` in ``dispose_lane`` (R205)."""
+    return [k for k in _engines if k[0] == kind]
+
+
 def lane_engine(kind: str, *, create: bool = False) -> Engine:
     """The engine for ``kind``. Refuses an absent lane unless ``create=True``.
 
@@ -243,7 +256,7 @@ def lane_engine(kind: str, *, create: bool = False) -> Engine:
         raise LaneAbsentError(f"the {spec.kind} lane has no database file at {path.name}")
     key = (kind, str(path))
     with _lock:
-        stale = [k for k in _engines if k[0] == kind and k != key]
+        stale = _other_engines_of(kind, key)
         eng = _engines.get(key)
         if eng is None:
             eng = _build_engine(spec, path)
@@ -519,7 +532,7 @@ def dispose_lane(kind: str) -> None:
     lane — a snapshot, a restore swap.
     """
     with _lock:
-        keys = [k for k in _engines if k[0] == kind]
+        keys = _keys_of(kind)
         engines = [_engines.pop(k) for k in keys]
         for k in keys:
             _factories.pop(k, None)

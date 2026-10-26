@@ -856,7 +856,7 @@
       const modeRow = `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
         + _anCtlLabel(t("View")) + seg("counts", t("Counts")) + seg("indexed", t("Indexed"))
         + (byLangOffered ? seg("bylang", t("By language")) : "") + `</div>`;
-      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" data-on-click="anTrendPick('${sym}')"`
+      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" data-on-click="anTrendPick(${esc(JSON.stringify(sym))})"`
         + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
       // A commodity chosen from the drop-down leaves the drop-down at "more…" (it is an
       // adder), so it needs a lit chip of its own: that chip IS the statement of what is
@@ -4471,7 +4471,7 @@
         + (d.tags || []).map((x) => `<tr><th style="text-align:start;font-weight:500;padding-inline-end:10px" dir="ltr">${esc(x.key)}</th><td dir="auto">${esc(x.value)}</td></tr>`).join("")
         + `</tbody></table>`;
       if (d.place_id) {
-        html += `<p><button type="button" class="tiny secondary" data-on-click="openPlaceCard('${esc(d.place_id)}')">${esc(t("Open the place card"))}</button></p>`;
+        html += `<p><button type="button" class="tiny secondary" data-on-click="openPlaceCard(${esc(JSON.stringify(d.place_id))})">${esc(t("Open the place card"))}</button></p>`;
       }
       html += `<div class="muted small">${esc(d.vintage ? tf("OpenStreetMap data of {date}", {date: d.vintage.slice(0, 10)}) : t("The extract states no date"))}</div>`;
       html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;

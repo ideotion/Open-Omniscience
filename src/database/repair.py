@@ -715,7 +715,7 @@ def _exclusive_window() -> Iterator[None]:
 
 def _quiet(timeout: float) -> None:
     """Wait for any job already in flight on the corpus (``corpus_lease``) to finish; refuse, naming it, when one does not."""
-    from src.database.corpus_lease import wait_for_quiescence
+    from src.database.corpus_lease import foreign_note, wait_for_quiescence
 
     held = wait_for_quiescence(timeout, should_stop=_CANCEL.is_set)
     if _CANCEL.is_set():
@@ -723,7 +723,7 @@ def _quiet(timeout: float) -> None:
     if held:
         raise Declined(
             "writer-busy",
-            "another job is still writing to the library (" + ", ".join(held) + f") after waiting {timeout:.0f} s",
+            "another job is still writing to the library (" + ", ".join(held) + f") after waiting {timeout:.0f} s" + foreign_note(held),
         )
 
 

@@ -6552,6 +6552,7 @@
   "today": "今日",
   "tokens": "トークン",
   "tone": "トーン",
+  "too large (use folder import)": "大きすぎます（フォルダーのインポートを使用）",
   "took {wall}, {gate} with writes paused": "{wall} かかり、そのうち {gate} は書き込みを一時停止",
   "top 3 sources hold {pct}% of articles": "上位 3 ソースが記事の {pct}% を占めます",
   "top {n} of {total}": "上位 {n}／{total}",

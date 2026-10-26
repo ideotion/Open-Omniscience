@@ -107,7 +107,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
 that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag and 30–34 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -131,13 +131,13 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–23).**
+**Items added at the tag (12–23) and by the close-out audit (30–34).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
   the Windows locked-folder raw copy (inferred, not observed); the Windows msvcrt polling lock and the NFS/FUSE flock in
   `src/safety/file_lock.py` (a filesystem that cannot lock runs unlocked with one stderr warning naming the file); the launcher's
-  stderr-filter summary-row exposure (measured 0 to 9 ms idle over 22 launches, no figure under load).
+  stderr-filter summary-row exposure (reported by RC2 as 0 to 9 ms idle over 22 launches on 17 Oct, from a hand run with no raw table kept, so INFERRED rather than evidenced; no figure under load).
 - **13. `hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
   is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
   a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
@@ -172,11 +172,24 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   characters reordered. A possible product defect (the walk rated it P1): the date inside the RTL probe lacks the U+2068 … U+2069 bidi
   isolates the recorded lesson calls for. Not caused by encryption as far as the walk can tell, but it was not re-run on a plaintext
   store to confirm. Owner: the qualification lane, after the tag.
-- **23. The world-map lenses request files that do not ship** (found by the item 21 walk): switching a lens fetches
-  `osm_admin0.json`, `osm_admin1.json`, `osm_borders/admin0.world.json` and `osm_borders/admin1.world.json` (`app-map.js:364,369`),
-  none of which ship, so a fresh install logs four console 404s per switch. Low severity (P3); the files are generated from an OSM import, so this is row
-  E's unbuilt admin-boundary artifact showing through.
-
+- **23. The world-map lenses request files that do not ship, closed as by design** (found by the item 21 walk, ruled `R213`):
+  on an install without the operator-built boundary files, the map asks for `osm_admin0.json`, `osm_admin1.json`,
+  `osm_borders/admin0.world.json` and `osm_borders/admin1.world.json` (`app-map.js:351-372`) once per page load (the loader caches
+  its answer for the page session; the walk reloaded the page between lenses), and the four 404s show in the console. The design says
+  «absent -> Natural Earth, never an error»; nothing the person sees is wrong, and no manifest or static listing exists to ask first.
+  The 404s stop when row E's operator build lands the files (the 0.5.1 item that already exists). Record:
+  `plan-row-j/proposal-item23-osm-admin-presence-2026-10-26.md` (the `/api/health` presence flag, not built).
+- **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3275-3297`): its cost at the
+  field catalogue (86k sources) is not measured; measure first, then a column projection that keeps what callers of the full form see.
+- **31. A declined rollup spawns a build thread on every served read** (audit A-026, `src/analytics/rollup_serve.py:1421`): needs the
+  mem-low measurement before any change.
+- **32. The «130 GB corpus» label on the full-text rebuild timing** (audit A-027, `src/database/fts.py:807, 990`, `OPEN_QUEUE.md:619`): the
+  report's evidence points to the 11.7 GB database (268,241 articles) with the data folder, backups included, near 130 GB; it cannot
+  be settled from the tree, so the wording stays until the record's author says which size the 981 to 1,645 s was taken at.
+- **33. Fixed-name `.tmp` writers of files two servers share** (audit A-031, `src/monitoring/forensics.py:295`): already allowlisted with
+  owner lanes; `session_state.json` is the one whose torn write changes the next boot's verdict.
+- **34. The launcher's «0 to 9 ms idle over 22 launches»** (audit A-034, item 12 above): RC2's own list is its only source, no raw timing
+  table is in the tree; RC2 states it as inferred or commits the table.
 ---
 
 ## 2. The rows

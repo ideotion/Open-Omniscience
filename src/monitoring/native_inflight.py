@@ -135,9 +135,19 @@ class native_call(contextlib.AbstractContextManager):  # noqa: N801 - used as a 
             self._slot = -1
 
     def __enter__(self) -> None:
-        if self._slot >= 0:
+        if self._slot < 0:
+            return
+        try:
+            _bump(self._slot, 1)
+        except Exception:  # noqa: S110 - the bracket never raises into the call it wraps
+            pass
+        except BaseException:
+            # An interrupt (Ctrl-C on the main thread) lands between the bump and ``__enter__`` returning, so ``__exit__`` will NEVER run for this entry and the slot would read
+            # "in flight" until restart, and every later abort with it. Undo, then let the interrupt through. If it landed before the bump's own write, the undo lowers a
+            # concurrent holder's count by one for as long as that call lasts (the count is clamped at zero): a short undercount is the lesser error.
             with contextlib.suppress(Exception):
-                _bump(self._slot, 1)
+                _bump(self._slot, -1)
+            raise
 
     def __exit__(self, *exc: object) -> None:
         if self._slot >= 0:

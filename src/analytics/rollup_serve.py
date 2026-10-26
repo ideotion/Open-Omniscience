@@ -375,7 +375,8 @@ def _build_inmemory_and_swap() -> dict | None:
     ok = False
     _progress_begin()
     try:
-        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"])
+        if not rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"]):
+            return {"reason": rollup_marker.ELSEWHERE, "at": time.time()}  # another server began a build between the check and now (R183)
         with session_scope() as s:
             # Token BEFORE the build (conservative: rows landing DURING the build make the
             # recorded token compare "changed" next check -> one extra rebuild, never a
@@ -1201,6 +1202,15 @@ def _build_and_swap() -> str:
             _refresh_persisted_build()
         else:
             stopped = _build_inmemory_and_swap()
+            from src.analytics import rollup_marker
+
+            if stopped is not None and stopped.get("reason") == rollup_marker.ELSEWHERE:
+                # R183: another server's build is running. Not a stop: no hold is kept (it would refuse real builds after that server is done), no build ran.
+                with _LOCK:
+                    _STATE["last_skip"] = {**stopped, "source": "last-build"}
+                ran = False
+                outcome = "declined"
+                return outcome
             if stopped is not None:
                 grew = observed = None
                 if isinstance(stopped.get("rss_mb"), (int, float)) and isinstance(
@@ -1404,8 +1414,10 @@ def windowed_rows(
     articles}`` ordered by mentions desc (the same shape/order the live windowed query
     produces before the hidden-word / family / ring layers).
 
-    Returns ``None`` (fallback) when: not opted in, the rollup is not built yet, or ANY
-    error. Kicks a background (re)build when the rollup is missing or the change gate
+    Returns ``None`` (fallback) when: not opted in, the rollup is not built yet, the engine
+    answered with its out-of-memory error (R194) or left the instance unusable (a fatal), or an
+    error escaped the query. An ORDINARY engine error inside the query is NOT a fallback: the
+    columnar layer answers empty (and counts it), and that empty list is returned. Kicks a background (re)build when the rollup is missing or the change gate
     detects a newer corpus state (P1.10), but serves the current one meanwhile (never
     blocks)."""
     if not serve_enabled() or not days:
@@ -1441,8 +1453,10 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
     rollup, or ``None`` to fall back to the live query. Used by ``trending`` (its recent /
     prior windows) — which is why wiring it also accelerates ``trending_windows`` (the Home
     poll), since that calls ``trending`` per window. Same safety as :func:`windowed_rows`:
-    opted-in only, background (re)build, serves the current build meanwhile, any error ->
-    ``None``."""
+    opted-in only, background (re)build, serves the current build meanwhile. ``None`` on the
+    engine's out-of-memory error (R194), on a fatal instance, or on an escaped error; an
+    ordinary engine error inside the query answers ``{}`` (empty on error, live only on OOM
+    or a fatal instance)."""
     if not serve_enabled():
         return None
     from src.analytics import columnar
@@ -1462,7 +1476,8 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
             if con is None:
                 return None
             counts = columnar.windowed_term_counts(con, start_day=lo, end_day=hi)
-        if _drop_if_unusable(con):
+        dropped = _drop_if_unusable(con)  # always asked: it takes the fatal the query left, if any
+        if dropped or counts is None:  # None = the engine's out-of-memory error (R194): the live scan answers
             return None
         return {kid: mv[0] for kid, mv in counts.items()}  # mentions only (exact)
     except Exception as exc:  # noqa: BLE001 - any serve failure -> live fallback

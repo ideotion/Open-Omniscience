@@ -467,7 +467,7 @@ def note_stop_signal(name: str) -> None:
     _STOP_SIGNAL = name
 
 
-def record_shutdown_phase(phase: str, *, reason: str | None = None) -> None:
+def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[str, Any] | None = None) -> None:
     """Advance the sentinel through the teardown (S0.2).
 
     Before this, the sentinel had two states -- 'running' and 'clean' -- so a death
@@ -479,15 +479,134 @@ def record_shutdown_phase(phase: str, *, reason: str | None = None) -> None:
     'it was killed mid-collection'.
 
     ``reason`` names WHY the stop began (a signal, the in-app power button); it is
-    recorded once, on the first phase, and carried forward."""
+    recorded once, on the first phase, and carried forward. ``shutdown_began_at`` is stamped the same way, once, on the first phase:
+    ``shutdown_phase_at`` moves with every phase and ``ended_at`` is the last, so without it the teardown's duration was not readable
+    (the 10-10 session's last step and its end were the same second). ``facts`` are the few named values a phase learned
+    (:func:`dispose_facts`), merged in as they are; only the keys in :data:`_DISPOSE_FACT_KEYS` are kept."""
     state = _read_state() or {}
     state["state"] = phase
     state["shutdown_phase_at"] = _now()
+    if not state.get("shutdown_began_at"):
+        state["shutdown_began_at"] = state["shutdown_phase_at"]
     if reason and not state.get("shutdown_reason"):
         state["shutdown_reason"] = reason
     if _STOP_SIGNAL and not state.get("stop_signal"):
         state["stop_signal"] = _STOP_SIGNAL
+    if facts:
+        state.update({k: v for k, v in facts.items() if k in _DISPOSE_FACT_KEYS})
     _write_state(state)
+
+
+#: The one key the disposal step leaves in the sentinel, and ``previous_session_report`` reads back: :func:`dispose_facts`' answer. Only keys
+#: named here are kept, whatever a caller hands ``record_shutdown_phase``.
+_DISPOSE_FACT_KEYS = ("dispose",)
+
+#: The largest log size the ``dispose`` member carries (just under 1 TB, twelve digits), the largest connection count (three digits) and the
+#: longest teardown it calls a duration (an hour). WHAT THEY PROTECT: the byte room of the member in the session-forensics report
+#: (tests/test_session_forensics_budget.py builds it at these cuts). A value past a cut is not a measurement, so the member says the reading was
+#: unusable (``unreadable`` / ``unknown``) or leaves the duration out, never a number it cannot stand behind.
+DISPOSE_WAL_MAX_BYTES = 10**12 - 1
+DISPOSE_OUT_MAX = 999
+DISPOSE_TOOK_MAX_S = 3600
+
+#: What each code of the ``dispose`` member says in words (the stored record carries the short code; the text maps it back, as
+#: :data:`DIED_REASON_WORDS` does for ``died_into_phase``). A code stands IN PLACE of a number it could not give, so an unknown is never a
+#: ``0`` and its reason costs no field of its own: ``wal`` is a byte count or ``unreadable``; ``out`` a count or one of ``earlier`` · ``unknown``
+#: · ``unasked``; ``step`` one of the outcomes below. ``copied`` is a ``busy`` answer after every frame of the log was written back. THE ``out`` AND
+#: ``step`` CODES ARE SEVEN CHARACTERS AT MOST, and ``unreadable`` (ten) is the one ``wal`` code, because the member's worst case is paid out
+#: of the 2,415 B room (tests/test_session_forensics_budget.py builds it from these tables, every code at every cut).
+DISPOSE_WAL_WORDS = {"unreadable": "the -wal's size could not be read"}
+DISPOSE_OUT_WORDS = {
+    "earlier": "an earlier disposal replaced the pool",
+    "unknown": "the pool did not say",
+    "unasked": "the pool was not asked",
+}
+DISPOSE_STEP_WORDS = {
+    "done": "the log was written back and truncated",
+    "busy": "a reader, a writer or another checkpoint held the log, and the answer did not show all of it written back",
+    "copied": "every frame was written back, but a reader with a recent snapshot or a writer in the middle of a write still held the log, "
+    "so it was not truncated and keeps its size (what a writer commits afterwards is not written back)",
+    "failed": "the write-back failed (its exception class is in the storage journal)",
+    "locked": "the write-back did not run: the store is locked, this process never opened it",
+    "fresh": "the write-back did not run: the store is new, this process never opened it",
+    "no db": "the write-back did not run: there is no SQLite database file to write back into",
+    "not run": "the write-back step did not run",
+    "unknown": "the sentinel names a write-back result this build does not know",
+}
+#: A step ``why`` the write-back step reports, as the code the member keeps (``locked`` / ``fresh``; anything else, a missing file or another
+#: backend, is ``no db``).
+_SKIP_CODES = {"locked": "locked", "fresh": "fresh"}
+
+
+def dispose_facts(disposed: dict[str, Any] | None, checkpoint: dict[str, Any] | None) -> dict[str, Any]:
+    """The facts the disposal step records, as the sentinel's one ``dispose`` key: the log still on disk (``wal``, read NOW, after the engine
+    was disposed), what the pool held (``out``) and what the write-back before it did (``step``). An unknown is a CODE in place of the number
+    (see :data:`DISPOSE_OUT_WORDS`), never ``0``. ``disposed`` is :func:`~src.database.session.dispose_engine`'s return and ``checkpoint`` is
+    :func:`~src.database.shutdown_checkpoint.checkpoint_before_dispose`'s; either may be ``None`` (the step did not run). Never raises."""
+    out: dict[str, Any] = {}
+    try:
+        # the log of the file the write-back step looked at, so the step and this record cannot read different files
+        wal_path = checkpoint.get("wal_path") if isinstance(checkpoint, dict) else None
+        wal = wal_state_before_open(Path(wal_path) if wal_path else None)
+        if wal.get("state") == "present" and isinstance(wal.get("bytes"), int):
+            out["wal"] = wal["bytes"]
+        elif wal.get("state") == "absent":
+            out["wal"] = 0
+        else:
+            out["wal"] = "unreadable"
+    except Exception:  # noqa: BLE001 - forensics never blocks a shutdown
+        out["wal"] = "unreadable"
+    if isinstance(disposed, dict):
+        n = disposed.get("checked_out")
+        if isinstance(n, int):
+            out["out"] = n
+        else:
+            try:
+                from src.database.session import EARLIER_DISPOSAL
+
+                earlier = disposed.get("checked_out_why") == EARLIER_DISPOSAL
+            except Exception:  # noqa: BLE001
+                earlier = False
+            out["out"] = "earlier" if earlier else "unknown"
+    else:
+        out["out"] = "unasked"
+    if isinstance(checkpoint, dict) and checkpoint.get("outcome"):
+        step = str(checkpoint["outcome"])
+        if step == "busy" and checkpoint.get("copied_all"):
+            step = "copied"
+        elif step == "skipped":
+            step = _SKIP_CODES.get(str(checkpoint.get("why")), "no db")
+        out["step"] = step
+    else:
+        out["step"] = "not run"
+    return {"dispose": out}
+
+
+def _clean_dispose(raw: Any, took: int | None) -> dict[str, Any] | None:
+    """The sentinel's ``dispose`` record as the report carries it, rebuilt field by field: the file is on disk and anything may have written
+    it, so a number is kept only inside its cut (:data:`DISPOSE_WAL_MAX_BYTES`, :data:`DISPOSE_OUT_MAX`), a code only when it is one the tables
+    know, and anything else becomes the code that says the reading was unusable (``unreadable`` / ``unknown``: for ``step`` that is
+    ``unknown``, never ``not run``, which would claim the step did not run). ``took`` (seconds from the teardown's first step to the
+    session's end, computed by the caller) is added when it is a credible duration. ``None`` when the sentinel holds no such record (a
+    build before this one): the report then says nothing."""
+    if not isinstance(raw, dict):
+        return None
+
+    def number(value: Any, cut: int, codes: dict[str, str], other: str) -> Any:
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= cut:
+            return value
+        return value if isinstance(value, str) and value in codes else other
+
+    out: dict[str, Any] = {}
+    if "wal" in raw:
+        out["wal"] = number(raw["wal"], DISPOSE_WAL_MAX_BYTES, DISPOSE_WAL_WORDS, "unreadable")
+    if "out" in raw:
+        out["out"] = number(raw["out"], DISPOSE_OUT_MAX, DISPOSE_OUT_WORDS, "unknown")
+    if "step" in raw:
+        out["step"] = raw["step"] if isinstance(raw["step"], str) and raw["step"] in DISPOSE_STEP_WORDS else "unknown"
+    if isinstance(took, int) and 0 <= took <= DISPOSE_TOOK_MAX_S:
+        out["took"] = took
+    return out
 
 
 def record_clean_shutdown() -> None:
@@ -537,10 +656,27 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
             "ts": d.get("ts"),
             "rss_mb": d.get("rss_mb"),
             "mem_avail_mb": d.get("mem_avail_mb"),
-            "elapsed_s": d.get("elapsed_s"),
+            "since_pass_start_s": _seconds_between(d.get("pass_id"), d.get("ts")),
             "pass_id": d.get("pass_id"),
         }
     return None
+
+
+def _seconds_between(start: Any, end: Any) -> float | None:
+    """``end`` minus ``start`` in seconds, both ISO-8601 strings, or ``None`` when either is missing, unreadable or the two
+    cannot be compared (never a ``0``, which would read as "the pass had just begun").
+
+    The collect-perf tick used to carry ``elapsed_s`` (seconds since the monitor was built); it no longer does, to pay for the
+    extraction-lock block, and a tick's ``pass_id`` is the pass's own start (``runner.py`` stamps it before the sources are
+    chosen), so the time into the pass is ``ts`` minus ``pass_id``. That is a slightly different quantity from the old
+    ``elapsed_s`` (it includes the seconds the pass spent choosing its sources before the monitor existed), which is why the
+    key is named for what it holds and the old name is gone."""
+    try:
+        a = datetime.fromisoformat(str(start))
+        b = datetime.fromisoformat(str(end))
+        return round((b - a).total_seconds(), 1)
+    except (TypeError, ValueError):
+        return None
 
 
 #: The unlock step that holds the verify connection's recovery and its checkpoint-on-close. The
@@ -686,8 +822,9 @@ def wal_bytes_before_open() -> int | None:
         return None
 
 
-def wal_state_before_open() -> dict[str, Any]:
-    """The -wal file's state at the moment of the call, in THREE states.
+def wal_state_before_open(path: Path | None = None) -> dict[str, Any]:
+    """The -wal file's state at the moment of the call, in THREE states. ``path`` is the log to look at (the shutdown write-back names the
+    file its step looked at, so the facts that follow read the same one); by default the data folder's own.
 
     READ THIS BEFORE INTERPRETING THE RESULT (2026-09-02, S0.1). What the call
     measures depends entirely on WHEN it runs, because *any* SQLite connection
@@ -718,7 +855,7 @@ def wal_state_before_open() -> dict[str, Any]:
     ``wal_at_boot``. A reading taken later (the unlock timer) describes the unlock
     path's own timing, not the previous session.
     """
-    p = data_dir() / f"{_DB_NAME}-wal"
+    p = path if path is not None else data_dir() / f"{_DB_NAME}-wal"
     try:
         return {
             "bytes": p.stat().st_size,
@@ -806,6 +943,8 @@ def previous_session_report() -> dict[str, Any]:
         # a different fact from being killed mid-collection, and one the two-state
         # sentinel could not express.
         "shutting-down": "unclean-end-during-shutdown",
+        # the write-back before the disposal can take as long as the write-back itself (about 90 s for 1.4 GB), so a death inside it is its own fact
+        "writing-back": "unclean-end-during-write-back",
         "dispose-done": "unclean-end-after-dispose",
         "clean": "clean",
     }.get(state, f"unknown({state})")
@@ -815,6 +954,13 @@ def previous_session_report() -> dict[str, Any]:
     for key in ("shutdown_reason", "stop_signal", "shutdown_phase_at"):
         if prev.get(key):
             out[key] = prev[key]
+    # What that session's disposal left behind, as ONE member (R201: the headroom above the diagnostics floor is spent member by member, and
+    # this one is registered in HEADROOM_MEMBERS with its worst case measured). A ``0`` is a fact (no log), so it is carried when PRESENT, not
+    # when truthy; a sentinel written by a build before this one has none, and the report then says nothing rather than "empty". The
+    # teardown's start is not copied (a timestamp is 45 B): the seconds from it to the end are computed here.
+    dispose = _clean_dispose(prev.get("dispose"), _seconds_between(prev.get("shutdown_began_at"), prev.get("ended_at")))
+    if dispose is not None:
+        out["dispose"] = dispose
     if out["previous_session"] != "clean":
         # How it ENDED, from the witnesses outside the process (2026-09-26): the
         # launcher's exit status, the user-space memory killers' journal lines and the
@@ -845,7 +991,7 @@ def previous_session_report() -> dict[str, Any]:
 #: The members of the session-forensics report that spend the 2,415 B headroom above the diagnostics floor. A member joins this tuple in the
 #: commit that adds it, together with a worst-case builder in tests/test_session_forensics_budget.py (that test is red while the two differ,
 #: and while a ``*_BYTES`` cap exists in the monitoring modules that no member claims).
-HEADROOM_MEMBERS = ("crashing_thread_kind", "launcher_stderr", "died_into_phase", "native_in_flight", "last_thread_census", "stack")
+HEADROOM_MEMBERS = ("crashing_thread_kind", "launcher_stderr", "died_into_phase", "native_in_flight", "last_thread_census", "stack", "dispose")
 
 #: What each ``died_into_phase`` reason code says in words (the stored record carries the short code; every reader maps it back, so the report
 #: reads as it did before the codes). tools/diag_reader.py carries the same table for the triage.
@@ -1717,6 +1863,50 @@ def _render_earlier_ends(ev: Any) -> list[str]:
     return out
 
 
+def _seconds_between(begin: Any, end: Any) -> int | None:
+    """Whole seconds from one ISO timestamp to another, or ``None`` when either is missing, unparseable or the order is reversed
+    (a clock set back mid-teardown is not a negative duration)."""
+    try:
+        seconds = (datetime.fromisoformat(str(end)) - datetime.fromisoformat(str(begin))).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return int(seconds) if seconds >= 0 else None
+
+
+def _render_log_left(prev: dict[str, Any]) -> list[str]:
+    """The line that keeps a ``clean`` end from reading as a clean log: ``clean`` says the teardown ran to its last step, not that the
+    ``-wal`` was written back into the database, and the next open may pay that write-back. Said whenever the disposal left a log (its size,
+    what the pool held, what the write-back before it did), and also when it left none or could not be read; silent only for a session
+    that did not record the value (a build before this one)."""
+    d = prev.get("dispose")
+    if not isinstance(d, dict) or "wal" not in d:
+        return []
+    left, held, step = d.get("wal"), d.get("out"), d.get("step")
+    held_text = (
+        f"{held} connection(s) still checked out when the pool was disposed"
+        if isinstance(held, int)
+        else f"checked-out connections not counted ({DISPOSE_OUT_WORDS.get(str(held), 'no reason recorded')})"
+    )
+    wrote_text = (
+        f"the write-back before it: {DISPOSE_STEP_WORDS.get(step, step)}" if step else "no write-back recorded (no reason recorded)"
+    )
+    if isinstance(left, int) and left > 0:
+        lines = [
+            f"- the -wal was LEFT by that session's end: {left:,} bytes were still on disk after the pool was disposed ({held_text}; {wrote_text})"
+        ]
+        if prev.get("previous_session") == "clean":
+            lines.append(
+                "  - 'clean' above means the teardown ran to its end, not that this log was written back; the -wal at the next boot "
+                "(wal_at_boot) says what that open found"
+            )
+        return lines
+    if left == 0:
+        return [f"- the -wal was empty after that session's pool was disposed ({held_text}; {wrote_text})"]
+    return [
+        f"- the -wal after that session's disposal was not measured ({DISPOSE_WAL_WORDS.get(str(left), 'no reason recorded')}; {held_text}; {wrote_text})"
+    ]
+
+
 def render_text(d: dict[str, Any] | None = None) -> str:
     """A plain-text rendering of the session forensics, built to be READABLE WHEN
     PASTED INTO A CHAT — the channel this file exists for. Mirrors
@@ -1745,6 +1935,14 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- shutdown reason: {prev['shutdown_reason']}")
     if prev.get("shutdown_phase_at"):
         lines.append(f"- last teardown step at: {prev['shutdown_phase_at']}")
+    if isinstance(prev.get("dispose"), dict):
+        took = prev["dispose"].get("took")
+        lines.append(
+            f"- the teardown took {took} s from its first step to the end"
+            if isinstance(took, int)
+            else "- the teardown's duration was not readable (its first step or its end was not recorded)"
+        )
+    lines += _render_log_left(prev)
     if prev.get("last_rss_mb") is not None:
         lines.append(f"- collector's last RSS sample: {prev['last_rss_mb']} MB")
     wal_boot = prev.get("wal_at_boot") or {}

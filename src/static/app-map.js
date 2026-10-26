@@ -3338,7 +3338,7 @@
     function _osmCompAdmin1(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const a = c.admin1 || {};
-      const btn = (label) => `<button type="button" class="tiny secondary" data-on-click="osmCountAdmin1('${esc(c.country)}')">${esc(t(label))}</button>`;
+      const btn = (label) => `<button type="button" class="tiny secondary" data-on-click="osmCountAdmin1(${esc(JSON.stringify(c.country))})">${esc(t(label))}</button>`;
       const say = {
         "no-admin1-file": "Per region: the region outlines are not built on this install, so no region is counted.",
         "no-regions": "Per region: the region outlines hold no region of this country.",
@@ -3477,7 +3477,7 @@
       }
       const rows = d.results.map((r) => `<tr><td dir="auto">${esc(r.address)}</td>`
         + `<td style="text-align:end;padding:2px 8px">${esc(`${(+r.lat).toFixed(5)}, ${(+r.lon).toFixed(5)}`)}</td>`
-        + `<td><button type="button" class="tiny secondary" data-on-click="openOsmObjectCard('${esc(r.object)}')">${esc(t("Open"))}</button></td></tr>`).join("");
+        + `<td><button type="button" class="tiny secondary" data-on-click="openOsmObjectCard(${esc(JSON.stringify(r.object))})">${esc(t("Open"))}</button></td></tr>`).join("");
       const more = d.total > d.results.length ? `<div class="hint">${esc(osmCompTf("{shown} of {total} addresses shown.", { shown: fmtNum(d.results.length, 0), total: fmtNum(d.total, 0) }))}</div>` : "";
       out.innerHTML = `<table class="data" title="${esc(t(d.method || ""))}"><tbody>${rows}</tbody></table>${more}`;
     }

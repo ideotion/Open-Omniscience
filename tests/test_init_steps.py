@@ -62,6 +62,12 @@ def clock(monkeypatch):
 
 @pytest.fixture()
 def dd(monkeypatch, tmp_path):
+    # ``src.database.session`` binds its engine to ``OO_DATA_DIR`` at its FIRST import and never again, while the settings store reads
+    # the variable on every call. A test that imports ``src.api.main`` after the line below, in a run where nothing imported the session
+    # before it, binds the engine to this test's tmp_path for the rest of the process (the country-form card then reads a marker from
+    # one store while the app stamped another). Import first, so the engine binds to the suite's directory whatever the order.
+    import src.database.session  # noqa: F401
+
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(forensics, "_PREV_AT_BOOT", None)
     monkeypatch.setattr(forensics, "_PREV_LOADED", False)

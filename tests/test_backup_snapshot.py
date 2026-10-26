@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import shutil
 import sqlite3
 import subprocess
@@ -665,7 +666,7 @@ def test_another_machines_marker_is_not_judged_by_a_pid_that_means_nothing_here(
     marker is unknown, so only the age rule applies to it."""
     root = tmp_path / "drive"
     root.mkdir()
-    foreign = {"pid": _dead_pid(), "started": 1.0, "host": "another-machine-" + sb.platform.node()}
+    foreign = {"pid": _dead_pid(), "started": 1.0, "host": "another-machine-" + platform.node()}
     young = _leftover(root, ".bak-build-young-foreign", foreign)
     old = _leftover(root, ".bak-build-old-foreign", foreign, age_hours=48)
     assert sb._owner_state(young) == "unknown"
@@ -706,7 +707,7 @@ def test_the_machine_tag_tells_two_machines_with_one_name_apart(tmp_path, monkey
     and they differ, the marker is another machine's and only the age rule applies."""
     root = tmp_path / "drive"
     root.mkdir()
-    base = {"pid": _dead_pid(), "started": 1.0, "host": sb.platform.node()}
+    base = {"pid": _dead_pid(), "started": 1.0, "host": platform.node()}
     monkeypatch.setattr(sb, "_machine_tag", lambda: "aaaaaaaaaaaaaaaa")
     mine = _leftover(root, ".bak-build-mine", {**base, "machine": "aaaaaaaaaaaaaaaa"})
     theirs = _leftover(root, ".bak-build-theirs", {**base, "machine": "bbbbbbbbbbbbbbbb"})
@@ -731,14 +732,14 @@ def test_the_machine_tag_is_a_hash_never_the_raw_machine_id(monkeypatch):
                 return raw + "\n"
             raise OSError(self.name)
 
-    monkeypatch.setattr(sb, "Path", _Fake)
+    monkeypatch.setattr("src.safety.process_owner.Path", _Fake)
     tag = sb._machine_tag()
     assert tag and len(tag) == 16 and tag not in raw and raw not in tag
     # a one-way digest under this app's own label, not a re-encoding of the id (hex, base64...)
     assert tag == hashlib.sha256(f"open-omniscience-backup-owner:{raw}".encode()).hexdigest()[:16]
     assert tag != raw.encode().hex()[:16] and tag != raw[:16]
     assert sb._machine_tag() == tag, "stable"
-    monkeypatch.setattr(sb, "Path", lambda name: type("N", (), {"read_text": lambda *_a, **_k: (_ for _ in ()).throw(OSError())})())
+    monkeypatch.setattr("src.safety.process_owner.Path", lambda name: type("N", (), {"read_text": lambda *_a, **_k: (_ for _ in ()).throw(OSError())})())
     assert sb._machine_tag() is None
 
 
@@ -770,7 +771,7 @@ def test_a_running_backup_marks_its_staging_with_its_owner(live, tmp_path, monke
 
     assert seen and seen[0]["pid"] == os.getpid()
     assert abs(seen[0]["started"] - psutil.Process().create_time()) < 1.0
-    assert seen[0]["host"] == sb.platform.node()
+    assert seen[0]["host"] == platform.node()
 
 
 def _sweep_remembered_now() -> None:

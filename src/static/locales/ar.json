@@ -6552,6 +6552,7 @@
   "today": "اليوم",
   "tokens": "رموز",
   "tone": "نبرة",
+  "too large (use folder import)": "كبيرة جدًا (استخدم الاستيراد من مجلد)",
   "took {wall}, {gate} with writes paused": "استغرق ⁨{wall}⁩، منها ⁨{gate}⁩ مع إيقاف الكتابة",
   "top 3 sources hold {pct}% of articles": "أعلى 3 مصادر تحتوي {pct}% من المقالات",
   "top {n} of {total}": "أعلى {n} من {total}",

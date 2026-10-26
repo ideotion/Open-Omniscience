@@ -6552,6 +6552,7 @@
   "today": "hari ini",
   "tokens": "token",
   "tone": "nada",
+  "too large (use folder import)": "terlalu besar (gunakan impor folder)",
   "took {wall}, {gate} with writes paused": "memakan waktu {wall}, {gate} di antaranya dengan penulisan dijeda",
   "top 3 sources hold {pct}% of articles": "3 sumber teratas memuat {pct}% artikel",
   "top {n} of {total}": "{n} teratas dari {total}",

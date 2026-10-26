@@ -38,6 +38,7 @@ still file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from collections import deque
@@ -146,17 +147,26 @@ def _statement_evidence(duration_ms: float, now: datetime | None = None) -> dict
         end = now if now is not None else datetime.now(UTC)
         opened = end.timestamp() - duration_ms / 1000.0 - 1.0
         inside = []
+        longer = []
         for r in rows:
             try:
                 ended = datetime.fromisoformat(str(r.get("at"))).timestamp()
                 dur = float(r.get("duration_ms") or 0.0)
             except (TypeError, ValueError):
                 continue  # a row whose time cannot be read cannot be placed inside the request
-            if ended >= opened and dur <= duration_ms:
+            if ended < opened:
+                continue
+            if dur <= duration_ms:
                 inside.append(r)
+            elif math.isfinite(dur) and math.isfinite(duration_ms):  # a NaN or infinite time is not strict JSON and is no evidence of anything
+                entry = _began_before(r, ended, dur, end.timestamp(), opened, duration_ms)
+                if entry is not None:
+                    longer.append(entry)
+        # Evidence only, and absent when empty so a record without one costs nothing: it never feeds ``found``, the share or ``classify``.
+        earlier = {"began_before": sorted(longer, key=lambda e: -e["duration_ms"])[:_BEGAN_BEFORE_ROWS]} if longer else {}
         if not inside:
             return {"available": True, "found": False, "recorded": len(rows),
-                    "note": "none of the recorded slow statements ended inside this request's window"}
+                    "note": "none of the recorded slow statements ended inside this request's window", **earlier}
         worst = max(inside, key=lambda r: float(r.get("duration_ms") or 0.0))
         worst_ms = float(worst.get("duration_ms") or 0.0)
         share = (worst_ms / duration_ms) if duration_ms > 0 else 0.0
@@ -168,9 +178,33 @@ def _statement_evidence(duration_ms: float, now: datetime | None = None) -> dict
             # shared by clicking "download diagnostics", so it carries no corpus text).
             "sql": str(worst.get("sql") or "")[:200],
             "share_of_request": round(share, 3),
+            **earlier,
         }
     except Exception as exc:  # noqa: BLE001
         return {"available": False, "reason": type(exc).__name__}
+
+
+#: How many statements ``began_before`` names: the longest two. A third would be a list of what the process did that minute.
+_BEGAN_BEFORE_ROWS = 2
+
+
+def _began_before(row: dict[str, Any], ended: float, dur_ms: float, request_end: float, opened: float, duration_ms: float) -> dict[str, Any] | None:
+    """A statement longer than the request that ended inside it: began ``began_before_s`` before the request opened, and covered
+    ``overlap_share`` of the request (clamped, so it can never read as more than all of it, the 1.023 that made the share rule).
+
+    Both are measured from ``opened``, which is the request's start minus the one second of slack that ``at``'s whole-second resolution
+    needs, so ``overlap_share`` is an UPPER bound and ``began_before_s`` a LOWER bound, each within a second. A row with no overlap at all
+    (it ended exactly at ``opened``, inside the slack only) is no evidence of overlap and gives ``None``."""
+    started = ended - dur_ms / 1000.0
+    overlap_ms = (min(ended, request_end) - opened) * 1000.0
+    if not overlap_ms > 0.0 or not duration_ms > 0.0:
+        return None
+    return {
+        "duration_ms": round(dur_ms, 1),
+        "sql": str(row.get("sql") or "")[:80],
+        "began_before_s": round(max(opened - started, 0.0), 1),
+        "overlap_share": round(min(overlap_ms / duration_ms, 1.0), 3),
+    }
 
 
 #: How many checkouts the pool evidence names (oldest first). Enough to name the standing
@@ -341,7 +375,9 @@ def _assemble(rows: list[dict[str, Any]], shown: list[dict[str, Any]]) -> dict[s
             "of the single-writer gate, the event-loop watchdog and the slow-query log. "
             "The classes are conditions those readings SUPPORT, never a proof of cause, "
             "and a record can carry several. Class counts are per-record and a record "
-            "may carry more than one class, so they do not sum to n_recorded."
+            "may carry more than one class, so they do not sum to n_recorded. A statement "
+            "listed under began_before ran longer than the request and ended inside it; the "
+            "log has no thread id, so a holder and a bystander look the same."
         ),
         "caveat": (
             "Correlation only. A stall whose cause none of these three instruments can "

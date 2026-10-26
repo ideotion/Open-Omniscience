@@ -100,8 +100,8 @@ def test_sentinel_reports_an_unclean_end_with_the_last_rss_sample(dd):
     forensics.record_session_start()
     (dd / "collect_perf.jsonl").write_text(
         json.dumps({"ts": "t1", "rss_mb": 100.0}) + "\n"
-        + json.dumps({"ts": "t2", "rss_mb": 10599.8, "mem_avail_mb": 42.0,
-                      "elapsed_s": 77885.3, "pass_id": "p"}) + "\n",
+        + json.dumps({"ts": "2026-09-26T16:06:50.000+00:00", "rss_mb": 10599.8, "mem_avail_mb": 42.0,
+                      "pass_id": "2026-09-25T18:28:45+00:00"}) + "\n",
         encoding="utf-8",
     )
     # session 2 boots: the module re-reads the sentinel as a fresh boot
@@ -111,6 +111,9 @@ def test_sentinel_reports_an_unclean_end_with_the_last_rss_sample(dd):
     rep = forensics.previous_session_report()
     assert rep["previous_session"] == "unclean-end"
     assert rep["last_collector_sample"]["rss_mb"] == 10599.8
+    # the tick carries no elapsed_s any more (the extraction-lock block is paid for with it): time into the pass is ts minus pass_id
+    assert "elapsed_s" not in rep["last_collector_sample"]
+    assert rep["last_collector_sample"]["since_pass_start_s"] == 77885.0
     # the OOM wording is an INFERENCE, stated as such — never asserted as fact
     assert "inference" in rep["method"].lower()
     assert _no_score_keys(rep) == []
@@ -401,3 +404,13 @@ def test_a_real_orphan_is_still_reported_as_one(tmp_path, monkeypatch):
     assert len(inv["suspect_staging"]) == 1
     assert inv["suspect_staging"][0]["plaintext_snapshot"] is True
     assert inv["totals"]["pre_restore_snapshot_bytes"] == 500
+
+
+def test_time_into_the_pass_is_unknown_not_zero_when_a_timestamp_cannot_be_read():
+    """``ts`` minus ``pass_id``: a tick written by an older build, a cut line or a naive/aware mix is ``None``, never ``0``."""
+    f = forensics._seconds_between
+    assert f("2026-09-26T16:00:00+00:00", "2026-09-26T16:00:01.500+00:00") == 1.5
+    assert f("2026-09-26T16:00:00Z", "2026-09-26T16:00:00Z") == 0.0  # a real zero is a zero
+    assert f(None, "2026-09-26T16:00:00+00:00") is None
+    assert f("p", "t2") is None
+    assert f("2026-09-26T16:00:00", "2026-09-26T16:00:01+00:00") is None  # naive against aware

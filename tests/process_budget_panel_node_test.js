@@ -76,7 +76,7 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- an ordinary under-budget pass ----------------------------------------- //
 {
   const out = _budgetHtml(act({
-    mode: "target", budget_kbps: 500, process_kbps: 180.5, collector_kbps: 180.5,
+    budget_kbps: 500, process_kbps: 180.5,
     downloads_kbps: null, downloads_measured: false, downloads_idle: true,
     partial: false, unmeasured: [],
   }));
@@ -91,7 +91,7 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- THE REFUSAL. An unmeasurable download draws no row, and never a 0 ------ //
 {
   const out = _budgetHtml(act({
-    mode: "target", budget_kbps: 500, process_kbps: 100, collector_kbps: 100,
+    budget_kbps: 500, process_kbps: 100,
     downloads_kbps: null, downloads_measured: false, downloads_idle: false,
     partial: true, unmeasured: [{ key: "oo-dump-en", reason: "no bytes observed yet" }],
   }));
@@ -107,7 +107,7 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- THE TWIN. A MEASURED zero is a real observation and MUST draw ---------- //
 {
   const out = _budgetHtml(act({
-    mode: "target", budget_kbps: 500, process_kbps: 40, collector_kbps: 40,
+    budget_kbps: 500, process_kbps: 40,
     downloads_kbps: 0, downloads_measured: true, downloads_idle: false,
     partial: false, unmeasured: [],
   }));
@@ -121,7 +121,7 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- maximum mode has no ceiling, and it is never rendered as a number ------ //
 {
   const out = _budgetHtml(act({
-    mode: "maximum", budget_kbps: null, process_kbps: 9000, collector_kbps: 9000,
+    budget_kbps: null, process_kbps: 9000,
     downloads_kbps: null, downloads_measured: false, downloads_idle: true,
     partial: false, unmeasured: [], over_budget: null,
   }));
@@ -134,7 +134,7 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- over budget BY A DOWNLOAD says cutting collection cannot help ---------- //
 {
   const out = _budgetHtml(act({
-    mode: "target", budget_kbps: 500, process_kbps: 4020, collector_kbps: 20,
+    budget_kbps: 500, process_kbps: 4020,
     downloads_kbps: 4000, downloads_measured: true, downloads_idle: false,
     partial: false, unmeasured: [], over_budget: true, governed_kbps: 20,
   }));
@@ -147,7 +147,7 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- the prose is the CLIENT's, never the server's English reason ----------- //
 {
   const out = _budgetHtml(act({
-    mode: "target", budget_kbps: 500, process_kbps: 100, collector_kbps: 100,
+    budget_kbps: 500, process_kbps: 100,
     downloads_kbps: null, downloads_measured: false, downloads_idle: true,
     partial: false, unmeasured: [],
     budget_reason: "SERVER_SIDE_ENGLISH_SENTINEL",
@@ -163,8 +163,8 @@ const act = (budget) => ({ collect_perf: budget ? { process_budget: budget } : {
 // --- every value is escaped ------------------------------------------------ //
 {
   const out = _budgetHtml(act({
-    mode: "target", budget_kbps: "<script>x</script>", process_kbps: 1,
-    collector_kbps: 1, downloads_kbps: null, downloads_measured: false,
+    budget_kbps: "<script>x</script>", process_kbps: 1,
+    downloads_kbps: null, downloads_measured: false,
     downloads_idle: true, partial: false, unmeasured: [],
   }));
   assert.ok(!out.includes("<script>"), "a payload value reached the DOM unescaped: " + out);

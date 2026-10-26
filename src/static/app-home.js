@@ -1925,8 +1925,8 @@
       let collapseBtn = "";
       if (c.type === "echo_chamber" && sig.signature) {
         collapseBtn = sig.collapse_applied
-          ? `<button class="secondary tiny" data-on-click="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
-          : `<button class="secondary tiny" data-on-click="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
+          ? `<button class="secondary tiny" data-on-click="cardCollapse(${esc(JSON.stringify(sig.signature))}, false)">Expand (revert)</button>`
+          : `<button class="secondary tiny" data-on-click="cardCollapse(${esc(JSON.stringify(sig.signature))}, true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
       }
       // Weather-corroboration cards (if-this-then-SUGGEST, 2026-06-12): the
       // bounded Open-Meteo fetch happens ONLY from this button, behind the one
@@ -1934,7 +1934,7 @@
       let weatherBtn = "";
       let weatherBox = "";
       if (c.type === "weather_corroboration" && sig.lat != null && sig.lon != null) {
-        weatherBtn = `<button class="secondary tiny" data-on-click="cardWeatherFetch('${c.id}')" title="Fetches the bounded Open-Meteo slice for this place and window — only after your consent.">Fetch weather context</button>`;
+        weatherBtn = `<button class="secondary tiny" data-on-click="cardWeatherFetch(${esc(JSON.stringify(c.id))})" title="Fetches the bounded Open-Meteo slice for this place and window — only after your consent.">Fetch weather context</button>`;
         weatherBox = `<div class="wx" id="wx-${c.id}" style="margin-top:6px"></div>`;
       }
       // Investigation recipe (0.0.8 WP8/RM-20): opens /investigate in a NEW tab,
@@ -2015,7 +2015,7 @@
               ${openBtn}
               ${recipeBtn}
               ${weatherBtn}
-              <button class="secondary tiny" data-on-click="addToDraft('${c.id}')">+ Add to draft</button>
+              <button class="secondary tiny" data-on-click="addToDraft(${esc(JSON.stringify(c.id))})">+ Add to draft</button>
               ${collapseBtn}
               ${dismiss}
             </div>
@@ -2268,13 +2268,13 @@
         if (!d.items || !d.items.length) { box.innerHTML = '<div class="muted">No Leads pinned yet. Use “+ Add to draft” on a briefing Lead.</div>'; return; }
         box.innerHTML = d.items.map(it => {
           const c = it.card;
-          return `<div class="draft-item" data-id="${c.id}">
+          return `<div class="draft-item" data-id="${esc(c.id)}">
             <div class="di-body">
               <div class="di-title">${esc(cardTitle(c))}</div>
               <div class="hint" style="margin-top:2px">${esc(cardText(c, "summary"))}</div>
-              <textarea placeholder="Your note (ships in the export)…" data-on-change="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
+              <textarea placeholder="Your note (ships in the export)…" data-on-change="saveDraftItemNote(${esc(JSON.stringify(c.id))}, this.value)">${esc(it.note||"")}</textarea>
             </div>
-            <button class="ghost tiny" data-on-click="removeDraftItem('${c.id}')">Remove</button>
+            <button class="ghost tiny" data-on-click="removeDraftItem(${esc(JSON.stringify(c.id))})">Remove</button>
           </div>`;
         }).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load the draft.</div>'; }
@@ -2330,8 +2330,8 @@
         box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.actors.map(a => {
           const members = a.sources.map(esc).join(", ");
           const btn = a.applied
-            ? `<button class="secondary tiny" data-on-click="collapseAction('${esc(a.signature)}', false)">Expand (revert)</button>`
-            : `<button class="secondary tiny" data-on-click="collapseAction('${esc(a.signature)}', true)">Apply collapse</button>`;
+            ? `<button class="secondary tiny" data-on-click="collapseAction(${esc(JSON.stringify(a.signature))}, false)">Expand (revert)</button>`
+            : `<button class="secondary tiny" data-on-click="collapseAction(${esc(JSON.stringify(a.signature))}, true)">Apply collapse</button>`;
           const flag = a.applied ? '<span class="pill ok">collapsed</span> ' : '<span class="pill warn">annotated only</span> ';
           return `<div class="panel" style="background:var(--panel2); margin-top:8px">
             ${flag}<b>${a.size} sources</b> · ${a.shared_stories} shared story(ies)
@@ -2367,7 +2367,7 @@
           dim("Coordination", co.is_member ? `Member of ${co.actors.length} detected actor(s).` : "No coordination detected.", co.method, co.caveat) +
           dim("Novelty (originates vs echoes)", nv.mean_ratio==null ? "Not enough data." : `Mean novelty <b>${nv.mean_ratio}</b> over ${nv.n} articles.`, nv.method, nv.caveat) +
           dim("Output capacity", `${oc.articles} articles · ~${oc.per_day}/day (corpus median ${oc.corpus_median_per_day}/day).`, oc.method, oc.caveat) +
-          dim("Transparency", `${tr.country?ooCountryCell(tr.country):"?"} · ${tr.language?ooLangCell(tr.language):"?"} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
+          dim("Transparency", `${tr.country?ooCountryCell(tr.country):"?"} · ${tr.language?ooLangCell(tr.language):"?"} · ownership: ${(tr.ownership_tags||[]).map(esc).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).map(esc).join(", ")||"—"}`, tr.method, tr.caveat) +
           dim("Track record", `${rec.total_articles} articles in your corpus.`, rec.method, rec.caveat);
       } catch (e) { out.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
     }
@@ -2414,8 +2414,8 @@
           `<div class="draft-item"><div class="di-body"><b>${esc(a.author_name||a.author_id.slice(0,12))}</b>
             <span class="hint">· ${a.annotations} annotation(s) · ${esc(a.author_id.slice(0,16))}…</span></div>
             <label class="switch" style="margin-top:0"><input type="checkbox" ${a.trusted?"checked":""}
-              data-on-change="trustAuthor('${a.author_id}', this.checked)"> trust</label>
-            <button class="ghost tiny" data-on-click="removeAuthor('${a.author_id}')">Remove</button></div>`).join("");
+              data-on-change="trustAuthor(${esc(JSON.stringify(a.author_id))}, this.checked)"> trust</label>
+            <button class="ghost tiny" data-on-click="removeAuthor(${esc(JSON.stringify(a.author_id))})">Remove</button></div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
     }
     async function trustAuthor(id, trusted) {

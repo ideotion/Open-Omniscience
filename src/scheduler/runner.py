@@ -2870,9 +2870,12 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
     # The pause and the count are INSIDE the ``try`` (R171): the pause holds the scheduler (``hold_exclusive``) before it stops it, so an
     # interrupt delivered anywhere between that and the old ``try`` left collection held for good (and, once the count was taken, the
     # depth up for good). ``counted`` is set in the same step as the depth, so the ``finally`` lowers the depth only for a window that
-    # raised it. If the interrupt lands before the pause has REPORTED, ``was_paused`` is still False and the ``finally`` releases the hold
-    # without starting the loop (it cannot tell whether the stop happened): the worst case is a scheduler that is neither held nor running,
-    # which the operator's Start button puts right. After the pause has reported, the resume is exact.
+    # raised it. If the interrupt lands before the pause has REPORTED (between the stop and the ``was_paused =`` store), ``was_paused`` is
+    # still False and the ``finally`` releases the hold without starting the loop (it cannot tell whether the stop happened): the worst case
+    # is a scheduler that is neither held nor running, which the operator's Start button puts right. After the pause has reported, the
+    # resume is exact: the ``finally`` raises the paused flag itself when ``was_paused`` is set, so an interrupt between the report and the
+    # body's own raising of it (a Python-level lock wrapper, as the tests model one, has that gap; a C lock practically has none) still
+    # resumes what the pause stopped.
     was_paused = False
     counted = False
     try:
@@ -2891,6 +2894,8 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
         yield was_paused
     finally:
         with _EXCL_LOCK:
+            if was_paused:
+                _EXCL_PAUSED = True  # idempotent with the body's own: the body's may not have run when the interrupt came
             if counted:
                 _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
             last = _EXCL_DEPTH == 0

@@ -85,6 +85,14 @@ def _store_price_rows(
     db.commit()
 
 
+# MEASURED (parse_price_csv, fresh process, peak RSS above the bytes already read, synthetic daily rows with
+# currency, unit and market): 0.41 MiB / 13,000 points +7 MiB, 4.09 MiB / 130,000 +71 MiB, 40.9 MiB / 1.3 M +713 MiB,
+# i.e. about 17.4 times the file, and 44 s of parse at 1.3 M rows. _MAX_PRICE_CSV_BYTES protects the worker's memory
+# while one file is parsed: 16 MiB (about 520,000 rows, a year of one-minute bars) holds the parse near 285 MiB, and is
+# 40 times the realistic file (a daily index since 1971 is about 13,000 rows, 0.4 MiB).
+_MAX_PRICE_CSV_BYTES = 16 * 1024 * 1024
+
+
 @router.post("/{symbol}/prices/import-csv")
 async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends(get_db)) -> dict:
     """Bulk-import price points for a symbol from an uploaded CSV.
@@ -93,8 +101,22 @@ async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends
     (price/value/close). Optional: currency, unit, market. Malformed rows are
     reported rather than silently dropped.
     """
-    raw = await file.read()
-    parsed = parse_price_csv(raw.decode("utf-8", errors="replace"))
+    # Bounded read (cap + 1): a file over the cap materialises only cap + 1 bytes and is refused, so one
+    # upload cannot balloon the worker (audit 0.5.0 A-019; the sibling PDF and .eml uploads are bounded
+    # the same way).
+    raw = await file.read(_MAX_PRICE_CSV_BYTES + 1)
+    if len(raw) > _MAX_PRICE_CSV_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"The CSV is larger than {_MAX_PRICE_CSV_BYTES // (1024 * 1024)} MiB; the parse holds about "
+                f"17 times its size in memory, so that limit keeps it under about "
+                f"{17 * _MAX_PRICE_CSV_BYTES // (1024 * 1024)} MiB. Nothing was imported; split the file."
+            ),
+        )
+    # The parse is pure CPU and measured at about 44 s for 1.3 M rows (about 14 s at the cap): it runs OFF the event loop,
+    # like the DB half below, or every other request waits for it (audit 0.5.0 A-038, found while measuring A-019).
+    parsed = await run_in_threadpool(lambda: parse_price_csv(raw.decode("utf-8", errors="replace")))
     if not parsed.points and parsed.errors:
         raise HTTPException(status_code=400, detail="; ".join(parsed.errors[:5]))
     # S3.6: this handler MUST stay `async def` -- it awaits the upload stream -- so its
