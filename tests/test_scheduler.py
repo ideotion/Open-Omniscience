@@ -24,6 +24,7 @@ from src.database.models import Article, Base, Source
 from src.ingest import EthicalFetcher
 from src.scheduler.runner import BackgroundScheduler, run_scrape_once
 from src.scheduler.settings import SchedulerSettings
+from tests.wallclock_helpers import HANG_GUARD_S, quiet_pass_tail, wait_until
 
 
 class FakeResponse:
@@ -128,7 +129,10 @@ def test_run_scrape_once_never_crawls_a_whole_source_now_the_mode_is_retired(db)
     )
 
 
-def test_scheduler_start_runs_then_stops():
+def test_scheduler_start_runs_then_stops(monkeypatch):
+    # The loop answers a stop after the pass it is in has ended, tail included (a collection of the whole process heap, a WAL checkpoint, the
+    # off-peak maintenance): real work whose time is the suite's, not the property here.
+    quiet_pass_tail(monkeypatch)
     calls = {"n": 0}
 
     def fake_run():
@@ -140,21 +144,26 @@ def test_scheduler_start_runs_then_stops():
         # Long interval: only the immediate first run happens before we stop.
         settings_provider=lambda: SchedulerSettings(interval_minutes=60),
     )
+    sched._maint_interval_s = 1e9
+    sched._last_maint = time.monotonic()
     try:
         assert sched.start() is True
         assert sched.start() is False  # already running
 
-        deadline = time.time() + 5
-        while calls["n"] < 1 and time.time() < deadline:
+        deadline = time.monotonic() + HANG_GUARD_S  # a hang guard: the first pass is immediate
+        while calls["n"] < 1 and time.monotonic() < deadline:
             time.sleep(0.02)
         assert calls["n"] >= 1
 
+        # The count is bumped inside the pass; the result is recorded just after it returns: wait for what is asserted, not for the count.
+        assert wait_until(lambda: sched.status()["last_result"] is not None), "the pass's result was never recorded"
         st = sched.status()
         assert st["running"] is True
         assert st["last_result"]["ok"] is True
     finally:
         assert sched.stop() is True
-    assert sched.is_running() is False
+    # stop() joins for a bounded time and answers True either way: the thread's end is what is observed.
+    assert wait_until(lambda: not sched.is_running()), "the loop did not end after stop()"
 
 
 def test_scheduler_run_now_triggers_run():
@@ -177,6 +186,10 @@ def test_scheduler_api(tmp_path, monkeypatch):
     from src.scheduler.runner import get_scheduler
 
     get_scheduler()._run_once_fn = lambda: {"ok": True, "stub": True}
+    # The stop below is answered after the pass the loop is in has ended, tail included: real work whose time is the suite's, not the property here.
+    quiet_pass_tail(monkeypatch)
+    monkeypatch.setattr(get_scheduler(), "_maint_interval_s", 1e9)
+    monkeypatch.setattr(get_scheduler(), "_last_maint", time.monotonic())
 
     from src.api.main import app
 

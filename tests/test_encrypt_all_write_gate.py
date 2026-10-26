@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from src.database.writer import write_gate
+from tests.wallclock_helpers import HANG_GUARD_S
 
 
 @pytest.fixture(autouse=True)
@@ -115,7 +116,7 @@ def test_a_concurrent_writer_actually_queues_behind_encrypt_all(monkeypatch):
     def _slow_encrypt_database(path, key, *, library=False):
         # Block until the test tells us to finish -- long enough for the other
         # thread below to attempt (and be forced to queue behind) the gate.
-        release_encrypt.wait(timeout=5)
+        release_encrypt.wait(timeout=HANG_GUARD_S)
         return {"path": str(path), "encrypted": True}
 
     monkeypatch.setattr(tool, "encrypt_database", _slow_encrypt_database)
@@ -126,10 +127,9 @@ def test_a_concurrent_writer_actually_queues_behind_encrypt_all(monkeypatch):
 
     encrypt_thread = threading.Thread(target=lambda: tool.encrypt_all("pw-123456"))
     encrypt_thread.start()
-    # Give encrypt_all time to acquire the gate and enter the (blocked) first call.
-    for _ in range(50):
-        if write_gate.stats()["held"]:
-            break
+    # Wait for encrypt_all to acquire the gate and enter the (blocked) first call, under a guard and not for a count of sleeps.
+    deadline = time.monotonic() + HANG_GUARD_S
+    while not write_gate.stats()["held"] and time.monotonic() < deadline:
         time.sleep(0.02)
     assert write_gate.stats()["held"] is True, "encrypt_all must hold the gate while it runs"
 
@@ -139,7 +139,7 @@ def test_a_concurrent_writer_actually_queues_behind_encrypt_all(monkeypatch):
     assert not other_writer_ran_at, "the concurrent writer must not run while encrypt_all holds the gate"
 
     release_encrypt.set()  # let encrypt_all's (blocked) calls finish
-    encrypt_thread.join(timeout=5)
-    t.join(timeout=5)
+    encrypt_thread.join(timeout=HANG_GUARD_S)
+    t.join(timeout=HANG_GUARD_S)
     assert other_writer_ran_at, "the concurrent writer must eventually run, after encrypt_all releases"
     assert write_gate.stats()["held"] is False

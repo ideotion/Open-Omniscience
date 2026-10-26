@@ -20,6 +20,7 @@ import subprocess
 import pytest
 
 from src.monitoring import forensics, kernel_log
+from tests.wallclock_helpers import HANG_GUARD_S
 
 _OOM = (
     "Sep 02 09:37:20 box kernel: Out of memory: Killed process 12345 "
@@ -214,20 +215,21 @@ def test_the_boot_read_runs_off_the_critical_path(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(forensics, "_KERNEL_EVIDENCE", None)
     release = threading.Event()
+    read_returned = threading.Event()
 
     def _slow(pid, since=None):
         release.wait(10)
+        read_returned.set()
         return {"verdict": "oom-kill", "lines": [_OOM]}
 
     monkeypatch.setattr(
         "src.monitoring.kernel_log.read_kernel_evidence", _slow, raising=False
     )
-    t0 = time.monotonic()
     forensics.start_kernel_evidence_read({"pid": 1, "started_at": "2026-09-02T09:00:00+00:00"})
-    assert time.monotonic() - t0 < 1.0, "the boot must not wait on the kernel read"
+    assert not read_returned.is_set(), "the boot must not wait on the kernel read"
     assert forensics.kernel_evidence()["verdict"] == "not-read"
     release.set()
-    for _ in range(100):
+    for _ in range(int(HANG_GUARD_S / 0.05)):
         if forensics.kernel_evidence()["verdict"] != "not-read":
             break
         time.sleep(0.05)

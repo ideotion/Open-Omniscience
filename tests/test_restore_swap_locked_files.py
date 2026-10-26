@@ -29,11 +29,11 @@ from __future__ import annotations
 
 import errno
 import threading
-import time
 from pathlib import Path
 
 import pytest
 
+from src.backup import merge as merge_mod
 from src.backup.merge import (
     _checkpoint_before_swap,
     _lock_holder_note,
@@ -42,6 +42,7 @@ from src.backup.merge import (
     _file_is_locked,
     classify_restore_error,
 )
+from tests.wallclock_helpers import HANG_GUARD_S, SteppedClock, call_on_thread
 
 
 def _win_error(winerror: int, message: str, filename: str | None = None) -> PermissionError:
@@ -154,14 +155,14 @@ def test_a_lock_that_clears_is_waited_out(tmp_path, monkeypatch):
         return real_unlink(self, missing_ok=missing_ok)
 
     monkeypatch.setattr(type(db), "unlink", flaky)
+    clock = SteppedClock()
+    monkeypatch.setattr(merge_mod, "time", clock)
 
-    started = time.monotonic()
     _clear_stale_side_files(db, wait_s=5.0)
-    elapsed = time.monotonic() - started
 
     assert refusals["n"] == 2, "the retry must actually have been exercised"
     assert not (tmp_path / "corpus.db-wal").exists()
-    assert elapsed < 5.0, "it must return as soon as the lock clears, not burn the budget"
+    assert len(clock.slept) == 2 and sum(clock.slept) < 5.0, "it must return as soon as the lock clears, not burn the budget"
 
 
 def test_a_lock_that_never_clears_still_raises(tmp_path, monkeypatch):
@@ -179,13 +180,14 @@ def test_a_lock_that_never_clears_still_raises(tmp_path, monkeypatch):
         raise _win_error(32, "utilise par un autre processus")
 
     monkeypatch.setattr(type(db), "unlink", always_locked)
+    clock = SteppedClock()
+    monkeypatch.setattr(merge_mod, "time", clock)
 
-    started = time.monotonic()
     with pytest.raises(PermissionError):
         _clear_stale_side_files(db, wait_s=0.5)
-    elapsed = time.monotonic() - started
 
-    assert 0.4 <= elapsed < 3.0, f"must give up at the budget, took {elapsed:.2f}s"
+    # the budget is a sum of sleeps on a clock that moves only when the loop sleeps: it waited the 0.5 s it was given (and not a step beyond)
+    assert 0.4 <= sum(clock.slept) <= 0.5 + 0.25, f"must give up at the budget, slept {clock.slept}"
 
 
 def test_an_error_that_is_not_a_lock_is_not_retried(tmp_path, monkeypatch):
@@ -203,14 +205,14 @@ def test_an_error_that_is_not_a_lock_is_not_retried(tmp_path, monkeypatch):
         raise OSError(errno.EROFS, "Read-only file system")
 
     monkeypatch.setattr(type(db), "unlink", read_only)
+    clock = SteppedClock()
+    monkeypatch.setattr(merge_mod, "time", clock)
 
-    started = time.monotonic()
     with pytest.raises(OSError) as caught:
         _clear_stale_side_files(db, wait_s=30.0)
-    elapsed = time.monotonic() - started
 
     assert caught.value.errno == errno.EROFS
-    assert elapsed < 1.0, f"a non-lock error must raise at once, took {elapsed:.2f}s"
+    assert clock.slept == [], f"a non-lock error must raise at once, it waited {sum(clock.slept):.2f} s of the 30 s budget"
 
 
 # --------------------------------------------------------------------------
@@ -371,26 +373,25 @@ def test_a_checkpoint_blocked_behind_a_writer_is_bounded(monkeypatch):
     def holder():
         with write_lock():
             holder_in.set()
-            release.wait(30)
+            release.wait(3 * HANG_GUARD_S)
 
     thread = threading.Thread(target=holder, daemon=True)
     thread.start()
     try:
-        assert holder_in.wait(5), "the fixture never took the write gate"
+        assert holder_in.wait(HANG_GUARD_S), "the fixture never took the write gate"
 
-        started = time.monotonic()
-        answered = _checkpoint_before_swap(1.0)
-        elapsed = time.monotonic() - started
+        # the gate is held for three guards, so a checkpoint that waited for it cannot come back inside one: coming back is the budget working
+        came_back, answered = call_on_thread(_checkpoint_before_swap, 1.0)
         # Captured HERE: releasing the gate below lets the worker finish, so
         # asserting on the events afterwards would read the wrong moment.
         was_entered, was_finished = entered.is_set(), finished.is_set()
     finally:
         release.set()
 
+    assert came_back, "the checkpoint waited for the writer instead of giving up at its budget"
     assert answered is False
-    assert 0.9 <= elapsed < 3.0, f"must give up at the budget, took {elapsed:.2f}s"
     assert was_entered and not was_finished, "the checkpoint must genuinely have been stuck"
-    assert finished.wait(5), "and it drains once the gate frees -- never abandoned mid-write"
+    assert finished.wait(HANG_GUARD_S), "and it drains once the gate frees -- never abandoned mid-write"
 
 
 # --------------------------------------------------------------------------
@@ -543,12 +544,13 @@ def test_the_replace_gives_up_at_the_budget_and_leaves_both_files(tmp_path, monk
         lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")),
     )
 
-    started = time.monotonic()
+    clock = SteppedClock()
+    monkeypatch.setattr(merge_mod, "time", clock)
+
     with pytest.raises(PermissionError):
         _replace_live_corpus(working, target, wait_s=0.5)
-    elapsed = time.monotonic() - started
 
-    assert 0.4 <= elapsed < 3.0, f"must give up at the budget, took {elapsed:.2f}s"
+    assert 0.4 <= sum(clock.slept) <= 0.5 + 0.25, f"must give up at the budget, slept {clock.slept}"
     assert target.read_bytes() == b"old", "the live corpus must be untouched"
     assert working.read_bytes() == b"new", "and the merged copy must survive too"
 
@@ -566,14 +568,14 @@ def test_the_replace_does_not_retry_a_non_lock_error(tmp_path, monkeypatch):
         raise OSError(errno.EXDEV, "Invalid cross-device link")
 
     monkeypatch.setattr(merge_mod.os, "replace", cross_device)
+    clock = SteppedClock()
+    monkeypatch.setattr(merge_mod, "time", clock)
 
-    started = time.monotonic()
     with pytest.raises(OSError) as caught:
         _replace_live_corpus(working, target, wait_s=30.0)
-    elapsed = time.monotonic() - started
 
     assert caught.value.errno == errno.EXDEV
-    assert elapsed < 1.0, f"a non-lock error must raise at once, took {elapsed:.2f}s"
+    assert clock.slept == [], f"a non-lock error must raise at once, it waited {sum(clock.slept):.2f} s of the 30 s budget"
 
 
 def test_a_lock_retry_re_disposes_the_engine(tmp_path, monkeypatch):
@@ -772,24 +774,26 @@ def test_both_side_files_share_ONE_budget_not_one_each(tmp_path, monkeypatch) ->
         target.with_name(target.name + suffix).write_bytes(b"x")
 
     budget = 2.0
-    release_wal_at = time.monotonic() + 1.0
+    clock = SteppedClock()  # the retry loop's sleeps move it, nothing else: the budget is spent in the loop's own steps
+    monkeypatch.setattr(merge_mod, "time", clock)
+    release_wal_at = clock.now + 1.0
     real_unlink = Path.unlink
 
     def _fake(self, missing_ok=False):  # noqa: ANN001
         name = str(self)
         if name.endswith("-shm"):
             raise _win_error(32, "held", name)  # never released
-        if time.monotonic() < release_wal_at:
+        if clock.now < release_wal_at:
             raise _win_error(32, "held", name)  # released halfway through
         return real_unlink(self, missing_ok=missing_ok)
 
     monkeypatch.setattr(Path, "unlink", _fake)
     monkeypatch.setattr(merge_mod, "_SWAP_HANDLE_WAIT_S", 999.0)
 
-    started = time.monotonic()
+    started = clock.now
     with pytest.raises(OSError):
         merge_mod._clear_stale_side_files(target, wait_s=budget)
-    spent = time.monotonic() - started
+    spent = clock.now - started
 
     # Shared: -wal clears at ~1.0s, -shm gets the remaining ~1.0s => ~2.0s total
     # (up to 2.25 -- see the docstring on the pre-sleep deadline check).

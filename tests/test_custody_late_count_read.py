@@ -38,6 +38,37 @@ def _record(n: int, late: bool = False) -> None:
             log.record(f"article:{i}", "h" * 64, CustodyAction.INGEST, metadata={"late": True} if late else {})
 
 
+#: How long a read that a writer holds is waited for before the test calls it hung. It is a hang guard, never the verdict: the verdict
+#: is whether the read came back while the writer STILL held the file, which no pause of this process can change (a bound on how long
+#: the read took could: the encrypted read measured 2.73 s healthy against the 3.0 s it was held to, because each page-size
+#: candidate under the open pays a key derivation).
+_HELD_READ_HANG_GUARD_S = 20.0
+
+
+def _read_while_writer_holds() -> tuple[dict, bool, list]:
+    """``late_reading()`` on a thread; the caller's writer keeps the file until this returns. ``(the reading, whether it came back while
+    the writer still held, the timeout each open of the log was given)``: a read that waits for the writer cannot come back until the
+    guard ends it, and a read whose open is given more than the bound would wait that long on a writer, which the guard alone would let
+    pass when it is shorter than the guard (the encrypted open pays it once per page-size candidate)."""
+    import src.database.connect as dbc
+
+    real, timeouts = dbc.connect, []
+
+    def recording(*args, **kwargs):
+        timeouts.append(kwargs.get("timeout"))
+        return real(*args, **kwargs)
+
+    dbc.connect = recording
+    box: dict = {}
+    try:
+        reader = threading.Thread(target=lambda: box.update(got=pending.late_reading()), daemon=True)
+        reader.start()
+        reader.join(_HELD_READ_HANG_GUARD_S)
+    finally:
+        dbc.connect = real
+    return box.get("got", {}), not reader.is_alive(), timeouts
+
+
 def test_the_count_counts_what_the_log_holds(data):
     _record(3)
     _record(2, late=True)
@@ -104,12 +135,12 @@ def test_a_writer_holding_the_file_makes_the_count_unread_not_a_wait(data, monke
     writer = sqlite3.connect(data / "custody_log.db", isolation_level=None)
     writer.execute("BEGIN EXCLUSIVE")
     try:
-        t0 = time.monotonic()
-        got = pending.late_reading()
-        assert time.monotonic() - t0 < 5
+        got, came_back_while_held, timeouts = _read_while_writer_holds()
     finally:
         writer.execute("ROLLBACK")
         writer.close()
+    assert came_back_while_held, "the count waited for the writer that holds the file"
+    assert timeouts == [0.1], f"the open of the log was given {timeouts}, not the 0.1 s bound"
     assert got["count"] is None and got["reason"] == "OperationalError"
 
 
@@ -161,17 +192,14 @@ def test_an_encrypted_log_held_by_a_writer_is_also_unread_within_the_bound_not_w
     writer = connect(tmp_path / "custody_log.db", check_same_thread=False)
     writer.isolation_level = None
     writer.execute("BEGIN EXCLUSIVE")
-    release = threading.Timer(4.0, lambda: writer.execute("ROLLBACK"))
-    release.start()
     try:
-        t0 = time.monotonic()
-        got = pending.late_reading()
-        waited = time.monotonic() - t0
+        got, came_back_while_held, timeouts = _read_while_writer_holds()
     finally:
-        release.join(10)
+        writer.execute("ROLLBACK")
         writer.close()
         dbc.set_passphrase(previous)
-    assert waited < 3.0, f"the encrypted read waited {waited:.1f} s for a writer with a 0.3 s bound"
+    assert came_back_while_held, "the encrypted read waited for a writer with a 0.3 s bound"
+    assert timeouts == [0.3], f"the open of the log was given {timeouts}, not the 0.3 s bound (it pays it once per page-size candidate)"
     assert got["count"] is None and got["reason"], got
 
 

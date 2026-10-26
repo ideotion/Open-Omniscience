@@ -522,13 +522,17 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
         time.sleep(0.8)
         write_gate.release()
 
+    own = {}
+
     def fake_drain_once(*a, **k):
         t = threading.Thread(target=other_thread_holds, name="somebody-else")
         t.start()
         t.join(timeout=30)
+        began = time.monotonic()
         assert write_gate.acquire(timeout=30), "the other thread released the gate"
         time.sleep(0.03)
         write_gate.release()
+        own["took"] = time.monotonic() - began
         return R.DrainReport(revisions_stored=1)
 
     original = R.drain_once
@@ -539,9 +543,11 @@ def test_a_drain_records_what_its_own_thread_held_of_the_write_gate_and_nobody_e
         R.drain_once = original
     g = runner.drain_status()["drain_duration"]["write_gate"]
     assert g["measured_drains"] == 1 and g["grants"] == 1
-    # the other thread's hold is 0.8 s; this thread's own is 0.03 s plus whatever a loaded runner adds
-    # (a macOS CI run measured 0.18 s for a 0.03 s sleep), so the bound sits well between the two
-    assert 0.027 <= g["held_s"] < 0.6, "only this thread's own hold, not the other thread's 0.8 s"
+    # The gate's figure for this thread is its hold INSIDE the span this test timed around the same two calls, so it can
+    # never exceed that span, however long a loaded runner made the 0.03 s sleep; the other thread's 0.8 s is a hold the
+    # test itself ran before the span began, and a figure that took it in would be past the span by about that much. The
+    # relation holds at any speed, where a fixed 0.6 s bound failed under a frozen process (1.27 s for the 0.03 s sleep).
+    assert 0.027 <= g["held_s"] <= own["took"] + 0.02, "only this thread's own hold, not the other thread's 0.8 s"
     assert g["longest_hold_s"] == g["held_s"]
     with lane_session("wiki") as db:
         runner._history.flush(db)

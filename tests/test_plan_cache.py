@@ -29,7 +29,7 @@ class Clock:
         return self.t
 
 
-def _settled(cache: PlanPreviewCache, timeout: float = 3.0) -> None:
+def _settled(cache: PlanPreviewCache, timeout: float = 20.0) -> None:  # a hang guard: a settled cache returns at once
     end = time.monotonic() + timeout
     while cache.stats()["refreshing"] and time.monotonic() < end:
         time.sleep(0.01)
@@ -61,17 +61,18 @@ def test_a_stale_preview_is_served_at_once_while_one_refresh_runs():
     cache = PlanPreviewCache(clock=clock)
     cache.get(S, lambda: {"planned_total": 1})
     gate = threading.Event()
+    refresh_returned = threading.Event()
     started: list[int] = []
 
     def slow():  # the pool is exhausted: this is the wait a request thread used to sit in
         started.append(1)
         gate.wait(10)
+        refresh_returned.set()
         return {"planned_total": 2}
 
     clock.t += FRESH_S + 1
-    t0 = time.monotonic()
     out = cache.get(S, slow)
-    assert time.monotonic() - t0 < 0.5, "the poll waited on the refresh"
+    assert not refresh_returned.is_set(), "the poll waited on the refresh"  # it came back while the refresh was still stuck
     assert out["planned_total"] == 1 and out["state"] == "refreshing" and out["age_s"] > FRESH_S
     assert out["stale"] is False
     # many more polls while the refresh is stuck: still instant, still ONE refresh
@@ -109,9 +110,15 @@ def test_with_nothing_cached_the_poll_waits_a_short_bounded_time_then_says_compu
     monkeypatch.setattr(pc, "FIRST_WAIT_S", 0.05)
     cache = PlanPreviewCache(clock=Clock())
     gate = threading.Event()
-    t0 = time.monotonic()
-    out = cache.get(S, lambda: (gate.wait(10), {"planned_total": 3})[1])
-    assert time.monotonic() - t0 < 1.0
+    compute_returned = threading.Event()
+
+    def compute():
+        gate.wait(10)
+        compute_returned.set()
+        return {"planned_total": 3}
+
+    out = cache.get(S, compute)
+    assert not compute_returned.is_set(), "the poll waited for the whole computation, not the short bound"
     assert out["state"] == "computing" and out["as_of"] is None and "planned_total" not in out
     gate.set()
     _settled(cache)
@@ -193,16 +200,20 @@ def test_a_poll_is_answered_while_the_database_never_answers(monkeypatch):
     pc.plan_cache._reset_for_tests()
     monkeypatch.setattr(pc, "FIRST_WAIT_S", 0.05)
     gate = threading.Event()
-    monkeypatch.setattr(
-        runner.BackgroundScheduler, "_compute_plan", lambda self, settings, last: (gate.wait(10), {})[1]
-    )
+    compute_returned = threading.Event()
+
+    def stuck_plan(self, settings, last):
+        gate.wait(10)
+        compute_returned.set()
+        return {}
+
+    monkeypatch.setattr(runner.BackgroundScheduler, "_compute_plan", stuck_plan)
     try:
         with TestClient(app) as client:
             for _ in range(5):
-                t0 = time.monotonic()
                 r = client.get("/api/scheduler/activity")
+                assert not compute_returned.is_set(), "a poll waited for the database that never answers"
                 assert r.status_code == 200
-                assert time.monotonic() - t0 < 1.5
                 assert r.json()["plan"]["state"] == "computing"
     finally:
         gate.set()

@@ -34,6 +34,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from src.monitoring import holder_state
 from src.monitoring import storage_events as se
+from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
 
 MARKER = "MARKER-passphrase-4711-correct-horse"
 
@@ -96,7 +97,7 @@ def _on_journal_replace(monkeypatch, journal, fn):
     monkeypatch.setattr(se.os, "replace", routed)
 
 
-def _wait_until(pred, timeout: float = 3.0) -> bool:
+def _wait_until(pred, timeout: float = HANG_GUARD_S) -> bool:  # a hang guard: a condition that holds returns at once
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if pred():
@@ -260,7 +261,7 @@ def test_a_burst_of_events_is_one_write_not_one_each(journal, monkeypatch):
     _on_journal_replace(monkeypatch, journal, lambda a, b: (replaced.append(1), real(a, b))[1])
     for n in range(40):
         se.record("checkpoint", {"n": n})
-    assert _wait_until(lambda: replaced, timeout=3.0)
+    assert _wait_until(lambda: replaced)
     time.sleep(0.5)
     assert len(replaced) <= 2, f"40 events cost {len(replaced)} writes"
 
@@ -726,7 +727,7 @@ def test_a_write_gate_hold_by_a_thread_named_with_the_passphrase_is_scrubbed(jou
 
     t = threading.Thread(target=hold, name=f"worker-{MARKER}", daemon=True)
     t.start()
-    assert taken.wait(3)
+    assert taken.wait(HANG_GUARD_S)
     time.sleep(0.1)
     writer.watchdog_tick(gate, None)
     let_go.set()
@@ -770,47 +771,50 @@ def test_the_background_writer_outlives_a_failed_write(journal, monkeypatch):
     assert _member()["file"]["last_write_ok_at"] is not None
 
 
-def _records_promptly(n: int = 300) -> float:
-    """Record ``n`` events of every shape a site records and return the seconds it took (the assertion is the caller's)."""
-    started = time.monotonic()
+def _record_every_shape(n: int = 300) -> None:
+    """Record ``n`` events of every shape a site records. The caller asserts the thing it must not have waited for is still unfinished
+    when this returns: a recording that waited for it could not have come back first, however slow or fast the machine is."""
     for i in range(n):
         se.record("gate_hold", {"n": i}, key=f"k{i % 5}")
         se.update("gate_hold", f"k{i % 5}", {"m": i})
         se.end("gate_hold", f"k{i % 5}")
         se.note_pool_timeout(waited_s=1.0)
-    return time.monotonic() - started
 
 
 def test_a_recording_never_waits_for_a_write_that_is_stuck_on_the_disk(journal, monkeypatch):
     """The coordinator's (a): the measured sites take only the short lock for the dict update. The writer copies under the lock and
     writes outside it, so a write that hangs (a full or failing drive, which is when the guard engages) holds nothing a site needs."""
-    entered, release = threading.Event(), threading.Event()
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
     real = se.os.replace
 
     def stuck(a, b):
         entered.set()
-        release.wait(10)
+        release.wait(3 * HANG_GUARD_S)
+        returned.set()
         return real(a, b)
 
     _on_journal_replace(monkeypatch, journal, stuck)
     se.record("guard", {"n": 0})
-    assert entered.wait(3), "the writer is now inside the disk write"
-    took = _records_promptly()
-    assert took < 2.0, f"1,200 recordings took {took:.2f}s while the write was stuck"
-    assert _member()["kinds"]["gate_hold"]["total"] == 300, "the member answers from memory while the write is stuck"
-    release.set()
+    try:
+        assert entered.wait(HANG_GUARD_S), "the writer is now inside the disk write"
+        _record_every_shape()
+        assert not returned.is_set(), "1,200 recordings waited for the write that is stuck on the disk"
+        assert _member()["kinds"]["gate_hold"]["total"] == 300, "the member answers from memory while the write is stuck"
+    finally:
+        release.set()
     assert _wait_until(lambda: _file_total(journal, "gate_hold") == 300)
 
 
 def test_a_recording_never_waits_for_the_writers_first_read_of_the_file(journal, monkeypatch):
     """The same condition for the other disk touch: the writer reads the file before its first write, and a hung read holds no lock
     a recording takes."""
-    entered, release = threading.Event(), threading.Event()
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
     real = se._read_file
 
     def stuck():
         entered.set()
-        release.wait(10)
+        release.wait(3 * HANG_GUARD_S)
+        returned.set()
         return real()
 
     journal.write_text(
@@ -819,10 +823,12 @@ def test_a_recording_never_waits_for_the_writers_first_read_of_the_file(journal,
     )
     monkeypatch.setattr(se, "_read_file", stuck)
     se.record("guard", {"n": 0})
-    assert entered.wait(3), "the writer is now inside its read of the file"
-    took = _records_promptly()
-    assert took < 2.0, f"1,200 recordings took {took:.2f}s while the read was stuck"
-    release.set()
+    try:
+        assert entered.wait(HANG_GUARD_S), "the writer is now inside its read of the file"
+        _record_every_shape()
+        assert not returned.is_set(), "1,200 recordings waited for the writer's first read of the file"
+    finally:
+        release.set()
     assert _wait_until(lambda: _file_total(journal, "guard") == 5), "the history the file held is extended, not replaced"
 
 
@@ -966,6 +972,9 @@ def test_a_site_carries_on_when_the_journal_cannot_write_gate_guard_checkpoint_a
     time.sleep(0.03)
     writer.watchdog_tick(gate, None)
     gate.release()
+    # the threshold is raised before the usability probe below: with 10 ms as the bar, a probe that a loaded runner holds for 10 ms
+    # (a scheduler gap between two statements) is a SECOND journaled hold, and the count of one below would be a bet on the scheduler
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 3600.0)
     assert gate.acquire(timeout=1.0) is True
     gate.release()
 
@@ -1025,7 +1034,7 @@ class _Holder:
 
     def __enter__(self):
         self.thread.start()
-        assert self.taken.wait(3)
+        assert self.taken.wait(HANG_GUARD_S)
         return self
 
     def __exit__(self, *_exc) -> None:
@@ -1350,7 +1359,7 @@ def test_a_pool_timeout_is_journaled_with_who_held_the_connections_and_the_error
 
     t = threading.Thread(target=hold, name="the-holder", daemon=True)
     t.start()
-    assert taken.wait(3)
+    assert taken.wait(HANG_GUARD_S)
     began = time.monotonic()
     with pytest.raises(PoolTimeoutError) as raised:
         eng.raw_connection()
@@ -1360,7 +1369,9 @@ def test_a_pool_timeout_is_journaled_with_who_held_the_connections_and_the_error
     assert "timed out" in str(raised.value), "the pool's own error, not ours"
     (e,) = _events("pool_timeout")
     assert e["pool_size"] == 1 and e["overflow"] == 0 and e["timeout_s"] == 0.1 and e["collector"] is False
-    assert waited - 0.05 <= e["waited_s"] <= waited + 0.5
+    # the pool waited its own timeout (0.1 s) at least, and no longer than the span the test timed around the call; a pause BETWEEN the test's two
+    # clock reads makes that span longer, never shorter, so the upper side stays true on a stalled machine where a lower side taken from it does not
+    assert 0.099 <= e["waited_s"] <= waited + 0.5
     assert e["thread"] == threading.current_thread().name
     assert [h["thread"] for h in e["holders"]] == ["the-holder"] and e["holders"][0]["age_s"] >= 0
     assert e["checked_out"] == 1
@@ -1383,7 +1394,7 @@ def test_a_collector_refused_by_the_reservation_is_journaled_too(journal):
 
     t = threading.Thread(target=hold, daemon=True)
     t.start()
-    assert taken.wait(3)
+    assert taken.wait(HANG_GUARD_S)
     with collector_role(), pytest.raises(PoolTimeoutError, match="last 4 connections"):
         eng.raw_connection()
     let_go.set()
@@ -1442,8 +1453,8 @@ def test_a_thread_named_with_the_passphrase_is_scrubbed_in_the_gate_stats_the_re
 
     t = threading.Thread(target=take_once, name=name, daemon=True)
     t.start()
-    assert done.wait(5)
-    t.join(5)
+    assert done.wait(HANG_GUARD_S)
+    t.join(HANG_GUARD_S)
     assert MARKER not in json.dumps(write_gate_report(), default=str)
     assert MARKER.encode() not in bundle._member_bytes(bundle._contention_member())
 
@@ -1495,7 +1506,7 @@ def _marker_named_pool_holder(eng, name: str):
 
     t = threading.Thread(target=run, name=name, daemon=True)
     t.start()
-    assert taken.wait(5)
+    assert taken.wait(HANG_GUARD_S)
     return t, let_go
 
 
@@ -1641,18 +1652,33 @@ def test_a_failed_write_is_tried_again_without_another_change(journal, monkeypat
 
 
 def test_a_persistent_write_failure_backs_off_instead_of_writing_every_delay(journal, monkeypatch):
-    calls = {"n": 0}
+    stamps: list[float] = []
 
     def always(_a, _b):
-        calls["n"] += 1
+        stamps.append(time.monotonic())
         raise OSError(errno.ENOSPC, "No space left on device")
 
     _on_journal_replace(monkeypatch, journal, always)
     monkeypatch.setattr(se, "FLUSH_DELAY_S", 0.05)
+    delays: list[float] = []
+    real_wait_out = se._wait_out
+
+    def recording_wait_out(generation, seconds):
+        delays.append(seconds)
+        return real_wait_out(generation, seconds)
+
+    monkeypatch.setattr(se, "_wait_out", recording_wait_out)
     se.record("guard", {"kind": "disk"})
-    time.sleep(1.0)
-    # delays 0.05 (coalesce) then 0.1, 0.2, 0.4 plus the 0.05 coalescing before each: well under one attempt per 0.05 s
-    assert 2 <= calls["n"] <= 6, f"{calls['n']} attempts in a second"
+    assert _wait_until(lambda: len(stamps) >= 4), f"four attempts were made, {len(stamps)} were"
+    # The delay the writer ASKED for after each failure is read, not inferred from how long the attempts took (which a loaded writer only
+    # stretches): twice the last, from the coalescing delay, so a backoff far too slow, too fast or flat fails by what it requested.
+    assert [d for d in delays if d != 0.05][:3] == [0.1, 0.2, 0.4], f"the retries asked to wait {delays}"
+    # Each retry waits twice as long as the last (0.1, 0.2, 0.4 s) and the 0.05 s coalescing comes before each attempt. A wait is never shorter than
+    # its deadline, so the gaps between attempts only ever grow past these floors, on a starved writer as on an idle one; a writer that tried
+    # again every delay would show 0.1 s gaps and fail the first floor. (This was a count of attempts in one second, which a starved writer made
+    # smaller than the 2 it asked for.)
+    gaps = [b - a for a, b in zip(stamps, stamps[1:4], strict=False)]
+    assert [g >= floor for g, floor in zip(gaps, (0.13, 0.23, 0.43), strict=True)] == [True] * 3, f"the retries back off: {gaps}"
 
 
 def test_a_data_directory_that_cannot_be_resolved_at_the_write_is_a_failed_write_not_a_dead_writer(journal, monkeypatch):
@@ -1831,7 +1857,7 @@ def test_a_pool_timeout_counts_its_own_pools_checkouts_and_names_only_its_own_ho
 
     t = threading.Thread(target=hold, name="mine-holder", daemon=True)
     t.start()
-    assert taken.wait(3)
+    assert taken.wait(HANG_GUARD_S)
     with pytest.raises(PoolTimeoutError):
         mine.raw_connection()
     let_go.set()
@@ -1994,30 +2020,31 @@ def test_no_wait_loop_of_the_journal_writer_leaves_its_jump_back_outside_the_wit
 
 def test_wait_out_returns_at_the_deadline_and_never_leaves_the_condition_held():
     start = time.monotonic()
-    se._wait_out(se._GENERATION, 0.05)
-    assert 0.04 <= time.monotonic() - start < 1.0
-    assert se._COND.acquire(timeout=1.0), "the condition's lock was left held by the wait"
+    came_back, _ = call_on_thread(se._wait_out, se._GENERATION, 0.05)
+    assert came_back, "a wait with a deadline comes back at it"
+    assert time.monotonic() - start >= 0.04
+    assert se._COND.acquire(timeout=HANG_GUARD_S), "the condition's lock was left held by the wait"
     se._COND.release()
 
 
 def test_wait_out_returns_at_once_when_a_reset_made_its_generation_old():
     stale = se._GENERATION
     se.reset_for_tests()
-    start = time.monotonic()
-    se._wait_out(stale, 30.0)
-    assert time.monotonic() - start < 1.0, "a wait for a generation that was reset must not run to its deadline"
+    # A wait that ran to its deadline would take the 30 s the guard is shorter than; one that sees the generation is old comes back at once.
+    came_back, _ = call_on_thread(se._wait_out, stale, 3 * HANG_GUARD_S)
+    assert came_back, "a wait for a generation that was reset must not run to its deadline"
 
 
 def test_a_reset_ends_a_wait_out_in_progress(journal):
-    box: list[float] = []
+    box: list[bool] = []
     gen = se._GENERATION
-    t = threading.Thread(target=lambda: (se._wait_out(gen, 30.0), box.append(time.monotonic())), daemon=True)
-    began = time.monotonic()
+    # a wait of three guards: only the reset can end it in time, so the thread having ended inside the guard is the reset having woken it
+    t = threading.Thread(target=lambda: (se._wait_out(gen, 3 * HANG_GUARD_S), box.append(True)), daemon=True)
     t.start()
     time.sleep(0.1)
     se.reset_for_tests()
-    t.join(timeout=5.0)
-    assert not t.is_alive() and box and box[0] - began < 5.0, "the reset did not wake the wait"
+    t.join(timeout=HANG_GUARD_S)
+    assert not t.is_alive() and box, "the reset did not wake the wait"
 
 
 def test_wait_until_dirty_returns_when_a_change_is_waiting_and_leaves_the_condition_free(journal):
@@ -2027,7 +2054,7 @@ def test_wait_until_dirty_returns_when_a_change_is_waiting_and_leaves_the_condit
     time.sleep(0.1)
     assert t.is_alive() and not box, "nothing was waiting to be written, so the wait must not have returned"
     se.record("guard", {"n": 1})
-    t.join(timeout=5.0)
+    t.join(timeout=HANG_GUARD_S)
     assert box == [se._GENERATION]
     assert se._COND.acquire(timeout=1.0)
     se._COND.release()
@@ -2279,16 +2306,16 @@ def test_the_stamps_are_taken_in_the_order_of_the_records_so_the_onset_is_never_
         event = real_build(fields)
         if fields.get("who") == "first":
             built.set()
-            assert second_done.wait(5)
+            assert second_done.wait(3 * HANG_GUARD_S)
         return event
 
     monkeypatch.setattr(se, "_build", build)
     t = threading.Thread(target=lambda: se.record("pool_timeout", {"who": "first", "waited_s": 1.0}))
     t.start()
-    assert built.wait(5)
+    assert built.wait(HANG_GUARD_S)
     se.record("pool_timeout", {"who": "second", "waited_s": 2.0})
     second_done.set()
-    t.join(5)
+    t.join(HANG_GUARD_S)
     assert not t.is_alive()
     k = _member()["kinds"]["pool_timeout"]
     assert k["total"] == 2

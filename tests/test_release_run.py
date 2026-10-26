@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import release_run as rr
+from tests.wallclock_helpers import call_on_thread, wait_until
 
 _ROOT = Path(__file__).resolve().parent.parent
 NEEDLE = "hunter2-never-on-disk"
@@ -249,9 +250,9 @@ def test_a_cancel_during_the_soak_still_collects_and_reports(fast):
 def test_collect_now_ends_the_window_early_and_says_so(fast):
     ctx = FakeCtx()
     threading.Timer(0.15, rr.request_collect_now).start()
-    t0 = time.monotonic()
-    res = rr.run_release_run(ctx, **_params(fast["dest"], soak_hours=24))
-    assert time.monotonic() - t0 < 20
+    came_back, res = call_on_thread(rr.run_release_run, ctx, **_params(fast["dest"], soak_hours=24))
+    ctx.cancel()  # a window that did not end early is ended here, so the thread is not left soaking for the rest of the 24 h
+    assert came_back, "the 24 h window did not end when collect-now was asked for"
     assert res["report"]["soak"]["ended_by"] == "collect-now"
     assert res["report"]["outcome"] == "done"
     # The window it got is recorded, not the window it asked for.
@@ -1832,23 +1833,27 @@ def test_an_attempt_that_finds_its_directory_taken_restores_nothing_and_removes_
     assert (taken / "earlier.txt").read_text(encoding="utf-8") == "an earlier install"
 
 
-def test_a_child_that_writes_more_than_a_pipe_holds_is_read_while_it_runs_and_is_not_left_blocked(fast, monkeypatch):
+def test_a_child_that_writes_more_than_a_pipe_holds_is_read_while_it_runs_and_is_not_left_blocked(fast, monkeypatch, tmp_path):
     """The parent waited for the child with ``poll`` and read its pipes only after it had exited, so a child that
     wrote more than a pipe holds (64 KiB on Linux) blocked in its write until the cancel: 60,000 bytes returned,
     70,000 did not (measured). The real results are about 10 KB; what nothing caps is a repair list or a long
     traceback, and a hang that looks like a slow restore is the failure the operator cannot tell from one. A real
-    child here writes 300,000 bytes to each pipe, goes on for most of a second, and then writes its result. A
+    child here writes 300,000 bytes to each pipe, goes on until the test has SEEN three turns of the wait (not for a
+    fixed time, which a stalled machine runs out before the parent has turned), and then writes its result. A
     watchdog cancels the run after 40 s, so a regression fails with that fact rather than hanging the suite.
     MUTATION TARGETS: the read inside the wait, and a wait that ends at its first timeout instead of going on in
     turns (a restore takes hours: each turn renews the progress line and is where a cancel lands)."""
     real_popen = subprocess.Popen
+    go = tmp_path / "child.go"
     script = (
         "import json, os, sys, time\n"
         "sys.stdout.write('o' * 300_000)\n"
         "sys.stdout.flush()\n"
         "sys.stderr.write('e' * 300_000 + 'THE-END')\n"
         "sys.stderr.flush()\n"
-        "time.sleep(0.8)\n"
+        f"go, end = {str(go)!r}, time.time() + 30\n"
+        "while not os.path.exists(go) and time.time() < end:\n"
+        "    time.sleep(0.02)\n"
         "open(os.environ['OO_RELEASE_RUN_OUT'], 'w', encoding='utf-8').write(json.dumps(" + repr(_OK_CHILD) + "))\n"
     )
     monkeypatch.setattr(rr, "_RESTORE_POLL_S", 0.1)
@@ -1857,18 +1862,27 @@ def test_a_child_that_writes_more_than_a_pipe_holds_is_read_while_it_runs_and_is
         PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired))
     run = rr._Run(rr.RunParams(**_params(fast["dest"])))
     ctx = FakeCtx()
+
+    def turns_seen() -> list:
+        return [d for _done, _total, d in list(ctx.progress) if d and d.startswith("fresh install (")]
+
+    def let_the_child_go() -> None:
+        wait_until(lambda: len(turns_seen()) >= 3, guard_s=25.0)  # whether or not it got there: a child left waiting would hold the run to the watchdog
+        go.write_text("go", encoding="utf-8")
+
     watchdog = threading.Timer(40.0, ctx.cancel)
     watchdog.start()
-    t0 = time.monotonic()
+    letter = threading.Thread(target=let_the_child_go, daemon=True)
+    letter.start()
     try:
         ph = rr._run_phase(run, ctx, "fresh_install_restore",
                            lambda: _REAL_RESTORE(ctx, run, fast["dest"] / "backup", label="own-backup"))
     finally:
         watchdog.cancel()
+        go.write_text("go", encoding="utf-8")
     assert not ctx.stopping, "the child was still blocked on a full pipe when the watchdog cancelled the run"
     assert ph["status"] == "measured", ph
-    assert time.monotonic() - t0 < 30
-    turns = [d for _done, _total, d in ctx.progress if d and d.startswith("fresh install (")]
+    turns = turns_seen()
     assert len(turns) >= 3, f"the wait went on in turns while the child ran: {turns}"
     tail = ph["result"]["stderr_tail"]
     assert len(tail) == 4000 and tail.endswith("e" * 3993 + "THE-END"), "the end of what the child wrote is kept"

@@ -36,6 +36,7 @@ from src.ingest import (
 )
 from src.scheduler.runner import run_scrape_once
 from src.scheduler.settings import SchedulerSettings
+from tests.wallclock_helpers import HANG_GUARD_S
 
 _RSS = (
     '<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>'
@@ -148,10 +149,12 @@ class _CountingSession:
     """Counts feed fetches (not robots) so we can assert the kill switch stops
     further work. Slow enough that a mid-pass trip lands while workers run."""
 
-    def __init__(self, delay=0.05):
+    def __init__(self, delay=0.05, hold: threading.Event | None = None):
         self.headers: dict = {}
         self.proxies: dict = {}
         self._delay = delay
+        self._hold = hold  # when given, a fetch stays in flight until the test sets it (and ``delay`` is not slept)
+        self.fetching = threading.Event()  # set when a feed fetch is under way
         self._lock = threading.Lock()
         self.feed_fetches = 0
 
@@ -161,7 +164,11 @@ class _CountingSession:
             return _Resp(text="User-agent: *\nAllow: /", ct="text/plain", url=url)
         with self._lock:
             self.feed_fetches += 1
-        time.sleep(self._delay)
+        self.fetching.set()
+        if self._hold is not None:
+            self._hold.wait(HANG_GUARD_S)
+        else:
+            time.sleep(self._delay)
         return _Resp(text=_RSS, url=url)
 
 
@@ -209,7 +216,10 @@ def test_kill_switch_tripped_mid_pass_stops_remaining_workers():
     n = 12
     _seed(tag, [f"{tag}-{i}.example" for i in range(n)])
 
-    sess = _CountingSession(delay=0.1)
+    # Fetches stay in flight until the switch is tripped, so what the pass fetches is a count of the workers that were under way (at most
+    # two), not of how many fetches a slow runner happened to fit before a fixed sleep ended.
+    hold = threading.Event()
+    sess = _CountingSession(hold=hold)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=sess)
     settings = SchedulerSettings(collect_parallelism=2, select_tags=[tag])
 
@@ -223,17 +233,19 @@ def test_kill_switch_tripped_mid_pass_stops_remaining_workers():
 
     t = threading.Thread(target=go)
     t.start()
-    # Let a couple of workers get in flight, then trip the switch.
-    time.sleep(0.12)
-    activate_kill_switch()
     try:
-        assert done.wait(15), "mid-pass kill switch did not let the pass return (deadlock?)"
-        t.join(5)
+        # A worker is in flight when a feed fetch is under way: trip the switch, then let the in-flight fetches finish.
+        assert sess.fetching.wait(HANG_GUARD_S), "no worker ever fetched"
+        activate_kill_switch()
+        hold.set()
+        assert done.wait(HANG_GUARD_S), "mid-pass kill switch did not let the pass return (deadlock?)"
+        t.join(HANG_GUARD_S)
     finally:
+        hold.set()
         clear_kill_switch()
 
     # The switch stopped the remaining workers: strictly fewer than all sources
-    # were fetched (a couple in-flight may complete; the rest are halted).
+    # were fetched (the in-flight ones complete; the rest are halted).
     assert sess.feed_fetches < n, sess.feed_fetches
 
 

@@ -44,7 +44,6 @@ from __future__ import annotations
 import ast
 import pathlib
 import threading
-import time
 
 # Module scope, not function scope, and that is load-bearing: this file uses
 # `from __future__ import annotations`, so every annotation is a STRING that FastAPI
@@ -238,8 +237,9 @@ def test_a_slow_sync_handler_does_not_stall_a_concurrent_request():
     Determinism: the slow handler blocks on an Event that is set only AFTER the second
     request has come back, so the outcome does not depend on machine speed. On the
     threadpool the second request returns in milliseconds; on the event loop it CANNOT
-    return until the gate times out. The assertion is far below that timeout, so a slow
-    CI box changes the margin and never the verdict.
+    return until the gate times out. The assertion is an ORDER, not a duration: the slow
+    handler had not returned when the second request did. A slow or paused CI box changes
+    how long both take and never which came back first, until a stall outlasts the gate.
     """
     from src.api.ratelimit import limiter
 
@@ -255,13 +255,15 @@ def test_a_slow_sync_handler_does_not_stall_a_concurrent_request():
 
     gate = threading.Event()
     entered = threading.Event()
+    slow_returned = threading.Event()
     router = APIRouter()
 
     @router.get("/slow")
     @limiter.limit("1000/hour")
     def slow(request: Request, db: Session = Depends(_get_db)) -> dict:
         entered.set()
-        gate.wait(timeout=3.0)  # stands in for synchronous DB work through the codec
+        gate.wait(timeout=10.0)  # stands in for synchronous DB work through the codec
+        slow_returned.set()
         return {"ok": True}
 
     @router.get("/trivial")
@@ -285,18 +287,17 @@ def test_a_slow_sync_handler_does_not_stall_a_concurrent_request():
         worker.start()
         assert entered.wait(timeout=5.0), "/slow never started -- the harness is broken"
 
-        started = time.perf_counter()
         resp = client.get("/trivial")
-        elapsed = time.perf_counter() - started
+        trivial_came_back_first = not slow_returned.is_set()
 
         gate.set()
         finished.wait(timeout=5.0)
         worker.join(timeout=5.0)
 
     assert resp.status_code == 200
-    assert elapsed < 1.0, (
-        f"the concurrent trivial request took {elapsed * 1000:.0f} ms while a slow "
-        "handler was in flight -- it was stalled behind it, which is what an `async def` "
+    assert trivial_came_back_first, (
+        "the concurrent trivial request came back only after the slow "
+        "handler did -- it was stalled behind it, which is what an `async def` "
         "handler doing synchronous DB work does to EVERY other request in this "
         "single-worker server (measured in the field: a 12.6 s handler made a pure "
         "in-memory /api/scheduler/status read take 41.7 s)."

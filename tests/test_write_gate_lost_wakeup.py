@@ -32,9 +32,10 @@ import pytest
 
 from src.database import writer
 from src.utils import interrupts
+from tests.wallclock_helpers import HANG_GUARD_S
 
 #: How long a test waits for a thread that SHOULD get through; a passing run never waits for it.
-GET_THROUGH_S = 5.0
+GET_THROUGH_S = HANG_GUARD_S
 #: The step the tests shorten the module's to, so a lost wake-up costs this much here and not the production second.
 TEST_STEP_S = 0.05
 
@@ -208,7 +209,7 @@ def test_the_step_is_not_a_timeout_a_writer_waits_as_long_as_the_gate_is_held(mo
 
 
 def test_a_bounded_acquire_still_gives_up_at_its_own_deadline_not_at_a_step(monkeypatch):
-    monkeypatch.setattr(writer, "_WAKE_STEP_S", 30.0)  # far longer than the bound: only the deadline can end the wait
+    monkeypatch.setattr(writer, "_WAKE_STEP_S", 3 * GET_THROUGH_S)  # outlasts the wait for the thread: only the deadline can end it in time
     gate = writer.WriterGate()
     assert gate.acquire()
     started = time.monotonic()
@@ -218,7 +219,7 @@ def test_a_bounded_acquire_still_gives_up_at_its_own_deadline_not_at_a_step(monk
     t.join(GET_THROUGH_S)
     elapsed = time.monotonic() - started
     assert result == [False]
-    assert 0.15 <= elapsed < 3.0, elapsed
+    assert elapsed >= 0.15, elapsed  # it waited for its deadline; coming back at the step instead would have outlasted the join above
     assert gate._timeouts == 1
     gate.release()
 

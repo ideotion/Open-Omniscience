@@ -18,6 +18,7 @@ import time
 import pytest
 
 from src.backup.import_queue import ImportQueueManager
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 
 class _FakeJob:
@@ -132,15 +133,12 @@ def test_stop_cancels_the_running_item_and_every_queued_one(queue, monkeypatch):
     gate = threading.Event()
 
     def _slow(item, *, hold=False):
-        gate.wait(timeout=5)
+        gate.wait(timeout=HANG_GUARD_S)
         return {}
 
     monkeypatch.setattr(queue, "_run_corpus", _slow)
     queue.start([{"kind": "corpus", "path": f"/b/{i}"} for i in range(3)])
-    for _ in range(200):
-        if queue.status()["cursor"] == 0:
-            break
-        time.sleep(0.01)
+    assert wait_until(lambda: queue.status()["cursor"] == 0), "the worker never started the first item"
     queue.stop()
     gate.set()
     st = _drain(queue)
@@ -155,15 +153,12 @@ def test_a_stop_that_interrupts_a_merge_reads_stopped_not_failed(queue, monkeypa
     gate = threading.Event()
 
     def _interrupted(item, *, hold=False):
-        gate.wait(timeout=5)
+        gate.wait(timeout=HANG_GUARD_S)
         raise RuntimeError("merge interrupted: stop requested")
 
     monkeypatch.setattr(queue, "_run_corpus", _interrupted)
     queue.start([{"kind": "corpus", "path": "/b/0"}, {"kind": "corpus", "path": "/b/1"}])
-    for _ in range(200):
-        if queue.status()["cursor"] == 0:
-            break
-        time.sleep(0.01)
+    assert wait_until(lambda: queue.status()["cursor"] == 0), "the worker never started the first item"
     queue.stop()
     gate.set()
     st = _drain(queue)
@@ -277,7 +272,7 @@ def test_a_corrupt_state_file_is_simply_no_previous_run(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_two_runs_at_once_are_refused(queue, monkeypatch):
     gate = threading.Event()
-    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: gate.wait(timeout=5))
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: gate.wait(timeout=HANG_GUARD_S))
     queue.start([{"kind": "corpus", "path": "/b/1"}])
     with pytest.raises(RuntimeError):
         queue.start([{"kind": "corpus", "path": "/b/2"}])
@@ -293,7 +288,7 @@ def test_an_unknown_kind_is_refused_before_anything_starts(queue):
 
 def test_clear_refuses_while_a_run_is_in_flight(queue, monkeypatch):
     gate = threading.Event()
-    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: gate.wait(timeout=5))
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: gate.wait(timeout=HANG_GUARD_S))
     queue.start([{"kind": "corpus", "path": "/b/1"}])
     with pytest.raises(RuntimeError):
         queue.clear()

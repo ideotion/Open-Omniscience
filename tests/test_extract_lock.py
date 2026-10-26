@@ -50,6 +50,7 @@ from trafilatura.settings import Document
 
 import src.ingest.extract as extract_mod
 from src.ingest.extract import ExtractedDoc, extract_article
+from tests.wallclock_helpers import HANG_GUARD_S
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
@@ -225,7 +226,7 @@ def test_a_blank_page_is_refused_before_the_lock_is_asked_for(monkeypatch):
 
     def slow(*_a, **_kw):
         held.set()
-        assert release.wait(timeout=10)
+        assert release.wait(timeout=3 * HANG_GUARD_S)  # outlasts the asker's guard below: waiting for this is the only way to be late
         return _document()
 
     monkeypatch.setattr(trafilatura, "bare_extraction", slow)
@@ -235,7 +236,7 @@ def test_a_blank_page_is_refused_before_the_lock_is_asked_for(monkeypatch):
     answers: list[ExtractedDoc | None] = []
     asker = threading.Thread(target=lambda: answers.extend([extract_article(""), extract_article("   \n ")]), daemon=True)
     asker.start()
-    asker.join(timeout=2)
+    asker.join(timeout=HANG_GUARD_S)
     waited_for_the_lock = asker.is_alive()  # read BEFORE the slow extraction is let go: afterwards the asker could finish
     release.set()
     worker.join(timeout=10)

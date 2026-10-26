@@ -29,9 +29,10 @@ from src.database.writer import (
     watchdog_tick,
     write_lock,
 )
+from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
 
 
-def _wait_until(pred, timeout: float = 3.0) -> bool:
+def _wait_until(pred, timeout: float = HANG_GUARD_S) -> bool:  # a hang guard: a condition that holds returns at once
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if pred():
@@ -57,7 +58,7 @@ class _Holder:
 
     def __enter__(self) -> _Holder:
         self.thread.start()
-        assert self.taken.wait(3), "the holder thread never took the gate"
+        assert self.taken.wait(HANG_GUARD_S), "the holder thread never took the gate"
         return self
 
     def __exit__(self, *_exc) -> None:
@@ -72,9 +73,10 @@ class _Holder:
 def test_a_bounded_acquire_gives_up_and_says_so():
     gate = WriterGate()
     with _Holder(gate):
-        t0 = time.monotonic()
-        assert gate.acquire(timeout=0.15) is False
-        assert time.monotonic() - t0 < 2.0, "the bound did not bound"
+        # An acquire the bound does not bound waits for the holder, which lets go only when this block ends.
+        came_back, got = call_on_thread(gate.acquire, timeout=0.15)
+        assert came_back, "the bound did not bound"
+        assert got is False
     assert gate.stats()["timeouts"] == 1
 
 
@@ -104,10 +106,8 @@ def test_an_unbounded_acquire_still_waits_for_its_turn():
 def test_write_lock_raises_write_gate_busy_rather_than_writing_ungated():
     from src.database.writer import write_gate
 
-    with _Holder(write_gate):
-        with pytest.raises(WriteGateBusy) as exc:
-            with write_lock(timeout=0.1):
-                pytest.fail("write_lock entered a gate it never got")
+    with _Holder(write_gate), pytest.raises(WriteGateBusy) as exc, write_lock(timeout=0.1):
+        pytest.fail("write_lock entered a gate it never got")
     # The refusal names WHO, or it is just another anonymous timeout.
     assert "field-writer" in str(exc.value)
 
@@ -127,15 +127,14 @@ def test_checkpoint_wal_records_an_honest_skip_when_the_gate_is_busy(monkeypatch
         con.commit()
 
     with _Holder(write_gate):
-        t0 = time.monotonic()
-        out = hygiene.checkpoint_wal(engine=eng, force=True)
-        elapsed = time.monotonic() - t0
-
+        # the holder keeps the gate until this block ends, so a checkpoint that comes back inside it was ended by its own bound; one that
+        # waited for the holder would never come back, and the guard says so (a bound of 3 s on the 0.1 s wait was a figure a stall could pass)
+        came_back, out = call_on_thread(hygiene.checkpoint_wal, engine=eng, force=True)
+    assert came_back, "the checkpoint waited for the holder instead of its own gate timeout"
     assert out is not None, "a busy gate must not read as 'not due' (None)"
     assert out["skipped"] == "gate busy"
     assert out["waited_s"] == pytest.approx(0.1)
     assert out["detail"] == "WriteGateBusy"  # the class only: the holder's name is words, kept out of the record
-    assert elapsed < 3.0
     eng.dispose()
 
 

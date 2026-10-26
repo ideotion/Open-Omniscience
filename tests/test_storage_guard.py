@@ -42,6 +42,7 @@ from src.scheduler.storage_guard import (
     wal_high_bytes,
 )
 from tests.js_source_helper import python_function_source
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 _REAL_ENSURE_SUPERVISOR = runner._ensure_storage_supervisor  # the fixture below stubs it per test
 
@@ -819,9 +820,7 @@ def test_the_loop_pauses_in_a_named_phase_and_resumes_by_itself(monkeypatch):
     sched._storage_pause_poll_s = 0.02
     assert sched.start()
     try:
-        deadline = time.monotonic() + 5.0
-        while runner.current_phase() != "paused-wal-pinned" and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runner.current_phase() == "paused-wal-pinned")
         assert runner.current_phase() == "paused-wal-pinned"
         assert runs["n"] == 0
         st = sched.status()
@@ -829,9 +828,7 @@ def test_the_loop_pauses_in_a_named_phase_and_resumes_by_itself(monkeypatch):
         assert st["storage_guard"]["phase"] == "paused-wal-pinned"
         assert st["next_run"] is None, "no stale countdown while paused"
         g.reset(reason="test")
-        deadline = time.monotonic() + 5.0
-        while runs["n"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runs["n"] > 0)
         assert runs["n"] >= 1, "collection resumed without a restart"
     finally:
         sched.stop()
@@ -854,16 +851,12 @@ def test_the_loop_releases_the_latch_itself_when_no_supervisor_runs(monkeypatch)
     sched._storage_pause_poll_s = 0.02
     assert sched.start()
     try:
-        deadline = time.monotonic() + 5.0
-        while runner.current_phase() != "paused-wal-pinned" and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runner.current_phase() == "paused-wal-pinned")
         assert runner.current_phase() == "paused-wal-pinned"
         time.sleep(0.2)
         assert runs["n"] == 0, "still over the limit: still paused"
         g.fake["wal_bytes"] = 0  # the log reset; nothing but the loop is looking
-        deadline = time.monotonic() + 5.0
-        while runs["n"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runs["n"] > 0)
         assert runs["n"] >= 1, "the pause outlived the condition that caused it"
         assert g.engaged is False
     finally:
@@ -878,13 +871,9 @@ def test_stop_interrupts_a_storage_pause_promptly(monkeypatch):
     )
     sched._storage_pause_poll_s = 30.0  # only stop() can end this wait in time
     assert sched.start()
-    deadline = time.monotonic() + 5.0
-    while runner.current_phase() != "paused-low-disk" and time.monotonic() < deadline:
-        time.sleep(0.02)
-    t0 = time.monotonic()
-    sched.stop(timeout=5.0)
-    assert time.monotonic() - t0 < 3.0
-    assert not sched.is_running()
+    wait_until(lambda: runner.current_phase() == "paused-low-disk")
+    sched.stop(timeout=HANG_GUARD_S)
+    assert not sched.is_running(), "the pause wait was not interrupted by stop()"
 
 
 def test_a_pass_that_dies_of_a_full_drive_latches_the_guard():
@@ -1758,9 +1747,7 @@ def test_the_floor_is_read_every_tick_whatever_the_drain_is_waiting_on(monkeypat
     sup = threading.Thread(target=storage_guard._supervise, args=(stop,), daemon=True)
     sup.start()
     try:
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and not (started and len(polls) >= 6):
-            time.sleep(0.01)
+        wait_until(lambda: started and len(polls) >= 6)
         assert started == [1], "the drain started, once"
         assert len(polls) >= 6, "the floor kept being read while the drain was still waiting"
         assert any(t.name == "oo-storage-guard-drain" and t.is_alive() for t in threading.enumerate())
@@ -1857,21 +1844,19 @@ def test_a_drain_that_has_not_started_never_does_after_stop_and_stop_joins_the_o
     quick.start()
     monkeypatch.setattr(storage_guard, "_THREAD", None)
     monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", quick)
-    t0 = time.monotonic()
+    monkeypatch.setattr(storage_guard, "STOP_JOIN_S", HANG_GUARD_S)  # the join is a guard here: the drain ends in 0.3 s of its own
     storage_guard.stop()
     assert not quick.is_alive(), "stop() joined the drain thread"
-    assert time.monotonic() - t0 < 2.0
     # ... and gives up on one still waiting, within the bound (the thread is abandoned, a daemon)
     release = threading.Event()
     stuck = threading.Thread(target=lambda: release.wait(20), daemon=True)
     stuck.start()
     monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", stuck)
     monkeypatch.setattr(storage_guard, "STOP_JOIN_S", 0.3)
-    t0 = time.monotonic()
     try:
         storage_guard.stop()
-        assert time.monotonic() - t0 < 2.0, "stop() does not wait for ever for a stuck drain"
-        assert stuck.is_alive()
+        # still asleep when stop() came back: it gave up on the drain at its bound instead of waiting for it to end
+        assert stuck.is_alive(), "stop() waited for a stuck drain"
     finally:
         release.set()
         stuck.join(5)
@@ -2089,24 +2074,39 @@ def test_the_in_flight_flag_is_claimed_under_the_lock_that_made_the_cadence_chec
 def test_stop_waits_for_both_threads_within_one_budget_not_one_budget_each(monkeypatch):
     """A supervisor stuck in its reading AND a drain stuck on the pool or the gate cost
     ``STOP_JOIN_S`` in all: shutdown must not wait twice that."""
-    release = threading.Event()
-    sup = threading.Thread(target=lambda: release.wait(20), daemon=True)
-    drn = threading.Thread(target=lambda: release.wait(20), daemon=True)
-    sup.start()
-    drn.start()
+    # Two threads that never end, whose join "waits" its whole timeout on a clock only this test moves: what stop() asks of each join is
+    # then a sum to read, not a duration to time (a bound of 0.9 s on a 0.5 s budget was a figure a stalled runner could pass).
+    now = {"t": 1000.0}
+    me = threading.get_ident()
+
+    class _Clock:
+        def monotonic(self) -> float:
+            return now["t"] if threading.get_ident() == me else time.monotonic()
+
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+    joins: list[tuple[str, float]] = []
+
+    class _Stuck:
+        ident = 4242  # started, as far as stop() can tell
+
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def join(self, timeout: float | None = None) -> None:
+            joins.append((self.name, timeout))
+            now["t"] += timeout or 0.0  # it never ends: the whole wait is spent
+
+    monkeypatch.setattr(storage_guard, "time", _Clock())
     monkeypatch.setattr(storage_guard, "_STOP", threading.Event())
-    monkeypatch.setattr(storage_guard, "_THREAD", sup)
-    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", drn)
+    monkeypatch.setattr(storage_guard, "_THREAD", _Stuck("supervisor"))
+    monkeypatch.setattr(storage_guard, "_DRAIN_THREAD", _Stuck("drain"))
     monkeypatch.setattr(storage_guard, "STOP_JOIN_S", 0.5)
-    t0 = time.monotonic()
-    try:
-        storage_guard.stop()
-        elapsed = time.monotonic() - t0
-        assert 0.4 <= elapsed < 0.9, f"stop() took {elapsed:.2f} s for a 0.5 s budget in all"
-    finally:
-        release.set()
-        sup.join(5)
-        drn.join(5)
+    storage_guard.stop()
+    assert [name for name, _t in joins] == ["supervisor", "drain"], "both threads are waited for"
+    assert joins[0][1] == pytest.approx(0.5), f"the first wait is the whole budget: {joins}"
+    assert sum(t for _n, t in joins) <= 0.5 + 1e-9, f"the two waits share ONE budget, not one each: {joins}"
 
 
 def test_the_shutdown_wait_constant_is_within_the_bounds_it_was_chosen_for():
@@ -2183,9 +2183,7 @@ def test_the_pass_wind_down_and_the_loop_do_not_pause_under_an_override(monkeypa
     sched._storage_pause_poll_s = 0.02
     assert sched.start()
     try:
-        deadline = time.monotonic() + 5.0
-        while runs["n"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runs["n"] > 0)
         assert runs["n"] >= 1, "collection ran while the limit was still exceeded"
         assert runner.current_phase() != "paused-wal-pinned"
     finally:
@@ -2699,7 +2697,7 @@ def test_a_latch_set_by_measurement_never_releases_on_an_unreadable_figure():
     assert g.engaged, "no measurement said the drive recovered"
 
 
-def _returns_within(fn, seconds=10.0):
+def _returns_within(fn, seconds=HANG_GUARD_S):
     """Run ``fn`` on a daemon thread and fail, instead of hanging the suite, if it does not return:
     a regression that ignores a bound waits for ever."""
     out: list = []
@@ -2725,7 +2723,7 @@ def test_wait_if_engaged_can_be_bounded():
     g._clock = time.monotonic  # the helper's fake clock does not move; this wait is real, and short
     t0 = time.monotonic()
     assert _returns_within(lambda: g.wait_if_engaged(max_wait_s=0.3, poll_s=0.05)) is True
-    assert 0.25 <= time.monotonic() - t0 < 3.0
+    assert time.monotonic() - t0 >= 0.25, "it waited out the time it was given"
     stop = threading.Event()
     stop.set()
     assert _returns_within(lambda: g.wait_if_engaged(stop, poll_s=0.05)) is False, "an interrupted wait returns at once"

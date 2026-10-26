@@ -25,11 +25,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 import re
 import threading
-import time
 
 import pytest
 
 from src.database.corpus_lease import active_leases, corpus_lease, wait_for_quiescence
+from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
 
 
 # --------------------------------------------------------------------------- #
@@ -61,26 +61,50 @@ def test_nested_leases_release_only_at_the_outermost() -> None:
 #  the wait: both directions
 # --------------------------------------------------------------------------- #
 def test_quiescence_is_immediate_when_nothing_holds() -> None:
-    t0 = time.monotonic()
-    assert wait_for_quiescence(timeout=5.0) == []
-    assert time.monotonic() - t0 < 1.0, "an idle machine must not be made to wait"
+    # The timeout is three times the guard: a wait that was made when nothing holds is a wait that ran to it.
+    came_back, held = call_on_thread(wait_for_quiescence, timeout=3 * HANG_GUARD_S)
+    assert came_back, "an idle machine was made to wait"
+    assert held == []
 
 
-def test_it_waits_out_a_batch_that_had_already_begun() -> None:
-    """The whole point: a batch in flight when the import starts is waited for, not
-    replaced out from under."""
-    released = threading.Event()
+def _batch_held_until_looked_at(looks_needed: int):
+    """A batch that holds its lease until the waiter has LOOKED ``looks_needed`` times, then lets go: the wait is ended by what the waiter
+    did, never by a clock, so a paused or loaded process changes nothing about it. ``(started, hook, state)``: the hook wraps the
+    waiter's look at the leases (the module's ``active_leases``)."""
+    entered, go, released = threading.Event(), threading.Event(), threading.Event()
+    looks: list[list[str]] = []
 
     def worker():
         with corpus_lease("reindex"):
-            time.sleep(0.3)
+            entered.set()
+            go.wait(HANG_GUARD_S)
         released.set()
 
+    real = active_leases
+
+    def watching() -> list[str]:
+        held = real()
+        looks.append(held)
+        if len(looks) >= looks_needed:
+            go.set()
+        return held
+
     threading.Thread(target=worker, daemon=True).start()
-    time.sleep(0.05)
+    assert entered.wait(HANG_GUARD_S), "the batch never took its lease"
+    return watching, looks, go, released
+
+
+def test_it_waits_out_a_batch_that_had_already_begun(monkeypatch) -> None:
+    """The whole point: a batch in flight when the import starts is waited for, not
+    replaced out from under."""
+    from src.database import corpus_lease as cl
+
+    watching, looks, go, released = _batch_held_until_looked_at(3)
     assert active_leases() == ["reindex"]
-    assert wait_for_quiescence(timeout=5.0) == [], "it must wait, then proceed"
-    assert released.is_set()
+    monkeypatch.setattr(cl, "active_leases", watching)
+    assert wait_for_quiescence(timeout=3 * HANG_GUARD_S) == [], "it must wait, then proceed"
+    assert go.is_set() and len(looks) >= 3, "it returned before the batch was waited for"
+    assert released.wait(HANG_GUARD_S)
 
 
 def test_the_wait_returns_early_when_the_operator_stops() -> None:
@@ -92,35 +116,31 @@ def test_the_wait_returns_early_when_the_operator_stops() -> None:
 
     def worker():
         with corpus_lease("reindex"):
-            stop.wait(10)
+            held.set()
+            stop.wait(5 * HANG_GUARD_S)
 
     threading.Thread(target=worker, daemon=True).start()
-    time.sleep(0.05)
-    held.set()
+    assert held.wait(HANG_GUARD_S), "the worker never took its lease"
 
-    t0 = time.monotonic()
-    # A generous timeout it must NOT sit out, and a stop that is already true.
-    out = wait_for_quiescence(timeout=30.0, should_stop=lambda: True)
-    elapsed = time.monotonic() - t0
-    stop.set()
+    try:
+        # A timeout it must NOT sit out (three times the guard), the lease held until the test lets go, and a stop that is already true.
+        came_back, out = call_on_thread(wait_for_quiescence, timeout=3 * HANG_GUARD_S, should_stop=lambda: True)
+    finally:
+        stop.set()
+    assert came_back, "it waited out the timeout after a stop"
     assert out == ["reindex"], "it reports who was holding, so the caller can say so"
-    assert elapsed < 1.0, f"it must not wait out the timeout after a stop (took {elapsed:.1f}s)"
 
 
-def test_a_stop_never_shortens_a_healthy_wait() -> None:
+def test_a_stop_never_shortens_a_healthy_wait(monkeypatch) -> None:
     """The negative-space twin: should_stop returning False must leave the wait exactly as
     it was, or 'honour the stop' would quietly become 'give up early'."""
-    released = threading.Event()
+    from src.database import corpus_lease as cl
 
-    def worker():
-        with corpus_lease("reindex"):
-            time.sleep(0.3)
-        released.set()
-
-    threading.Thread(target=worker, daemon=True).start()
-    time.sleep(0.05)
-    assert wait_for_quiescence(timeout=5.0, should_stop=lambda: False) == []
-    assert released.is_set(), "it waited the batch out rather than returning early"
+    watching, looks, go, released = _batch_held_until_looked_at(3)
+    monkeypatch.setattr(cl, "active_leases", watching)
+    assert wait_for_quiescence(timeout=3 * HANG_GUARD_S, should_stop=lambda: False) == []
+    assert go.is_set() and len(looks) >= 3, "it returned early"
+    assert released.wait(HANG_GUARD_S), "it waited the batch out rather than returning early"
 
 
 def test_a_stop_during_the_wait_is_reported_as_a_stop_not_as_a_busy_writer() -> None:
@@ -147,13 +167,15 @@ def test_a_holder_that_never_finishes_is_reported_not_waited_on_forever() -> Non
     """Refusing is the safe answer; hanging is not, and swapping anyway would BE the
     data loss. The names come back so the operator learns who to stop."""
     stop = threading.Event()
+    entered = threading.Event()
 
     def worker():
         with corpus_lease("newsletter-import"):
-            stop.wait(10)
+            entered.set()
+            stop.wait(5 * HANG_GUARD_S)
 
     threading.Thread(target=worker, daemon=True).start()
-    time.sleep(0.05)
+    assert entered.wait(HANG_GUARD_S), "the holder never took its lease"
     try:
         assert wait_for_quiescence(timeout=0.3) == ["newsletter-import"]
     finally:

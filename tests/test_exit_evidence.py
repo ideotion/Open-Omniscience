@@ -35,6 +35,7 @@ from src.monitoring import exit_evidence as ee
 from src.monitoring import forensics, kernel_log, session_hwm
 from src.monitoring import session_history as sh
 from tests.js_source_helper import python_function_source
+from tests.wallclock_helpers import HANG_GUARD_S
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -815,7 +816,10 @@ def test_cpu_is_read_for_the_working_threads_only(monkeypatch):
         while not state and time.monotonic() < deadline:
             time.sleep(0.01)
         assert state, "the busy thread never started its loop"
-        time.sleep(0.2)
+        if sys.platform.startswith("linux"):  # until it has run long enough to show a hundredth of a second (the figure is rounded to it)
+            cpu_deadline = time.monotonic() + HANG_GUARD_S
+            while not real([busy.native_id]).get(busy.native_id) and time.monotonic() < cpu_deadline:
+                time.sleep(0.01)
         snap = session_hwm.thread_snapshot()
     finally:
         state.append(1)

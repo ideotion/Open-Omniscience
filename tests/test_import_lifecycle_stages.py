@@ -423,16 +423,33 @@ def test_the_boot_resume_never_blocks_the_boot(monkeypatch, boot_state):
     """The drain is the heaviest writer this process runs. A boot that waited on it
     would make a large backlog an app that will not start. The call only RECORDS the
     request now; the sequence that starts the drain runs in its own thread."""
-    import time as _t
+    import threading
 
-    boot_sequence, _calls = boot_state
+    import src.backup.volume_job as vj
+    from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
+
+    boot_sequence, calls = boot_state
     monkeypatch.setenv("OO_NO_SCHEDULER", "0")
     monkeypatch.delenv("OO_REINDEX_AUTORESUME", raising=False)
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    t0 = _t.monotonic()
-    _resume_reindex_backlog_at_boot(1)
-    assert _t.monotonic() - t0 < 1.0
+    # The drain is HELD: whatever starts it, on whatever thread, enters and waits for the test. A boot path that waited for the drain (ran it,
+    # or joined the thread that runs it) cannot come back while it is held, so coming back is the proof it did not wait; no duration is read.
+    entered = threading.Event()
+    release = threading.Event()
+
+    def held_drain() -> tuple[bool, None]:
+        entered.set()
+        release.wait(3 * HANG_GUARD_S)
+        return True, None
+
+    monkeypatch.setattr(vj, "start_reindex_drain", held_drain)
+    try:
+        came_back, _ = call_on_thread(_resume_reindex_backlog_at_boot, 1)
+    finally:
+        release.set()
+    assert came_back, "the boot path waited for the drain"
+    assert not entered.is_set() and calls == [], "the drain was started on the startup path"
     src_text = (Path(__file__).resolve().parents[1] / "src" / "api" / "main.py").read_text(encoding="utf-8")
     assert "target=boot_sequence.run" in src_text and 'name="oo-boot-sequence"' in src_text, (
         "the boot sequence must run in its own thread, never on the startup path"

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.api import heavy
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.database.maintenance import StatementTimeout, statement_deadline
+from tests.wallclock_helpers import HANG_GUARD_S
 
 
 @pytest.fixture(autouse=True)
@@ -67,7 +68,7 @@ def test_cap_refuses_the_excess_and_never_runs_it(monkeypatch):
 
     def a_compute():
         holding.set()
-        release.wait(2)
+        release.wait(3 * HANG_GUARD_S)
         return "A"
 
     def b_compute():
@@ -77,7 +78,7 @@ def test_cap_refuses_the_excess_and_never_runs_it(monkeypatch):
     res_a = {}
     t_a = threading.Thread(target=lambda: res_a.setdefault("v", run_heavy("A", a_compute)))
     t_a.start()
-    assert holding.wait(2), "leader A never took the slot"
+    assert holding.wait(HANG_GUARD_S), "leader A never took the slot"
 
     # The single slot is now held by A. A DISTINCT-key request must fast-fail, not pile on.
     with pytest.raises(HeavyBusy):
@@ -85,7 +86,7 @@ def test_cap_refuses_the_excess_and_never_runs_it(monkeypatch):
     assert b_calls[0] == 0, "the refused compute must NEVER run"
 
     release.set()
-    t_a.join(2)
+    t_a.join(HANG_GUARD_S)
     assert res_a["v"] == "A"
     assert heavy.status()["counters"]["busy"] >= 1
 
@@ -103,7 +104,7 @@ def test_single_flight_collapses_a_duplicate_to_one_compute():
     def leader_compute():
         calls[0] += 1
         leader_in.set()
-        release.wait(2)
+        release.wait(3 * HANG_GUARD_S)
         return "R"
 
     def follower_compute():
@@ -113,7 +114,7 @@ def test_single_flight_collapses_a_duplicate_to_one_compute():
     res = {}
     t_lead = threading.Thread(target=lambda: res.setdefault("lead", run_heavy("K", leader_compute)))
     t_lead.start()
-    assert leader_in.wait(2), "leader never entered compute"
+    assert leader_in.wait(HANG_GUARD_S), "leader never entered compute"
 
     # The flight for "K" now exists → this is DETERMINISTICALLY a follower.
     def _follow():
@@ -122,8 +123,8 @@ def test_single_flight_collapses_a_duplicate_to_one_compute():
     t_follow = threading.Thread(target=_follow)
     t_follow.start()
     release.set()  # let the leader finish; the follower shares its result
-    t_lead.join(2)
-    t_follow.join(2)
+    t_lead.join(HANG_GUARD_S)
+    t_follow.join(HANG_GUARD_S)
 
     assert res["lead"] == "R"
     assert res["follow"] == "R", "the follower must share the leader's REAL value"
@@ -141,13 +142,13 @@ def test_slow_leader_makes_a_follower_degrade_not_recompute(monkeypatch):
     def leader_compute():
         calls[0] += 1
         leader_in.set()
-        release.wait(2)  # slower than the follower's patience
+        release.wait(3 * HANG_GUARD_S)  # slower than the follower's patience
         return "R"
 
     res = {}
     t_lead = threading.Thread(target=lambda: res.setdefault("lead", run_heavy("K", leader_compute)))
     t_lead.start()
-    assert leader_in.wait(2)
+    assert leader_in.wait(HANG_GUARD_S)
 
     # Follower waits 0.2 s, the leader is still busy → HeavyBusy, NOT a second compute.
     with pytest.raises(HeavyBusy):
@@ -155,7 +156,7 @@ def test_slow_leader_makes_a_follower_degrade_not_recompute(monkeypatch):
     assert calls[0] == 1, "a follower that gives up must NOT recompute"
 
     release.set()
-    t_lead.join(2)
+    t_lead.join(HANG_GUARD_S)
     assert res["lead"] == "R"
 
 
@@ -170,7 +171,7 @@ def test_leader_error_propagates_and_is_shared_not_swallowed():
 
     def leader_compute():
         leader_in.set()
-        release.wait(2)
+        release.wait(3 * HANG_GUARD_S)
         raise ValueError("boom")
 
     res = {}
@@ -178,7 +179,7 @@ def test_leader_error_propagates_and_is_shared_not_swallowed():
         target=lambda: res.__setitem__("lead", _capture(lambda: run_heavy("K", leader_compute)))
     )
     t_lead.start()
-    assert leader_in.wait(2)
+    assert leader_in.wait(HANG_GUARD_S)
 
     res_follow = {}
 
@@ -188,8 +189,8 @@ def test_leader_error_propagates_and_is_shared_not_swallowed():
     t_follow = threading.Thread(target=_follow)
     t_follow.start()
     release.set()
-    t_lead.join(2)
-    t_follow.join(2)
+    t_lead.join(HANG_GUARD_S)
+    t_follow.join(HANG_GUARD_S)
 
     assert isinstance(res["lead"], ValueError)
     assert isinstance(res_follow["v"], ValueError), "the follower must see the leader's failure"
@@ -230,9 +231,9 @@ def test_guarded_read_maps_busy_to_429(monkeypatch):
     release = threading.Event()
 
     # Occupy the single slot with a background leader (a plain run_heavy key).
-    t = threading.Thread(target=lambda: run_heavy("held", lambda: (holding.set(), release.wait(2))))
+    t = threading.Thread(target=lambda: run_heavy("held", lambda: (holding.set(), release.wait(3 * HANG_GUARD_S))))
     t.start()
-    assert holding.wait(2)
+    assert holding.wait(HANG_GUARD_S)
 
     session = _sqlite_session()
     called = [0]
@@ -246,7 +247,7 @@ def test_guarded_read_maps_busy_to_429(monkeypatch):
     assert out == {"busy": True}
 
     release.set()
-    t.join(2)
+    t.join(HANG_GUARD_S)
 
 
 def test_guarded_read_maps_deadline_to_503_and_honors_on_timeout():
