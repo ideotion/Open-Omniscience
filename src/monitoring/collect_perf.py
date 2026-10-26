@@ -1224,8 +1224,8 @@ def window_history(limit: int | None = None) -> dict:
     """The closed governor windows the log still holds, oldest first, one compact row each, with what was kept of them.
 
     The log has one row per tick (1.5 s or longer) and the window record rides the one tick that closed a window (a window
-    is read after 240 s, so at most one tick in 160), so a diagnostics copy that keeps the newest 200 ticks, or the 17 of the
-    quick one, shows one window or none: not the staircase of permit counts and rates a pass walked, which is what says
+    is read after 240 s, so at most one tick in 160), so a diagnostics copy that keeps the newest ticks (191 in the whole copy,
+    17 in the quick one), shows one window or none: not the staircase of permit counts and rates a pass walked, which is what says
     where a machine settled and what each count paid. This reads the whole file (the cap is ``_CAP_LINES`` rows) and parses
     only the rows that closed a window.
 
