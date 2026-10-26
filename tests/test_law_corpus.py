@@ -17,7 +17,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -234,6 +234,113 @@ def test_existing_article_heals_its_language_on_a_re_ingest(db):
     assert res["status"] == "unchanged"
     db.refresh(art)
     assert art.language == "fr"  # healed even though the text itself never changed
+
+
+def _law_doc_with_text(db, **kw) -> LawDocument:
+    doc = LawDocument(jurisdiction="uk", title="Test Act", url="https://law.example/heal", latest_text=_BODY, **kw)
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+def _stamps(db, art, column) -> set:
+    return {v for (v,) in db.query(column).filter(KeywordMention.article_id == art.id)}
+
+
+def _indexed_while_carrying_a_poll_date(db, doc, when: datetime) -> Article:
+    """The state the heal exists for: a law article indexed while its `published_at` was still
+    the date WE polled the page (the pre-2026-08-07 behaviour), so its mentions carry that day."""
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.store import index_article
+    from src.law.corpus import upsert_law_corpus_article
+
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    art.published_at = when
+    db.commit()
+    index_article(db, art, extractor=BaselineExtractor())
+    return art
+
+
+def test_the_publication_date_heal_re_stamps_the_mentions_it_moved(db):
+    """0.5.1 item 39: the heal cleared `published_at` and committed, but the mentions keep the
+    day stamped when they were indexed, so the article sat in one period by its own clock
+    (`published_at or created_at`) and in another by every reader of `observed_on`."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    art = _indexed_while_carrying_a_poll_date(db, doc, datetime(2020, 5, 1))
+    assert _stamps(db, art, KeywordMention.observed_on) == {date(2020, 5, 1)}  # the state under repair
+
+    res = upsert_law_corpus_article(db, doc=doc)  # same text: the heal path
+
+    assert res["status"] == "unchanged"  # the text did not change; the stamps were redone
+    assert res["healed"] is True
+    assert res["mentions"] > 0
+    db.refresh(art)
+    assert art.published_at is None
+    assert _stamps(db, art, KeywordMention.observed_on) == {art.created_at.date()}
+
+
+def test_the_language_heal_re_stamps_the_mention_language(db):
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert _stamps(db, art, KeywordMention.language) == {"en"}  # indexed before the catalog stated one: the deduced language
+
+    doc.language = "fr"
+    db.commit()
+    res = upsert_law_corpus_article(db, doc=doc)
+
+    assert res["healed"] is True
+    assert _stamps(db, art, KeywordMention.language) == {"fr"}
+
+
+def test_an_article_with_nothing_to_heal_is_not_re_indexed(db, monkeypatch):
+    """The re-index is for a heal only: the steady state (the same text, nothing to correct) must
+    not pay an extraction per law on every pass."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+
+    def no_index(*_a, **_k):
+        raise AssertionError("an unchanged, already healed law article was re-indexed")
+
+    monkeypatch.setattr("src.analytics.store.index_article", no_index)
+    res = upsert_law_corpus_article(db, doc=doc)
+    assert res["status"] == "unchanged" and "healed" not in res
+
+
+def test_a_failed_re_index_leaves_the_heal_to_be_done_again(db, monkeypatch):
+    """The heal and its re-index commit together. Were the column committed first, a re-index
+    that failed (a lock, a full disk) would leave the next call nothing to heal, and the poll
+    date would stay stamped on the mentions for good."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    art = _indexed_while_carrying_a_poll_date(db, doc, datetime(2020, 5, 1))
+
+    real = __import__("src.analytics.store", fromlist=["index_article"]).index_article
+
+    def boom(*_a, **_k):
+        raise RuntimeError("index_article exploded")
+
+    monkeypatch.setattr("src.analytics.store.index_article", boom)
+    with pytest.raises(RuntimeError, match="exploded"):
+        upsert_law_corpus_article(db, doc=doc)
+    db.rollback()  # what sync_watched_laws does with a failed document
+    db.refresh(art)
+    assert art.published_at == datetime(2020, 5, 1)  # not committed alone
+    assert _stamps(db, art, KeywordMention.observed_on) == {date(2020, 5, 1)}
+
+    monkeypatch.setattr("src.analytics.store.index_article", real)
+    res = upsert_law_corpus_article(db, doc=doc)  # the next pass
+    assert res["healed"] is True
+    db.refresh(art)
+    assert _stamps(db, art, KeywordMention.observed_on) == {art.created_at.date()}
 
 
 def test_unchanged_refetch_does_not_duplicate_the_article(db):
