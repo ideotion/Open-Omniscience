@@ -655,6 +655,7 @@ def test_a_deferred_powershell_row_is_never_in_the_childs_command_line(tmp_path)
 
 
 @posix_only
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="the holder's own pid is read from /proc here; macOS has none")
 def test_the_mkdir_lock_records_the_pid_of_the_shell_holding_it_without_bashpid(tmp_path):
     """macOS ships bash 3.2, which has no BASHPID: `${BASHPID:-$$}` then recorded the LAUNCHER's pid for a lock held by its deferred child, so a second launcher
     saw the launcher exit and took a lock over that the child still held. The recorded pid is the holder's own, with and without BASHPID."""
@@ -692,3 +693,34 @@ def test_a_takeover_does_not_carry_off_a_lock_a_live_launcher_made_between_the_r
         live.kill()
         live.wait()
     assert _wait_for(lambda: {"pid": 5} in _rows(f)[0], 30), "the deferred row lands once the live holder is gone"
+
+
+@posix_only
+@pytest.mark.parametrize("case", ["empty", "remade"])
+def test_a_takeover_puts_back_a_lock_whose_owner_has_not_written_its_pid_yet_and_never_nests_it(tmp_path, case):
+    """Opus read: a live launcher that has made the lock directory and not yet written its pid reads as an empty owner; the takeover that moved it used to delete it.
+    And a lock made again while the moved one is held must not have the moved one nested inside it."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / f"{case}.jsonl"
+    _seed(f, 3)
+    lock = tmp_path / f"{case}.jsonl.lock.d"
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock.mkdir()
+    (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
+    shadow = (f': > "{lock}/pid"' if case == "empty" else f'command mv "{lock}" "{lock}.stash"; mkdir "{lock}"; sleep 100 & printf "%s\\n" $! > "{lock}/pid"')
+    script = f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; mv() {{ {shadow}; command mv "$@"; }}; oo_rec_append "{f}" \'{{"pid":6}}\' 0 0'
+    subprocess.run(["bash", "-c", script], env=env, check=True, timeout=30)
+    try:
+        assert lock.is_dir(), "the lock a launcher made in between is still there"
+        assert not list(lock.glob("*.dead.*")), "the moved lock was not nested inside it"
+        assert not list(tmp_path.glob(f"{case}.jsonl.lock.d.dead.*")), "and none was left behind"
+        assert {"pid": 6} not in _rows(f)[0], "nothing was written under a lock somebody else holds"
+    finally:
+        pidfile = lock / "pid"
+        held = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
+        if held.isdigit():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int(held), signal.SIGKILL)
+        subprocess.run(["rm", "-rf", str(lock), str(lock) + ".stash"])
+    assert _wait_for(lambda: {"pid": 6} in _rows(f)[0], 30), "the deferred row lands once that lock is gone"

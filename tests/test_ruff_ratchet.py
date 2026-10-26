@@ -20,6 +20,7 @@ nobody touched -- the recorded mypy-pin failure, bought a second time.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -88,6 +89,7 @@ def test_the_failure_message_names_the_ruff_version(monkeypatch, capsys):
     assert "ruff 9.9.9" in err and "may only be lowered" in err
 
 
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="ruff is not installed in this interpreter (the dev extra); the script refuses to count without it")
 def test_it_counts_findings_not_output_lines():
     """``ruff check`` prints two SUMMARY lines after the findings ("Found N errors",
     "[*] N fixable"), so a ``wc -l`` implementation over-reports by two and drifts the

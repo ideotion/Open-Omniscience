@@ -166,14 +166,16 @@ oo_rec_locked() {
         # the owner is gone: the lock is taken over. mv is atomic, so of two launchers taking it over only one moves it.
         if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
             # Between reading the owner and the mv the dead owner's lock may have been released and made again by a LIVE launcher: the mv would then carry off a lock
-            # that is held. So what was moved is read again, and a lock whose owner is not the one judged dead is put back (it cannot be, if a third launcher has
-            # made the lock again in that instant; that window is the width of two commands, not of the read-to-mv gap).
+            # that is held. So what was moved is read again, and a lock whose owner is not the one judged dead is put back, an empty pid file included (a launcher that
+            # has made the directory and not yet written its pid). A dead but different pid put back is harmless: the next pass takes it over. The put-back is made only
+            # while no lock stands (mv into an existing directory would nest the moved one inside it), and a lock made again in the instant between the test and the
+            # mv is the width of two commands, not of the read-to-mv gap.
             if mv "$d" "$d.dead.$$" 2>/dev/null; then
                 moved="$(cat "$d.dead.$$/pid" 2>/dev/null || true)"
-                if [ "$moved" != "$owner" ] && [ -n "$moved" ] && oo_pid_alive "$moved" 2>/dev/null; then
-                    mv "$d.dead.$$" "$d" 2>/dev/null || rm -rf "$d.dead.$$" 2>/dev/null
+                if [ "$moved" != "$owner" ] && [ ! -e "$d" ] && mv "$d.dead.$$" "$d" 2>/dev/null; then
+                    rm -rf "$d/${d##*/}.dead.$$" 2>/dev/null || true
                 else
-                    rm -rf "$d.dead.$$" 2>/dev/null
+                    rm -rf "$d.dead.$$" 2>/dev/null || true
                 fi
             fi
         fi
