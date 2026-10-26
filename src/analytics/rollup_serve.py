@@ -161,8 +161,8 @@ def serve_enabled() -> bool:
         return False
     from src.analytics import columnar
 
-    if not columnar.duckdb_available():
-        return False
+    if not columnar.duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
+        return False  # the engine itself is off (``columnar.open_store`` answers "off"): a build could only report "built" with no rollup
     if serve_mode() == "forced-on":
         return True
     # S1.1: below the RAM floor the in-memory rollup is OFF BY DEFAULT. It is a
@@ -373,7 +373,7 @@ def _build_inmemory_and_swap() -> dict | None:
         raise
     if con is None:
         _remove_spill(spill)
-        return None
+        return {"reason": ENGINE_OFF, "at": time.time()}  # NOT None: None means "built and swapped in" (the engine is off, nothing was built)
     r = _readings()
     ok = False
     _progress_begin()
@@ -481,10 +481,21 @@ def columnar_batch_mb() -> float:
     return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
 
 
+#: Why the last persisted refresh declined (a code from ``columnar.OpenedStore`` or "no-passphrase"/"no-secure-backend"/"engine-off"); read and
+#: cleared by the dispatcher, which puts it in ``last_skip``. A code, never an exception's text.
+_PERSISTED_DECLINE: dict = {"why": None}
+
+
+def _persisted_declined(why: str) -> bool:
+    _PERSISTED_DECLINE["why"] = why
+    return False
+
+
 def _refresh_persisted_build() -> bool | None:
-    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined before opening the store -- the
-    passphrase or the secure backend is gone since the dispatcher chose this path, or the engine gave no connection at all -- so nothing was refreshed
-    and the caller must not report a build nor release a hold; any other return means the refresh ran.
+    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined: the
+    passphrase or the secure backend is gone since the dispatcher chose this path, the engine is off, or the opener handed back an in-memory store
+    instead of the persisted one (``_PERSISTED_DECLINE`` says which) -- so nothing was refreshed and the caller must not report a build nor release
+    a hold; any other return means the refresh ran.
 
     A SINGLE connection is held for the process -- the columnar store's ATTACH open REJECTS a
     second in-process handle to the same file ("Unique file handle conflict"), so the in-memory
@@ -508,15 +519,26 @@ def _refresh_persisted_build() -> bool | None:
         con = _STATE["con"] if _STATE["persisted"] else None
     opened_now = con is None
     if opened_now:
-        # The dispatcher chose this path a moment ago; the passphrase is read ONCE here and the connect is not made without it, because
-        # ``columnar.connect`` given no passphrase (or no secure backend) hands back an IN-MEMORY connection, which this function would then
-        # record as the persisted store (``_STATE["persisted"] = True``) and report as built.
+        # The dispatcher chose this path a moment ago. The passphrase is read ONCE here and nothing is opened without it: ``columnar.open_store``
+        # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
         passphrase = _persist_passphrase()
-        if not passphrase or not columnar.secure_crypto_available():
-            return False  # gone since the verdict: the next kick takes the in-memory path (``_persisted_serve_active`` reads the same two things)
-        con = columnar.connect(passphrase=passphrase)  # opens the persisted file
+        if not passphrase:
+            return _persisted_declined("no-passphrase")  # gone since the verdict: the next kick takes the in-memory path
+        if not columnar.secure_crypto_available():
+            return _persisted_declined("no-secure-backend")
+        opened = columnar.open_store(passphrase)  # opens the persisted file; the opener REPORTS which store it opened
+        con = opened.con
+        if opened.kind != "persisted":
+            # An in-memory store was handed back (the encryption gate failed, or the persisted open raised) or the engine is off: not the store
+            # this function maintains, so it is closed, not recorded, and the call declines.
+            if con is not None:
+                try:
+                    con.close()
+                except Exception:  # noqa: BLE001 - closing a store that is not wanted must not turn a decline into a failure
+                    pass
+            return _persisted_declined(opened.fallback_reason or "engine-off")
     if con is None:
-        return False  # the engine itself is off (``OO_COLUMNAR=0``, or DuckDB missing)
+        return _persisted_declined("engine-off")  # a store cached in ``_STATE`` is never None here; this narrows the type and refuses the impossible
     try:
         with session_scope() as s:
             token = serve_gate.change_token(s)
@@ -682,6 +704,9 @@ _COUNT_MIN_INTERVAL_S = 60.0
 #: The reasons of a hold released by what changes the WALL (a larger limit, offload allowed, a smaller corpus, another version): the build ran into the
 #: engine's limit, or ended in an error of its own (R172). One rule for both, so a build that fails is not started again by the very next request.
 _WALL_REASONS = ("duckdb-limit", "build-failed")
+
+#: The in-memory build's answer when the engine is off (``OO_COLUMNAR=0``): a setting, not a stop, so no hold is kept for it.
+ENGINE_OFF = "engine-off"
 
 #: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
 #: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
@@ -1229,8 +1254,10 @@ def _build_and_swap() -> str:
                 # The refresh declined before opening the store (the passphrase or the secure backend went away between the verdict and here, so
                 # the next kick takes the in-memory path): no build ran, so this is neither "built" nor the end of a failure run -- a hold an
                 # earlier failed refresh kept stands.
+                why, _PERSISTED_DECLINE["why"] = _PERSISTED_DECLINE["why"], None
                 with _LOCK:
-                    _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted"}
+                    _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted",
+                                           **({"why": why} if why else {})}
                 ran = False
                 outcome = "declined"
                 return outcome
@@ -1242,6 +1269,13 @@ def _build_and_swap() -> str:
                 # R183: another server's build is running. Not a stop: no hold is kept (it would refuse real builds after that server is done), no build ran.
                 with _LOCK:
                     _STATE["last_skip"] = {**stopped, "source": "last-build"}
+                ran = False
+                outcome = "declined"
+                return outcome
+            if stopped is not None and stopped.get("reason") == ENGINE_OFF:
+                # The engine is off: no build ran and none can. A setting is not a stop, so no hold is kept (it would outlive the setting).
+                with _LOCK:
+                    _STATE["last_skip"] = {**stopped, "source": "engine"}
                 ran = False
                 outcome = "declined"
                 return outcome
