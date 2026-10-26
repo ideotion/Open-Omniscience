@@ -168,17 +168,20 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: tick and covers about five minutes in 330 KB (the Lenovo bundle); the hours and days are
 #: ``vitals.json``'s, so what the bundle keeps is the last minutes of the collector itself.
 #: It was 20 and the whole bundle's 200 (``recent_samples``' default); each gave up the ticks that pay for the window rows
-#: below: a window row is at most 401 bytes at its widest shape (377 was the largest the 18 Oct lab runs wrote; the test pins
-#: the widest) and a tick row at least 1,650 (the Lenovo bundle's 330 KB over 200), so 12 windows (4,812 B) cost 3 ticks
-#: (4,950 B) and 31 windows (12,431 B) cost 8 (13,200 B).
+#: below. The budget is serialised bytes of the largest shape: a window row at its widest and a tick row at its least, both
+#: built by tests/test_collect_perf_window_history.py from the real writers (the tick from ``CollectionMonitor._tick`` with no
+#: vitals at all, which is a supported state), plus the member's own envelope. It is uncompressed ``debug-bundle.json`` bytes. Deflated,
+#: a tick row compresses better than a window row (its sentences repeat), and a review measured the slim copy about 700 B
+#: larger of about 2 KB: the claim is "net zero before compression", not "the zip is the same size".
 _DEBUG_BUNDLE_SLIM_PERF_TICKS = 17
 _DEBUG_BUNDLE_PERF_TICKS = 192
 
-#: How many of the newest closed governor windows each copy keeps (``collect_perf.window_history``). A window is read only
-#: after 240 s, which is 160 ticks of 1.5 s, and the log holds 5,000 rows, so it holds at most 31 windows: the whole bundle
-#: keeps all of them. The slim one keeps the newest 12 (at least 48 minutes of a pass), the staircase of permit counts
-#: and rates that a handful of ticks cannot show.
-_DEBUG_BUNDLE_SLIM_PERF_WINDOWS = 12
+#: How many of the newest closed governor windows each copy keeps (``collect_perf.window_history``), and the member says how
+#: many the log held and whether it is partial. The count is what the ticks given up pay for, not what the log can hold: a
+#: window closes after 240 s AND 100 sources, a tick takes 1.5 s or longer, so a full 5,000-row log holds at least 31 and
+#: has no upper bound a slow machine cannot exceed. The slim copy keeps the newest 11 (at least 44 minutes of a pass), the
+#: staircase of permit counts and rates that a handful of ticks cannot show.
+_DEBUG_BUNDLE_SLIM_PERF_WINDOWS = 11
 _DEBUG_BUNDLE_PERF_WINDOWS = 31
 
 #: The storage guard's state carries the damage record whole (``database_damage``: incidents, notes, the last
