@@ -616,7 +616,8 @@
     matra is shredded and a search for सरक matches सरकार. The fix is the tokenizer option
     `categories 'L* N* Co M*'` (measured: सरकार and a vocalised مَدْرَسَةٌ each stay one token),
     but a tokenizer is fixed when the table is CREATED, so it means recreating `article_fts` and a
-    full rebuild (981–1,645 s on the field's 130 GB corpus, per `ensure_fts`'s own record) —
+    full rebuild (the one figure on record, 981–1,645 s, is the whole P0.4 unlock of 2026-07-09 with no
+    split by phase, on a database of 11.7 GB for the first export; the rebuild alone was never timed) —
     a migration of its own, not a side effect of S8. hi and bn are UI languages; this wants a
     ruling on when to pay that rebuild.
     **DECIDED 2026-09-28 (`R39`, «D3: a»): the rebuild is paid inside row B's storage-migration

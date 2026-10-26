@@ -2977,6 +2977,48 @@
     </section>
     </details>
 
+    <details class="adv-sec" data-adv="maintenance">
+      <summary><span class="adv-sec-t">Maintenance</span> <span class="muted">— a dry run of the quality gates, and two reports about what is stored</span></summary>
+    <section class="panel" id="maintenance-panel">
+      <h2>Maintenance</h2>
+      <p class="hint" style="margin-top:0"><span>A dry run reads every stored article against the quality gates and COUNTS what they would set aside. Nothing is written: this page starts runs that only count and sample, and applying a result is not offered here.</span>
+        <span>Everything on this page is local. No request leaves your computer, so it works in airplane mode.</span></p>
+      <p class="card-caveat">Counts are candidates under rules fitted to a few specimens. They are not an error rate and not a verdict on any source: read the samples before deciding anything.</p>
+
+      <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center;margin-top:12px">
+        <label class="row" style="gap:6px;align-items:center" title="Adds the thin-body signals: a page that is little more than a menu, or a subscriber prompt. They are counted per signal so you can read each before any later decision.">
+          <input id="maint-stubs" type="checkbox" style="width:auto"> <span>Also count stub pages (thin menus and subscriber prompts)</span></label>
+        <label class="row" style="gap:6px;align-items:center" title="Compares the site each article is stored on with its source's own site. A different site is a fact about where a page lives (a syndicated item, a redirect, a wire feed), not a verdict: nothing is marked for it. A site that cannot be read is counted separately and is never a mismatch.">
+          <input id="maint-hosts" type="checkbox" style="width:auto"> <span>Also compare each article's site with its source's site</span></label>
+      </div>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <button id="maint-start" data-on-click="maintStart(this)">Start a dry run</button>
+        <button class="secondary" id="maint-pause" style="display:none" data-on-click="maintAction('pause')">Pause</button>
+        <button class="secondary" id="maint-resume" style="display:none" data-on-click="maintAction('resume')">Resume</button>
+        <button class="secondary" id="maint-cancel" style="display:none" data-on-click="maintAction('cancel')">Cancel</button>
+        <span id="maint-msg" class="hint"></span>
+      </div>
+      <div id="maint-run" style="margin-top:10px" class="hint">Loading…</div>
+      <div id="maint-tally" style="margin-top:8px"></div>
+
+      <h3 style="margin-top:18px">Samples</h3>
+      <p class="hint" style="margin-top:0">A spot-check of what the rules picked: titles and addresses only, the same articles every time for the same library. A title opens the local copy.</p>
+      <div id="maint-samples" class="hint"></div>
+
+      <h3 style="margin-top:18px">Sources named by a bare identifier</h3>
+      <p class="hint" style="margin-top:0">Sources whose whole name is a Wikidata number. Nothing is renamed or marked here.</p>
+      <div id="maint-rawids" class="hint">Loading…</div>
+
+      <h3 style="margin-top:18px">Repeated lines in one source</h3>
+      <p class="hint" style="margin-top:0">Short lines that recur across one source's stored articles (menu entries, banners). A repeated line is a candidate to read, not a verdict: a recurring column title repeats too.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="maint-fsrc" type="number" min="1" style="width:9em" placeholder="Source number" aria-label="Source number">
+        <button class="secondary" data-on-click="maintLoadFurniture()">Read repeated lines</button>
+      </div>
+      <div id="maint-furniture" class="hint" style="margin-top:8px"></div>
+    </section>
+    </details>
+
     <details class="adv-sec" data-adv="stats">
       <summary><span class="adv-sec-t">Statistics producers</span> <span class="muted">— the official-statistics source directory</span></summary>
     <section class="panel">
@@ -4195,6 +4237,7 @@
   <script src="/static/app-insights.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>
+  <script src="/static/app-maintenance.js"></script>
   <script src="/static/app-diagnostics.js"></script>
   <script src="/static/app-corpus.js"></script>
   <script src="/static/app-map.js"></script>

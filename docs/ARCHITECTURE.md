@@ -245,7 +245,7 @@ the `[analysis]` extra (the app still boots without it, those endpoints disabled
 | `… /api/sources`, `/api/sources/...` | Source + group + metadata management |
 | `POST /api/sources/seed-defaults` | Seed the curated source catalogs (news + markets + generated world catalog) |
 | `GET /api/database/stats`, `/coverage`, `/countries` | Corpus row counts + on-disk size; country coverage; per-country source counts + topic keywords |
-| `GET /api/database/backup` | Consistent SQLite snapshot download (SQLite only) |
+| `GET /api/database/backup` | Consistent SQLite snapshot download (plaintext SQLite store only; refused for a request from another site or a Host the DNS-rebinding guard does not serve, one at a time per process, written to a private `.oo-backup-*` folder beside the database and removed when the download ends, 507 when the data volume cannot hold it) |
 | `POST /api/database/v2/restore/preview`, `/v2/restore/commit`, `/api/backup/v2/*` | **Additive-only** restore via the signed `oo-backup-2` artifact: preview the merge plan, then commit. Restore **never overwrites your corpus** — it merges duplicate-lessly, keeping local values on conflict (the destructive replace path was removed on 2026-06-13) |
 | `GET/PUT /api/settings` | GUI preferences (theme, default result limit) |
 | `… /api/scheduler/...` | Background collection: status, start, stop, run-now, config. Since the `0.4` cycle collection runs as **lanes side by side** (`rss` / `crawl` / `markets` / `wiki` / `law`), not one scheduler mode — per-lane storage under `… /api/storage/...`, and the **Living sources** tab reads `… /api/living/...` (what changed in Wikipedia, law and maps) |

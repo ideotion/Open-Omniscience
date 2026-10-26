@@ -63,6 +63,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateIndex, DropIndex
 
 from src.monitoring.secret_scrub import log_failure
+from src.utils.interrupts import kept
 
 _LOG = logging.getLogger(__name__)
 
@@ -339,7 +340,7 @@ def heal_bulk_build(engine: Engine) -> list[str]:
             return []
         created = _rebuild_missing(session, planned)
         conn = session.connection()
-        if not [n for n in planned if n not in _existing_indexes(conn)]:
+        if not kept(planned, lambda n: n not in _existing_indexes(conn)):  # a frame of its own: src/utils/interrupts.py
             close_state(session)
         if created:
             _LOG.warning(

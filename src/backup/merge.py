@@ -64,6 +64,7 @@ from src.monitoring.secret_scrub import (
     unicode_note,
 )
 from src.paths import data_dir
+from src.utils.interrupts import kept
 
 _LOG = logging.getLogger("backup.merge")
 
@@ -1342,8 +1343,9 @@ def _fts_index_merged_articles(
             # the insert trigger applies, and the mask recorded, so a later delete of a
             # merged article hands FTS5 exactly what was indexed.
             index_articles(con, chunk)
-            if progress is not None:
-                progress["done"] = min(i + len(chunk), len(ids))
+            if progress is None:  # a guard clause keeps the loop's back-edge inside the try (src/utils/interrupts.py)
+                continue
+            progress["done"] = min(i + len(chunk), len(ids))
     finally:
         # Restore the defaults whatever happened, so a corpus is never left with
         # automerge disabled or an outsized hash budget -- either would change
@@ -5702,16 +5704,23 @@ def _merge_side_files_and_custody(staged: StagedArtifact, report: dict) -> None:
         report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
 
 
+def _ids_after(all_ids: list[int], after: int) -> list[int]:
+    """The ids above ``after``. A function of its own, not a comprehension in ``reindex_imported_articles``: the list is long (a corpus), so a call per
+    item (``kept``) would cost, and a comprehension in a caller's frame leaves its back-edge outside the caller's ``try`` (src/utils/interrupts.py)."""
+    return [i for i in all_ids if i > after]
+
+
 def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
     """The body of the ``report_json_write`` stage — extracted for the same reason
     as :func:`_merge_side_files_and_custody`, and used by both paths."""
     from src.database.connect import connect as db_connect
 
+    body = json.dumps({k: v for k, v in report.items() if k != "plan"})  # before the connection: a comprehension under the try is the shape this avoids
     con = db_connect(working, check_same_thread=False)
     try:
         con.execute(
             "UPDATE main.merge_batches SET report_json = ? WHERE id = ?",
-            (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
+            (body, batch_id),
         )
         con.commit()
     finally:
@@ -5774,8 +5783,8 @@ def _carry_live_settings(working: Path) -> dict:
             def is_history_key(key: str) -> bool:  # noqa: ARG001
                 return False
 
-        settings = [r for r in rows if str(r[0]).startswith(_CARRIED_SETTINGS_KEYS) or is_history_key(str(r[0]))]
-        others = [r for r in rows if r not in settings]
+        settings = kept(rows, lambda r: str(r[0]).startswith(_CARRIED_SETTINGS_KEYS) or is_history_key(str(r[0])))
+        others = kept(rows, lambda r: r not in settings)
         if not rows:
             return {"carried": 0, "of": 0}
         dst = db_connect(working, check_same_thread=False)
@@ -5785,7 +5794,7 @@ def _carry_live_settings(working: Path) -> dict:
                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)"
             )
             have = {r[0]: r[1] for r in dst.execute("SELECT key, value FROM app_state")}
-            changed = [r for r in settings if have.get(r[0]) != r[1]]
+            changed = kept(settings, lambda r: have.get(r[0]) != r[1])
             for key, value, updated_at in changed:
                 dst.execute(
                     "INSERT INTO main.app_state (key, value, updated_at) VALUES (?, ?, ?) "
@@ -7143,7 +7152,7 @@ def reindex_imported_articles(
         # id at or below it is already re-indexed. A missing/foreign watermark simply
         # starts from the top -- correct, only slower (the re-index is idempotent).
         resume_after = _load_reindex_cursor(batch_id)
-        ids = [i for i in all_ids if i > resume_after] if resume_after is not None else all_ids
+        ids = _ids_after(all_ids, resume_after) if resume_after is not None else all_ids
         already = len(all_ids) - len(ids)
 
         # "Did this resume or start over?" -- answered from the artefact, with the
@@ -7250,11 +7259,13 @@ def _meminfo_mb(*keys: str) -> dict[str, int]:
         with open("/proc/meminfo", encoding="utf-8") as f:
             for line in f:
                 name, _, rest = line.partition(":")
-                if name in want:
-                    # "MemAvailable:   10261176 kB"
-                    out[name] = int(rest.split()[0]) // 1024
-                    if len(out) == len(want):
-                        break
+                if name not in want:  # guard clauses keep the loop's back-edge inside the ``with`` (src/utils/interrupts.py)
+                    continue
+                # "MemAvailable:   10261176 kB"
+                out[name] = int(rest.split()[0]) // 1024
+                if len(out) < len(want):
+                    continue
+                break
     except (OSError, ValueError, IndexError):
         return {}
     return out
