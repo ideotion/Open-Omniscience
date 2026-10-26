@@ -31,9 +31,11 @@ def _isolated(monkeypatch, tmp_path):
                                last_skip=None, persisted=False, built_at=0.0, bind=None)
     monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", False)
     rollup_serve._PERSISTED_DECLINE["why"] = None
+    rollup_serve._PERSISTED_FELL_BACK["why"] = None
     yield
     rollup_serve._STATE.update(keep)
     rollup_serve._PERSISTED_DECLINE["why"] = None
+    rollup_serve._PERSISTED_FELL_BACK["why"] = None
 
 
 class _Con:
@@ -120,20 +122,88 @@ def test_the_persisted_refresh_closes_an_in_memory_store_it_was_handed_and_recor
     assert rollup_serve._PERSISTED_DECLINE["why"] == fallback
 
 
-def test_the_dispatcher_puts_the_fallback_code_in_last_skip(monkeypatch):
-    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)
+def _kick_ready(monkeypatch, *, fallback):
+    """A dispatcher whose verdicts all pass and whose persisted opener answers ``fallback``; returns the list of in-memory builds started."""
+    builds: list = []
     monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: "pw")
     monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
-    monkeypatch.setattr(columnar, "open_store", lambda *a, **k: columnar.OpenedStore(_Con(), "memory", "encryption-gate-failed"))
+    monkeypatch.setattr(columnar, "open_store", lambda *a, **k: columnar.OpenedStore(_Con(), "memory", fallback))
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", lambda: builds.append(1))
     for name in ("_boot_order_verdict", "_affordability_verdict", "_memory_verdict", "_last_build_verdict"):
         monkeypatch.setattr(rollup_serve, name, lambda: None)
     monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
     monkeypatch.setattr(rollup_serve, "serve_enabled", lambda: True)
+    return builds
+
+
+def _kick():
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
-    assert rollup_serve._build_and_swap() == "declined"
+    return rollup_serve._build_and_swap()
+
+
+@pytest.mark.parametrize("fallback", ["encryption-gate-failed", "persisted-open-failed"])
+def test_a_persisted_open_that_fell_back_builds_in_memory_in_the_same_kick_and_says_why(monkeypatch, fallback):
+    builds = _kick_ready(monkeypatch, fallback=fallback)
+    assert _kick() == "built"
+    assert builds == [1], "the in-memory build did not run: every kick would decline and the rollup would never be served"
     skip = rollup_serve._STATE["last_skip"]
-    assert skip["reason"] == "persisted-unavailable" and skip["why"] == "encryption-gate-failed"
+    assert skip["reason"] == "persisted-unavailable" and skip["why"] == fallback and skip["source"] == "persisted"
     assert rollup_serve._PERSISTED_DECLINE["why"] is None, "the code is read once and cleared"
+    assert rollup_serve._PERSISTED_FELL_BACK["why"] == fallback
+
+
+def test_after_a_fallback_the_process_serves_in_memory_and_does_not_retry_the_persisted_open(monkeypatch):
+    builds = _kick_ready(monkeypatch, fallback="persisted-open-failed")
+    opens: list = []
+    monkeypatch.setattr(columnar, "open_store", lambda *a, **k: (opens.append(1), columnar.OpenedStore(_Con(), "memory", "persisted-open-failed"))[1])
+    assert _kick() == "built"
+    assert rollup_serve._persisted_serve_active() is False, "the verdicts must read the in-memory holds the fallback build keeps"
+    assert _kick() == "built"
+    assert len(opens) == 1 and builds == [1, 1], "the second kick went through the persisted open again"
+
+
+def test_an_in_memory_build_that_fails_after_a_fallback_keeps_the_in_memory_hold(monkeypatch):
+    _kick_ready(monkeypatch, fallback="encryption-gate-failed")
+
+    def boom():
+        raise RuntimeError("engine words that must not be kept")
+
+    monkeypatch.setattr(rollup_serve, "_build_inmemory_and_swap", boom)
+    assert _kick() == "failed"
+    held = rollup_serve._STATE["stopped"]
+    assert held["reason"] == "build-failed" and "store" not in held, "the hold is the in-memory one, not a persisted one"
+    assert rollup_serve._stopped_build_verdict() is not None, "the next verdict must see it: persisted is no longer the active store"
+
+
+@pytest.mark.parametrize("why", ["no-secure-backend", "engine-off"])
+def test_a_persisted_decline_that_is_not_a_fallback_builds_nothing(monkeypatch, why):
+    builds = _kick_ready(monkeypatch, fallback=None)
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)  # the verdict said persisted; the refresh finds it gone
+    monkeypatch.setattr(columnar, "secure_crypto_available", lambda: why != "no-secure-backend")
+    monkeypatch.setattr(columnar, "open_store", lambda *a, **k: columnar.OpenedStore(None, "off"))
+    assert _kick() == "declined"
+    assert builds == [] and rollup_serve._STATE["last_skip"]["why"] == why
+    assert rollup_serve._PERSISTED_FELL_BACK["why"] is None
+
+
+def test_the_persisted_refresh_records_a_store_the_opener_says_is_persisted(monkeypatch):
+    """Negative space for the declines: the success path still records the persisted store (a refresh that always declined would pass every test above)."""
+    import duckdb
+
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE TABLE keyword_daily(keyword VARCHAR, day DATE, n INTEGER)")
+    monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: "pw")
+    monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
+    monkeypatch.setattr(columnar, "open_store", lambda *a, **k: columnar.OpenedStore(con, "persisted"))
+    monkeypatch.setattr(columnar, "refresh_keyword_daily", lambda *a, **k: None)
+    monkeypatch.setattr("src.analytics.serve_gate.change_token", lambda _s: "t")
+    monkeypatch.setattr("src.analytics.corpus_epoch.get_corpus_epoch", lambda _s: 1)
+    try:
+        assert rollup_serve._refresh_persisted_build() is not False
+        assert rollup_serve._STATE["persisted"] is True and rollup_serve._STATE["con"] is con
+        assert rollup_serve._PERSISTED_DECLINE["why"] is None
+    finally:
+        con.close()
 
 
 def test_serve_enabled_is_false_when_the_engine_is_off_even_if_forced_on(monkeypatch):

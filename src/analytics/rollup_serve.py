@@ -191,6 +191,12 @@ def _persist_passphrase() -> str | None:
         return None
 
 
+#: Set (to the code) when a persisted open fell back to memory (``_PERSISTED_FALLBACK_WHY``): from then on THIS process serves from the in-memory
+#: store and keeps its holds, so a failing persisted open is not retried by every kick and an in-memory stop is not invisible to a verdict that
+#: still believed the persisted store was active. A restart tries the persisted open once more.
+_PERSISTED_FELL_BACK: dict = {"why": None}
+
+
 def _persisted_serve_active() -> bool:
     """True when the served rollup should use the PERSISTED encrypted DuckDB store (D1): the
     secure crypto backend is bundled+verified (``secure_crypto_available``) AND the corpus
@@ -200,6 +206,8 @@ def _persisted_serve_active() -> bool:
     bundled, so this returns False and the serve stays in-memory (byte-unchanged)."""
     from src.analytics import columnar
 
+    if _PERSISTED_FELL_BACK["why"] is not None:
+        return False  # the opener already fell back to memory in this process: the served store is the in-memory one, with the in-memory holds
     return bool(_persist_passphrase()) and columnar.secure_crypto_available()
 
 
@@ -481,6 +489,9 @@ def columnar_batch_mb() -> float:
     return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
 
 
+#: The decline codes that mean "a store was opened, but in memory": the dispatcher builds in memory in the same kick (``columnar.OpenedStore.fallback_reason``).
+_PERSISTED_FALLBACK_WHY = frozenset({"encryption-gate-failed", "persisted-open-failed"})
+
 #: Why the last persisted refresh declined (a code from ``columnar.OpenedStore`` or "no-passphrase"/"no-secure-backend"/"engine-off"); read and
 #: cleared by the dispatcher, which puts it in ``last_skip``. A code, never an exception's text.
 _PERSISTED_DECLINE: dict = {"why": None}
@@ -523,7 +534,7 @@ def _refresh_persisted_build() -> bool | None:
         # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
         passphrase = _persist_passphrase()
         if not passphrase:
-            return _persisted_declined("no-passphrase")  # gone since the verdict: the next kick takes the in-memory path
+            return _persisted_declined("no-passphrase")  # gone since the verdict: declined; the next verdict re-reads the setting
         if not columnar.secure_crypto_available():
             return _persisted_declined("no-secure-backend")
         opened = columnar.open_store(passphrase)  # opens the persisted file; the opener REPORTS which store it opened
@@ -1251,17 +1262,24 @@ def _build_and_swap() -> str:
         persisted_run = _persisted_serve_active()
         if persisted_run:
             if _refresh_persisted_build() is False:
-                # The refresh declined before opening the store (the passphrase or the secure backend went away between the verdict and here, so
-                # the next kick takes the in-memory path): no build ran, so this is neither "built" nor the end of a failure run -- a hold an
-                # earlier failed refresh kept stands.
+                # The refresh declined before it could maintain the persisted store: no persisted build ran, so this is neither "built" nor the
+                # end of a failure run -- a hold an earlier failed refresh kept stands.
                 why, _PERSISTED_DECLINE["why"] = _PERSISTED_DECLINE["why"], None
                 with _LOCK:
                     _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted",
                                            **({"why": why} if why else {})}
-                ran = False
-                outcome = "declined"
-                return outcome
-        else:
+                if why in _PERSISTED_FALLBACK_WHY:
+                    # The opener fell back to memory (the encryption gate failed, or the persisted open raised): the in-memory build below serves in
+                    # this same kick, so a persisted store that cannot open does not leave the keyword rollup unserved. The build that runs is an
+                    # in-memory one, so a failure or stop it hits keeps the in-memory hold; the latch makes the later verdicts read that hold.
+                    _PERSISTED_FELL_BACK["why"] = why
+                    persisted_run = False
+                else:
+                    # No passphrase, no secure backend or the engine is off: nothing to build in memory for the persisted path this kick.
+                    ran = False
+                    outcome = "declined"
+                    return outcome
+        if not persisted_run:
             stopped = _build_inmemory_and_swap()
             from src.analytics import rollup_marker
 

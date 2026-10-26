@@ -654,8 +654,10 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
     """Open the derived columnar engine — a persisted ENCRYPTED store when that is
     securely possible offline, else an in-memory store. NEVER a plaintext file on disk.
 
-    Returns a DuckDB connection, or ``None`` when the engine is unavailable (duckdb
-    absent / ``OO_COLUMNAR=0``) so the caller falls back to the live query. The returned
+    Returns an :class:`OpenedStore`: ``kind`` says which store ``con`` is (``persisted``,
+    ``memory`` or ``off``, the last with ``con`` None when duckdb is absent / ``OO_COLUMNAR=0``
+    so the caller falls back to the live query), and ``fallback_reason`` is a code when a
+    persisted store was asked for and an in-memory one was opened instead. The returned
     connection's working schema lives in the attached encrypted database ``oo`` when
     persisted, or the default in-memory catalog when not.
 
