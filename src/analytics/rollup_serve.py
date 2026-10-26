@@ -218,6 +218,7 @@ def status() -> dict:
         last_decline = dict(_STATE["last_decline"]) if _STATE["last_decline"] else None
         last_build = dict(_STATE["last_build"]) if _STATE.get("last_build") else None
         last_outcome = _STATE.get("last_outcome")
+        outcome_restored = bool(_STATE.get("last_outcome_restored"))
     failures, failure_class = _failure_view()
     out = {
         "enabled": serve_enabled(),
@@ -262,6 +263,8 @@ def status() -> dict:
     # exception CLASS NAME of the last failure (never its text). The ``stage`` of a failure hold is the LAST REPORTED stage, not the raising statement.
     if failures > 0:
         out["last_outcome"] = last_outcome
+        if outcome_restored:
+            out["last_outcome_restored"] = True  # present only when the outcome is the kept record's, from an earlier process
         out["consecutive_failures"] = failures
         out["last_failure_class"] = failure_class
     return out
@@ -729,6 +732,11 @@ def _read_kept_stop() -> dict | None:
         with _LOCK:
             if isinstance(n, int) and n > int(_STATE.get("failures") or 0):
                 _STATE["failures"], _STATE["failure_class"] = n, kept.get("engine_error_class")
+                # The run of failures came from the record, so the build that ended the last run did too: without this the status
+                # said ``consecutive_failures: 3`` beside ``last_outcome: null`` until this process built something. Marked as
+                # restored, because it is an earlier process's outcome (a build of THIS process replaces it and clears the mark).
+                if _STATE.get("last_outcome") is None:
+                    _STATE["last_outcome"], _STATE["last_outcome_restored"] = "failed", True
         return None
     with _LOCK:
         if _STATE.get("stopped") is None:
@@ -1273,6 +1281,7 @@ def _build_and_swap() -> str:
         if ran or outcome == "failed":  # a request the hold refuses ran no build: the field says how the last build that ENDED ended
             with _LOCK:
                 _STATE["last_outcome"] = outcome
+                _STATE.pop("last_outcome_restored", None)
         _BUILD_LOCK.release()
 
 
