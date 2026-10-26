@@ -14,10 +14,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.api import commodity
 from src.api.main import app
 from src.database.models import Base, CommodityPrice
 from src.database.session import get_db
+
+# the commodity router imports scipy (the [analysis] extra); a core install skips this file
+pytest.importorskip("scipy", reason="the commodity router needs the [analysis] extra")
+from src.api import commodity  # noqa: E402
 
 _CSV = "date,price\n2024-01-01,10.5\n2024-01-02,11.0\n"
 
