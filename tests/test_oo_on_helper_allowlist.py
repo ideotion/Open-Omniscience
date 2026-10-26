@@ -34,9 +34,12 @@ _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
 _OO_ON = (_STATIC / "oo-on.js").read_text(encoding="utf-8")
 
-# The verbs that erase, remove or stop something. A name carries one when a camelCase word of it is one.
+# The verbs that erase, remove, pause or stop something. A name carries one when a camelCase word of it is one.
 _VERBS = frozenset(
-    {"delete", "remove", "reset", "disable", "cancel", "exclude", "clear", "erase", "wipe", "purge", "uninstall", "shutdown", "panic", "secure"}
+    {
+        "delete", "remove", "reset", "disable", "cancel", "exclude", "clear", "erase", "wipe", "purge", "uninstall", "shutdown",
+        "panic", "secure", "pause", "stop", "hide", "revert",
+    }
 )
 
 # Names that carry a verb above yet touch only THIS TAB'S OWN view or this browser's own preference, and never the
@@ -47,8 +50,10 @@ _VIEW_ONLY = {
     "agExcludeBulk": "browser-local calendar-feed exclusions (localStorage)",
     "agExcludeClear": "browser-local calendar-feed exclusions (localStorage)",
     "agToggleExclude": "browser-local calendar-feed exclusions (localStorage)",
+    "bulkLlmStop": "aborts this tab's own in-flight request and hides its panel",
     "bulkJobCancel": "this tab's own queue and its own in-flight request",
     "bulkJobClearDone": "this tab's own queue list",
+    "bulkPanelHide": "hides a panel in the open view",
     "cardResetTunable": "puts a briefing-card input back to its default value, saves nothing",
     "clearIdxCompare": "empties the open comparison selection",
     "clearSrcFilters": "empties the sources filter form and reloads the list",
@@ -104,6 +109,21 @@ def test_the_verb_finder_sees_the_names_the_old_prefix_rule_missed() -> None:
         "deleteSource", "agExcludeClear", "_anClearSense", "xyzUninstallThing"
     ]
     assert _verb_names(["showTab", "loadTrends", "removedAll", "descendants"]) == []
+    # found by the read of the gesture gate itself: pause, stop, hide and revert belong in the net too
+    assert _verb_names(["kxHide", "pauseDump", "revertAllCollapse", "schedulerStop", "stopVllm"]) == [
+        "kxHide", "pauseDump", "revertAllCollapse", "schedulerStop", "stopVllm"
+    ]
+
+
+def test_the_click_only_scan_reads_single_quoted_bindings_too() -> None:
+    """excludeKeyword is bound only in single-quoted attributes; a scan that missed them could not fail for it."""
+    seen = 0
+    for text in _spa_texts().values():
+        for m in re.finditer(r"""data-on-([a-z]+)=(?:"([^"\n]*)"|'([^'\n]*)')""", text):
+            if re.search(r"\bexcludeKeyword\(", m.group(2) or m.group(3) or ""):
+                assert m.group(1) == "click"
+                seen += 1
+    assert seen >= 2
 
 
 def test_every_destructive_name_confirms_in_its_own_body_or_is_gesture_only() -> None:
@@ -132,7 +152,7 @@ def test_the_view_only_list_names_real_verb_actions_that_still_make_no_mutating_
     assert not dead, f"on the view-only list but not a verb-named allowlisted action (dead entry): {dead}"
     assert not set(_VIEW_ONLY) & gesture, f"both gesture-only and view-only: {sorted(set(_VIEW_ONLY) & gesture)}"
     assert all(reason.strip() for reason in _VIEW_ONLY.values())
-    mutating = [n for n in sorted(_VIEW_ONLY) if re.search(r"method\s*:\s*[\"'](POST|PUT|DELETE|PATCH)[\"']", function_body(js, n))]
+    mutating = [n for n in sorted(_VIEW_ONLY) if re.search(r"[\"']?method[\"']?\s*:\s*[\"'](POST|PUT|DELETE|PATCH)[\"']", function_body(js, n))]
     assert not mutating, f"view-only names that now make a mutating request: {mutating}"
 
 
@@ -141,9 +161,10 @@ def test_a_gesture_only_name_is_bound_only_to_click_events() -> None:
     gesture = _set_literal("GESTURE_ONLY")
     bad = []
     for fname, text in _spa_texts().items():
-        for m in re.finditer(r'data-on-([a-z]+)="([^"\n]*)', text):
+        # both quote styles: a single-quoted attribute (excludeKeyword's two bindings) is as live as a double-quoted one
+        for m in re.finditer(r"""data-on-([a-z]+)=(?:"([^"\n]*)"|'([^'\n]*)')""", text):
             for name in gesture:
-                if re.search(rf"\b{name}\(", m.group(2)) and m.group(1) != "click":
+                if re.search(rf"\b{name}\(", m.group(2) or m.group(3) or "") and m.group(1) != "click":
                     bad.append((fname, m.group(1), name))
     assert not bad, bad
 
