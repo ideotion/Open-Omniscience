@@ -326,6 +326,24 @@ def test_oo_allowed_hosts_names_are_accepted_as_an_origin_and_still_port_checked
     assert _from(client, origin="http://evil.example:8000", host=host).status_code == 403
 
 
+def test_a_tls_proxy_that_forwards_the_scheme_is_the_documented_route(client, monkeypatch):
+    """docs/SECURITY.md: behind a reverse proxy that terminates TLS the effective ports must still agree. uvicorn rewrites the
+    request's scheme from ``X-Forwarded-Proto`` (from 127.0.0.1 / ::1 by default); here the scheme is set the way the client's
+    base URL sets it. ``https`` + ``Origin: https://<name>`` is port 443 on both sides; a proxy that hides the scheme leaves
+    ``http`` (port 80) against an https Origin (port 443), which is refused."""
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "myhost.lan")
+    from src.api.main import app
+
+    behind_proxy = TestClient(app, base_url="https://myhost.lan")  # no ``with``: the fixture's client already ran the lifespan
+    assert behind_proxy.post("/api/briefing/refresh", headers={"Origin": "https://myhost.lan"}).status_code == 200
+    scheme_hidden = TestClient(app, base_url="http://myhost.lan")
+    r = scheme_hidden.post("/api/briefing/refresh", headers={"Origin": "https://myhost.lan"})
+    assert r.status_code == 403 and "Cross-origin" in r.json()["detail"]
+    # the name must still be one the operator listed
+    monkeypatch.delenv("OO_ALLOWED_HOSTS")
+    assert behind_proxy.post("/api/briefing/refresh", headers={"Origin": "https://myhost.lan"}).status_code in (403, 421)
+
+
 def test_the_two_readers_agree_on_odd_values():
     from src.api.main import _host_header_parts, _origin_parts
 

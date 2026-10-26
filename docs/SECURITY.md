@@ -396,7 +396,13 @@ down is a RECORD of that date and carries its own disposition table.)*
 - **The local API.** A state-changing request whose `Origin` (or `Referer`, when no `Origin` is
   sent) does not name this server is refused (403): it must carry the same hostname and the same
   port as the `Host` header, so another web app on a different loopback port is cross-origin
-  too. A `Host` header that does not name this loopback API is refused (421, a
+  too. The hostname must EQUAL the `Host` header's, not merely be a loopback name, so a page
+  loaded from `127.0.0.1` cannot post to a server addressed as `localhost` (a browser's `Origin`
+  and `Host` come from the same URL, so real use is unaffected). Behind a reverse proxy that
+  terminates TLS the effective ports must still agree: besides `OO_ALLOWED_HOSTS` naming the public
+  hostname, the proxy must forward `Host` and `X-Forwarded-Proto` (uvicorn applies the scheme from
+  `127.0.0.1` and `::1` only, `FORWARDED_ALLOW_IPS` widens that), and a proxy that hides the scheme
+  is refused (403). A `Host` header that does not name this loopback API is refused (421, a
   DNS-rebinding guard); `OO_ALLOWED_HOSTS` (comma-separated hostnames, no port) is the escape
   hatch for serving the app under another name and widens both checks; every non-Swagger
   response carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
