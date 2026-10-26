@@ -13,6 +13,7 @@ teardown, naming it; the good order passes under both. A guard that is never see
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -63,7 +64,7 @@ def test_the_conftest_binds_the_engine_to_the_suite_directory_at_the_start_of_th
     assert Path(str(session.DATA_DIR)).resolve() == Path(conftest._SUITE_DATA_DIR).resolve()
     src = CONFTEST.read_text(encoding="utf-8")
     assert src.index(IMPORT_LINE) > src.index('os.environ.setdefault("OO_KV_STRICT_GATE_ORDER"'), "after every env default the session reads"
-    assert src.index(IMPORT_LINE) < src.index("def _the_test_process_is_not_held_to_a_core_limit"), "before the first fixture"
+    assert src.index(IMPORT_LINE) < re.search(r"def _the_test_process_is_not_held_to_a_core_limit", src).start(), "before the first fixture"
 
 
 def test_with_the_import_a_test_that_moves_the_variable_first_binds_nothing_away(tmp_path):
@@ -91,7 +92,7 @@ def test_the_net_is_an_autouse_fixture_that_looks_at_the_first_binding_only():
     """The shape the children above depend on: autouse (no test names it), and a module already imported at the test's start is left
     alone (a second binding cannot happen, and the check costs one dictionary lookup per test)."""
     src = CONFTEST.read_text(encoding="utf-8")
-    start = src.index("def _engine_binds_to_the_suite_directory")
+    start = re.search(r"def _engine_binds_to_the_suite_directory", src).start()
     assert "@pytest.fixture(autouse=True)" in src[start - 60 : start]
     body = src[start : src.index("\n@pytest.fixture", start)]
     assert 'already = "src.database.session" in sys.modules' in body and "if already:" in body
