@@ -134,6 +134,17 @@ def _required_columns_without_default(new_table: Table, old_cols: list[str]) -> 
             if c.name not in old_cols and not c.nullable and c.server_default is None and c.default is None]
 
 
+def _refuse_if_unfit(new_table: Table, cols: list[str]) -> None:
+    """Refuse, naming it, a ``sources`` whose columns the rebuild cannot carry: one this build does not know (copying only the shared
+    columns would drop it silently, and local data never gives way, R100) or one the new table needs and ``cols`` lacks."""
+    unknown = _names_not_in(cols, [c.name for c in new_table.columns])
+    if unknown:
+        raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
+    missing = _required_columns_without_default(new_table, cols)
+    if missing:
+        raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
+
+
 def _extra_schema_objects(conn: Connection) -> list[tuple[str, str]]:
     """The indexes and triggers of ``sources`` the model does not declare, to be recreated after the rebuild, for the same reason as
     :func:`_names_not_in`."""
@@ -169,6 +180,12 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
     if getattr(dbapi, "in_transaction", False):
         # Not ours to commit, and inside it the pragma below is a silent no-op.
         raise SourceIdentityRefused("a transaction is already open on this connection; not rebuilding sources")
+    # Every refusal that can be decided from the schema is decided HERE, before anything is changed: the view is still in place, the
+    # pragma untouched, and a refused store is exactly as it was found. ``feed_key`` is added below, so it is counted as present now.
+    new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
+    new_cols = [c.name for c in new_table.columns]
+    _refuse_if_unfit(new_table, [*_columns(conn, "sources"), "feed_key"])
+    extra = _extra_schema_objects(conn)
     dbapi.create_function("oo_feed_key", 1, feed_key, deterministic=True)
     # Python's sqlite3 opens a transaction on its own before a DML statement; the rebuild owns its BEGIN/COMMIT,
     # so statements run in true autocommit for its duration and the connection's mode is put back after.
@@ -182,23 +199,19 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         raise SourceIdentityRefused("foreign-key enforcement could not be turned off; not rebuilding sources")
     began = False
     try:
-        conn.exec_driver_sql("DROP VIEW IF EXISTS keyword_mentions_all")
         add_feed_key_column(conn)
         backfill_feed_keys(conn)
-        old_cols = _columns(conn, "sources")
-        new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
-        new_cols = [c.name for c in new_table.columns]
-        unknown = _names_not_in(old_cols, new_cols)
-        if unknown:
-            # Copying only the shared columns would drop these silently, and local data never gives way (R100).
-            raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
-        copy = _names_in(new_cols, old_cols)
-        missing = _required_columns_without_default(new_table, old_cols)
-        if missing:
-            raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
-        extra = _extra_schema_objects(conn)
         conn.exec_driver_sql("BEGIN IMMEDIATE")
         began = True
+        # The read that decides what is copied, taken under the write lock: another writer's ALTER cannot land between it and the
+        # copy, so a column added meanwhile (a second process, an older build) is refused here, not left out of the copy. It must also
+        # follow the column being added above. A refusal rolls the transaction back like any other failure.
+        old_cols = _columns(conn, "sources")
+        _refuse_if_unfit(new_table, old_cols)
+        copy = _names_in(new_cols, old_cols)
+        # Inside the transaction, so that every failure from here on rolls the view back with the rest; a refused or failed rebuild used to
+        # leave ``keyword_mentions_all`` dropped for the life of the process (the caller recreates it only after a success).
+        conn.exec_driver_sql("DROP VIEW IF EXISTS keyword_mentions_all")
         conn.exec_driver_sql(f"DROP TABLE IF EXISTS {_NEW}")
         conn.exec_driver_sql(str(CreateTable(new_table).compile(dialect=conn.dialect)))
         cols = ", ".join(f'"{c}"' for c in copy)
@@ -219,12 +232,21 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         conn.exec_driver_sql("COMMIT")
         began = False
     except BaseException:
-        if began:
+        # ``in_transaction`` as well as ``began``: after a COMMIT that an interrupt followed there is nothing to roll back, and a ROLLBACK
+        # answering "no transaction is active" would replace the interrupt with an OperationalError that boot swallows. An interrupt
+        # inside a statement makes SQLAlchemy invalidate the connection (the driver one is closed, which rolls back): there is
+        # nothing left to ask, and asking would replace the interrupt with a ProgrammingError.
+        if began and not conn.invalidated and dbapi.in_transaction:
             conn.exec_driver_sql("ROLLBACK")
         raise
     finally:
-        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
-        dbapi.isolation_level = prior_isolation
+        if not conn.invalidated:
+            if began and dbapi.in_transaction:
+                # The ROLLBACK above never reached the driver (an interrupt landed first). Leaving it open is not neutral: setting
+                # ``isolation_level`` below COMMITS an open transaction on Python 3.13, which would commit a half-finished rebuild.
+                dbapi.execute("ROLLBACK")
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            dbapi.isolation_level = prior_isolation
     return {"state": "rebuilt", "rows_before": before, "rows_after": after}
 
 

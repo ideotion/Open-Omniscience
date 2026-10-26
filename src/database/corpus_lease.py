@@ -112,7 +112,7 @@ def _write_file(name: str) -> None:
             _OWNER = process_owner.owner_record()
         path.parent.mkdir(parents=True, exist_ok=True)
         # fsync: the file is created fresh at every first take, so a power cut before the data reached the disk would leave an empty file (rename-over-existing is the case the
-        # filesystem protects); about 1 ms per first take, measured, per batch and not per article
+        # filesystem protects); the file's flush was about 1 ms per first take when measured, and the folder's flush after the replace (audit 0.5.0 A-030) is a second one of the same order, per batch and not per article
         atomic_replace(path, json.dumps({**_OWNER, "name": name, "process": _PROCESS}), fsync=True)
     except Exception as exc:  # noqa: BLE001
         _warn_once(exc)

@@ -45,10 +45,15 @@ from pathlib import Path
 from src.database import library_generation as real
 from tests.test_swap_window_allocation_failures import _SOURCE, ALLOCATES, _load, _mutant
 
-#: How long the swap that is already waiting has before it gives up, and how soon after the cleanup it must have the window. With the swap's wait
-#: taking steps of ``TEST_STEP_S`` it is through in about that long; a wait with no step would sleep to the deadline.
-SWAP_DEADLINE_S = 1.5
-SWAP_THROUGH_WITHIN_S = 0.5
+#: How long the swap that is already waiting has before it gives up: a wait with no step, whose wake-up was lost, sleeps all of it and is refused.
+#: The limit is measured from the moment the swap asks, so it is wide enough that a pause of the whole process before the cleanup does not use it up.
+SWAP_DEADLINE_S = 3.0
+#: How long after BOTH the cleanup has begun and the swap is asking it may take to be through. With the swap's wait taking steps of ``TEST_STEP_S`` a healthy
+#: run is through in a few hundredths of a second (0.05-0.11 s measured from the start of the swap's thread, idle and beside 16 busy processes, which
+#: includes the body's own 0.05 s); a lost wake-up with no step takes the whole of ``SWAP_DEADLINE_S``, so anything between the two tells them apart and
+#: this sits well below the deadline. It is a wall-clock window on a thread, so the figure is put in the failure text: a pause of the process shows
+#: as a number, a lost wake-up as a refusal.
+SWAP_THROUGH_WITHIN_S = 1.0
 
 _COUNTER_STEP = re.compile(r"[-+]= 1\b")
 
@@ -61,7 +66,7 @@ class Run:
         self.where_is_the_release_call = False
         self.level_left = 0
         self.record_left = 0
-        self.swap_through_s: float | None = None  # None: it was refused at its deadline
+        self.swap_through_s: float | None = None  # from the later of "the cleanup began" and "the swap asked" to "through"; None: refused at its deadline
         self.swap_afterwards: bool | None = None
 
 
@@ -105,12 +110,12 @@ def _run(path: Path, *, mode: str, nth: int = 0) -> Run:
     swap_box: dict = {}
 
     def swapping() -> None:
-        started = time.monotonic()
+        swap_box["asked"] = time.monotonic()
         try:
             lg._LOCK.exclusive(SWAP_DEADLINE_S)
         except lg.LibraryBusy:
             return
-        swap_box["through_s"] = time.monotonic() - started
+        swap_box["through"] = time.monotonic()
         lg._LOCK.release_exclusive()
 
     swapper = threading.Thread(target=swapping, daemon=True)
@@ -121,6 +126,7 @@ def _run(path: Path, *, mode: str, nth: int = 0) -> Run:
             # a swap that wants the window while an open is in flight: blocked on the level this thread holds, as the repair and the restore are
             swapper.start()
             threading.Event().wait(0.05)  # let it reach the lock's wait
+            swap_box["cleanup_began"] = time.monotonic()
             state["armed"] = True  # the body is over: what runs from here is the cleanup
     except MemoryError:
         out.raised = "MemoryError"
@@ -130,8 +136,10 @@ def _run(path: Path, *, mode: str, nth: int = 0) -> Run:
         sys.settrace(previous)
     out.level_left = lg._LOCK._shared
     out.record_left = lg._LOCK.shared_held_here()
-    swapper.join(SWAP_DEADLINE_S + 1.0)
-    out.swap_through_s = swap_box.get("through_s")
+    # a level still raised means the swap cannot get through, so it is not waited for (it ends at its own deadline; the thread is a daemon on this copy's lock)
+    swapper.join(0 if out.level_left else SWAP_DEADLINE_S + 1.0)
+    if "through" in swap_box:  # not from the thread's start: that includes the body's own wait and any pause before the swap asked
+        out.swap_through_s = max(0.0, swap_box["through"] - max(swap_box["asked"], swap_box["cleanup_began"]))
     if not out.level_left:  # a level still raised makes this certain to fail: do not pay for it
         try:
             lg._LOCK.exclusive(SWAP_THROUGH_WITHIN_S)
@@ -156,7 +164,8 @@ def _sweep(path: Path) -> tuple[list[str], list[str]]:
         if (r.level_left or r.record_left) and not r.where_is_the_release_call:
             problems.append("a shared level is still raised")
         if not r.level_left and (r.swap_through_s is None or r.swap_through_s > SWAP_THROUGH_WITHIN_S):
-            problems.append("a swap that was already waiting for the open did not get through")
+            took = "was refused at its deadline" if r.swap_through_s is None else f"took {r.swap_through_s:.2f} s"
+            problems.append(f"a swap that was already waiting for the open did not get through (it {took}; the limit is {SWAP_THROUGH_WITHIN_S} s)")
         if r.swap_afterwards is False:
             problems.append("a swap asked for afterwards was refused")
         if problems:

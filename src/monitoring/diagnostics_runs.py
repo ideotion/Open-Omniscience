@@ -447,27 +447,17 @@ def _trim(lines: list[dict[str, Any]], keep_runs: int, reserve: int = 0) -> list
     return lines[first:]
 
 
-def _sync_folder(folder: Path) -> None:
-    """Sync the folder entry of a replaced file where the system allows it (POSIX); elsewhere a
-    no-op, which is the most the platform lets a program ask."""
-    with contextlib.suppress(OSError):
-        fd = os.open(folder, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
-
 def _write_all(lines: list[dict[str, Any]]) -> None:
-    """Replace the file with ``lines``: written aside, synced, moved over, and the folder synced,
-    so that the begin line of the run that triggered the rewrite is not lost to a power cut that
-    left the old name pointing at a half-written file."""
+    """Replace the file with ``lines``: written aside, synced, moved over, and the folder synced (all
+    three by ``atomic_replace``, which flushes the folder itself since audit 0.5.0 A-030; this module
+    kept a copy of that step of its own until then), so that the begin line of the run that
+    triggered the rewrite is not lost to a power cut that left the old name pointing at a
+    half-written file."""
     target = _path()
     text = "".join(json.dumps(d, separators=(",", ":")) + "\n" for d in lines)
     # newline="\n": text mode would write each LF as CRLF on Windows, and ``_trim`` counts one byte a newline,
     # so the file would pass the ceiling it is trimmed to.
     atomic_replace(target, text, newline="\n")
-    _sync_folder(target.parent)
 
 
 def _append(rec: dict[str, Any], *, trim_runs: int | None = None) -> bool:
