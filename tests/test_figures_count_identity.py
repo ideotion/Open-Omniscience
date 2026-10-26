@@ -87,6 +87,7 @@ def test_a_count_made_at_another_corpus_epoch_is_not_carried(monkeypatch):
     try:
         _compute(s)
         dbmod._MENTIONS_MEMO["count"] = 888_888
+        dbmod._MENTIONS_MEMO["duration_s"] = 55.0  # a real count's window, so only the epoch can refuse it (a 1 ms count carries 10 ms)
         with SessionLocal() as other:
             bump_corpus_epoch(other, reason="test")
             other.commit()
