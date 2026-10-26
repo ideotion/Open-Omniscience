@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         phases = [x.strip() for x in args.phases.split(",") if x.strip()]
         unknown = [x for x in phases if x not in ALL_PHASES]
         if unknown:
-            print(f"error: unknown phase(s): {unknown}; valid: {ALL_PHASES}", file=sys.stderr)
+            print(f"error: {len(unknown)} unknown phase(s) (not printed: a mistyped flag may have put a secret here); valid: {ALL_PHASES}", file=sys.stderr)
             return 2
 
     needs_backup = any(x in phases for x in ("backup", "verify", "restore"))

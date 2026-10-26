@@ -97,7 +97,6 @@ def test_an_unknown_or_abbreviated_flag_is_refused_without_printing_its_value(be
         f"--corpus-pass={CANARY}",
         f"--backup-passphrase-stdin={CANARY}",
         f"--corpus-passphrase-stdin={CANARY}",
-        f"--phases=unlock,{CANARY}",
         f"--repeats={CANARY}",
     ],
 )
@@ -110,6 +109,16 @@ def test_a_value_glued_to_a_flag_is_never_quoted_back_by_the_parser(bench, capsy
     assert rc == 2
     assert calls == []
     _no_canary(capsys, caplog)
+
+
+def test_an_unknown_phase_is_counted_never_printed(bench, monkeypatch, capsys, caplog):
+    mod, calls, corpus = bench
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "x")  # past the encrypted-corpus check, so the phases check is the one reached
+    rc = mod.main(["--corpus", str(corpus(True)), f"--phases=unlock,{CANARY}"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "1 unknown phase(s)" in err and CANARY not in err
+    assert calls == []
 
 
 def test_a_missing_required_flag_is_still_named(bench, capsys):
