@@ -313,7 +313,7 @@
         const cc = esc(ooCountryCode(r.country) || String(r.country || "").toUpperCase());
         const nm = esc((names && names[ooCountryKey(r.country)]) || ooCountryName(r.country, "") || cc);
         const clickable = ringId
-          ? ` style="cursor:pointer" data-on-click="_conceptDrillCountry('${esc(ringId)}','${esc(r.country)}')"` : "";
+          ? ` style="cursor:pointer" data-on-click="_conceptDrillCountry(${esc(JSON.stringify(ringId))},${esc(JSON.stringify(r.country))})"` : "";
         return `<g${clickable}><title>${nm}</title>`
           + `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${cc}</text>`
           + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
@@ -557,10 +557,10 @@
         // §D: the "not mapped" bucket is CLICKABLE too -- often the largest bucket,
         // and it must be investigable, never a dead end.
         const unlocNote = unloc
-          ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" data-on-click="_conceptDrillCountry('${esc(ringId)}', null)">`
+          ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" data-on-click="_conceptDrillCountry(${esc(JSON.stringify(ringId))}, null)">`
             + ooLabelHtml(esc(t("Not mapped (source country unknown)")), `${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}`) + `</button>` : "";
         const rows = (d.countries || []).filter(c => c.country)
-          .map(c => `<tr style="cursor:pointer" data-on-click="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
+          .map(c => `<tr style="cursor:pointer" data-on-click="_conceptDrillCountry(${esc(JSON.stringify(ringId))},${esc(JSON.stringify(c.country))})">`
             + `<td>${ooCountryCell(c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
         const tbl = rows
           ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";

@@ -50,6 +50,7 @@ def test_transparency_tags_are_escaped_before_they_are_joined() -> None:
     assert "(tr.ownership_tags||[]).map(esc).join" in js
     assert "(tr.leaning_tags||[]).map(esc).join" in js
     assert "(tr.leaning_tags||[]).join" not in js
+    assert "(tr.ownership_tags||[]).join" not in js
 
 
 def test_reader_esc_escapes_quotes() -> None:
