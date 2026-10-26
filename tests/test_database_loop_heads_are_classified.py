@@ -1,5 +1,6 @@
 """Audit 0.5.0 (A-012 part 2): every loop in ``src/database`` whose back-edge sits outside an exception-table entry AND that has a ``with``, a
-``try/finally`` or an ``except BaseException`` around it in the SAME function is listed here with the reason an interrupt cannot reach it.
+``try/finally`` or an ``except BaseException`` / ``except KeyboardInterrupt`` around it in the SAME scope is listed here with the reason an interrupt cannot
+reach it.
 
 THE READING (R162, R163, R165). On CPython 3.13 a loop whose last statement is a bare ``if`` leaves its ``JUMP_BACKWARD`` between two
 exception-table entries, so a ``KeyboardInterrupt`` landing there skips the cleanup around it. Only the MAIN thread is sent one, and only
@@ -7,25 +8,33 @@ until ``serve`` installs its signal handlers; a daemon or job thread never gets 
 tests/test_init_db_loops_survive_an_interrupt.py pins the loops ``init_db`` runs on the main thread (converted to the guard-clause form). THIS file
 pins the rest of the package, so a new loop of this shape is classified by whoever writes it instead of found by the next audit.
 
-THREE KINDS OF FLAGGED ROW, only the third listed. (A) No cleanup around the loop in the same function: CPython inlines a comprehension with a cleanup
+THREE KINDS OF FLAGGED HEAD, only the third listed. (A) No cleanup around the loop in the same scope: CPython inlines a comprehension with a cleanup
 entry of its own that restores the function's locals, which is all the helper sees, and a skipped back-edge there skips nothing. (B) Only an
 ``except Exception`` (or a narrower tuple): ``KeyboardInterrupt`` is not an ``Exception``, so that handler would not run for it either way. (C) A
-``with`` (a lock, a connection, a file), a ``try/finally`` or an ``except BaseException``: the cleanup the back-edge can skip. A caller's ``with`` is another
-code object and does not count: an interrupt leaves the callee normally.
+``with`` (a lock, a connection, a file), a ``try/finally``, or a handler for ``BaseException`` or ``KeyboardInterrupt``: the cleanup the back-edge can
+skip. Only the ``body`` of those counts: a loop in a ``finally`` block, in a handler or in an ``else`` is not protected by the ``try`` it sits in
+(a ``finally`` still covers a handler's or an ``else``'s statements), and a comprehension in a ``with`` item runs before the ``with`` is entered. A
+caller's ``with`` is another code object and does not count: an interrupt leaves the callee normally. Module bodies and class bodies are scopes like
+any other (import time runs on the main thread before any handler is installed); a generator expression or a lambda is its own frame, and the
+interrupt reaches its consumer instead.
 
 WHAT THE WORKER-ONLY CLASSIFICATION RESTS ON. Each reason below was written from the callers, found by grep, and from the thread that runs them; the thread
-starts were NOT traced line by line. The one caller outside the server is scripts/signal_leak_probe.py, a dev probe. (Inferred, not proven: a CLI or script
-entry that reaches one of these functions on the main thread would make its row wrong, and the fix then is the guard-clause form, as in #1489.)
-The full table is /mnt/project-files/osm-lane/audit12-part2-heads-table-2026-10-26.md.
+starts were NOT traced line by line. (Inferred, not proven. The review of this file found two rows wrong on exactly that ground, ``corpus_lease.active_leases`` and
+``pool_watch._live_rows``, reached from a main thread by ``release_run_fresh_restore`` and by a pool-checkout timeout; both were converted to the guard-clause
+form instead of being listed. A row's reason holds for the whole function: a new loop added to a listed function passes unseen, so the person adding it
+reads the reason. ``tests/test_worker_only_callers_pinned.py`` pins callers transitively and is the stronger check for the two functions it covers.)
+The scripts/ callers: scripts/signal_leak_probe.py is a dev probe. The reading is of CPython 3.13 bytecode, like its siblings.
 
-A row fails when it is MISSING (a new cleanup-covered head: classify it, or write it in the guard-clause form) and when it is STALE (the function no longer
-has such a head: delete the row, so the list never says something that stopped being true)."""
+A row fails when it is MISSING (a new cleanup-covered head: classify it, or write it in the guard-clause form) and when it is STALE (the scope no longer
+has such a head: delete the row, so the list never says something that stopped being true). Rows are keyed by the scope's qualified name, so two
+methods of one name in one file are two rows."""
 
 from __future__ import annotations
 
 import ast
 import dis
 import types
+from collections.abc import Iterator
 from pathlib import Path
 
 from tests.test_gates_survive_an_interrupt import _uncovered_loop_heads
@@ -36,17 +45,13 @@ _PACKAGE = "src/database"
 _WORKER = "worker-only"
 _LOOP = "event-loop"
 
-#: (file, function) -> the reason. A reason starts with ``worker-only`` or ``event-loop`` and names who runs it.
+#: (file, qualified scope name) -> the reason. A reason starts with ``worker-only`` or ``event-loop`` and names who runs it.
 _CLASS_C: dict[tuple[str, str], str] = {
-    ("src/database/corpus_lease.py", "active_leases"):
-        f"{_WORKER}: the scheduler's memstop, the oo-offline-maintenance thread, and repair's quiescence wait (a repair job thread)",
-    ("src/database/pool_watch.py", "_live_rows"):
-        f"{_LOOP}/{_WORKER}: the checked_out / standing_holders readers (diagnostics, the writer, the memory budget), on request threads or the event loop",
     ("src/database/article_indexes.py", "_refresh_stats"):
         f"{_WORKER}: the article-list index build, a BackgroundJob thread",
-    ("src/database/fts_reindex.py", "_park"):
+    ("src/database/fts_reindex.py", "SearchReindexJobManager._park"):
         f"{_WORKER}: the search-reindex-job daemon thread",
-    ("src/database/fts_reindex.py", "_run"):
+    ("src/database/fts_reindex.py", "SearchReindexJobManager._run"):
         f"{_WORKER}: the search-reindex-job daemon thread (threading.Thread(target=self._run, daemon=True))",
     ("src/database/maintenance.py", "maybe_incremental_vacuum"):
         f"{_WORKER}: the scheduler's maintenance thread (src/scheduler/maintenance.py), not an init_db step",
@@ -65,17 +70,18 @@ _CLASS_C: dict[tuple[str, str], str] = {
 }
 
 _LOOPS = (ast.For, ast.AsyncFor, ast.While)
-_COMPREHENSIONS = (ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp)
-_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_INLINED = (ast.ListComp, ast.DictComp, ast.SetComp)  # inlined into the enclosing frame on 3.12+
+_OWN_FRAME = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda, ast.GeneratorExp)
+_CATCHES_AN_INTERRUPT = frozenset({"BaseException", "KeyboardInterrupt"})
+_TRIES = tuple(t for t in (ast.Try, getattr(ast, "TryStar", None)) if t is not None)
 
 
-def _flagged_heads(text: str, filename: str) -> dict[str, set[tuple[int, str]]]:
-    """``{function name: {(head line, head text)}}`` for every loop head whose ``JUMP_BACKWARD`` is outside the exception entries that cover the head: the reading
-    of :func:`tests.test_gates_survive_an_interrupt._uncovered_loop_heads`, for every function of one compiled source at once."""
-    lines = text.splitlines()
-    out: dict[str, set[tuple[int, str]]] = {}
+def _flagged_heads(text: str, filename: str) -> dict[str, set[int]]:
+    """``{co_qualname: {head line}}`` for every loop head whose ``JUMP_BACKWARD`` is outside the exception entries that cover the head: the reading
+    of :func:`tests.test_gates_survive_an_interrupt._uncovered_loop_heads`, for every code object of one compiled source at once."""
+    out: dict[str, set[int]] = {}
 
-    def walk(code: types.CodeType):
+    def walk(code: types.CodeType) -> Iterator[types.CodeType]:
         yield code
         for const in code.co_consts:
             if isinstance(const, types.CodeType):
@@ -89,53 +95,93 @@ def _flagged_heads(text: str, filename: str) -> dict[str, set[tuple[int, str]]]:
                 continue
             if any(start <= ins.argval < end for start, end in ranges):
                 head = next(i for i in instructions if i.offset == ins.argval)
-                lineno = head.positions.lineno if head.positions else None
-                out.setdefault(code.co_name, set()).add((lineno or 0, lines[lineno - 1].strip() if lineno else "?"))
+                out.setdefault(code.co_qualname, set()).add(head.positions.lineno or 0 if head.positions else 0)
     return out
 
 
-def _cleanup_around(fn: ast.AST, node: ast.AST) -> bool:
-    """Whether, inside ``fn`` only (never across a nested function), ``node`` sits in a ``with``, a ``try`` with a ``finally``, or a ``try`` with a
-    handler that also catches ``BaseException`` or everything."""
+def _scopes(tree: ast.Module) -> dict[str, ast.AST]:
+    """``{co_qualname: node}`` for the module body, every class body and every function, named as CPython names their code objects."""
+    out: dict[str, ast.AST] = {"<module>": tree}
 
-    def path_to(parent: ast.AST, trail: list[ast.AST]) -> list[ast.AST] | None:
-        for child in ast.iter_child_nodes(parent):
-            if child is node:
-                return trail
-            if isinstance(child, _FUNCTIONS):
+    def visit(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                qualname = prefix + child.name
+                out[qualname] = child
+                visit(child, qualname + (".<locals>." if not isinstance(child, ast.ClassDef) else "."))
+            else:
+                visit(child, prefix)
+
+    visit(tree, "")
+    return out
+
+
+def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
+    """The nodes that run in ``scope``'s own frame: not those of a nested function, class, lambda or generator expression."""
+    for child in ast.iter_child_nodes(scope):
+        if isinstance(child, _OWN_FRAME):
+            continue
+        yield child
+        yield from _own_nodes(child)
+
+
+def _trail(parent: ast.AST, node: ast.AST) -> list[tuple[ast.AST, str]] | None:
+    """The ``(ancestor, field)`` pairs from ``parent`` down to ``node`` within one frame, or None."""
+    for field, value in ast.iter_fields(parent):
+        for child in value if isinstance(value, list) else [value]:
+            if not isinstance(child, ast.AST):
                 continue
-            found = path_to(child, [*trail, child])
+            if child is node:
+                return [(parent, field)]
+            if isinstance(child, _OWN_FRAME):
+                continue
+            found = _trail(child, node)
             if found is not None:
-                return found
-        return None
+                return [(parent, field), *found]
+    return None
 
-    for anc in path_to(fn, [fn]) or []:
-        if isinstance(anc, (ast.With, ast.AsyncWith)):
+
+def _caught_names(handler: ast.ExceptHandler) -> set[str] | None:
+    """The exception names a handler lists, or None for a bare ``except:``."""
+    if handler.type is None:
+        return None
+    nodes = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return {n.id if isinstance(n, ast.Name) else n.attr if isinstance(n, ast.Attribute) else "?" for n in nodes}
+
+
+def _cleanup_around(scope: ast.AST, node: ast.AST) -> bool:
+    """Whether, inside ``scope`` only, ``node`` sits in the body of a ``with``, in a ``try`` with a ``finally`` (its body, a handler or its ``else``), or in
+    the body of a ``try`` with a handler that also catches ``BaseException``, ``KeyboardInterrupt`` or everything."""
+    for anc, field in _trail(scope, node) or []:
+        if isinstance(anc, (ast.With, ast.AsyncWith)) and field == "body":
             return True
-        if isinstance(anc, ast.Try):
-            if anc.finalbody:
+        if isinstance(anc, _TRIES):
+            if anc.finalbody and field in ("body", "handlers", "orelse"):
                 return True
-            for handler in anc.handlers:
-                if handler.type is None or "BaseException" in ast.dump(handler.type):
-                    return True
+            if field == "body":
+                for handler in anc.handlers:
+                    caught = _caught_names(handler)
+                    if caught is None or caught & _CATCHES_AN_INTERRUPT:
+                        return True
     return False
 
 
 def _cleanup_covered(text: str, filename: str) -> set[str]:
-    """The names of the functions with a flagged head that has a cleanup construct around it in the same function. A head no AST node can be matched to is
-    counted as covered: the classifier fails closed."""
+    """The qualified names of the scopes with a flagged head that has a cleanup construct around it in the same scope. A head no AST node can be matched
+    to is counted as covered: the classifier fails closed."""
     flagged = _flagged_heads(text, filename)
     if not flagged:
         return set()
-    tree = ast.parse(text)
+    scopes = _scopes(ast.parse(text))
     covered: set[str] = set()
-    for fn in ast.walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name not in flagged:
+    for qualname, heads in flagged.items():
+        scope = scopes.get(qualname)
+        if scope is None:  # a generator expression or a lambda: its own frame, the interrupt is caught at its consumer
             continue
-        for lineno, _text in flagged[fn.name]:
+        for lineno in heads:
             matched = False
-            for node in ast.walk(fn):
-                if isinstance(node, _COMPREHENSIONS):  # may span lines: its head is the ``for`` clause, wherever it sits
+            for node in _own_nodes(scope):
+                if isinstance(node, _INLINED):  # may span lines: its head is the ``for`` clause, wherever it sits
                     hit = node.lineno <= lineno <= (node.end_lineno or node.lineno)
                 elif isinstance(node, _LOOPS):
                     hit = lineno == node.lineno or (isinstance(node, ast.While) and lineno == node.body[0].lineno)
@@ -143,10 +189,10 @@ def _cleanup_covered(text: str, filename: str) -> set[str]:
                     continue
                 if hit:
                     matched = True
-                    if _cleanup_around(fn, node):
-                        covered.add(fn.name)
+                    if _cleanup_around(scope, node):
+                        covered.add(qualname)
             if not matched:
-                covered.add(fn.name)
+                covered.add(qualname)
     return covered
 
 
@@ -154,8 +200,8 @@ def _package_class_c() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
     for path in sorted((_ROOT / _PACKAGE).glob("*.py")):
         rel = path.relative_to(_ROOT).as_posix()
-        for name in _cleanup_covered(path.read_text(encoding="utf-8"), rel):
-            found.add((rel, name))
+        for qualname in _cleanup_covered(path.read_text(encoding="utf-8"), rel):
+            found.add((rel, qualname))
     return found
 
 
@@ -180,9 +226,10 @@ def test_every_row_names_who_runs_it():
 
 def test_every_row_still_flags_under_the_projects_own_helper():
     """The classifier above is this file's own reading; the project's helper (tests/test_gates_survive_an_interrupt.py) is the one every other
-    ratchet trusts, so a row it does not flag any more is stale whatever this file says."""
-    for rel, name in sorted(_CLASS_C):
-        assert _uncovered_loop_heads(rel, name), f"{rel}::{name} has no uncovered loop head under the shared helper any more"
+    ratchet trusts, so a row it does not flag any more is stale whatever this file says. (The helper names a scope by its bare name.)"""
+    for rel, qualname in sorted(_CLASS_C):
+        name = qualname.rsplit(".", 1)[-1]
+        assert _uncovered_loop_heads(rel, name), f"{rel}::{qualname} has no uncovered loop head under the shared helper any more"
 
 
 _SHAPES = '''
@@ -217,6 +264,21 @@ def under_base_exception(items):
         raise
     return out
 
+def under_keyboard_interrupt(items):
+    out = []
+    try:
+        for x in items:
+            if x:
+                out.append(x)
+    except (KeyboardInterrupt, SystemExit):
+        out.clear()
+        raise
+    return out
+
+def comprehension_under_with(items):
+    with LOCK:
+        return [x for x in items if x]
+
 def under_exception_only(items):
     out = []
     try:
@@ -230,10 +292,6 @@ def under_exception_only(items):
 def comprehension_without_cleanup(items):
     return [x for x in items if x]
 
-def comprehension_under_with(items):
-    with LOCK:
-        return [x for x in items if x]
-
 def guard_clause_under_with(items):
     out = []
     with LOCK:
@@ -242,18 +300,55 @@ def guard_clause_under_with(items):
                 continue
             out.append(x)
     return out
+
+def loop_in_the_finally_body(items):
+    out = []
+    try:
+        out.append(1)
+    finally:
+        for x in items:
+            if x:
+                out.append(x)
+    return out
+
+def comprehension_in_a_with_item(items):
+    with open([x for x in items if x][0]):
+        pass
+
+class First:
+    def run(self, items):
+        with LOCK:
+            return [x for x in items if x]
+
+class Second:
+    def run(self, items):
+        return [x for x in items if x]
+
+with LOCK:
+    for x in range(3):
+        if x:
+            pass
 '''
 
 
 def test_the_classifier_sees_the_shapes_it_claims_to():
     """Anti-vacuity, so a green run means something: the cleanup-covered shapes are found and the harmless ones are not."""
     covered = _cleanup_covered(_SHAPES, "shapes.py")
-    assert covered == {"under_with", "under_finally", "under_base_exception", "comprehension_under_with"}, covered
+    assert covered == {
+        "under_with",
+        "under_finally",
+        "under_base_exception",
+        "under_keyboard_interrupt",
+        "comprehension_under_with",
+        "First.run",
+        "<module>",
+    }, covered
     flagged = _flagged_heads(_SHAPES, "shapes.py")
-    assert "under_exception_only" in flagged and "comprehension_without_cleanup" in flagged, flagged
+    for name in ("under_exception_only", "comprehension_without_cleanup", "loop_in_the_finally_body", "comprehension_in_a_with_item", "Second.run"):
+        assert name in flagged, (name, flagged)
     assert "guard_clause_under_with" not in flagged, flagged
 
 
 def test_the_package_holds_what_the_table_says_it_does():
-    assert len(_CLASS_C) >= 10
-    assert len(_package_class_c()) >= 10
+    assert len(_CLASS_C) >= 8
+    assert len(_package_class_c()) >= 8

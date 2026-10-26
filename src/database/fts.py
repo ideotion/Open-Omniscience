@@ -803,10 +803,12 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     code unconditionally ran ``INSERT INTO article_fts(article_fts) VALUES ('rebuild')``,
     which for an external-content FTS5 table DELETES the whole index and re-reads every
     article's ``title`` + ``content`` from the base table through the SQLCipher codec — a
-    corpus-scaled cost that RECURRED on every boot (measured 981 s, then 1,645 s, on two
-    consecutive boots of the field store on 2026-07-09, docs/product/SCALE_ROADMAP.md P0.4; that day's
-    database was 11.7 GB / 268,241 articles and the data folder with its backups near 130 GB, and which of the two the timing follows is not
-    claimed here; an index build would be one-time, this recurred). But the index is kept
+    corpus-scaled cost that RECURRED on every boot (an index build would be one-time, this
+    recurred). The field's unlock took 981 s, then 1,645 s, on two consecutive boots on
+    2026-07-09, on a 11.7 GB / 268,241-article database (docs/product/SCALE_ROADMAP.md P0.4,
+    which records the unlock as a whole and does not split it by phase); this rebuild was
+    named as the cause from the code and fixed against a synthetic corpus only (the 2026-07-10
+    row of docs/ledger/shipped.csv, "awaiting live validation"). But the index is kept
     current INCREMENTALLY by the ``article_fts_ai/ad/au`` triggers, so once populated it
     never needs a full rebuild on a normal boot.
 
@@ -989,7 +991,7 @@ def rebuild_with_current_tokenizer(con) -> dict:
     :func:`rebuild_index` fills it; one that already has the current tokenizer is rebuilt as is. The caller owns the
     transaction, so the drop, the create and the rebuild commit together or not at all: a run that dies half way
     leaves the old index and the old tokenizer, never an empty one. Only for a window the app is stopped in, or an
-    explicit re-index: the rebuild reads every article's text through the codec (981 s, then 1,645 s, on two consecutive boots of the field store on 2026-07-09: docs/product/SCALE_ROADMAP.md P0.4)."""
+    explicit re-index: the rebuild reads every article's text through the codec, a cost that grows with the corpus (see :func:`ensure_fts`)."""
     before = fts_tokenizer(con)
     if before is None:
         raise RuntimeError("there is no article index to rebuild")

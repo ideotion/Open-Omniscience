@@ -220,8 +220,12 @@ def corpus_lease(name: str) -> Iterator[None]:
 
 def active_leases() -> list[str]:
     """Names currently holding live-corpus work, in this process or in another server on the same data folder, sorted. Empty means quiescent."""
+    own: set[str] = set()
     with _FILE_LOCK, _LOCK:  # a release is complete (count lowered AND file removed) before it reads as released
-        own = {name for name, n in _HELD.items() if n > 0}
+        for name, n in _HELD.items():
+            if n <= 0:  # guard clause: the loop's last statement is not a bare ``if``, so its back-edge stays inside the ``with``
+                continue
+            own.add(name)
     return sorted(own | set(_foreign_leases()))
 
 
