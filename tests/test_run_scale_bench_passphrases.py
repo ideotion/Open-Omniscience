@@ -91,6 +91,35 @@ def test_an_unknown_or_abbreviated_flag_is_refused_without_printing_its_value(be
     _no_canary(capsys, caplog)
 
 
+@pytest.mark.parametrize(
+    "arg",
+    [
+        f"--corpus-pass={CANARY}",
+        f"--backup-passphrase-stdin={CANARY}",
+        f"--corpus-passphrase-stdin={CANARY}",
+        f"--phases=unlock,{CANARY}",
+        f"--repeats={CANARY}",
+    ],
+)
+def test_a_value_glued_to_a_flag_is_never_quoted_back_by_the_parser(bench, capsys, caplog, arg):
+    mod, calls, corpus = bench
+    try:
+        rc = mod.main(["--corpus", str(corpus(True)), arg])
+    except SystemExit as exc:  # argparse's own error, replaced by the fixed line
+        rc = exc.code
+    assert rc == 2
+    assert calls == []
+    _no_canary(capsys, caplog)
+
+
+def test_a_missing_required_flag_is_still_named(bench, capsys):
+    mod, _calls, _corpus = bench
+    with pytest.raises(SystemExit) as exc:
+        mod.main([])
+    assert exc.value.code == 2
+    assert "--corpus" in capsys.readouterr().err
+
+
 def test_the_old_flags_are_hidden_from_help_and_the_new_ones_are_listed(bench):
     import argparse
 

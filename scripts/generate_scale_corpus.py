@@ -77,8 +77,23 @@ def parse_date(text: str) -> date:
     return date.fromisoformat(text)
 
 
+class _QuietParser(argparse.ArgumentParser):
+    """An argument parser whose errors never quote what the caller typed.
+
+    argparse echoes the offending text in "ignored explicit argument 'X'" (``--flag-stdin=X``) and "ambiguous option: --pre=X
+    could match ..." (a prefix of a flag), and either may be a passphrase typed on the command line. A message is printed
+    only when it cannot quote an argument (a missing REQUIRED flag); every other one is replaced by a fixed line.
+    """
+
+    def error(self, message: str):
+        if not message.startswith("the following arguments are required"):
+            message = "could not parse the arguments (the text is not printed: it may carry a secret); see --help"
+        self.exit(2, f"error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
+    p = _QuietParser(
+        allow_abbrev=False,
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("--out", required=True, type=Path, help="destination .db path (NEW file)")
@@ -146,6 +161,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     passphrase = _passphrase(args, sys.stdin)
+    if args.passphrase_stdin and passphrase is None:
+        # Asked for an encrypted corpus and gave none: refuse rather than quietly write a plaintext one.
+        print("error: --passphrase-stdin was given but standard input carried no passphrase line", file=sys.stderr)
+        return 2
 
     out: Path = args.out
     if out.exists():

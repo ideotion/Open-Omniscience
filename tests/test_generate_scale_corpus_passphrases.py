@@ -69,6 +69,38 @@ def test_an_unknown_or_abbreviated_flag_is_refused_without_printing_its_value(ge
     _silent(capsys, caplog)
 
 
+@pytest.mark.parametrize(
+    "arg",
+    [f"--pass={CANARY}", f"--passphrase-stdin={CANARY}", f"--articles={CANARY}", f"--end-date={CANARY}"],
+)
+def test_a_value_glued_to_a_flag_is_never_quoted_back_by_the_parser(gen, tmp_path, capsys, caplog, arg):
+    mod = gen[0] if isinstance(gen, tuple) else gen
+    try:
+        rc = mod.main(["--out", str(tmp_path / "x.db"), "--articles", "10", arg])
+    except SystemExit as exc:  # argparse's own error, replaced by the fixed line
+        rc = exc.code
+    assert rc == 2
+    out = capsys.readouterr()
+    assert CANARY not in out.out + out.err + caplog.text
+
+
+def test_a_missing_required_flag_is_still_named(gen, capsys):
+    mod = gen[0] if isinstance(gen, tuple) else gen
+    with pytest.raises(SystemExit) as exc:
+        mod.main([])
+    assert exc.value.code == 2
+    assert "--out" in capsys.readouterr().err
+
+
+def test_passphrase_stdin_with_an_empty_line_is_refused_not_a_silent_plaintext_corpus(gen, monkeypatch, capsys):
+    mod, calls, out = gen
+    monkeypatch.setattr(sys, "stdin", io.StringIO("\n"))
+    rc = mod.main(["--out", str(out), "--articles", "10", "--passphrase-stdin"])
+    assert rc == 2
+    assert calls == []
+    assert "no passphrase line" in capsys.readouterr().err
+
+
 def test_the_old_flag_is_hidden_from_help_and_the_new_one_is_listed(gen):
     import argparse
 
@@ -100,13 +132,6 @@ def test_with_no_passphrase_the_corpus_is_plaintext_and_says_so(gen, capsys):
     assert mod.main(["--out", str(out), "--articles", "10"]) == 0
     assert calls[0]["passphrase"] is None
     assert "plaintext" in capsys.readouterr().err
-
-
-def test_an_empty_standard_input_line_is_no_passphrase(gen, monkeypatch):
-    mod, calls, out = gen
-    monkeypatch.setattr(sys, "stdin", io.StringIO("\n"))
-    assert mod.main(["--out", str(out), "--articles", "10", "--passphrase-stdin"]) == 0
-    assert calls[0]["passphrase"] is None
 
 
 def test_the_script_source_no_longer_reads_an_argv_passphrase_into_the_spec():

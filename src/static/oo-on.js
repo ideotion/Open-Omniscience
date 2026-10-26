@@ -152,7 +152,13 @@
   // would otherwise fire them with no action at all; a click a script dispatches
   // (`ooClickId`, `el.click()`) is not `isTrusted` either. A name is listed here when it is
   // destructive and does not confirm() in its own body;
-  // tests/test_oo_on_helper_allowlist.py holds the list to that rule.
+  // tests/test_oo_on_helper_allowlist.py holds the list to that rule BY NAME PREFIX (remove*, delete*,
+  // reset*, clear*, ...), so it does not see a destructive handler spelled otherwise (sgRemoveMember,
+  // lawSetWatched(id, false), jobCancel, excludeKeyword are known misses, audit 0.5.0 read of the bundle).
+  // Limits: a gesture is not the same as meaning to press THAT control (an injected overlay or
+  // accesskey turns a person's next click into a trusted click on it), and markup that brings its own
+  // panel for a field-reading handler is only stopped by that handler's prompt. The generalised
+  // per-event allowlist (A-023/A-024) is the real fix and stays a proposal.
   const GESTURE_ONLY = new Set(["removeAnnotation", "removeAuthor", "removeDraftItem", "removeUserCalendar", "secureErase"]);
   function isUserGesture(ev) {
     if (!ev || ev.isTrusted !== true) return false;
