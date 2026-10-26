@@ -958,7 +958,7 @@ def previous_session_report() -> dict[str, Any]:
     # this one is registered in HEADROOM_MEMBERS with its worst case measured). A ``0`` is a fact (no log), so it is carried when PRESENT, not
     # when truthy; a sentinel written by a build before this one has none, and the report then says nothing rather than "empty". The
     # teardown's start is not copied (a timestamp is 45 B): the seconds from it to the end are computed here.
-    dispose = _clean_dispose(prev.get("dispose"), _seconds_between(prev.get("shutdown_began_at"), prev.get("ended_at")))
+    dispose = _clean_dispose(prev.get("dispose"), _whole_seconds_between(prev.get("shutdown_began_at"), prev.get("ended_at")))
     if dispose is not None:
         out["dispose"] = dispose
     if out["previous_session"] != "clean":
@@ -1863,7 +1863,7 @@ def _render_earlier_ends(ev: Any) -> list[str]:
     return out
 
 
-def _seconds_between(begin: Any, end: Any) -> int | None:
+def _whole_seconds_between(begin: Any, end: Any) -> int | None:
     """Whole seconds from one ISO timestamp to another, or ``None`` when either is missing, unparseable or the order is reversed
     (a clock set back mid-teardown is not a negative duration)."""
     try:

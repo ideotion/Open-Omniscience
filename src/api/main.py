@@ -842,16 +842,13 @@ app.add_middleware(
 # hostname, never localhost. Reject any request whose Host (port stripped) is not a
 # loopback name; OO_ALLOWED_HOSTS (comma-separated hostnames) is the explicit escape
 # hatch for LAN self-hosters who serve the app under another name.
-_ALLOWED_HOST_NAMES = {
-    "127.0.0.1",
-    "localhost",
-    "::1",
-    "[::1]",
-    # Starlette's TestClient stamps Host: testserver on every request. It calls the
-    # ASGI app in-process — no network socket is ever opened — so allowing it cannot
-    # widen real-world exposure, and the test suite keeps working unmodified.
-    "testserver",
-}
+_LOOPBACK_HOST_NAMES = {"127.0.0.1", "localhost", "::1", "[::1]"}
+# Nothing else is served by default: NOT ``testserver``, the name Starlette's TestClient stamps on every request. A single-label name
+# that no one owns can be answered by whoever answers first on a LAN (LLMNR, NetBIOS: name resolution that is not DNS), so a same-LAN
+# attacker could answer ``testserver``, lure the user to ``http://testserver:8000`` and rebind it to 127.0.0.1: the page would be
+# same-origin with this API and pass every Host check (audit 0.5.0, R226; read from the code, not reproduced). The test suite lists the
+# name itself through ``OO_ALLOWED_HOSTS`` in ``tests/conftest.py``; the two in-process operator tools (``src/testing/scale_bench.py``,
+# ``scripts/perf_harness.py``) build their client on a loopback base URL.
 
 
 def _host_without_port(host_header: str) -> str:
@@ -870,18 +867,18 @@ def _host_without_port(host_header: str) -> str:
     return value
 
 
-def _allowed_hosts() -> set[str]:
-    """The loopback defaults plus any OO_ALLOWED_HOSTS entries (hostnames, no port).
+def _operator_hosts() -> set[str]:
+    """The OO_ALLOWED_HOSTS entries (hostnames, no port; an IPv6 literal is written with its brackets, as the Host guard
+    reads a bracketed Host header).
 
-    Read per-request (a set-union of a few strings — negligible) so tests and
-    operators can change the env without re-importing the app.
+    Read per-request (a few strings — negligible) so tests and operators can change the env without re-importing the app.
     """
-    allowed = set(_ALLOWED_HOST_NAMES)
-    for entry in os.getenv("OO_ALLOWED_HOSTS", "").split(","):
-        entry = entry.strip().lower()
-        if entry:
-            allowed.add(entry)
-    return allowed
+    return {entry.strip().lower() for entry in os.getenv("OO_ALLOWED_HOSTS", "").split(",") if entry.strip()}
+
+
+def _allowed_hosts() -> set[str]:
+    """The names the Host guard serves, and the names an Origin or Referer may carry: the loopback defaults and the operator's entries."""
+    return _LOOPBACK_HOST_NAMES | _operator_hosts()
 
 
 @app.middleware("http")
@@ -904,12 +901,12 @@ async def _host_header_guard(request: Request, call_next):
 # --- CSRF (S-003) + security headers (S-006) -------------------------------- #
 # No auth + a loopback API means a web page the user merely visits could POST to
 # 127.0.0.1:8000 (a "simple request" needs no CORS preflight). We reject any
-# state-changing request whose Origin/Referer is cross-origin (not loopback), and we
-# attach defensive headers (a CSP backstop, anti-clickjacking, nosniff) to every
-# response. The swagger docs (/docs, /redoc) load assets from a CDN, so they are
+# state-changing request whose Origin/Referer does not name THIS server (the same
+# host AND the same port as the Host header), and we attach defensive headers (a
+# CSP backstop, anti-clickjacking, nosniff) to every response. The swagger docs (/docs, /redoc) load assets from a CDN, so they are
 # exempt from the strict CSP (they render no ingested content).
 _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
-_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 _CSP = (
     "default-src 'self'; "
     # No 'unsafe-inline' for script (0.5 row I, Q1127 = a): every inline handler became a
@@ -923,22 +920,76 @@ _CSP = (
 _CSP_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
 
 
-def _origin_host(value: str | None) -> str | None:
+def _origin_parts(value: str | None) -> tuple[str, int] | None:
+    """The (hostname, effective port) an Origin or Referer value names, or ``None`` when it names no http(s) server.
+
+    The port is the explicit one, or the scheme's default (80 / 443); a port that is not a number in range, a scheme
+    other than http(s) (``file:``, ``data:``, ``about:``, an extension's own scheme) and a value with no hostname
+    (``null``) all give ``None``, which the caller refuses."""
     if not value:
         return None
     from urllib.parse import urlparse
 
     try:
-        return urlparse(value).hostname
-    except Exception:
+        parsed = urlparse(value)
+        name, port = parsed.hostname, parsed.port
+    except ValueError:  # urlparse raises it for a port that is not a number in range, and for a bracket it cannot close
         return None
+    default = _DEFAULT_PORTS.get(parsed.scheme.lower())
+    if name is None or default is None:
+        return None
+    return name, default if port is None else port
+
+
+def _host_header_parts(host_header: str, scheme: str) -> tuple[str, int] | None:
+    """The (hostname, effective port) the Host header names, with the port defaulting by the scheme the request arrived on.
+
+    The hostname has no brackets (``urlparse`` strips them from an Origin, so both sides are read the same way); ``None``
+    when the port is empty or not a number in range."""
+    value = host_header.strip().lower()
+    name = _host_without_port(value).strip("[]")
+    if value.startswith("["):
+        rest = value[value.find("]") + 1 :] if "]" in value else ""
+    elif value.count(":") == 1:
+        rest = ":" + value.rsplit(":", 1)[1]
+    else:
+        rest = ""  # no port, or a raw IPv6 literal (which has none)
+    if not rest:
+        return name, _DEFAULT_PORTS.get(scheme.lower(), 80)
+    digits = rest[1:] if rest.startswith(":") else ""
+    # five digits at most: ``int()`` of a longer run is slow, and past 4,300 digits it raises (a 500 from a security middleware)
+    if not (digits.isascii() and digits.isdigit() and len(digits) <= 5 and 0 < int(digits) < 65536):
+        return None
+    return name, int(digits)
+
+
+def _foreign_origin(request: Request, sent: str) -> bool:
+    """True when the Origin (or Referer) value ``sent`` does not name THIS server.
+
+    A browser tells apart two pages by (scheme, host, port); checking the hostname alone let any other loopback web app
+    (a dev server, a notebook, another local UI on ``localhost:9999``) post here with a loopback Origin (audit 0.5.0
+    A-001). So the hostname AND the effective port must be the Host header's, and the hostname one this server answers to
+    (``_allowed_hosts``: the loopback names and ``OO_ALLOWED_HOSTS``, so a LAN self-hoster who serves the app under another
+    name is not refused at their own UI, A-017). This middleware is the OUTER one: it runs before the DNS-rebinding guard
+    and does not rely on it, which is why the hostname is checked here and not assumed. The scheme is not compared: the
+    Host header carries none, and a port that differs is what tells two servers apart."""
+    origin = _origin_parts(sent)
+    here = _host_header_parts(request.headers.get("host", ""), request.url.scheme)
+    if origin is None or here is None:
+        return True
+    name = origin[0]
+    hosts = _allowed_hosts()
+    # the Host guard reads a bracketed IPv6 Host header whole (``[fe80::1]``), urlparse strips the brackets: take either spelling
+    listed = name in hosts or (":" in name and f"[{name}]" in hosts)
+    return origin != here or not listed
 
 
 @app.middleware("http")
 async def csrf_and_security_headers(request: Request, call_next):
     # CSRF: a cross-origin browser request to a state-changing endpoint carries an
-    # Origin (or at least a Referer); if present and not loopback, refuse. Requests
-    # with no Origin/Referer (CLI, same-origin server-side) are allowed.
+    # Origin (or at least a Referer); if present and not THIS server (the same host and the
+    # same port as the Host header), refuse. Requests with no Origin/Referer (CLI,
+    # same-origin server-side) are allowed.
     if request.method in _STATE_CHANGING:
         # A header that is PRESENT but names no host is a browser telling us it will not say where the request came
         # from: ``Origin: null`` (a sandboxed iframe, a ``file://`` page, a redirect across origins) parses to no
@@ -950,8 +1001,7 @@ async def csrf_and_security_headers(request: Request, call_next):
         sent = request.headers.get("origin")
         if sent is None:
             sent = request.headers.get("referer")
-        host = _origin_host(sent)
-        if sent is not None and (host is None or host not in _LOOPBACK_HOSTS):
+        if sent is not None and _foreign_origin(request, sent):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Cross-origin state-changing request refused (loopback only)."},

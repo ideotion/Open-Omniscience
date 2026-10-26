@@ -729,95 +729,123 @@ def test_the_watchdog_sleeps_until_the_full_tick_or_the_next_look_whichever_is_f
     assert writer._next_wait_s(15.0, due, now, looking) == expected
 
 
+class _SteppedClock:
+    """A monotonic clock that moves only when the watchdog loop WAITS, and the ``stop`` the loop waits on: ``wait(t)`` advances the clock by ``t`` and
+    returns False (not stopped), until the next wait would cross ``run_for`` seconds or ``max_waits`` waits were made, and then returns True (stopped).
+
+    The loop used to run on a real thread for a fixed 1.7 s and the tests counted its calls in that window, so a stall of the thread on a loaded runner
+    changed the count: the same assertion read ``1 >= 3`` on CI and passed locally. A 0.68 s stall of the first tick reproduces that exact failure, and
+    so does a first tick that fails to open the journal entry the looks need. On this clock the loop runs to the end on the calling thread, a stall is
+    not a thing that can happen, and the counts are the loop's own. ``max_waits`` ends a loop that spins (waits of zero never move the clock) so that
+    the old bug fails an assertion by name instead of hanging the test."""
+
+    def __init__(self, start: float, run_for: float, max_waits: int = 5000) -> None:
+        self.start, self.now, self.run_for, self.max_waits = start, start, run_for, max_waits
+        self.waits = 0
+
+    def wait(self, timeout: float | None = None) -> bool:
+        step = 0.0 if timeout is None else timeout
+        if self.waits >= self.max_waits or self.now + step > self.start + self.run_for + 1e-9:
+            return True
+        self.waits += 1
+        self.now += step
+        return False
+
+    def elapsed(self) -> float:
+        return self.now - self.start
+
+
+class _ClockedTime:
+    """``writer.time`` for the length of a test: the module's own ``time.monotonic()`` reads the stepped clock, everything else is the real ``time``."""
+
+    def __init__(self, clock: _SteppedClock) -> None:
+        self._clock = clock
+
+    def monotonic(self) -> float:
+        return self._clock.now
+
+    def __getattr__(self, name: str):
+        return getattr(time, name)
+
+
+def _run_the_loop_over_a_long_hold(monkeypatch, seconds: float = 1.8, tick=None, look=None) -> list[tuple[str, float]]:
+    """The watchdog's own loop on a gate held for ``seconds`` of simulated time: a 0.5 s full tick, a look every 0.02 s. Returns what the loop called,
+    in order, as ``("tick" | "look", simulated seconds since the start)``. ``tick`` and ``look`` replace the real ones (each is still recorded)."""
+    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
+    monkeypatch.setattr(writer, "HOLD_LOOK_S", 0.02)
+    monkeypatch.setenv("OO_WRITE_GATE_WATCH_INTERVAL_S", "0.5")
+    gate = writer.WriterGate()
+    monkeypatch.setattr(writer, "write_gate", gate)
+    let_go, t = _hold_the_gate(gate)
+    clock = _SteppedClock(time.monotonic(), seconds)
+    monkeypatch.setattr(writer, "time", _ClockedTime(clock))
+    calls: list[tuple[str, float]] = []
+    real_tick, real_look = writer.watchdog_tick, writer.sample_holder_state
+
+    def recorded_tick(g, w):
+        calls.append(("tick", clock.elapsed()))
+        return (tick or real_tick)(g, w)
+
+    def recorded_look(g, now=None):
+        calls.append(("look", clock.elapsed()))
+        return (look or real_look)(g, now)
+
+    monkeypatch.setattr(writer, "watchdog_tick", recorded_tick)
+    monkeypatch.setattr(writer, "sample_holder_state", recorded_look)
+    try:
+        writer._watchdog_loop(clock)
+    finally:
+        let_go.set()
+        t.join(5)
+    return calls
+
+
+def _at(calls: list[tuple[str, float]], what: str) -> list[float]:
+    return [at for kind, at in calls if kind == what]
+
+
 @pytest.mark.usefixtures("journal")
 def test_the_watchdog_loop_looks_every_second_of_a_long_hold_and_ticks_at_its_own_pace(proc, monkeypatch):
-    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
-    monkeypatch.setattr(writer, "HOLD_LOOK_S", 0.02)
-    monkeypatch.setenv("OO_WRITE_GATE_WATCH_INTERVAL_S", "0.5")
-    gate = writer.WriterGate()
-    monkeypatch.setattr(writer, "write_gate", gate)
-    ticks: list[float] = []
-    real_tick = writer.watchdog_tick
-    monkeypatch.setattr(writer, "watchdog_tick", lambda g, w: (ticks.append(time.monotonic()), real_tick(g, w))[1])
     proc.put("S", "futex_do_wait")
-    let_go, t = _hold_the_gate(gate)
-    stop = threading.Event()
-    loop = threading.Thread(target=writer._watchdog_loop, args=(stop,), daemon=True)
-    loop.start()
-    time.sleep(1.8)
-    stop.set()
-    loop.join(3)
-    let_go.set()
-    t.join(5)
+    calls = _run_the_loop_over_a_long_hold(monkeypatch)
     (event,) = _events("gate_hold")
     looks = sum(event["ws"])
-    assert looks >= 20, f"one look every 0.02 s for most of 1.8 s, not one every 0.5 s: {event['ws']}"
-    assert 2 <= len(ticks) <= 5, f"the full tick stayed at its 0.5 s pace: {len(ticks)} ticks"
-
-
-def _run_the_loop_over_a_long_hold(monkeypatch, order: list[str], seconds: float = 1.7) -> None:
-    """The watchdog's own loop on a gate held for ``seconds``: a 0.5 s full tick, a look every 0.02 s; ``order`` is what the loop called."""
-    monkeypatch.setattr(writer, "HOLD_RECORD_S", 0.05)
-    monkeypatch.setattr(writer, "HOLD_LOOK_S", 0.02)
-    monkeypatch.setenv("OO_WRITE_GATE_WATCH_INTERVAL_S", "0.5")
-    gate = writer.WriterGate()
-    monkeypatch.setattr(writer, "write_gate", gate)
-    let_go, t = _hold_the_gate(gate)
-    stop = threading.Event()
-    loop = threading.Thread(target=writer._watchdog_loop, args=(stop,), daemon=True)
-    loop.start()
-    time.sleep(seconds)
-    stop.set()
-    loop.join(3)
-    let_go.set()
-    t.join(5)
+    assert looks >= 60, f"one look every 0.02 s from the first tick's journal entry to 1.8 s, not one every 0.5 s: {event['ws']}"
+    assert len(_at(calls, "tick")) == 3, f"the full tick stayed at its 0.5 s pace: {_at(calls, 'tick')}"
 
 
 @pytest.mark.usefixtures("journal")
 def test_a_watchdog_tick_that_raises_waits_its_interval_and_does_not_stop_the_looks(proc, monkeypatch):
     """The loop moved ``due`` only after the tick returned, so a tick that raised was due again at once: the loop ran it at full speed (290,307
     times in a second) and, with the look in the same ``try``, took no look. The first tick is real (it journals the hold); every later one raises."""
-    order: list[str] = []
-    real_tick, real_look = writer.watchdog_tick, writer.sample_holder_state
     proc.put("S", "futex_do_wait")
+    real_tick = writer.watchdog_tick
+    ticked: list[int] = []
 
     def tick(g, w):
-        order.append("tick")
-        if order.count("tick") == 1:
+        ticked.append(1)
+        if len(ticked) == 1:
             return real_tick(g, w)
         raise RuntimeError("the tick failed")
 
-    def look(g, now=None):
-        order.append("look")
-        return real_look(g, now)
-
-    monkeypatch.setattr(writer, "watchdog_tick", tick)
-    monkeypatch.setattr(writer, "sample_holder_state", look)
-    _run_the_loop_over_a_long_hold(monkeypatch, order)
-    assert 2 <= order.count("tick") <= 6, f"a raising tick waits its 0.5 s: {order.count('tick')} ticks in 1.7 s"
-    after_the_first_raise = order[order.index("tick", order.index("tick") + 1) + 1 :]
-    between = after_the_first_raise[: after_the_first_raise.index("tick")] if "tick" in after_the_first_raise else after_the_first_raise
-    assert between.count("look") >= 3, "the looks go on between the raising ticks"
+    calls = _run_the_loop_over_a_long_hold(monkeypatch, tick=tick)
+    ticks = _at(calls, "tick")
+    assert len(ticks) == 3, f"a raising tick waits its 0.5 s: {len(ticks)} ticks in 1.8 s (a spinning loop is cut off at 5,000 waits)"
+    assert ticks == pytest.approx([0.5, 1.0, 1.5], abs=0.03), ticks
+    tick_at = [i for i, (kind, _when) in enumerate(calls) if kind == "tick"]
+    between = [kind for kind, _when in calls[tick_at[1] + 1 : tick_at[2]]]
+    assert between.count("look") >= 20, f"the looks go on between the raising ticks at their own 0.02 s pace: {between.count('look')} looks in 0.5 s"
 
 
 @pytest.mark.usefixtures("journal")
 def test_a_sampler_that_raises_does_not_spin_the_loop_or_stop_the_ticks(proc, monkeypatch):
-    order: list[str] = []
-    real_tick = writer.watchdog_tick
-
-    def tick(g, w):
-        order.append("tick")
-        return real_tick(g, w)
-
     def look(g, now=None):
-        order.append("look")
         raise RuntimeError("the look failed")
 
-    monkeypatch.setattr(writer, "watchdog_tick", tick)
-    monkeypatch.setattr(writer, "sample_holder_state", look)
-    _run_the_loop_over_a_long_hold(monkeypatch, order)
-    assert 2 <= order.count("tick") <= 6, order.count("tick")
-    assert 2 <= order.count("look") <= 8, f"one failed look per wake, each wake at the full tick's own pace: the loop did not spin ({order.count('look')} looks)"
+    calls = _run_the_loop_over_a_long_hold(monkeypatch, look=look)
+    ticks, looks = _at(calls, "tick"), _at(calls, "look")
+    assert ticks == pytest.approx([0.5, 1.0, 1.5], abs=0.03), f"the ticks go on at the full tick's own pace: {ticks}"
+    assert len(looks) == len(ticks), f"one failed look per wake, each wake at the full tick's pace: the loop did not spin ({len(looks)} looks)"
 
 
 # --------------------------------------------------------------------------- #

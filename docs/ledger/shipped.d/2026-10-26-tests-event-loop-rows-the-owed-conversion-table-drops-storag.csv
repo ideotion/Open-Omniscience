@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-26,tests/event-loop-rows,the owed-conversion table drops storage_events.record: the conversion landed (audit A-032),shipped,audit 0.5.0 A-032; R163,tests/test_event_loop_rows_pinned.py,"The R163 conversion of the two trim loops of storage_events.record landed (8bedf2c7a, pinned by tests/test_r163_storage_events_record.py) but the table still listed it as owed. The table is empty; the check over it is a loop, not a parametrize, so an empty table passes instead of being reported as skipped. Test-only."
