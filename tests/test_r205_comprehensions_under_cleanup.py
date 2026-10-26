@@ -3,7 +3,7 @@
 CPython 3.13 inlines a comprehension into its function, and the back-edge of its filter-skip then sits between the exception-table entries
 of the construct around it, so a ``KeyboardInterrupt`` delivered there leaves the frame without running the ``finally`` or the lock's
 release (measured on a minimal case: 12,283 of 12,491 interrupts skipped the ``finally``). In a frame of its own there is no handler to
-skip. The body of each comprehension is unchanged. The three sites are the Tier A items with a plausible chain to boot or a CLI in
+skip. The body of each comprehension is unchanged. The four sites are the Tier A items with a plausible chain to boot or a CLI in
 /mnt/project-files/audit-0.5.0/inputs/comprehensions-in-try-report.md (reachability there is by bare function name, depth 4: a hint, not a
 proof). The check reads the compiled code with the helper of tests/test_gates_survive_an_interrupt.py (imported, that file is not edited)."""
 
@@ -19,6 +19,7 @@ _SITES = (
     ("src/database/source_identity.py", "upgrade_sources_to_composite_key", "finally that turns foreign-key enforcement back on"),
     ("src/database/damage.py", "confirmed_damage", "with self._lock"),
     ("src/versioned/store.py", "lane_engine", "with _lock"),
+    ("src/versioned/store.py", "dispose_lane", "with _lock"),  # reached by encrypt_tool.encrypt_all through an aliased import
 )
 
 

@@ -236,6 +236,12 @@ def _other_engines_of(kind: str, key: tuple[str, str]) -> list[tuple[str, str]]:
     return [k for k in _engines if k[0] == kind and k != key]
 
 
+def _keys_of(kind: str) -> list[tuple[str, str]]:
+    """The cached engine keys of ``kind`` (call it with ``_lock`` held), for the same reason as :func:`_other_engines_of`: the
+    ``with _lock`` in ``dispose_lane`` (R205)."""
+    return [k for k in _engines if k[0] == kind]
+
+
 def lane_engine(kind: str, *, create: bool = False) -> Engine:
     """The engine for ``kind``. Refuses an absent lane unless ``create=True``.
 
@@ -526,7 +532,7 @@ def dispose_lane(kind: str) -> None:
     lane — a snapshot, a restore swap.
     """
     with _lock:
-        keys = [k for k in _engines if k[0] == kind]
+        keys = _keys_of(kind)
         engines = [_engines.pop(k) for k in keys]
         for k in keys:
             _factories.pop(k, None)
