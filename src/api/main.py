@@ -40,6 +40,7 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from starlette.requests import HTTPConnection
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -919,10 +920,16 @@ async def csrf_and_security_headers(request: Request, call_next):
     # Origin (or at least a Referer); if present and not loopback, refuse. Requests
     # with no Origin/Referer (CLI, same-origin server-side) are allowed.
     if request.method in _STATE_CHANGING:
-        host = _origin_host(request.headers.get("origin")) or _origin_host(
-            request.headers.get("referer")
-        )
-        if host is not None and host not in _LOOPBACK_HOSTS:
+        # A header that is PRESENT but names no host is a browser telling us it will not say where the request came
+        # from: ``Origin: null`` (a sandboxed iframe, a ``file://`` page, a redirect across origins) parses to no
+        # hostname, and the old test (``host is not None``) read that as "no Origin sent" and let it through. Only an
+        # ABSENT header (a CLI, a server-side caller) is allowed; the Origin, when sent, decides alone, so a loopback
+        # Referer cannot vouch for an Origin that is not loopback.
+        sent = request.headers.get("origin")
+        if sent is None:
+            sent = request.headers.get("referer")
+        host = _origin_host(sent)
+        if sent is not None and (host is None or host not in _LOOPBACK_HOSTS):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Cross-origin state-changing request refused (loopback only)."},
@@ -1137,6 +1144,21 @@ async def monitor_requests(request: Request, call_next):
 # no-ops when the client sent no `Accept-Encoding: gzip` (curl without it, or any
 # client that doesn't want it) and for responses already declaring another encoding.
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request: Request, exc: RequestValidationError):
+    """FastAPI's own 422 answers with ``errors()`` whole, and each error carries ``input``: the value that failed,
+    which for a request body is the BODY, so a route that takes a passphrase (unlock, create-db, encrypt, backup,
+    release run) sent it back in the response the moment any field was missing. The UI reads only ``msg``
+    (``_apiErrorMessage``), so ``input`` and ``ctx`` (which can hold the validator's own exception) are dropped
+    for every route and the error keeps what names the fault: ``type``, ``loc``, ``msg``. Nothing writes the
+    request or response body anywhere else (no middleware or logger reads it), so this is the one place it left."""
+    errors = [
+        {"type": str(item.get("type", "")), "loc": list(item.get("loc", ())), "msg": scrubbed(str(item.get("msg", "")))}
+        for item in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 # Rate limit exceeded handler

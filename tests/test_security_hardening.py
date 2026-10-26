@@ -199,3 +199,70 @@ def test_a_non_str_input_already_raised_BEFORE_the_narrowing(bad):
         safe_href(bad)
     with pytest.raises((TypeError, AttributeError)):
         sanitize_url(bad)
+
+
+# --- R191: a PRESENT Origin/Referer that names no host is refused ------------ #
+# `Origin: null` (sandboxed iframe, file:// page, cross-origin redirect) parses to no hostname, and the guard used
+# to read "no host" as "no header". Only an ABSENT header is allowed.
+@pytest.mark.parametrize("value", ["null", "file://", "file:///etc/hosts", "data:text/html,x", "about:blank", ""])
+def test_origin_that_names_no_host_is_refused(client, value):
+    r = client.post("/api/briefing/refresh", headers={"Origin": value})
+    assert r.status_code == 403, value
+
+
+@pytest.mark.parametrize("value", ["null", "file:///x", "about:blank"])
+def test_referer_that_names_no_host_is_refused(client, value):
+    r = client.post("/api/briefing/refresh", headers={"Referer": value})
+    assert r.status_code == 403, value
+
+
+def test_null_origin_is_not_rescued_by_a_loopback_referer(client):
+    r = client.post(
+        "/api/briefing/refresh",
+        headers={"Origin": "null", "Referer": "http://127.0.0.1:8000/"},
+    )
+    assert r.status_code == 403
+
+
+def test_a_loopback_origin_is_not_undone_by_a_foreign_referer(client):
+    # The Origin decides alone when it is sent (the long-standing behaviour, pinned so the rewrite keeps it).
+    r = client.post(
+        "/api/briefing/refresh",
+        headers={"Origin": "http://localhost:8000", "Referer": "https://evil.example/"},
+    )
+    assert r.status_code == 200
+
+
+def test_safe_methods_ignore_a_null_origin(client):
+    assert client.get("/api/health", headers={"Origin": "null"}).status_code in (200, 404)
+
+
+# --- R191: a 422 never echoes the request body ------------------------------- #
+CANARY = "canary-passphrase-4f9c1e7a"
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/api/system/create-db", {"passphrase": CANARY}),  # `confirm` missing
+        ("/api/system/encrypt-db", {"passphrase": CANARY, "confirm": CANARY, "consent": "not-a-bool"}),
+        ("/api/system/unlock", {"pass": CANARY, "n": {"x": CANARY}}),  # `passphrase` missing
+    ],
+)
+def test_validation_error_does_not_echo_the_body(client, path, body):
+    r = client.post(path, json=body)
+    assert r.status_code == 422, (path, r.status_code)
+    assert CANARY not in r.text
+    for item in r.json()["detail"]:
+        assert set(item) == {"type", "loc", "msg"}
+        assert "input" not in item and "ctx" not in item
+
+
+def test_malformed_json_422_does_not_echo_the_body(client):
+    r = client.post(
+        "/api/system/create-db",
+        content=f'{{"passphrase": "{CANARY}", '.encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 422
+    assert CANARY not in r.text
