@@ -431,13 +431,15 @@ working copy (~2×) ≈ **3–4× corpus** in scratch, so the sandbox caps at a 
 
 ```bash
 # 1. Generate an ENCRYPTED 50 GB corpus (then repeat at 100 GB):
-python scripts/generate_scale_corpus.py \
+OO_DB_PASSPHRASE="$OO_PASS" python scripts/generate_scale_corpus.py \
     --out /mnt/scratch/oo-50gb/open_omniscience.db \
-    --target-size 50GB --passphrase "$OO_PASS"
+    --target-size 50GB
 
 # 2. Full bench with the acceptance gate + an RSS bound:
-python scripts/run_scale_bench.py --corpus /mnt/scratch/oo-50gb \
-    --corpus-passphrase "$OO_PASS" ...
+OO_DB_PASSPHRASE="$OO_PASS" OO_BENCH_BACKUP_PASSPHRASE="$OO_BACKUP_PASS" \
+    python scripts/run_scale_bench.py --corpus /mnt/scratch/oo-50gb ...
+# (passphrases are read from those variables, or from standard input with
+#  --corpus-passphrase-stdin / --backup-passphrase-stdin; a flag carrying the value is refused)
 
 # 3. The OFFICIAL backup number = a fresh-process backup-only run.
 ```
