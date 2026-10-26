@@ -1316,6 +1316,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "Originale löschen? Es werden nur Dateien entfernt, die nachweislich bereits im App-Ordner vorhanden sind — alles, was nicht kopiert wurde, bleibt erhalten. Dies kann nicht rückgängig gemacht werden.",
   "Delete this download and its file?": "Diesen Download und seine Datei löschen?",
   "Delete this edition? The corpus is untouched — only the document goes.": "Diese Ausgabe löschen? Das Korpus bleibt unberührt – nur das Dokument verschwindet.",
+  "Delete this extractor? This cannot be undone.": "Diesen Extraktor löschen? Das lässt sich nicht rückgängig machen.",
   "Delete this watch and its history?": "Diese Beobachtung und ihren Verlauf löschen?",
   "Deleted.": "Gelöscht.",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "Löscht nur Dateien, deren Kopie im App-Ordner bestätigt ist. Führen Sie zuerst das Kopieren aus.",

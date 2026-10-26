@@ -39,10 +39,10 @@ eval(fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "u
 const ran = [];
 const GESTURE = [
   "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
-  "excludeKeyword", "familyResetGroup", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched", "osmPickRemove",
-  "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation", "removeAuthor",
-  "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "schedulerStop", "secureErase", "sgRemoveMember",
-  "stopVllm", "unattendedStop",
+  "excludeKeyword", "familyResetGroup", "familySplit", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched",
+  "mbRun", "osmPickRemove", "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation",
+  "removeAuthor", "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "runAiCheck", "schedulerStop",
+  "secureErase", "sgRemoveMember", "stopVllm", "toggleAiCoordinator", "unattendedStop",
 ];
 for (const n of [...GESTURE, "deleteSource"]) {
   global[n] = (...a) => ran.push(n + ":" + a.join(","));
