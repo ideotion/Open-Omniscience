@@ -407,6 +407,24 @@ down is a RECORD of that date and carries its own disposition table.)*
   hatch for serving the app under another name and widens both checks; every non-Swagger
   response carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
   `frame-ancestors 'none'`. CORS ships `allow_credentials=False`.
+- **What stands between a cross-site page and a state-changing request (stated 2026-10-26, audit 0.5.0
+  item 35).** Three layers, in the order a request meets them. (1) The `Host` allow-set refuses a
+  DNS-rebinding name (421). (2) The `Origin` / `Referer` check above refuses a foreign host or port
+  and an `Origin: null` (403); a request that carries neither header passes, which is what a
+  command-line client sends. (3) FastAPI's `strict_content_type` (on by default since 0.132.0, which
+  `pyproject.toml` now floors; registry entry `fastapi-strict-content-type`) makes a route that takes
+  a JSON model answer 422 to a body typed as `text/plain` or form data or not typed at all, so the
+  kinds of body a cross-site `<form>` or no-preflight `fetch` can send never reach the handler
+  (`tests/test_security_hardening.py`). Layer 3 is a property of the installed dependency, pinned by
+  that test and by the floor; the lock install that releases use pins 0.138.0. Six API modules read
+  a raw body, form or upload (`commodity`, `verification`, `claims`, `source_io`,
+  `diagnostics/qualification_merge`, `ingestion`), so layer 3 does not apply to those routes and layer 2 stands
+  alone there; a route that takes no body (`POST /api/briefing/refresh`) has nothing to type, so only
+  layer 2 stands. **What none of them covers:** a `GET` route with a side effect (the ones known are
+  `/api/geo/downloads/size` and `/api/database/backup`, each with a proposal in the 0.5.0
+  audit record), and a browser that sends no `Origin` and no `Referer` (legacy only). A `Sec-Fetch-Site`
+  check in the middleware would be a fourth, independent signal; it is not built, because nothing
+  has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
   cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
   encryption remains the host's job (Qubes/LUKS) — this bounds a shared host, not a seized one.

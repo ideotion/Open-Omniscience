@@ -424,3 +424,35 @@ def test_malformed_json_422_does_not_echo_the_body(client):
     # pydantic's own answer here carries `input` and `ctx`; the key set is what fails on the old handler
     for item in r.json()["detail"]:
         assert set(item) == {"type", "loc", "msg"}
+
+
+# --- audit 0.5.0 item 35: the second layer, a JSON route refuses a body that is not typed as JSON ----------------- #
+# A cross-site <form> or fetch(mode="no-cors") can send only a few Content-Types (text/plain, form-urlencoded, multipart) without a
+# preflight. FastAPI's strict_content_type (on by default since 0.132.0, which pyproject now floors) makes a route that takes a JSON
+# model answer 422 `model_attributes_type` to any of them, so the body never reaches the handler. MEASURED on the wheels (2026-10-26):
+# 0.131.0 already answers 422 to text/plain and form-urlencoded (the body is not parsed as JSON), and parses a body with NO Content-Type
+# as JSON and reaches the handler; 0.132.0 and later refuse that case too, so the no-Content-Type row is the one that fails below the
+# floor. It is a property of the installed dependency, not of this repo, so it is pinned here: the Origin guard (above) and the Host guard are the other two layers, and a
+# POST with no body (`/api/briefing/refresh`) has only the Origin guard to lean on. docs/SECURITY.md names all three.
+_JSON_ROUTE = "/api/newsletters/remove-imported"  # takes RemoveNewslettersBody; with confirm false the handler answers 400
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Content-Type": "text/plain"},
+        {"Content-Type": "application/x-www-form-urlencoded"},
+        {"Content-Type": "text/plain;charset=UTF-8"},
+        {},  # no Content-Type at all
+    ],
+)
+def test_a_json_route_refuses_a_body_not_typed_as_json(client, headers):
+    r = client.post(_JSON_ROUTE, content=b'{"confirm": false}', headers=headers)
+    assert r.status_code == 422, (headers, r.status_code, r.text)
+    assert r.json()["detail"][0]["type"] == "model_attributes_type"
+
+
+def test_a_json_route_still_accepts_a_body_typed_as_json(client):
+    # The same bytes with the right type reach the handler, which refuses on its own rule (confirm false): 400, not the 422 above.
+    r = client.post(_JSON_ROUTE, content=b'{"confirm": false}', headers={"Content-Type": "application/json"})
+    assert r.status_code == 400, (r.status_code, r.text)

@@ -194,6 +194,23 @@ def test_starlette_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_b
     assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins starlette {pins[0]}, below the floor"
 
 
+def test_fastapi_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
+    """The local API leans on FastAPI's ``strict_content_type`` (on by default since 0.132.0) as the second of three layers against a
+    cross-site POST (docs/SECURITY.md, "The local API"); ``fastapi>=0.110`` admitted releases without it. The floor is written in three
+    places (pyproject, the registry, the lock file) and nothing else ties them."""
+    entry = next(a for a in R.load_registry() if a["id"] == "fastapi-strict-content-type")
+    pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^\s*"fastapi>=([0-9][0-9.]*)[",]', pyproject, flags=re.MULTILINE)
+    assert m, "pyproject.toml's fastapi requirement lost its floor (see the comment above it)"
+    assert m.group(1) == str(entry["pin"]["floor"]), "pyproject and the registry disagree on the fastapi floor"
+    assert R._ver_ge(str(entry["pin"]["verified"]), m.group(1)), "the verified release is below the floor"
+    assert entry["upstream_check"]["current"] == str(entry["pin"]["verified"]), "the release the watch compares with is the newest one run"
+    lock = (R.repo_root() / "requirements.lock").read_text(encoding="utf-8")
+    pins = re.findall(r"^fastapi==([0-9][0-9.]*)\b", lock, flags=re.MULTILINE)
+    assert len(pins) == 1, f"requirements.lock must pin fastapi exactly once, found {pins}"
+    assert R._ver_ge(pins[0], str(entry["pin"]["floor"])), f"the lock pins fastapi {pins[0]}, below the floor"
+
+
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""

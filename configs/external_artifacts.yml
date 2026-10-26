@@ -598,6 +598,39 @@ artifacts:
       - "src/ingest/extract.py _LXML_LOCK is meant to be the only way the app reaches libxml2 (tests/test_extract_lock.py walks src/ for imports and calls, and its docstring names what the walks do not see)"
     last_verified: "2026-10-16"
 
+  - id: fastapi-strict-content-type
+    title: fastapi (the API framework), floor 0.132.0
+    kind: runtime-coupling
+    description: >
+      The local API keeps a cross-site page from posting to it with three layers (docs/SECURITY.md, "The local API"): the Host allow-set
+      (421), the Origin / Referer host-and-port check on every state-changing method (403, src/api/main.py csrf_and_security_headers), and
+      FastAPI's strict_content_type, which makes a route that takes a JSON model answer 422 model_attributes_type to a body not typed as
+      JSON. The third is a property of the installed dependency, not of this repo: it is on by default since 0.132.0 (read in the wheels:
+      0.131.0 has no strict_content_type, 0.132.0 has it as Default(True) in fastapi/routing.py). pyproject.toml said fastapi>=0.110, so a
+      hand-installed 0.110 to 0.131 had no such check. WHAT THE FLOOR CHANGES, measured on the wheels on 2026-10-26 with
+      tests/test_security_hardening.py::test_a_json_route_refuses_a_body_not_typed_as_json (POST /api/newsletters/remove-imported): on
+      0.131.0 text/plain and form-urlencoded bodies already answer 422 (the body is not parsed as JSON) and a body with NO Content-Type is
+      parsed as JSON and reaches the handler (the one row that fails); on 0.132.0 and 0.138.0 (the pin of requirements.lock) all rows
+      pass. A route that takes no body (POST /api/briefing/refresh) has no content to type, so only the Origin check stands there. WHAT WAS
+      RUN: that test file's json_route tests with each release's unpacked wheel first on PYTHONPATH (starlette and pydantic as installed),
+      0.131.0 failed one row, 0.132.0, 0.138.0 and 0.162.0 (the newest installed here) passed. In CI the test and core-only jobs run the
+      tests on whatever release pip resolves that day; no CI job runs them on the floor, so the floor is verified by that hand run.
+    upstream: https://pypi.org/project/fastapi/ (https://github.com/fastapi/fastapi)
+    check_upstream: "pypi.org/pypi/fastapi/json - compare info.version; 0.162.0 was the newest run here on 2026-10-26, the lock pins 0.138.0"
+    license: MIT
+    pin: {floor: "0.132.0", verified: "0.162.0"}
+    upstream_check: {github: "fastapi/fastapi", type: release, current: "0.162.0"}
+    refresh: >
+      on a new fastapi release run the json_route tests in tests/test_security_hardening.py and the route test files on it (its unpacked
+      wheel first on PYTHONPATH), then move verified and upstream_check.current together; the floor moves only when a release is found to
+      carry a defect this app meets. A release that changes the default of strict_content_type, or that stops answering 422 on a JSON
+      route, is read first: the test would then fail for a reason this entry states.
+    couplings:
+      - "pyproject.toml dependencies fastapi carries the same floor (test-enforced)"
+      - "requirements.lock pins exactly one release at or above the floor (0.138.0 today; test-enforced)"
+      - "docs/SECURITY.md 'The local API' names the three layers and what none of them covers (tests/test_security_hardening.py)"
+    last_verified: "2026-10-26"
+
   - id: starlette-gzip-flush
     title: starlette (the web layer under fastapi), floor 1.5.0
     kind: runtime-coupling
