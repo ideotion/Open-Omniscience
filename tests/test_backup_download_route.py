@@ -843,6 +843,111 @@ def test_the_removal_does_not_run_on_the_event_loop(data_dir, monkeypatch):
     assert not workdir.exists()
 
 
+def test_the_route_marks_its_snapshot_directory_with_the_process_that_made_it(client, data_dir, monkeypatch):
+    """0.5.1 item 40. The marker is what lets the next start tell a dead server's snapshot from another live server's (R176); it is
+    written before the snapshot, so a kill at any point after the directory exists leaves it."""
+    import json
+
+    import psutil
+
+    seen: dict = {}
+
+    def spy(dest):
+        seen["marker"] = json.loads((Path(dest).parent / ".owner.json").read_text(encoding="utf-8"))
+        Path(dest).write_bytes(b"x" * 100)
+
+    monkeypatch.setattr(sb, "backup_to", spy)
+    assert client.get("/api/database/backup", headers=OWN_PAGE).status_code == 200
+    assert seen["marker"]["pid"] == os.getpid()
+    assert seen["marker"]["started"] == round(psutil.Process().create_time(), 3)
+    assert _left_over(data_dir) == []
+
+
+def test_the_prefix_the_route_writes_is_the_prefix_the_boot_sweep_removes():
+    """Two files spell one directory name. A rename in the route that left the sweep behind would make the snapshot of a killed
+    server survive until the next backup again, silently."""
+    from src.backup import stream_backup
+
+    assert dbapi._BACKUP_DIR_PREFIX in stream_backup._TEMP_DIR_PREFIXES
+    assert dbapi._BACKUP_DIR_PREFIX in stream_backup._OWNER_MARKED_PREFIXES
+
+
+_KILL_SCRIPT = """
+import pathlib, sys, time
+from starlette.requests import Request
+import src.api.database as dbapi
+import src.backup.sqlite_backup as sb
+from src.database.session import init_db
+
+init_db()
+
+
+def slow(dest):
+    pathlib.Path(dest).write_bytes(b"PLAINTEXT" * 1000)  # a partial copy of the corpus, on disk
+    print("writing", flush=True)
+    time.sleep(120)  # a snapshot of a big corpus takes minutes; the test kills the process here
+
+
+sb.backup_to = slow
+request = Request(
+    {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/database/backup",
+        "query_string": b"",
+        "headers": [(b"host", b"127.0.0.1"), (b"sec-fetch-site", b"same-origin")],
+    }
+)
+dbapi.download_backup(request)
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGKILL is POSIX")
+def test_a_server_killed_while_its_snapshot_is_written_leaves_a_directory_the_next_start_removes_at_once(tmp_path):
+    """0.5.1 item 40, in a real process. SIGKILL (or the power) runs no exit hook and no signal handler, so the plaintext copy of
+    the corpus is on disk when the next server starts. Before this change the boot sweep did not know the directory at all. The
+    control is the point: the directory is young, so the 24 h age rule alone keeps it, and only the marker of a process that is
+    gone makes the sweep take it at once."""
+    from src.backup import stream_backup
+
+    data = tmp_path / "data"
+    env = {**os.environ, "OO_DATA_DIR": str(data), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _KILL_SCRIPT],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 180
+        line = ""
+        while time.monotonic() < deadline and "writing" not in line:
+            line = proc.stdout.readline()
+            if not line and proc.poll() is not None:
+                raise AssertionError(f"the server ended before it wrote: {proc.stdout.read()[-2000:]}")
+        assert "writing" in line, "the snapshot was never started"
+        proc.kill()
+        assert proc.wait(timeout=60) == -signal.SIGKILL
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    (left,) = sorted(data.glob(".oo-backup-*"))
+    assert (left / "snapshot.db").exists(), "the kill did not leave the copy (the test measures nothing)"
+    marker = left / ".owner.json"
+    assert marker.exists(), "the route wrote no owner marker"
+    kept = marker.read_bytes()
+    marker.unlink()
+    assert stream_backup.sweep_stale_backup_temps(data) == 0 and left.exists(), "control: with no marker the age rule keeps a young directory"
+    marker.write_bytes(kept)
+    assert stream_backup.sweep_stale_backup_temps(data) == 1
+    assert not left.exists(), "the directory of a process that is gone stayed"
+
+
 def test_a_crashed_servers_leftovers_are_swept_but_a_younger_directory_and_other_files_are_not(client, data_dir):
     old = data_dir / ".oo-backup-crashed"
     young = data_dir / ".oo-backup-streaming"

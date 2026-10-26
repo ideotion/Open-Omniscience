@@ -815,7 +815,9 @@ def download_backup(request: Request) -> FileResponse:
     that cannot be read is not a refusal, and the response says it was not checked). The directory is removed when the
     response ends (a process that is stopped while a snapshot is still being written removes it as it stops: at interpreter exit,
     :func:`_remove_live_snapshot_dirs`, and before a SIGTERM that outlasts the graceful window ends it, :func:`install_stop_signal_cleanup`),
-    and a leftover from a crashed server older than a day is removed by the next request.
+    and a leftover from a crashed server older than a day is removed by the next request. A KILL (SIGKILL, the power) runs nothing, so
+    the directory carries an owner marker (:func:`src.backup.stream_backup.write_owner_marker`): the boot sweep removes a dead
+    owner's directory at the next start at once, and one with no marker only by the age rule.
     """
     from src.backup.sqlite_backup import BackupError, backup_to, live_db_path
     from src.database.connect import is_encrypted_file
@@ -860,6 +862,12 @@ def download_backup(request: Request) -> FileResponse:
         workdir = Path(tempfile.mkdtemp(prefix=_BACKUP_DIR_PREFIX, dir=data_dir))
         with _BACKUP_LOCK:
             _live_snapshot_dirs[workdir] = os.getpid()
+        # Whose directory this is, for the boot sweep: a KILL (SIGKILL, power) runs no exit hook, and the leftover is a full plaintext
+        # copy of the corpus. With the marker the next start removes a dead owner's directory at once; without it (the write is
+        # best-effort) the sweep falls back to the 24 h age rule, as it always did (0.5.1 item 40).
+        from src.backup.stream_backup import write_owner_marker
+
+        write_owner_marker(workdir)
         snapshot = workdir / "snapshot.db"
         try:
             backup_to(snapshot)

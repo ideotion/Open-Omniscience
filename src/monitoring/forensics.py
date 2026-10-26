@@ -59,7 +59,12 @@ _LOG = logging.getLogger(__name__)
 # previously lived in the ambient /tmp, which the OS clears; it now lives on real
 # disk beside the venv, where nothing did. Same class as the others: present == a
 # run that did not finish cleanly.
-_STAGING_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-vllm-pip-build")
+# ``.oo-backup-`` (src/api/database.py:_BACKUP_DIR_PREFIX) joins 2026-10-26 (0.5.1
+# item 40): the snapshot dir of GET /api/database/backup holds a PLAINTEXT copy of the
+# whole corpus as ``snapshot.db``, removed when the response ends and by an exit hook;
+# a kill (SIGKILL, power) runs neither, so a copy found here is a run that did not
+# finish. A download in flight is listed too, as any live staging dir is.
+_STAGING_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-vllm-pip-build", ".oo-backup-")
 _PART_SUFFIX = ".oopart"
 
 # Field diagnostics 2026-09-11 (C2). The forensics export printed "orphaned
@@ -81,7 +86,7 @@ _PART_SUFFIX = ".oopart"
 # itemised, with the policy that governs them stated -- the operator can then see 51.6 GB
 # of safety net and decide, rather than discovering it as an unexplained gap.
 _PRE_RESTORE_SNAPSHOT_RE = re.compile(r"^pre-restore-(\d{8}T\d{6}Z)\.db$")
-_PLAINTEXT_MEMBER_NAMES = ("corpus.db", "custody_log.db")
+_PLAINTEXT_MEMBER_NAMES = ("corpus.db", "custody_log.db", "snapshot.db")
 
 _DB_NAME = "open_omniscience.db"
 

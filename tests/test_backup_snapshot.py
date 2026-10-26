@@ -660,6 +660,47 @@ def test_a_dead_owners_copy_goes_at_once_a_live_owners_never(tmp_path):
     assert alive.exists() and young_unmarked.exists() and volumes.exists()
 
 
+def test_the_snapshot_dir_of_the_backup_route_is_swept_by_its_owner_like_a_staging_dir(tmp_path):
+    """MUTATION TARGET (0.5.1 item 40). ``.oo-backup-*`` is the plaintext snapshot of ``GET /api/database/backup``. A kill leaves it,
+    and the route's own sweep ran only when someone asked for the NEXT backup. The boot sweep now knows the prefix and judges the
+    directory by its owner: a dead process's goes at once whatever its age, another live process's stays whatever its age
+    (several servers may share one data folder, R176), and with no marker the 24 h age rule applies as it did."""
+    root = tmp_path / "data"
+    root.mkdir()
+    with _other_live_process() as (pid, started):
+        dead = _leftover(root, ".oo-backup-dead", {"pid": _dead_pid(), "started": 1.0})
+        recycled = _leftover(root, ".oo-backup-recycled", {"pid": pid, "started": 1.0})
+        alive = _leftover(root, ".oo-backup-alive", {"pid": pid, "started": started}, age_hours=72)
+        old_unmarked = _leftover(root, ".oo-backup-old", None, age_hours=48)
+        young_unmarked = _leftover(root, ".oo-backup-young", None)
+        not_a_snapshot = _leftover(root, ".oo-backups-elsewhere", None, age_hours=72)
+        assert sb.sweep_stale_backup_temps(root) == 3
+    assert not dead.exists() and not recycled.exists() and not old_unmarked.exists()
+    assert alive.exists() and young_unmarked.exists() and not_a_snapshot.exists()
+
+
+def test_a_snapshot_dir_of_this_very_process_is_never_taken_at_once(tmp_path):
+    """The route's own live download carries THIS process's marker: the verdict for it is "unknown", so only the age rule applies and
+    the boot or maintenance sweep cannot remove it from under the client reading it."""
+    import psutil
+
+    me = {"pid": os.getpid(), "started": round(psutil.Process().create_time(), 3)}
+    root = tmp_path / "data"
+    root.mkdir()
+    streaming = _leftover(root, ".oo-backup-streaming", me)
+    assert sb._owner_state(streaming) == "unknown"
+    assert sb.sweep_stale_backup_temps(root) == 0 and streaming.exists()
+
+
+def test_a_restore_staging_dir_is_still_judged_by_age_alone_not_by_a_marker(tmp_path):
+    """Widening the owner rule to a prefix whose owner writes no marker would change what the old sweep did: ``.restore-*`` keeps the
+    age rule even when a stray marker names a dead process."""
+    root = tmp_path / "data"
+    root.mkdir()
+    young = _leftover(root, ".restore-young", {"pid": _dead_pid(), "started": 1.0})
+    assert sb.sweep_stale_backup_temps(root) == 0 and young.exists()
+
+
 def test_another_machines_marker_is_not_judged_by_a_pid_that_means_nothing_here(tmp_path):
     """Two machines back up to one shared folder: the other machine's live job has a pid that does
     not exist on this one, and calling it dead removed it in the middle of its export. A foreign
