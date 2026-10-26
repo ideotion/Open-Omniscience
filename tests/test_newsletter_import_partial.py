@@ -9,6 +9,7 @@ reply, or a rollback of the earlier rounds) is a decision that has to edit them,
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.api import ingestion
@@ -118,7 +119,7 @@ def test_a_failure_inside_one_round_keeps_the_earlier_batches_loses_its_own_and_
     calls = {"n": 0}
 
     def commit_failing_on_the_second_batch():
-        calls["n"] += 1  # ingest_emails commits once per batch and nowhere else on this path
+        calls["n"] += 1  # ingest_emails commits once per batch on this path (these bodies have no links, so nothing else commits)
         if calls["n"] == 2:
             raise RuntimeError("the second batch failed to commit")
         return real_commit()
@@ -137,11 +138,21 @@ def test_a_failure_inside_one_round_keeps_the_earlier_batches_loses_its_own_and_
     assert s.query(Article).count() == 5
 
 
-def test_a_lock_or_collision_in_a_batch_is_redone_one_message_at_a_time_not_raised():
-    """The contrast that makes the pin above mean something: an integrity error on a batch commit does NOT escape; the batch is redone per message."""
-    from sqlalchemy.exc import IntegrityError
+def _collide_or_lock(kind: str):
+    from sqlalchemy.exc import IntegrityError, OperationalError
 
-    from src.database.models import Article
+    if kind == "collision":
+        return IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: articles.hash"))
+    return OperationalError("COMMIT", {}, Exception("database is locked"))
+
+
+@pytest.mark.parametrize("kind", ["collision", "lock"])
+def test_a_lock_or_collision_in_a_batch_is_redone_one_message_at_a_time_not_raised(kind):
+    """The contrast that makes the pin above mean something: an integrity error OR a lock on a batch commit does NOT escape; the batch is redone per message.
+
+    The commit is counted by call: on this path ``_flush`` is the only caller (the bodies have no links, so ``_maybe_index_email_links`` does not commit, and
+    ``_attach_target`` only flushes), so the first call is the first batch's."""
+    from src.database.models import Article, Source
     from src.ingest.email import ingest_emails
 
     s, src = _session()
@@ -149,14 +160,15 @@ def test_a_lock_or_collision_in_a_batch_is_redone_one_message_at_a_time_not_rais
     real_commit = s.commit
     state = {"raised": False}
 
-    def collide_once():
-        if not state["raised"]:  # the first commit is the first batch's
+    def fail_once():
+        if not state["raised"]:
             state["raised"] = True
-            raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: articles.hash"))
+            raise _collide_or_lock(kind)
         return real_commit()
 
-    s.commit = collide_once  # type: ignore[method-assign]
+    s.commit = fail_once  # type: ignore[method-assign]
     tally = ingest_emails(s, src, msgs, commit_batch=2)
     assert state["raised"]
-    assert tally["stored"] == 4, tally
+    assert tally["stored"] == 4 and tally["duplicate"] == 0, tally
     assert s.query(Article).count() == 4
+    assert s.query(Source).filter(Source.domain == "news.example").count() == 1, "the publisher source is re-created once after the rollback, not per message"
