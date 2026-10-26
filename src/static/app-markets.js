@@ -424,7 +424,7 @@
         ` <span class="muted">— ${esc(x.verdict_note || x.detail || "")}</span></div>`).join("");
       const retry = (r.retryable_failed_keys || []);
       const btn = retry.length
-        ? `<button class="secondary tiny" style="margin-top:4px" data-on-click="retryFailedFeeds('${esc(category||"")}', '${esc(retry.join(","))}', '${esc(elId)}')">` +
+        ? `<button class="secondary tiny" style="margin-top:4px" data-on-click="retryFailedFeeds(${esc(JSON.stringify(category||""))}, ${esc(JSON.stringify(retry.join(",")))}, ${esc(JSON.stringify(elId))})">` +
           esc(t("Retry failed feeds")) + ` (${retry.length})</button>`
         : "";
       el.innerHTML = rows + btn;
