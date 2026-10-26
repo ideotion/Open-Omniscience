@@ -135,3 +135,53 @@ def test_the_build_record_names_the_checkpoints(session, monkeypatch, tmp_path):
     lb = rollup_serve.status()["last_build"]
     assert lb["shard_checkpoints"] >= 1 and lb["shard_checkpoint_failures"] == 0
     assert lb["shard_checkpoint_first_failure"] is None and lb["shard_checkpoint_secs"] is not None
+
+
+class InterruptException(Exception):  # noqa: N818 - the engine's own class name, which the build matches by name
+    pass
+
+
+def test_an_interrupt_at_a_shard_checkpoint_ends_the_build_instead_of_carrying_on(session, monkeypatch):  # noqa: F811
+    """An interrupt is someone asking the statement to stop. At the aggregate and the bulk insert it already propagated
+    (``_NEVER_RETRIED``); at the checkpoint it was counted as a checkpoint that "failed", the build carried on, and every remaining shard
+    was aggregated after the stop was asked for."""
+    _seed(session, keywords=61, mentions_per=7)
+    _force_shards(monkeypatch, 4)
+
+    class Interrupted(_Recorder):
+        def execute(self, sql, *a, **k):
+            if sql.strip().upper() == "CHECKPOINT" and self.order.count("checkpoint") == 1:
+                self.order.append("interrupted")
+                raise InterruptException("INTERRUPT Error")
+            return super().execute(sql, *a, **k)
+
+    con = Interrupted(_con())
+    with pytest.raises(InterruptException):
+        columnar.build_keyword_daily(con, session, batch_size=50)
+    assert con.order == ["checkpoint", "aggregate", "interrupted"], "no shard was aggregated after the interrupt"
+
+
+def test_an_interrupt_at_the_compacting_checkpoint_propagates_and_is_no_outcome():
+    from tests.test_rollup_build_streaming import _CheckpointCon
+
+    with pytest.raises(InterruptException):
+        columnar.compact(_CheckpointCon(InterruptException("INTERRUPT Error")))
+
+
+def test_a_checkpoint_that_fails_and_carries_on_is_logged_by_class_not_only_tallied(session, monkeypatch, caplog):  # noqa: F811
+    """The tally names the first failure; the log names every one, so a run of them is visible in the error log the bundle keeps."""
+    import logging
+
+    _seed(session, keywords=40, mentions_per=5)
+    _force_shards(monkeypatch, 2)
+
+    class Refusing(_Recorder):
+        def execute(self, sql, *a, **k):
+            if sql.strip().upper() == "CHECKPOINT":
+                raise RuntimeError("engine words")
+            return super().execute(sql, *a, **k)
+
+    with caplog.at_level(logging.WARNING, logger=columnar._LOG.name):
+        columnar.build_keyword_daily(Refusing(_con()), session, batch_size=50)
+    lines = [r.getMessage() for r in caplog.records if "serves uncompacted" in r.getMessage()]
+    assert len(lines) == 2 and all("RuntimeError" in ln for ln in lines), lines

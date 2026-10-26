@@ -22,14 +22,21 @@ RUN OFFLINE, with the app STOPPED. --corpus is a DATA DIRECTORY containing
 and live_db_path resolve to the corpus). The backup/restore phases need
 ~corpus-size scratch inside the data dir; pick --phases to bound disk/time.
 
+PASSPHRASES NEVER GO ON THE COMMAND LINE (audit A-020; the argv of a process is readable by every
+user of the machine through ps, lands in shell history and in CI logs). The backup passphrase comes from
+$OO_BENCH_BACKUP_PASSPHRASE, the corpus's from $OO_DB_PASSPHRASE (the name the app itself reads), set by
+the caller; or each is read from standard input with --backup-passphrase-stdin / --corpus-passphrase-stdin
+(the corpus line first when both are given, one line each). The old --backup-passphrase /
+--corpus-passphrase flags are kept ONLY to refuse them by name, and an unrecognized argument is
+reported by count, never printed: argparse would otherwise print the value it could not place.
+
 Examples:
   # Full run on a plaintext corpus, report to stdout:
-  python scripts/run_scale_bench.py --corpus /data/bench/oo-200mb \
-      --backup-passphrase bench-only-pass
+  OO_BENCH_BACKUP_PASSPHRASE=... python scripts/run_scale_bench.py --corpus /data/bench/oo-200mb
 
-  # Field-scale ENCRYPTED corpus, unlock + backup only, report to a file:
-  python scripts/run_scale_bench.py --corpus /mnt/scratch/oo-50gb \
-      --corpus-passphrase "$OO_PASS" --backup-passphrase bench-only-pass \
+  # Field-scale ENCRYPTED corpus, unlock + backup only, report to a file (both from stdin):
+  printf '%s\n%s\n' "$CORPUS_PASS" "$BACKUP_PASS" | python scripts/run_scale_bench.py \
+      --corpus /mnt/scratch/oo-50gb --corpus-passphrase-stdin --backup-passphrase-stdin \
       --phases unlock,backup --out /mnt/scratch/report.json
 
 The ~200 MB CI-safe smoke tier rides the pytest marker: `pytest -m scale_smoke`.
@@ -46,6 +53,24 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
+_BACKUP_ENV = "OO_BENCH_BACKUP_PASSPHRASE"
+_CORPUS_ENV = "OO_DB_PASSPHRASE"
+
+
+def _passphrases(args, stdin) -> tuple[str | None, str | None]:
+    """``(backup, corpus)`` from standard input or the named environment variables; never from argv, never echoed."""
+    lines = None
+    if args.corpus_passphrase_stdin or args.backup_passphrase_stdin:
+        lines = stdin.read().splitlines()
+    pos = 0
+    corpus = os.environ.get(_CORPUS_ENV) or None
+    backup = os.environ.get(_BACKUP_ENV) or None
+    if args.corpus_passphrase_stdin:
+        corpus = lines[pos] if len(lines) > pos and lines[pos] else None
+        pos += 1
+    if args.backup_passphrase_stdin:
+        backup = lines[pos] if len(lines) > pos and lines[pos] else None
+    return backup, corpus
 
 
 def _is_encrypted(db_path: Path) -> bool:
@@ -57,8 +82,23 @@ def _is_encrypted(db_path: Path) -> bool:
         return False
 
 
+class _QuietParser(argparse.ArgumentParser):
+    """An argument parser whose errors never quote what the caller typed.
+
+    argparse echoes the offending text in "ignored explicit argument 'X'" (``--flag-stdin=X``) and "ambiguous option: --pre=X
+    could match ..." (a prefix of a flag), and either may be a passphrase typed on the command line. A message is printed
+    only when it cannot quote an argument (a missing REQUIRED flag); every other one is replaced by a fixed line.
+    """
+
+    def error(self, message: str):
+        if not message.startswith("the following arguments are required"):
+            message = "could not parse the arguments (the text is not printed: it may carry a secret); see --help"
+        self.exit(2, f"error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
+    p = _QuietParser(
+        allow_abbrev=False,
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument(
@@ -66,13 +106,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="data directory containing open_omniscience.db (OO_DATA_DIR will point here)",
     )
     p.add_argument("--out", type=Path, default=None, help="write the JSON report here (else stdout)")
+    # Refused, not accepted: see the module docstring. Hidden from --help so nobody is invited to use them.
+    p.add_argument("--backup-passphrase", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--corpus-passphrase", default=None, help=argparse.SUPPRESS)
     p.add_argument(
-        "--backup-passphrase", default=None,
-        help="encrypts the backup VOLUMES; required for the backup/restore phases",
+        "--backup-passphrase-stdin", action="store_true",
+        help=f"read the backup-volume passphrase from standard input (else ${_BACKUP_ENV}); required for the backup/restore phases",
     )
     p.add_argument(
-        "--corpus-passphrase", default=None,
-        help="the corpus's SQLCipher passphrase (required if the corpus is encrypted)",
+        "--corpus-passphrase-stdin", action="store_true",
+        help=f"read the corpus's SQLCipher passphrase from standard input (else ${_CORPUS_ENV}); required if the corpus is encrypted",
     )
     p.add_argument(
         "--phases", default="all",
@@ -105,7 +148,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    # parse_known_args, not parse_args: argparse's own "unrecognized arguments: ..." error prints the arguments back, and
+    # an unknown flag may be a passphrase option under another spelling. Only a COUNT is printed.
+    args, unknown = build_parser().parse_known_args(argv)
+    if unknown:
+        print(
+            f"error: {len(unknown)} unrecognized argument(s) (not printed: they may carry a secret); see --help",
+            file=sys.stderr,
+        )
+        return 2
+    if args.backup_passphrase is not None or args.corpus_passphrase is not None:
+        # Named and valueless: the value is in the caller's shell history already, and is not printed again here.
+        print(
+            "error: passphrases are not accepted on the command line (a process's arguments are readable "
+            f"by other users and land in shell history). Set ${_BACKUP_ENV} / ${_CORPUS_ENV}, or use "
+            "--backup-passphrase-stdin / --corpus-passphrase-stdin. The value you passed was not used.",
+            file=sys.stderr,
+        )
+        return 2
+    backup_passphrase, corpus_passphrase = _passphrases(args, sys.stdin)
 
     corpus_dir: Path = args.corpus
     corpus_db = corpus_dir / "open_omniscience.db"
@@ -114,9 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     encrypted = _is_encrypted(corpus_db)
-    if encrypted and not args.corpus_passphrase:
+    if encrypted and not corpus_passphrase:
         print(
-            "error: the corpus is encrypted; pass --corpus-passphrase",
+            f"error: the corpus is encrypted; set ${_CORPUS_ENV} or pass --corpus-passphrase-stdin",
             file=sys.stderr,
         )
         return 2
@@ -129,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("OO_AUTOSEED", "0")
     os.environ.setdefault("OO_FIELD_TEST", "0")
     if encrypted:
-        os.environ["OO_DB_PASSPHRASE"] = args.corpus_passphrase
+        os.environ["OO_DB_PASSPHRASE"] = corpus_passphrase  # the app's own variable; a no-op when the caller set it
     else:
         os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 
@@ -141,13 +202,13 @@ def main(argv: list[str] | None = None) -> int:
         phases = [x.strip() for x in args.phases.split(",") if x.strip()]
         unknown = [x for x in phases if x not in ALL_PHASES]
         if unknown:
-            print(f"error: unknown phase(s): {unknown}; valid: {ALL_PHASES}", file=sys.stderr)
+            print(f"error: {len(unknown)} unknown phase(s) (not printed: a mistyped flag may have put a secret here); valid: {ALL_PHASES}", file=sys.stderr)
             return 2
 
     needs_backup = any(x in phases for x in ("backup", "verify", "restore"))
-    if needs_backup and not args.backup_passphrase:
+    if needs_backup and not backup_passphrase:
         print(
-            "error: the backup/restore phases need --backup-passphrase "
+            f"error: the backup/restore phases need ${_BACKUP_ENV} or --backup-passphrase-stdin "
             "(the volume backup is always encrypted)",
             file=sys.stderr,
         )
@@ -155,8 +216,8 @@ def main(argv: list[str] | None = None) -> int:
 
     report = run_full(
         corpus_dir,
-        backup_passphrase=args.backup_passphrase or "",
-        corpus_passphrase=args.corpus_passphrase,
+        backup_passphrase=backup_passphrase or "",
+        corpus_passphrase=corpus_passphrase,
         phases=phases,
         repeats=args.repeats,
         wal_writes=args.wal_writes,

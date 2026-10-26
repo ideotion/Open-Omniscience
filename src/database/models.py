@@ -632,6 +632,38 @@ class FeedFetchState(Base):
         return f"<FeedFetchState(source_id={self.source_id}, status={self.last_status})>"
 
 
+class HostMismatchConfirmed(Base):
+    """A person's note that ONE source legitimately publishes on ONE other site (R193, 2026-10-26).
+
+    The quarantine job's host-mismatch REPORT (``src/ingest/host_mismatch.py``) counts articles stored
+    on a different registrable site than their source's own. A page on another site can be a good
+    article (syndication, a redirect, a wire feed), so after a person has looked at a pair and decided
+    it is fine, this row says so: the report then lists that pair as ``confirmed`` instead of as
+    something still to review. It never hides it, and it is never a quarantine signal.
+
+    KEYED on (source id, the article's registrable site as ``check_host`` returns it -- the one
+    normaliser, no second one here). A SEPARATE table, never a tag on ``sources`` (R193). OPERATOR
+    data: it is carried by a restore (merge rule R195) and never rebuilt by a derived job.
+    """
+
+    __tablename__ = "host_mismatch_confirmed"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    article_site: Mapped[str] = mapped_column(String(255), nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "article_site", name="uq_host_confirmed_pair"),
+    )
+
+    def __repr__(self):
+        return f"<HostMismatchConfirmed(source={self.source_id} site={self.article_site!r})>"
+
+
 class SourceQualificationAttempt(Base):
     """One row per qualification/re-qualification ATTEMPT (append-only -- the vintage
     convention, matching StatFigure/law-document versioning: a re-attempt is a NEW row,

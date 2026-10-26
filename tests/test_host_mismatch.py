@@ -174,5 +174,5 @@ def test_the_source_domains_are_read_with_one_query_per_batch(world):
                  lambda conn, cur, stmt, *a: seen.append(stmt))
     seen.clear()
     r = qj.default_quarantine_candidates_batch(session, after_id=0, limit=50, include_host_mismatch=True)
-    assert r["host_mismatch"] == {"mismatch": 2, "unknown": 1}
+    assert r["host_mismatch"] == {"mismatch": 2, "confirmed": 0, "unknown": 1}
     assert sum("FROM sources" in q and "articles" not in q for q in seen) == 1, seen
