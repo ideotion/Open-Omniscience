@@ -169,6 +169,19 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
     if getattr(dbapi, "in_transaction", False):
         # Not ours to commit, and inside it the pragma below is a silent no-op.
         raise SourceIdentityRefused("a transaction is already open on this connection; not rebuilding sources")
+    # Every refusal that can be decided from the schema is decided HERE, before anything is changed: the view is still in place, the
+    # pragma untouched, and a refused store is exactly as it was found. ``feed_key`` is added below, so it is counted as present now.
+    new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
+    new_cols = [c.name for c in new_table.columns]
+    before_cols = _columns(conn, "sources")
+    unknown = _names_not_in(before_cols, new_cols)
+    if unknown:
+        # Copying only the shared columns would drop these silently, and local data never gives way (R100).
+        raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
+    missing = _required_columns_without_default(new_table, [*before_cols, "feed_key"])
+    if missing:
+        raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
+    extra = _extra_schema_objects(conn)
     dbapi.create_function("oo_feed_key", 1, feed_key, deterministic=True)
     # Python's sqlite3 opens a transaction on its own before a DML statement; the rebuild owns its BEGIN/COMMIT,
     # so statements run in true autocommit for its duration and the connection's mode is put back after.
@@ -182,23 +195,15 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         raise SourceIdentityRefused("foreign-key enforcement could not be turned off; not rebuilding sources")
     began = False
     try:
-        conn.exec_driver_sql("DROP VIEW IF EXISTS keyword_mentions_all")
         add_feed_key_column(conn)
         backfill_feed_keys(conn)
-        old_cols = _columns(conn, "sources")
-        new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
-        new_cols = [c.name for c in new_table.columns]
-        unknown = _names_not_in(old_cols, new_cols)
-        if unknown:
-            # Copying only the shared columns would drop these silently, and local data never gives way (R100).
-            raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
+        old_cols = _columns(conn, "sources")  # the one read that must follow the column being added: it decides what is copied
         copy = _names_in(new_cols, old_cols)
-        missing = _required_columns_without_default(new_table, old_cols)
-        if missing:
-            raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
-        extra = _extra_schema_objects(conn)
         conn.exec_driver_sql("BEGIN IMMEDIATE")
         began = True
+        # Inside the transaction, so that every failure from here on rolls the view back with the rest; a refused or failed rebuild used to
+        # leave ``keyword_mentions_all`` dropped for the life of the process (the caller recreates it only after a success).
+        conn.exec_driver_sql("DROP VIEW IF EXISTS keyword_mentions_all")
         conn.exec_driver_sql(f"DROP TABLE IF EXISTS {_NEW}")
         conn.exec_driver_sql(str(CreateTable(new_table).compile(dialect=conn.dialect)))
         cols = ", ".join(f'"{c}"' for c in copy)
