@@ -145,21 +145,31 @@
     return undefined;
   }
 
-  // Names that act on a literal id or erase data and carry no prompt of their own before the
-  // request: they run only for a person's own click, or Enter/Space on the focused control
-  // (audit A-011, F5 option B). `error`, `load`, `toggle`, `focus` and hover are delegated too, so
-  // markup an attacker managed to inject (`<img src=x data-on-error="removeAuthor('a')">`)
-  // would otherwise fire them with no action at all; a click a script dispatches
-  // (`ooClickId`, `el.click()`) is not `isTrusted` either. A name is listed here when it is
-  // destructive and does not confirm() in its own body;
-  // tests/test_oo_on_helper_allowlist.py holds the list to that rule BY NAME PREFIX (remove*, delete*,
-  // reset*, clear*, ...), so it does not see a destructive handler spelled otherwise (sgRemoveMember,
-  // lawSetWatched(id, false), jobCancel, excludeKeyword are known misses, audit 0.5.0 read of the bundle).
+  // Names that act on a literal id, erase or remove stored data, or stop, pause or cancel running work,
+  // and carry no prompt of their own before the request: they run only for a person's own click, or
+  // Enter/Space on the focused control (audit A-011, F5 option B). `error`, `load`, `toggle`, `focus` and
+  // hover are delegated too, so markup an attacker managed to inject
+  // (`<img src=x data-on-error="removeAuthor('a')">`) would otherwise fire them with no action at all;
+  // a click a script dispatches (`ooClickId`, `el.click()`) is not `isTrusted` either.
+  // tests/test_oo_on_helper_allowlist.py finds a name that needs this by the verbs inside it (delete,
+  // remove, reset, disable, cancel, exclude, clear, erase, wipe, purge, uninstall, shutdown, pause, stop,
+  // hide, revert, ...), wherever they sit, and refuses a new one that neither confirms, is listed here, nor
+  // is on that test's short list of names that touch only this tab's own view. That is a net for the names
+  // that carry such a verb, not a proof: a name whose destructive half is an ARGUMENT (lawSetWatched(id,
+  // false), toggleWatch(id, false), candidateAct(id, 'dismiss'), collapseAction), a name with no listed
+  // verb (familySplit, unwatchLaw) and the toggles bound to `change` (updateSourceEnabled, trustAuthor)
+  // are not found, and are recorded as limits in the shipped row.
   // Limits: a gesture is not the same as meaning to press THAT control (an injected overlay or
   // accesskey turns a person's next click into a trusted click on it), and markup that brings its own
   // panel for a field-reading handler is only stopped by that handler's prompt. The generalised
   // per-event allowlist (A-023/A-024) is the real fix and stays a proposal.
-  const GESTURE_ONLY = new Set(["removeAnnotation", "removeAuthor", "removeDraftItem", "removeUserCalendar", "secureErase"]);
+  const GESTURE_ONLY = new Set([
+    "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
+    "excludeKeyword", "familyResetGroup", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched", "osmPickRemove",
+    "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation", "removeAuthor",
+    "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "schedulerStop", "secureErase", "sgRemoveMember",
+    "stopVllm", "unattendedStop",
+  ]);
   function isUserGesture(ev) {
     if (!ev || ev.isTrusted !== true) return false;
     return ev.type === "click" || (ev.type === "keydown" && (ev.key === "Enter" || ev.key === " "));
