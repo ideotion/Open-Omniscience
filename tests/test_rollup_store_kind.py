@@ -152,6 +152,21 @@ def test_a_persisted_open_that_fell_back_builds_in_memory_in_the_same_kick_and_s
     assert rollup_serve._PERSISTED_FELL_BACK["why"] == fallback
 
 
+@pytest.mark.parametrize("verdict,source", [("_affordability_verdict", "affordability"), ("_last_build_verdict", "last-build"),
+                                            ("_stopped_build_verdict", "stopped")])
+def test_the_fall_through_build_must_pass_the_start_time_verdicts_that_stood_aside_for_the_persisted_store(monkeypatch, verdict, source):
+    """Q65: the verdicts ran while the persisted store was active and three of them return None for it, so the in-memory build the fall-through
+    starts would otherwise skip the start-time guards (affordability, the killed-build marker, the stop hold) the 0.5.0 crash fix put in front of it."""
+    builds = _kick_ready(monkeypatch, fallback="encryption-gate-failed")
+    stand_aside = {"reason": "mem-short", "at": 1.0}
+    monkeypatch.setattr(rollup_serve, verdict, lambda: stand_aside if rollup_serve._PERSISTED_FELL_BACK["why"] else None)
+    assert _kick() == "declined"
+    assert builds == [], "the in-memory build started past a verdict that refuses it"
+    skip = rollup_serve._STATE["last_skip"]
+    assert skip["reason"] == "mem-short" and skip["source"] == source
+    assert rollup_serve._LAST_OUTCOME["value"] == "declined"
+
+
 def test_after_a_fallback_the_process_serves_in_memory_and_does_not_retry_the_persisted_open(monkeypatch):
     builds = _kick_ready(monkeypatch, fallback="persisted-open-failed")
     opens: list = []

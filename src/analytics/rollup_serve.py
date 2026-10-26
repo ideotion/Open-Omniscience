@@ -1236,18 +1236,21 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip: dict | None = None
-        source: str | None = None
-        for name, verdict in (
-            ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
-            ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
-            ("affordability", _affordability_verdict),
-        ):
-            skip = verdict()
-            if skip:
-                source = name
-                break
-        if skip:
+        def _decline_for_skip() -> bool:
+            """Run the verdicts in order; the first that fires is recorded as the decline. True when one did."""
+            skip: dict | None = None
+            source: str | None = None
+            for name, verdict in (
+                ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
+                ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
+                ("affordability", _affordability_verdict),
+            ):
+                skip = verdict()
+                if skip:
+                    source = name
+                    break
+            if not skip:
+                return False
             with _LOCK:
                 _STATE["last_skip"] = {**skip, "source": source}
             if source is not None and source not in _TRANSIENT_VERDICTS:
@@ -1256,6 +1259,9 @@ def _build_and_swap() -> str:
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
             )
+            return True
+
+        if _decline_for_skip():
             outcome = "declined"
             return outcome
         ran = True
@@ -1274,6 +1280,13 @@ def _build_and_swap() -> str:
                     # in-memory one, so a failure or stop it hits keeps the in-memory hold; the latch makes the later verdicts read that hold.
                     _PERSISTED_FELL_BACK["why"] = why
                     persisted_run = False
+                    # The start-time verdicts above ran while the persisted store was active, and three of them (stopped, last-build,
+                    # affordability) stand aside for it: the in-memory build must pass them too, now that it is the build that runs. They are the
+                    # guards that keep a build the machine cannot afford, or one a killed build already showed it cannot finish, from starting.
+                    if _decline_for_skip():
+                        ran = False
+                        outcome = "declined"
+                        return outcome
                 else:
                     # No passphrase, no secure backend or the engine is off: nothing to build in memory for the persisted path this kick.
                     ran = False
