@@ -67,7 +67,7 @@ DEFAULT_WAIT_S = 180.0
 _POLL_S = 0.25
 
 #: SEVERAL SERVERS ON ONE DATA FOLDER (R176, R183). The dict above is this process's; a swap in server A could not see server B's batch in flight and would swap the file
-#: under it. So the FIRST holder of a name in a process also writes ``<data>/leases/<name>.<process>.lease`` (the owner record: pid, start time, host, machine tag) and the
+#: under it. This NARROWS the hazard, it does not close it: the exclusive window and the write gates stay per process, so a second server can start a batch during the wait or keep a pooled connection to the replaced file. So the FIRST holder of a name in a process also writes ``<data>/leases/<name>.<process>.lease`` (the owner record: pid, start time, host, machine tag) and the
 #: LAST one removes it. A reader counts another process's file as held when its owner is ALIVE, or UNKNOWN (another host or machine on a shared drive, an unreadable record: a
 #: swap that cannot tell refuses and names it, it does not swap under someone). A file whose owner is DEAD is a leftover: it is ignored and swept (the takeover). Workers still
 #: never wait on any of this. A file that cannot be written logs once and the in-process lease stands (a missing record is not evidence).
@@ -76,6 +76,12 @@ _FILE_LOCK = threading.Lock()
 _FILE_WARNED = False
 _OWNER: dict | None = None
 _SUFFIX = ".lease"
+#: How long a lease file that cannot be READ is still counted as held: ``_POLL_S`` x 40 = 10 s. WHAT IT PROTECTS: a shared drive whose rename is not atomic, where a
+#: reader can meet a live writer's file half written. On a local disk the write is a temp file renamed over the name, so a reader never sees a partial file and an empty or
+#: garbled file is a leftover (a power cut before the data reached the disk): past this age it is named in the log, swept, and no longer blocks a swap forever. The lease
+#: carries NO heartbeat (a record with a readable owner has nothing to age by), so this bound applies only to a file with no owner to judge; a readable record of another host
+#: stays held and is named, with its owner fields, in the refusal (:func:`foreign_note`).
+_UNREADABLE_GRACE_S = _POLL_S * 40
 
 
 def _dir() -> Path:
@@ -102,10 +108,12 @@ def _write_file(name: str) -> None:
         from src.safety.file_lock import atomic_replace
 
         path = _own_file(name)
-        if _OWNER is None:
+        if not _OWNER:  # an empty record (psutil failed once) is not kept: every later lease would be written unjudgeable
             _OWNER = process_owner.owner_record()
         path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_replace(path, json.dumps({**_OWNER, "name": name, "process": _PROCESS}), fsync=False)
+        # fsync: the file is created fresh at every first take, so a power cut before the data reached the disk would leave an empty file (rename-over-existing is the case the
+        # filesystem protects); the cost is measured per batch, not per article
+        atomic_replace(path, json.dumps({**_OWNER, "name": name, "process": _PROCESS}), fsync=True)
     except Exception as exc:  # noqa: BLE001
         _warn_once(exc)
 
@@ -117,13 +125,13 @@ def _remove_file(name: str) -> None:
         _warn_once(exc)
 
 
-def _foreign_leases() -> list[str]:
-    """Names held by OTHER processes (alive or unknown owner); sweeps the files of dead owners."""
-    held: set[str] = set()
+def _scan() -> list[tuple[str, Path, dict | None, str]]:
+    """Every other process's lease file as ``(name, file, record, state)``; sweeps the files of dead owners and of unreadable ones past :data:`_UNREADABLE_GRACE_S`."""
+    out: list[tuple[str, Path, dict | None, str]] = []
     try:
         files = sorted(_dir().glob(f"*{_SUFFIX}"))
     except OSError:
-        return []
+        return out
     for f in files:
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
@@ -131,13 +139,40 @@ def _foreign_leases() -> list[str]:
             if rec.get("process") == _PROCESS:
                 continue
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            name = f.name.split(".", 1)[0] or f.name  # unreadable: judged "unknown", so held, under the name its file carries
+            name = f.name.split(".", 1)[0] or f.name  # unreadable: held under the name its file carries, until it is old enough to be a leftover
             rec = None
-        if rec is not None and process_owner.record_state(rec, machine=process_owner.machine_tag()) == "dead":
+            try:
+                age = time.time() - f.stat().st_mtime
+            except OSError:
+                continue  # gone between the listing and now
+            if age > _UNREADABLE_GRACE_S:
+                _LOG.warning("corpus lease: swept an unreadable lease file for %r (%.0f s old); a crash before it was written out leaves one", name, age)
+                f.unlink(missing_ok=True)
+                continue
+        state = process_owner.record_state(rec, machine=process_owner.machine_tag()) if rec is not None else "unknown"
+        if state == "dead":
             f.unlink(missing_ok=True)  # the takeover: a dead owner's lease is a leftover
             continue
-        held.add(name)
-    return sorted(held)
+        out.append((name, f, rec, state))
+    return out
+
+
+def _foreign_leases() -> list[str]:
+    """Names held by OTHER processes (alive or unknown owner)."""
+    return sorted({name for name, _f, _r, _s in _scan()})
+
+
+def foreign_note(held: list[str]) -> str:
+    """A sentence for a refusal whose holders include another server's lease file: it names the file and prints the lease's own owner fields unchanged, so the operator
+    can tell a real neighbour from a lease that only looks foreign (a renamed host after a crash). ``""`` when every holder is this process's."""
+    rows = [(n, f, r, s) for n, f, r, s in _scan() if n in held]
+    if not rows:
+        return ""
+    parts = []
+    for name, f, rec, state in rows:
+        fields = json.dumps({k: rec.get(k) for k in ("pid", "started", "host", "machine")}) if rec is not None else "unreadable"
+        parts.append(f"{name}: {state}, owner {fields}, file {f}")
+    return " Held by another server on this data folder, or a leftover of one: " + "; ".join(parts) + ". Delete that lease file only if that server is not running."
 
 
 @contextmanager
@@ -152,11 +187,13 @@ def corpus_lease(name: str) -> Iterator[None]:
     lingers a moment, never early). An interrupt between lowering and removing leaves a file that other servers count as held until this process ends; they then sweep it.
     """
     took = False
+    wrote = False
     try:
         with _FILE_LOCK:
             with _LOCK:
                 first = _HELD.get(name, 0) == 0
             if first:
+                wrote = True  # set before the write: an interrupt inside it may leave the file, and the cleanup below removes it
                 _write_file(name)
             with _LOCK:
                 _HELD[name] = _HELD.get(name, 0) + 1
@@ -170,6 +207,9 @@ def corpus_lease(name: str) -> Iterator[None]:
                     last = _HELD[name] == 0
                 if last:
                     _remove_file(name)
+        elif wrote:
+            with _FILE_LOCK:  # the take did not complete: the file written for it must not outlive it
+                _remove_file(name)
 
 
 def active_leases() -> list[str]:

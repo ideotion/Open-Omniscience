@@ -248,3 +248,37 @@ def test_an_error_in_a_verdict_before_any_build_started_keeps_no_failure_hold(mo
     assert rollup_serve._build_and_swap() == "failed"
     assert builds == [] and rollup_serve._STATE["stopped"] is None, "no build ran, so no build-failed hold"
     assert rollup_serve._STATE["failures"] == 0 and rollup_serve.status().get("consecutive_failures") is None
+
+
+def test_a_build_that_lost_the_claim_to_another_server_is_declined_and_keeps_no_hold(monkeypatch):
+    """R183: ``begin()`` False means another server's build is running. Not a failure, not a stop: no hold, no build, the connections closed."""
+    from contextlib import contextmanager
+
+    import src.database.session as dbs
+    from src.analytics import columnar, rollup_marker, serve_gate
+
+    closed: list[str] = []
+
+    class Con:
+        def close(self):
+            closed.append("con")
+
+    @contextmanager
+    def scope():
+        yield object()
+
+    built: list[int] = []
+    monkeypatch.setattr(columnar, "budget_snapshot", lambda: {"duckdb_limit_mb": 1004.0, "duckdb_threads": 2, "total_mb": 6000.0, "read_at": 0.0})
+    monkeypatch.setattr(columnar, "connect", lambda **kw: Con())
+    monkeypatch.setattr(columnar, "build_keyword_daily", lambda *a, **k: built.append(1))
+    monkeypatch.setattr(dbs, "session_scope", scope)
+    monkeypatch.setattr(serve_gate, "change_token", lambda s: ("t", 1))
+    monkeypatch.setattr(rollup_marker, "begin", lambda **kw: False)
+    monkeypatch.setattr(rollup_marker, "clear", lambda: None)
+    monkeypatch.setattr(rollup_serve, "_spill_setting", lambda: "")
+    rollup_serve._STATE.pop("stopped", None)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    assert built == [] and closed == ["con"]
+    assert not rollup_serve._STATE.get("stopped"), "no hold: it would refuse real builds after the other server is done"
+    assert rollup_serve._STATE["last_skip"]["reason"] == rollup_marker.ELSEWHERE
