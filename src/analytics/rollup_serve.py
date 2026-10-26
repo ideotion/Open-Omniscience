@@ -482,8 +482,9 @@ def columnar_batch_mb() -> float:
 
 
 def _refresh_persisted_build() -> bool | None:
-    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when no connection could be opened (nothing was
-    refreshed, so the caller must not report a build nor release a hold); any other return means the refresh ran.
+    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined before opening the store -- the
+    passphrase or the secure backend is gone since the dispatcher chose this path, or the engine gave no connection at all -- so nothing was refreshed
+    and the caller must not report a build nor release a hold; any other return means the refresh ran.
 
     A SINGLE connection is held for the process -- the columnar store's ATTACH open REJECTS a
     second in-process handle to the same file ("Unique file handle conflict"), so the in-memory
@@ -507,9 +508,15 @@ def _refresh_persisted_build() -> bool | None:
         con = _STATE["con"] if _STATE["persisted"] else None
     opened_now = con is None
     if opened_now:
-        con = columnar.connect(passphrase=_persist_passphrase())  # opens the persisted file
+        # The dispatcher chose this path a moment ago; the passphrase is read ONCE here and the connect is not made without it, because
+        # ``columnar.connect`` given no passphrase (or no secure backend) hands back an IN-MEMORY connection, which this function would then
+        # record as the persisted store (``_STATE["persisted"] = True``) and report as built.
+        passphrase = _persist_passphrase()
+        if not passphrase or not columnar.secure_crypto_available():
+            return False  # gone since the verdict: the next kick takes the in-memory path (``_persisted_serve_active`` reads the same two things)
+        con = columnar.connect(passphrase=passphrase)  # opens the persisted file
     if con is None:
-        return False  # secure backend / passphrase vanished mid-flight -> in-memory next time
+        return False  # the engine itself is off (``OO_COLUMNAR=0``, or DuckDB missing)
     try:
         with session_scope() as s:
             token = serve_gate.change_token(s)
@@ -1219,8 +1226,9 @@ def _build_and_swap() -> str:
         persisted_run = _persisted_serve_active()
         if persisted_run:
             if _refresh_persisted_build() is False:
-                # No connection was opened (the passphrase or the secure backend went away between the verdict and here): no build ran, so this is
-                # neither "built" nor the end of a failure run -- a hold an earlier failed refresh kept stands, and the in-memory path takes over.
+                # The refresh declined before opening the store (the passphrase or the secure backend went away between the verdict and here, so
+                # the next kick takes the in-memory path): no build ran, so this is neither "built" nor the end of a failure run -- a hold an
+                # earlier failed refresh kept stands.
                 with _LOCK:
                     _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted"}
                 ran = False
