@@ -46,14 +46,23 @@ Both totals only grow, so the DIFFERENCE between two readings is exact for the i
 hold: :func:`asking` runs before the lock is asked for and :func:`gave_up` (called by :func:`record`, after the lock is
 given up, and idempotent) when the thread is no longer waiting, but :func:`holding` and :func:`released` run INSIDE the
 hold, each one clock read and a few additions under a private leaf lock. The cost was measured, not assumed: the four
-marks of one extraction take about 2 to 3 microseconds together (medians 2.1 to 3.0 over six runs on two shared-vCPU
-machines), the two inside the hold about 1.1 to 1.7 (medians 1.1, 1.1, 1.7, 1.2, 1.2 and 1.2), against a mean hold of
-35 to 40 ms (8 KB pages) or 285 to 320 ms (64 KB); a 14-collector run of the real collector, base tree against gauge
-tree, five alternating runs per cell, is in the shipped row.
+marks of one extraction take about 2 to 3 microseconds together (medians 2.1 to 3.0 over nine runs on two shared-vCPU
+machines, 2.5 on the last three), the two inside the hold about 1.1 to 1.7 (medians 1.1, 1.1, 1.7, 1.2, 1.2, 1.2, then
+1.36, 1.34 and 1.35 on the head that merges), against a mean hold of 35 to 40 ms (8 KB pages) or 285 to 320 ms (64 KB);
+a 14-collector run of the real collector, base tree against gauge tree, five alternating runs per cell, is in the shipped
+row. Those micro figures are warm and uncontended. In the loaded run the gap between the window's ``got`` stamp and the
+gauge's start of a hold is 2 to 6 microseconds per hold: that is what the part of :func:`holding` BEFORE its clock read
+costs in situ, so it is a floor for the whole of :func:`holding` there, and the cost inside a hold in a loaded run is
+more than the warm micro figure (0.005 to 0.015 percent of a 40 ms hold for that part alone).
 ``tests/test_lock_live_reading.py`` pins that the marks do no
-I/O and take no other lock, and that a step body contains no call, so one mark is applied whole or not at all when an
-interrupt arrives (:func:`_mark` says what an interrupt can still do). The gauge reads the clock under its own lock, so a
+I/O and take no other lock, and that a step body has no interrupt point of its own (no call, no backward jump, no ``with``),
+so one mark is applied whole or not at all when an interrupt arrives (:func:`_mark` says what an interrupt can still do);
+a step also computes every new total BEFORE it stores any, so a step that fails (``MemoryError`` while allocating a float)
+leaves the totals and the open intervals exactly as they were. The gauge reads the clock under its own lock, so a
 mark and a reading are totally ordered and a reading can never see more held time than elapsed.
+
+The gauge assumes the extraction lock is EXCLUSIVE (it is an ``RLock``): with a no-op lock (the lock-off cells of the
+bench harness) two threads are inside at once and its totals mean nothing.
 """
 
 from __future__ import annotations
@@ -126,12 +135,16 @@ def _mark(step: Callable[[float, int], None]) -> float | None:
     The one place the gauge swallows a failure: a statistic never replaces an extraction's result (nor, for the two
     marks inside the hold, lengthens it by raising). A failed mark leaves the totals as they were. Only ``Exception``
     is caught: an interrupt in the main thread propagates. WHAT AN INTERRUPT CAN STILL DO (``KeyboardInterrupt`` lands
-    in the main thread, ``MemoryError`` anywhere): CPython 3.13 checks for one at a call's return and at the start of
-    a Python frame, so the step bodies below are written with no call in them (one mark is applied whole or not at
-    all), but a mark can still be skipped by an interrupt at its own entry. A skipped ``asking`` or ``holding`` leaves
-    a waiter that :func:`record` and the thread's next :func:`asking` close; a skipped ``released`` leaves a holder
-    that the next ``holding`` from ANOTHER thread closes (the lock cannot be held by two), and that stays until
-    restart when no other thread ever takes the lock. Best effort, said so: it needs a signal exactly there."""
+    in the main thread, ``MemoryError`` anywhere): CPython 3.13 checks for one at a call's return, at the start of
+    a Python frame and at a backward jump, so the step bodies below are written with none of those in them (one mark is
+    applied whole or not at all) and compute every new total before storing any (a step that raises changes nothing),
+    but a mark can still be skipped by an interrupt at its own entry. A skipped ``holding`` (after ``asking`` registered
+    the wait; a skipped ``asking`` registers nothing) leaves a waiter that :func:`record` and the thread's next
+    :func:`asking` close; a skipped ``released`` (or one that failed) leaves its hold OPEN, a phantom holder, which the next
+    ``holding`` from ANOTHER thread closes (the lock cannot be held by two). Two cases are NOT healed and last until restart: the same thread's next ``holding``
+    DEEPENS the phantom instead (so its age keeps growing while the lock is free, and every later hold by that thread is
+    booked inside it), and a new thread that reuses a dead holder's ``get_ident()`` value is not "another thread". Best
+    effort, said so: it needs a signal exactly at a mark's entry."""
     ident = threading.get_ident()
     try:
         with _LIVE_LOCK:
@@ -142,35 +155,48 @@ def _mark(step: Callable[[float, int], None]) -> float | None:
         return None
 
 
-# The step bodies contain no call (subscripts, comparisons and ``del`` only): see :func:`_mark`.
+# The step bodies have no interrupt point of their own (no call, no backward jump, no ``with``: see :func:`_mark`) and
+# compute every new total BEFORE they store any: the only things that can raise are the subtractions and additions (a float
+# is allocated), and by then nothing has changed. The stores that follow touch keys that already exist or delete one that
+# does, which allocates nothing.
 def _on_ask(t: float, ident: int) -> None:
+    waited = _live["waited_s"]
     if ident in _waiters:  # a wait that was never closed (a skipped mark): close it here so the total never goes backwards
         asked = _waiters[ident]
         if t > asked:
-            _live["waited_s"] += t - asked
-    _waiters[ident] = t
+            waited = waited + (t - asked)
+    _waiters[ident] = t  # may allocate (a dict resize); if it raises, nothing has been stored
+    _live["waited_s"] = waited
 
 
 def _on_give_up(t: float, ident: int) -> None:
     if ident in _waiters:
         asked = _waiters[ident]
-        del _waiters[ident]
+        waited = _live["waited_s"]
         if t > asked:
-            _live["waited_s"] += t - asked
+            waited = waited + (t - asked)
+        _live["waited_s"] = waited
+        del _waiters[ident]
 
 
 def _on_hold(t: float, ident: int) -> None:
+    waited = _live["waited_s"]
     if ident in _waiters:  # the wait ends where the hold begins (the body of _on_give_up, inlined: a call here is a window)
         asked = _waiters[ident]
-        del _waiters[ident]
         if t > asked:
-            _live["waited_s"] += t - asked
+            waited = waited + (t - asked)
     depth = _live["depth"]
+    occupied = _live["occupied_s"]
     if depth > 0 and _live["holder"] != ident:  # the lock cannot be held by two threads: the earlier hold's release was skipped
         since = _live["since"]
         if since is not None and t > since:
-            _live["occupied_s"] += t - since  # a reading already counted it as open until now, so the total stays continuous
+            occupied = occupied + (t - since)  # a reading already counted it as open until now, so the total stays continuous
         depth = 0
+    # every new total is computed: the stores follow
+    if ident in _waiters:
+        del _waiters[ident]
+    _live["waited_s"] = waited
+    _live["occupied_s"] = occupied
     _live["depth"] = depth + 1
     if depth == 0:
         _live["since"] = t
@@ -181,13 +207,15 @@ def _on_release(t: float, ident: int) -> None:
     depth = _live["depth"]
     if depth <= 0:  # an unmatched release (its ``holding`` was skipped): nothing to close, never negative
         return
-    _live["depth"] = depth - 1
     if depth == 1:
         since = _live["since"]
+        occupied = _live["occupied_s"]
+        if since is not None and t > since:
+            occupied = occupied + (t - since)
+        _live["occupied_s"] = occupied
         _live["since"] = None
         _live["holder"] = None
-        if since is not None and t > since:
-            _live["occupied_s"] += t - since
+    _live["depth"] = depth - 1
 
 
 def asking() -> None:

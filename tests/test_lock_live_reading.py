@@ -15,18 +15,23 @@ What each group of tests guards, and what fails without it:
   threads and a sampler (the totals double counted, a wait dropped, a hold closed twice, a reading that sees more
   held time than elapsed);
 * the cleanup (an exception, a ``BaseException`` and an interrupted acquire each leave no phantom holder or waiter;
-  a SKIPPED mark leaves nothing behind that outlives the call, the totals never go backwards, and a holder whose release
-  was skipped is closed by the next take from another thread);
+  a skipped or failed ``holding`` leaves no waiter that outlives the call, the totals never go backwards, and a holder
+  whose release was skipped is closed by the next take from ANOTHER thread; the same thread's next take deepens it
+  instead, which is a documented edge and pinned as one);
+* a step that raises changes nothing (every new total is computed before any is stored), so a ``MemoryError`` at the
+  float arithmetic cannot make an open hold or an open wait vanish from a reading;
 * the window and the gauge stay apart (a pass ``reset()`` does not touch the gauge);
 * the marks sit where they say (``asking`` outside the lock and INSIDE the outer ``try``, ``holding`` and ``released``
-  inside the hold, the clock read under the gauge's own lock) and do nothing but arithmetic: the step bodies contain no
-  call at all, which is what makes one mark apply whole or not at all when an interrupt arrives;
+  inside the hold, the clock read under the gauge's own lock) and do nothing but arithmetic: the step bodies have no
+  call, no backward jump and no ``with`` (checked on the bytecode, since CPython 3.13 looks for an interrupt at each of
+  those), which is what makes one mark apply whole or not at all when an interrupt arrives;
 * a broken gauge never breaks an extraction.
 """
 
 from __future__ import annotations
 
 import ast
+import dis
 import inspect
 import textwrap
 import threading
@@ -399,6 +404,54 @@ def test_the_marks_inside_the_hold_call_nothing_but_the_clock_and_the_step_bodie
         assert _calls(step) == set(), f"{step.__name__} has a call in it: a window for an interrupt between two of its stores"
 
 
+_STEPS = (lock_stats._on_ask, lock_stats._on_give_up, lock_stats._on_hold, lock_stats._on_release)
+_INTERRUPT_OPS = {"FOR_ITER", "GET_ITER", "BEFORE_WITH", "BEFORE_ASYNC_WITH", "MAKE_FUNCTION", "SEND", "YIELD_VALUE"}
+
+
+def _interrupt_points(func) -> list[str]:
+    """The instructions after which CPython 3.13 looks for a pending interrupt, other than the frame's own entry: a call's
+    return (``CALL*``, and the implicit calls of ``with``, ``for`` and generators) and a backward jump."""
+    return [
+        i.opname
+        for i in dis.get_instructions(func)
+        if i.opname.startswith(("CALL", "JUMP_BACKWARD")) or i.opname in _INTERRUPT_OPS
+    ]
+
+
+def test_the_interrupt_point_finder_sees_a_call_a_loop_a_with_and_a_comprehension():
+    """The pin below is only as good as its finder: each shape that gives an interrupt a place to land must be found."""
+
+    def with_call(x):
+        return len(x)
+
+    def with_while(x):
+        while x:
+            x = x[1:]
+
+    def with_for(x):
+        for _ in x:
+            pass
+
+    def with_with(x):
+        with x:
+            pass
+
+    def with_generator(x):
+        return sum(i for i in x)
+
+    for f in (with_call, with_while, with_for, with_with, with_generator):
+        assert _interrupt_points(f), f"{f.__name__} gives an interrupt a place to land and the finder does not see it"
+    assert _interrupt_points(lambda a, b: a - b if a > b else b) == []
+
+
+def test_a_step_body_has_no_interrupt_point_of_its_own_on_the_bytecode():
+    """``ast.Call`` is not the property: a ``while`` or a ``for`` has no call and CPython 3.13 still checks for an interrupt at
+    its backward jump (a loop around one store survived the source-level pin). The finding was reproduced: a
+    ``KeyboardInterrupt`` does land inside a loop with no call."""
+    for step in _STEPS:
+        assert _interrupt_points(step) == [], f"{step.__name__}: an interrupt can land between two of its stores"
+
+
 # --------------------------------------------------------------------------
 # a broken gauge never breaks an extraction
 # --------------------------------------------------------------------------
@@ -546,3 +599,115 @@ def test_the_marks_sit_where_the_exception_table_needs_them():
     first_final = inner.finalbody[0]
     assert isinstance(first_final, ast.Assign) and call_name(first_final) == "lock_stats.released"
     assert [ast.unparse(t) for t in first_final.targets] == ["released"], "the stamp record() takes is released()'s own reading"
+
+
+# --------------------------------------------------------------------------
+# a step that fails changes nothing
+# --------------------------------------------------------------------------
+class _Boom(float):
+    """A clock reading whose subtraction fails the way a float allocation can (``MemoryError`` is an ``Exception``)."""
+
+    armed = False
+
+    def __sub__(self, other):
+        if _Boom.armed:
+            raise MemoryError("no room for a float")
+        return float.__sub__(self, other)
+
+
+class _fails:
+    """``with _fails():`` every subtraction on a ``_Boom`` reading raises."""
+
+    def __enter__(self):
+        _Boom.armed = True
+
+    def __exit__(self, *exc):
+        _Boom.armed = False
+        return False
+
+
+def test_a_release_whose_arithmetic_fails_leaves_the_hold_open_and_the_total_where_it_was(clock):
+    """The review's finding: ``_on_release`` cleared ``since`` and ``holder`` before the addition, so a failure there made
+    an open 85 s hold vanish (occupied 85 -> 0, no holder) while ``_mark`` swallowed the error."""
+    me = threading.get_ident()
+    lock_stats.holding()
+    clock.t = _Boom(185.0)
+    with _fails():
+        lock_stats.released()
+    live = lock_stats._live
+    assert (live["depth"], live["since"], live["holder"], live["occupied_s"]) == (1, 100.0, me, 0.0)
+    reading = lock_stats.live_reading()
+    assert reading["occupied_s"] == 85.0 and reading["holder_age_s"] == 85.0
+    lock_stats.released()  # the retry closes it with its full length
+    assert lock_stats._live["occupied_s"] == 85.0 and lock_stats._live["since"] is None and _idle()
+
+
+def test_a_give_up_whose_arithmetic_fails_keeps_the_wait_open_and_the_total_where_it_was(clock):
+    lock_stats.asking()
+    clock.t = _Boom(105.0)
+    with _fails():
+        lock_stats.gave_up()
+    assert lock_stats._live["waited_s"] == 0.0 and len(lock_stats._waiters) == 1, "the open wait vanished"
+    assert lock_stats.live_reading()["waited_s"] == 5.0
+    lock_stats.gave_up()
+    assert lock_stats._live["waited_s"] == 5.0 and not lock_stats._waiters
+
+
+def test_a_hold_whose_arithmetic_fails_closes_neither_the_wait_nor_a_phantom_and_opens_nothing(clock):
+    me = threading.get_ident()
+    lock_stats.asking()
+    clock.t = _Boom(104.0)
+    with _fails():
+        lock_stats.holding()
+    live = lock_stats._live
+    assert (live["depth"], live["waited_s"], len(lock_stats._waiters)) == (0, 0.0, 1), "half a hold was applied"
+    lock_stats.holding()
+    assert (live["depth"], live["waited_s"], live["holder"], len(lock_stats._waiters)) == (1, 4.0, me, 0)
+    # and the same for the phantom another thread left behind
+    lock_stats._live.update(depth=1, since=100.0, holder=-1, occupied_s=0.0)
+    lock_stats._waiters.clear()
+    clock.t = _Boom(110.0)
+    with _fails():
+        lock_stats.holding()
+    assert (live["depth"], live["holder"], live["since"], live["occupied_s"]) == (1, -1, 100.0, 0.0)
+    lock_stats.holding()
+    assert (live["depth"], live["holder"], live["since"], live["occupied_s"]) == (1, me, 110.0, 10.0)
+
+
+def test_an_ask_whose_arithmetic_fails_keeps_the_stale_wait_and_registers_nothing_new(clock):
+    me = threading.get_ident()
+    lock_stats._waiters[me] = 90.0
+    clock.t = _Boom(100.0)
+    with _fails():
+        lock_stats.asking()
+    assert lock_stats._waiters == {me: 90.0} and lock_stats._live["waited_s"] == 0.0
+    lock_stats.asking()
+    assert lock_stats._waiters == {me: 100.0} and lock_stats._live["waited_s"] == 10.0
+
+
+# --------------------------------------------------------------------------
+# record() closes a wait whatever else it does, and the edges that are documented are pinned as edges
+# --------------------------------------------------------------------------
+def test_record_closes_a_leftover_waiter_even_when_the_window_statistic_fails(clock, monkeypatch):
+    """``gave_up`` is the first statement of ``record``, not the last of its ``try``: the window update is the part that may
+    raise (and ``record`` swallows it), and a waiter whose ``holding`` was skipped must not depend on it."""
+    lock_stats.asking()  # registered; holding() never ran
+    clock.t += 3.0
+    with monkeypatch.context() as scoped:
+        scoped.setattr(lock_stats, "_STATS_LOCK", _BrokenLock())
+        lock_stats.record(asked=100.0, got=101.0, released=102.0, html="x")  # the window update raises inside; swallowed
+    assert not lock_stats._waiters and lock_stats._live["waited_s"] == 3.0
+
+
+def test_the_same_threads_next_hold_deepens_a_phantom_and_does_not_heal_it(clock):
+    """A DOCUMENTED edge (``_mark``'s docstring), pinned so the words stay true: only another thread's hold heals a holder
+    whose release was skipped; the same thread's next hold nests inside it."""
+    me = threading.get_ident()
+    lock_stats.holding()  # this thread takes the lock at 100 and its release mark is skipped
+    clock.t += 5.0
+    lock_stats.holding()  # the real lock is free again; the next extraction takes it
+    assert (lock_stats._live["depth"], lock_stats._live["since"], lock_stats._live["holder"]) == (2, 100.0, me)
+    clock.t += 5.0
+    lock_stats.released()
+    assert lock_stats._live["depth"] == 1, "one release closes one level: the phantom is still open"
+    assert lock_stats.live_reading()["holder_age_s"] == 10.0, "its age keeps growing while the lock is free"
