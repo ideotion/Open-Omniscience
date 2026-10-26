@@ -205,6 +205,17 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   500 with no tally. The same was already true of the 200-row commits inside `ingest_emails`; a re-import is idempotent because
   duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally.
 - **37. The `/api/database/figures` memo**: it is keyed without the engine identity, so the figures can be stale after a swap; 0.5.1.
+- **44. A Thorough diagnostics build has no scan budget**: it runs 16 scans of up to 300 s each, so by the deadlines alone it can hold
+  the collection pause for up to 80 minutes (a ceiling from the constants, not an observation). Observed: 53.5 minutes of build, 50.7 of
+  them paused, at 12 M mentions on a 2-core machine (the user's 0.4.0 zip of 2026-10-16); 145 s and 246 s on a 4-vCPU lab at 1.56 M and
+  3.12 M mentions, one run each. The zip stays small: 58 to 59 files, under 3 MB uncompressed and under 0.5 MB as an archive, the largest
+  member about 0.5 MB against the 12 MB per-member cap. Quick is held to 600 s of scans. Not measured: a current-tree Thorough build on a
+  real written store, an encrypted store, a corpus past 12 M mentions. 0.5.1 takes the first real zip; whether Thorough should carry a
+  budget is a decision for then, not a defect now. Record: `rc-diagnostics/max-mode-zip-limits-export.md` in the project folder.
+- **45. `duckdb_limit_mb` is decimal megabytes** (measured on DuckDB 2.0.0: `SET memory_limit='1000MB'` reads back as 953.6 MiB): the
+  figure is applied to DuckDB as `f"{n}MB"` (`src/analytics/columnar.py`) and compared in `rollup_serve.py`'s affordability check with
+  `avail_mb`, which is mebibytes (`psutil` bytes / 1024^2). The two differ by 4.9 %, in the safe direction (the check overstates what the build
+  can take). Left as it is; any new reader of the field should treat it as MB (10^6 bytes).
 ---
 
 ## 2. The rows
