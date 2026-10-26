@@ -198,7 +198,7 @@ cycle closed with `v0.2.0`, the `0.3` cycle with `v0.3.0`, the `0.4` cycle with 
 named for the release that closes it — the release-gate files say so in their own words
 (`RELEASE_0.4_GATE.md` is "the checkable inventory for closing the `0.4` cycle") — and a
 version number may be *set* mid-cycle before the tag (e.g. `0.4.0` was set 2026-09-28,
-for the tag to move onto; `0.5.0` was set on the commit the tag names), which is why a changelog heading's date and its tag date can
+for the tag to move onto; `0.5.0` was set on the flip PR, and the tag names its merge commit), which is why a changelog heading's date and its tag date can
 differ.
 
 ### Why this matters (the values link)

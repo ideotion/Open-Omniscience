@@ -181,7 +181,7 @@ finding things, or it finds so much that every answer is the same answer).
   `v0.3.0` (2026-08-23, the 0.3 close per `RC01`), `v0.4.0` (2026-09-28) and `v0.5.0` (2026-10-26).** `v0.4.0` was
   first cut where pyproject still read `0.3.0`, and `release.yml` refuses a tag ≠ the version:
   the fix is the `0.4.0` flip + the tag moved onto it (`RELEASE_0.4_GATE.md` row G); `v0.5.0` was cut on
-  the flip commit itself. The 0.5.1 open items are `RELEASE_0.5_GATE.md` §1d.
+  the flip PR's merge commit. The 0.5.1 open items are `RELEASE_0.5_GATE.md` §1d.
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit). Model catalog
   stays date-stamped (`CATALOG_AS_OF` + freshness test); clearnet is a stated
   install prerequisite for model downloads.

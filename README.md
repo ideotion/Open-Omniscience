@@ -35,9 +35,10 @@
 > through its revisions. Its long second half answered field reports from instances past a million
 > articles: the keyword rollup that crashed them, the write gate, the connection pool and the evidence
 > the app keeps when it ends badly. Every row of the release gate,
-> [`docs/product/RELEASE_0.5_GATE.md`](docs/product/RELEASE_0.5_GATE.md), is built and verified in the
-> sandbox (fixtures, generated stores, Chromium walks); what only a real install can supply is listed
-> there as named open items for `0.5.1`.
+> [`docs/product/RELEASE_0.5_GATE.md`](docs/product/RELEASE_0.5_GATE.md), is built and verified as far as
+> the sandbox can (fixtures, generated stores, Chromium walks), except two artifacts that wait on an
+> operator build (the gazetteer and the OSM admin-boundary files); what only a real install can supply
+> is listed there as named open items for `0.5.1`.
 
 > **`v0.4.0` — living sources, tagged 2026-09-28.** The `0.4`
 > cycle made sources that change over time first-class: one versioned-source substrate

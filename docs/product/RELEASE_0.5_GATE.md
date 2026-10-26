@@ -55,6 +55,9 @@ at the tag moved onto this gate's list** — §1b names them, and 0.5 is not tag
 **The exit.** `v0.5.0` is tagged when rows A–L are CLOSED on named artifacts, the 0.4 rows of §1b are CLOSED on
 theirs (`R92`), the three i18n gates and the
 whole-tree guards are green on the tagged tree, and the release notes carry the no-telemetry re-check (Q111).
+**Amended 2026-10-26 (`R186`, `R187`):** «CLOSED» means built and verified as far as a session can verify it, with each real-install
+step carried as a named 0.5.1 open item (§1d); the board's OPEN headings keep the wording of the day each row was built, and `R92`'s
+«not tagged until they are done» is read the same way for the §1b rows.
 ~~Row D closes with OSM rows INSIDE the machine only: until Q823 ⛔ is ruled, no OSM-derived row enters an export,
 a bulletin or an evidence ZIP (today's state, not a decision).~~ **Q823 = a (2026-09-29):** OSM-derived rows may
 enter exports, bulletins, evidence ZIPs and backups, each carrying OSM's credit and the ODbL share-alike line
@@ -100,20 +103,21 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 
 ## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-26, `R185`–`R187`)
 
-`v0.5.0` is tagged with every row built and verified as far as a session can verify it: CI, fixtures, generated stores and
-Chromium walks on an encrypted install (`R126`). A row's closing artifact is the PR it names; the real-install step is a **named
+`v0.5.0` is tagged with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
+Chromium walks on seeded plaintext stores, `R126`), except two artifacts that are not built at all, row C's gazetteer (S4) and row E's
+admin-boundary files, which wait on an operator build; the per-release encrypted click-through was not run on a 0.5 tree (item 21). A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–20 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–21 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
 | A | Built, Chromium-verified in en and ar (PR #1198) | The reference-corpus export compare and the typo-table build cost, measured on the operator's corpus; the person's UX pass (item 11) |
 | B | B1–B4 merged; generated-backup evidence (R135, labelled generated) | Item 7: the operator's real restore with the duplicate scan at 0; the real FTS rebuild time |
 | C | Built except S4's artifact | Item 9: the gazetteer build waits on row D's reference run |
-| D | S1–S6 built and fixture-verified; the maximum-mode governor (PR #1455, R178, R180) and the stop-by-name guard (PR #1424) merged | Item 8: the reference-VM ingest numbers (`scripts/osm_reference_run.py`); the slow-network permit count of the governor waits for a field diagnostics archive (R181) |
-| E | Built on a fixture artifact | Item 10: the planet-file build |
-| F | Built and fixture-verified | Items 1–4: the walk run for a stated period on both transports, WARM rows, analytics 4–5 on real rows |
-| G | Built (PR #1203) | Items 5–6: a law's 2019 text on one real source; the CLML adapter has never read a real document, so a `not-found` there is the next fix |
+| D | S1–S6 built and fixture-verified; the maximum-mode governor (PR #1455, R178, R180) and the stop-by-name guard (PR #1424) merged | Item 8: the reference-VM ingest numbers (`scripts/osm_reference_run.py`); the slow-network permit count of the governor waits for a field diagnostics archive (R181), and the climb was not exercised in the measured pass (item 20) |
+| E | Built and Chromium-verified on a fixture artifact; the real artifact is not built | Item 10: the OSM-derived admin-0 / admin-1 artifacts, and the person's five-map click-through |
+| F | Built; PARTIAL from real machines (2026-10-06 log, #1314): the 72 h clause read as met on 11 of 13 machines | Items 1–4: the walk clause on both transports, WARM rows from a real stream, analytics 4–5 on real rows |
+| G | Built (PR #1203) | Item 5: a law's 2019 text on one real source; item 6: a fetched CLML document round-trips (the CLML adapter has never read a real document, so a `not-found` there is the next fix) |
 | H | Closed 2026-09-29 | none |
 | I | Closed on the 2026-10-06 sweep; H3's removal is deferred behind its own test (three named gaps), not a 0.5 condition | none |
 | J | J1–J3 merged, with the outlet integer (PR #1461, R177) | Item 7 |
@@ -127,7 +131,7 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–20).**
+**Items added at the tag (12–21).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
@@ -140,9 +144,10 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **14. A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
   only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
   bodies have one version.
-- **15. The all-history top-terms query at 28 M mentions** (PR #1467): the built-code cell was lost to container recycles three times, so
-  the query is measured through the built serve path at 20 M and 24 M, and at 28 M only by the standalone run of the same shape
-  (polled peak 914.7 MiB, 43 MiB spare). The built 28 M cell is the open item.
+- **15. The all-history top-terms query on the shipped code** (PR #1467): the built-path runs at 20 M and 24 M were made on the first
+  version of the change, which a container restart lost, and the query was rebuilt from the same source and not re-run on it; the
+  28 M built-code cell was lost to container recycles three times, and at 28 M only the standalone run of the same shape answered
+  (polled peak 914.7 MiB, 43 MiB spare). Re-measuring all three sizes on the shipped code is the open item.
 - **16. The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
   stay default-off.
 - **17. PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
@@ -158,6 +163,9 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   checks only the first take of each section, the Retry-After figure was measured to 1 GB on one ext4 disk, Windows unmeasured); #1453
   (the gauge with the lock off, and other core counts, are not measured). Full text in `audit-0.5.0/inputs/open-items.md` section C,
   items B2–B3.
+- **21. The per-release encrypted click-through** (`CLAUDE.md`, ruled 2026-09-15, Q1149 = a): every Chromium walk of the 0.5 cycle ran
+  on a seeded store with `OO_DB_PLAINTEXT=1`; the only encrypted walk is `docs/audit/encrypted-clickthrough-2026-09-16`, which
+  predates 0.5. Run `OO_UIWALK_ENCRYPTED_PASS=… scripts/ui_clickthrough_run.py --require-encrypted` on a 0.5 tree.
 
 ---
 

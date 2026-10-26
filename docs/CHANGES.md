@@ -11,8 +11,10 @@ reports from instances past a million articles: the keyword rollup that crashed 
 the connection pool and the evidence the app keeps when it ends badly.
 
 **What this release does not claim.** Every row of the gate,
-[`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md), is built and verified in the sandbox (fixtures,
-generated stores, and Chromium walks on an encrypted install); what only a real install can supply is
+[`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md), is built and verified as far as a sandbox can verify it
+(fixtures, generated stores, and Chromium walks on seeded plaintext stores; the per-release encrypted click-through was
+not run on a 0.5 tree and is open item 21), except two artifacts that are not built at all: row C's gazetteer (S4) and
+row E's admin-boundary files, both of which wait on an operator build. What only a real install can supply is
 listed as named open items for `0.5.1`: the real pre-migration restore (row B, J), the reference-VM OSM
 ingest and the gazetteer and admin-boundary artifact builds (rows C, D, E, L), the Wikipedia walk run for a
 stated period on both transports (row F), a law's 2019 text on one real source (row G), the weights digest
@@ -85,7 +87,7 @@ values, and a person's own click-through of each surface. Figures quoted below a
 
 - **One Diagnostics button** builds a Quick or a Thorough archive in numbered parts, with the vitals history,
   a session record per boot and the launcher's exit, stop and stderr evidence for bash, PowerShell and macOS
-  (#1354, #1286, #1323, #1444). A crash report carries the thread kind, the C library's abort message and the
+  (#1354, #1286, #1323, #1444; built and fixture-tested, the macOS and Windows runs are 0.5.1 open item 12 in the gate's §1d). A crash report carries the thread kind, the C library's abort message and the
   kernel's kill counters.
 
 ### Privacy and safety
