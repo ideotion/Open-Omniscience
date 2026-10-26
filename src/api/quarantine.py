@@ -205,6 +205,47 @@ def quarantine_raw_id_sources(limit: int = Query(50, ge=1, le=200)) -> dict:
         session.close()
 
 
+@router.get("/source-furniture")
+def quarantine_source_furniture(
+    source_id: int = Query(..., ge=1),
+    sample: int = Query(200, ge=10, le=1000),
+    min_share: float = Query(0.3, gt=0.0, le=1.0),
+) -> dict:
+    """Short lines that repeat across ONE source's stored bodies (menu entries, ad slots, banners):
+    candidates for a person to read and, if they are furniture, to add to the rule lists by hand.
+    READ-ONLY and local; it marks and strips nothing, and a repeated line is not a verdict on the
+    articles that carry it (a recurring column title is a repeated line too)."""
+    from src.analytics.quarantine_job import _default_session
+    from src.database.models import Article, Source
+    from src.ingest.furniture import learn_repeated_lines
+
+    session = _default_session()
+    try:
+        src = session.query(Source.id, Source.name, Source.domain).filter(Source.id == source_id).first()
+        if src is None:
+            raise HTTPException(status_code=404, detail="No such source.")
+        total = session.query(Article.id).filter(Article.source_id == source_id).count()
+        ids = [i for (i,) in session.query(Article.id).filter(Article.source_id == source_id)
+               .order_by(Article.id.desc()).limit(sample)]
+        texts = [c for (c,) in session.query(Article.content).filter(Article.id.in_(ids))] if ids else []
+        learned = learn_repeated_lines(texts, min_share=min_share)
+        return {
+            "source": {"id": src[0], "name": src[1], "domain": src[2]},
+            "articles_in_source": total,
+            "sampled": len(ids),
+            **learned,
+            "min_share": min_share,
+            "method": (
+                f"the {len(ids)} newest articles of this source (not a random sample, so a recent template "
+                "change shows more than an old one); a line is listed when it is at most "
+                "12 words and appears in at least min_share of the bodies read and in 3 or more of them; "
+                "'known' lines are ones the rules already strip. Local read, nothing marked or removed"
+            ),
+        }
+    finally:
+        session.close()
+
+
 @router.post("/{action}")
 def quarantine_action(action: str) -> dict:
     """Pause / resume / cancel the running background quarantine job. A resume always

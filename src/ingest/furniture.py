@@ -102,6 +102,43 @@ def is_furniture(paragraph: str) -> bool:
     )
 
 
+LEARN_MAX_WORDS = 12
+
+
+def learn_repeated_lines(texts: list[str], *, min_share: float = 0.3, min_articles: int = 3) -> dict:
+    """Lines that recur across ONE source's bodies: a candidate list for a human to read, never a rule.
+
+    A line counts once per body, is compared casefolded with edge punctuation dropped, and is a
+    candidate only when it is SHORT (``LEARN_MAX_WORDS`` words or fewer; a repeated long paragraph is
+    syndication or a quotation, not a slot) and appears in at least ``min_share`` of the bodies AND at
+    least ``min_articles`` of them. Lines ``is_furniture`` already names are marked ``known`` so the
+    reader sees what the rules already catch. Nothing is stripped or marked here."""
+    bodies = [t for t in texts if t and t.strip()]
+    n = len(bodies)
+    counts: dict[str, int] = {}
+    shown: dict[str, str] = {}
+    for body in bodies:
+        seen = set()
+        for para in _paragraphs(body):
+            if len(para.split()) > LEARN_MAX_WORDS:
+                continue
+            key = para.casefold().strip(_EDGE)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            shown.setdefault(key, para)
+        for key in seen:
+            counts[key] = counts.get(key, 0) + 1
+    floor = max(min_articles, min_share * n)
+    kept = sorted((k for k, c in counts.items() if c >= floor), key=lambda k: (-counts[k], shown[k]))
+    rows = [
+        {"line": shown[k], "articles": counts[k], "share": round(counts[k] / n, 3),
+         "known": is_furniture(shown[k])}
+        for k in kept
+    ]
+    return {"examined": n, "candidates": rows}
+
+
 def strip_furniture(text: str) -> tuple[str, int]:
     """``(text without furniture lines, how many were removed)``. Only the matched lines go (plus
     one blank separator line after each); every other byte is kept, so text without furniture
