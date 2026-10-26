@@ -704,6 +704,9 @@ def _release_backup_slot(token: object, workdir: Path | None) -> None:
     global _backup_flight
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
+        from src.backup.stream_backup import unregister_active_staging
+
+        unregister_active_staging(workdir)
     with _BACKUP_LOCK:
         if workdir is not None:
             _live_snapshot_dirs.pop(workdir, None)
@@ -747,6 +750,10 @@ def install_stop_signal_cleanup() -> list[str]:
     installed: list[str] = []
 
     def _remove_then_die(signum, _frame):  # pragma: no cover - driven by a real signal; a real process pins it
+        # A second SIGTERM must not run this handler again on top of itself: during the removal (seconds on some file systems) it would
+        # find the table already emptied and kill the process with the directory still there, and while this one holds _BACKUP_LOCK
+        # (not reentrant, and this is the main thread) it would block for good. Measured by the read of item 41.
+        signal.signal(signum, signal.SIG_IGN)
         try:
             _remove_live_snapshot_dirs()
         finally:
@@ -865,9 +872,13 @@ def download_backup(request: Request) -> FileResponse:
         # Whose directory this is, for the boot sweep: a KILL (SIGKILL, power) runs no exit hook, and the leftover is a full plaintext
         # copy of the corpus. With the marker the next start removes a dead owner's directory at once; without it (the write is
         # best-effort) the sweep falls back to the 24 h age rule, as it always did (0.5.1 item 40).
-        from src.backup.stream_backup import write_owner_marker
+        from src.backup.stream_backup import register_active_staging, write_owner_marker
 
         write_owner_marker(workdir)
+        # And registered as a live job's staging, which the sweeps check BEFORE they read any marker: the verdict on a marker compares
+        # process start times as wall-clock instants, and a clock step while a download is in flight would otherwise let this process's
+        # own maintenance sweep take the directory from under its client (found by the read of item 40, measured).
+        register_active_staging(workdir)
         snapshot = workdir / "snapshot.db"
         try:
             backup_to(snapshot)

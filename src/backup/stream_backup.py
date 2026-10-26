@@ -153,6 +153,21 @@ def active_staging(path: Path | str) -> Iterator[None]:
             _ACTIVE_STAGING.discard(key)
 
 
+def register_active_staging(path: Path | str) -> None:
+    """Mark ``path`` as a live job's staging until :func:`unregister_active_staging`, for a job whose life does not fit one ``with`` block
+    (the backup route's snapshot directory is made in a request thread and removed when the response ends, on another)."""
+    key = str(Path(path).resolve())
+    with _ACTIVE_LOCK:
+        _ACTIVE_STAGING.add(key)
+
+
+def unregister_active_staging(path: Path | str) -> None:
+    """Undo :func:`register_active_staging`. Idempotent."""
+    key = str(Path(path).resolve())
+    with _ACTIVE_LOCK:
+        _ACTIVE_STAGING.discard(key)
+
+
 def is_active_staging(path: Path | str) -> bool:
     """True when ``path`` is (or lives inside) a registered live job's staging."""
     s = str(Path(path).resolve())

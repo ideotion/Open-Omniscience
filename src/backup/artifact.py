@@ -927,8 +927,9 @@ def cleanup_staging(staged: StagedArtifact) -> None:
 
 def cleanup_stale_staging(max_age_hours: float = 24.0) -> int:
     """Boot-time janitor: remove orphaned backup/restore temps in the data dir —
-    ``.restore-*`` AND ``.bak-build-*`` staging dirs plus ``*.oopart`` /
-    ``*.reassembling`` files older than ``max_age_hours``. A crashed backup must
+    ``.restore-*``, ``.bak-build-*`` and the backup route's ``.oo-backup-*`` staging dirs plus ``*.oopart`` /
+    ``*.reassembling`` files older than ``max_age_hours`` (a ``.bak-build-*`` or ``.oo-backup-*`` dir whose owner marker names a dead
+    process goes at once). A crashed backup must
     not leak gigabytes silently (2026-07-09 field event: ~120 GB of unidentified
     data-dir growth, prime suspect = orphaned staging — which for the OLD format
     contained a PLAINTEXT corpus snapshot, an at-rest-encryption violation on top).

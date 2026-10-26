@@ -680,8 +680,10 @@ def test_the_snapshot_dir_of_the_backup_route_is_swept_by_its_owner_like_a_stagi
 
 
 def test_a_snapshot_dir_of_this_very_process_is_never_taken_at_once(tmp_path):
-    """The route's own live download carries THIS process's marker: the verdict for it is "unknown", so only the age rule applies and
-    the boot or maintenance sweep cannot remove it from under the client reading it."""
+    """The route's own live download carries THIS process's marker: the verdict for it is "unknown", so the marker alone never takes it
+    at once. (The route also registers the directory as a live job's staging, which the sweeps check before they read a marker,
+    because the verdict on a marker compares process start times as wall-clock instants and a clock step would make a live owner
+    "dead": pinned in test_backup_download_route.py. This test pins the marker's own verdict, not the registry.)"""
     import psutil
 
     me = {"pid": os.getpid(), "started": round(psutil.Process().create_time(), 3)}

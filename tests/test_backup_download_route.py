@@ -693,8 +693,19 @@ import uvicorn
 import src.api.database as dbapi
 
 workdir = pathlib.Path(sys.argv[1])
-if sys.argv[3] == "install":
+if sys.argv[3] in ("install", "install-slow"):
     print("installed", dbapi.install_stop_signal_cleanup(), flush=True)
+if sys.argv[3] == "install-slow":
+    import shutil, time
+
+    real_rmtree = shutil.rmtree
+
+    def slow_rmtree(*args, **kwargs):  # a removal that takes seconds, as on btrfs, ZFS or a USB disk
+        print("removing", flush=True)
+        time.sleep(3)
+        return real_rmtree(*args, **kwargs)
+
+    shutil.rmtree = slow_rmtree
 workdir.mkdir()
 (workdir / "snapshot.db").write_bytes(b"PLAINTEXT" * 1000)
 with dbapi._BACKUP_LOCK:
@@ -715,8 +726,31 @@ def _free_port() -> int:
         return probe.getsockname()[1]
 
 
-def _sigterm_a_server_past_its_graceful_window(tmp_path: Path, mode: str):
-    """Start ``_TERM_SCRIPT`` in its own process, hold one request open, send SIGTERM; return (exit status, workdir)."""
+def _wait_for_line(proc, text: str, seconds: float) -> bool:
+    """Read the child's output until ``text`` has arrived (POSIX pipes only). Reads the raw descriptor: ``readline()`` on the text
+    wrapper pulls a whole chunk in, keeps the lines after the first in its own buffer where ``select`` cannot see them, and then
+    waits for an end of file, so the line this waits for was seen only after the process had gone and the test it served passed
+    against a handler without its guard (measured: the mutant passed three runs in five)."""
+    import select
+
+    fd = proc.stdout.fileno()
+    seen = b""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([fd], [], [], 0.5)
+        if ready:
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                return False
+            seen += chunk
+            if text.encode() in seen:
+                return True
+    return False
+
+
+def _sigterm_a_server_past_its_graceful_window(tmp_path: Path, mode: str, *, second_sigterm: bool = False):
+    """Start ``_TERM_SCRIPT`` in its own process, hold one request open, send SIGTERM (and, when asked, a second one while the stop
+    handler is removing the directory); return (exit status, workdir)."""
     workdir = tmp_path / ".oo-backup-stopping"
     port = _free_port()
     env = {**os.environ, "OO_DATA_DIR": str(tmp_path / "data"), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
@@ -743,6 +777,9 @@ def _sigterm_a_server_past_its_graceful_window(tmp_path: Path, mode: str):
             client_socket.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
             time.sleep(0.5)  # the request is in flight (if it were not yet, uvicorn stops at once and the result is the same)
             proc.send_signal(signal.SIGTERM)
+            if second_sigterm:
+                assert _wait_for_line(proc, "removing", 60), "the stop handler never began its removal"
+                proc.send_signal(signal.SIGTERM)
             status = proc.wait(timeout=60)
     finally:
         if proc.poll() is None:
@@ -765,6 +802,17 @@ def test_a_sigterm_that_outlasts_the_graceful_window_removes_the_snapshot_direct
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
+def test_a_second_sigterm_while_the_handler_is_removing_the_directory_neither_hangs_nor_leaves_it(tmp_path):
+    """The read of the bundle, N3. SIGHUP goes through the graceful path and becomes a SIGTERM to self, and a second ``kill`` is
+    plausible: with a removal that takes seconds, a second SIGTERM used to run the handler again on top of itself, find the table
+    already emptied, and end the process by the signal with the first removal unfinished (the directory left); and one landing while
+    the first holds the (non-reentrant) lock on the main thread blocked for good. The handler ignores the signal first."""
+    status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "install-slow", second_sigterm=True)
+    assert status == -signal.SIGTERM
+    assert not workdir.exists(), "a second SIGTERM during the removal left the plaintext snapshot in the data folder"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
 def test_without_the_handler_the_same_sigterm_leaves_the_snapshot_directory(tmp_path):
     """The premise of the test above, measured instead of assumed: with the default SIGTERM action uvicorn's re-raised signal kills
     the process at once, with no thread joined and no exit hook run. If this ever fails, uvicorn stopped doing that and the handler
@@ -772,6 +820,52 @@ def test_without_the_handler_the_same_sigterm_leaves_the_snapshot_directory(tmp_
     status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "plain")
     assert status == -signal.SIGTERM
     assert workdir.exists(), "uvicorn no longer ends a SIGTERM stop by the default action: is install_stop_signal_cleanup still needed?"
+
+
+def test_the_stop_cleanup_takes_sigterm_and_nothing_else():
+    """The read of the bundle, N4. A source scan cannot tell a registration for SIGTERM from one for SIGINT that sits beside it, and a
+    SIGINT handler that restores the default would bring the leak back for Ctrl+C."""
+    watched = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    before = {s: signal.getsignal(s) for s in watched}
+    try:
+        assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
+        assert signal.getsignal(signal.SIGINT) is before[signal.SIGINT]
+        assert signal.getsignal(signal.SIGHUP) is before[signal.SIGHUP]
+        assert signal.getsignal(signal.SIGTERM) is not before[signal.SIGTERM]
+    finally:
+        for s, h in before.items():
+            signal.signal(s, h)
+
+
+def test_the_route_registers_its_directory_as_live_staging_until_the_response_ends(client, data_dir, monkeypatch):
+    """The read of the bundle, N1. The sweeps check the live-staging registry before they read an owner marker. The verdict on a marker
+    compares process start times as wall-clock instants, so a clock step can turn this process's own marker into "dead" (measured with a
+    simulated step); the test writes such a marker and sweeps the data folder while the snapshot is being written."""
+    import json
+
+    from src.backup import stream_backup
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    during: dict = {}
+
+    def spy(dest):
+        workdir = Path(dest).parent
+        (workdir / ".owner.json").write_text(json.dumps({"pid": dead.pid, "started": 1.0}), encoding="utf-8")
+        during["workdir"] = workdir
+        during["verdict"] = stream_backup._owner_state(workdir)
+        during["registered"] = stream_backup.is_active_staging(workdir)
+        stream_backup.sweep_stale_backup_temps(workdir.parent)
+        during["still_there"] = workdir.exists()
+        Path(dest).write_bytes(b"x" * 100)
+
+    monkeypatch.setattr(sb, "backup_to", spy)
+    assert client.get("/api/database/backup", headers=OWN_PAGE).status_code == 200
+    assert during["verdict"] == "dead", "the test did not put the directory in the state it means to protect"
+    assert during["registered"] is True
+    assert during["still_there"] is True, "a sweep of the data folder took the directory of a download in flight"
+    assert not stream_backup.is_active_staging(during["workdir"]), "the registry kept a directory the response had removed"
+    assert _left_over(data_dir) == []
 
 
 def test_the_stop_handler_removes_what_this_process_holds_then_restores_the_default_and_signals_itself(data_dir, monkeypatch):
@@ -785,7 +879,14 @@ def test_the_stop_handler_removes_what_this_process_holds_then_restores_the_defa
         dbapi._live_snapshot_dirs[theirs] = os.getpid() + 1
     installed: dict[int, object] = {}
     killed: list[tuple[int, int]] = []
-    monkeypatch.setattr(dbapi.signal, "signal", lambda signum, handler: installed.__setitem__(signum, handler))
+    held_when_ignored: list[bool] = []
+
+    def fake_signal(signum, handler):
+        installed[signum] = handler
+        if handler == signal.SIG_IGN:
+            held_when_ignored.append(held.exists())
+
+    monkeypatch.setattr(dbapi.signal, "signal", fake_signal)
     monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
 
     assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
@@ -793,6 +894,7 @@ def test_the_stop_handler_removes_what_this_process_holds_then_restores_the_defa
     assert callable(handler)
     handler(signal.SIGTERM, None)
 
+    assert held_when_ignored == [True], "a second SIGTERM must be ignored from before the removal begins"
     assert not held.exists()
     assert theirs.exists(), "a directory another process made is not this process's to remove"
     assert installed[signal.SIGTERM] == signal.SIG_DFL, "the default action must be back before the signal is sent"
@@ -845,7 +947,7 @@ def test_the_removal_does_not_run_on_the_event_loop(data_dir, monkeypatch):
 
 def test_the_route_marks_its_snapshot_directory_with_the_process_that_made_it(client, data_dir, monkeypatch):
     """0.5.1 item 40. The marker is what lets the next start tell a dead server's snapshot from another live server's (R176); it is
-    written before the snapshot, so a kill at any point after the directory exists leaves it."""
+    written before the snapshot, so a kill after the marker write leaves it (a kill between the directory and the marker leaves an unmarked directory, which keeps the 24 h age rule)."""
     import json
 
     import psutil
