@@ -71,9 +71,8 @@ from typing import Any
 
 #: What a composed figure means, published beside it.
 METHOD = (
-    "the app's own download bytes -- the collector's fetch counter plus every "
-    "file-download sampler that is currently measurable -- against the budget the "
-    "collection-speed governor is set to"
+    "the app's own download bytes (collector fetches plus every measurable file download) "
+    "against the collection-speed governor's budget"
 )
 
 #: Bytes/s -> kilobits/s (decimal), the unit the operator's target is written in.
@@ -90,8 +89,9 @@ def budget_kbps(governor: Any) -> int | None:
     """The per-process ceiling, read from the governor's OWN knobs.
 
     ``None`` means there is no ceiling: ``maximum`` mode is the operator asking for
-    as much as the machine and the hosts will give, and the governor backs off on
-    contention rather than on a rate. Returning ``0`` instead would read as "no
+    as much as the machine and the hosts will give, and the governor steers by the
+    articles stored per window and backs off on contention, not toward a rate.
+    Returning ``0`` instead would read as "no
     bytes allowed", which is a different instruction entirely.
 
     Reads ``governor.mode`` / ``governor.target_kbps`` rather than accepting them as
@@ -179,10 +179,7 @@ def compose(
 
     if budget is None:
         out["over_budget"] = None
-        out["budget_reason"] = (
-            "no ceiling: the collection speed is set to maximum, so the governor "
-            "backs off on contention rather than on a rate"
-        )
+        out["budget_reason"] = "no ceiling: speed set to maximum; the governor steers by measured gain and contention"
         return out
 
     out["over_budget"] = process > budget
