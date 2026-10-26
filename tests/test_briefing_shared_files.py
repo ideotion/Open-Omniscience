@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -51,14 +52,30 @@ def test_two_processes_pinning_cards_lose_no_card(dd):
 
 
 def test_two_processes_recording_reasons_lose_no_reason(dd):
-    child = _child(dd, "from src.briefing import dismiss_reasons as r\nfor i in range(40):\n    r.record_reason(f'child-{i}', 'x')\n")
+    """The store keeps the most recent ``_MAX_ENTRIES`` reasons, so the parent's loop is bounded to leave room for the child's 40: an unbounded loop on a runner where the
+    child took seconds to start wrote 1,547 reasons, and the cap (correctly) dropped the oldest 587 of them. The parent also starts only once the child is writing."""
+    started = dd / "child.started"
+    child = _child(dd, f"from src.briefing import dismiss_reasons as r\nopen({str(started)!r}, 'w').close()\nfor i in range(40):\n    r.record_reason(f'child-{{i}}', 'x')\n")
+    deadline = time.monotonic() + 120
+    while not started.exists() and child.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    limit = dismiss_reasons._MAX_ENTRIES - 40
     n = 0
-    while child.poll() is None:
+    while child.poll() is None and n < limit:
         dismiss_reasons.record_reason(f"parent-{n}", "x")
         n += 1
     child.wait()
     ids = {r["card_id"] for r in dismiss_reasons.all_reasons()}
-    assert {f"child-{i}" for i in range(40)} <= ids and {f"parent-{i}" for i in range(n)} <= ids
+    assert n > 0 and {f"child-{i}" for i in range(40)} <= ids and {f"parent-{i}" for i in range(n)} <= ids
+
+
+def test_the_reason_store_drops_the_oldest_past_its_cap_and_nothing_else(dd):
+    """The behaviour that made the unbounded loop above fail: past ``_MAX_ENTRIES`` the oldest go, in order, and the newest are all kept."""
+    total = dismiss_reasons._MAX_ENTRIES + 25
+    for i in range(total):
+        dismiss_reasons.record_reason(f"parent-{i}", "x")
+    ids = [r["card_id"] for r in dismiss_reasons.all_reasons()]
+    assert ids == [f"parent-{i}" for i in range(25, total)]
 
 
 def test_the_cache_is_replaced_through_a_unique_temp(dd, monkeypatch):
