@@ -107,7 +107,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
 that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, 24–29, 35, 37 and 38–42 by the lanes' rulings and 30–34 and 36 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, 24–29, 35, 37 and 38–43 by the lanes' rulings and 30–34 and 36 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -131,7 +131,7 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–23), by the lanes' rulings (24–29, 35, 37–42) and by the close-out audit (30–34, 36).**
+**Items added at the tag (12–23), by the lanes' rulings (24–29, 35, 37–43) and by the close-out audit (30–34, 36).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
@@ -216,6 +216,10 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   later; the threadpool shields the native cancel; 0.5.1 (Export lane).
 - **42. The backup route and a client that goes away**: the route should watch `receive()` for `http.disconnect`, as
   `RecordedFileResponse` does, so a gone client stops the read early and frees the single-flight claim; 0.5.1 (Export lane).
+- **43. `tests/test_figures_cold_start.py` fails after the 58 files before it in the API shard** (Export lane, 0.5.1): its two tests (a cold
+  route answers without the count and then carries it; a count past its deadline is a named failure held for its window) fail only when
+  run after the 58 files that precede them in the API shard, and pass alone; identical on main before #1487. An order dependence on
+  main, not bisected.
 ---
 
 ## 2. The rows
