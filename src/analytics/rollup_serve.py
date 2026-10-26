@@ -232,6 +232,8 @@ def status() -> dict:
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
         "store": "persisted" if persisted else "memory",  # D1: persisted encrypted vs in-memory
+        # Why the persisted store is not the one served although it is configured (a code, set for the life of the process); None otherwise.
+        "persisted_fallback": _PERSISTED_FELL_BACK["why"],
         "built": con is not None,
         "built_at": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
@@ -1283,10 +1285,11 @@ def _build_and_swap() -> str:
                     # The start-time verdicts above ran while the persisted store was active, and three of them (stopped, last-build,
                     # affordability) stand aside for it: the in-memory build must pass them too, now that it is the build that runs. They are the
                     # guards that keep a build the machine cannot afford, or one a killed build already showed it cannot finish, from starting.
+                    ran = False  # a verdict that raises here is no build that failed (as in the first pass): it keeps no hold
                     if _decline_for_skip():
-                        ran = False
                         outcome = "declined"
                         return outcome
+                    ran = True
                 else:
                     # No passphrase, no secure backend or the engine is off: nothing to build in memory for the persisted path this kick.
                     ran = False

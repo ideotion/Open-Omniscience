@@ -122,6 +122,9 @@ def test_the_persisted_refresh_closes_an_in_memory_store_it_was_handed_and_recor
     assert rollup_serve._PERSISTED_DECLINE["why"] == fallback
 
 
+_REAL_STOPPED = rollup_serve._stopped_build_verdict
+
+
 def _kick_ready(monkeypatch, *, fallback):
     """A dispatcher whose verdicts all pass and whose persisted opener answers ``fallback``; returns the list of in-memory builds started."""
     builds: list = []
@@ -165,6 +168,41 @@ def test_the_fall_through_build_must_pass_the_start_time_verdicts_that_stood_asi
     skip = rollup_serve._STATE["last_skip"]
     assert skip["reason"] == "mem-short" and skip["source"] == source
     assert rollup_serve._LAST_OUTCOME["value"] == "declined"
+
+
+def test_the_fall_through_honours_a_real_in_memory_stop_hold(monkeypatch):
+    """The real ``_stopped_build_verdict`` (not a stand-in that reads the latch): after the latch an in-memory hold with no ``store`` field applies."""
+    import time
+
+    builds = _kick_ready(monkeypatch, fallback="encryption-gate-failed")
+    monkeypatch.setattr(rollup_serve, "_stopped_build_verdict", _REAL_STOPPED)
+    monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 500.0)
+    rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 500.0, "epoch": 1}
+    monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", True)
+    assert _kick() == "declined"
+    assert builds == [] and rollup_serve._STATE["last_skip"]["source"] == "stopped"
+
+
+def test_a_verdict_that_raises_after_the_latch_is_no_failed_build_and_keeps_no_hold(monkeypatch):
+    _kick_ready(monkeypatch, fallback="encryption-gate-failed")
+
+    def boom():
+        if rollup_serve._PERSISTED_FELL_BACK["why"]:
+            raise RuntimeError("verdict words that must not be kept")
+        return None
+
+    monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", boom)
+    assert _kick() == "failed"
+    assert rollup_serve._STATE["stopped"] is None and rollup_serve._STATE["failures"] == 0, "an error in a verdict kept a failure hold"
+
+
+def test_the_status_names_the_fallback_after_a_later_decline_overwrites_last_skip(monkeypatch):
+    _kick_ready(monkeypatch, fallback="persisted-open-failed")
+    monkeypatch.setattr(rollup_serve, "_affordability_verdict",
+                        lambda: {"reason": "mem-short", "at": 1.0} if rollup_serve._PERSISTED_FELL_BACK["why"] else None)
+    assert _kick() == "declined"
+    st = rollup_serve.status()
+    assert st["persisted_fallback"] == "persisted-open-failed" and st["last_skip"]["reason"] == "mem-short"
 
 
 def test_after_a_fallback_the_process_serves_in_memory_and_does_not_retry_the_persisted_open(monkeypatch):
