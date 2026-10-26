@@ -101,7 +101,8 @@ def _world(session, *, articles: int, seed: int = 7, mentions: tuple[int, int] =
     In the period (2026-07-25 to 2026-07-31): ordinary articles with 1 to 30 mentions of 45 visible and 7 hidden
     keywords, counts 1 to 4 so there are ties at every cut; an article whose every keyword is hidden; an article
     with no mention row; a quarantined article (kept, as before); one with no ``published_at`` (its ``created_at``
-    is the clock); a stand-in (left out); one at the period's first instant (in) and one at the instant it ends (out).
+    is the clock); a stand-in (left out); one at the period's first instant (in), one a second before it ends (in) and
+    one at the instant it ends (out).
     Outside it: articles a week early and a week late, with mentions.
     """
     rng = random.Random(seed)
@@ -114,7 +115,7 @@ def _world(session, *, articles: int, seed: int = 7, mentions: tuple[int, int] =
         session.add(k)
         session.flush()
         kw[term] = k.id
-    made: dict[str, list[int]] = {k: [] for k in ("period", "hidden_only", "bare", "quarantined", "undated", "stand_in", "outside", "first_instant", "end_instant")}
+    made: dict[str, list[int]] = {k: [] for k in ("period", "hidden_only", "bare", "quarantined", "undated", "stand_in", "outside", "first_instant", "last_second", "end_instant")}
     counter = [0]
 
     def article(kind: str, when: datetime, *, published: bool = True, quarantined: bool = False, stand_in: bool = False) -> Article:
@@ -157,7 +158,7 @@ def _world(session, *, articles: int, seed: int = 7, mentions: tuple[int, int] =
         mention(art, term, 2, when)
     # the period is [start, end): its first instant is in, the instant the next period starts at is not
     end = datetime(_P.end.year, _P.end.month, _P.end.day)
-    for kind, when in (("first_instant", start), ("end_instant", end)):
+    for kind, when in (("first_instant", start), ("last_second", end - timedelta(seconds=1)), ("end_instant", end)):
         art = article(kind, when)
         for term in _VISIBLE[10:16]:
             mention(art, term, 2, when)
@@ -194,7 +195,7 @@ def test_the_chunked_read_gives_the_one_statement_read_exactly(world, monkeypatc
     assert made["quarantined"][0] in new
     assert made["undated"][0] in new
     assert made["stand_in"][0] not in new
-    assert made["first_instant"][0] in new and made["end_instant"][0] not in new
+    assert made["first_instant"][0] in new and made["last_second"][0] in new and made["end_instant"][0] not in new
     assert not set(made["outside"]) & set(new)
     assert any(len(v) == stories._TERMS_PER_ARTICLE for v in new.values()), "some article is cut at the top 12"
 
@@ -261,6 +262,59 @@ def test_the_edition_numbers_are_the_old_ones(world, monkeypatch):
             assert clusters, "the comparison must have produced stories, or equality of two empty lists proves nothing"
 
 
+# --------------------------------------------------------------------------------------------- the stated differences
+
+
+def test_the_period_follows_the_articles_clock_where_the_old_read_followed_each_mentions_date():
+    """The two differences audit 0.5.0 A-003 states, pinned so they are decisions on the record and not surprises.
+
+    The old read chose MENTION rows by their ``observed_on`` (the date stamped when the article was indexed); the new one chooses
+    ARTICLES by ``coalesce(published_at, created_at)`` (how ``period.py`` defines the period) and reads all of their mentions. They
+    agree for every article whose clock has not moved since it was indexed, which is the whole of ``_world``. They differ for:
+
+    * ``healed``: the clock is inside the period but its mentions are dated a week earlier (the law corpus's heal clears
+      ``published_at`` without re-indexing): the new read has it, the old did not;
+    * ``undated``: the clock is inside, the mentions carry no date at all: the new read has it, the old did not;
+    * ``moved_out``: the mentions are dated inside, the clock has since moved a week later: the old read had it, the new does not;
+    * ``orphan``: mention rows whose article row is gone, dated inside: the old read counted them, the new does not.
+    """
+    s = _session()
+    made = _world(s, articles=20)
+    src = s.query(Source).one()
+    term = {k.term: k.id for k in s.query(Keyword)}
+    start = datetime(_P.start.year, _P.start.month, _P.start.day)
+    inside, week_early, week_late = start + timedelta(days=3), start - timedelta(days=4), start + timedelta(days=11)
+
+    def add(label: str, clock: datetime, observed: date | None) -> int:
+        art = Article(
+            url=f"https://d/{label}", canonical_url=f"https://d/{label}", source_id=src.id, title=label, content=label,
+            hash=f"{label:0<64}"[:64], published_at=clock, created_at=clock,
+        )
+        s.add(art)
+        s.flush()
+        for t in _VISIBLE[:5]:
+            s.add(KeywordMention(keyword_id=term[t], article_id=art.id, count=2, observed_on=observed, source_id=src.id))
+        return art.id
+
+    healed = add("healed", inside, week_early.date())
+    undated = add("undated-mentions", inside, None)
+    moved_out = add("moved-out", week_late, inside.date())
+    orphan = 10_000_000
+    for t in _VISIBLE[:5]:
+        s.add(KeywordMention(keyword_id=term[t], article_id=orphan, count=2, observed_on=inside.date(), source_id=src.id))
+    s.commit()
+
+    new, old = article_keyword_sets(s, _P), _old_sets(s, _P)
+    assert {healed, undated} <= set(new) and not ({healed, undated} & set(old))
+    assert moved_out in old and moved_out not in new
+    assert orphan in old and orphan not in new
+    # nothing else differs: the rest of the answer is the old one exactly
+    ours = {healed, undated, moved_out, orphan}
+    assert {a: v for a, v in new.items() if a not in ours} == {a: v for a, v in old.items() if a not in ours}
+    assert set(made["period"]) <= set(new)
+    s.close()
+
+
 # --------------------------------------------------------------------------------------------- the bound
 
 
@@ -280,7 +334,7 @@ def test_no_statement_reads_the_mentions_of_more_than_one_chunk(world, monkeypat
     monkeypatch.setattr(stories, "_ARTICLE_CHUNK", 10)
     seen = _mention_statements(s)
     build_stories(s, _P)
-    in_period = len(made["period"]) + len(made["hidden_only"]) + len(made["bare"]) + len(made["quarantined"]) + len(made["undated"]) + len(made["first_instant"])
+    in_period = len(made["period"]) + len(made["hidden_only"]) + len(made["bare"]) + len(made["quarantined"]) + len(made["undated"]) + len(made["first_instant"]) + len(made["last_second"])
     assert seen, "the read must have touched keyword_mentions"
     for statement, params in seen:
         assert "article_id IN" in statement, "a read of the mentions that is not bounded to a chunk of articles"
@@ -288,15 +342,16 @@ def test_no_statement_reads_the_mentions_of_more_than_one_chunk(world, monkeypat
     assert len(seen) == math.ceil(in_period / 10)
 
 
-def test_the_mention_read_is_served_by_the_covering_article_index(world):
+def test_the_mention_read_is_served_by_the_covering_article_index(world, monkeypatch):
+    """The plan of the statement the read ACTUALLY issues (captured as it runs), not of one written beside it."""
     s, _ = world
-    plan = " ".join(
-        str(r[3])
-        for r in s.connection().exec_driver_sql(
-            "EXPLAIN QUERY PLAN SELECT article_id, keyword_id, count FROM keyword_mentions_all WHERE article_id IN (1, 2, 3)"
-        )
-    )
-    assert "COVERING INDEX ix_mention_article_count" in plan
+    monkeypatch.setattr(stories, "_ARTICLE_CHUNK", 10)
+    seen = _mention_statements(s)
+    build_stories(s, _P)
+    assert seen
+    statement, params = seen[0]
+    plan = " ".join(str(r[3]) for r in s.connection().exec_driver_sql("EXPLAIN QUERY PLAN " + statement, params))
+    assert "COVERING INDEX ix_mention_article_count" in plan, plan
 
 
 @contextmanager
@@ -311,8 +366,15 @@ def _peak():
 
 
 def test_resident_memory_does_not_follow_the_length_of_the_period(monkeypatch):
-    """500 articles and 2,000 articles of 25 mentions each, the same 20 kept: the new read's peak is flat, the old one's is not."""
+    """500 articles and 2,000 articles of 25 mentions each, the same 20 kept: what the new read adds with the length of the period
+    is a small part of what the old one adds. Compared as GROWTH (peak at 2,000 minus peak at 500), so the fixed costs both share
+    (the stoplist, the verdict table, the interpreter's own caches) cancel; a first small build warms them so that they are
+    not charged to the first measurement. Measured on this machine: the old read grows by 9.7 MB, the new one by 0.3 MB."""
     monkeypatch.setattr(stories, "_ARTICLE_CHUNK", 50)
+    warm = _session()
+    _world(warm, articles=5)
+    build_stories(warm, _P, max_articles=20)
+    warm.close()
     peaks: dict[tuple[str, int], int] = {}
     for n in (500, 2000):
         s = _session()
@@ -324,8 +386,10 @@ def test_resident_memory_does_not_follow_the_length_of_the_period(monkeypatch):
             _old_sets(s, _P)
             peaks["old", n] = peak()
         s.close()
-    assert peaks["new", 2000] < 1.5 * peaks["new", 500], peaks
-    assert peaks["old", 2000] > 3.0 * peaks["old", 500], peaks
+    grew_old = peaks["old", 2000] - peaks["old", 500]
+    grew_new = peaks["new", 2000] - peaks["new", 500]
+    assert grew_old > 0
+    assert grew_new < 0.25 * grew_old, peaks
     assert peaks["new", 2000] < 0.35 * peaks["old", 2000], peaks
 
 
@@ -385,6 +449,23 @@ def test_the_deadline_setting_is_clamped(monkeypatch, value, expect):
     else:
         monkeypatch.setenv("OO_BULLETIN_STORIES_DEADLINE_S", value)
     assert _stories_deadline_s() == expect
+
+
+def test_a_read_that_is_really_out_of_time_is_stopped_and_the_same_read_with_time_is_not(monkeypatch):
+    """The deadline is on the read: with next to no time the progress handler stops it and ``StatementTimeout`` comes out of
+    ``build_stories`` (the progress handler fires every 20,000 opcodes, so the world is big enough to reach one); with the default
+    the same world completes. Without ``statement_deadline`` around ``_richest_sets`` the first half fails."""
+    from src.database.maintenance import StatementTimeout
+
+    s = _session()
+    _world(s, articles=700, mentions=(25, 25))
+    monkeypatch.setenv("OO_BULLETIN_STORIES_DEADLINE_S", "1e-9")
+    with pytest.raises(StatementTimeout):
+        build_stories(s, _P)
+    monkeypatch.delenv("OO_BULLETIN_STORIES_DEADLINE_S")
+    out = build_stories(s, _P)
+    assert out["articles_in_period"] >= 700
+    s.close()
 
 
 def test_a_read_that_runs_out_of_time_leaves_the_edition_without_stories(monkeypatch):

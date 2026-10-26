@@ -13,6 +13,7 @@ commodity table yet) gets an honest, smaller picture rather than a crash.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import shutil
@@ -27,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from src.api import served_cache
 from src.database.session import engine, get_db
@@ -575,8 +577,11 @@ def vacuum() -> dict:
 _BACKUP_STALE_AFTER_S = 24 * 3600
 _BACKUP_DIR_PREFIX = ".oo-backup-"
 _BACKUP_LOCK = threading.Lock()
-#: The download in flight in THIS process: (its snapshot directory or None while it is being made, when it was claimed), or None.
-_backup_flight: tuple[Path | None, float] | None = None
+#: The download in flight in THIS process: (its claim token, its snapshot directory or None while it is being made, when it was
+#: claimed), or None. The token is what a request holds: only the request whose token is recorded can record a directory for the
+#: claim or free it, so a download that outlives its claim (taken over after :data:`_BACKUP_STALE_AFTER_S`) cannot free the
+#: takeover's.
+_backup_flight: tuple[object, Path | None, float] | None = None
 
 
 def _refuse_cross_site(request: Request) -> None:
@@ -589,15 +594,25 @@ def _refuse_cross_site(request: Request) -> None:
 
     * ``Sec-Fetch-Site`` when the browser sends it: ``same-origin`` (the app's own page) and ``none`` (an address typed or a bookmark)
       pass; ``same-site`` (another port or host on this machine) and ``cross-site`` do not.
-    * ``Origin``, else ``Referer``, when sent: its host and port must be the request's own ``Host`` (the Host header is itself
-      checked against the loopback names by the app's DNS-rebinding guard). ``Origin: null`` names no host and is refused.
+    * ``Host``: one of the names the app's DNS-rebinding guard serves (the loopback names, the test client's, ``OO_ALLOWED_HOSTS``).
+      A page on a name that an attacker rebinds to 127.0.0.1 is SAME-ORIGIN with itself, so the checks below pass for it and only
+      this one stops it; the middleware stops it too, and the route does not depend on that.
+    * ``Origin``, else ``Referer``, when sent: its host and port must be the request's own ``Host``. ``Origin: null`` names no
+      host and is refused.
     * Neither sent: a command line, a script or a navigation from this page, which carries no ``Referer`` under the app's own
-      ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods.
+      ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods. **The stated limit:**
+      a browser that does not send Fetch Metadata (Firefox before 90, Safari before 16.4, an old embedded webview) sends none of
+      the three for ``<img src=... referrerpolicy="no-referrer">``, so that request is served: the page still cannot read the
+      answer, but the machine writes the snapshot. The one-at-a-time slot and the free-space gate bound what that costs.
     """
+    from src.api.main import _allowed_hosts, _host_without_port
+
     refusal = HTTPException(
         status_code=403,
         detail="Refused: the corpus snapshot is served to the app's own page, not to a request from another site or origin.",
     )
+    if _host_without_port(request.headers.get("host", "")) not in _allowed_hosts():
+        raise refusal
     site = request.headers.get("sec-fetch-site")
     if site is not None and site.strip().lower() not in ("same-origin", "none"):
         raise refusal
@@ -614,36 +629,42 @@ def _refuse_cross_site(request: Request) -> None:
         raise refusal
 
 
-def _claim_backup_slot() -> None:
-    """One snapshot at a time in this process: 429 while another is being made or streamed.
+def _claim_backup_slot() -> object:
+    """One snapshot at a time in this process: 429 while another is being made or streamed. Returns the claim's token.
 
     A snapshot is a full copy of the corpus on the data volume, so two at once is twice the disk and twice the reads of a store
     the collector is writing into. The claim is released when the response ends, however it ends; a claim older than
     :data:`_BACKUP_STALE_AFTER_S` is a response that never ran, and is taken over."""
     global _backup_flight
+    token = object()
     with _BACKUP_LOCK:
-        if _backup_flight is not None and (time.monotonic() - _backup_flight[1]) < _BACKUP_STALE_AFTER_S:
+        if _backup_flight is not None and (time.monotonic() - _backup_flight[2]) < _BACKUP_STALE_AFTER_S:
             raise HTTPException(
                 status_code=429,
                 detail="Another corpus snapshot is being made or downloaded; retry when it has finished.",
             )
-        _backup_flight = (None, time.monotonic())
+        _backup_flight = (token, None, time.monotonic())
+    return token
 
 
-def _note_backup_dir(workdir: Path) -> None:
-    """Record the snapshot directory of the claim this request holds."""
+def _note_backup_dir(token: object, workdir: Path) -> None:
+    """Record the snapshot directory of the claim this request holds (nothing if the claim has been taken over since)."""
     global _backup_flight
     with _BACKUP_LOCK:
-        _backup_flight = (workdir, _backup_flight[1] if _backup_flight else time.monotonic())
+        if _backup_flight is not None and _backup_flight[0] is token:
+            _backup_flight = (token, workdir, _backup_flight[2])
 
 
-def _release_backup_slot(workdir: Path | None) -> None:
-    """Remove the snapshot directory (if one was made) and free the slot. Idempotent; never raises."""
+def _release_backup_slot(token: object, workdir: Path | None) -> None:
+    """Remove the snapshot directory (if one was made) and free the claim ``token`` holds. Idempotent; never raises.
+
+    The directory is this request's own and is removed whatever became of the claim; the claim is freed only if it is still this
+    request's, so a download that was taken over (a day or more in flight) does not free the takeover's."""
     global _backup_flight
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
     with _BACKUP_LOCK:
-        if _backup_flight is not None and (workdir is None or _backup_flight[0] in (None, workdir)):
+        if _backup_flight is not None and _backup_flight[0] is token:
             _backup_flight = None
 
 
@@ -666,17 +687,22 @@ def _sweep_stale_snapshots(data_dir: Path) -> None:
 
 
 class _SnapshotResponse(FileResponse):
-    """A file response that removes its snapshot directory when it ends, however it ends (sent, client gone, error)."""
+    """A file response that removes its snapshot directory when it ends, however it ends (sent, client gone, error, cancelled).
 
-    def __init__(self, path: Path, workdir: Path, **kwargs) -> None:
+    The removal runs in a worker thread, shielded from the cancellation of a client that went away: deleting a corpus-sized file
+    can take seconds on some file systems (btrfs, ZFS, a USB disk) and must neither stall the event loop nor be skipped."""
+
+    def __init__(self, path: Path, workdir: Path, token: object, **kwargs) -> None:
         super().__init__(path, **kwargs)
         self._workdir = workdir
+        self._token = token
 
     async def __call__(self, scope, receive, send) -> None:
         try:
             await super().__call__(scope, receive, send)
         finally:
-            _release_backup_slot(self._workdir)
+            # shielded: a client that went away cancels this task, and the directory must still be removed
+            await asyncio.shield(run_in_threadpool(_release_backup_slot, self._token, self._workdir))
 
 
 @router.get("/backup")
@@ -698,7 +724,7 @@ def download_backup(request: Request) -> FileResponse:
     from src.database.connect import is_encrypted_file
 
     _refuse_cross_site(request)
-    _claim_backup_slot()
+    token = _claim_backup_slot()
     workdir: Path | None = None
     try:
         try:
@@ -713,8 +739,12 @@ def download_backup(request: Request) -> FileResponse:
         if not is_encrypted_file(db_path):
             needed = 0
             for part in (db_path, Path(str(db_path) + "-wal")):
-                with contextlib.suppress(OSError):
+                try:
                     needed += part.stat().st_size
+                except FileNotFoundError:
+                    continue  # no log file is a log of zero bytes
+                except OSError:
+                    space_checked = False  # a size that cannot be read leaves the figure short, and the response says so
             try:
                 free = int(shutil.disk_usage(data_dir).free)
             except OSError:
@@ -728,7 +758,7 @@ def download_backup(request: Request) -> FileResponse:
                     ),
                 )
         workdir = Path(tempfile.mkdtemp(prefix=_BACKUP_DIR_PREFIX, dir=data_dir))
-        _note_backup_dir(workdir)
+        _note_backup_dir(token, workdir)
         snapshot = workdir / "snapshot.db"
         try:
             backup_to(snapshot)
@@ -738,12 +768,13 @@ def download_backup(request: Request) -> FileResponse:
         return _SnapshotResponse(
             snapshot,
             workdir,
+            token,
             media_type="application/x-sqlite3",
             filename=f"open-omniscience-backup-{ts}.db",
             headers=None if space_checked else {"X-OO-Free-Space-Check": "not-read"},
         )
     except BaseException:
-        _release_backup_slot(workdir)
+        _release_backup_slot(token, workdir)
         raise
 
 

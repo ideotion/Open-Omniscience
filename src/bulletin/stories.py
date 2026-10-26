@@ -106,13 +106,18 @@ def _stories_deadline_s() -> float:
 def _period_article_ids(session, period: Period) -> array:
     """The ids of the articles the period holds, sorted, from the ``articles`` clock index alone.
 
-    ``ix_article_observed`` is ``coalesce(published_at, created_at)`` (``_CLOCK`` is written exactly as it defines it), and a
-    keyword mention's ``observed_on`` is that same clock's date (``store.py`` stamps ``(published_at or created_at).date()``), so
-    ``clock in [start, end)`` names the articles whose mentions the period holds. An index range over the clock reads no article row
-    page; a stand-in (the placeholder a salvage copy writes for a lost article) is left out through the hash index, as the mention
-    read did through its article ids. A quarantined article is NOT left out here, as it was not before: that is D22's slice.
-    The ids come back as an ``array('q')``, eight bytes each, so a period of millions of articles costs megabytes. Sorted, so each
-    chunk of the mention read lands on neighbouring pages of the covering index."""
+    ``ix_article_observed`` is ``coalesce(published_at, created_at)`` (``_CLOCK`` is written exactly as it defines it), which is
+    how ``period.py`` defines the period. The read this replaced chose MENTION rows by their ``observed_on``, the date
+    ``store.py`` stamps from that clock when the article is indexed (``(published_at or created_at).date()``); the two agree
+    unless the article's clock moved after it was indexed (the law corpus's heal clears ``published_at`` without re-indexing) or
+    the mention carries no date. For those articles this read follows the ARTICLE's clock: it keeps the article in the period its
+    clock names, with all of its mentions, where the old read followed each mention's stamped date. That is a stated difference
+    of audit 0.5.0 A-003, with the orphan one (mention rows whose article row is gone were counted, and are not now). An index
+    range over the clock reads no article row page; a stand-in (the placeholder a salvage copy writes for a lost article) is left
+    out through the hash index, as the mention read did through its article ids. A quarantined article is NOT left out here, as it
+    was not before: that is D22's slice. The ids come back as an ``array('q')``, eight bytes each, resident for the whole read
+    (2 MB at the field's 268,241 articles); the list they are sorted from exists only while it is sorted (about 36 bytes an
+    entry). Sorted, so each chunk of the mention read lands on neighbouring pages of the covering index."""
     lo = datetime.combine(period.start, time.min)
     hi = datetime.combine(period.end, time.min)
     clock = _CLOCK
@@ -350,9 +355,9 @@ def build_stories(
             "method": (
                 "the period's articles are taken from the article clock index and their mention rows are read "
                 f"{_ARTICLE_CHUNK} articles at a time, each reduced to its top {_TERMS_PER_ARTICLE} visible keywords before the "
-                f"next read: what is held is the keyword sets of the richest {max_articles:,} articles and one read, whatever the "
-                f"length of the period. The read is stopped after {deadline_s:g} s, and the edition then says its stories "
-                "could not be built."
+                f"next read: what is held is the keyword sets of the richest {max_articles:,} articles, one read and eight bytes "
+                f"for each article of the period. The read is stopped after {deadline_s:g} s, and the edition then says its "
+                "stories could not be built."
             ),
         },
         "threshold": threshold,
