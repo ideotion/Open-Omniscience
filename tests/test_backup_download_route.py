@@ -149,6 +149,13 @@ def test_a_host_the_operator_named_is_served_with_its_own_origin(monkeypatch):
         dbapi._refuse_cross_site(_request({"Origin": "http://evil.test:8000"}, host="corpus.lan:8000"))
 
 
+def test_origin_decides_when_a_request_sends_both_origin_and_referer():
+    """``Origin`` is the browser's own statement of who is asking; the ``Referer`` is read only when there is no ``Origin``."""
+    dbapi._refuse_cross_site(_request({"Origin": "http://testserver", "Referer": "http://evil.example/p"}))
+    with pytest.raises(HTTPException):
+        dbapi._refuse_cross_site(_request({"Origin": "http://evil.example", "Referer": "http://testserver/p"}))
+
+
 @pytest.mark.parametrize(
     "headers",
     [{}, OWN_PAGE, {"Sec-Fetch-Site": "none"}, {"Sec-Fetch-Site": "Same-Origin"}, {"Referer": "http://testserver/index.html"}],
@@ -167,6 +174,14 @@ def test_a_request_that_sends_none_of_the_three_headers_is_served_which_is_the_s
     limit is a decision in the record and not a surprise; the page cannot read the answer, and the slot and the space gate bound the cost."""
     r = client.get("/api/database/backup")
     assert r.status_code == 200 and _left_over(data_dir) == []
+
+
+def test_the_same_limit_holds_for_a_name_the_operator_serves_over_plain_http(monkeypatch):
+    """Browsers attach Fetch Metadata only to loopback and HTTPS targets, so a page that points an ``<img>`` at an
+    ``OO_ALLOWED_HOSTS`` name over plain HTTP sends none of the three headers either: served, as curl is. Pinned so the second
+    form of the limit is a decision in the record and not a surprise."""
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "corpus.lan")
+    dbapi._refuse_cross_site(_request({}, host="corpus.lan:8000"))
 
 
 def test_the_snapshot_is_written_beside_the_database_and_removed_when_the_response_ends(client, data_dir, monkeypatch):
@@ -220,14 +235,71 @@ Usage = collections.namedtuple("Usage", "total used free")
 
 def test_a_volume_without_room_for_the_snapshot_is_refused_with_both_figures(client, data_dir, monkeypatch):
     calls = _forbid_snapshots(monkeypatch)
-    monkeypatch.setattr(dbapi, "shutil", _Seen(dbapi.shutil, disk_usage=lambda p: Usage(10**9, 10**9 - 10, 10)))
+    measured: list[Path] = []
+
+    def usage(path):
+        measured.append(Path(path))
+        return Usage(10**9, 10**9 - 10, 10)
+
+    monkeypatch.setattr(dbapi, "shutil", _Seen(dbapi.shutil, disk_usage=usage))
     r = client.get("/api/database/backup", headers=OWN_PAGE)
     assert r.status_code == 507
+    assert measured == [data_dir], "the volume measured is not the one the snapshot is written on"
     detail = r.json()["detail"]
-    assert "10 bytes free" in detail and "needed" in detail
+    assert "10 bytes free" in detail and "up to" in detail and "needed" in detail
     needed = int(detail.split("up to ")[1].split(" ")[0].replace(",", ""))
     assert needed >= sb.live_db_path().stat().st_size, "the figure asked for is less than the database file itself"
     assert not calls and _left_over(data_dir) == [] and dbapi._backup_flight is None
+
+
+class _Sized:
+    """What ``Path.stat`` returns for a file whose size the test chooses."""
+
+    def __init__(self, size):
+        self.st_size = size
+
+
+def _wal_of(size, *, unreadable=False):
+    """``Path`` as the route sees it, with a log file of ``size`` bytes (the real database file keeps its real size)."""
+
+    class WithWal(type(Path())):
+        def stat(self, *a, **k):
+            if self.name.endswith("-wal"):
+                if unreadable:
+                    raise PermissionError(13, "denied")
+                return _Sized(size)
+            return super().stat(*a, **k)
+
+    return WithWal
+
+
+def test_the_log_file_counts_toward_the_room_a_snapshot_needs_and_room_for_exactly_that_is_enough(client, data_dir, monkeypatch):
+    """database + log is what a snapshot can write; one byte less is refused, exactly that is served."""
+    wal = 700_000
+    monkeypatch.setattr(dbapi, "Path", _wal_of(wal))
+    room = {}
+
+    def usage(path):
+        return Usage(10**12, 0, sb.live_db_path().stat().st_size + wal + room["delta"])
+
+    monkeypatch.setattr(dbapi, "shutil", _Seen(dbapi.shutil, disk_usage=usage))
+    room["delta"] = -1
+    short = client.get("/api/database/backup", headers=OWN_PAGE)
+    assert short.status_code == 507, "the log file was left out of the room a snapshot needs"
+    room["delta"] = 0
+    exact = client.get("/api/database/backup", headers=OWN_PAGE)
+    assert exact.status_code == 200, "room for exactly the database and its log was refused"
+    assert "X-OO-Free-Space-Check" not in exact.headers
+
+
+def test_a_refusal_for_room_says_at_least_when_a_size_could_not_be_read(client, data_dir, monkeypatch):
+    """A figure built from one size is a floor, not an upper bound, and the refusal must not call it 'up to'."""
+    monkeypatch.setattr(dbapi, "Path", _wal_of(0, unreadable=True))
+    monkeypatch.setattr(dbapi, "shutil", _Seen(dbapi.shutil, disk_usage=lambda p: Usage(10**9, 10**9 - 1, 1)))
+    r = client.get("/api/database/backup", headers=OWN_PAGE)
+    assert r.status_code == 507
+    detail = r.json()["detail"]
+    assert "at least" in detail and "up to" not in detail and "could not be read" in detail
 
 
 def test_a_free_space_that_cannot_be_read_is_not_a_refusal_and_the_response_says_so(client, data_dir, monkeypatch):
@@ -242,14 +314,7 @@ def test_a_free_space_that_cannot_be_read_is_not_a_refusal_and_the_response_says
 
 def test_a_log_file_whose_size_cannot_be_read_leaves_the_figure_short_and_the_response_says_so(client, data_dir, monkeypatch):
     """A WAL that exists but cannot be measured would make ``needed`` smaller than the truth without a word."""
-
-    class WalUnreadable(type(Path())):
-        def stat(self, *a, **k):
-            if self.name.endswith("-wal"):
-                raise PermissionError(13, "denied")
-            return super().stat(*a, **k)
-
-    monkeypatch.setattr(dbapi, "Path", WalUnreadable)
+    monkeypatch.setattr(dbapi, "Path", _wal_of(0, unreadable=True))
     r = client.get("/api/database/backup", headers=OWN_PAGE)
     assert r.status_code == 200
     assert r.headers["X-OO-Free-Space-Check"] == "not-read"
@@ -270,19 +335,18 @@ def test_only_one_snapshot_is_made_at_a_time_and_the_slot_comes_back(client, dat
 
 
 def test_a_claim_whose_response_never_ran_is_taken_over_after_the_stale_age(client, data_dir):
-    dbapi._backup_flight = (object(), None, time.monotonic() - dbapi._BACKUP_STALE_AFTER_S - 1)
+    dbapi._backup_flight = (object(), time.monotonic() - dbapi._BACKUP_STALE_AFTER_S - 1)
     assert client.get("/api/database/backup", headers=OWN_PAGE).status_code == 200
     assert dbapi._backup_flight is None
 
 
 def test_a_download_that_was_taken_over_does_not_free_or_overwrite_the_takeovers_claim(data_dir):
     a = dbapi._claim_backup_slot()
-    dbapi._backup_flight = (a, None, time.monotonic() - dbapi._BACKUP_STALE_AFTER_S - 1)
+    dbapi._backup_flight = (a, time.monotonic() - dbapi._BACKUP_STALE_AFTER_S - 1)
     b = dbapi._claim_backup_slot()  # taken over
     a_dir = data_dir / ".oo-backup-a"
     a_dir.mkdir()
-    dbapi._note_backup_dir(a, a_dir)  # a late note from the first request
-    assert dbapi._backup_flight[0] is b and dbapi._backup_flight[1] is None
+    assert dbapi._backup_flight[0] is b
     dbapi._release_backup_slot(a, a_dir)  # the first request finishes at last
     assert not a_dir.exists(), "a request's own directory is its own to remove"
     assert dbapi._backup_flight is not None and dbapi._backup_flight[0] is b, "the first request freed the takeover's claim"
@@ -305,13 +369,28 @@ def test_a_failed_snapshot_frees_the_slot_and_removes_its_directory(client, data
     assert dbapi._backup_flight is None
 
 
+class _Stop(BaseException):
+    """What a shutdown or an interrupt raises in the worker: not an ``Exception``, so ``except Exception`` would miss it."""
+
+
+def test_a_stop_that_is_not_an_exception_still_frees_the_slot_and_removes_the_directory(data_dir, monkeypatch):
+    def stops(dest):
+        Path(dest).write_bytes(b"half")
+        raise _Stop()
+
+    monkeypatch.setattr(sb, "backup_to", stops)
+    with pytest.raises(_Stop):
+        dbapi.download_backup(_request({}))
+    assert _left_over(data_dir) == []
+    assert dbapi._backup_flight is None
+
+
 def _snapshot_response(data_dir: Path):
     token = dbapi._claim_backup_slot()
     workdir = data_dir / ".oo-backup-test"
     workdir.mkdir()
     snap = workdir / "snapshot.db"
     snap.write_bytes(b"x" * 1000)
-    dbapi._note_backup_dir(token, workdir)
     return workdir, dbapi._SnapshotResponse(snap, workdir, token, media_type="application/x-sqlite3")
 
 
@@ -348,7 +427,8 @@ def test_a_response_that_fails_in_the_middle_of_the_body_still_removes_the_direc
 
 
 def test_a_response_that_is_cancelled_still_removes_the_directory_and_frees_the_slot(data_dir):
-    """A client that goes away cancels the task: the removal is shielded, so the cancellation does not skip it."""
+    """A response task cancelled once (``wait_for`` here) still gets its directory removed and its claim freed. This case also
+    passes without the shield, because a single cancellation is survivable; the cancel-scope case below is the one that pins it."""
     workdir, resp = _snapshot_response(data_dir)
 
     async def run() -> None:

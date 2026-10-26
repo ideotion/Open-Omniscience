@@ -577,11 +577,11 @@ def vacuum() -> dict:
 _BACKUP_STALE_AFTER_S = 24 * 3600
 _BACKUP_DIR_PREFIX = ".oo-backup-"
 _BACKUP_LOCK = threading.Lock()
-#: The download in flight in THIS process: (its claim token, its snapshot directory or None while it is being made, when it was
-#: claimed), or None. The token is what a request holds: only the request whose token is recorded can record a directory for the
-#: claim or free it, so a download that outlives its claim (taken over after :data:`_BACKUP_STALE_AFTER_S`) cannot free the
-#: takeover's.
-_backup_flight: tuple[object, Path | None, float] | None = None
+#: The download in flight in THIS process (not in another server on the same data folder, R176: each makes its own, and the
+#: free-space gate is each one's own look at the volume): (its claim token, when it was claimed), or None. The token is what a
+#: request holds: only the request whose token is recorded can free the claim, so a download that outlives its claim (taken over
+#: after :data:`_BACKUP_STALE_AFTER_S`) cannot free the takeover's.
+_backup_flight: tuple[object, float] | None = None
 
 
 def _refuse_cross_site(request: Request) -> None:
@@ -590,20 +590,22 @@ def _refuse_cross_site(request: Request) -> None:
     A browser cannot be stopped from sending a GET to a loopback address, and the response of this one is the whole corpus written
     out in plaintext, so the route has to refuse for itself the requests a page of another site makes (an ``<img src>`` or a
     ``fetch`` to ``http://127.0.0.1:PORT/api/database/backup`` costs the machine a full snapshot even where the browser then hides
-    the answer). What the refusal reads, in this order:
+    the answer). Every one of these must pass; what the refusal reads:
 
-    * ``Sec-Fetch-Site`` when the browser sends it: ``same-origin`` (the app's own page) and ``none`` (an address typed or a bookmark)
-      pass; ``same-site`` (another port or host on this machine) and ``cross-site`` do not.
     * ``Host``: one of the names the app's DNS-rebinding guard serves (the loopback names, the test client's, ``OO_ALLOWED_HOSTS``).
       A page on a name that an attacker rebinds to 127.0.0.1 is SAME-ORIGIN with itself, so the checks below pass for it and only
       this one stops it; the middleware stops it too, and the route does not depend on that.
+    * ``Sec-Fetch-Site`` when the browser sends it: ``same-origin`` (the app's own page) and ``none`` (an address typed or a bookmark)
+      pass; ``same-site`` (another port or host on this machine) and ``cross-site`` do not.
     * ``Origin``, else ``Referer``, when sent: its host and port must be the request's own ``Host``. ``Origin: null`` names no
       host and is refused.
     * Neither sent: a command line, a script or a navigation from this page, which carries no ``Referer`` under the app's own
-      ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods. **The stated limit:**
-      a browser that does not send Fetch Metadata (Firefox before 90, Safari before 16.4, an old embedded webview) sends none of
-      the three for ``<img src=... referrerpolicy="no-referrer">``, so that request is served: the page still cannot read the
-      answer, but the machine writes the snapshot. The one-at-a-time slot and the free-space gate bound what that costs.
+      ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods. **The stated limit,
+      in two forms:** a browser that does not send Fetch Metadata (Firefox before 90, Safari before 16.4, an old embedded webview),
+      and any browser asked for a name that is not a "potentially trustworthy" address (an ``OO_ALLOWED_HOSTS`` name over plain
+      HTTP: browsers attach Fetch Metadata only to loopback and HTTPS targets), send none of the three for
+      ``<img src=... referrerpolicy="no-referrer">``, so that request is served: the page still cannot read the answer, but the
+      machine writes the snapshot. The one-at-a-time slot and the free-space gate bound what that costs.
     """
     from src.api.main import _allowed_hosts, _host_without_port
 
@@ -634,25 +636,18 @@ def _claim_backup_slot() -> object:
 
     A snapshot is a full copy of the corpus on the data volume, so two at once is twice the disk and twice the reads of a store
     the collector is writing into. The claim is released when the response ends, however it ends; a claim older than
-    :data:`_BACKUP_STALE_AFTER_S` is a response that never ran, and is taken over."""
+    :data:`_BACKUP_STALE_AFTER_S` is taken over: a response that never ran, or one still streaming after a day, which the token
+    keeps from freeing the takeover's claim. It is a per-process rule: two servers on one data folder (R176) can each hold one."""
     global _backup_flight
     token = object()
     with _BACKUP_LOCK:
-        if _backup_flight is not None and (time.monotonic() - _backup_flight[2]) < _BACKUP_STALE_AFTER_S:
+        if _backup_flight is not None and (time.monotonic() - _backup_flight[1]) < _BACKUP_STALE_AFTER_S:
             raise HTTPException(
                 status_code=429,
                 detail="Another corpus snapshot is being made or downloaded; retry when it has finished.",
             )
-        _backup_flight = (token, None, time.monotonic())
+        _backup_flight = (token, time.monotonic())
     return token
-
-
-def _note_backup_dir(token: object, workdir: Path) -> None:
-    """Record the snapshot directory of the claim this request holds (nothing if the claim has been taken over since)."""
-    global _backup_flight
-    with _BACKUP_LOCK:
-        if _backup_flight is not None and _backup_flight[0] is token:
-            _backup_flight = (token, workdir, _backup_flight[2])
 
 
 def _release_backup_slot(token: object, workdir: Path | None) -> None:
@@ -689,8 +684,10 @@ def _sweep_stale_snapshots(data_dir: Path) -> None:
 class _SnapshotResponse(FileResponse):
     """A file response that removes its snapshot directory when it ends, however it ends (sent, client gone, error, cancelled).
 
-    The removal runs in a worker thread, shielded from the cancellation of a client that went away: deleting a corpus-sized file
-    can take seconds on some file systems (btrfs, ZFS, a USB disk) and must neither stall the event loop nor be skipped."""
+    The removal runs in a worker thread, shielded from the cancellation of the task (a server shutting down, a cancel scope
+    around the response; a disconnected client is not relied on to cancel it, and on a stack that only drops the sends the file
+    is read to its end first): deleting a corpus-sized file can take seconds on some file systems (btrfs, ZFS, a USB disk) and
+    must neither stall the event loop nor be skipped."""
 
     def __init__(self, path: Path, workdir: Path, token: object, **kwargs) -> None:
         super().__init__(path, **kwargs)
@@ -701,7 +698,7 @@ class _SnapshotResponse(FileResponse):
         try:
             await super().__call__(scope, receive, send)
         finally:
-            # shielded: a client that went away cancels this task, and the directory must still be removed
+            # shielded: a cancelled task (shutdown, a cancel scope) must still get its directory removed and its claim freed
             await asyncio.shield(run_in_threadpool(_release_backup_slot, self._token, self._workdir))
 
 
@@ -738,11 +735,12 @@ def download_backup(request: Request) -> FileResponse:
         # really be written is measured against the volume.
         if not is_encrypted_file(db_path):
             needed = 0
-            for part in (db_path, Path(str(db_path) + "-wal")):
+            for part, may_be_absent in ((db_path, False), (Path(str(db_path) + "-wal"), True)):
                 try:
                     needed += part.stat().st_size
                 except FileNotFoundError:
-                    continue  # no log file is a log of zero bytes
+                    # no log file is a log of zero bytes; a missing database file is a figure that is not known
+                    space_checked = space_checked and may_be_absent
                 except OSError:
                     space_checked = False  # a size that cannot be read leaves the figure short, and the response says so
             try:
@@ -753,12 +751,13 @@ def download_backup(request: Request) -> FileResponse:
                 raise HTTPException(
                     status_code=507,
                     detail=(
-                        f"Not enough free space on the data volume for a snapshot: {free:,} bytes free, up to {needed:,} "
-                        "needed (the database file and its log). Free some space, or use the streaming backup in Settings."
+                        f"Not enough free space on the data volume for a snapshot: {free:,} bytes free, "
+                        f"{'up to' if space_checked else 'at least'} {needed:,} needed (the database file and its log"
+                        f"{'' if space_checked else ', one of whose sizes could not be read'}). "
+                        "Free some space, or use the streaming backup in Settings."
                     ),
                 )
         workdir = Path(tempfile.mkdtemp(prefix=_BACKUP_DIR_PREFIX, dir=data_dir))
-        _note_backup_dir(token, workdir)
         snapshot = workdir / "snapshot.db"
         try:
             backup_to(snapshot)
