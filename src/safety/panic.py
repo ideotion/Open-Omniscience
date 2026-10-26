@@ -49,3 +49,6 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             from src.config.kv_store import kv_invalidate
 
             kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
+            from src.api import served_cache
+
+            served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone

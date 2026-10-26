@@ -445,16 +445,19 @@ def test_the_crypto_erase_forgets_the_stores_seen_and_the_panic_wipe_goes_offlin
     so a process still running online cannot rebuild a followed session from that read and leave Tor. MUTATION TARGET: the
     ``activate_kill_switch`` in ``panic_wipe``'s ``finally``, or the ``kv_invalidate`` beside it."""
     from src import ingest as I
+    from src.api import served_cache
     from src.safety import panic_wipe
 
     _store(env)
     session = following_session("wiki", "ua")
     assert session.transport_proxy == SOCKS
+    served_cache._CACHE["insights:status"] = {"payload": {"total_articles": 5}, "bind": object(), "built_at": 0, "checked_at": 0, "probe": 1}
     I.clear_kill_switch()
     try:
         panic_wipe(tmp_path, confirm=True)
         assert I.kill_switch_active(), "the wipe left the app online"
         assert not kv_store._seen and not kv_store._cache, "the wiped store is still remembered"
+        assert not served_cache._CACHE, "the served counts of the wiped corpus are still served"
         with pytest.raises(Exception, match=r"(?i)airplane|offline|kill|blocked"):
             following_session("wiki", "ua").get("https://example.org/", timeout=2)
     finally:

@@ -1003,6 +1003,7 @@ def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> 
 #: interrupt. Retrying such a batch row by row repeats the failure at 1.1 thousand rows/s with the build
 #: lock held, so they propagate (the caller turns the first into a decline).
 _NEVER_RETRIED = frozenset({"OutOfMemoryException", "InterruptException"})
+_INTERRUPTED = frozenset({"InterruptException"})
 
 # Column types of the two tables the build fills in bulk.
 _STAGE_TYPES = ("BIGINT", "VARCHAR", "BIGINT", "BIGINT")
@@ -1753,7 +1754,7 @@ def compact(con) -> dict:
     ``"ok"``; ``"out-of-memory"`` (a FATAL allocation error: the memory wall, the instance is invalid); ``"fatal"``
     (any other FATAL error: the instance is unusable and must not be served); or ``"failed"`` (any other error: the
     rollup is intact and serves as it would uncompacted, ``compacted`` false). ``reason`` is the error CLASS name, never
-    the engine's text. Counts and sizes only."""
+    the engine's text. An ``InterruptException`` is not an outcome: it propagates (see ``_checkpoint``). Counts and sizes only."""
     return _checkpoint(con)
 
 
@@ -1769,6 +1770,11 @@ def _checkpoint(con) -> dict:
         con.execute("CHECKPOINT")
     except Exception as exc:  # noqa: BLE001 - classified by name, as the build's own limit is
         out["reason"] = type(exc).__name__
+        if out["reason"] in _INTERRUPTED:
+            # An interrupt is someone asking the statement to stop, not a checkpoint that failed: carrying on would aggregate every
+            # remaining shard (or serve the rollup) after the stop was asked for. It propagates exactly as it does out of the
+            # aggregate and the bulk insert (``_NEVER_RETRIED``), for the caller's generic path to end the build.
+            raise
         if out["reason"] == _ALLOCATION_FATAL_CLASS:
             out["outcome"] = "out-of-memory" if _ALLOCATION_FATAL_PHRASE in str(exc) else "fatal"
         else:
