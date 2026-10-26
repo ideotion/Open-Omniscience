@@ -672,7 +672,7 @@
 
     async function deleteSource(id, name) {
       if (!confirm(`Delete source "${name}"? This also removes its stored articles.`)) return;
-      try { await api("/api/sources/" + id, {method: "DELETE"});
+      try { await api("/api/sources/" + id + "?confirm=true", {method: "DELETE"});
         toast("Source deleted."); loadManagedSources(); loadSources(); loadDbStats(); }
       catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }

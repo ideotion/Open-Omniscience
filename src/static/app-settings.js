@@ -1017,6 +1017,7 @@
       } finally { if (btn) btn.disabled = false; }
     }
     async function deleteCustomPrompt(id) {
+      if (!confirm(_ct("Delete this extractor? This cannot be undone."))) return;
       try { await api(`/api/ai/prompts/${id}`, {method: "DELETE"}); loadCustomPrompts(); }
       catch (e) {
         const st = $("ai-prompt-status");

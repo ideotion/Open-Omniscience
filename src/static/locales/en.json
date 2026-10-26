@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.",
   "Delete this download and its file?": "Delete this download and its file?",
   "Delete this edition? The corpus is untouched — only the document goes.": "Delete this edition? The corpus is untouched — only the document goes.",
+  "Delete this extractor? This cannot be undone.": "Delete this extractor? This cannot be undone.",
   "Delete this watch and its history?": "Delete this watch and its history?",
   "Deleted.": "Deleted.",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "Deletes only the files confirmed already copied into the app folder. Run the copy first.",

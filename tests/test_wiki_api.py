@@ -130,7 +130,10 @@ def test_wiki_api_crud_track_and_changes(tmp_path, monkeypatch):
             assert st["pages"] == 1 and st["flagged"] == 1
 
             # Delete cascades.
-            assert client.delete(f"/api/wiki/pages/{pid}").json()["deleted"] == pid
+            refused = client.delete(f"/api/wiki/pages/{pid}")
+            assert refused.status_code == 400 and "confirm=true" in refused.json()["detail"]
+            assert client.get("/api/wiki/status").json()["pages"] == 1, "a refused delete must leave the page"
+            assert client.delete(f"/api/wiki/pages/{pid}?confirm=true").json()["deleted"] == pid
             assert client.get("/api/wiki/status").json()["pages"] == 0
     finally:
         app.dependency_overrides.clear()

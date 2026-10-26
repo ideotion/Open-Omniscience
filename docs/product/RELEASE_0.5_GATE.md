@@ -188,7 +188,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **25. Early dispose** (`R202`): the engine disposes early at shutdown, shipped; 0.5.1 verifies it under the persistent-OOM run (item 28).
 - **26. The YAML loader field** (`R207`): the feedparser/YAML loader field stays as it is in 0.5.0 by design; deferred.
 - **27. Lease heartbeat**: the several-servers-per-data-folder leases (`R176`) have no heartbeat yet; the plan is
-  `rc-diagnostics/plan-r183-leases-2026-10-26.md` in the project folder; deferred.
+  `rc-diagnostics/plan-r183-leases-2026-10-26.md` in the project folder; deferred. **Stays a proposal (`R255`):** no code in 0.5.1 unless a real «held for ever» report arrives; the proposal text is in `audit-0.5.0/inputs/open-items.md` («0.5.1 item 27 proposal»).
 - **28. Persistent-OOM double run**: under a persistent out-of-memory one request can start the rollup build twice; a stated limit, the
   fix is 0.5.1.
 - **29. The FTS settle-it check**: there is no check yet that the full-text index settled after an interrupted repair; deferred.
@@ -202,7 +202,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   recorded). `SCALE_ROADMAP` gives about 130 GB for the folder, and the roughly 120 GB of it beside the database is what nothing
   identifies. The fix is validated by the live unlock at 602 ms (`RELEASE_0.2_GATE.md`) and the 323 ms pass over 1,048,725 articles
   (`shipped.csv`). The `fts.py` comment was rewritten in PR #1501 (fold `09502fa82`, merged `65eed22bf`); `OPEN_QUEUE.md:619` and the
-  estimate wording in row B4 follow here. What stays unknown, and is stated: how long a rebuild alone takes on a real corpus
+  estimate wording in row B4 were reworded in PR #1506. What stays unknown, and is stated: how long a rebuild alone takes on a real corpus
   (§1c item 7 measures it).
 - **33. Fixed-name `.tmp` writers of files two servers share** (audit A-031, `src/monitoring/forensics.py:295`): already allowlisted with
   owner lanes; `session_state.json` is the one whose torn write changes the next boot's verdict.
@@ -212,17 +212,20 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   content-type middleware exists anywhere.
 - **36. A multi-round `.eml` import that fails midway** (audit A-006's fix, PR #1486): earlier rounds stay committed and the reply is a
   500 with no tally. The same was already true of the 200-row commits inside `ingest_emails`; a re-import is idempotent because
-  duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally. **Pinned as a stated limit (R252, 0.5.1 item 36):** `tests/test_newsletter_import_partial.py` fixes what is true today (the earlier round stays stored, the reply is a 500 naming the storage failure with no tally, a re-import stores only what is missing); a partial tally in the reply stays a decision for whoever edits those tests.
+  duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally. **Done as a stated limit (PR #1509, `R252`, 0.5.1 item 36):** `tests/test_newsletter_import_partial.py` fixes what is true today (the earlier round stays stored, the reply is a 500 naming the storage failure with no tally, a re-import stores only what is missing); a partial tally in the reply stays a decision for whoever edits those tests.
 - **37. The `/api/database/figures` memo**: it was keyed without the engine identity, so the figures could be stale after a swap. **Done (PR #1500, merged `e80d08b74`):** the carried mentions count is tied to the file it counted (engine object, corpus epoch and a generation), the shape `/api/insights/status` has.
 - **38. Panic wipe and the served memo**: the panic wipe must call `served_cache.invalidate()` after the wipe, so the served figures and
   scan memo cannot answer with pre-wipe data. Done in PR #1496 (keyword lane).
 - **39. The law corpus heal and the article-date rule**: `src/law/corpus.py` heal clears `published_at` without re-indexing, so the
   article-date rule (`coalesce(published_at, created_at)`) can move an article between periods; the heal must re-index or keep the
-  date; 0.5.1 (Export lane, which owns the date rule).
+  date; 0.5.1 (Export lane, which owns the date rule). Fix in draft PR #1511 (not merged).
 - **40. Boot sweeps and the `.oo-backup-` prefix**: the boot sweeps in `stream_backup` and `forensics` do not know the `.oo-backup-`
-  prefix, so a snapshot left by a crash survives until the next backup-route call; 0.5.1 (Export lane).
-- **41. A graceful-shutdown cancel during a long snapshot** leaves `.oo-backup-*/snapshot.db` until the next route call, at least 24 h
-  later; the threadpool shields the native cancel; 0.5.1 (Export lane).
+  prefix, so a snapshot left by a crash survives until the next backup-route call; 0.5.1 (Export lane). Fix in draft PR #1511 (not merged).
+- **41. A FORCED exit during a long snapshot** (a second Ctrl+C while the snapshot thread runs) leaves the plaintext
+  `.oo-backup-*/snapshot.db` until the next route call, at least 24 h later. This item first read «a graceful-shutdown cancel»: that was
+  half wrong, since measurement shows a cancel in the middle of a snapshot is already clean (the staging directory is removed); the leak
+  is the forced exit. 0.5.1 (Export lane): an exit hook and a pid table in the
+  backup route, in draft PR #1511 (not merged), with item 40's boot sweep as the second line.
 - **42. The backup route and a client that goes away** (a stated limit, R235): `GET /api/database/backup` keeps streaming after the client
   disconnects when Starlette is at the 1.5 to 1.7 floor; measured on a 20 GB sparse snapshot, 1.7.0 had not released after 60 s, 1.8.0
   released in 0.02 s and 1.10.0 in 0.03 s, so the limit holds only for that floor. Raising the floor to 1.8.0 is a version-coupling
@@ -231,7 +234,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **43. `tests/test_figures_cold_start.py` fails after the 58 files before it in the API shard** (Export lane, 0.5.1): its two tests (a cold
   route answers without the count and then carries it; a count past its deadline is a named failure held for its window) fail only when
   run after the 58 files that precede them in the API shard, and pass alone; identical on main before #1487. An order dependence on
-  main, not bisected.
+  main, not bisected. Cause measured since (article rows without a `word_count` from another test's seed); fix in draft PR #1511 (not merged), test-only.
 - **44. A Thorough diagnostics build has no scan budget**: it runs 16 scans of up to 300 s each, so by the deadlines alone it can hold
   the collection pause for up to 80 minutes (a ceiling from the constants, not an observation). Observed: 53.5 minutes of build, 50.7 of
   them paused, at 12 M mentions on a 2-core machine (the user's 0.4.0 zip of 2026-10-16); 145 s and 246 s on a 4-vCPU lab at 1.56 M and
@@ -243,10 +246,11 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   figure is applied to DuckDB as `f"{n}MB"` (`src/analytics/columnar.py`) and compared in `rollup_serve.py`'s affordability check with
   `avail_mb`, which is mebibytes (`psutil` bytes / 1024^2). The two differ by 4.9 %, in the safe direction (the check overstates what the build
   can take). Left as it is; any new reader of the field should treat it as MB (10^6 bytes).
-- **46. A right-to-left date reordered outside the keyed card frames** (qual lane, 0.5.1, a proposal): `app-home.js` lines 367, 674 and 881 feed
+- **46. A right-to-left date reordered outside the keyed card frames** (qual lane, 0.5.1, proposal ACCEPTED `R258`/`R259`): `app-home.js` lines 367, 674 and 881 feed
   meta lines, and about 40 `slice(0, 10)` sites in `app-analysis`, `app-corpus` and the claim code interpolate a raw ISO date after an Arabic
-  name. The proposal is one shared `ooIsoDate()` helper that isolates the date under RTL, plus a ratchet test over the sites. Item 22's fix
-  (the qualification lane's next PR) covers the keyed card frame point only.
+  name. Accepted as a call-site `ooIsoDate()` helper that isolates the date under RTL plus a zero-slack ratchet over the sites, built as one
+  qualification PR after the open PRs on its files merge (the sweep table is `qual-lane/item46-raw-date-sweep-2026-10-26.md`). Item 22's fix
+  (PR #1498) covered the keyed card frame point only.
 ---
 
 ## 2. The rows

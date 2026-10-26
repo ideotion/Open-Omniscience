@@ -4336,7 +4336,7 @@
 
     async function deleteWikiPage(id, title) {
       if (!confirm(`Stop watching "${title}"? Its stored revisions are removed.`)) return;
-      try { await api("/api/wiki/pages/"+id, {method:"DELETE"}); toast("Removed."); loadWiki(); }
+      try { await api("/api/wiki/pages/"+id+"?confirm=true", {method:"DELETE"}); toast("Removed."); loadWiki(); }
       catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 

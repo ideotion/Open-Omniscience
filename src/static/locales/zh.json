@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "删除原文件？仅删除已确认存在于应用文件夹中的文件——未复制的内容将保留。此操作无法撤销。",
   "Delete this download and its file?": "删除此下载及其文件？",
   "Delete this edition? The corpus is untouched — only the document goes.": "删除此期？语料库不受影响 — 只删除文档。",
+  "Delete this extractor? This cannot be undone.": "删除此提取器？此操作无法撤销。",
   "Delete this watch and its history?": "删除此监视项及其历史记录？",
   "Deleted.": "已删除。",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "仅删除已确认复制到应用文件夹中的文件。请先执行复制。",

@@ -1057,10 +1057,23 @@ def update_source(
 
 @router.delete("/{source_id:int}", response_model=dict)
 @limiter.limit("20/hour")
-def delete_source(request: Request, source_id: int, db: Session = Depends(get_db)):
+def delete_source(
+    request: Request,
+    source_id: int,
+    confirm: bool = Query(False, description="must be true: deleting a source deletes its articles"),
+    db: Session = Depends(get_db),
+):
     """
-    Delete a source.
+    Delete a source AND every article it collected (the relationship cascades).
+
+    Refuses without ``confirm=true``, as every route that destroys collected data in bulk does
+    (audit 0.5.0 follow-on to the gesture gate): a request that merely names the id never erases a corpus.
     """
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="confirm=true is required: deleting a source also deletes its stored articles.",
+        )
     logger.info(f"Delete source request: source_id={source_id}")
 
     with SourceManager(session=db) as manager:

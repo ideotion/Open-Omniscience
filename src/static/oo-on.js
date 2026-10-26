@@ -157,18 +157,21 @@
   // is on that test's short list of names that touch only this tab's own view. That is a net for the names
   // that carry such a verb, not a proof: a name whose destructive half is an ARGUMENT (lawSetWatched(id,
   // false), toggleWatch(id, false), candidateAct(id, 'dismiss'), collapseAction), a name with no listed
-  // verb (familySplit, unwatchLaw) and the toggles bound to `change` (updateSourceEnabled, trustAuthor)
-  // are not found, and are recorded as limits in the shipped row.
+  // verb (unwatchLaw) and the toggles bound to `change` (updateSourceEnabled, trustAuthor)
+  // are not found by that name test, and are recorded as limits in the shipped row.
+  // tests/test_destructive_surfaces.py adds a second finder that reads what a function DOES (a DELETE, or a
+  // POST/PUT to a route with such a verb in it), which is how toggleAiCoordinator, mbRun, runAiCheck and
+  // familySplit came to be listed: none has a verb in its name, and the first three cancel a running job when pressed again.
   // Limits: a gesture is not the same as meaning to press THAT control (an injected overlay or
   // accesskey turns a person's next click into a trusted click on it), and markup that brings its own
   // panel for a field-reading handler is only stopped by that handler's prompt. The generalised
   // per-event allowlist (A-023/A-024) is the real fix and stays a proposal.
   const GESTURE_ONLY = new Set([
     "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
-    "excludeKeyword", "familyResetGroup", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched", "osmPickRemove",
-    "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation", "removeAuthor",
-    "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "schedulerStop", "secureErase", "sgRemoveMember",
-    "stopVllm", "unattendedStop",
+    "excludeKeyword", "familyResetGroup", "familySplit", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched",
+    "maintAction", "mbRun", "osmPickRemove", "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation",
+    "removeAuthor", "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "runAiCheck", "schedulerStop",
+    "secureErase", "sgRemoveMember", "stopVllm", "toggleAiCoordinator", "unattendedStop",
   ]);
   function isUserGesture(ev) {
     if (!ev || ev.isTrusted !== true) return false;

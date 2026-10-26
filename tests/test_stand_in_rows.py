@@ -342,7 +342,7 @@ def test_a_source_is_not_updated_or_deleted_by_the_id_of_the_stand_in_and_the_ar
     before = (stand_in_row.name, stand_in_row.domain, stand_in_row.enabled, stand_in_row.priority)
     put = client.put("/api/sources/13", json={"name": "renamed", "enabled": True, "priority": 3})
     assert put.status_code == 404, put.text
-    gone = client.delete("/api/sources/13")
+    gone = client.delete("/api/sources/13?confirm=true")
     assert gone.status_code == 404, gone.text
     session.expire_all()
     row = session.query(Source).filter(Source.id == 13).one()
@@ -356,7 +356,7 @@ def test_a_source_is_not_updated_or_deleted_by_the_id_of_the_stand_in_and_the_ar
     session.add(Source(name="twin", domain="twin.example.org"))
     session.commit()
     twin = session.query(Source).filter(Source.domain == "twin.example.org").one().id
-    assert client.delete(f"/api/sources/{twin}").status_code == 200
+    assert client.delete(f"/api/sources/{twin}?confirm=true").status_code == 200
     session.expire_all()
     assert session.query(Source).filter(Source.id == twin).count() == 0
 

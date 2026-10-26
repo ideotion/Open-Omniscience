@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "Hapus yang asli? Hanya berkas yang sudah dipastikan ada di folder aplikasi yang dihapus — apa pun yang belum disalin tetap ada. Tindakan ini tidak dapat dibatalkan.",
   "Delete this download and its file?": "Hapus unduhan ini dan filenya?",
   "Delete this edition? The corpus is untouched — only the document goes.": "Hapus edisi ini? Korpus tidak tersentuh — hanya dokumennya yang hilang.",
+  "Delete this extractor? This cannot be undone.": "Hapus pengekstrak ini? Tindakan ini tidak dapat dibatalkan.",
   "Delete this watch and its history?": "Hapus pemantauan ini beserta riwayatnya?",
   "Deleted.": "Dihapus.",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "Hanya menghapus berkas yang salinannya di folder aplikasi sudah dipastikan. Jalankan penyalinan terlebih dahulu.",

@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "মূল ফাইলগুলি মুছবেন? কেবল সেই ফাইলগুলি সরানো হয় যেগুলির উপস্থিতি অ্যাপ ফোল্ডারে নিশ্চিত — যা অনুলিপি হয়নি তা থেকে যায়। এটি ফেরানো যাবে না।",
   "Delete this download and its file?": "এই ডাউনলোড এবং এর ফাইল মুছবেন?",
   "Delete this edition? The corpus is untouched — only the document goes.": "এই সংস্করণটি মুছবেন? কর্পাস অক্ষত থাকে — কেবল নথিটি যায়।",
+  "Delete this extractor? This cannot be undone.": "এই এক্সট্র্যাক্টরটি মুছবেন? এটি পূর্বাবস্থায় ফেরানো যাবে না।",
   "Delete this watch and its history?": "এই নজরদারি ও তার ইতিহাস মুছে ফেলবেন?",
   "Deleted.": "মুছে ফেলা হয়েছে।",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "শুধু সেই ফাইলগুলি মোছে যেগুলির অনুলিপি অ্যাপ ফোল্ডারে নিশ্চিত হয়েছে। আগে অনুলিপি চালান।",

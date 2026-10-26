@@ -662,7 +662,11 @@ def test_the_endpoint_forwards_the_operators_criteria_choice_to_the_manager():
     qj.get_quarantine_manager = lambda: _Recorder()  # type: ignore[assignment]
     try:
         c = TestClient(app)
-        assert c.post("/api/quarantine/start?write=true&include_prose_gate=false").status_code == 200
+        n = len(seen)
+        refused = c.post("/api/quarantine/start?write=true&include_prose_gate=false")
+        assert refused.status_code == 400 and "confirm=true" in refused.json()["detail"]
+        assert len(seen) == n, "a refused write must not start the job"
+        assert c.post("/api/quarantine/start?write=true&include_prose_gate=false&confirm=true").status_code == 200
         assert seen[-1] == {"write": True, "include_prose_gate": False}
 
         # ...and the twin: omitting it must not silently narrow a default run either.

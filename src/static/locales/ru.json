@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "Удалить оригиналы? Будут удалены только файлы, наличие которых в папке приложения подтверждено — всё, что не было скопировано, останется. Это действие необратимо.",
   "Delete this download and its file?": "Удалить эту загрузку и её файл?",
   "Delete this edition? The corpus is untouched — only the document goes.": "Удалить этот выпуск? Корпус не затрагивается — исчезает только документ.",
+  "Delete this extractor? This cannot be undone.": "Удалить этот экстрактор? Это действие нельзя отменить.",
   "Delete this watch and its history?": "Удалить это наблюдение и его историю?",
   "Deleted.": "Удалено.",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "Удаляет только файлы, копия которых в папке приложения подтверждена. Сначала выполните копирование.",
