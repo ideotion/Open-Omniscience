@@ -281,7 +281,7 @@
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
       const lasts = rows.map(r => r.last).filter(Boolean).sort();
       const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
-      const day = (s) => (s || "").slice(0, 10);
+      const day = (s) => ooIsoDate(s);
       const tonePill = (label, val) => {
         if (val == null) return `<span class="muted">—</span>`;
         const cls = label === "positive" ? "ok" : label === "negative" ? "err" : "";
@@ -1814,7 +1814,7 @@
     // reader knows whether a number is an exact live count or an estimate, and as of when;
     // the method / n / rollup note ride the #oo-tip hover (the translated title). It is a
     // DISCLOSURE, never a score (no numeric grade), so the no-score rule holds.
-    function _basisWhen(iso) { return iso ? String(iso).slice(0, 10) : ""; }
+    function _basisWhen(iso) { return iso ? ooIsoDate(iso) : ""; }
     function basisChip(counts, disc) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!counts && !disc) return "";

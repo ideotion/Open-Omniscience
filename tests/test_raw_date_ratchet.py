@@ -19,7 +19,8 @@ lowered in the same change, so the ratchet cannot hold room for a regression (th
 * a date already isolated by its own element (app-backup's ``dir=ltr`` span);
 * computation, not rendering: query-string / range bounds, chart axes, ids, hashes, filenames, array
   windows (app-agenda, app-analysis, app-core, app-corpus, app-diagnostics, app-evidence, app-insights,
-  app-markets, ootimeline), the helpers' own slices (app-core), and plain-text export lines (app-analysis).
+  app-markets, ootimeline), the helpers' own slices (app-core), and plain-text export lines (app-analysis; its synthesis.html export too, a saved file
+  must not carry invisible isolate characters).
 
 If your slice RENDERS a date in a sentence or a "name · date" line, use ``ooIsoDate`` instead and leave
 the pin alone. If it is one of the kinds above, raise the pin by one and say which kind in the commit.
@@ -40,11 +41,11 @@ _PATTERN = re.compile(r"(?:slice|substring|substr)\(\s*0\s*,\s*1[06]\s*\)")
 _PINS = {
     "app-agenda.js": 1,
     "app-ai-tools.js": 2,
-    "app-analysis.js": 7,
+    "app-analysis.js": 8,
     "app-backup.js": 2,
     "app-claim.js": 1,
     "app-core.js": 3,
-    "app-corpus.js": 3,
+    "app-corpus.js": 1,
     "app-diagnostics.js": 1,
     "app-evidence.js": 1,
     "app-home.js": 1,

@@ -2813,7 +2813,7 @@
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
       const lasts = rows.map(r => r.last).filter(Boolean).sort();
       const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
-      const day = (s) => (s || "").slice(0, 10);
+      const day = (s) => ooIsoDate(s);
       const tonePill = (label, val) => {
         if (val == null) return `<span class="muted">—</span>`;
         const cls = label === "positive" ? "ok" : label === "negative" ? "err" : "";
@@ -3193,13 +3193,13 @@
     function _synthAsHtml() {
       const t = _synthT(); const r = _synthData; if (!r) return "";
       const rows = (r.members || []).map((m) =>
-        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc(ooIsoDate(m.published_at))} · ${esc(ooLangCode(m.language || ""))}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
+        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10))} · ${esc(ooLangCode(m.language || ""))}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
       return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t("Synthesis"))}</title>`
         + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#1a1a1a}`
         + `.meta{color:#666;font-size:13px}blockquote{color:#555;border-left:3px solid #ddd;padding-left:12px}`
         + `pre{white-space:pre-wrap;font:inherit}ul{padding-left:18px}li{margin:6px 0}</style></head><body>`
         + `<h1>${esc(t("Synthesis"))}</h1>`
-        + `<p class="meta">${ooLabelHtml(esc(t("Local model")), esc(r.model || "?"))} · ${esc(_synthCountLabel(t, r.member_count))} · ${ooIsoDate(new Date().toISOString())}</p>`
+        + `<p class="meta">${ooLabelHtml(esc(t("Local model")), esc(r.model || "?"))} · ${esc(_synthCountLabel(t, r.member_count))} · ${new Date().toISOString().slice(0, 10)}</p>`
         + `<pre>${esc(r.result || "")}</pre>`
         + `<blockquote>${esc(r.caveat || "")}</blockquote>`
         + `<h2>${esc(t("Synthesized corpus"))}</h2><ul>${rows}</ul></body></html>`;
