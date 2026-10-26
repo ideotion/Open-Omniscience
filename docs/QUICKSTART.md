@@ -1,7 +1,7 @@
 # Quickstart — running the app
 
-This is the **trustworthy core** (the app is an honest **alpha** — `v0.4.0`, the
-`0.4` living-sources cycle, tagged 2026-09-28; the running app reports its exact
+This is the **trustworthy core** (the app is an honest **alpha** — `v0.5.0`, the
+`0.5` investigator's-desk cycle, tagged 2026-10-26; the running app reports its exact
 version): add a source → ethically scrape it → store with provenance →
 Boolean full-text search → export. Local-first, loopback only, no accounts.
 

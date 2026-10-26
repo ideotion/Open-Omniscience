@@ -1,6 +1,107 @@
 # Changelog
 
-> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, and since then each `0.N` cycle has closed with **`v0.N.0`** — the `0.2` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), the `0.3` cycle produced **`0.3.0`, measured & verified** (tagged `v0.3.0`), and the `0.4` cycle produced **`0.4.0`, living sources** (tagged `v0.4.0`; see the README’s version note and CONTRIBUTING’s cycle↔version table).
+> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, and since then each `0.N` cycle has closed with **`v0.N.0`** — the `0.2` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), the `0.3` cycle produced **`0.3.0`, measured & verified** (tagged `v0.3.0`), the `0.4` cycle produced **`0.4.0`, living sources** (tagged `v0.4.0`), and the `0.5` cycle produced **`0.5.0`, the investigator's desk** (tagged `v0.5.0`; see the README’s version note and CONTRIBUTING’s cycle↔version table).
+
+## 0.5.0 — the investigator's desk (the `0.5` cycle, version set 2026-10-26)
+
+The `0.5` cycle is about **working a story**: asking one question across every search need, following
+a claim from a headline to its sources, a place from a news article to its map, and a law or a
+Wikipedia page through its revisions. It also carried a long second half that began, again, as field
+reports from instances past a million articles: the keyword rollup that crashed them, the write gate,
+the connection pool and the evidence the app keeps when it ends badly.
+
+**What this release does not claim.** Every row of the gate,
+[`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md), is built and verified as far as a sandbox can verify it
+(fixtures, generated stores, and Chromium walks on seeded plaintext stores, plus the per-release encrypted click-through, run on
+`21a888c42`: both seeded states walked in through the real unlock screen and measured encrypted at rest, and nothing found was caused
+by encryption; the walk's two product findings are open items 22 and 23), except two artifacts that are not built at all: row C's gazetteer (S4) and
+row E's admin-boundary files, both of which wait on an operator build. What only a real install can supply is
+listed as named open items for `0.5.1`: the real pre-migration restore (row B, J), the reference-VM OSM
+ingest and the gazetteer and admin-boundary artifact builds (rows C, D, E, L), the Wikipedia walk run for a
+stated period on both transports (row F), a law's 2019 text on one real source (row G), the weights digest
+values, and a person's own click-through of each surface. Figures quoted below are labelled **generated**,
+**measured** or **estimated** where the gate text labels them, and the release notes generated from
+`docs/ledger/shipped.csv` carry the per-item PR numbers.
+
+### The investigator's desk
+
+- **The advanced search**: one builder for every search need, with `NEAR`, prefix and column filters,
+  saved searches as watches, permalinks, and the same parameter set on export (#1198).
+- **The Claim Workspace and the Conjunction Lens**: a claim walked from its first sighting through
+  corroboration, reachable from every vertical (#1205, #1210, #1220); a dossier seed joining one
+  Wikidata item's news, web and Wikipedia coverage (#1226); the onboarding tour and the signed-evidence
+  review (#1240); a bulletin carrier for the OpenStreetMap completeness card (#1245).
+- **The entity spine**: Wikidata items keyed by QID, the Place entity and its card, places and Wikidata
+  items carried in backups (#1206, #1257).
+- **Explore**: Search and the analysis as one sidebar page, and a three-step interface-depth dial
+  (Essentials, Standard, Full) instead of gates (#1208, #1229).
+
+### OpenStreetMap and maps
+
+- **The OSM lane**: extract readers and an encrypted `osm.db`, the change model, a country picker that
+  stays off until chosen with its costs shown, the full-history planet download (sized and consented), the
+  places search and the local geocoder, tag completeness per region, and a canvas map under published
+  caps (#1212, #1214, #1217, #1223). A reference run is one command, `scripts/osm_reference_run.py`
+  (#1317); the lane stops by name before the kernel would kill it (#1424).
+- **Maps**: OSM admin boundaries keyed ISO 3166-2, the ranked table in full beside every choropleth, maps
+  that open on OSM's border convention with its date, and a border file split into a small world file plus
+  per-country detail (#1213, #1215, #1218, #1230, #1266).
+
+### Wikipedia and laws
+
+- **Wikipedia**: the allpages walk for the never-edited tail (off by default), the WARM tier, the lane's
+  own search index, «Add to corpus» for any version, one item across editions and pageviews beside press
+  coverage (#1197, #1200, #1202, #1207, #1256).
+- **Laws**: one version reader, point-in-time search and analytics 3 to 5 (#1203).
+
+### Countries, sources and the keyword rollup
+
+- **ISO 3166-1 alpha-3 in the store** (row B): the country form is a fact about the store, and
+  `open-omniscience migrate-countries` moves it with a verified safety copy and a journal; every JSON
+  payload speaks alpha-3 through one boundary; the shipped catalogues were rewritten and the
+  Hindi and Bengali tokenizer fixed (#1402, #1410, #1417, #1419). Generated evidence only: 4.7 M rows in
+  16.4 s; the operator's real run is a `0.5.1` item.
+- **A source is keyed on its feed** (row J): one outlet can hold several feeds, every gate that states
+  independence counts outlets, a restore hands a verdict to a new sibling feed in the disqualified
+  direction only, and the outlet is kept as an integer by three triggers (#1425, #1430, #1433, #1461).
+- **The in-memory keyword rollup no longer holds the corpus in memory** (the crash this cycle chased):
+  staged in shards sized from the engine's own limit, declined as the limit rather than retried, and
+  checkpointed before the aggregate (#1310, #1422, #1427).
+- **Stoplists are ours to grow**: nine curated batches reach the stored keywords and the Home cards, and a
+  user is never asked (#1331 and the batches after it, R111).
+
+### Data safety and storage
+
+- **Backups and restores**: differences from a restore are listed and reversible (#1237, #1242, #1252, #1265);
+  a restore holds settings writes from the carry to the replace (#1375) and a shared file is written
+  under a cross-process lock and a unique temp where several servers share a folder (#1454);
+  the export pauses collection while it copies (#1216); the custody import streams in slices (#1193); the
+  data drive may be an external disk with a marker that is never recreated (#1219).
+- **Write gate, pool and disk**: the collector may not take the last pooled connections (#1243); a
+  storage guard pauses collection when the log is pinned or the drive is nearly full (#1279, #1283); a damaged
+  file is noticed, named and contained per file, with a repair at start-up (#1325, #1346); a boot page check
+  and a durable storage-events journal (#1389, #1384).
+- **Interrupt safety**: wait loops and shared-state context managers were audited against the rulings that
+  came out of the crash reports (R144, R161 to R165, R171).
+
+### Diagnostics and what the app keeps when it ends badly
+
+- **One Diagnostics button** builds a Quick or a Thorough archive in numbered parts, with the vitals history,
+  a session record per boot and the launcher's exit, stop and stderr evidence for bash, PowerShell and macOS
+  (#1354, #1286, #1323, #1444; built and fixture-tested, the macOS and Windows runs are 0.5.1 open item 12 in the gate's §1d). A crash report carries the thread kind, the C library's abort message and the
+  kernel's kill counters.
+
+### Privacy and safety
+
+- **The passphrase may not reach a file, a log, a report or a screen**: a sweep of every sink, a guard test
+  per package, and a scrub at entry that fails closed (the sink sweeps, #1348 to #1420).
+- **Redirects leave only to a host on the lane's list, on every hop** (#1393, #1394, #1409); the urllib3 log
+  filter fails closed (#1423).
+
+### Open at this release
+
+The named `0.5.1` items are in `docs/product/RELEASE_0.5_GATE.md` §1c and §1d; none blocks the tag
+(`Q62` = a, `R187`).
 
 ## 0.4.0 — living sources (the `0.4` cycle, version set 2026-09-28)
 
