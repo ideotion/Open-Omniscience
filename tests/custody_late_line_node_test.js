@@ -88,15 +88,13 @@ assert.strictEqual(draw(null), "");
   assert.ok(/Counted at /.test(counted), counted);
   const asked = draw({ pending: 2, recorded_late: null, recorded_late_reason: "boom", recorded_late_computed_at: at });
   assert.ok(/Asked at /.test(asked) && !/Counted at/.test(asked), asked);
-  const bad = draw({ pending: 0, recorded_late: 7, recorded_late_computed_at: "not a date" });
-  assert.ok(bad.includes("Counted at not a date"), "an unparseable time was dropped or garbled: " + bad);
-  // The app's own formatter is used when present (the app language, not the browser's); where it returns nothing the browser's form is used.
+  // The app's own formatter is used when present (the app language, not the browser's); where it returns nothing (an unparseable time) the value as sent is shown.
   FMT.fn = () => "25 octobre 2026, 21:00";
   const fr = draw({ pending: 0, recorded_late: 7, recorded_late_computed_at: at });
   assert.ok(fr.includes("Counted at 25 octobre 2026, 21:00."), "the app formatter was not used: " + fr);
   FMT.fn = () => "";
   const fb = draw({ pending: 0, recorded_late: 7, recorded_late_computed_at: at });
-  assert.ok(fb.includes("Counted at ") && !fb.includes("octobre"), "no fallback when the formatter answers nothing: " + fb);
+  assert.ok(fb.includes("Counted at " + at + "."), "the value as sent was not shown when the formatter answers nothing: " + fb);
   FMT.fn = null;
   const none = draw({ pending: 0, recorded_late: 7 });
   assert.ok(!/Counted at|Asked at/.test(none), "a time was invented: " + none);

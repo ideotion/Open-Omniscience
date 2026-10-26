@@ -2433,11 +2433,10 @@
         : _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.",
           { p, r: L.recorded_late == null ? "?" : L.recorded_late });
       // The moment the count was taken (or asked for): nothing here caches it, so a number never reads as a standing fact. The time is
-      // written in the app language (fmtDateTime), not the browser's; where that formatter is absent the browser's own form is used.
+      // written in the app language by the shared formatter (which answers nothing for an unparseable one); the value as sent is shown
+      // where it does, never the browser's own locale.
       if (L.recorded_late_computed_at) {
-        const d = new Date(L.recorded_late_computed_at);
-        const when = isNaN(d.getTime()) ? String(L.recorded_late_computed_at)
-          : ((typeof fmtDateTime === "function" && fmtDateTime(L.recorded_late_computed_at)) || d.toLocaleString());
+        const when = (typeof fmtDateTime === "function" && fmtDateTime(L.recorded_late_computed_at)) || String(L.recorded_late_computed_at);
         text += " " + (unread ? _qualTf("Asked at {time}.", { time: when }) : _qualTf("Counted at {time}.", { time: when }));
       }
       el.textContent = text;
