@@ -25,16 +25,23 @@ from types import SimpleNamespace
 import pytest
 
 from src.scheduler.runner import BackgroundScheduler, round_robin_interleave
+from tests.wallclock_helpers import HANG_GUARD_S, quiet_pass_tail
 
-# Generous join/wait ceiling — we wait on Events that fire in milliseconds, so a
-# real box clears these instantly; the ceiling only bounds a hung thread.
-_WAIT = 5.0
+# The ceiling on every wait in this file: a guard against a hung thread, never a verdict. The Events fire in milliseconds, so a
+# thread that gets there returns at once and a passing run waits only as long as the thread takes.
+_WAIT = HANG_GUARD_S
 
 
 @pytest.fixture(autouse=True)
 def _isolate_data_dir(monkeypatch, tmp_path):
     # _do_run writes one run-log line via record_run(); keep it in a temp dir.
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _quiet_pass_tail(monkeypatch):
+    """These tests are about WHEN the loop starts a pass: the real work every pass ends with is out of the order they assert."""
+    quiet_pass_tail(monkeypatch)
 
 
 class _FakeSettings:
@@ -60,8 +67,8 @@ def _settings(continuous: bool, interval_minutes: int = 1):
 
 def _no_off_peak_maintenance(sch):
     """The loop runs REAL off-peak maintenance right after its first pass (``_last_maint`` starts unset, so the throttle
-    does not hold it back): 1.5 s on an empty database, seconds on a busy one, against the 5 s these tests wait for two
-    passes. Throttled as if it had just run, the loop measures only what the test is about."""
+    does not hold it back): 1.5 s on an empty database, seconds on a busy one. Throttled as if it had just run, the loop
+    measures only what the test is about."""
     import time
 
     sch._maint_interval_s = 1e9
@@ -102,6 +109,7 @@ def test_interval_mode_runs_once_then_idles_and_stops_promptly():
 
     # interval_minutes=1 -> after the first immediate pass the loop idles 60s.
     sch = BackgroundScheduler(run_once_fn=run_once, settings_provider=_settings(False, 1))
+    _no_off_peak_maintenance(sch)
     assert sch.start() is True
     try:
         assert ran.wait(_WAIT), "the first pass runs immediately on start"
