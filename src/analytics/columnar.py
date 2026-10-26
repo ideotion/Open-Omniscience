@@ -1574,7 +1574,7 @@ def _top_terms_query(start_day, end_day, kind, limit: int) -> tuple[str, list]:
     params.append(int(limit))
     # The day filter sits in the inner query and the kind filter in the join: the parameters keep their order (days, kind, limit).
     # The inner query sums per keyword_id (an integer key, two sums), so the join and the text grouping above it see one row per keyword and
-    # not one per keyword and day: measured at 1,004 MB (one run per size, generated corpora), the one-step form failed with the engine's memory error at 20, 24 and 28 M mentions and this form answered at all three.
+    # not one per keyword and day: measured at 1,004 MB (one run per size, generated corpora), the one-step form failed with the engine's memory error at 20, 24 and 28 M mentions and this form answered at all three in a standalone bench (the built serve path was re-run at 20 and 24 M; its 28 M cell was not obtained).
     # Keywords that share their four text columns still add, as they did when they were grouped by those columns alone.
     sql = (
         "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 - only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
