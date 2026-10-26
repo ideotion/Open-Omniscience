@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-25,ingest/qualification,Dry run counts and samples articles on another site than their source,shipped,PR #1458; follows PR #1445,src/ingest/host_mismatch.py src/analytics/quarantine_job.py src/api/quarantine.py tests/test_host_mismatch.py,"include_host_mismatch (default off) reports a count and a 20-row sample of articles whose registrable site differs from their source's, with both sites named; unknown is separate and never a mismatch; report-only, nothing is marked even with write=true."

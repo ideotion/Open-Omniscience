@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-25,ingest/qualification,Two concurrent quarantine resumes no longer double-count,shipped,PR #1460; follows PR #1450,src/analytics/quarantine_job.py tests/test_quarantine_resume_race.py,"resume() held the lock for the state check, released it, then called start(); two callers could both read paused at one cursor and the second restarted a finished run. The lock now spans the check through start(); the second caller is refused. Red-without test interleaves the two."

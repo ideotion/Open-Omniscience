@@ -314,6 +314,53 @@ def test_a_restore_that_cannot_start_its_hold_refuses_and_touches_nothing(world,
         blocker.join(_PATIENCE_S)
 
 
+def test_a_restore_that_meets_a_stuck_settings_lock_refuses_and_touches_nothing(world, monkeypatch):
+    """R144(b): a settings lock left held by an operation that ended is refused and named (``KvLockStuck``); a restore turns it into the same
+    refusal as a hold it cannot start, with nothing written to the corpus, and not into a failed restore."""
+    tmp_path, live, working = world
+    fresh = threading.RLock()
+    monkeypatch.setattr(kv_store, "_hold_lock", fresh)
+    monkeypatch.setattr(kv_store, "_hold", threading.Condition(fresh))
+    monkeypatch.setattr(kv_store, "_hold_by", None)
+    monkeypatch.setattr(kv_store, "_inflight", set())
+    calls: list[str] = []
+    monkeypatch.setattr(merge, "_carry_live_settings", lambda w: calls.append("carry") or {})
+    monkeypatch.setattr(merge, "swap_in_corpus", lambda *a, **k: calls.append("swap"))
+    taken, go, out = threading.Event(), threading.Event(), []
+
+    def restore() -> None:
+        go.wait(_PATIENCE_S)
+        try:
+            merge._carry_and_swap(working, live, {})
+            out.append(None)
+        except BaseException as exc:  # noqa: BLE001 - handed to the test
+            out.append(exc)
+
+    def leave_it_held() -> None:
+        fresh.acquire()  # outside every section, and the thread ends without letting go
+        taken.set()
+
+    # The restoring thread is started BEFORE the owner ends: the system hands a dead thread's ident to the next thread it starts, and a thread
+    # with the owner's ident re-enters the RLock (the one case the detector cannot see; see tests/test_kv_lock_stuck.py).
+    runner = threading.Thread(target=restore, daemon=True)
+    runner.start()
+    leaver = threading.Thread(target=leave_it_held)
+    leaver.start()
+    assert taken.wait(_PATIENCE_S)
+    leaver.join(_PATIENCE_S)
+    before = (_rows(live), working.exists())
+    go.set()
+    runner.join(_PATIENCE_S)
+    assert out, "the restore is waiting for ever on the stuck settings lock"
+    err = out[0]
+    assert isinstance(err, merge.RestoreRefused), repr(err)
+    assert "Restart Open Omniscience" in str(err) and "nothing was written to your corpus" in str(err)
+    assert "kv_store" not in str(err), "the refusal must use its own fixed words"
+    assert calls == [], "the carry or the swap ran without the hold"
+    assert (_rows(live), working.exists()) == before
+    assert kv_store._hold_by is None
+
+
 def test_the_hold_is_let_go_when_the_swap_refuses_or_fails(world, monkeypatch):
     tmp_path, live, working = world
     invalidated: list[int] = []
@@ -360,7 +407,7 @@ def test_the_hold_does_not_depend_on_the_write_gate(world, monkeypatch):
 def test_the_refusal_is_the_restores_own_refusal_so_the_journal_reads_it_as_refused():
     assert issubclass(merge.RestoreRefused, merge.RestoreAborted)
     src = ast.unparse(_func("_carry_and_swap"))
-    assert src.count("RestoreRefused(") == 2  # the hold and the library window; the generic handlers keep both as errors, not cancellations
+    assert src.count("RestoreRefused(") == 3  # the hold, a stuck settings lock, and the library window; the generic handlers keep all as errors, not cancellations
 
 
 # --------------------------------------------------------------------------- #
