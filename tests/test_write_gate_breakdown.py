@@ -110,23 +110,31 @@ def test_each_kind_of_work_goes_to_its_own_bucket_and_they_add_up_to_the_hold(wo
     eng, factory = world
     s = factory()
     s.connection()  # the pooled connection first, as the app does
+    before_lock = time.monotonic()
     with writer.write_lock():
         t0 = time.monotonic()
         s.execute(text("INSERT INTO sources (name, domain) SELECT 'x' || slow(0.3), 'a.example'"))
+        insert_took = time.monotonic() - t0  # the clock around the statement: the most its bucket may hold
         s.execute(text("SELECT slow(0.2)"))
         with s.begin_nested():
             s.execute(text("UPDATE sources SET name = name"))
         time.sleep(0.25)  # Python work: no statement
         s.commit()
-        held = time.monotonic() - t0
+        read_from = time.monotonic()
         got = _by_kind()
+        read_to = time.monotonic()
         raw = list(GATE._spent)
-    assert 0.3 <= got["insert"] < 1.5 and raw[writer._INSERT] >= 0.3
+    assert 0.3 <= got["insert"] <= insert_took + 0.15 and raw[writer._INSERT] >= 0.3  # 0.15: the bucket is rounded to a tenth
     assert got["other_statement"] >= 0.2 and raw[writer._OTHER] >= 0.2
     assert raw[writer._SAVEPOINT] > 0.0, "SAVEPOINT / RELEASE are their own bucket (fast here, so unrounded)"
     assert raw[writer._COMMIT] > 0.0, "the commit is its own bucket"
     assert got["between_statements"] >= 0.25, "the sleep is no statement: it is between statements"
-    assert sum(got.values()) == pytest.approx(held, abs=0.25), f"the five buckets are the hold's seconds: {got} vs {held:.3f}"
+    # The hold began somewhere between the two clock reads around the lock and the buckets were summed somewhere between the two reads around
+    # the sum, so the seconds they hold lie between the shortest and the longest span those reads allow; a pause anywhere only widens the
+    # span, never moves the sum out of it (each of the five buckets is rounded to a tenth, 0.25 s at most in all).
+    assert read_from - t0 - 0.25 <= sum(got.values()) <= read_to - before_lock + 0.25, (
+        f"the five buckets are the hold's seconds: {got} vs {read_from - t0:.3f} to {read_to - before_lock:.3f}"
+    )
     s.close()
 
 
@@ -228,11 +236,15 @@ def test_a_sessions_commit_is_closed_exactly_by_its_after_commit(world):
     s.connection()
     with writer.write_lock():
         s.flush()
+        began = time.monotonic()
         s.commit()
+        commit_took = time.monotonic() - began  # this machine's real flush and fsync, whatever it was
         time.sleep(0.3)  # the gate is still held by this block: the commit is over and must not keep counting
         got = _by_kind()
         commit = GATE._spent[writer._COMMIT]
-    assert 0.0 < commit < 0.1, f"the session's commit kept counting after it ended: {commit}"
+    # a commit is counted for at most the clock around it; one that kept counting adds the 0.3 s above, which no slow disk can take away
+    assert 0.0 < commit <= commit_took + 0.05, f"the session's commit kept counting after it ended: {commit} against {commit_took}"
+    assert got["commit"] <= commit_took + 0.15, f"the commit still counts, as running work, after it ended: {got} against {commit_took}"  # 0.15: rounded to a tenth
     assert got["between_statements"] >= 0.3
     s.close()
 
@@ -341,11 +353,14 @@ def test_the_rows_a_select_hands_back_after_its_first_are_between_statements_and
     s = factory()
     s.connection()
     with writer.write_lock():
-        s.execute(text("SELECT slow(0.2) AS x FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4)")).fetchall()
+        began = time.monotonic()
+        result = s.execute(text("SELECT slow(0.2) AS x FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4)"))
+        first_row_took = time.monotonic() - began  # the clock around the statement: the most ``other_statement`` may hold
+        result.fetchall()
         got = GATE.hold_breakdown(GATE._held_since)
     s.close()
     assert got["between_statements"] >= 0.5, f"the rows after the first were not left to between_statements: {got}"
-    assert got["other_statement"] <= 0.4, f"only the first row's work belongs to the statement: {got}"
+    assert got["other_statement"] <= first_row_took + 0.15, f"only the first row's work belongs to the statement: {got} against {first_row_took}"
     assert "rows after the first" in se._METHOD, "the member must say what between_statements holds"
 
 
