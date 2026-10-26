@@ -272,8 +272,9 @@ def test_the_period_follows_the_articles_clock_where_the_old_read_followed_each_
     ARTICLES by ``coalesce(published_at, created_at)`` (how ``period.py`` defines the period) and reads all of their mentions. They
     agree for every article whose clock has not moved since it was indexed, which is the whole of ``_world``. They differ for:
 
-    * ``healed``: the clock is inside the period but its mentions are dated a week earlier (the law corpus's heal clears
-      ``published_at`` without re-indexing): the new read has it, the old did not;
+    * ``healed``: the clock is inside the period but its mentions are dated a week earlier (the law corpus's heal cleared
+      ``published_at`` without re-indexing until 0.5.1 item 39, and a store that ran it keeps the stale stamps): the new read has
+      it, the old did not;
     * ``undated``: the clock is inside, the mentions carry no date at all: the new read has it, the old did not;
     * ``moved_out``: the mentions are dated inside, the clock has since moved a week later: the old read had it, the new does not;
     * ``orphan``: mention rows whose article row is gone, dated inside: the old read counted them, the new does not.

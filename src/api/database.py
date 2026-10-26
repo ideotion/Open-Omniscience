@@ -18,6 +18,7 @@ import atexit
 import contextlib
 import os
 import shutil
+import signal
 import tempfile
 import threading
 import time
@@ -621,9 +622,11 @@ _BACKUP_LOCK = threading.Lock()
 #: after :data:`_BACKUP_STALE_AFTER_S`) cannot free the takeover's.
 _backup_flight: tuple[object, float] | None = None
 #: The snapshot directories this process has made and not yet removed, with the pid that made them (guarded by
-#: :data:`_BACKUP_LOCK`). A process that EXITS while a worker thread is still writing a snapshot (a forced stop: uvicorn's second
-#: Ctrl+C closes the loop at once and the interpreter then waits for the thread) has no task left to remove the directory when the
-#: thread ends, so :func:`_remove_live_snapshot_dirs` does it at exit. A kill (SIGKILL, power) runs nothing; the sweeps cover that.
+#: :data:`_BACKUP_LOCK`). A process that STOPS while a worker thread is still writing a snapshot has no task left to remove the
+#: directory when the thread ends, and two stops do that: uvicorn's second Ctrl+C closes the loop at once and the interpreter then
+#: waits for the thread (removed by :func:`_remove_live_snapshot_dirs` at exit), and a SIGTERM that outlasts the graceful window
+#: ends the process by the signal itself, which runs no exit hook (removed by :func:`install_stop_signal_cleanup`'s handler, just
+#: before the signal does its work). A kill (SIGKILL, power) runs nothing; the sweeps cover that.
 _live_snapshot_dirs: dict[Path, int] = {}
 
 
@@ -725,6 +728,39 @@ def _remove_live_snapshot_dirs() -> None:
 atexit.register(_remove_live_snapshot_dirs)
 
 
+def install_stop_signal_cleanup() -> list[str]:
+    """Remove this process's snapshot directories before a SIGTERM ends it (0.5.1 item 41, the second half). Returns the names installed.
+
+    uvicorn handles SIGTERM itself while it runs: it stops accepting, waits up to ``timeout_graceful_shutdown`` for the requests in
+    flight and cancels what is left. Then, as it returns, it puts back the handlers it found and RAISES the signal again, so that the
+    process ends the way a SIGTERM ends it. That is the in-app power button (``request_shutdown``), SIGHUP (routed onto SIGTERM by
+    ``install_signal_handlers``) and a logout. The handler that is put back is whatever stood there when ``uvicorn.run`` began; with
+    the default one the process dies on the spot, with no thread joined and no exit hook run, and a snapshot that was still being
+    written (or finished and not yet read by a client that stopped) stays behind as a plaintext copy of the corpus (measured on the
+    real app under a real uvicorn, 30 s window: rc -15, the whole file left).
+
+    So this must run BEFORE ``uvicorn.run``: its handler removes the directories this process holds and then restores the default
+    action and sends the signal to itself, which ends the process exactly as before (same exit status), only with the copy gone. A
+    worker thread still writing into the removed directory writes to an unlinked file that the process's end frees. SIGINT needs
+    nothing: uvicorn re-raises it as a ``KeyboardInterrupt`` and the interpreter then runs :func:`_remove_live_snapshot_dirs`.
+    """
+    installed: list[str] = []
+
+    def _remove_then_die(signum, _frame):  # pragma: no cover - driven by a real signal; a real process pins it
+        try:
+            _remove_live_snapshot_dirs()
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _remove_then_die)
+        installed.append("SIGTERM")
+    except (ValueError, OSError):  # not the main thread, or no such signal here
+        pass
+    return installed
+
+
 def _sweep_stale_snapshots(data_dir: Path) -> None:
     """Remove the snapshot directories a crashed server left (older than :data:`_BACKUP_STALE_AFTER_S`). Never raises."""
     cutoff = time.time() - _BACKUP_STALE_AFTER_S
@@ -777,7 +813,8 @@ def download_backup(request: Request) -> FileResponse:
     from another site (:func:`_refuse_cross_site`), made one at a time (:func:`_claim_backup_slot`), and not started when the
     data volume has less free space than the file and its log, the most a snapshot can write (507, with both figures; a figure
     that cannot be read is not a refusal, and the response says it was not checked). The directory is removed when the
-    response ends (a process that is stopped while a snapshot is still being written removes it as it exits, :func:`_remove_live_snapshot_dirs`),
+    response ends (a process that is stopped while a snapshot is still being written removes it as it stops: at interpreter exit,
+    :func:`_remove_live_snapshot_dirs`, and before a SIGTERM that outlasts the graceful window ends it, :func:`install_stop_signal_cleanup`),
     and a leftover from a crashed server older than a day is removed by the next request.
     """
     from src.backup.sqlite_backup import BackupError, backup_to, live_db_path

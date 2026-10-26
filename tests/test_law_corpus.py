@@ -337,10 +337,89 @@ def test_a_failed_re_index_leaves_the_heal_to_be_done_again(db, monkeypatch):
     assert _stamps(db, art, KeywordMention.observed_on) == {date(2020, 5, 1)}
 
     monkeypatch.setattr("src.analytics.store.index_article", real)
-    res = upsert_law_corpus_article(db, doc=doc)  # the next pass
+    res = upsert_law_corpus_article(db, doc=doc)  # the next call
     assert res["healed"] is True
     db.refresh(art)
     assert _stamps(db, art, KeywordMention.observed_on) == {art.created_at.date()}
+
+
+def test_a_heal_that_re_stamped_mentions_bumps_the_corpus_epoch_and_a_steady_state_does_not(db):
+    """The re-index rewrites changed mention rows in place under their old ids (a heal moves them to another day), which the
+    columnar rollup's id-watermark merge cannot see; the epoch is what makes it rebuild (`corpus_epoch`)."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    _indexed_while_carrying_a_poll_date(db, doc, datetime(2020, 5, 1))
+    before = get_corpus_epoch(db)
+
+    assert upsert_law_corpus_article(db, doc=doc)["healed"] is True
+    assert get_corpus_epoch(db) == before + 1
+
+    assert "healed" not in upsert_law_corpus_article(db, doc=doc)  # nothing left to heal
+    assert get_corpus_epoch(db) == before + 1, "a pass with nothing to heal must not force a rebuild of the rollup"
+
+
+def _catalog_stating_french(tmp_path: Path) -> tuple[Path, Path]:
+    catalog = tmp_path / "cat.yml"
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: uk, title: Test Act, url: 'https://law.example/heal', language: fr, country: gb}\n",
+        encoding="utf-8",
+    )
+    return catalog, tmp_path / "no-such-generated.yml"
+
+
+def test_the_catalog_language_heal_re_stamps_the_mention_language_of_the_article_it_healed(db, tmp_path):
+    """`register_documents` heals the linked article's language itself, because the tracker no longer re-syncs an unchanged
+    document; without a re-index the article read French and its mentions English (0.5.1 item 39)."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.law.catalog import register_documents
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.language is None and _stamps(db, art, KeywordMention.language) == {"en"}
+    before = get_corpus_epoch(db)
+
+    catalog, no_gen = _catalog_stating_french(tmp_path)
+    out = register_documents(db, path=catalog, generated_path=no_gen)
+
+    assert out["healed_language"] == 1
+    db.refresh(art)
+    assert art.language == "fr"
+    assert _stamps(db, art, KeywordMention.language) == {"fr"}
+    assert get_corpus_epoch(db) == before + 1
+    assert register_documents(db, path=catalog, generated_path=no_gen)["healed_language"] == 0
+    assert get_corpus_epoch(db) == before + 1, "the second registration found nothing to heal"
+
+
+def test_a_failed_re_index_after_the_catalog_language_heal_never_breaks_the_registration(db, tmp_path, monkeypatch, caplog):
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.law.catalog import register_documents
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    before = get_corpus_epoch(db)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("index_article exploded")
+
+    monkeypatch.setattr("src.analytics.store.index_article", boom)
+    catalog, no_gen = _catalog_stating_french(tmp_path)
+    with caplog.at_level("WARNING"):
+        out = register_documents(db, path=catalog, generated_path=no_gen)  # a boot path: must return
+
+    assert out["healed_language"] == 1
+    db.refresh(art)
+    assert art.language == "fr"  # the registration's own commit stands
+    assert _stamps(db, art, KeywordMention.language) == {"en"}  # and the stamps keep the old value, named in the log
+    assert any("re-index of a language-healed law article failed" in r.getMessage() for r in caplog.records)
+    assert get_corpus_epoch(db) == before, "nothing was re-stamped, so nothing is owed a rebuild"
 
 
 def test_unchanged_refetch_does_not_duplicate_the_article(db):

@@ -155,6 +155,7 @@ def test_the_figures_route_answers_cold_without_the_count_and_then_carries_it(mo
         done = dbmod.library_figures(s)
     finally:
         release.set()  # a failed assertion above must not leave the count waiting behind the next test's
+        _wait(lambda: not served_cache._build_lock("db:figures").locked())  # and its stored entry must land before the teardown clears
         s.close()
     assert seen and seen[0] != threading.get_ident(), "the count ran on the request thread"
     assert done["keyword_mentions"] == 12 and done["keyword_mentions_state"] == "counted"

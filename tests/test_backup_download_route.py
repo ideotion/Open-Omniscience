@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import inspect
 import os
 import shutil
+import signal
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -34,6 +37,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import src.api.database as dbapi
+import src.api.main as main_mod
 import src.backup.sqlite_backup as sb
 from src.api.main import app
 from src.database.session import init_db
@@ -640,6 +644,7 @@ import os, pathlib, sys, threading, time
 import src.api.database as dbapi
 
 workdir = pathlib.Path(sys.argv[1])
+marker = pathlib.Path(sys.argv[2])
 workdir.mkdir()
 with dbapi._BACKUP_LOCK:
     dbapi._live_snapshot_dirs[workdir] = os.getpid()
@@ -647,7 +652,8 @@ with dbapi._BACKUP_LOCK:
 
 def snapshot_that_outlives_the_main_thread():
     time.sleep(1.0)
-    (workdir / "snapshot.db").write_bytes(b"x" * 1000)
+    (workdir / "snapshot.db").write_bytes(b"x" * 1000)  # raises if the exit hook already removed the directory
+    marker.write_text("written")  # outside the directory: only a write that succeeded leaves it
 
 
 threading.Thread(target=snapshot_that_outlives_the_main_thread).start()  # not a daemon: the worker behind a request is not
@@ -657,11 +663,14 @@ print("main thread done", flush=True)
 
 def test_a_process_that_exits_while_a_snapshot_is_still_being_written_leaves_no_directory(tmp_path):
     """The real interpreter, in its own process: the main thread ends, a non-daemon thread writes the snapshot a second later, and
-    the exit hook runs after Python has joined that thread, so the file it wrote is removed too. The order is the thing under test."""
+    the exit hook runs after Python has joined that thread, so the file it wrote is removed too. The ORDER is what is pinned: a hook
+    that ran before the join would remove the directory first and the thread's write would fail, so the marker the thread leaves
+    outside the directory after its write would be missing (and a traceback would be on stderr)."""
     workdir = tmp_path / ".oo-backup-exiting"
+    marker = tmp_path / "written"
     env = {**os.environ, "OO_DATA_DIR": str(tmp_path / "data"), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
     done = subprocess.run(
-        [sys.executable, "-c", _EXIT_SCRIPT, str(workdir)],
+        [sys.executable, "-c", _EXIT_SCRIPT, str(workdir), str(marker)],
         cwd=Path(__file__).resolve().parent.parent,
         env=env,
         capture_output=True,
@@ -670,7 +679,148 @@ def test_a_process_that_exits_while_a_snapshot_is_still_being_written_leaves_no_
     )
     assert done.returncode == 0, done.stderr[-2000:]
     assert "main thread done" in done.stdout
+    assert "Traceback" not in done.stderr, done.stderr[-2000:]
+    assert marker.exists(), "the exit hook ran before the worker thread was joined: its write found the directory gone"
     assert not workdir.exists(), "the snapshot a worker thread wrote after the main thread ended was left in the data folder"
+
+
+#: A real uvicorn serving one request that never finishes, with a graceful window of one second, the way ``_serve`` runs it. After
+#: the window uvicorn cancels what is left, puts back the SIGTERM handler it found and raises the signal again; what that does is
+#: what the two tests below measure. The directory stands for a snapshot a worker is still writing (or one a client stopped reading).
+_TERM_SCRIPT = """
+import asyncio, os, pathlib, sys
+import uvicorn
+import src.api.database as dbapi
+
+workdir = pathlib.Path(sys.argv[1])
+if sys.argv[3] == "install":
+    print("installed", dbapi.install_stop_signal_cleanup(), flush=True)
+workdir.mkdir()
+(workdir / "snapshot.db").write_bytes(b"PLAINTEXT" * 1000)
+with dbapi._BACKUP_LOCK:
+    dbapi._live_snapshot_dirs[workdir] = os.getpid()
+
+
+async def app(scope, receive, send):
+    await asyncio.sleep(120)  # a request still running when the graceful window ends
+
+
+uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[2]), timeout_graceful_shutdown=1, lifespan="off", ws="none", log_level="warning")
+"""
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _sigterm_a_server_past_its_graceful_window(tmp_path: Path, mode: str):
+    """Start ``_TERM_SCRIPT`` in its own process, hold one request open, send SIGTERM; return (exit status, workdir)."""
+    workdir = tmp_path / ".oo-backup-stopping"
+    port = _free_port()
+    env = {**os.environ, "OO_DATA_DIR": str(tmp_path / "data"), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _TERM_SCRIPT, str(workdir), str(port), mode],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 120
+        client_socket = None
+        while time.monotonic() < deadline and client_socket is None:
+            if proc.poll() is not None:
+                raise AssertionError(f"the server ended before it listened: {proc.stdout.read()[-2000:]}")
+            try:
+                client_socket = socket.create_connection(("127.0.0.1", port), timeout=1)
+            except OSError:
+                time.sleep(0.1)
+        assert client_socket is not None, "the server never listened"
+        with client_socket:
+            client_socket.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            time.sleep(0.5)  # the request is in flight (if it were not yet, uvicorn stops at once and the result is the same)
+            proc.send_signal(signal.SIGTERM)
+            status = proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    return status, workdir
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
+def test_a_sigterm_that_outlasts_the_graceful_window_removes_the_snapshot_directory_and_still_ends_the_process_by_the_signal(tmp_path):
+    """0.5.1 item 41, the SIGTERM half, in a real uvicorn: the in-app power button, SIGHUP (routed onto SIGTERM) and a logout all
+    end this way, and a backup of a big corpus takes longer than the 30 s window. The handler installed before ``uvicorn.run`` is the
+    one uvicorn puts back and re-raises into; it removes the directory and then lets the signal end the process, so the exit status
+    is what it always was."""
+    status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "install")
+    assert status == -signal.SIGTERM, f"the process did not end by the signal it was sent (status {status})"
+    assert not workdir.exists(), "the plaintext snapshot was left in the data folder by a SIGTERM"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
+def test_without_the_handler_the_same_sigterm_leaves_the_snapshot_directory(tmp_path):
+    """The premise of the test above, measured instead of assumed: with the default SIGTERM action uvicorn's re-raised signal kills
+    the process at once, with no thread joined and no exit hook run. If this ever fails, uvicorn stopped doing that and the handler
+    may no longer be needed; look before deleting it."""
+    status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "plain")
+    assert status == -signal.SIGTERM
+    assert workdir.exists(), "uvicorn no longer ends a SIGTERM stop by the default action: is install_stop_signal_cleanup still needed?"
+
+
+def test_the_stop_handler_removes_what_this_process_holds_then_restores_the_default_and_signals_itself(data_dir, monkeypatch):
+    held = data_dir / ".oo-backup-held"
+    held.mkdir()
+    (held / "snapshot.db").write_bytes(b"x" * 1000)
+    theirs = data_dir / ".oo-backup-theirs"
+    theirs.mkdir()
+    with dbapi._BACKUP_LOCK:
+        dbapi._live_snapshot_dirs[held] = os.getpid()
+        dbapi._live_snapshot_dirs[theirs] = os.getpid() + 1
+    installed: dict[int, object] = {}
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(dbapi.signal, "signal", lambda signum, handler: installed.__setitem__(signum, handler))
+    monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
+
+    assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
+    handler = installed[signal.SIGTERM]
+    assert callable(handler)
+    handler(signal.SIGTERM, None)
+
+    assert not held.exists()
+    assert theirs.exists(), "a directory another process made is not this process's to remove"
+    assert installed[signal.SIGTERM] == signal.SIG_DFL, "the default action must be back before the signal is sent"
+    assert killed == [(os.getpid(), signal.SIGTERM)]
+
+
+def test_the_stop_handler_still_signals_when_the_removal_fails(data_dir, monkeypatch):
+    installed: dict[int, object] = {}
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(dbapi.signal, "signal", lambda signum, handler: installed.__setitem__(signum, handler))
+    monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
+
+    def broken():
+        raise RuntimeError("the removal broke")
+
+    monkeypatch.setattr(dbapi, "_remove_live_snapshot_dirs", broken)
+    dbapi.install_stop_signal_cleanup()
+    with pytest.raises(RuntimeError):
+        installed[signal.SIGTERM](signal.SIGTERM, None)
+    assert killed == [(os.getpid(), signal.SIGTERM)], "a failed removal must not keep the process from ending"
+
+
+def test_the_server_start_installs_the_stop_handler_before_uvicorn_runs():
+    source = inspect.getsource(main_mod._serve)
+    assert "install_stop_signal_cleanup()" in source
+    assert source.index("install_stop_signal_cleanup()") < source.index("uvicorn.run("), (
+        "uvicorn puts back the handler it found: the cleanup must stand there when uvicorn.run begins"
+    )
 
 
 def test_the_removal_does_not_run_on_the_event_loop(data_dir, monkeypatch):

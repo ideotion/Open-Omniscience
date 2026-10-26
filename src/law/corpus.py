@@ -103,6 +103,22 @@ def _index_corpus_article(session: Session, art: Article, extractor) -> dict:
     return index_article(session, art, extractor=extractor)
 
 
+def reindex_healed_article(session: Session, art: Article, extractor=None, *, bump: bool = True) -> dict:
+    """Re-index a law article whose stamped fields were just healed, then tell the disposable rollup (0.5.1 item 39).
+
+    A language or publication date is STAMPED onto the article's mentions when it is indexed, so a heal that stopped at the
+    article's column left every mention carrying the old value. ``index_article`` rewrites changed mention rows in place under their
+    old ids (a heal MOVES them to another day), which the columnar rollup's id-watermark merge cannot see (``corpus_epoch``): the
+    epoch is bumped after the re-index has committed, so a rebuild that starts before it cannot read the old stamps and then be
+    trusted. ``bump=False`` leaves it to a caller that heals many articles and bumps once (best-effort by its own contract)."""
+    tally = _index_corpus_article(session, art, extractor)
+    if bump:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(session, reason="law_corpus_heal")
+    return tally
+
+
 def upsert_law_corpus_article(
     session: Session, *, doc: LawDocument, extractor=None
 ) -> dict:
@@ -162,7 +178,7 @@ def upsert_law_corpus_article(
         # commit TOGETHER: committing the column first would make a failed re-index
         # unrepeatable, because the next call finds nothing left to heal. The status
         # stays "unchanged" (the text did); `healed` says the stamps were redone.
-        tally = _index_corpus_article(session, art, extractor)
+        tally = reindex_healed_article(session, art, extractor)
         return {
             "document_id": doc.id,
             "status": "unchanged",
