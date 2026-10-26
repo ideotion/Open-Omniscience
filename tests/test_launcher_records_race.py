@@ -432,6 +432,7 @@ def test_after_a_normal_exit_only_the_empty_flock_files_are_left(tmp_path):
 def test_the_mkdir_lock_leaves_nothing_after_a_normal_exit(tmp_path):
     pids, f = _exits_round(tmp_path, 3, no_flock=True)
     want = ["launcher_exits.jsonl", "launcher_stderr.jsonl"]
+    # CI evidence (#1504, 26 Oct): the one leftover was `.launcher_stderr.<pid>.pid`, the filter's own pid file, which its END removes after the summary row.
     # WHAT THE WAIT PROTECTS: the launchers have exited, but two writers outlive them by design and hold the lock while they finish: the stderr
     # filter writes its summary row after the launcher returns (measured 0 to 55 ms under load, scripts/launcher_stderr_exposure.py), and a launcher
     # that missed the lock handed its row to a detached child (R174). A single look right after the wait caught that lock in use (main red 9). The
