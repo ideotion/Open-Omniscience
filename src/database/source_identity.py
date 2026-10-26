@@ -29,7 +29,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 
 from src.database.feed_key import feed_key
-from src.database.models import Source
+from src.database.models import SOURCE_OUTLET_ID_TRIGGERS, Source
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
@@ -82,22 +82,26 @@ def add_feed_key_column(conn: Connection) -> bool:
     return True
 
 
+def _owns_the_transaction(conn: Connection) -> bool:
+    """True when this code may BEGIN and COMMIT on ``conn``: the DRIVER is in true autocommit with no transaction open (the boot
+    path, where every UPDATE would otherwise be its own commit: 10.5 s encrypted for the 6,400 sources of the shipped catalogue,
+    0.47 s in one). In any other mode the caller owns the commit: pysqlite opens its implicit transaction at the first DML, which
+    is the caller's, so nothing is begun or committed here. The driver's ``in_transaction`` alone is not the test: pysqlite sets
+    it only at the first DML, so a caller inside a SQLAlchemy ``engine.begin()`` that has only read would be taken for idle and
+    have its work committed under it (the independent read's L2); a caller in that state is not in autocommit."""
+    dbapi = conn.connection.dbapi_connection
+    return not getattr(dbapi, "in_transaction", False) and (
+        getattr(dbapi, "isolation_level", "") is None or getattr(dbapi, "autocommit", None) is True
+    )
+
+
 def backfill_feed_keys(conn: Connection) -> int:
     """Set every row's ``feed_key`` from its ``rss_url``; returns the rows whose key changed."""
     rows = conn.exec_driver_sql("SELECT id, rss_url, feed_key FROM sources").fetchall()
     changed = [(feed_key(r[1]), r[0]) for r in rows if (r[2] or "") != feed_key(r[1])]
     if not changed:
         return 0
-    # One transaction when the DRIVER is in true autocommit with none open (the boot path: every UPDATE would be its own
-    # commit, 10.5 s encrypted for the 6,400 sources of the shipped catalogue, 0.47 s in one). In any other mode the
-    # caller owns the commit: pysqlite opens its implicit transaction at the first UPDATE, which is the caller's, so
-    # nothing is begun or committed here. The driver's ``in_transaction`` alone is not the test: pysqlite sets it only at
-    # the first DML, so a caller inside a SQLAlchemy ``engine.begin()`` that has only read would be taken for idle and
-    # have its keys committed under it (the independent read's L2); a caller in that state is not in autocommit.
-    dbapi = conn.connection.dbapi_connection
-    own = not getattr(dbapi, "in_transaction", False) and (
-        getattr(dbapi, "isolation_level", "") is None or getattr(dbapi, "autocommit", None) is True
-    )
+    own = _owns_the_transaction(conn)
     if own:
         conn.exec_driver_sql("BEGIN IMMEDIATE")
     try:
@@ -224,4 +228,79 @@ def ensure_source_composite_key(engine: Engine) -> dict[str, Any]:
         return result
     except Exception as exc:  # noqa: BLE001 - the boot must go on; the verdict is returned and logged by class
         log_failure(_LOG, "could not move the sources key to (domain, feed)", exc, level=logging.WARNING)
+        return {"state": "refused", "error": type(exc).__name__}
+
+
+_OUTLET_STALE_SQL = (
+    "SELECT COUNT(*) FROM sources s WHERE s.outlet_id IS NOT (SELECT MIN(x.id) FROM sources x WHERE x.domain = s.domain)"
+)
+_OUTLET_HEAL_SQL = (
+    "UPDATE sources SET outlet_id = (SELECT MIN(x.id) FROM sources x WHERE x.domain = sources.domain)"
+    " WHERE outlet_id IS NOT (SELECT MIN(x.id) FROM sources x WHERE x.domain = sources.domain)"
+)
+
+
+def install_source_outlet_id(conn: Connection) -> dict[str, Any]:
+    """R177: the integer ``sources.outlet_id`` and the three triggers that keep it right, on ``conn``.
+
+    Additive and idempotent, and the only schema work the outlet integer needs: ``ADD COLUMN`` (nothing is rebuilt), the
+    triggers (``CREATE TRIGGER IF NOT EXISTS``), and ONE ``UPDATE`` that corrects the rows that are wrong -- all of them on
+    a store that never had the column, none on a steady boot (the count that finds nothing to do). Its cost scales with the ``sources`` table, never with
+    the articles or the mentions: encrypted, alone, median of 7, a steady boot costs 4 ms at 7,000 sources, 65 ms at 70,000 and
+    2.0 s at 700,000, and the first install (column, triggers, back-fill) 42 ms, 0.53 s and 8.1 s
+    (``plan-row-j/outlet-id-plan-2026-10-17``). Writes ``outlet_id`` and nothing else: no verdict, no catalogue-owned field and no operator edit is
+    touched (R100, R167). Returns ``{"added", "triggers", "healed"}``; ``{"state": "absent"}`` with no sources table."""
+    if conn.dialect.name != "sqlite":
+        return {"state": "skipped"}
+    if not conn.exec_driver_sql("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sources'").fetchone():
+        return {"state": "absent"}
+    added = False
+    if "outlet_id" not in _columns(conn, "sources"):
+        conn.exec_driver_sql("ALTER TABLE sources ADD COLUMN outlet_id INTEGER")
+        added = True
+    # The three triggers and the heal are ONE transaction when this code owns it (the boot path runs in autocommit, where each
+    # statement would be its own commit): a refusal part-way (SQLITE_BUSY from another process, a full disk) must not leave two
+    # triggers and no heal, because a store with some triggers keeps non-NULL values that nothing then corrects, and
+    # ``outlets_unhealed`` looks only at NULL rows (the independent read's F1). All or none: none leaves every row NULL, which
+    # the gates read exactly. The ADD COLUMN stays outside, in its own commit, since rolling it back would fail every ``Source`` query.
+    own = _owns_the_transaction(conn)
+    if own:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+    try:
+        have = {
+            r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='sources'").fetchall()
+        }
+        made = 0
+        for name, sql in SOURCE_OUTLET_ID_TRIGGERS.items():
+            if name not in have:
+                conn.exec_driver_sql(sql)
+                made += 1
+        stale: int = conn.exec_driver_sql(_OUTLET_STALE_SQL).scalar_one()
+        if stale:
+            conn.exec_driver_sql(_OUTLET_HEAL_SQL)
+    except BaseException:
+        if own:
+            conn.exec_driver_sql("ROLLBACK")
+        raise
+    if own:
+        conn.exec_driver_sql("COMMIT")
+    return {"added": added, "triggers": made, "healed": stale}
+
+
+def ensure_source_outlet_id(engine: Engine) -> dict[str, Any]:
+    """Boot self-heal for the outlet integer (R177). Never raises into boot: a refusal is logged by class. If the ADD COLUMN
+    itself is refused, every ORM query on ``Source`` fails with "no such column" (as for any self-healed column); if only the
+    triggers or the heal are refused, rows stay NULL and a gate reads them exactly (``outlets_unhealed``, then the lowest id of
+    the row's own domain) until a later boot corrects them. Runs AFTER ``ensure_source_composite_key``: that rebuild replays any
+    trigger the old table held, and this step then finds nothing to add."""
+    if engine.url.get_backend_name() != "sqlite":
+        return {"state": "skipped"}
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            result = install_source_outlet_id(conn)
+        if result.get("added") or result.get("triggers") or result.get("healed"):
+            _LOG.info("sources.outlet_id: %s", result)
+        return result
+    except Exception as exc:  # noqa: BLE001 - the boot must go on; the verdict is returned and logged by class
+        log_failure(_LOG, "could not set up sources.outlet_id", exc, level=logging.WARNING)
         return {"state": "refused", "error": type(exc).__name__}

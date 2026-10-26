@@ -41,7 +41,7 @@ from src.database.models import (
     MarketExtractionRule,
     Source,
 )
-from src.database.outlet import outlet_expr
+from src.database.outlet import outlet_expr, outlets_unhealed
 from src.database.stand_in import not_a_stand_in_article_id
 
 _LOG = logging.getLogger(__name__)
@@ -214,12 +214,13 @@ def _daily_totals(session, cutoff: date, hi: date) -> dict[date, int]:
 def _source_counts(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[int, int]:
     """Per-keyword count of DISTINCT OUTLETS over the window (a site's several feeds are one: row J, R146)."""
     out: dict[int, int] = {}
+    unhealed = outlets_unhealed(session)  # asked once per call, not per chunk (R177)
     for i in range(0, len(kw_ids), _IN_CHUNK):
         chunk = kw_ids[i : i + _IN_CHUNK]
         for kid, n in (
             session.query(
                 KeywordMentionRead.keyword_id,
-                func.count(distinct(outlet_expr(KeywordMentionRead.source_id, Source.domain))),
+                func.count(distinct(outlet_expr(KeywordMentionRead.source_id, Source.outlet_id, unhealed=unhealed))),
             )
             .outerjoin(Source, Source.id == KeywordMentionRead.source_id)
             .filter(

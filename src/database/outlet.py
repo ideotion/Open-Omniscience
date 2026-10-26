@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, aliased
 
 from src.database.models import Source
 
@@ -35,21 +35,40 @@ def outlet_key(source_id: int | None, domain: str | None) -> str:
     return domain or f"source-{source_id}"
 
 
-def outlet_expr(source_id_col: Any, domain_col: Any) -> Any:
-    """SQL: the outlet an article's source belongs to -- its domain, or the bare INTEGER source id when the source row is gone.
+def outlet_expr(source_id_col: Any, outlet_id_col: Any, *, unhealed: bool = False) -> Any:
+    """SQL: the outlet an article's source belongs to, as an INTEGER -- the lowest id among the sources of its domain
+    (``sources.outlet_id``), or the bare source id when the source row is gone.
 
-    For ``count(distinct ...)``: the domain column must come from a join to ``sources`` on the same row, and the
-    join must be OUTER where an article may lack a source, or the unmatched rows leave the count.
+    For ``count(distinct ...)``: ``outlet_id_col`` must be ``Source.outlet_id`` from a join to ``sources`` on the same row,
+    and the join must be OUTER where an article may lack a source, or the unmatched rows leave the count. An outlet id is the
+    id of a row that exists and shares the domain (three triggers on ``sources`` keep it so, ``SOURCE_OUTLET_ID_TRIGGERS``), so
+    it can never equal an orphan's own source id: an orphan stays its own outlet.
 
-    The two sides of the coalesce differ in type ON PURPOSE. This used to build ``'source-' || cast(id as text)`` for the
-    missing row, which is the same count (SQLite's ``DISTINCT`` keeps text and integer apart, so an orphan id ``123`` and a
-    domain spelt ``123`` stay two outlets, as ``source-123`` and ``123`` did) at the price of a string built and hashed for
-    every row of a scan: on a 2.34 M-mention window the outlet join read 6.47 s against 5.37 s without the string work
-    (``source_id`` alone: 4.28 s; ``plan-row-j/outlet-key-design-2026-10-17``). ``domain`` is NOT NULL, so the integer
-    only ever appears for a mention whose source row is gone. The value is only counted, never read back; the Python
-    spelling for display, ``outlet_key``, stays ``source-<id>``. SQLite only (the app is SQLite-only; another engine would
-    refuse to mix the two types)."""
-    return func.coalesce(domain_col, source_id_col)
+    ``outlet_id`` is NULL only on a row written before the boot step reached it, or when that step failed (trigger creation or
+    the heal) until the next boot. Read plainly, such a row counts as its own outlet, which OVERCOUNTS outlets -- the unsafe
+    direction (R146: manufactured agreement). ``unhealed=True`` adds the exact reading, the lowest id of the row's own domain,
+    as a correlated subquery. It is NOT the default: always on, it measured +29 % on a 2.34 M-mention window (encrypted), so a
+    gate asks ``outlets_unhealed`` ONCE per run and passes the answer, and a healed store reads the plain form.
+
+    Why an integer and not the domain: a text key costs a hash of a string per scanned mention row. On a 2.34 M-mention window
+    ``source_id`` alone read 4.28 s plain (5.07 s encrypted); the text join 6.47 s (5.97 s); ``coalesce(domain, source_id)``
+    5.37 s plain and, on an ENCRYPTED store, 5.89 s, which is NOT distinguishable from the text join there; this integer 4.51 s
+    plain and 5.21 s encrypted (R177; ``plan-row-j/outlet-key-design-2026-10-17``). The value is only counted, never read back;
+    the Python spelling for display, ``outlet_key``, stays the domain or ``source-<id>``. SQLite only."""
+    if not unhealed:
+        return func.coalesce(outlet_id_col, source_id_col)
+    sibling = aliased(Source)
+    oldest = (
+        select(func.min(sibling.id)).where(sibling.domain == Source.domain).correlate(Source).scalar_subquery()
+    )
+    return func.coalesce(outlet_id_col, oldest, source_id_col)
+
+
+def outlets_unhealed(session: Session) -> bool:
+    """True when at least one source row has no ``outlet_id`` yet (a store the boot step has not reached, or reached and failed).
+
+    One indexed probe (``LIMIT 1``; 0.044 s at 700,000 sources); a gate asks it once per run and passes it as ``unhealed=``."""
+    return session.query(Source.id).filter(Source.outlet_id.is_(None)).first() is not None
 
 
 class OutletMap:

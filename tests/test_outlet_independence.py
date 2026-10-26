@@ -59,13 +59,27 @@ def test_outlet_map_names_an_outlet_by_its_oldest_source(s):
     assert m.key(999, "gone.example") == "gone.example" and m.key(999) == "source-999"
 
 
-def test_outlet_expr_is_the_domain_or_a_stable_placeholder(s):
-    a = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en")
-    s.commit()
+def test_outlet_expr_counts_outlets_not_feeds_in_every_outlet_id_state(s):
+    """Two BBC feeds and DW: two outlets whether ``outlet_id`` is written, NULL (exact form), or half written."""
     from sqlalchemy import func
-    n = (s.query(func.count(func.distinct(outlet_expr(Article.source_id, Source.domain))))
-         .select_from(Article).outerjoin(Source, Source.id == Article.source_id).scalar())
-    assert n == 1 and a
+
+    a = _feed(s, "BBC News", "bbc.com", "https://bbc.com/en")
+    b = _feed(s, "BBC Arabic", "bbc.com", "https://bbc.com/ar")
+    c = _feed(s, "DW", "dw.com", "https://dw.com/rss")
+    s.commit()
+
+    def count(**kw):
+        return (s.query(func.count(func.distinct(outlet_expr(Article.source_id, Source.outlet_id, **kw))))
+                .select_from(Article).outerjoin(Source, Source.id == Article.source_id).scalar())
+
+    assert count() == 2 and a and b and c
+    s.execute(Source.__table__.update().where(Source.id == b).values(outlet_id=None))  # half written
+    s.commit()
+    assert count(unhealed=True) == 2
+    s.execute(Source.__table__.update().values(outlet_id=None))  # not written at all
+    s.commit()
+    assert count(unhealed=True) == 2
+    assert count() == 3, "the plain form overcounts a NULL row's feeds: why a gate passes unhealed= when outlets_unhealed says so"
 
 
 def test_one_outlets_feeds_are_not_a_coordinated_actor(s):
@@ -209,8 +223,33 @@ def _name(session, sid):
     return session.get(Source, sid).name
 
 
-def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path):
-    """Two feeds of one site citing a page are one path (single_origin); a second OUTLET makes two."""
+@pytest.mark.parametrize("outlet_ids_unwritten", [False, True], ids=["healed", "outlet_id-NULL"])
+def test_story_propagation_candidates_are_ranked_by_outlets_so_one_sites_feeds_cannot_crowd_out_a_story(
+    tmp_path, monkeypatch, outlet_ids_unwritten
+):
+    """The candidate prefilter ranks terms by outlet count and keeps ``max_terms``: read as feeds, a term carried by four feeds
+    of one site (six 'sources', three outlets) outranks a term carried by four real outlets and crowds it out of the list. On a
+    store the boot step has not reached (``outlet_id`` NULL, R177) the gate must still rank by outlets. (The items' own counts are
+    recounted in Python, so only this ranking shows the difference.)"""
+    from src.analytics.story_propagation import find_story_propagation
+
+    session = _kw_session(tmp_path, monkeypatch)
+    bbc = [_feed(session, n, "bbc.com", f"https://bbc.com/{n}") for n in ("a", "b", "c", "d")]
+    named = {d: _feed(session, d, f"{d}.example", f"https://{d}.example/rss") for d in ("dw", "zdf", "ard", "ndr")}
+    session.commit()
+    if outlet_ids_unwritten:
+        session.execute(Source.__table__.update().values(outlet_id=None))  # an UPDATE of outlet_id alone fires no trigger
+        session.commit()
+    _mention_spread(session, "crowder", [(bbc[0], 8), (bbc[1], 7), (bbc[2], 6), (bbc[3], 5), (named["dw"], 4), (named["zdf"], 1)])
+    _mention_spread(session, "realstory", [(named["dw"], 8), (named["zdf"], 6), (named["ard"], 4), (named["ndr"], 1)])
+    items = find_story_propagation(session, max_terms=1)["items"]
+    assert [i["term"] for i in items] == ["realstory"]
+
+
+@pytest.mark.parametrize("outlet_ids_unwritten", [False, True], ids=["healed", "outlet_id-NULL"])
+def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path, outlet_ids_unwritten):
+    """Two feeds of one site citing a page are one path (single_origin); a second OUTLET makes two. Also on a store the boot
+    step has not reached (``outlet_id`` NULL), where the board must not read each feed as an outlet (R177, R146)."""
     from fastapi.testclient import TestClient
 
     from src.api.main import app
@@ -231,6 +270,9 @@ def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path):
                    ArticleLink(article_id=arts[a], url=y, normalized_url=y, link_type="external"),
                    ArticleLink(article_id=arts[c], url=y, normalized_url=y, link_type="external")])
         s.commit()
+        if outlet_ids_unwritten:
+            s.execute(Source.__table__.update().values(outlet_id=None))  # an UPDATE of outlet_id alone fires no trigger
+            s.commit()
 
     def _db():
         d = Sess()
@@ -309,6 +351,10 @@ def test_the_ripple_independence_gate_counts_outlets(tmp_path, monkeypatch):
     _mention_spread(session, "oilterm", [(a, 1), (b, 1), (c, 1)])
     kid = session.query(Keyword).filter_by(normalized_term="oilterm").one().id
     today = datetime.now(UTC).date()
+    assert _source_counts(session, [kid], today - timedelta(days=5), today + timedelta(days=1)) == {kid: 2}
+    # the same store before the boot step reached it: the gate reads the row's own domain, not each feed as an outlet
+    session.execute(Source.__table__.update().values(outlet_id=None))
+    session.commit()
     assert _source_counts(session, [kid], today - timedelta(days=5), today + timedelta(days=1)) == {kid: 2}
 
 

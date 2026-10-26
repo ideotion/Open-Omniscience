@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
-from src.database.outlet import OutletMap, outlet_expr
+from src.database.outlet import OutletMap, outlet_expr, outlets_unhealed
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_article_id, stand_in_article_ids
 
@@ -174,7 +174,7 @@ def corpus_links(
         # is many-to-one (a link row belongs to exactly one article), so it adds no
         # fan-out to the article count grouped beside it.
         # OUTLETS, not feeds: two feeds of one site are one voice (row J, R146).
-        srcs = func.count(func.distinct(outlet_expr(Article.source_id, Source.domain)))
+        srcs = func.count(func.distinct(outlet_expr(Article.source_id, Source.outlet_id, unhealed=outlets_unhealed(db))))
         rows = (
             db.query(
                 ArticleLink.normalized_url.label("nu"),

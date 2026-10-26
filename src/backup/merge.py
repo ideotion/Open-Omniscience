@@ -2285,6 +2285,7 @@ _MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
     # a handover, not a gap.
     "sources.article_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
     "sources.counter_reconciled_at": "the reconciliation's own stamp; set by the reconcile, never copied",
+    "sources.outlet_id": "derived from domain and id by three triggers on sources (R177); an incoming id means nothing here, and the INSERT fires them",
     "keywords.article_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
     "keywords.mention_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
     "keywords.last_reconciled_at": "the reconciliation's own stamp; set by the reconcile, never copied",
