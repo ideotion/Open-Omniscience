@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import statistics
 import subprocess
 import sys
@@ -61,9 +63,10 @@ def _one(base: Path) -> dict:
 
 
 def _measure(mode: str, launches: int, load: int, out) -> list[dict]:
-    hogs = [subprocess.Popen([sys.executable, "-c", "while True: pass"]) for _ in range(load)]
+    hogs: list[subprocess.Popen] = []
     rows = []
     try:
+        hogs.extend(subprocess.Popen([sys.executable, "-c", "while True: pass"]) for _ in range(load))
         if load:
             time.sleep(1.0)  # let the load settle before the first launch
         for i in range(launches):
@@ -90,6 +93,18 @@ def _say(mode: str, rows: list[dict]) -> str:
     )
 
 
+def _environment() -> dict:
+    """What the figures depend on, written as the table's first row so the table backs the statement made about it."""
+    awk = shutil.which("awk")
+    try:
+        first = subprocess.run([awk, "--version"], capture_output=True, text=True, timeout=10).stdout.splitlines()
+        version = first[0] if first else None
+    except (OSError, subprocess.SubprocessError, TypeError):
+        version = None
+    bash = subprocess.run(["bash", "--version"], capture_output=True, text=True, timeout=10).stdout.splitlines()
+    return {"environment": True, "cpu_count": os.cpu_count(), "awk": version, "bash": bash[0] if bash else None, "platform": sys.platform}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--launches", type=int, default=60)
@@ -97,6 +112,7 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="the raw table, one JSON row per launch")
     a = ap.parse_args()
     with open(a.out, "w", encoding="utf-8") as out:
+        out.write(json.dumps(_environment()) + "\n")
         print(_say("idle", _measure("idle", a.launches, 0, out)))
         if a.load:
             print(_say(f"loaded x{a.load}", _measure("loaded", a.launches, a.load, out)))
