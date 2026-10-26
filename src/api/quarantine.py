@@ -225,20 +225,19 @@ def quarantine_source_furniture(
         if src is None:
             raise HTTPException(status_code=404, detail="No such source.")
         total = session.query(Article.id).filter(Article.source_id == source_id).count()
-        ids = [i for (i,) in session.query(Article.id).filter(Article.source_id == source_id)
-               .order_by(Article.id.desc()).limit(sample)]
-        texts = [c for (c,) in session.query(Article.content).filter(Article.id.in_(ids))] if ids else []
+        texts = [c for (c,) in session.query(Article.content).filter(Article.source_id == source_id)
+                 .order_by(Article.id.desc()).limit(sample)]
         learned = learn_repeated_lines(texts, min_share=min_share)
         return {
             "source": {"id": src[0], "name": src[1], "domain": src[2]},
             "articles_in_source": total,
-            "sampled": len(ids),
+            "sampled": len(texts),
             **learned,
             "min_share": min_share,
             "method": (
-                f"the {len(ids)} newest articles of this source (not a random sample, so a recent template "
+                f"the {len(texts)} newest articles of this source (not a random sample, so a recent template "
                 "change shows more than an old one); a line is listed when it is at most "
-                "12 words and appears in at least min_share of the bodies read and in 3 or more of them; "
+                "12 words and appears in at least min_share of the non-empty bodies read (the examined count) and in 3 or more of them; "
                 "'known' lines are ones the rules already strip. Local read, nothing marked or removed"
             ),
         }

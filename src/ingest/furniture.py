@@ -25,6 +25,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import math
 import re
 
 # A paragraph that is, in full, one of these (casefolded, edge punctuation dropped) is an ad slot.
@@ -129,7 +130,7 @@ def learn_repeated_lines(texts: list[str], *, min_share: float = 0.3, min_articl
             shown.setdefault(key, para)
         for key in seen:
             counts[key] = counts.get(key, 0) + 1
-    floor = max(min_articles, min_share * n)
+    floor = max(min_articles, math.ceil(round(min_share * n, 9)))
     kept = sorted((k for k, c in counts.items() if c >= floor), key=lambda k: (-counts[k], shown[k]))
     rows = [
         {"line": shown[k], "articles": counts[k], "share": round(counts[k] / n, 3),

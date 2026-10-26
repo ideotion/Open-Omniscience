@@ -101,3 +101,10 @@ def test_it_marks_nothing_and_strips_nothing(world, monkeypatch):
     with world() as s:
         assert s.query(Article).filter(Article.quarantined.is_(True)).count() == 0
         assert s.query(Article).filter(Article.content.like("%Annons%")).count() == 12
+
+
+def test_a_line_exactly_at_min_share_is_listed_despite_float_error():
+    # 0.07 * 100 == 7.000000000000001: the line in exactly 7 of 100 bodies must still be listed
+    texts = [f"Meny\nA{i}" for i in range(7)] + [f"B{i}" for i in range(93)]
+    out = learn_repeated_lines(texts, min_share=0.07)
+    assert [r["line"] for r in out["candidates"]] == ["Meny"] and out["candidates"][0]["articles"] == 7
