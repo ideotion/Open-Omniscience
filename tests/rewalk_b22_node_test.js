@@ -98,6 +98,8 @@ function sandbox(I, els, body, extra) {
     const window = { OOI18N: this.I.api };
     const OOI18N = this.I.api;
     ${ESC}
+    const document = { documentElement: { dir: "ltr" } };
+    ${extract("ooIsoDate", null, CORE)}
     const $ = (id) => this.els[id] || null;
     const fmtNum = (n) => String(n);
     const calls = this.calls;

@@ -795,7 +795,7 @@
         if (g.kind === "articles") {
           const grp = head(t("Articles"), g) + crossNote;
           items.forEach(it => out.push({grp, label: it.title || ("#" + it.article_id),
-            sub: (it.published_at || "").slice(0, 10) || t("article"),
+            sub: ooIsoDate(it.published_at) || t("article"),
             run: () => window.open(it.url, "_blank")}));
         } else if (g.kind === "keywords") {
           const grp = head(t("Keywords"), g) + crossNote;

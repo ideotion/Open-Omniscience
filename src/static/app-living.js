@@ -839,8 +839,8 @@
       const vint = $("law-amend-vintage");
       if (vint) {
         vint.textContent = d.newest_capture
-          ? tf("Amendments captured from {from} to {to}. The newest capture counted: {newest}.", { from: d.window_from, to: d.window_to, newest: d.newest_capture.slice(0, 10) })
-          : tf("No amendment was captured from {from} to {to}.", { from: d.window_from, to: d.window_to });
+          ? tf("Amendments captured from {from} to {to}. The newest capture counted: {newest}.", { from: ooIsoDate(d.window_from), to: ooIsoDate(d.window_to), newest: ooIsoDate(d.newest_capture) })
+          : tf("No amendment was captured from {from} to {to}.", { from: ooIsoDate(d.window_from), to: ooIsoDate(d.window_to) });
       }
       const off = $("law-amend-off");
       if (off) {
@@ -953,7 +953,7 @@
     // A held version as "edition · which text · date": the one line a palette row and a
     // Search tab row both carry, so the two cannot describe one hit two ways.
     function laneHitSub(it, t) {
-      return [it.edition || "", laneWhichText(it.which, t), (it.revised_at || "").slice(0, 10)]
+      return [it.edition || "", laneWhichText(it.which, t), ooIsoDate(it.revised_at)]
         .filter(Boolean).join(" · ");
     }
 

@@ -87,7 +87,7 @@
       }
       body += `<ol class="claim-list">` + r.articles.map((a) =>
         `<li value="${esc(a.position)}">${_claimArticleLink(a, t)}`
-        + ` <span class="muted">${esc(a.source || "")}${a.published_at ? " · " + esc(String(a.published_at).slice(0, 10)) : ""}</span>`
+        + ` <span class="muted">${esc(a.source || "")}${a.published_at ? " · " + esc(ooIsoDate(a.published_at)) : ""}</span>`
         + (a.language ? " " + ooLangCell(a.language, {cls: "claim-pill"}) : "")
         + `</li>`).join("") + `</ol>`;
       return _claimStep("①", t("Related articles in your corpus"),

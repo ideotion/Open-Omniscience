@@ -75,6 +75,7 @@ const LANE = [
 const opened = [];
 const src =
   extractConst("esc") + "\n" +
+  "var document = {documentElement: {dir: 'ltr'}};\n" + extract("ooIsoDate") + "\n" +
   extractBlockConst("safeUrl") + "\n" +
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
