@@ -138,6 +138,44 @@ def test_the_bracket_sits_between_the_gauge_marks_inside_the_hold(monkeypatch):
     assert events == ["holding", "enter", "exit", "released"]
 
 
+class _Tree:
+    """Stands in for an lxml tree: records the slot's reading at the moment it is freed (libxml2's free is where a native abort can land)."""
+
+    seen: list[tuple[int, int]] = []
+
+    def __del__(self) -> None:
+        _Tree.seen.append(_slot())
+
+
+def test_the_trees_of_a_returning_extraction_are_freed_while_the_slot_counts_it_in_flight(monkeypatch):
+    _Tree.seen = []
+
+    def body(html, *, url=None):
+        tree = _Tree()  # noqa: F841 - a frame local, the way bare_extraction holds its tree
+        return None
+
+    monkeypatch.setattr(extract, "_extract_locked", body)
+    assert extract.extract_article("<html><body>x</body></html>") is None
+    assert _Tree.seen == [(1, 1)], f"a tree was freed outside the bracket -- saw {_Tree.seen}"
+    assert _slot() == (0, 1)
+
+
+def test_the_trees_of_a_raising_extraction_are_freed_while_the_slot_counts_it_in_flight(monkeypatch):
+    """On a raise the trees live on in the traceback's frames and are freed by ``_release_frames`` in ``except``: the
+    bracket must still be open there, or a native abort in that free reads as 'nothing in flight'."""
+    _Tree.seen = []
+
+    def body(html, *, url=None):
+        tree = _Tree()  # noqa: F841
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(extract, "_extract_locked", body)
+    with pytest.raises(RuntimeError, match="boom"):
+        extract.extract_article("<html><body>x</body></html>")
+    assert _Tree.seen == [(1, 1)], f"the trees of a raising extraction were freed outside the bracket -- saw {_Tree.seen}"
+    assert _slot() == (0, 1)
+
+
 def test_a_worker_waiting_for_the_lock_is_not_counted_as_in_lxml(monkeypatch):
     inside = threading.Event()
     release = threading.Event()
@@ -161,16 +199,20 @@ def test_a_worker_waiting_for_the_lock_is_not_counted_as_in_lxml(monkeypatch):
     first = threading.Thread(target=extract.extract_article, args=("first",), name="first")
     second = threading.Thread(target=extract.extract_article, args=("second",), name="second")
     first.start()
-    assert inside.wait(_WAIT)
-    second.start()
-    # Give the second thread time to run up to the lock and block there; a bracket opened BEFORE the lock would have
-    # counted it by now.
-    threading.Event().wait(0.3)
-    assert _slot() == (1, 1), "one in lxml; the one waiting for the lock is not"
-    assert entered_by == ["first"]
-    release.set()
-    first.join(_WAIT)
-    second.join(_WAIT)
+    try:
+        assert inside.wait(_WAIT)
+        second.start()
+        # Give the second thread time to run up to the lock and block there; a bracket opened BEFORE the lock would have
+        # counted it by now.
+        threading.Event().wait(0.3)
+        assert _slot() == (1, 1), "one in lxml; the one waiting for the lock is not"
+        assert entered_by == ["first"]
+    finally:
+        # also when an assertion above fails: a thread left holding the extraction lock would break every later test
+        release.set()
+        first.join(_WAIT)
+        if second.is_alive() or second.ident is not None:
+            second.join(_WAIT)
     assert order == ["first", "second"]
     assert entered_by == ["first", "second"]
     assert _slot() == (0, 2)
