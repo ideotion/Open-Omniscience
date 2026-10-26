@@ -354,7 +354,7 @@ def ensure_source_outlet_id(engine: Engine) -> dict[str, Any]:
     itself is refused, every ORM query on ``Source`` fails with "no such column" (as for any self-healed column); if only the
     triggers or the heal are refused, rows stay NULL and a gate reads them exactly (``outlets_unhealed``, then the lowest id of
     the row's own domain) until a later boot corrects them. Runs AFTER ``ensure_source_composite_key``: that rebuild replays any
-    trigger the old table held, and this step then finds nothing to add."""
+    trigger the old table held, and this step then adds what is missing and replaces any whose body is out of date."""
     if engine.url.get_backend_name() != "sqlite":
         return {"state": "skipped"}
     try:
