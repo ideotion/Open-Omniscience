@@ -216,3 +216,15 @@ def test_the_right_passphrase_loads_the_wrapped_mldsa_key_and_is_not_legacy(tmp_
     _signer(tmp_path, monkeypatch, "pass-1")
     s = _signer(tmp_path, monkeypatch, "pass-1")
     assert s.key_protection == "aes256gcm-scrypt" and s.is_hybrid
+
+
+def test_a_wrapped_mldsa_key_with_no_passphrase_held_raises_instead_of_signing_with_garbage(tmp_path, monkeypatch):
+    _fake_pqc(monkeypatch)
+    _signer(tmp_path, monkeypatch, None)  # both keys plaintext
+    (tmp_path / "ml.key").write_bytes(signing._wrap(b"P" * 10 + b"S" * 30, b"earlier-pass"))
+    try:
+        _signer(tmp_path, monkeypatch, None)
+    except signing.SigningError as exc:
+        assert "no passphrase" in str(exc) and "earlier-pass" not in str(exc)
+    else:  # pragma: no cover - the defect: the wrapped blob was split into a garbage key pair
+        raise AssertionError("a wrapped ML-DSA key with no passphrase held must not load")

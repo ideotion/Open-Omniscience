@@ -2,9 +2,9 @@
 
 The endpoint used to read every uploaded ``.eml`` whole into one list before parsing any of it, so
 one request's memory was the sum of all the files plus the parse of the largest (measured: the
-parse holds about 7.8 times the message). Now a file over ``_MAX_EML_BYTES`` is refused with 413
-BEFORE anything is stored (fail closed, nothing half-imported, the body never read or echoed), and
-messages are stored in rounds whose held bytes stay under ``_EML_BATCH_BYTES``.
+parse holds about 7.8 times the message). Now a file over ``_MAX_EML_BYTES`` is skipped UNREAD and
+counted in ``skipped_oversize`` (the body never read or echoed; the rest of the upload still
+imports), and messages are stored in rounds whose held bytes stay under ``_EML_BATCH_BYTES``.
 """
 
 from __future__ import annotations

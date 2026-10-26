@@ -335,6 +335,14 @@ class HybridSigner:
                     self._legacy_plain = True
                     data = blob
             else:
+                # No passphrase held: only a blob of exactly the plain key length is a plaintext
+                # key; a longer one is still wrapped, and splitting it would sign with garbage
+                # (the same defect as above, audit 0.5.0 A-018, read-response).
+                if len(blob) != _mldsa_plain_len():
+                    raise SigningError(
+                        "the ML-DSA custody key is wrapped but no passphrase is held "
+                        "(unlock the app first)"
+                    )
                 data = blob
             pk_len = _mldsa.PUBLIC_KEY_SIZE
             return data[:pk_len], data[pk_len:]
