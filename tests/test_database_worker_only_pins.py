@@ -35,7 +35,7 @@ _LOCAL_ONLY = frozenset({"run"})
 _VALUE_ENTRIES: dict[str, str] = {
     "src/api/boot_sequence.py::_verify_database": "a step handed to _timed(...) by boot_sequence.run, which main.py starts on the daemon thread oo-boot-sequence",
     "src/api/main.py::_run_startup_upkeep._warm_insights_cache": "handed to boot_sequence.run as its warm-up callback, on the daemon thread oo-boot-sequence",
-    "src/briefing/producers.py::emotion_profile_card": "a producer registered with the briefing service and called by _refresh_briefing, on a request thread or a job thread",
+    "src/briefing/producers.py::emotion_profile_card": "a producer registered with the briefing service; its callers (_refresh_briefing, run_all_bounded from bulletin/cards.py, analytics/leads_quality.py and card_audit.observe_producers) run on a request, job or diagnostics thread, never the main thread",
     "src/briefing/producers.py::framing_split": "a producer registered with the briefing service (as above)",
     "src/briefing/producers.py::ip_litigation_pulse": "a producer registered with the briefing service (as above)",
     "src/briefing/producers.py::lonely_signal": "a producer registered with the briefing service (as above)",

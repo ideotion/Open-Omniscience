@@ -698,7 +698,7 @@ def update(kind: str, key: Any, fields: dict[str, Any]) -> bool:
                 return False
             cleaned = _clean(fields)
             if isinstance(cleaned, dict):
-                merged = {**event, **{k: v for k, v in cleaned.items() if k not in _OWNED}}
+                merged = {**event, **kept_items(cleaned, lambda k, _v: k not in _OWNED)}
                 if _size(merged) <= MAX_EVENT_BYTES:
                     event.update(merged)
                     _mark_dirty_locked()  # a merge refused for size changed nothing: no write for it

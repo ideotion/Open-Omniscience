@@ -18,7 +18,10 @@ WHAT THIS CANNOT DO, and the mark of it. The call graph is read by NAME (tests/t
 through ``getattr``, a registry, a stored callable or a decorator is not seen. A name that is also a builtin or a common method (``update``, ``get``, ``run``,
 ``digest``) or is defined in three or more files is followed only inside its own file, because otherwise ``subprocess.run`` pulls in thousands of functions: that
 UNDER-APPROXIMATES a real cross-file call through such a name. And two files that share a rarer name produce a path that is not a call: :data:`_DISMISSED` lists
-those, each with the exact entries it dismisses, so a NEW entry through the same scope still fails. A forward reachability with every ambiguous name expanded was
+those, each with the exact entries it dismisses AND the one colliding name they are owed to, so a NEW entry through the same scope still fails. A call through an
+IMPORT ALIAS (``from x import f as _g``, then ``_g()``) is not resolved either, nor is a target handed to ``atexit.register`` or ``signal.signal``; no scope was
+found to depend on either when this file was written (a forward walk from ``main`` with imports and aliases resolved found none), and
+``vitals_history.start`` is known to be reached through an alias from the event loop (R165), which is exempt anyway. A forward reachability with every ambiguous name expanded was
 read once by hand when this file was written (16 extra rows, all collisions: ``subprocess.run`` in ``_run_ephemeral``, ``core_guard.engage`` calling its own
 ``status``); it is not rerun here.
 
@@ -59,20 +62,30 @@ _LISTED: dict[str, tuple[frozenset[str], str]] = {
     "src/osm/places.py::build_search_index": (frozenset({"script"}), "scripts/osm_ingest.py, an operator tool that ingests one country and exits"),
     "src/osm/reader.py::available_memory_bytes": (frozenset({"script"}), "scripts/osm_ingest.py (as above)"),
     "src/osm/view.py::build_view_index": (frozenset({"script"}), "scripts/osm_ingest.py (as above)"),
-    "src/wiki/dump_index.py::build_index": (frozenset({"script"}), "the collection bench script's stage timing (a dev tool)"),
-    "src/wiki/dumpread.py::_read_stream_block": (frozenset({"script"}), "the collection bench script's stage timing (a dev tool)"),
-    "src/wiki/dumpread.py::iter_pages": (frozenset({"script"}), "the collection bench script's stage timing (a dev tool)"),
 }
 
-#: scope -> (the entry tokens that reach it by NAME only, and what the name collision is). An entry NOT in the set still fails.
-_DISMISSED: dict[str, tuple[frozenset[str], str]] = {
-    "src/monitoring/storage_events.py::update": (
-        frozenset({"main:src/monitoring/release_run_fresh_restore.py::main", "script"}),
-        "storage_events.run_ended calls `fields.update(...)`, a dict method, which the name-based graph reads as a call of this module's own update()",
-    ),
+#: scope -> (the entry tokens that reach it by NAME only, the colliding name, and what the collision is). The tokens must ALL vanish when that one name is
+#: followed only inside its own file (:func:`test_every_dismissed_token_is_owed_to_its_colliding_name`), so a real call through any other name still fails.
+_DISMISSED: dict[str, tuple[frozenset[str], str, str]] = {
     "src/osm/pbf.py::_records": (
         frozenset({"main:src/api/main.py::main", "event-loop"}),
+        "read_header",
         "forensics.pages_state_before_open calls read_header of monitoring/page_reading.py; osm/pbf.py defines a read_header too, and the graph cannot tell them apart",
+    ),
+    "src/wiki/dump_index.py::build_index": (
+        frozenset({"script"}),
+        "build_index",
+        "scripts/collect_throughput_bench.py reaches catalog/cities.py::cached_index, which calls ITS OWN build_index; wiki/dump_index.py defines one too",
+    ),
+    "src/wiki/dumpread.py::_read_stream_block": (
+        frozenset({"script"}),
+        "build_index",
+        "only wiki/dump_index.build_index calls it (through iter_pages), and that is reached by the name collision above",
+    ),
+    "src/wiki/dumpread.py::iter_pages": (
+        frozenset({"script"}),
+        "build_index",
+        "only wiki/dump_index.build_index calls it, and that is reached by the name collision above",
     ),
 }
 
@@ -143,7 +156,7 @@ def test_no_cleanup_covered_loop_outside_the_database_package_is_reachable_on_th
             problems.append(f"{ident}: no function of that name in the graph (a module or class body runs at import time on the main thread): convert it")
             continue
         tokens = _tokens(graph, ident, ambiguous, console)
-        dismissed = _DISMISSED.get(ident, (frozenset(), ""))[0]
+        dismissed = _DISMISSED.get(ident, (frozenset(), "", ""))[0]
         seen_dismissed[ident] |= tokens & dismissed
         real = tokens - dismissed
         mains = sorted(t for t in real if t.startswith("main:"))
@@ -162,7 +175,7 @@ def test_no_cleanup_covered_loop_outside_the_database_package_is_reachable_on_th
     for ident in _LISTED:
         if ident not in seen_scopes:
             problems.append(f"{ident}: listed but no longer a cleanup-covered loop head: delete the row")
-    for ident, (tokens, _why) in _DISMISSED.items():
+    for ident, (tokens, _name, _why) in _DISMISSED.items():
         if ident not in seen_scopes:
             problems.append(f"{ident}: dismissed but no longer a cleanup-covered loop head: delete the row")
         elif tokens - seen_dismissed[ident]:
@@ -174,9 +187,18 @@ def test_every_listed_row_has_a_reason_and_a_known_kind():
     for ident, (kinds, reason) in _LISTED.items():
         assert kinds and kinds <= {"script", "event-loop", "dev-tool"}, (ident, kinds)
         assert len(reason) > 20, (ident, reason)
-    for ident, (tokens, reason) in _DISMISSED.items():
-        assert tokens and all(t.startswith("main:") or t in {"script", "event-loop", "dev-tool"} for t in tokens), (ident, tokens)
+    for ident, (tokens, name, reason) in _DISMISSED.items():
+        assert name and tokens and all(t.startswith("main:") or t in {"script", "event-loop", "dev-tool"} for t in tokens), (ident, tokens)
         assert len(reason) > 20, (ident, reason)
+
+
+def test_every_dismissed_token_is_owed_to_its_colliding_name():
+    """A dismissal is only as wide as its collision: follow that one name inside its own file and every dismissed token must be gone."""
+    graph = _LocalGraph(read_sources())
+    ambiguous, console = _ambiguous(graph), _console_entries()
+    for ident, (tokens, name, _why) in _DISMISSED.items():
+        left = _tokens(graph, ident, ambiguous | {name}, console)
+        assert not (left & tokens), f"{ident}: {sorted(left & tokens)} still reach it with {name!r} cut, so they are not (only) the collision"
 
 
 def test_the_console_script_is_a_function_of_the_graph():
