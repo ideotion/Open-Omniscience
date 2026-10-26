@@ -69,7 +69,6 @@ never estimated, never a score.
 
 from __future__ import annotations
 
-import contextlib
 import copy
 import logging
 import threading
@@ -196,8 +195,6 @@ def _recount_started(key: str) -> float | None:
 def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> None:
     """Cache ``payload``. An entry with no bind is not stored: it could never pass
     the bind gate, so it would occupy a slot that can never be served."""
-    if bind is None:
-        return
     now = time.time()
     # A payload may carry ``__ttl_s__``: how long THIS entry stands before a recompute is considered. It is how a recorded
     # failure holds its stated window instead of being retried at the endpoint's normal interval (the retry is a scan).
@@ -207,6 +204,12 @@ def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> N
     # written": every poll past the TTL recomputes, and the compute decides what is still carried.
     if isinstance(payload, dict) and payload.pop("__unverified__", None):
         probe = None
+    # ``__discard__``: the payload was computed over a corpus that may have been swapped out while it ran; it is returned to the
+    # caller that asked and never stored, so the next poll computes again over the file that is there now.
+    if isinstance(payload, dict) and payload.pop("__discard__", None):
+        return
+    if bind is None:
+        return
     with _LOCK:
         _CACHE[key] = {
             "payload": payload,
@@ -365,8 +368,10 @@ def invalidate(key: str | None = None) -> None:
             _CACHE.pop(key, None)
     # State a caller keeps BESIDE the cache (a carried scan) is about the same corpus the entry was, so it goes with it.
     for hook in tuple(_INVALIDATE_HOOKS):
-        with contextlib.suppress(Exception):  # one caller's reset must not stop the swap that is invalidating
+        try:
             hook()
+        except Exception as exc:  # noqa: BLE001 - one caller's reset must not stop the swap that is invalidating
+            log_failure(_LOG, "served-cache invalidate hook failed", exc, level=logging.WARNING)
 
 
 #: Callables run by :func:`invalidate`: a module that carries a result outside ``_CACHE`` registers its reset here.

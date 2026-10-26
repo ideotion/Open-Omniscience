@@ -919,9 +919,11 @@ _STATUS_FAILURE_WINDOW_S = 1200
 _STATUS_MEMO_LOCK = _threading.Lock()
 #: The last finished scans: {"bind", "epoch", "total_articles", "indexed", "mentions", "duration_s", "finished_at" (epoch s)}. In
 #: memory only, so after a restart the first scans run at once and are measured again. Bound to the database they scanned by the
-#: engine OBJECT (a second engine never inherits them) AND by the corpus epoch: a restore, an unlock or a wipe keeps the one
-#: module-level engine object while the file under it is replaced, so identity alone says nothing (the trap
-#: ``source_country_rollup`` records). ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
+#: engine OBJECT (a second engine never inherits them) AND by the corpus epoch AND by a generation that ``served_cache.invalidate()``
+#: (a restore's swap, a VACUUM) bumps. The engine object alone says nothing: a swap keeps the one module-level engine while the
+#: file under it is replaced (the trap ``source_country_rollup`` records). The epoch is 0 on any file never bumped, so it tells
+#: two young corpora apart only when a re-index, prune, fold or restore-merge has bumped one of them: in practice the generation
+#: is what covers a swap. A panic wipe calls neither (``panic.py`` only drops the settings cache): stated limit, 0.5.1. ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
 #: difference of two readings taken together.
 _STATUS_MEMO: dict = {}
 #: When the last pair FAILED: {"bind", "epoch", "at" (epoch s), "payload" (the failure fields)}. It lives here, not in the cache
@@ -1037,6 +1039,8 @@ def _compute_status(db: Session) -> dict:
     from src.api.database import _failure_kind
     from src.database.maintenance import MemoryShort
 
+    with _STATUS_MEMO_LOCK:
+        generation = _STATUS_GENERATION[0]  # BEFORE the first read: an invalidate after this point makes every number below suspect
     out = q.status_totals(db)
     epoch = _corpus_epoch(db)
     carried = _carried_status_scans(db, epoch)
@@ -1047,10 +1051,12 @@ def _compute_status(db: Session) -> dict:
     held = _held_status_failure(db, epoch)
     if held is not None:
         out.update(held["payload"])
+        out["index_counts_failure"] = {
+            **held["payload"]["index_counts_failure"],
+            "retry_after_s": max(0, int(_STATUS_FAILURE_WINDOW_S - (_status_now_s() - held["at"]))),
+        }
         out["__unverified__"] = True
         return out
-    with _STATUS_MEMO_LOCK:
-        generation = _STATUS_GENERATION[0]
     deadline = _status_scan_deadline_s()
     started = _status_clock()
     try:
@@ -1092,7 +1098,7 @@ def _compute_status(db: Session) -> dict:
                 "mentions": mentions,
                 "index_counts_state": "counted",
                 "index_counts_computed_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                "__unverified__": True,  # not carried (no bind, or the corpus was swapped mid-scan): the next poll counts again
+                "__discard__": True,  # not carried and not cached (no bind, or the corpus was swapped mid-scan): counted over a file that may be gone
             }
         )
     else:

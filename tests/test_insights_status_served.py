@@ -348,7 +348,31 @@ def test_scans_that_were_running_when_the_corpus_was_swapped_are_not_remembered(
     _poll()
     _idle()
     assert insights._STATUS_MEMO == {}, "the pair was counted over the file that was swapped out"
-    assert _poll()["index_counts_state"] in ("counted", "computing")
+    with served_cache._LOCK:
+        assert insights._STATUS_KEY not in served_cache._CACHE, "nor is the payload served as 'counted' for a TTL"
+    monkeypatch.setattr(q, "status_mentions", real)
+    again = _poll()  # nothing cached: the next poll starts the count over the file that is there now
+    assert again["index_counts_state"] == "computing"
+    _idle()
+    assert _poll()["index_counts_state"] == "counted"
+
+
+def test_the_generation_is_read_before_the_first_read_of_the_database(monkeypatch):
+    """An invalidate between the totals read and the scans must not leave the scans looking current."""
+    real = q.status_totals
+    fired = []
+
+    def _swap_after_totals(session):
+        out = real(session)
+        if not fired:  # only the first read, the one before the scans (the scans' own total read must not swap again)
+            fired.append(1)
+            served_cache.invalidate()
+        return out
+
+    monkeypatch.setattr(q, "status_totals", _swap_after_totals)
+    _poll()
+    _idle()
+    assert insights._STATUS_MEMO == {}
 
 
 def test_a_failure_does_not_freeze_the_cheap_totals(monkeypatch, clock):
@@ -372,6 +396,7 @@ def test_a_failure_does_not_freeze_the_cheap_totals(monkeypatch, clock):
     assert later["total_articles"] == failed["total_articles"] + 1, "the totals refreshed inside the failure window"
     assert later["index_counts_state"] == "failed" and len(calls) == 1, "and no scan was retried"
     assert later["index_counts_failure"]["at"] == failed["index_counts_failure"]["at"]
+    assert later["index_counts_failure"]["retry_after_s"] == insights._STATUS_FAILURE_WINDOW_S - 60, "the time actually left"
     clock.advance(insights._STATUS_FAILURE_WINDOW_S)  # nothing written: the window ending alone must start the retry
     _poll()
     _idle()
