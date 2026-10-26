@@ -206,7 +206,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally.
 - **37. The `/api/database/figures` memo**: it is keyed without the engine identity, so the figures can be stale after a swap; 0.5.1.
 - **38. Panic wipe and the served memo**: the panic wipe must call `served_cache.invalidate()` after the wipe, so the served figures and
-  scan memo cannot answer with pre-wipe data; 0.5.1 (keyword lane).
+  scan memo cannot answer with pre-wipe data. Done in PR #1496 (keyword lane).
 - **39. The law corpus heal and the article-date rule**: `src/law/corpus.py` heal clears `published_at` without re-indexing, so the
   article-date rule (`coalesce(published_at, created_at)`) can move an article between periods; the heal must re-index or keep the
   date; 0.5.1 (Export lane, which owns the date rule).
@@ -214,8 +214,11 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   prefix, so a snapshot left by a crash survives until the next backup-route call; 0.5.1 (Export lane).
 - **41. A graceful-shutdown cancel during a long snapshot** leaves `.oo-backup-*/snapshot.db` until the next route call, at least 24 h
   later; the threadpool shields the native cancel; 0.5.1 (Export lane).
-- **42. The backup route and a client that goes away**: the route should watch `receive()` for `http.disconnect`, as
-  `RecordedFileResponse` does, so a gone client stops the read early and frees the single-flight claim; 0.5.1 (Export lane).
+- **42. The backup route and a client that goes away** (a stated limit, R235): `GET /api/database/backup` keeps streaming after the client
+  disconnects when Starlette is at the 1.5 to 1.7 floor; measured on a 20 GB sparse snapshot, 1.7.0 had not released after 60 s, 1.8.0
+  released in 0.02 s and 1.10.0 in 0.03 s, so the limit holds only for that floor. Raising the floor to 1.8.0 is a version-coupling
+  change (registry, `pyproject.toml` and the lock together) and a proposal, written in `audit-0.5.0/inputs/open-items.md` as «A-008 item
+  42 proposal»; 0.5.1 (Export lane).
 - **43. `tests/test_figures_cold_start.py` fails after the 58 files before it in the API shard** (Export lane, 0.5.1): its two tests (a cold
   route answers without the count and then carries it; a count past its deadline is a named failure held for its window) fail only when
   run after the 58 files that precede them in the API shard, and pass alone; identical on main before #1487. An order dependence on
