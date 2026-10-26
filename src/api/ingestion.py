@@ -13,6 +13,7 @@ across requests.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -398,6 +399,40 @@ _ATTACH_CAVEAT = (
 # path comfortably handles thousands.
 _MAX_UPLOAD_FILES = 5000
 
+# E4 (audit of 0.5.0, 2026-10-26): the upload used to read every .eml whole into one list before
+# parsing any, so the request's memory was the sum of every file plus the parse of the largest.
+# MEASURED (parse_email on one message with a base64 attachment, fresh process, peak RSS above the
+# bytes already read): 1.3 MiB -> +10 MiB, 25.6 MiB -> +200 MiB, 50.9 MiB -> +397 MiB, 101.6 MiB
+# -> +791 MiB, i.e. the parse holds about 7.8x the message on top of the message itself (synthetic
+# messages shaped like a newsletter with one large attachment; no real mail corpus exists to measure).
+#
+# _MAX_EML_BYTES protects the single worker's memory while ONE message is parsed: 36 MiB is above
+# the largest message the common providers carry (Gmail and Yahoo 25 MiB, Outlook.com about 34 MB,
+# Exchange Online's default about 35 MB), and the parse of one at the cap holds about 281 MiB. A
+# file over it is skipped without being read and counted in the tally (``skipped_oversize``, shown
+# in the import result); folder import is the path for a message that size.
+# _EML_BATCH_BYTES protects the same memory across files: messages are read and stored in rounds
+# whose held bytes stay under it, so a thousand ordinary newsletters no longer sit in memory at once.
+# That also answers the "total byte budget" the audit asked for: memory is bounded by this round
+# size, not by the upload, so no cap on the upload's total is needed (a 1.5 GB import of 5,000
+# ordinary newsletters is legitimate and is not refused). What the request body costs on disk
+# (Starlette spools file parts to a temporary file) is outside this bound and is a stated limit.
+_MAX_EML_BYTES = 36 * 1024 * 1024
+_EML_BATCH_BYTES = 64 * 1024 * 1024
+
+
+def _upload_size(f: Any) -> int:
+    """The spooled size of an uploaded file, without reading it."""
+    size = getattr(f, "size", None)
+    if isinstance(size, int):
+        return size
+    inner = f.file
+    here = inner.tell()
+    inner.seek(0, 2)
+    end = inner.tell()
+    inner.seek(here)
+    return end
+
 
 @router.post("/newsletters/import")
 async def import_newsletters(request: Request, db: Session = Depends(get_db)) -> dict:
@@ -428,17 +463,25 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
     # UploadFile has that attribute), and it narrows the UploadFile | str union
     # for the .read() below.
     files = [v for v in form.getlist("files") if isinstance(v, UploadFile)]
-    raws: list[bytes] = []
+    emls = []
     skipped_non_eml = 0
     for f in files:
         name = (getattr(f, "filename", "") or "").lower()
         if not name.endswith(".eml"):
             skipped_non_eml += 1
             continue
-        try:
-            raws.append(await f.read())
-        except Exception:
-            skipped_non_eml += 1
+        emls.append(f)
+    # Fail closed per file: a file over the cap is never read, parsed or stored, and is COUNTED
+    # (tally["skipped_oversize"]) so the person is told; the rest of the upload still imports. Only
+    # its NAME is ever in play, the body is not looked at or logged.
+    skipped_oversize = 0
+    keep = []
+    for f in emls:
+        if _upload_size(f) > _MAX_EML_BYTES:
+            skipped_oversize += 1
+        else:
+            keep.append(f)
+    emls = keep
     # Heavy sync work (parse + anonymise + index_article per message) runs OFF the
     # event loop -- this is an async def handler, so without this a multi-thousand-
     # message import freezes the single-worker server for its whole duration (the
@@ -455,19 +498,45 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
     from starlette.concurrency import run_in_threadpool
 
     source = await run_in_threadpool(_get_newsletter_source, db)
-    try:
-        tally = await run_in_threadpool(ingest_emails, db, source, raws)
-    except Exception as exc:  # ingest_emails is total; never let storage escape as a raw 500
-        await run_in_threadpool(db.rollback)
-        raise HTTPException(
-            status_code=500,
-            detail=http_detail(exc, "Newsletter import failed while storing: "),
-        ) from exc
+    tally: dict[str, int] = {}
+
+    async def _store(raws: list[bytes]) -> None:
+        try:
+            got = await run_in_threadpool(ingest_emails, db, source, raws)
+        except Exception as exc:  # ingest_emails is total; never let storage escape as a raw 500
+            await run_in_threadpool(db.rollback)
+            raise HTTPException(
+                status_code=500,
+                detail=http_detail(exc, "Newsletter import failed while storing: "),
+            ) from exc
+        for key, count in got.items():
+            tally[key] = tally.get(key, 0) + count
+
+    pending: list[bytes] = []
+    held = 0
+    for f in emls:
+        try:
+            data = await f.read(_MAX_EML_BYTES + 1)
+        except Exception:
+            skipped_non_eml += 1
+            continue
+        if len(data) > _MAX_EML_BYTES:
+            skipped_oversize += 1  # cannot happen after the size check above; counted, never parsed
+            continue
+        if pending and held + len(data) > _EML_BATCH_BYTES:
+            await _store(pending)
+            pending, held = [], 0
+        pending.append(data)
+        held += len(data)
+    if pending or not tally:
+        await _store(pending)
     tally["skipped_non_eml"] = skipped_non_eml
+    tally["skipped_oversize"] = skipped_oversize
     return {
         "source": source.name,
         "source_id": source.id,
         "received": len(files),
+        "max_eml_bytes": _MAX_EML_BYTES,
         "tally": tally,
     }
 

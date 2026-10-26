@@ -1448,6 +1448,7 @@
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
+          (tl.skipped_oversize ? ` · ${n(tl.skipped_oversize)} ${esc(t("too large (use folder import)"))}` : "") +
           `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`;
         input.value = "";
         toast(t("Newsletters imported."), "ok");

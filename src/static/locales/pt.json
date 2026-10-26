@@ -6552,6 +6552,7 @@
   "today": "hoje",
   "tokens": "tokens",
   "tone": "tom",
+  "too large (use folder import)": "grandes demais (use a importação de pasta)",
   "took {wall}, {gate} with writes paused": "demorou {wall}, {gate} disso com as escritas pausadas",
   "top 3 sources hold {pct}% of articles": "as 3 principais fontes detêm {pct}% dos artigos",
   "top {n} of {total}": "Top {n} de {total}",

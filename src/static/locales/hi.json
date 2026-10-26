@@ -6552,6 +6552,7 @@
   "today": "आज",
   "tokens": "टोकन",
   "tone": "टोन",
+  "too large (use folder import)": "बहुत बड़ी (फ़ोल्डर आयात का उपयोग करें)",
   "took {wall}, {gate} with writes paused": "{wall} लगे, जिसमें से {gate} के दौरान लेखन रुका रहा",
   "top 3 sources hold {pct}% of articles": "शीर्ष 3 स्रोतों में {pct}% लेख हैं",
   "top {n} of {total}": "शीर्ष {n} / {total}",
