@@ -803,8 +803,14 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     code unconditionally ran ``INSERT INTO article_fts(article_fts) VALUES ('rebuild')``,
     which for an external-content FTS5 table DELETES the whole index and re-reads every
     article's ``title`` + ``content`` from the base table through the SQLCipher codec — a
-    corpus-scaled cost that RECURRED on every boot (measured 981 s → 1,645 s on the field's
-    130 GB corpus; an index build would be one-time, this recurred). But the index is kept
+    corpus-scaled cost that RECURRED on every boot (an index build would be one-time, this
+    recurred). The field's unlock took 981 s, then 1,645 s, on two consecutive boots on
+    2026-07-09 (docs/product/SCALE_ROADMAP.md P0.4; the first export's database was 11.7 GB /
+    268,241 articles, the second's size is not recorded). That record is of the unlock as a
+    whole and does not split it by phase, so the share of it this rebuild took was never
+    measured; the fix was validated afterwards, on the maintainer's live runs (unlock 602 ms in
+    docs/product/RELEASE_0.2_GATE.md, 323 ms on 1,048,725 articles / 21.0 GB on 2026-08-12 in
+    docs/ledger/shipped.csv). But the index is kept
     current INCREMENTALLY by the ``article_fts_ai/ad/au`` triggers, so once populated it
     never needs a full rebuild on a normal boot.
 
@@ -987,7 +993,7 @@ def rebuild_with_current_tokenizer(con) -> dict:
     :func:`rebuild_index` fills it; one that already has the current tokenizer is rebuilt as is. The caller owns the
     transaction, so the drop, the create and the rebuild commit together or not at all: a run that dies half way
     leaves the old index and the old tokenizer, never an empty one. Only for a window the app is stopped in, or an
-    explicit re-index: the rebuild reads every article's text through the codec (981 to 1,645 s on a 130 GB corpus)."""
+    explicit re-index: the rebuild reads every article's text through the codec, a cost that grows with the corpus (see :func:`ensure_fts`)."""
     before = fts_tokenizer(con)
     if before is None:
         raise RuntimeError("there is no article index to rebuild")
