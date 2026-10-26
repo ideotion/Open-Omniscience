@@ -1,6 +1,6 @@
 # Release gate — v0.5.0 · The investigator's desk
 
-**Status: CLOSED at the `v0.5.0` tag (2026-10-XX) with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
+**Status: CLOSED at the `v0.5.0` tag (2026-10-26) with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
 checkable inventory for closing the `0.5` cycle. It exists now because the maintainer ruled (Q112 = a, Q1204 =
 a) that the gate files for 0.4–0.9 are written in one session from the answered sheet
 ([`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -98,7 +98,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 
 ---
 
-## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-XX, `R185`–`R187`)
+## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-26, `R185`–`R187`)
 
 `v0.5.0` is tagged with every row built and verified as far as a session can verify it: CI, fixtures, generated stores and
 Chromium walks on an encrypted install (`R126`). A row's closing artifact is the PR it names; the real-install step is a **named

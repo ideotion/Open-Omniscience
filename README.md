@@ -29,7 +29,7 @@
 
 ## Status — v0.5.0: the investigator's desk
 
-> **`0.5.0` is the current version** (tagged `v0.5.0`, a pre-release, 2026-10-XX). The `0.5`
+> **`0.5.0` is the current version** (tagged `v0.5.0`, a pre-release, 2026-10-26). The `0.5`
 > cycle is about **working a story**: one advanced search for every search need, a claim followed from
 > a headline to its sources, a place from a news article to its map, and a law or a Wikipedia page
 > through its revisions. Its long second half answered field reports from instances past a million

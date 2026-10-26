@@ -2,7 +2,7 @@
 
 > The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, and since then each `0.N` cycle has closed with **`v0.N.0`** — the `0.2` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), the `0.3` cycle produced **`0.3.0`, measured & verified** (tagged `v0.3.0`), the `0.4` cycle produced **`0.4.0`, living sources** (tagged `v0.4.0`), and the `0.5` cycle produced **`0.5.0`, the investigator's desk** (tagged `v0.5.0`; see the README’s version note and CONTRIBUTING’s cycle↔version table).
 
-## 0.5.0 — the investigator's desk (the `0.5` cycle, version set 2026-10-XX)
+## 0.5.0 — the investigator's desk (the `0.5` cycle, version set 2026-10-26)
 
 The `0.5` cycle is about **working a story**: asking one question across every search need, following
 a claim from a headline to its sources, a place from a news article to its map, and a law or a

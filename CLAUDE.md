@@ -178,7 +178,7 @@ finding things, or it finds so much that every answer is the same answer).
   0.1"/"onto 0.2" shipped-log entries are RECORDS of when those were the branch, not
   the current one. **TAGGED by the maintainer, each a GitHub pre-release: `v0.2.0`
   (2026-07-18, after the live P0 validation; the sequencing ruling is in the Open queue),
-  `v0.3.0` (2026-08-23, the 0.3 close per `RC01`), `v0.4.0` (2026-09-28) and `v0.5.0` (2026-10-XX).** `v0.4.0` was
+  `v0.3.0` (2026-08-23, the 0.3 close per `RC01`), `v0.4.0` (2026-09-28) and `v0.5.0` (2026-10-26).** `v0.4.0` was
   first cut where pyproject still read `0.3.0`, and `release.yml` refuses a tag ≠ the version:
   the fix is the `0.4.0` flip + the tag moved onto it (`RELEASE_0.4_GATE.md` row G); `v0.5.0` was cut on
   the flip commit itself. The 0.5.1 open items are `RELEASE_0.5_GATE.md` §1d.
