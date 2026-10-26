@@ -40,6 +40,14 @@ class EncryptionError(RuntimeError):
 
 
 def _derive(passphrase: bytes, salt: bytes, n: int, r: int, p: int) -> bytes:
+    # The cost comes out of the FILE's header on the read paths, so a crafted header could ask for an enormous scrypt (memory n*r*128 bytes, time linear in p).
+    # Every container this app has ever written carries exactly (_N, _R, _P) (git history of this module), so the reader accepts exactly that and refuses anything else
+    # as malformed BEFORE any work is done. WHAT THE BOUND PROTECTS: the memory of one derivation, n*r*128 = 32 MiB, measured 32.8 MiB peak growth and 0.11 s on this build;
+    # a header can no longer make a restore allocate more. WRITER AND READER SHARE ONE CONSTANT: the tuple accepted here IS the one the writers pack (_N, _R, _P), so changing the
+    # writer's cost changes what this accepts and a build can never refuse its own new files; the files an OLDER build wrote with other parameters would need their own entry here,
+    # in the commit that changes the constant (tests/test_crypto_header_bounds.py derives the accepted tuple from the constant and pins both directions).
+    if (n, r, p) != (_N, _R, _P):
+        raise EncryptionError("malformed encrypted header (unsupported key-derivation parameters)")
     return Scrypt(salt=salt, length=32, n=n, r=r, p=p).derive(passphrase)
 
 
