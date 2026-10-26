@@ -375,7 +375,8 @@ def _build_inmemory_and_swap() -> dict | None:
     ok = False
     _progress_begin()
     try:
-        rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"])
+        if not rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"]):
+            return {"reason": rollup_marker.ELSEWHERE, "at": time.time()}  # another server began a build between the check and now (R183)
         with session_scope() as s:
             # Token BEFORE the build (conservative: rows landing DURING the build make the
             # recorded token compare "changed" next check -> one extra rebuild, never a
@@ -1201,6 +1202,15 @@ def _build_and_swap() -> str:
             _refresh_persisted_build()
         else:
             stopped = _build_inmemory_and_swap()
+            from src.analytics import rollup_marker
+
+            if stopped is not None and stopped.get("reason") == rollup_marker.ELSEWHERE:
+                # R183: another server's build is running. Not a stop: no hold is kept (it would refuse real builds after that server is done), no build ran.
+                with _LOCK:
+                    _STATE["last_skip"] = {**stopped, "source": "last-build"}
+                ran = False
+                outcome = "declined"
+                return outcome
             if stopped is not None:
                 grew = observed = None
                 if isinstance(stopped.get("rss_mb"), (int, float)) and isinstance(

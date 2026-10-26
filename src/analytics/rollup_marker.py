@@ -23,6 +23,11 @@ build never reaches the build's ``finally``. ``begin`` therefore registers an ``
 on every exit Python gets to handle and never after a SIGKILL or the kernel's OOM killer, which is exactly
 the difference this file exists to see.
 
+SEVERAL SERVERS ON ONE DATA FOLDER (R176, R183): the record carries its owner (pid, start time, host, machine tag). A record whose owner is DEAD is a killed build (above). A record
+whose owner is ALIVE, or one this machine cannot judge (another host on a shared drive), is a build RUNNING ELSEWHERE: it is not a kill, so it never holds this server back as one;
+a second whole-corpus build beside it is what the memory guard exists to prevent, so it is declined, named ``build_running_elsewhere``, and tried again at the next request. A record
+with no owner (written before this field existed) is judged as before: a different process's record is a killed build.
+
 Honesty: counts and sizes only, written to ONE small JSON file in the data directory, replaced
 atomically. No path, no term, no article. A marker that cannot be written or read never blocks a
 build (a missing record is not evidence of a kill): the failure is logged and the build proceeds.
@@ -33,13 +38,14 @@ from __future__ import annotations
 import atexit
 import json
 import logging
-import os
 import threading
 import time
 import uuid
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
+from src.safety import process_owner
+from src.safety.file_lock import atomic_replace, file_lock
 
 _LOG = logging.getLogger(__name__)
 
@@ -75,14 +81,30 @@ _WRITE_LOCK = threading.Lock()
 _closed = False
 
 
+ELSEWHERE = "build_running_elsewhere"
+
+
 def _write(record: dict) -> None:
     with _WRITE_LOCK:
         if _closed:
             return  # the process is exiting normally: nothing may put the marker back
-        path = _path()
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_replace(_path(), json.dumps(record, sort_keys=True), fsync=False)
+
+
+def _owner_state(rec: dict) -> str | None:
+    """``alive`` / ``dead`` / ``unknown`` for the process that wrote ``rec``; ``None`` for a record with no owner field."""
+    owner = rec.get("owner")
+    if not isinstance(owner, dict) or not owner:
+        return None
+    return process_owner.record_state(owner, machine=process_owner.machine_tag())
+
+
+def running_elsewhere() -> dict | None:
+    """The record of a build ANOTHER process is running now (its owner alive, or one this machine cannot judge), else ``None``."""
+    rec = read()
+    if rec is None or rec.get("process") == _PROCESS_ID:
+        return None
+    return rec if _owner_state(rec) in ("alive", "unknown") else None
 
 
 def _exit_clear() -> None:
@@ -93,8 +115,11 @@ def _exit_clear() -> None:
     clear()
 
 
-def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | None) -> None:
-    """Record that a build is starting, with what this process holds and what the machine has."""
+def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | None) -> bool:
+    """Record that a build is starting, with what this process holds and what the machine has.
+
+    Returns ``False`` without writing when another process's build is running (checked and claimed under one file lock, so two servers that passed the pre-build check
+    together cannot both start); ``True`` otherwise, including when the record cannot be written (a missing record is not evidence of a kill)."""
     global _last_write, _peak_rss, _begin_rss, _exit_hook_registered, _last_stage
     _peak_rss = _begin_rss = rss_mb
     _last_stage = "start"
@@ -102,22 +127,27 @@ def begin(*, rss_mb: float | None, avail_mb: float | None, limit_mb: float | Non
         _exit_hook_registered = True
         atexit.register(_exit_clear)
     try:
-        _write({
-            "format": FORMAT,
-            "process": _PROCESS_ID,
-            "started_at": time.time(),
-            "stage": "start",
-            "rows_done": 0,
-            "rss_mb": rss_mb,
-            "rss_begin_mb": rss_mb,
-            "rss_peak_mb": rss_mb,
-            "avail_mb": avail_mb,
-            "duckdb_limit_mb": limit_mb,
-            "written_at": time.time(),
-        })
-        _last_write = time.monotonic()
+        with file_lock(_path()):
+            if running_elsewhere() is not None:
+                return False
+            _write({
+                "format": FORMAT,
+                "process": _PROCESS_ID,
+                "owner": process_owner.owner_record(),
+                "started_at": time.time(),
+                "stage": "start",
+                "rows_done": 0,
+                "rss_mb": rss_mb,
+                "rss_begin_mb": rss_mb,
+                "rss_peak_mb": rss_mb,
+                "avail_mb": avail_mb,
+                "duckdb_limit_mb": limit_mb,
+                "written_at": time.time(),
+            })
+            _last_write = time.monotonic()
     except Exception as exc:  # noqa: BLE001 - a marker that cannot be written must not stop the build
         log_failure(_LOG, "rollup marker: could not write the in-progress record", exc, level=logging.WARNING)
+    return True
 
 
 def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: float | None) -> None:
@@ -134,14 +164,15 @@ def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: floa
     if not changed and time.monotonic() - _last_write < _WRITE_EVERY_S:
         return
     try:
-        rec = read()
-        if rec is None or rec.get("process") != _PROCESS_ID:
-            return  # not ours to refresh
-        rec.update({
-            "stage": stage, "rows_done": int(rows_done), "rss_mb": rss_mb,
-            "rss_peak_mb": _peak_rss, "avail_mb": avail_mb, "written_at": time.time(),
-        })
-        _write(rec)
+        with file_lock(_path()):  # read-change-write: a second server's begin() checks this file under the same lock
+            rec = read()
+            if rec is None or rec.get("process") != _PROCESS_ID:
+                return  # not ours to refresh
+            rec.update({
+                "stage": stage, "rows_done": int(rows_done), "rss_mb": rss_mb,
+                "rss_peak_mb": _peak_rss, "avail_mb": avail_mb, "written_at": time.time(),
+            })
+            _write(rec)
         _last_write = time.monotonic()
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "rollup marker: progress write failed", exc, level=logging.DEBUG)
@@ -150,10 +181,11 @@ def progress(stage: str, rows_done: int, *, rss_mb: float | None, avail_mb: floa
 def clear() -> None:
     """The build ended by a path Python saw (done, declined, failed): remove our record."""
     try:
-        rec = read()
-        if rec is not None and rec.get("process") != _PROCESS_ID:
-            return  # a record of another process's build is not ours to remove
-        _path().unlink(missing_ok=True)
+        with file_lock(_path()):
+            rec = read()
+            if rec is not None and rec.get("process") != _PROCESS_ID:
+                return  # a record of another process's build is not ours to remove
+            _path().unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "rollup marker: clear failed", exc, level=logging.DEBUG)
 
@@ -168,11 +200,11 @@ def read() -> dict | None:
 
 
 def killed_build() -> dict | None:
-    """The record of a build that a DIFFERENT process started and never finished, else ``None``."""
+    """The record of a build that a DIFFERENT process started and never finished (its owner is dead, or the record names none), else ``None``."""
     rec = read()
     if rec is None or rec.get("process") == _PROCESS_ID:
         return None
-    return rec
+    return rec if _owner_state(rec) in (None, "dead") else None
 
 
 def retry_verdict(avail_mb: float | None, floor_mb: float) -> dict | None:
@@ -182,6 +214,16 @@ def retry_verdict(avail_mb: float | None, floor_mb: float) -> dict | None:
     (the app's own baseline is already taken out of the available figure by the new process, so counting
     it again would make an ordinary restart look unaffordable); a retry needs that much available plus
     the guard's floor. An unreadable reading is no evidence either way, so it never blocks."""
+    elsewhere = running_elsewhere()
+    if elsewhere is not None:
+        return {
+            "reason": ELSEWHERE,
+            "at": time.time(),
+            "other_started_at": elsewhere.get("started_at"),
+            "other_stage": elsewhere.get("stage"),
+            "other_rows_done": elsewhere.get("rows_done"),
+            "other_written_at": elsewhere.get("written_at"),
+        }
     rec = killed_build()
     if rec is None or avail_mb is None:
         return None

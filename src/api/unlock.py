@@ -254,7 +254,7 @@ def _alone_with_the_library() -> Iterator[None]:
     still winding down when the encryption ends (``stop()`` joins for 10 s only) would otherwise keep the response, and the drain's
     refusal, for up to 19 x 30 s after the store was already encrypted. The pending-resume watcher takes it over, as it does for any
     resume that finds the old pass alive."""
-    from src.database.corpus_lease import wait_for_quiescence
+    from src.database.corpus_lease import foreign_note, wait_for_quiescence
     from src.scheduler.runner import exclusive_window
 
     with exclusive_window(resume_retries=0):
@@ -264,7 +264,7 @@ def _alone_with_the_library() -> Iterator[None]:
                 status_code=409,
                 detail="another job is still writing to the library ("
                 + ", ".join(held)
-                + f") after waiting {ENCRYPT_QUIESCE_S:.0f} s; nothing was encrypted",
+                + f") after waiting {ENCRYPT_QUIESCE_S:.0f} s; nothing was encrypted" + foreign_note(held),
             )
         yield
 
