@@ -146,15 +146,21 @@ fire("click", el({"data-on-click": "probeThrow();probe('after')"}));
 assert.strictEqual(calls.length, 1, "the statement after a throwing one still ran");
 assert.ok(errors.some((e) => e.includes("boom")), "the error was logged, not swallowed");
 
-// 8. ooOpenUrl refuses anything but a path on this app
+// 8. ooOpenUrl refuses anything but a path on this app. "On this app" is decided by RESOLVING the path
+//    the way the browser will: a URL parser reads a backslash as a slash, so a slash then a backslash
+//    then a host (or the same written as a \\u005c escape, which the binding grammar decodes) starts with "/"
+//    and not "//" and still names another origin (audit A-010).
 let opened = [];
-global.open = (u) => opened.push(u);
-for (const u of ["https://example.org/", "//evil.example/x", "javascript:alert(1)", "data:x"]) {
+global.location = {origin: "http://127.0.0.1:8000"};
+global.open = (u, target, features) => opened.push([u, target, features]);
+for (const u of ["https://example.org/", "//evil.example/x", "javascript:alert(1)", "data:x",
+                 "/\\\\evil.example/x", "/\\u005cevil.example/x", "/\\\\\\\\evil.example/x", "\\\\evil.example/x",
+                 "/\\u005c/evil.example/x", "api/relative"]) {
   fire("click", el({"data-on-click": `ooOpenUrl('${u}')`}));
 }
 assert.deepStrictEqual(opened, []);
 fire("click", el({"data-on-click": "ooOpenUrl('/api/catalog/export.csv')"}));
-assert.deepStrictEqual(opened, ["/api/catalog/export.csv"]);
+assert.deepStrictEqual(opened, [["http://127.0.0.1:8000/api/catalog/export.csv", "_blank", "noopener"]]);
 
 console.error = realError; console.warn = realWarn;
 console.log("oo_on_node_test.js: OK");

@@ -31,9 +31,11 @@ def _isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(rollup_serve, "_build_budget", lambda: {"duckdb_limit_mb": 1004.0, "offload_allowed": False})
     keep = {k: rollup_serve._STATE.get(k) for k in ("stopped", "failures", "failure_class", "last_outcome", "last_decline", "last_skip")}
     rollup_serve._STATE.update(stopped=None, failures=0, failure_class=None, last_outcome=None, last_decline=None, last_skip=None)
+    rollup_serve._STATE.pop("last_outcome_restored", None)
     monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", False)
     yield
     rollup_serve._STATE.update(keep)
+    rollup_serve._STATE.pop("last_outcome_restored", None)
 
 
 def _run(monkeypatch, builds, *, raises=None, stage="aggregate"):
@@ -116,6 +118,29 @@ def test_a_restart_keeps_the_count_but_not_the_hold(monkeypatch):
     assert _run(monkeypatch, builds, raises=RuntimeError("b")) == "failed" and builds, "the first build after a restart runs"
     assert rollup_serve._STATE["stopped"]["consecutive_failures"] == 2, "the count carried over"
     assert _run(monkeypatch, builds, raises=RuntimeError("c")) == "declined" and len(builds) == 1, "and the second is held again"
+
+
+def test_a_restart_hands_over_how_the_last_build_ended_beside_the_count_it_hands_over(monkeypatch):
+    """The kept record carried ``consecutive_failures`` across a restart but not ``last_outcome``, so the status read
+    ``consecutive_failures: 3`` beside ``last_outcome: null`` until this process built something. The outcome is the record's, said so
+    (``last_outcome_restored``), and replaced, with the mark cleared, by the first build of this process."""
+    _run(monkeypatch, [], raises=RuntimeError("a"))
+    _run(monkeypatch, [], raises=RuntimeError("b"))  # declined by the hold: ``last_outcome`` keeps saying failed
+    rollup_serve._STATE.update(stopped=None, failures=0, failure_class=None, last_outcome=None)  # a new process
+    monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", False)
+    st = rollup_serve.status()
+    assert st["consecutive_failures"] == 1 and st["last_failure_class"] == "RuntimeError"
+    assert st["last_outcome"] == "failed" and st["last_outcome_restored"] is True
+    assert _run(monkeypatch, [], raises=RuntimeError("c")) == "failed"
+    after = rollup_serve.status()
+    assert after["last_outcome"] == "failed" and "last_outcome_restored" not in after, "this process's own build replaced it"
+    assert after["consecutive_failures"] == 2
+
+
+def test_a_restart_with_no_failures_kept_reports_no_outcome_it_never_had(monkeypatch):
+    st = rollup_serve.status()
+    assert "last_outcome" not in st and "last_outcome_restored" not in st
+    assert rollup_serve._STATE.get("last_outcome") is None
 
 
 def test_the_hold_is_released_by_what_releases_the_duckdb_limit_hold(monkeypatch):

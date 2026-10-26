@@ -716,9 +716,15 @@
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
 
-    async function ingestUrl() {
-      const url = $("ing-url").value.trim();
-      const id = $("ing-source").value;
+    async function ingestUrl(btn) {
+      // Fields from the panel the pressed button sits in, not the first element of the page with
+      // the id (audit A-004).
+      const panel = btn && btn.closest ? btn.closest("section") : null;
+      const urlBox = panel && panel.querySelector("#ing-url");
+      const srcBox = panel && panel.querySelector("#ing-source");
+      if (!urlBox || !srcBox) return;
+      const url = urlBox.value.trim();
+      const id = srcBox.value;
       if (!url) { toast("Enter a URL.", "err"); return; }
       if (!id) { toast("Select a source to attribute it to.", "err"); return; }
       $("ingest-result").textContent = "Fetching…";
@@ -727,7 +733,7 @@
           body: JSON.stringify({source_id: Number(id), url})});
         $("ingest-result").innerHTML = `Result: <span class="pill ${r.result==='stored'?'ok':'warn'}">${esc(r.result)}</span>` +
           (r.detail ? ` — ${esc(r.detail)}` : "");
-        if (r.result === "stored") { $("ing-url").value = ""; doSearch({refresh: true}); }
+        if (r.result === "stored") { urlBox.value = ""; doSearch({refresh: true}); }
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
 

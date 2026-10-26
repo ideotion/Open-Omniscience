@@ -737,7 +737,7 @@ def run_full(
         report["plaintext_caveat"] = (
             "PLAINTEXT corpus: every SQLCipher codec cost is ABSENT from these numbers. "
             "Do NOT use this report for scale-acceptance decisions; regenerate the "
-            "corpus with --passphrase and assert corpus.encrypted == true."
+            "corpus with a passphrase ($OO_DB_PASSPHRASE or --passphrase-stdin) and assert corpus.encrypted == true."
         )
     phase_out: dict[str, Any] = report["phases"]
 
