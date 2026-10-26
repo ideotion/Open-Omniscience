@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import itertools
 import logging
 import os as _os
 import threading as _threading
@@ -30,6 +29,7 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
+from src.api import served_cache
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.countries import country_param
@@ -81,11 +81,25 @@ class InsightsStatus(_CacheEnvelopeFields):
     """Shape of ``queries.status`` -- indexing progress + corpus totals."""
 
     total_articles: int
-    indexed_articles: int
-    remaining: int
     keywords: int
     entities: int
-    mentions: int
+    # The three figures that need a full pass over the mention index are ``None`` while that pass has not finished (or failed),
+    # with ``index_counts_state`` saying which; never a zero standing for "not known".
+    indexed_articles: int | None = None
+    remaining: int | None = None
+    mentions: int | None = None
+    index_counts_state: str | None = None  # "counted" | "computing" | "failed"
+    index_counts_computed_at: str | None = None
+    index_counts_recount_after_s: int | None = None
+    index_counts_reason: str | None = None
+    index_counts_failure: dict | None = None
+    # The disclosure :mod:`src.api.served_cache` attaches to every payload it serves.
+    as_of: str | None = None
+    cache_age_s: int | None = None
+    verified_current: bool | None = None
+    recount_running_s: int | None = None
+    pending: bool | None = None
+    pending_since: str | None = None
 
 
 class SourceTypeFacet(BaseModel):
@@ -861,58 +875,263 @@ def _reset_status_probe_for_tests() -> None:
         _PROBE_ENGINES.clear()
 
 
-_NOPROBE_SEQ = itertools.count()
+# --------------------------------------------------------------------------- #
+# /status: the two whole-index scans run in the BACKGROUND, carried in proportion to their cost
+# --------------------------------------------------------------------------- #
+#
+# ``/api/insights/status`` is polled every 6 s by the Insights tab. It used to be keyed on ``PRAGMA data_version``, which changes
+# on every commit by any connection, so during a collection pass (a commit per batch, ``index_article`` inside it) EVERY poll was a
+# miss and ran two whole-table scans of the mention index on the request thread, with no deadline and no concurrency cap
+# (audit 0.5.0, A-002; ``count(*)`` over about 12 M mentions measured 55 s, 182 s under other load, on the field corpus).
+# It now goes through :mod:`src.api.served_cache` like ``/api/database/figures``: the totals (index-backed, exact now) answer at
+# once, the two scans run once at a time on a background thread under a statement deadline, and a finished scan is carried for ten
+# times its own measured duration. The scan fields are ``null`` with a named state while they are not known, never a zero.
+
+#: Seconds before a served status is considered for a background recompute (when something was written). A recompute inside the
+#: scans' window refreshes only the index-backed totals and starts no scan. Matches the Home stats interval (15 s).
+_STATUS_TTL_S = 15
+
+#: The served-cache key, namespaced because the cache dict is process-global and shared with the database and library routes.
+_STATUS_KEY = "insights:status"
+
+#: The statement deadline of EACH background scan, in seconds. It protects the pooled connection and the read snapshot a scan
+#: holds (an open read pins the WAL from checkpointing), not the request, which no longer waits on it. The field's worst measured
+#: ``count(id)`` over this index is 182 s (diagnostics of 2026-10-16: ``SELECT count(keyword_mentions_all.id)``, 182,137 ms, on an
+#: ENCRYPTED store -- ``at_rest_state: "unlocked-encrypted"``, 6.7 GB file, 2 CPUs -- so no plaintext-to-SQLCipher factor applies
+#: to it); the figures count, the same shape, measured 55 s under less load. The OTHER scan here, ``count(distinct article_id)``,
+#: measured 1.2 to 1.4 times ``count(id)`` cold on a synthetic 12 M-row PLAINTEXT index (2026-10-26), and 1.2 to 1.7 times on
+#: RC2's SQLCipher indexes at 12 M and 36 M rows (``rc-diagnostics/remeasure-a002-2026-10-26.md``; ratios transfer, its absolute
+#: seconds do not). So its worst on the field box is INFERRED at 1.4 x 182 = 255 s (310 s at the 1.7 worst ratio): a floor-ish
+#: estimate, not a bound. 500 s is 1.6 times 310 s (the worst measured ratio) and 2.0 times 255 s. A scan that passes it is a
+#: named, retried failure, not a wrong number. ``OO_STATUS_SCAN_DEADLINE_S`` changes it; 0 disables it.
+_STATUS_SCAN_DEADLINE_S = 500.0
+
+#: A finished pair of scans is carried, not repeated, for this many times its own measured duration: the same factor #1439 gave the
+#: figures count (``_FIGURES_COUNT_DUTY_FACTOR``), which caps the scans at 1/10 of one core, what the collectors on a 2-core box
+#: need. The window is shorter than ``_STATUS_TTL_S`` only when the scans take under 1.5 s, where they simply repeat.
+_STATUS_SCAN_DUTY_FACTOR = 10
+
+#: How long a scan that failed is NOT retried, in seconds: 1,200 s. Each of the two scans has its OWN deadline, so a pair that
+#: fails on its second scan has spent up to twice the deadline (1,000 s) before it is thrown away: a failing corpus holds a
+#: connection and a snapshot for at most 1,000 s in every 2,200 s. The figures use 900 s for their 300 s deadline.
+_STATUS_FAILURE_WINDOW_S = 1200
+
+_STATUS_MEMO_LOCK = _threading.Lock()
+#: The last finished scans: {"bind", "epoch", "total_articles", "indexed", "mentions", "duration_s", "finished_at" (epoch s)}. In
+#: memory only, so after a restart the first scans run at once and are measured again. Bound to the database they scanned by the
+#: engine OBJECT (a second engine never inherits them) AND by the corpus epoch AND by a generation that ``served_cache.invalidate()``
+#: (a restore's swap, a VACUUM) bumps. The engine object alone says nothing: a swap keeps the one module-level engine while the
+#: file under it is replaced (the trap ``source_country_rollup`` records). The epoch is 0 on any file never bumped, so it tells
+#: two young corpora apart only when a re-index, prune, fold or restore-merge has bumped one of them: in practice the generation
+#: is what covers a swap. A panic wipe calls neither (``panic.py`` only drops the settings cache): stated limit, 0.5.1. ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
+#: difference of two readings taken together.
+_STATUS_MEMO: dict = {}
+#: When the last pair FAILED: {"bind", "epoch", "at" (epoch s), "payload" (the failure fields)}. It lives here, not in the cache
+#: entry's TTL, so the cheap totals keep refreshing while the failure stands; a retry happens when the window ends.
+_STATUS_FAILURE: dict = {}
+#: Bumped whenever the carried state is forgotten, so a scan that was already running when the corpus was swapped does not
+#: store its numbers afterwards.
+_STATUS_GENERATION = [0]
 
 
-def _noprobe_key(bind) -> str:
-    """The probe-unavailable fallback key: TRULY per-call, so it can never produce a
-    wrong cache hit (it only loses caching). The old fallback keyed on ``id(db)`` — a
-    per-request Session address that CPython recycles, so within the cache TTL a LATER
-    request's Session could land on the same address and hit an entry computed for a
-    different engine (wrong corpus) or for a pre-write snapshot (with the probe down,
-    writes are invisible — the ALPHA lesson: per-connection state is blind on pools).
-    A monotonic nonce cannot recur; the bind id keeps the key attributable per engine;
-    the SimpleCache max_size bounds the one-shot entries."""
-    qualifier = f"e{id(bind)}" if bind is not None else "nobind"
-    return "|".join(["status", "noprobe", qualifier, str(next(_NOPROBE_SEQ))])
+def _status_now_s() -> float:
+    return _time.time()
 
 
-def _status_cache_key(db: Session) -> str:
-    """A DATA-AWARE cache key for /status: the session's DB bind + the SQLite
-    ``PRAGMA data_version`` read on a PINNED probe connection (:func:`_data_version`).
+def _status_clock() -> float:
+    """The monotonic clock the scans are timed with (a seam, so a test can move it)."""
+    return _time.monotonic()
 
-    Repeat polls with no intervening write reuse the same key (a cache HIT — the whole
-    point, collapsing the field's 172 repeated full counts); a commit by ANY connection
-    bumps ``data_version`` so the progress number stays live (honest, never stale-through-a-
-    write — including a write on a DIFFERENT pooled connection than the poller's, the case
-    the old same-connection probe missed); and a different DB (a test fixture on its own
-    engine) gets a different ``id(bind)``, so a cached status is never served for the wrong
-    corpus. Probe unavailable/failed -> :func:`_noprobe_key` (per-call, never a wrong hit)."""
-    parts = ["status"]
-    bind = None
+
+def _forget_status_scans() -> None:
+    """Forget the carried scans and any recorded failure. Run by ``served_cache.invalidate`` (a restore's swap, a VACUUM) and by
+    the tests: what was counted is about the file that was there before."""
+    with _STATUS_MEMO_LOCK:
+        _STATUS_MEMO.clear()
+        _STATUS_FAILURE.clear()
+        _STATUS_GENERATION[0] += 1
+
+
+served_cache.on_invalidate(_forget_status_scans)
+
+
+def _corpus_epoch(db: Session) -> int:
+    from src.analytics.corpus_epoch import get_corpus_epoch
+
+    return get_corpus_epoch(db)
+
+
+def _status_scan_deadline_s() -> float:
+    try:
+        return float(_os.environ.get("OO_STATUS_SCAN_DEADLINE_S", _STATUS_SCAN_DEADLINE_S))
+    except ValueError:
+        return _STATUS_SCAN_DEADLINE_S
+
+
+def _same_database(db: Session, held: dict, epoch: int) -> bool:
+    """Whether ``held`` (the memo or the failure record) was made over the database ``db`` reads now."""
+    try:
+        return bool(held) and db.get_bind() is held["bind"] and held["epoch"] == epoch
+    except Exception:  # noqa: BLE001 - any doubt about the database -> scan again
+        return False
+
+
+def _carried_status_scans(db: Session, epoch: int) -> dict | None:
+    """The previous scans, when still inside their cost-proportional window and made over this database; else None."""
+    with _STATUS_MEMO_LOCK:
+        memo = dict(_STATUS_MEMO)
+    if not _same_database(db, memo, epoch):
+        return None
+    return memo if _status_now_s() - memo["finished_at"] < _STATUS_SCAN_DUTY_FACTOR * memo["duration_s"] else None
+
+
+def _held_status_failure(db: Session, epoch: int) -> dict | None:
+    """The recorded failure, while its retry window stands over this database; else None (and the scans run again)."""
+    with _STATUS_MEMO_LOCK:
+        failure = dict(_STATUS_FAILURE)
+    if not _same_database(db, failure, epoch):
+        return None
+    return failure if _status_now_s() - failure["at"] < _STATUS_FAILURE_WINDOW_S else None
+
+
+def _remember_status_scans(
+    db: Session, epoch: int, generation: int, total: int, indexed: int, mentions: int, duration_s: float,
+) -> dict | None:
     try:
         bind = db.get_bind()
-        parts.append(str(id(bind)))
-        if getattr(getattr(bind, "dialect", None), "name", "") == "sqlite":
-            dv = _data_version(bind)
-            if dv is None:
-                return _noprobe_key(bind)
-            parts.append(dv)
-    except Exception:  # noqa: BLE001 - any probe failure -> a per-call key (never a wrong hit)
-        return _noprobe_key(bind)
-    return "|".join(parts)
+    except Exception:  # noqa: BLE001 - without a bind the scans cannot be told apart from another database's
+        return None
+    memo = {
+        "bind": bind, "epoch": epoch, "total_articles": total, "indexed": indexed, "mentions": mentions,
+        "duration_s": duration_s, "finished_at": _status_now_s(),
+    }
+    with _STATUS_MEMO_LOCK:
+        if _STATUS_GENERATION[0] != generation:
+            return None  # the carried state was forgotten while these scans ran: they may be about the file that was swapped out
+        _STATUS_MEMO.clear()
+        _STATUS_FAILURE.clear()
+        _STATUS_MEMO.update(memo)
+    return memo
+
+
+def _status_scan_fields(memo: dict) -> dict:
+    """The scan fields of the payload, with WHEN they were counted and how long they are carried: ``remaining`` is the difference of
+    the two readings taken together at that moment, not of today's total."""
+    return {
+        "indexed_articles": memo["indexed"],
+        "remaining": max(0, memo["total_articles"] - memo["indexed"]),
+        "mentions": memo["mentions"],
+        "index_counts_state": "counted",
+        "index_counts_computed_at": datetime.fromtimestamp(memo["finished_at"], UTC).isoformat(timespec="seconds"),
+        "index_counts_recount_after_s": int(_STATUS_SCAN_DUTY_FACTOR * memo["duration_s"]),
+    }
+
+
+def _compute_status(db: Session) -> dict:
+    """The background computation: the index-backed totals, then the two mention scans, each under a statement deadline.
+
+    A scan that cannot finish is a NAMED failure (``index_counts_state: "failed"`` with its kind, deadline, time and retry window),
+    and the failure is held for that window instead of being tried again per poll. A finished pair is carried for
+    ``_STATUS_SCAN_DUTY_FACTOR`` times its measured duration. Either way a recompute inside the window refreshes the cheap totals
+    and starts no scan, and the entry is stored UNVERIFIED (``__unverified__``): the write probe vouches for the totals, never for
+    a count taken earlier, so the window ending is noticed even when nothing was written."""
+    from src.api.database import _failure_kind
+    from src.database.maintenance import MemoryShort
+
+    with _STATUS_MEMO_LOCK:
+        generation = _STATUS_GENERATION[0]  # BEFORE the first read: an invalidate after this point makes every number below suspect
+    out = q.status_totals(db)
+    epoch = _corpus_epoch(db)
+    carried = _carried_status_scans(db, epoch)
+    if carried is not None:
+        out.update(_status_scan_fields(carried))
+        out["__unverified__"] = True
+        return out
+    held = _held_status_failure(db, epoch)
+    if held is not None:
+        out.update(held["payload"])
+        out["index_counts_failure"] = {
+            **held["payload"]["index_counts_failure"],
+            "retry_after_s": max(0, int(_STATUS_FAILURE_WINDOW_S - (_status_now_s() - held["at"]))),
+        }
+        out["__unverified__"] = True
+        return out
+    deadline = _status_scan_deadline_s()
+    started = _status_clock()
+    try:
+        with statement_deadline(db, deadline):
+            indexed = q.status_indexed_articles(db)
+        total = q.status_totals(db)["total_articles"]
+        with statement_deadline(db, deadline):
+            mentions = q.status_mentions(db)
+    except Exception as exc:  # noqa: BLE001 - a failed scan is recorded, never raised into a poller
+        fields = {
+            "indexed_articles": None,
+            "remaining": None,
+            "mentions": None,
+            "index_counts_state": "failed",
+            "index_counts_failure": {
+                "kind": _failure_kind(type(exc), MemoryShort, StatementTimeout),
+                "deadline_s": deadline,
+                "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "retry_after_s": _STATUS_FAILURE_WINDOW_S,
+            },
+        }
+        out.update(fields)
+        out["__unverified__"] = True
+        with contextlib.suppress(Exception):
+            bind = db.get_bind()
+            with _STATUS_MEMO_LOCK:
+                if _STATUS_GENERATION[0] == generation:
+                    _STATUS_FAILURE.clear()
+                    _STATUS_FAILURE.update({"bind": bind, "epoch": epoch, "at": _status_now_s(), "payload": fields})
+        with contextlib.suppress(Exception):
+            db.rollback()  # the interrupted statement leaves the transaction unusable for the next caller of this session
+        return out
+    memo = _remember_status_scans(db, epoch, generation, total, indexed, mentions, max(_status_clock() - started, 0.001))
+    if memo is None:
+        out.update(
+            {
+                "indexed_articles": indexed,
+                "remaining": max(0, total - indexed),
+                "mentions": mentions,
+                "index_counts_state": "counted",
+                "index_counts_computed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "__discard__": True,  # not carried and not cached (no bind, or the corpus was swapped mid-scan): counted over a file that may be gone
+            }
+        )
+    else:
+        out.update(_status_scan_fields(memo))
+    return out
+
+
+def _status_pending(db: Session) -> dict:
+    """What a cold request is answered with while the scans run: the totals, exact now, and the scan fields as NOT YET KNOWN."""
+    out = q.status_totals(db)
+    out.update(
+        {
+            "indexed_articles": None,
+            "remaining": None,
+            "mentions": None,
+            "index_counts_state": "computing",
+            "index_counts_reason": "counting the keyword index in the background; the totals are exact now",
+        }
+    )
+    return out
 
 
 @router.get("/status", response_model=InsightsStatus)
 def insights_status(db: Session = Depends(get_db)) -> dict:
     """Indexing progress + corpus keyword/entity totals.
 
-    POLLED by the Insights "N to index" ticker. Served through a DATA-AWARE cache
-    (:func:`_status_cache_key`) so a burst of identical polls does not re-run the corpus
-    counts every time (the field's 124 s of repeated full scans), while a write still
-    invalidates it so the progress stays live. The counts themselves are the REAL, exact
-    values (q.status)."""
-    return _cached(_status_cache_key(db), lambda: q.status(db))
+    POLLED every 6 s by the Insights "N to index" ticker, so a poll never waits on a scan. The totals (articles, keywords,
+    entities) are exact at ``as_of``; the three figures that need a full pass over the mention index (``indexed_articles``,
+    ``remaining``, ``mentions``) are computed once in the BACKGROUND, under a statement deadline, and carried for ten times their
+    measured duration (``index_counts_computed_at`` says when, ``index_counts_recount_after_s`` for how long). Until the first
+    pass lands they are ``null`` with ``index_counts_state: "computing"``; a pass that cannot finish is ``"failed"`` with its
+    kind, deadline and retry window. The values are the same exact counts the route always returned (:func:`q.status`), never an
+    estimate and never a score."""
+    return served_cache.cached(_STATUS_KEY, _compute_status, db, ttl_s=_STATUS_TTL_S, cold_payload=_status_pending)
 
 
 @router.post("/reindex")

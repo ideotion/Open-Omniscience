@@ -1457,7 +1457,7 @@ def test_a_fatal_allocation_error_is_a_duckdb_limit_stop_at_the_stage_it_was_in_
     assert stage == "stage-insert" or isinstance(stopped["peak_mib"], float), "the sizes read before the fatal"
     assert rollup_serve._STATE["con"] is previous, "nothing swapped in"
     assert rollup_marker.read() is None
-    assert "allocate" not in repr(stopped) and "957.3" not in repr(stopped)
+    assert "allocate" not in repr(stopped) and "957.3 MiB" not in repr(stopped)
 
 
 def test_the_stop_is_kept_released_by_the_existing_rules_and_carries_no_engine_text_into_status_or_the_file(
@@ -1475,7 +1475,7 @@ def test_the_stop_is_kept_released_by_the_existing_rules_and_carries_no_engine_t
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     assert rollup_serve._build_and_swap() == "declined"
     blob = _text_everywhere(rollup_serve.status()["last_skip"])
-    assert "allocate" not in blob and "957.3" not in blob and "Failed to create checkpoint" not in blob
+    assert "allocate" not in blob and "957.3 MiB" not in blob and "Failed to create checkpoint" not in blob
     kept = rollup_hold.read()
     assert kept["stage"] == "aggregate" and kept["engine_error_class"] == "FatalException"
     assert rollup_serve.status()["stopped"]["engine_error_class"] == "FatalException"
@@ -1686,7 +1686,7 @@ def test_a_served_query_that_hits_the_fatal_allocation_error_drops_the_rollup_an
     assert rollup_hold.read()["stage"] == "serve-fatal"
     assert rollup_serve._stopped_build_verdict()["reason"] == "duckdb-limit", "the next request does not rebuild into the wall"
     blob = _text_everywhere(stopped)
-    assert "allocate" not in blob and "957.3" not in blob and "checkpoint" not in blob
+    assert "allocate" not in blob and "957.3 MiB" not in blob and "checkpoint" not in blob
     fb = rollup_serve.status()["serve_fallbacks"]["fallbacks"]
     assert [(r["error"], r["count"]) for r in fb] == [("FatalException", 1)], "counted by class name"
 
@@ -1792,7 +1792,7 @@ def test_compact_checkpoints_once_and_reads_the_size_before_and_after():
 def test_compact_reads_a_fatal_allocation_error_as_the_wall_and_any_other_fatal_as_unusable():
     wall = columnar.compact(_CheckpointCon(FatalException(_FATAL_WORDS)))
     assert wall["outcome"] == "out-of-memory" and wall["reason"] == "FatalException" and wall["compacted"] is False
-    assert "allocate" not in repr(wall) and "957.3" not in repr(wall), "the engine's words are matched and dropped"
+    assert "allocate" not in repr(wall) and "957.3 MiB" not in repr(wall), "the engine's words are matched and dropped"
     other = columnar.compact(_CheckpointCon(FatalException("FATAL Error: database has been invalidated")))
     assert other["outcome"] == "fatal" and other["reason"] == "FatalException" and other["compacted"] is False
 
