@@ -351,7 +351,7 @@ def test_the_test_clients_own_host_name_is_served_only_when_the_operator_lists_i
     monkeypatch.delenv("OO_ALLOWED_HOSTS")
     assert _from(client, origin="http://testserver:8000", host="testserver:8000").status_code == 403
     assert _from(client, origin="http://testserver", host="testserver").status_code == 403
-    assert _from(client, origin="http://testserver:8000", host="localhost:8000").status_code == 403
+    assert _from(client, origin="http://testserver:8000", host="localhost:8000").status_code == 403  # the hostname-equality rule, whatever the allow-set holds
     assert client.get("/api/health", headers={"Host": "testserver"}).status_code == 421
     monkeypatch.setenv("OO_ALLOWED_HOSTS", "testserver")
     assert _from(client, origin="http://testserver:8000", host="testserver:8000").status_code == 200

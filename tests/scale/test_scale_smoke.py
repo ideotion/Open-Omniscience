@@ -94,6 +94,7 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
         "OO_AUTOSEED": "0",
     }
     env.pop("OO_DB_PLAINTEXT", None)
+    env.pop("OO_ALLOWED_HOSTS", None)  # the suite lists ``testserver`` there; the tool must reach the app the way an operator's run does (R226)
     proc = subprocess.run(
         [
             sys.executable,
