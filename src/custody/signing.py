@@ -183,6 +183,14 @@ def _wrap(plaintext: bytes, passphrase: bytes) -> bytes:
     return salt + nonce + ct
 
 
+def _mldsa_plain_len() -> int:
+    """The length of an UNWRAPPED ML-DSA key file (public key + secret key), read from a throwaway pair
+    generated now and never stored, so no size constant of the library has to be trusted. Only the failed-unwrap
+    path asks (1.6 ms measured for a whole ML-DSA round trip)."""
+    pk, sk = _mldsa.generate_keypair()
+    return len(pk) + len(sk)
+
+
 def _unwrap(blob: bytes, passphrase: bytes) -> bytes:
     salt, nonce, ct = blob[:16], blob[16:28], blob[28:]
     key = Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(passphrase)
@@ -312,11 +320,29 @@ class HybridSigner:
                 try:
                     data = _unwrap(blob, self._pp)
                 except Exception:  # noqa: BLE001 - GCM tag check failed
-                    # Legacy plaintext key from before the passphrase existed:
-                    # the failed unwrap is deterministic proof it is not wrapped.
+                    # A failed tag check proves only that this blob is not WRAPPED UNDER THIS
+                    # passphrase: it is equally what a wrong passphrase and an altered file look
+                    # like (``_wrap`` writes no magic prefix). A legacy plaintext key from before
+                    # the passphrase existed is told apart by its LENGTH, which is exactly
+                    # public key + secret key; anything else is refused, never used as a key
+                    # (audit 0.5.0 A-018: the still-wrapped blob used to be split into a
+                    # garbage key pair and signed with, silently).
+                    if len(blob) != _mldsa_plain_len():
+                        raise SigningError(
+                            "the ML-DSA custody key could not be unwrapped with the passphrase held "
+                            "(a wrong passphrase, or the key file was altered)"
+                        ) from None
                     self._legacy_plain = True
                     data = blob
             else:
+                # No passphrase held: only a blob of exactly the plain key length is a plaintext
+                # key; a longer one is still wrapped, and splitting it would sign with garbage
+                # (the same defect as above, audit 0.5.0 A-018, read-response).
+                if len(blob) != _mldsa_plain_len():
+                    raise SigningError(
+                        "the ML-DSA custody key is wrapped but no passphrase is held "
+                        "(unlock the app first)"
+                    )
                 data = blob
             pk_len = _mldsa.PUBLIC_KEY_SIZE
             return data[:pk_len], data[pk_len:]

@@ -30,7 +30,7 @@
       if (!_docList.length) { $("doc-nav").innerHTML = '<div class="muted">Docs unavailable.</div>'; return; }
       $("doc-nav").innerHTML = _docList.map(d =>
         `<button class="doc-link ${d.slug === _docSlug ? "active" : ""}" ${d.available ? "" : "disabled"}
-           data-on-click="openDoc('${d.slug}')">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
+           data-on-click="openDoc(${esc(JSON.stringify(d.slug))})">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
       if (!_docSlug) openDoc((_docList.find(d => d.slug === "user-manual") || _docList[0] || {}).slug);
     }
     // `anchor` (2026-09-09) is optional and additive: the omnibar's Help-content group
@@ -1202,7 +1202,7 @@
                step="${step}" data-default="${esc(String(tn.default))}">
         <span class="muted card-tune-range">${esc(t("safe range"))} ${range}</span>
         <button class="ghost tiny card-tune-reset" ${changed ? "" : "disabled"}
-                data-on-click="cardResetTunable('${esc(prod)}','${esc(tn.key)}')"
+                data-on-click="cardResetTunable(${esc(JSON.stringify(prod))},${esc(JSON.stringify(tn.key))})"
                 title="${esc(t("Put this back to the value the app ships with."))}">${esc(t("Reset"))}</button>
         <div class="hint card-tune-impact">${esc(tn.impact)}${
           tn.floor_reason ? ` <span class="card-tune-floor">${esc(tn.floor_reason)}</span>` : ""}</div>
@@ -1448,6 +1448,7 @@
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
+          (tl.skipped_oversize ? ` · ${n(tl.skipped_oversize)} ${esc(t("too large (use folder import)"))}` : "") +
           `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`;
         input.value = "";
         toast(t("Newsletters imported."), "ok");

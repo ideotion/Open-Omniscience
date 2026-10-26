@@ -84,7 +84,7 @@
       host.innerHTML =
         `<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">`
         + `<div><b style="font-size:1.15em">${esc(_fmtBytes(total))}</b> <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
-        + `<button class="secondary" style="font-size:11px;padding:2px 8px" data-on-click="renderStorageFootprint('${esc(host.id)}', true)">${esc(t("Re-measure"))}</button></div>`
+        + `<button class="secondary" style="font-size:11px;padding:2px 8px" data-on-click="renderStorageFootprint(${esc(JSON.stringify(host.id))}, true)">${esc(t("Re-measure"))}</button></div>`
         + `<div class="muted" style="font-size:11px;margin:3px 0 8px"${d.method ? ` title="${esc(d.method)}"` : ""}>`
         // Honest label (no fabricated security): the private sum includes -shm + backup
         // staging, which are NOT necessarily encrypted — so it is "Private (local)", with the
