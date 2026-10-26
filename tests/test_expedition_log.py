@@ -188,3 +188,53 @@ def test_the_refresh_rides_the_hourly_recorder_it_reads_from():
     ref = src.index("expedition.refresh(session)")
     assert ref > snap, "the digest must refresh AFTER the snapshot it composes from"
     assert 'get("armed")' in src, "an unarmed machine must write nothing"
+
+
+def test_the_log_is_replaced_through_a_unique_temp(dd, monkeypatch):
+    """R176: two servers on one folder shared one fixed ``.json.tmp``; the temp now carries the pid and thread."""
+    import os
+
+    seen = []
+    real = os.replace
+    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    expedition._write({"k": 1})
+    assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen
+    assert not list(dd.glob("*.tmp*"))
+
+
+def _waits_for_the_file_lock(dd, call):
+    """``call`` runs on a thread while the main thread holds the file's lock: it must not finish until the lock is let go (a read-change-write outside it can write
+    back the log another server changed in between)."""
+    import threading
+
+    from src.safety.file_lock import file_lock
+
+    finished = threading.Event()
+    with file_lock(dd / "expedition.json"):
+        threading.Thread(target=lambda: (call(), finished.set()), daemon=True).start()
+        assert not finished.wait(0.5), "the read-change-write did not wait for the file's lock"
+    assert finished.wait(10)
+
+
+def test_recording_an_event_waits_for_the_files_lock(dd, series):
+    _waits_for_the_file_lock(dd, lambda: expedition.record_event("probe", "x"))
+    assert any(e["kind"] == "probe" for e in expedition._read()["events"])
+
+
+def test_arming_and_disarming_wait_for_the_files_lock(dd, series):
+    _waits_for_the_file_lock(dd, lambda: expedition.arm(note="n"))
+    assert expedition._read()["armed"] is True
+    _waits_for_the_file_lock(dd, lambda: expedition.disarm("r"))
+    assert expedition._read()["armed"] is False
+
+
+def test_a_refresh_keeps_an_event_recorded_while_its_counters_were_being_read(dd, series, monkeypatch):
+    expedition.arm(note="n")
+
+    def slow_series(session, metric, *, days):
+        expedition.record_event("during", "recorded by another server while the counters are read")
+        return {"metric": metric}
+
+    monkeypatch.setattr(expedition, "_series_window", slow_series)
+    expedition.refresh(None)
+    assert any(e["kind"] == "during" for e in expedition._read()["events"]), "the refresh wrote back the log it had read before the event"

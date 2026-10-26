@@ -21,6 +21,8 @@ import logging
 import re
 from dataclasses import asdict, dataclass
 
+from src.safety.file_lock import atomic_replace
+
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-app-settings-1"
@@ -301,9 +303,7 @@ def _read_raw_strict() -> dict | None:
 def _write_raw(payload: dict) -> None:
     if not _use_kv():
         path = _settings_path()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
-        tmp.replace(path)  # atomic on the same filesystem
+        atomic_replace(path, json.dumps(payload, indent=2, sort_keys=True), fsync=False)  # a temp named for the process and thread, moved over the file (R176)
         return
     from src.config.kv_store import kv_set_json
 

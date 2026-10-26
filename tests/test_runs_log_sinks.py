@@ -485,7 +485,7 @@ def test_an_expedition_file_that_cannot_be_written_logs_the_failure_scrubbed_wit
     def refused(*args, **kwargs):
         raise OSError(28, f"No space left on device ({SECRET})")
 
-    monkeypatch.setattr(ex.os, "replace", refused)
+    monkeypatch.setattr("src.safety.file_lock.os.replace", refused)
     caplog.set_level(logging.DEBUG)
     _inside_another_failure(lambda: ex._write({"armed": True}))
     assert "OSError" in _the_one_record(caplog, "could not persist expedition.json").getMessage()

@@ -36,6 +36,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger("scheduler.memstop")
 
@@ -115,9 +116,7 @@ def _write(record: dict[str, Any]) -> int | None:
                 record = {k: record[k] for k in ("kind", "session_id", "pid", "at", "uptime_s", "decision", "cut") if k in record}
                 record["cut"]["left_out"] = sorted(set(record["cut"]["left_out"]) | {"steps", "in_flight_at_start", "exclusive"})
                 text = json.dumps(record, indent=1, default=str)
-        tmp = _path().with_suffix(".json.tmp")
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, _path())
+        atomic_replace(_path(), text, fsync=False)
         return len(text.encode("utf-8"))
     except OSError as exc:
         log_failure(_LOG, "memory stop: the record could not be written", exc, level=logging.WARNING)

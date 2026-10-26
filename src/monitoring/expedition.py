@@ -43,12 +43,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock
 
 _LOG = logging.getLogger(__name__)
 
@@ -84,6 +84,11 @@ def _path():
     return data_dir() / "expedition.json"
 
 
+def _held():
+    """The file's cross-process lock for a read-change-write (R176): two servers recording an event at once must not each write back the log they read."""
+    return file_lock(_path())
+
+
 def _read() -> dict[str, Any]:
     try:
         return json.loads(_path().read_text(encoding="utf-8"))
@@ -97,9 +102,7 @@ def _write(state: dict[str, Any]) -> None:
     write path added for resilience must itself degrade, never raise)."""
     try:
         p = _path()
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-        os.replace(tmp, p)
+        atomic_replace(p, json.dumps(state, indent=1), fsync=False)
     except OSError as err:
         log_failure(_LOG, "could not persist expedition.json", err, level=logging.WARNING)
 
@@ -116,28 +119,30 @@ def arm(*, safety: dict[str, Any] | None = None, note: str = "") -> dict[str, An
     """Mark the start of an unattended run. Idempotent in the sense that re-arming an
     already-armed run keeps the ORIGINAL ``started_at`` — the window a returning operator
     cares about is the whole absence, not the last button press."""
-    state = _read()
-    if not state.get("armed"):
-        state = {
-            "armed": True,
-            "started_at": _now_iso(),
-            "events": state.get("events", [])[-_MAX_EVENTS:],
-            "events_dropped": int(state.get("events_dropped", 0)),
-        }
-    state["armed"] = True
-    state["safety"] = safety or {}
-    if note:
-        state["note"] = note
-    _write(state)
+    with _held():
+        state = _read()
+        if not state.get("armed"):
+            state = {
+                "armed": True,
+                "started_at": _now_iso(),
+                "events": state.get("events", [])[-_MAX_EVENTS:],
+                "events_dropped": int(state.get("events_dropped", 0)),
+            }
+        state["armed"] = True
+        state["safety"] = safety or {}
+        if note:
+            state["note"] = note
+        _write(state)
     record_event("armed", note or "unattended run armed")
     return state
 
 
 def disarm(reason: str = "") -> dict[str, Any]:
-    state = _read()
-    state["armed"] = False
-    state["ended_at"] = _now_iso()
-    _write(state)
+    with _held():
+        state = _read()
+        state["armed"] = False
+        state["ended_at"] = _now_iso()
+        _write(state)
     record_event("disarmed", reason or "unattended run disarmed")
     return _read()
 
@@ -145,15 +150,16 @@ def disarm(reason: str = "") -> dict[str, Any]:
 def record_event(kind: str, message: str) -> None:
     """Append one notable event, trimming the ring. Best-effort; never raises."""
     try:
-        state = _read()
-        events = list(state.get("events") or [])
-        events.append({"t": _now_iso(), "kind": str(kind)[:32], "message": str(message)[:400]})
-        if len(events) > _MAX_EVENTS:
-            dropped = len(events) - _MAX_EVENTS
-            state["events_dropped"] = int(state.get("events_dropped", 0)) + dropped
-            events = events[-_MAX_EVENTS:]
-        state["events"] = events
-        _write(state)
+        with _held():
+            state = _read()
+            events = list(state.get("events") or [])
+            events.append({"t": _now_iso(), "kind": str(kind)[:32], "message": str(message)[:400]})
+            if len(events) > _MAX_EVENTS:
+                dropped = len(events) - _MAX_EVENTS
+                state["events_dropped"] = int(state.get("events_dropped", 0)) + dropped
+                events = events[-_MAX_EVENTS:]
+            state["events"] = events
+            _write(state)
     except Exception as err:  # noqa: BLE001 - a log that breaks the run defeats its own purpose
         log_failure(_LOG, "expedition event not recorded", err, level=logging.WARNING)
 
@@ -258,13 +264,17 @@ def refresh(session) -> dict[str, Any]:
     state = _read()
     days = _window_days(state)
     try:
-        state["counters"] = [_series_window(session, m, days=days) for m in _TRACKED]
-        state["window_days"] = days
-        state["refreshed_at"] = _now_iso()
+        counters = [_series_window(session, m, days=days) for m in _TRACKED]  # the slow part, outside the lock
     except Exception as err:  # noqa: BLE001
         log_failure(_LOG, "expedition refresh failed", err, level=logging.WARNING)
         return state
-    _write(state)
+    # Read again under the lock and change only what this call computed: an event another server recorded while the counters were being read stays.
+    with _held():
+        state = _read()
+        state["counters"] = counters
+        state["window_days"] = days
+        state["refreshed_at"] = _now_iso()
+        _write(state)
     return state
 
 

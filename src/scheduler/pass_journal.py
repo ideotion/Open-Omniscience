@@ -42,6 +42,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _LOG = logging.getLogger(__name__)
 
@@ -85,8 +86,7 @@ def _readings() -> dict[str, float]:
 def _append(record: dict[str, Any]) -> None:
     try:
         with _LOCK:
-            with _path().open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record) + "\n")
+            locked_append(_path(), json.dumps(record) + "\n")
     except OSError as exc:
         log_failure(_LOG, f"could not append to {_FILE}", exc, level=logging.DEBUG)
 
@@ -96,15 +96,14 @@ def trim() -> None:
     try:
         with _LOCK:
             p = _path()
-            try:
-                lines = p.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                return
-            if len(lines) <= _MAX_LINES:
-                return
-            tmp = p.with_suffix(".jsonl.tmp")
-            tmp.write_text("\n".join(lines[-_MAX_LINES:]) + "\n", encoding="utf-8")
-            os.replace(tmp, p)
+            with file_lock(p):
+                try:
+                    lines = p.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    return
+                if len(lines) <= _MAX_LINES:
+                    return
+                atomic_replace(p, "\n".join(lines[-_MAX_LINES:]) + "\n", fsync=False)
     except OSError as exc:
         log_failure(_LOG, f"could not trim {_FILE}", exc, level=logging.DEBUG)
 
