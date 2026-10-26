@@ -121,8 +121,9 @@ _KILLER_TAGS = ("systemd-oomd", "earlyoom", "nohang", "systemd-coredump")
 
 #: How many serialised bytes of the session-forensics headroom the core-dump stack may use, the whole ``stack`` member included. WHAT IT
 #: PROTECTS: the 2,415 B headroom above the diagnostics floor. The sum of every member's MEASURED worst case, three launcher_stderr sessions at
-#: 319 B, died_into_phase 75, native_in_flight 181 (key included), the thread census 150, this 570 and crashing_thread_kind 440 (WAL's), is
-#: 2,373 B (tests/test_session_forensics_budget.py builds each with the real code and goes red if any grows): 42 B are unspent.
+#: 319 B, died_into_phase 75, native_in_flight 181 (key included), the thread census 150, this 570, crashing_thread_kind 407 (eleven places of
+#: 37 B) and dispose 75, is 2,415 B (tests/test_session_forensics_budget.py builds each with the real code and goes red if any grows): NONE is
+#: unspent, so the next member is paid for by shrinking one of these or by a ruled move of the floor, never by the room.
 COREDUMP_STACK_BYTES = 570
 _COREDUMP_HEAD = re.compile(r"systemd-coredump\S*:\s+Process\s+(\d+)\s+\(")
 _COREDUMP_KEEP = re.compile(r"^(?:Stack trace of thread \d+:|#\d+\s)")
