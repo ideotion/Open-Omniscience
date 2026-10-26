@@ -79,14 +79,21 @@ def _real_window_and_tick(tmp_path, monkeypatch):
     return gov, json.loads(line), len(line) + 1
 
 
+#: The least a real tick row measured when the windows were paid for: the event-loop watchdog measuring, no vitals (Export's re-measure,
+#: /mnt/project-files/audit-0.5.0/inputs/remeasure-1464.md; the tick this test builds, ``_real_window_and_tick``, has no ``start()`` and so
+#: is not the least a real tick is). A RECORDED constant, not the live tick: a later trim of the tick only makes the zip smaller than it was
+#: when the trade was made, and a pin against the live tick would fail on that.
+_LEAST_TICK_BYTES_AT_THE_TRADE = 1552
+
+
 def test_the_window_rows_cost_no_more_bytes_than_the_ticks_each_copy_gave_up(tmp_path, monkeypatch):
     """The budget is the serialised bytes of the largest shape, not a count: a window row at its widest (every number at its longest,
-    the shape taken from the governor's own record) against the least a real tick row measures, plus the member's envelope. Uncompressed
-    ``debug-bundle.json`` bytes: the archive deflates it, which is not the claim."""
+    the shape taken from the governor's own record) plus the member's envelope, against the ticks each copy gave up at the least a real tick
+    measured. Uncompressed ``debug-bundle.json`` bytes: the archive deflates it, which is not the claim."""
     from src.api import diagnostics as d
     from src.scheduler.bandwidth import BandwidthGovernor
 
-    gov, tick_row, tick_bytes = _real_window_and_tick(tmp_path, monkeypatch)
+    _gov, tick_row, _tick_bytes = _real_window_and_tick(tmp_path, monkeypatch)
     # the fixture's window carries exactly the keys the governor writes, so a new field cannot slip into every row unmeasured
     from tests.test_bandwidth_governor import _windows
 
@@ -99,5 +106,7 @@ def test_the_window_rows_cost_no_more_bytes_than_the_ticks_each_copy_gave_up(tmp
               "cpu_saturated_share": 0.99, "decision": "saturated-at-floor"}
     row = len(json.dumps(widest, separators=(",", ":"))) + 1
     envelope = len(json.dumps({"windows": [], "held": 99999, "kept": 99999, "partial": True, "reason": None, "skipped_rows": 99999}))
-    assert d._DEBUG_BUNDLE_SLIM_PERF_WINDOWS * row + envelope <= (20 - d._DEBUG_BUNDLE_SLIM_PERF_TICKS) * tick_bytes
-    assert d._DEBUG_BUNDLE_PERF_WINDOWS * row + envelope <= (200 - d._DEBUG_BUNDLE_PERF_TICKS) * tick_bytes
+    assert d._DEBUG_BUNDLE_SLIM_PERF_WINDOWS * row + envelope <= (
+        d._DEBUG_BUNDLE_SLIM_PERF_TICKS_NO_WINDOWS - d._DEBUG_BUNDLE_SLIM_PERF_TICKS) * _LEAST_TICK_BYTES_AT_THE_TRADE
+    assert d._DEBUG_BUNDLE_PERF_WINDOWS * row + envelope <= (
+        d._DEBUG_BUNDLE_PERF_TICKS_NO_WINDOWS - d._DEBUG_BUNDLE_PERF_TICKS) * _LEAST_TICK_BYTES_AT_THE_TRADE

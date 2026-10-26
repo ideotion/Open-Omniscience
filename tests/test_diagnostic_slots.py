@@ -526,12 +526,27 @@ def test_the_slim_bundle_keeps_collect_perf_to_its_newest_ticks(db, monkeypatch)
 
     asked, windows = [], []
     monkeypatch.setattr(cp, "recent_samples", lambda limit=200: asked.append(limit) or [])
-    monkeypatch.setattr(cp, "window_history", lambda limit=None: windows.append(limit) or {"windows": []})
+    monkeypatch.setattr(cp, "window_history", lambda limit=None: windows.append(limit) or {"windows": [{"decision": "hold"}]})
     _bundle(db, True)
     _bundle(db, False)
-    assert d._DEBUG_BUNDLE_SLIM_PERF_TICKS == 17 and d._DEBUG_BUNDLE_PERF_TICKS == 192
-    assert asked == [17, 192], "each copy asks for the ticks that are left once the window rows are paid for"
+    assert d._DEBUG_BUNDLE_SLIM_PERF_TICKS == 17 and d._DEBUG_BUNDLE_PERF_TICKS == 191
+    assert asked == [17, 191], "each copy asks for the ticks that are left once the window rows are paid for"
     assert windows == [11, 31], "each copy asks for the newest closed windows its freed ticks pay for"
+
+
+def test_a_log_without_a_closed_window_gives_up_no_ticks(db, monkeypatch):
+    """Nothing to pay for: a target-mode log closes no window and an unreadable log has none to show, so the copies keep the ticks they
+    kept before the window rows, and the windows member still says why it is empty."""
+    import src.monitoring.collect_perf as cp
+
+    for history in ({"windows": [], "reason": "no window closed"}, {"windows": None, "reason": "no log"}):
+        asked = []
+        monkeypatch.setattr(cp, "recent_samples", lambda limit=200, asked=asked: asked.append(limit) or [])
+        monkeypatch.setattr(cp, "window_history", lambda limit=None, history=history: history)
+        slim, whole = _bundle(db, True), _bundle(db, False)
+        assert asked == [20, 200], history
+        assert slim["collect_perf_windows"] == history and whole["collect_perf_windows"] == history
+        assert slim["slim"]["collect_perf_newest_ticks"] == 20
 
 
 def test_only_an_explicit_true_slims_the_bundle(db):
