@@ -403,7 +403,7 @@ down is a RECORD of that date and carries its own disposition table.)*
   hostname, the proxy must forward `Host` and `X-Forwarded-Proto` (uvicorn applies the scheme from
   `127.0.0.1` and `::1` only, `FORWARDED_ALLOW_IPS` widens that), and a proxy that hides the scheme
   is refused (403). A `Host` header that does not name this loopback API is refused (421, a
-  DNS-rebinding guard); `OO_ALLOWED_HOSTS` (comma-separated hostnames, no port) is the escape
+  DNS-rebinding guard); `OO_ALLOWED_HOSTS` (comma-separated hostnames, no port; an IPv6 literal is written with its brackets, as `[fe80::1]`) is the escape
   hatch for serving the app under another name and widens both checks; every non-Swagger
   response carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
   `frame-ancestors 'none'`. CORS ships `allow_credentials=False`.

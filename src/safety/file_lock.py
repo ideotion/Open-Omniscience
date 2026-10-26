@@ -175,7 +175,7 @@ def _flush_directory(path: Path) -> None:
     filesystem cannot, the replace stands and :func:`_skip_directory_flush` names why. Any other failure (EIO, a full disk reported only here) is raised, as the
     file's own flush does: the new file is then in place and may not survive a power cut, which the caller is told."""
     if sys.platform == "win32":
-        _skip_directory_flush("windows cannot flush a folder")
+        _skip_directory_flush("this build does not flush a folder on windows")
         return
     fd: int | None = None
     try:

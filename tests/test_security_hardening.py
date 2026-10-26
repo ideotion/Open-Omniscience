@@ -344,6 +344,32 @@ def test_a_tls_proxy_that_forwards_the_scheme_is_the_documented_route(client, mo
     assert behind_proxy.post("/api/briefing/refresh", headers={"Origin": "https://myhost.lan"}).status_code in (403, 421)
 
 
+def test_the_test_clients_own_host_name_is_not_a_name_an_origin_may_carry(client, monkeypatch):
+    """The Host guard serves ``testserver`` (Starlette's TestClient stamps it). An Origin may not carry it: a page served from a
+    name that resolves to an attacker and is then rebound to loopback would otherwise pass this check as well as the Host guard."""
+    assert _from(client, origin="http://testserver:8000", host="testserver:8000").status_code == 403
+    assert _from(client, origin="http://testserver", host="testserver").status_code == 403
+    # an operator who lists the name themselves has said they serve it
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "testserver")
+    assert _from(client, origin="http://testserver:8000", host="testserver:8000").status_code == 200
+
+
+def test_an_over_long_port_in_the_host_header_is_refused_not_a_server_error(client):
+    """``int()`` of a run of more than 4,300 digits raises; the middleware answered 500 where the old guard answered 200."""
+    r = _from(client, origin="http://localhost:8000", host="localhost:" + "9" * 5000)
+    assert r.status_code == 403
+
+
+def test_a_bracketed_ipv6_name_in_oo_allowed_hosts_works_for_both_guards(client, monkeypatch):
+    """The Host guard reads ``[fe80::1]:8000`` as ``[fe80::1]``; urlparse hands the Origin's name back without its brackets. An
+    operator who lists the bracketed spelling (as the docs say) must get past both, and the port is still checked."""
+    host = "[fe80::1]:8000"
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "[fe80::1]")
+    assert _from(client, origin="http://[fe80::1]:8000", host=host).status_code == 200
+    assert _from(client, origin="http://[fe80::1]:9999", host=host).status_code == 403
+    assert _from(client, origin="http://[fe80::2]:8000", host=host).status_code == 403
+
+
 def test_the_two_readers_agree_on_odd_values():
     from src.api.main import _host_header_parts, _origin_parts
 
@@ -358,7 +384,7 @@ def test_the_two_readers_agree_on_odd_values():
     assert _host_header_parts("[::1]:8000", "http") == ("::1", 8000)
     assert _host_header_parts("[::1]", "http") == ("::1", 80)
     assert _host_header_parts("::1", "http") == ("::1", 80)  # a raw IPv6 literal has no port
-    for bad in ("localhost:", "localhost:abc", "localhost:0", "localhost:65536", "localhost:-1", "[::1]x"):
+    for bad in ("localhost:", "localhost:abc", "localhost:0", "localhost:65536", "localhost:-1", "[::1]x", "localhost:" + "9" * 5000):
         assert _host_header_parts(bad, "http") is None, bad
 
 

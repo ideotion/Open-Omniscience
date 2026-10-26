@@ -23,6 +23,10 @@ from src.safety import file_lock
 from src.safety.file_lock import atomic_replace, locked_append, temp_name
 from src.safety.file_lock import file_lock as lock
 
+# the folder's flush is not attempted on Windows (``_flush_directory`` returns early and counts the skip), so a test that expects a folder
+# event or a reason other than "this build does not flush a folder on windows" has nothing to observe there
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the folder flush is not attempted on Windows")
+
 ROOT = str(Path(file_lock.__file__).parents[2])
 
 
@@ -204,7 +208,8 @@ def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
     atomic_replace(f, "b", fsync=False, sweep_every_s=300.0)
     assert synced == [] and len(swept) == 1, "a throttled writer swept twice, or synced when told not to"
     atomic_replace(f, "c")
-    assert len(synced) == 2 and len(swept) == 2, "a flushed replace flushes the file and then its folder"
+    # the file and then its folder (the folder's flush is not attempted on Windows)
+    assert len(synced) == (1 if sys.platform == "win32" else 2) and len(swept) == 2, "a flushed replace flushes the file and then its folder"
     assert f.read_text(encoding="utf-8") == "c"
 
 
@@ -440,6 +445,7 @@ def _recording_fsync(monkeypatch, *, on_folder=None):
     return events
 
 
+@posix_only
 def test_a_flushed_replace_flushes_the_file_then_moves_it_then_flushes_the_folder(tmp_path, monkeypatch):
     events = _recording_fsync(monkeypatch)
     target = tmp_path / "state.json"
@@ -455,6 +461,7 @@ def test_a_replace_that_does_not_ask_for_a_flush_flushes_neither_the_file_nor_th
     assert [e[0] for e in events] == ["replace"], events
 
 
+@posix_only
 def test_a_filesystem_that_cannot_flush_a_folder_still_replaces_and_the_reason_is_counted_and_said_once(tmp_path, monkeypatch, capsys):
     def einval(fd):
         raise OSError(errno.EINVAL, "no folder flush here")
@@ -472,6 +479,7 @@ def test_a_filesystem_that_cannot_flush_a_folder_still_replaces_and_the_reason_i
     assert str(tmp_path) not in err, "the note carries no folder"
 
 
+@posix_only
 def test_a_folder_that_cannot_be_opened_is_skipped_with_the_cause_named(tmp_path, monkeypatch):
     import os
 
@@ -496,9 +504,10 @@ def test_windows_is_skipped_by_name_and_the_file_is_still_flushed(tmp_path, monk
     monkeypatch.setattr(file_lock, "_DIR_FLUSH_SKIPPED", {})
     atomic_replace(tmp_path / "state.json", "new")
     assert [e[0] for e in events] == ["file", "replace"], events
-    assert list(file_lock.directory_flush_skips()) == ["windows cannot flush a folder"]
+    assert list(file_lock.directory_flush_skips()) == ["this build does not flush a folder on windows"]
 
 
+@posix_only
 def test_a_failed_folder_flush_is_raised_with_the_new_file_in_place_and_no_temp_left(tmp_path, monkeypatch):
     """Any failure but 'this filesystem has no such flush' means the move may not survive a power cut, which the file's own flush also refuses to hide."""
 
@@ -515,6 +524,7 @@ def test_a_failed_folder_flush_is_raised_with_the_new_file_in_place_and_no_temp_
     assert [p.name for p in tmp_path.iterdir() if ".tmp" in p.name] == []
 
 
+@posix_only
 def test_an_interrupt_in_the_folder_flush_closes_the_folder_it_opened(tmp_path, monkeypatch):
     import os
 
@@ -525,12 +535,19 @@ def test_an_interrupt_in_the_folder_flush_closes_the_folder_it_opened(tmp_path, 
         raise KeyboardInterrupt
 
     _recording_fsync(monkeypatch, on_folder=interrupted)
+    closed: list[int] = []
+    real_close = os.close
+
+    def recording_close(fd):
+        closed.append(fd)
+        real_close(fd)
+
+    monkeypatch.setattr(os, "close", recording_close)
     with pytest.raises(KeyboardInterrupt):
         atomic_replace(tmp_path / "state.json", "new")
     assert len(seen) == 1
-    with pytest.raises(OSError) as closed:
-        os.fstat(seen[0])
-    assert closed.value.errno == errno.EBADF, "the folder's descriptor was left open"
+    # asked of ``os.close`` and not probed with ``fstat`` on the number afterwards: another thread can be handed a freed number
+    assert seen[0] in closed, "the folder's descriptor was left open"
 
 
 def test_one_file_through_a_symlinked_folder_raises_instead_of_deadlocking(tmp_path):
