@@ -364,7 +364,7 @@ def _seed_pre_ledger(prev_state: dict[str, Any] | None) -> dict[str, Any] | None
     last_seen = _norm_iso((hwm or {}).get("last_ts"))
     if state == "clean" and ended:
         end.update({"at": ended, "clean": True, "basis": "the sentinel's clean-shutdown stamp"})
-    elif state in ("shutting-down", "dispose-done") and teardown:
+    elif state in ("shutting-down", "writing-back", "dispose-done") and teardown:
         end.update({"at": teardown, "clean": False,
                     "basis": "the sentinel's last teardown stamp: the process died during its own shutdown"})
     elif last_seen:

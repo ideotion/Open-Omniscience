@@ -50,24 +50,40 @@ in disguise. The writer appends ~12.5 MB/s and the WAL read at the end of the
 scan is what was written since the last TRUNCATE finished; a TRUNCATE costs 3-4
 fsyncs, so on a fast disk (~1 ms) a round peaks at 0-13% of the bound and on a
 disk that stalls it does not. The failed run read, round by round, 0.54 / 5.99 /
-9.26 MB with 10 / 4 / 2 checkpoint attempts (every round still had its 10 in-scan
-releases and a successful checkpoint, so the property held and only the bytes
-failed). Delaying every fsync of this test with ``strace -e inject`` reproduces
-that shape: 100 ms -> 3-4 attempts and 1.6-2.9 MB; 300 ms -> 1 attempt and
-6.2-6.5 MB (over the old bound in every round); 4 or 8 CPU burners change nothing
-(13-15 attempts, at most 0.8 MB). The bound is now the fixed headroom PLUS what
-the writer appends while the round's slowest attempt is in flight, each term
-named in ``_allowed_wal_bytes``. The measured table and the probes are in the
-lane folder's soak-failure-2026-10-26 report; the lesson fragment carries the
-rule.
+9.26 MB with 10 / 4 / 2 checkpoint attempts. Delaying every fsync of this test with
+``strace -e inject`` reproduces that shape: 100 ms -> 3-4 attempts and 1.6-2.9 MB;
+300 ms -> 1 attempt and 6.2-6.5 MB (over the old bound in every round); 4 or 8 CPU
+burners change nothing (13-15 attempts, at most 0.8 MB). The bound is now the fixed
+headroom PLUS what the writer appends while the round's slowest attempt is in flight,
+each term named in ``_allowed_wal_bytes``.
+
+WHAT THE BYTE BOUND DOES NOT DO, AND WHAT DOES (independent read of the change,
+26 Oct): in the build from before the fix every busy TRUNCATE holds the WAL write
+lock for its 50 ms busy timeout, which slows the writer to ~5-6.7 MB/s, and the log
+ends at 4.5-6.4 MB: INSIDE this bound in 10 of 10 rounds (it was inside the old fixed
+6 MiB bound in 9 of 10). So no byte bound killed that mutation, old or new. What kills
+it, every round, is the in-scan success: a checkpoint that FINISHED, with its busy
+flag clear, after the scan's first chunk was delivered and before the scan ended
+(``_in_scan_success``). The earlier test counted every record, including the attempt
+still in flight when the scan ended and recorded after the pin was gone, so in the slow
+regime this change tunes for the original design bug (commit without closing the
+cursor) passed all four assertions; it counts only attempts that began after the first
+chunk (the reader already pinned) and ended inside the scan. The byte bound stays as the
+promise that the log does not grow without bound while checkpoints report success, and
+it is only asserted on a round where it CAN fail: once the allowance reaches every byte
+the round could have written (a slow-attempt round, where the in-flight term alone is
+most of the scan), the round is INCONCLUSIVE for the bytes, is printed as such with its
+numbers, and no round is passed as a byte check it could not have failed. The measured
+tables and the probes are in the lane folder's soak-failure-2026-10-26 report and the
+independent read's folder; the lesson fragment carries the rule.
 """
 from __future__ import annotations
 
-import os
 import threading
 import time
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
@@ -122,10 +138,17 @@ _TEST_RELEASE_INTERVAL_S = 0.05
 # in-scan release, so this floor is what stops a silent regression to the
 # single-window shape if the monkeypatch below is ever dropped.
 _MIN_RELEASES_PER_ROUND = 4
+# How many checkpoint attempts that ANSWERED inside the scan a round needs before "none of them cleared" counts as evidence that the property
+# failed. Fewer is a slow disk, not a broken fix: MEASURED 26 Oct with every fsync delayed (strace --seccomp-bpf -e inject), the fixed build
+# finished a clear checkpoint inside the scan in every round up to a 60 ms delay (attempts of 0.15-0.27 s, 2-8 of them), in 3 of 4 at 80 ms (one
+# attempt in the scan, 0.35 s) and in none at 100 ms (0.43 s, one or two attempts), because an attempt longer than a release window (the scan's
+# 0.1 s pause) cannot fit one. Every round with four or more in-scan attempts had its success; the build from before the fix has none in ANY
+# regime. A round below this count with no in-scan success is INCONCLUSIVE for the property, and says so.
+_MIN_ATTEMPTS_TO_JUDGE = 4
 
 
-def _wal_engine(db_path: Path, *, seed_rows: int):
-    os.environ["OO_WAL_SIZE_LIMIT_MB"] = str(_JOURNAL_SIZE_LIMIT_MB)
+def _wal_engine(db_path: Path, *, seed_rows: int, monkeypatch):
+    monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", str(_JOURNAL_SIZE_LIMIT_MB))  # undone at the test's end: the 1 MiB limit must not reach another test
     eng = create_engine(f"sqlite:///{db_path}", future=True)
     event.listen(eng, "connect", db_session._sqlite_pragmas)
     with eng.connect() as c:
@@ -136,14 +159,36 @@ def _wal_engine(db_path: Path, *, seed_rows: int):
     return eng
 
 
-def _slow_scan_producer(session):
-    result = session.execute(text("SELECT x FROM t"))
-    for _ in range(8):
-        chunk = result.fetchmany(3)
-        if not chunk:
-            break
-        time.sleep(0.1)
-    return []
+def _make_scan_producer(first_chunk_at: list[float]):
+    """The slow scanning producer. ``first_chunk_at`` receives the monotonic time the first chunk was delivered: from then on the scan's
+    snapshot is pinned (or, once the guard has released it, the next window opens), so a checkpoint attempt that began EARLIER proves
+    nothing about the property."""
+
+    def _slow_scan_producer(session):
+        result = session.execute(text("SELECT x FROM t"))
+        for _ in range(8):
+            chunk = result.fetchmany(3)
+            if chunk and not first_chunk_at:
+                first_chunk_at.append(time.monotonic())
+            if not chunk:
+                break
+            time.sleep(0.1)
+        return []
+
+    return _slow_scan_producer
+
+
+def _in_scan_attempts(attempts: list[dict], *, first_chunk: float, scan_ended: float) -> tuple[list[dict], float]:
+    """The checkpoint attempts that are evidence about the scan, and how long the slowest one ran INSIDE it.
+
+    Only what the scan could see counts. An attempt whose checkpoint call was issued before the first chunk was delivered met no pinned
+    snapshot, and one still running when the scan ended finished after the pin was gone (it is joined and recorded after the measurement):
+    neither says anything about the property. An attempt that returned nothing answered nothing. For the bytes, only the part of an attempt
+    inside the scan is time the writer appended during (a slow attempt's tail past the scan's end is not).
+    """
+    evidence = [a for a in attempts if a["busy"] is not None and a["called"] >= first_chunk and a["ended"] <= scan_ended]
+    extents = [min(a["ended"], scan_ended) - a["began"] for a in attempts if a["began"] < scan_ended]
+    return evidence, max(extents, default=0.0)
 
 
 def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s: float = 0.0) -> dict:
@@ -153,6 +198,9 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
     the measured facts for this round's assertions. ``attempt_delay_s`` makes every
     checkpoint attempt take that much longer before it runs (a stand-in for a slow
     fsync inside the attempt: the log is reset when the attempt ends either way).
+
+    Every checkpoint attempt is STAMPED: when it began, when the checkpoint call itself was issued (after the stand-in delay) and when it ended,
+    and what it answered, so that what counts as evidence is decided against the scan's own window and not against the end of the thread.
     """
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None)
     monkeypatch.setattr(registry, "_REGISTRY", [])
@@ -173,10 +221,11 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
         return _real_release(session)
 
     monkeypatch.setattr(registry, "_release_transaction", _counting_release)
-    registry.register("slow_scan", _slow_scan_producer)
+    first_chunk_at: list[float] = []
+    registry.register("slow_scan", _make_scan_producer(first_chunk_at))
 
     db_path = tmp_path / f"wal_soak_round_{round_i}.db"
-    eng = _wal_engine(db_path, seed_rows=_SEED_ROWS)
+    eng = _wal_engine(db_path, seed_rows=_SEED_ROWS, monkeypatch=monkeypatch)
     wal_path = Path(str(db_path) + "-wal")
     Session = sessionmaker(bind=eng, future=True)
 
@@ -200,15 +249,16 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
 
     stop_checkpointer = threading.Event()
     ckpt_results: list[dict] = []
-    attempt_seconds: list[float] = []
+    attempts: list[dict] = []
 
     def _checkpointer():
         while not stop_checkpointer.is_set():
-            started = time.monotonic()
+            began = time.monotonic()
             if attempt_delay_s:
                 time.sleep(attempt_delay_s)
+            called = time.monotonic()
             rec = checkpoint_wal(engine=eng, force=True, busy_timeout_ms=50)
-            attempt_seconds.append(time.monotonic() - started)
+            attempts.append({"began": began, "called": called, "ended": time.monotonic(), "busy": None if rec is None else rec["busy"]})
             if rec is not None:
                 ckpt_results.append(rec)
             time.sleep(0.05)
@@ -221,7 +271,8 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
     try:
         registry.run_all(Session_bound)
     finally:
-        scan_seconds = time.monotonic() - scan_started
+        scan_ended = time.monotonic()
+        scan_seconds = scan_ended - scan_started
         rows_at_end = rows_written[0]
         wal_bytes_during_window = wal_path.stat().st_size if wal_path.exists() else 0
         stop_writer.set()
@@ -231,12 +282,18 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
         Session_bound.close()
         eng.dispose()
 
+    first_chunk = first_chunk_at[0] if first_chunk_at else scan_ended
+    in_scan, longest_in_scan = _in_scan_attempts(attempts, first_chunk=first_chunk, scan_ended=scan_ended)
     return {
         "wal_bytes_during_window": wal_bytes_during_window,
         "writer_bytes_per_s": rows_at_end * _WRITER_ROW_BYTES / scan_seconds if scan_seconds else 0.0,
-        "longest_attempt_s": max(attempt_seconds, default=0.0),
+        "bytes_possible": int((rows_at_end * _WRITER_ROW_BYTES + _SEED_ROWS * 4096) * 1.02),
+        "longest_attempt_s": max((a["ended"] - a["began"] for a in attempts), default=0.0),
+        "longest_attempt_in_scan_s": longest_in_scan,
+        "in_scan_success": any(a["busy"] == 0 for a in in_scan),
         "any_checkpoint_succeeded": any(rec["busy"] == 0 for rec in ckpt_results),
         "checkpoint_attempts": len(ckpt_results),
+        "attempts_in_scan": len(in_scan),
         "wal_releases": len(releases),
         "write_error_count": len(write_errors),
     }
@@ -248,14 +305,60 @@ def _allowed_wal_bytes(*, writer_bytes_per_s: float, longest_attempt_s: float) -
     ``headroom``: the fixed multiple of the configured ceiling, what a fast disk is
     allowed to overshoot by (a round peaks at 0-13% of it on an idle box).
     ``in_flight``: what the writer appends while the round's slowest checkpoint
-    attempt runs. A TRUNCATE cannot reset the log under a writer that keeps
-    committing, so these bytes are unavoidable; a slow disk makes the term larger and
-    a build that never truncates leaves it small (its attempts fail fast), so the
-    bound still fails the second and no longer fails the first.
+    attempt runs, counting only the part of that attempt that lies inside the scan
+    (``longest_attempt_s`` is ``longest_attempt_in_scan_s``): a TRUNCATE cannot reset
+    the log under a writer that keeps committing, so these bytes are unavoidable. A
+    slow disk makes the term larger. THIS BOUND DOES NOT FAIL THE BUILD FROM BEFORE THE
+    FIX: that build's log ends inside it (4.5 to 6.4 MB against 6.6 to 6.9 MB, 10 of 10
+    rounds), and the in-scan success is what does (see the module docstring).
     """
     headroom = _MAX_DURING_WINDOW_MULTIPLE * _JOURNAL_SIZE_LIMIT_BYTES
     in_flight = writer_bytes_per_s * longest_attempt_s
     return {"headroom": headroom, "in_flight": in_flight, "total": headroom + in_flight}
+
+
+def _round_verdict(r: dict) -> dict:
+    """What a round says: red, inconclusive or neither, and why.
+
+    ``red``: reasons the round fails -- no checkpoint finished inside the scan with its busy flag clear although enough attempts answered inside
+    it to judge (``_MIN_ATTEMPTS_TO_JUDGE``), no attempt recorded at all, too few in-scan release windows, or a byte check that could fail and
+    was exceeded. ``property_conclusive``: False when no in-scan attempt cleared and too few answered to say the fix failed (a slow disk: the
+    round is INCONCLUSIVE for the property, never passed as one). ``bytes_conclusive``: False when the allowance already reaches every byte the
+    round could have written, so the byte check cannot fail. ``allowed``: the named terms.
+    """
+    allowed = _allowed_wal_bytes(writer_bytes_per_s=r["writer_bytes_per_s"], longest_attempt_s=r["longest_attempt_in_scan_s"])
+    bytes_conclusive = allowed["total"] < r["bytes_possible"]
+    judged = r["attempts_in_scan"] >= _MIN_ATTEMPTS_TO_JUDGE
+    property_conclusive = r["in_scan_success"] or judged
+    red = []
+    if judged and not r["in_scan_success"]:
+        red.append("no checkpoint finished inside the scan with its busy flag clear")
+    if r["checkpoint_attempts"] == 0:
+        red.append("no checkpoint attempt recorded at all")
+    if r["wal_releases"] < _MIN_RELEASES_PER_ROUND:
+        red.append(f"{r['wal_releases']} WAL releases, fewer than {_MIN_RELEASES_PER_ROUND}")
+    if bytes_conclusive and r["wal_bytes_during_window"] > allowed["total"]:
+        red.append(f"the WAL held {r['wal_bytes_during_window']} B at the end of the scan, over {allowed['total']:.0f} B")
+    return {"red": red, "property_conclusive": property_conclusive, "bytes_conclusive": bytes_conclusive, "allowed": allowed}
+
+
+def _unclosed_fetchmany(commit: bool):
+    """A ``_WalGuardResult.fetchmany`` that never closes the cursor, so the scan keeps its snapshot for the whole scan: the build from before
+    the fix (``commit=False``), or the original design bug the class docstring records (``commit=True``: it commits and counts the release
+    but the cursor stays open, which releases nothing)."""
+
+    def fetchmany(self, size=None):
+        self._reopen_if_needed()
+        chunk = self._result.fetchmany(size)
+        self._fetched += len(chunk)
+        if commit:
+            now = time.monotonic()
+            if self._last_release_mono is None or now - self._last_release_mono >= registry._WAL_GUARD_MIN_RELEASE_INTERVAL_S:
+                registry._release_transaction(self._session)
+                self._last_release_mono = now
+        return chunk
+
+    return fetchmany
 
 
 def test_the_checkpoint_progress_guarantee_holds_reliably_across_repeated_rounds(
@@ -267,96 +370,127 @@ def test_the_checkpoint_progress_guarantee_holds_reliably_across_repeated_rounds
     tests/test_wal_reader_starvation.py) -- must hold on EVERY one of several
     repeated, independent rounds within the SAME process, not just the
     first. And even while legitimately busy, the WAL must stay within a
-    bounded multiple of its configured ceiling on every round -- never an
-    unbounded, ever-worsening growth as more rounds accumulate.
+    bounded multiple of its configured ceiling on every round whose byte check
+    can fail -- never an unbounded, ever-worsening growth as more rounds
+    accumulate. A round whose byte check could not fail is printed as
+    inconclusive with its numbers, never passed as a byte check.
     """
     per_round: list[dict] = []
     for round_i in range(_ROUNDS):
         per_round.append(_run_one_round(tmp_path, round_i, monkeypatch))
 
-    failed_checkpoint_rounds = [i for i, r in enumerate(per_round) if not r["any_checkpoint_succeeded"]]
-    assert not failed_checkpoint_rounds, (
-        "the checkpoint-succeeds-while-busy property failed on round(s) "
-        f"{failed_checkpoint_rounds} of {_ROUNDS} -- it must hold on EVERY round, "
-        f"not just the first: {per_round}"
+    verdicts = [_round_verdict(r) for r in per_round]
+    for i, (r, v) in enumerate(zip(per_round, verdicts, strict=True)):
+        if not v["property_conclusive"]:
+            print(
+                f"SOAK ROUND {i} INCONCLUSIVE FOR THE PROPERTY: {r['attempts_in_scan']} checkpoint attempt(s) answered inside the scan (fewer than "
+                f"{_MIN_ATTEMPTS_TO_JUDGE}) and none cleared; the slowest ran {r['longest_attempt_in_scan_s']:.3f} s inside it (a slow disk, not a verdict)"
+            )
+        if not v["bytes_conclusive"]:
+            print(
+                f"SOAK ROUND {i} INCONCLUSIVE FOR THE BYTE BOUND: allowed {v['allowed']['total']:.0f} B >= the {r['bytes_possible']} B the round could "
+                f"have written (headroom {v['allowed']['headroom']}, in flight {v['allowed']['in_flight']:.0f})"
+            )
+    red_rounds = [(i, v["red"]) for i, v in enumerate(verdicts) if v["red"]]
+    assert not red_rounds, (
+        "the checkpoint-succeeds-while-busy property or the bytes failed on round(s) (index, reasons) "
+        f"{red_rounds} of {_ROUNDS} -- it must hold on EVERY round, not just the first: {per_round} {verdicts}"
     )
-
-    oversized_rounds = []
-    for i, r in enumerate(per_round):
-        allowed = _allowed_wal_bytes(
-            writer_bytes_per_s=r["writer_bytes_per_s"], longest_attempt_s=r["longest_attempt_s"]
+    if not any(v["property_conclusive"] for v in verdicts):
+        pytest.skip(
+            f"every one of the {_ROUNDS} rounds was inconclusive for the property (too few checkpoint attempts answered inside the scan, none cleared): "
+            f"{[(r['attempts_in_scan'], round(r['longest_attempt_in_scan_s'], 3)) for r in per_round]} (attempts in scan, slowest in-scan seconds)"
         )
-        if r["wal_bytes_during_window"] > allowed["total"]:
-            oversized_rounds.append((i, r["wal_bytes_during_window"], allowed))
-    assert not oversized_rounds, (
-        f"the WAL grew past {_MAX_DURING_WINDOW_MULTIPLE}x the configured "
-        f"{_JOURNAL_SIZE_LIMIT_BYTES}-byte ceiling plus what the writer appends during the "
-        "round's slowest checkpoint attempt, DURING the busy window, on round(s) "
-        f"(round index, wal_bytes, allowed): {oversized_rounds} -- full per-round data: {per_round}"
-    )
-
-    # A genuine attempt was made every round (this is the "sustained, not a
-    # one-off" claim -- a round that silently registered ZERO checkpoint
-    # attempts at all would make "any_checkpoint_succeeded" vacuously easy to
-    # satisfy by simply never trying).
-    starved_attempts = [i for i, r in enumerate(per_round) if r["checkpoint_attempts"] == 0]
-    assert not starved_attempts, (
-        f"round(s) {starved_attempts} recorded ZERO checkpoint attempts at all -- "
-        "the background checkpointer thread must have actually run: "
-        f"{per_round}"
-    )
-
-    # ...and the same anti-vacuity argument one level down: the property above
-    # is only meaningfully tested if the scan actually OFFERED several release
-    # windows to hit. Under the production 30 s throttle a 0.8 s scan offers
-    # exactly ONE (measured: t=0.009 s), and "did a checkpoint happen to land
-    # in a 9 ms window" is a coin flip, not a guarantee -- which is what made
-    # this test flaky on CI. If the monkeypatch in _run_one_round is ever
-    # dropped, this is the assertion that says so instead of the suite going
-    # intermittently red for a reason nobody can reproduce locally.
-    single_window_rounds = [
-        (i, r["wal_releases"])
-        for i, r in enumerate(per_round)
-        if r["wal_releases"] < _MIN_RELEASES_PER_ROUND
-    ]
-    assert not single_window_rounds, (
-        f"round(s) (index, releases) {single_window_rounds} saw fewer than "
-        f"{_MIN_RELEASES_PER_ROUND} WAL releases -- the scan was not given the "
-        "several in-scan release windows a real long scan gets, so the "
-        "checkpoint-progress assertion above was decided by thread-scheduling "
-        f"luck rather than by the fix: {per_round}"
-    )
 
 
-def test_the_wal_bound_gives_a_slow_attempt_the_bytes_the_writer_appends_meanwhile():
-    """The failed CI round (9,261,792 B, 2 attempts) was over the old fixed 6 MiB. Its slowest
-    attempt is not in the log, so the test says what that attempt would have had to be: with the
-    writer at the measured ~12.5 MB/s the bound accepts that round from about a quarter of a
-    second per attempt."""
-    rate = 12_500_000.0
-    needed_s = (9_261_792 - _MAX_DURING_WINDOW_MULTIPLE * _JOURNAL_SIZE_LIMIT_BYTES) / rate
-    assert 0.2 < needed_s < 0.3, needed_s
-    assert _allowed_wal_bytes(writer_bytes_per_s=rate, longest_attempt_s=0.4)["total"] > 9_261_792
-    assert _allowed_wal_bytes(writer_bytes_per_s=rate, longest_attempt_s=0.2)["total"] < 9_261_792
-    # Each term is named and they add up.
-    t = _allowed_wal_bytes(writer_bytes_per_s=rate, longest_attempt_s=0.4)
-    assert t["total"] == t["headroom"] + t["in_flight"] and t["in_flight"] == rate * 0.4
+@pytest.mark.parametrize("commit", [False, True], ids=["never-closes", "commit-without-close"])
+def test_a_scan_that_never_releases_its_snapshot_is_red_when_the_attempts_can_judge_it(tmp_path, monkeypatch, commit):
+    """The mutation the soak exists for, as a REAL ROUND, not as arithmetic on assumed inputs: the build from before the fix (``never-closes``)
+    and the original design bug (``commit-without-close``). Neither can finish a checkpoint with a clear busy flag while the scan holds its
+    snapshot, so the round is red for exactly that reason, whatever the byte bound says (it passes both: the log ends inside it, 4.5 to 6.4 MB)."""
+    monkeypatch.setattr(registry._WalGuardResult, "fetchmany", _unclosed_fetchmany(commit))
+    r = _run_one_round(tmp_path, 0, monkeypatch)
+    v = _round_verdict(r)
+    assert not r["in_scan_success"], ("a scan that holds its snapshot cannot be checkpointed inside it", r)
+    if not v["property_conclusive"]:
+        pytest.skip(f"a disk this slow answered {r['attempts_in_scan']} attempt(s) inside the scan, too few to call it (the round is inconclusive, never green)")
+    assert "no checkpoint finished inside the scan with its busy flag clear" in v["red"], (r, v)
 
 
-def test_the_wal_bound_still_fails_a_log_nothing_truncated():
-    """The mutation this bound must keep killing: a build that never resets the log under a
-    scan. Its log holds everything the writer appended (~0.9 s at 12.5 MB/s, about 11 MB) and
-    its attempts fail fast (the 50 ms busy timeout), so the in-flight term stays small."""
-    t = _allowed_wal_bytes(writer_bytes_per_s=12_500_000.0, longest_attempt_s=0.06)
-    assert 11_000_000 > t["total"], t
+def test_in_the_slow_regime_the_original_design_bug_is_inconclusive_not_a_pass(tmp_path, monkeypatch):
+    """The regime this change tunes for (every checkpoint attempt slow): the original design bug (commit without closing the cursor) used to
+    PASS all four assertions there, because its one success was an attempt that finished 0.475 s after the scan ended and was counted. Now that
+    attempt is not evidence, and two attempts in the scan are too few to call a failure: the round is inconclusive and says so."""
+    monkeypatch.setattr(registry._WalGuardResult, "fetchmany", _unclosed_fetchmany(True))
+    r = _run_one_round(tmp_path, 0, monkeypatch, attempt_delay_s=0.45)
+    v = _round_verdict(r)
+    assert not r["in_scan_success"], r
+    assert not v["property_conclusive"] and v["red"] == [], (r, v)
+    print(f"SOAK slow-attempt mutant round INCONCLUSIVE FOR THE PROPERTY: {r['attempts_in_scan']} attempt(s) answered inside the scan, none cleared")
 
 
-def test_a_checkpoint_attempt_that_takes_longer_is_measured_and_the_bound_follows_it(tmp_path, monkeypatch):
-    """A real round with every attempt held for 0.6 s (the stand-in for a slow fsync). The
-    round measures the slowest attempt itself (never assumes it) and the log stays within the
-    bound that follows it."""
+def test_an_attempt_that_finishes_after_the_scan_is_not_evidence_and_its_bytes_are_capped_at_the_scans_end(tmp_path, monkeypatch):
+    """A real round with every attempt held for 0.6 s (the stand-in for a slow fsync). What this pins is the ACCOUNTING, which is
+    deterministic: the slowest attempt is measured on its own clock, only the part of it inside the scan is allowed bytes, and the
+    attempt that was still running when the scan ended (it began inside the scan and was joined after) is not an in-scan attempt. Whether
+    the one in-scan attempt lands in a release window is not decided here (it is the main test's, over many attempts)."""
     r = _run_one_round(tmp_path, 0, monkeypatch, attempt_delay_s=0.6)
     assert r["longest_attempt_s"] >= 0.6, r
-    assert r["writer_bytes_per_s"] > 0, r
-    allowed = _allowed_wal_bytes(writer_bytes_per_s=r["writer_bytes_per_s"], longest_attempt_s=r["longest_attempt_s"])
-    assert r["wal_bytes_during_window"] <= allowed["total"], (r, allowed)
+    assert 0.6 <= r["longest_attempt_in_scan_s"] <= r["longest_attempt_s"], r
+    assert r["attempts_in_scan"] <= r["checkpoint_attempts"], r
+    v = _round_verdict(r)
+    assert v["allowed"]["in_flight"] == r["writer_bytes_per_s"] * r["longest_attempt_in_scan_s"], v
+    # Slow attempts give the byte check no room to fail: the allowance reaches what the writer could have written, and the round
+    # says so instead of passing a check it could not have failed.
+    assert not v["bytes_conclusive"], (r, v)
+    print(f"SOAK slow-attempt round INCONCLUSIVE FOR THE BYTE BOUND: allowed {v['allowed']['total']:.0f} B, possible {r['bytes_possible']} B")
+
+
+def test_a_round_is_inconclusive_exactly_when_it_could_not_have_failed():
+    """The verdict on synthetic rounds (the shapes the real ones take), so the rules themselves do not depend on timing."""
+    base = {"writer_bytes_per_s": 12_500_000.0, "bytes_possible": 11_000_000, "in_scan_success": True, "checkpoint_attempts": 9,
+            "attempts_in_scan": 8, "wal_releases": 9, "longest_attempt_in_scan_s": 0.02, "wal_bytes_during_window": 800_000}
+    ok = _round_verdict(base)
+    assert ok["red"] == [] and ok["property_conclusive"] and ok["bytes_conclusive"], ok
+    # a byte check that CAN fail and is exceeded is red
+    over = _round_verdict(base | {"wal_bytes_during_window": 9_000_000})
+    assert over["bytes_conclusive"] and len(over["red"]) == 1 and "over" in over["red"][0], over
+    # slow attempts: the allowance already covers everything the writer could have written -> neither red nor a pass of the byte check
+    slow = _round_verdict(base | {"longest_attempt_in_scan_s": 0.6, "wal_bytes_during_window": 9_000_000})
+    assert not slow["bytes_conclusive"] and slow["red"] == [], slow
+    # no clear checkpoint in the scan although enough attempts answered in it: red (the fix failed)
+    judged = _round_verdict(base | {"in_scan_success": False})
+    assert judged["red"] == ["no checkpoint finished inside the scan with its busy flag clear"] and judged["property_conclusive"], judged
+    # ...with too few attempts answering in the scan (every attempt slow): inconclusive, not red and not a pass
+    few = _round_verdict(base | {"in_scan_success": False, "attempts_in_scan": _MIN_ATTEMPTS_TO_JUDGE - 1})
+    assert few["red"] == [] and not few["property_conclusive"], few
+    # a success seen is positive evidence however few attempts there were
+    assert _round_verdict(base | {"attempts_in_scan": 1})["property_conclusive"]
+    # the other two structural reds
+    assert _round_verdict(base | {"checkpoint_attempts": 0})["red"] == ["no checkpoint attempt recorded at all"]
+    assert len(_round_verdict(base | {"wal_releases": _MIN_RELEASES_PER_ROUND - 1})["red"]) == 1
+    # The failed CI round (9,261,792 B, 2 attempts) was over the old fixed 6 MiB: its slowest in-scan attempt would have had to run about a
+    # quarter of a second for the new allowance to take it.
+    needed_s = (9_261_792 - _MAX_DURING_WINDOW_MULTIPLE * _JOURNAL_SIZE_LIMIT_BYTES) / 12_500_000.0
+    assert 0.2 < needed_s < 0.3, needed_s
+    t = _allowed_wal_bytes(writer_bytes_per_s=12_500_000.0, longest_attempt_s=0.4)
+    assert t["total"] == t["headroom"] + t["in_flight"] and t["in_flight"] == 12_500_000.0 * 0.4 and t["total"] > 9_261_792
+
+
+def test_which_attempts_are_evidence_and_how_much_of_a_slow_one_is_inside_the_scan():
+    """The accounting on synthetic stamps: the first chunk is delivered at t=1.0, the scan ends at t=2.0."""
+
+    def at(began, called, ended, busy):
+        return {"began": began, "called": called, "ended": ended, "busy": busy}
+
+    before_pin = at(0.1, 0.1, 0.2, 0)  # cleared, but before the scan held anything: no evidence
+    inside = at(1.2, 1.3, 1.4, 0)
+    inside_busy = at(1.5, 1.5, 1.6, 1)
+    unanswered = at(1.6, 1.6, 1.7, None)
+    spans_the_end = at(1.8, 1.9, 2.4, 0)  # cleared AFTER the scan ended (the old counting's only "success" under the original design bug)
+    got, longest = _in_scan_attempts([before_pin, inside, inside_busy, unanswered, spans_the_end], first_chunk=1.0, scan_ended=2.0)
+    assert got == [inside, inside_busy]
+    assert abs(longest - 0.2) < 1e-9, "the slowest attempt's part inside the scan: 1.8 -> 2.0, not the 0.6 s it ran in all"
+    assert _in_scan_attempts([spans_the_end], first_chunk=1.0, scan_ended=2.0)[0] == []
+    # an attempt that began after the scan is not in the extents at all
+    assert _in_scan_attempts([at(2.1, 2.1, 2.2, 0)], first_chunk=1.0, scan_ended=2.0) == ([], 0.0)

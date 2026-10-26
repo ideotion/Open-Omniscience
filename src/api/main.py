@@ -720,6 +720,14 @@ async def lifespan(app: FastAPI):
     # a reader, takes no time cap, and records what it did either way (``src/database/shutdown_checkpoint.py``).
     shutdown_checkpoint: dict | None = None
     try:
+        # its own phase: the step can take as long as the write-back (about 90 s for 1.4 GB, where a service manager's stop timeout is about
+        # as long), and a death inside it must not read as a death "during shutdown" with the previous step as its last word
+        from src.monitoring.forensics import record_shutdown_phase
+
+        record_shutdown_phase("writing-back")
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not stamp the write-back phase", exc, level=logging.DEBUG)
+    try:
         from src.database.shutdown_checkpoint import checkpoint_before_dispose
 
         shutdown_checkpoint = checkpoint_before_dispose()

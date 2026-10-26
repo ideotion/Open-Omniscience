@@ -68,6 +68,17 @@ DATABASE_URL = os.getenv("DATABASE_URL", default_sqlite_url())
 _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
 
+def _sqlite_file(url: str) -> str:
+    """The file a ``sqlite:///`` URL names, as the creator opens it (the string as written, not SQLAlchemy's parsed ``url.database``, which
+    drops a ``?`` suffix and un-escapes ``%``)."""
+    return url.removeprefix("sqlite:///")
+
+
+#: The database file the pool's connections are opened on, or ``None`` off SQLite. The one source the shutdown write-back reads, so the step
+#: and the creator cannot name different files.
+DB_FILE: str | None = _sqlite_file(DATABASE_URL) if _IS_SQLITE else None
+
+
 def _pool_timeout_s() -> float:
     """``OO_DB_POOL_TIMEOUT``: how long a checkout waits for a pooled connection (default 30 s).
 
@@ -102,7 +113,7 @@ def _build_engine() -> Engine:
         # passphrase. The URL is kept so engine.url.database stays truthful.
         # check_same_thread=False is safe here because sessions are
         # request/operation scoped (see module docstring), not shared globally.
-        db_path = DATABASE_URL.removeprefix("sqlite:///")
+        db_path = _sqlite_file(DATABASE_URL)
 
         def _creator():
             from src.database.connect import connect
@@ -996,13 +1007,35 @@ def pool_checkouts(eng: Engine | None = None) -> dict[str, Any]:
         return {"checked_out": None, "checked_out_why": f"the pool's count could not be read ({type(exc).__name__})"}
 
 
+#: What the reason says when an earlier disposal replaced the pool this one is counting (R202): the count is then not the whole truth.
+EARLIER_DISPOSAL = "an earlier disposal replaced the pool"
+_LEFT_BEHIND_LOCK = threading.Lock()
+#: How many connections EARLIER :func:`dispose_engine` calls left checked out on the pool each replaced (``None`` once one could not count).
+#: ``Engine.dispose()`` swaps in a new pool, so a connection checked out at that moment belongs to the old one: it stays open when it is
+#: given back (it lands idle in a pool nothing disposes) and no later count sees it.
+_LEFT_BEHIND: int | None = 0
+
+
 def dispose_engine() -> dict[str, Any]:
     """Dispose the engine's connection pool (call on app shutdown), and say what the pool held when it did.
 
     ``Engine.dispose()`` closes the connections that are IN the pool. One a thread still has checked out stays open, and SQLite writes
     the log back into the database and removes it only when the LAST connection on the file closes, so with one straggler the disposal
     leaves the whole log where it was (measured: a 300 MiB log, 100 % left, plain and encrypted). The return value is
-    :func:`pool_checkouts` read just BEFORE the disposal, so a caller that wants to say so can; callers that ignore it are unchanged."""
+    :func:`pool_checkouts` read just BEFORE the disposal, so a caller that wants to say so can; callers that ignore it are unchanged.
+
+    When an EARLIER call (the in-app power button disposes before it signals the process; so do the unlock, restore and repair paths)
+    left connections checked out on the pool it replaced, the count of this one would read the new, nearly empty pool and say ``0`` while
+    connections are still open: it says ``None`` and :data:`EARLIER_DISPOSAL` instead (26 Oct 2026, measured: ``checked_out`` 1 before the
+    first disposal, 0 after, the returned connection idle in the old pool). A call that follows only disposals that held nothing is
+    counted as before."""
+    global _LEFT_BEHIND
     seen = pool_checkouts()
     engine.dispose()
+    n = seen.get("checked_out")
+    with _LEFT_BEHIND_LOCK:
+        earlier = _LEFT_BEHIND
+        _LEFT_BEHIND = None if earlier is None or n is None else earlier + n
+    if earlier is None or earlier > 0:
+        return {"checked_out": None, "checked_out_why": EARLIER_DISPOSAL}
     return seen

@@ -1,8 +1,9 @@
 """The session-forensics byte room, measured with the real code (10-17, WAL's finding on 79a811950).
 
-The room is 2,415 B above the 1,500,000 B diagnostics floor. Every member this lane adds is built here in its WORST case by the code that
-writes it, serialised the way the report is (compact JSON, the member's key included), and summed. Nothing is typed in but the one member
-this lane does not write (crashing_thread_kind, measured by WAL): a member that grows turns this red, which a pinned figure cannot do."""
+The room is 2,415 B above the 1,500,000 B diagnostics floor. Every member of the report that spends it is built here in its WORST case by the
+code that writes it, serialised the way the report is (compact JSON, the member's key included), and summed. Nothing is typed in: a member
+that grows turns this red, which a pinned figure cannot do. (``crashing_thread_kind`` was a typed 440 B until the ``dispose`` member needed
+33 B of the room: its real worst, ELEVEN appearances of 37 B, is 407 B, and is now built from the module's own kind constants.)"""
 
 from __future__ import annotations
 
@@ -18,7 +19,6 @@ from src.monitoring import native_inflight as ni
 from src.monitoring import session_hwm as hwm
 
 HEADROOM = 2415
-CRASHING_THREAD_KIND = 440  # WAL's measurement; written by the crash-trace code, not by this lane
 
 
 def _member(key: str, value) -> int:
@@ -85,6 +85,30 @@ def _died_worst() -> int:
     return max(_member("died_into_phase", forensics._died_into_phase(c)) for c in cases)
 
 
+def _dispose_worst() -> int:
+    """The largest ``dispose`` member the REPORT can carry: every field at its longest value, built by the reader that rebuilds it from the
+    sentinel (``_clean_dispose``: the file is on disk and anything may have written it), over every code each field can take."""
+    import itertools
+
+    wals = [forensics.DISPOSE_WAL_MAX_BYTES, *forensics.DISPOSE_WAL_WORDS, 0]
+    outs = [forensics.DISPOSE_OUT_MAX, *forensics.DISPOSE_OUT_WORDS, 0]
+    steps = list(forensics.DISPOSE_STEP_WORDS)
+    worst = 0
+    for wal, out, step, took in itertools.product(wals, outs, steps, (forensics.DISPOSE_TOOK_MAX_S, None)):
+        built = forensics._clean_dispose({"wal": wal, "out": out, "step": step}, took)
+        worst = max(worst, _member("dispose", built))
+    return worst
+
+
+def _kind_worst() -> int:
+    """``crashing_thread_kind`` at its worst: the longest of the five values the crash-trace code writes, key and separating comma included
+    (the key sits among others in a trace or a row), at every place the report carries it: one per earlier unclean end shown, and the previous
+    session's own."""
+    kinds = (ee.KIND_PYTHON, ee.KIND_NON_PYTHON, ee.KIND_NOT_IN_DUMP, ee.KIND_WITHHELD, ee.KIND_NO_TRACE)
+    per_place = max(_member("crashing_thread_kind", k) + 1 for k in kinds)
+    return per_place * (ee.EARLIER_ENDS_LIMIT + 1)
+
+
 def _native_worst() -> int:
     from tests.test_native_inflight import _rec
 
@@ -113,6 +137,8 @@ def _stack_worst() -> int:
 def test_the_worst_case_of_every_member_this_lane_writes_fits_the_headroom(dd, tmp_path, monkeypatch):
     sizes = {
         "launcher_stderr (per session)": _stderr_worst(dd),
+        "crashing_thread_kind": _kind_worst(),
+        "dispose": _dispose_worst(),
         "died_into_phase": _died_worst(),
         "native_in_flight": _native_worst(),
         "last_thread_census": _census_worst(tmp_path, monkeypatch),
@@ -121,13 +147,15 @@ def test_the_worst_case_of_every_member_this_lane_writes_fits_the_headroom(dd, t
     sessions = ee.STDERR_ROWS_SHOWN + 1  # the previous session's own, beside the earlier unclean ends shown
     # the census and the stack are held to their caps by construction (a cap, not a sample, is what they can be at worst)
     sizes["last_thread_census"], sizes["stack"] = max(sizes["last_thread_census"], hwm.CENSUS_BYTES), max(sizes["stack"], ee.COREDUMP_STACK_BYTES)
-    total = CRASHING_THREAD_KIND + sizes["launcher_stderr (per session)"] * sessions + sum(v for k, v in sizes.items() if not k.startswith("launcher_stderr"))
+    total = sizes["launcher_stderr (per session)"] * sessions + sum(v for k, v in sizes.items() if not k.startswith("launcher_stderr"))
     assert total <= HEADROOM, f"{total} B against {HEADROOM} B: {sizes} x {sessions} sessions"
 
 
 def test_each_member_has_its_own_allowance_so_one_cannot_spend_anothers(dd, tmp_path, monkeypatch):
     assert _stderr_worst(dd) <= 319  # the measured worst (WAL re-measured the same figure on 9d970ebfc)
     assert _died_worst() <= 80
+    assert _dispose_worst() <= 75  # the measured worst: 12-digit log size, 7-character codes, a 4-digit duration
+    assert _kind_worst() <= 407  # 11 places x 37 B: the longest value is "not-in-dump"
     assert _native_worst() <= ni.REPORT_BYTES_BUDGET
     assert _census_worst(tmp_path, monkeypatch) <= hwm.CENSUS_BYTES
     assert _stack_worst() <= ee.COREDUMP_STACK_BYTES
@@ -160,13 +188,14 @@ def test_every_died_into_phase_code_has_its_words():
 
 _BUILDERS = {  # member -> a function returning the worst-case serialised bytes of that member
     "launcher_stderr": lambda dd, tmp, mp: _stderr_worst(dd),
+    "crashing_thread_kind": lambda dd, tmp, mp: _kind_worst(),
+    "dispose": lambda dd, tmp, mp: _dispose_worst(),
     "died_into_phase": lambda dd, tmp, mp: _died_worst(),
     "native_in_flight": lambda dd, tmp, mp: _native_worst(),
     "last_thread_census": lambda dd, tmp, mp: _census_worst(tmp, mp),
     "stack": lambda dd, tmp, mp: _stack_worst(),
 }
-_EXTERNAL = {"crashing_thread_kind": CRASHING_THREAD_KIND}  # written by the crash-trace code; WAL's measurement
-_CAP_OF = {"COREDUMP_STACK_BYTES": "stack", "CENSUS_BYTES": "last_thread_census", "REPORT_BYTES_BUDGET": "native_in_flight"}
+_CAP_OF = {"COREDUMP_STACK_BYTES": "stack", "CENSUS_BYTES": "last_thread_census", "REPORT_BYTES_BUDGET": "native_in_flight", "DISPOSE_WAL_MAX_BYTES": "dispose"}
 _NOT_A_MEMBER = {  # byte constants that are not a share of the headroom, each with why
     "_TRACE_MAX_BYTES": "how much of the trace log is read",
     "_TRACE_LINE_BYTES": "the width of one trace line",
@@ -176,7 +205,7 @@ _NOT_A_MEMBER = {  # byte constants that are not a share of the headroom, each w
 
 
 def test_every_headroom_member_has_a_worst_case_builder_here_and_nothing_else_does():
-    assert set(forensics.HEADROOM_MEMBERS) == set(_BUILDERS) | set(_EXTERNAL), "a member was added or removed without its worst case being measured here"
+    assert set(forensics.HEADROOM_MEMBERS) == set(_BUILDERS), "a member was added or removed without its worst case being measured here"
 
 
 def test_every_byte_cap_in_the_monitoring_modules_is_claimed_by_a_member_or_named_as_not_one():
