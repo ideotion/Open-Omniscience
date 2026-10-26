@@ -164,7 +164,7 @@ def default_quarantine_candidates_batch(
     signal) for the job's spot-check sample. Only the job asks; the import-time callers store this
     function's whole result in their saved reports and must not gain an unbounded key."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
-    from src.database.models import Article, Source
+    from src.database.models import Article, HostMismatchConfirmed, Source
     from src.ingest.furniture import stub_verdict
     from src.ingest.host_mismatch import check_host
     from src.ingest.non_article import (
@@ -180,7 +180,8 @@ def default_quarantine_candidates_batch(
     by_reason: dict[str, int] = {}
     ids_by_reason: dict[str, list[int]] = {}  # this batch's candidates per signal (ids only)
     to_write: dict[int, str] = {}  # id -> signal, for rows NOT already quarantined
-    host_counts = {"mismatch": 0, "unknown": 0}
+    host_counts = {"mismatch": 0, "confirmed": 0, "unknown": 0}
+    confirmed_pairs: set[tuple[int, str]] = set()  # (source id, article site) a person has already confirmed
     source_domains: dict[int, str | None] = {}  # source id -> domain, read once per batch
     already_quarantined = 0
     scanned = 0
@@ -196,15 +197,32 @@ def default_quarantine_candidates_batch(
                 chunk = wanted[i : i + _ID_SET_CHUNK]
                 found = dict(session.query(Source.id, Source.domain).filter(Source.id.in_(chunk)))
                 source_domains.update({sid: found.get(sid) for sid in chunk})
+            # The pairs a person has confirmed for these sources (R193): read per batch, never cached
+            # across batches, so a confirmation made while the run is paused is seen on resume.
+            batch_sources = sorted({r[7] for r in rows})
+            confirmed_pairs.clear()
+            for i in range(0, len(batch_sources), _ID_SET_CHUNK):
+                chunk = batch_sources[i : i + _ID_SET_CHUNK]
+                confirmed_pairs.update(
+                    (int(sid), site)
+                    for sid, site in session.query(
+                        HostMismatchConfirmed.source_id, HostMismatchConfirmed.article_site
+                    ).filter(HostMismatchConfirmed.source_id.in_(chunk))
+                )
         for aid, url, wc, content, lang, detected, is_quarantined, *rest in rows:
             scanned += 1
             last_id = max(last_id, int(aid))
             if include_host_mismatch:
                 host = check_host(url, source_domains.get(rest[0]))
-                if host.state != "same":
-                    host_counts[host.state] += 1
-                if host.state == "mismatch":
+                state = host.state
+                if state == "mismatch" and (rest[0], host.article_site) in confirmed_pairs:
+                    state = "confirmed"  # reviewed by a person: still reported, no longer to review
+                if state != "same":
+                    host_counts[state] += 1
+                if state == "mismatch":
                     ids_by_reason.setdefault("host_mismatch", []).append(int(aid))
+                elif state == "confirmed":
+                    ids_by_reason.setdefault("host_confirmed", []).append(int(aid))
             verdict = classify_non_article(url or "", word_count=wc)  # URL-shape rules (text=None)
             signal: str | None = verdict.signal if verdict is not None else None
             if signal is None and index_page_tiers:
