@@ -2719,6 +2719,27 @@ def _returns_within(fn, seconds=HANG_GUARD_S):
 
 def test_wait_if_engaged_can_be_bounded():
     """P8: a caller that cannot wait for ever says how long it can."""
+    # what the wait ASKS for, on a clock only the wait moves: the bound is a sum to read, where a duration measured here would pass a
+    # wait of 2 s for a bound of 0.3 s on any runner
+    spent = {"t": 1000.0}
+    asked: list[float] = []
+
+    class _SpentPause:
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, timeout: float | None = None) -> bool:
+            asked.append(timeout or 0.0)
+            assert len(asked) < 1000, "the wait never ended"
+            spent["t"] += timeout or 0.0
+            return False
+
+    bounded = _engaged("wal")
+    bounded._clock = lambda: spent["t"]
+    # 0.2 s polls for a 0.3 s bound: the last wait must be clipped to the 0.1 s left, which a bound that is a multiple of the poll never shows
+    assert _returns_within(lambda: bounded.wait_if_engaged(_SpentPause(), max_wait_s=0.3, poll_s=0.2)) is True
+    assert sum(asked) == pytest.approx(0.3), f"it waited out the time it was given and no more: {asked}"
+    assert max(asked) <= 0.2 + 1e-9, "no single wait is longer than the poll it was given"
     g = _engaged("wal")
     g._clock = time.monotonic  # the helper's fake clock does not move; this wait is real, and short
     t0 = time.monotonic()

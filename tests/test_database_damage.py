@@ -44,7 +44,7 @@ from src.database.damage import (
 )
 from src.scheduler import runner
 from src.scheduler import storage_guard as sg
-from tests.wallclock_helpers import HANG_GUARD_S, wait_until
+from tests.wallclock_helpers import HANG_GUARD_S, record_asked_joins, wait_until
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = 4096
@@ -1334,6 +1334,7 @@ def test_the_latch_is_set_before_the_record_and_the_record_does_not_hold_it_up(t
     """The failing statement's thread may hold the write gate and the drive may be the failing one: the
     latch (memory) is set first and read freely, and the record's write is waited for a bounded time."""
     monkeypatch.setattr(damage, "RECORD_WAIT_S", 0.3)
+    joins = record_asked_joins(monkeypatch, damage)
     reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
     release = threading.Event()
     entered = threading.Event()
@@ -1361,6 +1362,7 @@ def test_the_latch_is_set_before_the_record_and_the_record_does_not_hold_it_up(t
         t.join(15.0)
         assert not t.is_alive() and result["noted"] is True
         assert result["write_still_stuck"], "the failing statement was held by a hung drive"
+        assert joins == [0.3], f"the failing statement waits for the record for exactly RECORD_WAIT_S: {joins}"
     finally:
         release.set()
 

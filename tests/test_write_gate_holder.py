@@ -29,7 +29,7 @@ from src.database.writer import (
     watchdog_tick,
     write_lock,
 )
-from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
+from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread, record_asked_waits
 
 
 def _wait_until(pred, timeout: float = HANG_GUARD_S) -> bool:  # a hang guard: a condition that holds returns at once
@@ -70,14 +70,19 @@ class _Holder:
 # --- S2.5: the bound ------------------------------------------------------- #
 
 
-def test_a_bounded_acquire_gives_up_and_says_so():
+def test_a_bounded_acquire_gives_up_and_says_so(monkeypatch):
+    from src.database import writer
+
     gate = WriterGate()
+    asked = record_asked_waits(monkeypatch, writer, "_wait", 2, only=lambda args: args[1] is gate._lock)
     with _Holder(gate):
         # An acquire the bound does not bound waits for the holder, which lets go only when this block ends.
         came_back, got = call_on_thread(gate.acquire, timeout=0.15)
         assert came_back, "the bound did not bound"
         assert got is False
     assert gate.stats()["timeouts"] == 1
+    # and what it waited FOR was never more than the bound it was given (each wait is the time left, or the step if that is less)
+    assert asked and all(t is not None and 0.0 < t <= 0.15 for t in asked), f"the waits asked for: {asked}"
 
 
 def test_an_unbounded_acquire_still_waits_for_its_turn():

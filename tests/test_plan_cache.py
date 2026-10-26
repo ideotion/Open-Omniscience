@@ -106,8 +106,29 @@ def test_concurrent_polls_start_a_single_refresh():
     _settled(cache)
 
 
+class _AskedWaits:
+    """``plan_cache.threading`` with an Event that records the timeout each wait is ASKED for: what the poll asks of the refresh is a
+    number to read, where how long it took would be a bet on the scheduler (a 2 s wait and a 0.05 s one both end before the 10 s gate)."""
+
+    def __init__(self) -> None:
+        self.asked: list[float | None] = []
+        outer = self
+
+        class _Event(threading.Event):
+            def wait(self, timeout: float | None = None) -> bool:
+                outer.asked.append(timeout)
+                return super().wait(timeout)
+
+        self.Event = _Event
+
+    def __getattr__(self, name):
+        return getattr(threading, name)
+
+
 def test_with_nothing_cached_the_poll_waits_a_short_bounded_time_then_says_computing(monkeypatch):
     monkeypatch.setattr(pc, "FIRST_WAIT_S", 0.05)
+    shim = _AskedWaits()
+    monkeypatch.setattr(pc, "threading", shim)
     cache = PlanPreviewCache(clock=Clock())
     gate = threading.Event()
     compute_returned = threading.Event()
@@ -119,6 +140,7 @@ def test_with_nothing_cached_the_poll_waits_a_short_bounded_time_then_says_compu
 
     out = cache.get(S, compute)
     assert not compute_returned.is_set(), "the poll waited for the whole computation, not the short bound"
+    assert shim.asked == [0.05], f"the poll asks the refresh for exactly FIRST_WAIT_S: {shim.asked}"
     assert out["state"] == "computing" and out["as_of"] is None and "planned_total" not in out
     gate.set()
     _settled(cache)

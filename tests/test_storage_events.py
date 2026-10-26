@@ -25,6 +25,7 @@ import errno
 import itertools
 import json
 import sqlite3
+import sys
 import threading
 import time
 
@@ -2018,11 +2019,24 @@ def test_no_wait_loop_of_the_journal_writer_leaves_its_jump_back_outside_the_wit
     assert not any(bad.values()), f"a wait loop's jump back is outside the with (lines): {bad}"
 
 
-def test_wait_out_returns_at_the_deadline_and_never_leaves_the_condition_held():
+def test_wait_out_returns_at_the_deadline_and_never_leaves_the_condition_held(monkeypatch):
+    asked: list[float | None] = []
+    real_wait = se._COND.wait
+
+    def asked_wait(timeout: float | None = None) -> bool:
+        # only the waits `_wait_out` makes: the journal's flusher thread waits on this same condition, whatever test is running
+        if sys._getframe(1).f_code.co_name == "_wait_out":
+            asked.append(timeout)
+        return real_wait(timeout)
+
+    # the condition itself stays: a swapped-in one would take the flusher's next wait with it, and leave it parked there after the undo
+    monkeypatch.setattr(se._COND, "wait", asked_wait)
     start = time.monotonic()
     came_back, _ = call_on_thread(se._wait_out, se._GENERATION, 0.05)
     assert came_back, "a wait with a deadline comes back at it"
     assert time.monotonic() - start >= 0.04
+    # a wait of 2 s for a deadline of 0.05 s would come back inside the guard too: the number it asked the condition for is the bound
+    assert asked and all(t is not None and 0.0 < t <= 0.05 for t in asked), f"waits longer than the deadline it was given: {asked}"
     assert se._COND.acquire(timeout=HANG_GUARD_S), "the condition's lock was left held by the wait"
     se._COND.release()
 

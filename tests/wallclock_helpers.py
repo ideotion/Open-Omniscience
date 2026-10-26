@@ -101,6 +101,47 @@ class SteppedClock:
         self.now += max(0.0, seconds)
 
 
+def record_asked_waits(
+    monkeypatch: Any, module: Any, name: str, index: int, only: Callable[[tuple[Any, ...]], bool] | None = None
+) -> list[float | None]:
+    """Replace ``module.<name>`` (a wait the code under test makes) with one that records the timeout it is ASKED for, argument ``index``,
+    and then delegates. What a bounded wait asks for is a number the test can compare with the bound it was given, on any runner; how long
+    the wait then took is the scheduler's, and a stall of a second cannot tell a wait of 0.15 s from one of 3 s. ``only`` receives the
+    call's positional arguments and keeps the record to the waits the test is about (a wait on this test's own lock): the wait is
+    module-wide, and a background thread of the process that waits through it meanwhile is not the wait under test."""
+    real = getattr(module, name)
+    asked: list[float | None] = []
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        if only is None or only(args):
+            asked.append(args[index] if len(args) > index else kwargs.get("timeout"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, spy)
+    return asked
+
+
+def record_asked_joins(monkeypatch: Any, module: Any) -> list[float | None]:
+    """Make ``module.threading`` a view of the real one whose ``Thread`` records the timeout each ``join`` is ASKED for, and return the
+    record. A join that waits too long for a thread that is stuck is a number in the call, and the test reads it there: a join of 5 s for
+    a bound of 0.3 s returns inside any hang guard a test can afford, so no duration ends up telling the two apart."""
+    asked: list[float | None] = []
+
+    class _Thread(threading.Thread):
+        def join(self, timeout: float | None = None) -> None:
+            asked.append(timeout)
+            super().join(timeout)
+
+    class _View:
+        Thread = _Thread
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(threading, name)
+
+    monkeypatch.setattr(module, "threading", _View())
+    return asked
+
+
 def watch_flight_followers(monkeypatch: Any, heavy_module: Any) -> threading.Event:
     """An event that is set when a duplicate request begins waiting on a running flight of ``src.api.heavy``'s single-flight.
 
