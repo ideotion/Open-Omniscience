@@ -201,11 +201,14 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
     try:
         add_feed_key_column(conn)
         backfill_feed_keys(conn)
-        old_cols = _columns(conn, "sources")  # the one read that must follow the column being added: it decides what is copied
-        _refuse_if_unfit(new_table, old_cols)  # and it is judged again, so a column another process added meanwhile is refused, not dropped
-        copy = _names_in(new_cols, old_cols)
         conn.exec_driver_sql("BEGIN IMMEDIATE")
         began = True
+        # The read that decides what is copied, taken under the write lock: another writer's ALTER cannot land between it and the
+        # copy, so a column added meanwhile (a second process, an older build) is refused here, not left out of the copy. It must also
+        # follow the column being added above. A refusal rolls the transaction back like any other failure.
+        old_cols = _columns(conn, "sources")
+        _refuse_if_unfit(new_table, old_cols)
+        copy = _names_in(new_cols, old_cols)
         # Inside the transaction, so that every failure from here on rolls the view back with the rest; a refused or failed rebuild used to
         # leave ``keyword_mentions_all`` dropped for the life of the process (the caller recreates it only after a success).
         conn.exec_driver_sql("DROP VIEW IF EXISTS keyword_mentions_all")
@@ -230,17 +233,20 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         began = False
     except BaseException:
         # ``in_transaction`` as well as ``began``: after a COMMIT that an interrupt followed there is nothing to roll back, and a ROLLBACK
-        # answering "no transaction is active" would replace the interrupt with an OperationalError that boot swallows.
-        if began and dbapi.in_transaction:
+        # answering "no transaction is active" would replace the interrupt with an OperationalError that boot swallows. An interrupt
+        # inside a statement makes SQLAlchemy invalidate the connection (the driver one is closed, which rolls back): there is
+        # nothing left to ask, and asking would replace the interrupt with a ProgrammingError.
+        if began and not conn.invalidated and dbapi.in_transaction:
             conn.exec_driver_sql("ROLLBACK")
         raise
     finally:
-        if began and dbapi.in_transaction:
-            # The ROLLBACK above never reached the driver (an interrupt landed first). Leaving it open is not neutral: setting
-            # ``isolation_level`` below COMMITS an open transaction on Python 3.13, which would commit a half-finished rebuild.
-            dbapi.execute("ROLLBACK")
-        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
-        dbapi.isolation_level = prior_isolation
+        if not conn.invalidated:
+            if began and dbapi.in_transaction:
+                # The ROLLBACK above never reached the driver (an interrupt landed first). Leaving it open is not neutral: setting
+                # ``isolation_level`` below COMMITS an open transaction on Python 3.13, which would commit a half-finished rebuild.
+                dbapi.execute("ROLLBACK")
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            dbapi.isolation_level = prior_isolation
     return {"state": "rebuilt", "rows_before": before, "rows_after": after}
 
 

@@ -167,3 +167,44 @@ def test_an_interrupt_after_the_commit_stays_the_interrupt(legacy_with_view):
     with legacy_with_view.connect() as c:
         assert source_identity_state(c) == "composite"
         assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+
+def _interrupt_in_the_driver(engine, monkeypatch, *, at: str, after: bool, once_seen: str = ""):
+    """A real Ctrl-C lands inside SQLAlchemy's statement execution, which treats it as an exit exception and invalidates the connection
+    (closing the driver one). The proxy above raises outside that code and so cannot show what the cleanup then meets."""
+    real = engine.dialect.do_execute
+    seen = {"armed": not once_seen}
+
+    def _do_execute(cursor, statement, parameters, context=None):
+        if once_seen and once_seen in statement.upper():
+            seen["armed"] = True
+        if seen["armed"] and at in statement.upper():
+            if after:
+                real(cursor, statement, parameters, context)
+            raise KeyboardInterrupt
+        return real(cursor, statement, parameters, context)
+
+    monkeypatch.setattr(engine.dialect, "do_execute", _do_execute)
+
+
+def test_an_interrupt_inside_a_statement_stays_the_interrupt_and_the_store_stays_as_found(legacy_with_view, monkeypatch):
+    _interrupt_in_the_driver(legacy_with_view, monkeypatch, at="INSERT INTO SOURCES_COMPOSITE_NEW", after=False)
+    with legacy_with_view.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, pytest.raises(KeyboardInterrupt):
+        upgrade_sources_to_composite_key(conn)
+    monkeypatch.undo()
+    assert _view_present(legacy_with_view)
+    with legacy_with_view.connect() as c:
+        assert source_identity_state(c) == "legacy"
+        assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+
+def test_an_interrupt_inside_the_commit_statement_stays_the_interrupt(legacy_with_view, monkeypatch):
+    """The COMMIT ran and the interrupt followed it inside SQLAlchemy: the connection is invalidated, the cleanup must not ask it anything,
+    and the interrupt must not become a ProgrammingError that boot reads as a refusal."""
+    _interrupt_in_the_driver(legacy_with_view, monkeypatch, at="COMMIT", after=True, once_seen="RENAME TO SOURCES")
+    with legacy_with_view.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, pytest.raises(KeyboardInterrupt):
+        upgrade_sources_to_composite_key(conn)
+    monkeypatch.undo()
+    with legacy_with_view.connect() as c:
+        assert source_identity_state(c) == "composite"
+        assert c.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
