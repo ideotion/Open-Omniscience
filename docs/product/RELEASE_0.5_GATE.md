@@ -140,6 +140,9 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
   only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
   bodies have one version.
+- **The all-history top-terms query at 28 M mentions** (PR #1467): the built-code cell was lost to container recycles three times, so
+  the query is measured through the built serve path at 20 M and 24 M, and at 28 M only by the standalone run of the same shape
+  (polled peak 914.7 MiB, 43 MiB spare). The built 28 M cell is the open item.
 - **The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
   stay default-off.
 - **PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
