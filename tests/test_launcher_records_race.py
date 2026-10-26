@@ -709,7 +709,10 @@ def test_a_takeover_puts_back_a_lock_whose_owner_has_not_written_its_pid_yet_and
     lock.mkdir()
     (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
     shadow = (f': > "{lock}/pid"' if case == "empty" else f'command mv "{lock}" "{lock}.stash"; mkdir "{lock}"; sleep 100 & printf "%s\\n" $! > "{lock}/pid"')
-    script = f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; mv() {{ {shadow}; command mv "$@"; }}; oo_rec_append "{f}" \'{{"pid":6}}\' 0 0'
+    # The shadow runs ONCE (mkdir is atomic): the deferred child is forked from this shell and inherits the `mv` function, so a shadow that fired on every
+    # call would, in the child, put a new live lock back between the test's removal of the old one and the child's own takeover, and the row would wait for
+    # the stand-in's 100 s (CI, 2026-10-26: two `sleep` orphans where the test starts one).
+    script = f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; mv() {{ if mkdir "{tmp_path}/{case}.shadow" 2>/dev/null; then {shadow}; fi; command mv "$@"; }}; oo_rec_append "{f}" \'{{"pid":6}}\' 0 0'
     subprocess.run(["bash", "-c", script], env=env, check=True, timeout=30)
     try:
         assert lock.is_dir(), "the lock a launcher made in between is still there"
