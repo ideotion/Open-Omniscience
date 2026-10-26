@@ -2268,13 +2268,13 @@
         if (!d.items || !d.items.length) { box.innerHTML = '<div class="muted">No Leads pinned yet. Use “+ Add to draft” on a briefing Lead.</div>'; return; }
         box.innerHTML = d.items.map(it => {
           const c = it.card;
-          return `<div class="draft-item" data-id="${c.id}">
+          return `<div class="draft-item" data-id="${esc(c.id)}">
             <div class="di-body">
               <div class="di-title">${esc(cardTitle(c))}</div>
               <div class="hint" style="margin-top:2px">${esc(cardText(c, "summary"))}</div>
-              <textarea placeholder="Your note (ships in the export)…" data-on-change="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
+              <textarea placeholder="Your note (ships in the export)…" data-on-change="saveDraftItemNote(${esc(JSON.stringify(c.id))}, this.value)">${esc(it.note||"")}</textarea>
             </div>
-            <button class="ghost tiny" data-on-click="removeDraftItem('${c.id}')">Remove</button>
+            <button class="ghost tiny" data-on-click="removeDraftItem(${esc(JSON.stringify(c.id))})">Remove</button>
           </div>`;
         }).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load the draft.</div>'; }
@@ -2367,7 +2367,7 @@
           dim("Coordination", co.is_member ? `Member of ${co.actors.length} detected actor(s).` : "No coordination detected.", co.method, co.caveat) +
           dim("Novelty (originates vs echoes)", nv.mean_ratio==null ? "Not enough data." : `Mean novelty <b>${nv.mean_ratio}</b> over ${nv.n} articles.`, nv.method, nv.caveat) +
           dim("Output capacity", `${oc.articles} articles · ~${oc.per_day}/day (corpus median ${oc.corpus_median_per_day}/day).`, oc.method, oc.caveat) +
-          dim("Transparency", `${tr.country?ooCountryCell(tr.country):"?"} · ${tr.language?ooLangCell(tr.language):"?"} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
+          dim("Transparency", `${tr.country?ooCountryCell(tr.country):"?"} · ${tr.language?ooLangCell(tr.language):"?"} · ownership: ${(tr.ownership_tags||[]).map(esc).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).map(esc).join(", ")||"—"}`, tr.method, tr.caveat) +
           dim("Track record", `${rec.total_articles} articles in your corpus.`, rec.method, rec.caveat);
       } catch (e) { out.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
     }

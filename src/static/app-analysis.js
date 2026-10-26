@@ -856,7 +856,7 @@
       const modeRow = `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
         + _anCtlLabel(t("View")) + seg("counts", t("Counts")) + seg("indexed", t("Indexed"))
         + (byLangOffered ? seg("bylang", t("By language")) : "") + `</div>`;
-      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" data-on-click="anTrendPick('${sym}')"`
+      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" data-on-click="anTrendPick(${esc(JSON.stringify(sym))})"`
         + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
       // A commodity chosen from the drop-down leaves the drop-down at "more…" (it is an
       // adder), so it needs a lit chip of its own: that chip IS the statement of what is

@@ -22,7 +22,9 @@
   function esc(s) {
     var d = document.createElement("div");
     d.textContent = s == null ? "" : String(s);
-    return d.innerHTML;
+    // innerHTML escapes & < > only. The quotes are escaped too because this is used inside
+    // double-quoted attributes (title=, data-*=, href=, value=), where a bare " ends the value.
+    return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
   // THE SPA'S NUMBER WRITER, PORTED (click-through B16, V16). toLocaleString() reads the
   // BROWSER's locale, which the app's language switcher never changes, so this page wrote
