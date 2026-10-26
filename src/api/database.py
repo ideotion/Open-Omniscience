@@ -14,6 +14,7 @@ commodity table yet) gets an honest, smaller picture rather than a crash.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import os
 import shutil
@@ -619,6 +620,11 @@ _BACKUP_LOCK = threading.Lock()
 #: request holds: only the request whose token is recorded can free the claim, so a download that outlives its claim (taken over
 #: after :data:`_BACKUP_STALE_AFTER_S`) cannot free the takeover's.
 _backup_flight: tuple[object, float] | None = None
+#: The snapshot directories this process has made and not yet removed, with the pid that made them (guarded by
+#: :data:`_BACKUP_LOCK`). A process that EXITS while a worker thread is still writing a snapshot (a forced stop: uvicorn's second
+#: Ctrl+C closes the loop at once and the interpreter then waits for the thread) has no task left to remove the directory when the
+#: thread ends, so :func:`_remove_live_snapshot_dirs` does it at exit. A kill (SIGKILL, power) runs nothing; the sweeps cover that.
+_live_snapshot_dirs: dict[Path, int] = {}
 
 
 def _refuse_cross_site(request: Request) -> None:
@@ -696,8 +702,27 @@ def _release_backup_slot(token: object, workdir: Path | None) -> None:
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
     with _BACKUP_LOCK:
+        if workdir is not None:
+            _live_snapshot_dirs.pop(workdir, None)
         if _backup_flight is not None and _backup_flight[0] is token:
             _backup_flight = None
+
+
+def _remove_live_snapshot_dirs() -> None:
+    """At interpreter exit, remove the snapshot directories this process made and still holds (0.5.1 item 41). Never raises.
+
+    Python joins its non-daemon threads BEFORE it runs the exit hooks, so a worker thread that was still writing a snapshot when a
+    forced stop closed the loop has finished by now, and the file it wrote is what this removes. Only the pid that made a directory
+    removes it: a forked child that inherited the table must not take its parent's live download."""
+    with _BACKUP_LOCK:
+        mine = [path for path, pid in _live_snapshot_dirs.items() if pid == os.getpid()]
+        for path in mine:
+            del _live_snapshot_dirs[path]
+    for path in mine:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+atexit.register(_remove_live_snapshot_dirs)
 
 
 def _sweep_stale_snapshots(data_dir: Path) -> None:
@@ -752,7 +777,8 @@ def download_backup(request: Request) -> FileResponse:
     from another site (:func:`_refuse_cross_site`), made one at a time (:func:`_claim_backup_slot`), and not started when the
     data volume has less free space than the file and its log, the most a snapshot can write (507, with both figures; a figure
     that cannot be read is not a refusal, and the response says it was not checked). The directory is removed when the
-    response ends, and a leftover from a crashed server older than a day is removed by the next request.
+    response ends (a process that is stopped while a snapshot is still being written removes it as it exits, :func:`_remove_live_snapshot_dirs`),
+    and a leftover from a crashed server older than a day is removed by the next request.
     """
     from src.backup.sqlite_backup import BackupError, backup_to, live_db_path
     from src.database.connect import is_encrypted_file
@@ -795,6 +821,8 @@ def download_backup(request: Request) -> FileResponse:
                     ),
                 )
         workdir = Path(tempfile.mkdtemp(prefix=_BACKUP_DIR_PREFIX, dir=data_dir))
+        with _BACKUP_LOCK:
+            _live_snapshot_dirs[workdir] = os.getpid()
         snapshot = workdir / "snapshot.db"
         try:
             backup_to(snapshot)

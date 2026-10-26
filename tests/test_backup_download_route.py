@@ -22,6 +22,8 @@ import collections
 import os
 import shutil
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -69,8 +71,10 @@ def data_dir():
     for left in d.glob(".oo-backup-*"):
         shutil.rmtree(left, ignore_errors=True)
     dbapi._backup_flight = None
+    dbapi._live_snapshot_dirs.clear()
     yield d
     dbapi._backup_flight = None
+    dbapi._live_snapshot_dirs.clear()
 
 
 @pytest.fixture()
@@ -208,6 +212,7 @@ def test_the_snapshot_is_written_beside_the_database_and_removed_when_the_respon
         assert seen["mode"] == 0o700, "the snapshot directory is the owner's alone"
     assert not dest.parent.exists(), "the snapshot outlived its response"
     assert dbapi._backup_flight is None
+    assert dbapi._live_snapshot_dirs == {}, "the exit hook would still be holding a directory that is gone"
     out = Path(data_dir) / "downloaded-copy.db"
     out.write_bytes(r.content)
     try:
@@ -503,6 +508,169 @@ def test_a_response_whose_scope_is_cancelled_again_and_again_still_removes_the_d
     anyio.run(run)
     assert not workdir.exists(), "the removal was skipped by a scope that was already cancelled"
     assert dbapi._backup_flight is None
+
+
+def _app_scope() -> dict:
+    """A GET for the backup as uvicorn hands it to the whole application, from the app's own page."""
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/database/backup",
+        "raw_path": b"/api/database/backup",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"host", b"127.0.0.1:8000"), (b"sec-fetch-site", b"same-origin")],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 8000),
+        "extensions": {},
+    }
+
+
+def _snapshot_that_waits(monkeypatch) -> tuple[threading.Event, threading.Event]:
+    """A snapshot that is still being written until the test lets it finish: (started, finish)."""
+    started, finish = threading.Event(), threading.Event()
+
+    def slow(dest):
+        Path(dest).write_bytes(b"x" * 100)
+        started.set()
+        assert finish.wait(60), "the test never let the snapshot finish"
+
+    monkeypatch.setattr(sb, "backup_to", slow)
+    return started, finish
+
+
+async def _until(condition, seconds: float = 20.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        await asyncio.sleep(0.05)
+    return condition()
+
+
+def test_a_request_cancelled_while_its_snapshot_is_written_still_removes_the_directory_and_frees_the_slot(data_dir, monkeypatch):
+    """0.5.1 item 41, the cancel half. A server shutting down cancels the task of a request whose snapshot a worker thread is still
+    writing, and the thread cannot be stopped. MEASURED to be clean already (anyio holds the cancellation until the thread has
+    returned, the response is then run, cancelled at its first await, and its ``finally`` removes the directory), so this pins a
+    behaviour a dependency could change rather than repairs one. The forced exit, which does leave the directory, is the test
+    after the cancel tests."""
+    started, finish = _snapshot_that_waits(monkeypatch)
+
+    async def run() -> None:
+        async def drop(message):
+            return None
+
+        task = asyncio.create_task(app(_app_scope(), _receive, drop))
+        try:
+            assert await _until(started.is_set), "the snapshot never started"
+            assert _left_over(data_dir) != [] and dbapi._backup_flight is not None
+            assert [d.name for d in dbapi._live_snapshot_dirs] == _left_over(data_dir), "the route did not register its directory for the exit hook"
+            task.cancel()  # the single, native cancellation uvicorn's shutdown applies to its request tasks
+            finish.set()  # the thread cannot be stopped; it finishes, and only then does the cancellation land
+            await asyncio.wait({task}, timeout=20)
+            assert task.done(), "the cancelled request did not end"
+        finally:
+            finish.set()
+        assert await _until(lambda: _left_over(data_dir) == [] and dbapi._backup_flight is None)
+
+    asyncio.run(run())
+    assert _left_over(data_dir) == [], "the snapshot directory of a cancelled request was left behind"
+    assert dbapi._backup_flight is None, "the claim of a cancelled request was left held"
+
+
+def test_a_request_whose_scope_is_cancelled_while_its_snapshot_is_written_still_removes_the_directory(data_dir, monkeypatch):
+    """The same under a cancel scope (anyio's own cancellation, level-triggered, which also waits for the worker thread and then
+    lands): the response is built and the task is cancelled before it can send a byte. Also a pin; it passes without the exit hook."""
+    import anyio
+
+    started, finish = _snapshot_that_waits(monkeypatch)
+
+    async def run() -> None:
+        async def drop(message):
+            return None
+
+        async def call() -> None:
+            await app(_app_scope(), _receive, drop)
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(call)
+                assert await _until(started.is_set), "the snapshot never started"
+                tg.cancel_scope.cancel()
+                finish.set()
+        finally:
+            finish.set()
+        assert await _until(lambda: _left_over(data_dir) == [] and dbapi._backup_flight is None)
+
+    anyio.run(run)
+    assert _left_over(data_dir) == [], "the snapshot directory of a cancelled request was left behind"
+    assert dbapi._backup_flight is None, "the claim of a cancelled request was left held"
+
+
+def test_the_exit_hook_removes_the_snapshot_directories_this_process_still_holds(data_dir):
+    """0.5.1 item 41, the forced-exit half. With a real uvicorn, a second Ctrl+C while a snapshot was being written closed the loop
+    at once; the interpreter then waited for the worker thread, which finished the copy for a request that no longer existed, and
+    the process exited with the whole corpus in plaintext in ``.oo-backup-*``. The exit hook removes what is still held."""
+    held = data_dir / ".oo-backup-held"
+    held.mkdir()
+    (held / "snapshot.db").write_bytes(b"x" * 1000)
+    with dbapi._BACKUP_LOCK:
+        dbapi._live_snapshot_dirs[held] = os.getpid()
+    dbapi._remove_live_snapshot_dirs()
+    assert not held.exists()
+    assert dbapi._live_snapshot_dirs == {}
+
+
+def test_the_exit_hook_does_not_take_a_directory_another_process_made(data_dir):
+    """A forked child inherits the table of its parent and runs the exit hooks it inherited; the parent's live download is not the
+    child's to remove."""
+    theirs = data_dir / ".oo-backup-theirs"
+    theirs.mkdir()
+    with dbapi._BACKUP_LOCK:
+        dbapi._live_snapshot_dirs[theirs] = os.getpid() + 1
+    dbapi._remove_live_snapshot_dirs()
+    assert theirs.exists()
+
+
+_EXIT_SCRIPT = """
+import os, pathlib, sys, threading, time
+import src.api.database as dbapi
+
+workdir = pathlib.Path(sys.argv[1])
+workdir.mkdir()
+with dbapi._BACKUP_LOCK:
+    dbapi._live_snapshot_dirs[workdir] = os.getpid()
+
+
+def snapshot_that_outlives_the_main_thread():
+    time.sleep(1.0)
+    (workdir / "snapshot.db").write_bytes(b"x" * 1000)
+
+
+threading.Thread(target=snapshot_that_outlives_the_main_thread).start()  # not a daemon: the worker behind a request is not
+print("main thread done", flush=True)
+"""
+
+
+def test_a_process_that_exits_while_a_snapshot_is_still_being_written_leaves_no_directory(tmp_path):
+    """The real interpreter, in its own process: the main thread ends, a non-daemon thread writes the snapshot a second later, and
+    the exit hook runs after Python has joined that thread, so the file it wrote is removed too. The order is the thing under test."""
+    workdir = tmp_path / ".oo-backup-exiting"
+    env = {**os.environ, "OO_DATA_DIR": str(tmp_path / "data"), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
+    done = subprocess.run(
+        [sys.executable, "-c", _EXIT_SCRIPT, str(workdir)],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert "main thread done" in done.stdout
+    assert not workdir.exists(), "the snapshot a worker thread wrote after the main thread ended was left in the data folder"
 
 
 def test_the_removal_does_not_run_on_the_event_loop(data_dir, monkeypatch):
