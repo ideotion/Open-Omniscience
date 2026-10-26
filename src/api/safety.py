@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import logging
+import threading
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -24,6 +25,15 @@ from src.safety import settings as safety_settings
 _LOG = logging.getLogger("api.safety")
 
 router = APIRouter(prefix="/api/safety", tags=["safety"])
+
+# Phase 2 (the free-space overwrite) is offered only AFTER phase 1 in THIS process: a request to
+# it with no panic behind it would fill the live corpus volume to the brim for nothing (audit
+# A-011). The gate is at the route, not in ``full_secure_erase``, so the function and the
+# uninstall flow that calls it directly are untouched. Held in memory on purpose: the app is
+# restarted after a wipe, and a restarted app has nothing to scrub that a fresh panic could not
+# name. ``_ERASE_LOCK`` keeps two overwrites from running at once on one volume.
+_PANIC_DONE = threading.Event()
+_ERASE_LOCK = threading.Lock()
 
 _PROXY_NOTE = (
     "Protected mode routes fetches through your proxy and sends a generic User-Agent. "
@@ -159,7 +169,9 @@ def panic(body: PanicBody) -> dict:
         raise HTTPException(status_code=400, detail="set confirm=true to wipe (irreversible)")
     from src.safety import panic_wipe
 
-    return panic_wipe(confirm=True)
+    report = panic_wipe(confirm=True)
+    _PANIC_DONE.set()
+    return report
 
 
 @router.post("/secure-erase")
@@ -171,12 +183,21 @@ def secure_erase(body: SecureEraseBody) -> dict:
     Honest limit: byte-overwrite does not guarantee erasure on SSD/flash/CoW media."""
     if not body.confirm:
         raise HTTPException(status_code=400, detail="set confirm=true to run the full overwrite")
+    if not _PANIC_DONE.is_set():
+        raise HTTPException(
+            status_code=400,
+            detail="the full overwrite follows a panic wipe: run /api/safety/panic first",
+        )
     from src.safety.crypto_erase import full_secure_erase
 
+    if not _ERASE_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="a full overwrite is already running")
     try:
         return full_secure_erase(body.passes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    finally:
+        _ERASE_LOCK.release()
 
 
 @router.get("/uninstall/plan")

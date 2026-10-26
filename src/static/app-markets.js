@@ -1651,15 +1651,21 @@
       } catch (e) { toast(_failMsg("Import failed: {error}", e), "err"); }
     }
 
-    async function importCustomFeed() {
+    async function importCustomFeed(btn) {
+      // Fields from the panel the pressed button sits in, not the first element of the page with
+      // the id (audit A-004).
+      const panel = btn && btn.closest ? btn.closest("section") : null;
+      if (!panel) return;
+      const f = (id) => panel.querySelector("#" + id);
+      for (const id of ["feed-url", "feed-symbol", "feed-unit", "feed-currency", "feed-market", "feed-datecol", "feed-valcol"]) if (!f(id)) return;
       const body = {
-        url: $("feed-url").value.trim(),
-        symbol: $("feed-symbol").value.trim(),
-        unit: $("feed-unit").value.trim() || "t",
-        currency: $("feed-currency").value.trim() || "USD",
-        market: $("feed-market").value.trim() || null,
-        date_column: $("feed-datecol").value.trim() || null,
-        value_column: $("feed-valcol").value.trim() || null,
+        url: f("feed-url").value.trim(),
+        symbol: f("feed-symbol").value.trim(),
+        unit: f("feed-unit").value.trim() || "t",
+        currency: f("feed-currency").value.trim() || "USD",
+        market: f("feed-market").value.trim() || null,
+        date_column: f("feed-datecol").value.trim() || null,
+        value_column: f("feed-valcol").value.trim() || null,
       };
       if (!body.url || !body.symbol) { toast("URL and symbol are required.", "err"); return; }
       $("feed-result").textContent = "Downloading and importing…";

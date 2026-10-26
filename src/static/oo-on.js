@@ -145,7 +145,25 @@
     return undefined;
   }
 
+  // Names that act on a literal id or erase data and carry no prompt of their own before the
+  // request: they run only for a person's own click, or Enter/Space on the focused control
+  // (audit A-011, F5 option B). `error`, `load`, `toggle`, `focus` and hover are delegated too, so
+  // markup an attacker managed to inject (`<img src=x data-on-error="removeAuthor('a')">`)
+  // would otherwise fire them with no action at all; a click a script dispatches
+  // (`ooClickId`, `el.click()`) is not `isTrusted` either. A name is listed here when it is
+  // destructive and does not confirm() in its own body;
+  // tests/test_oo_on_helper_allowlist.py holds the list to that rule.
+  const GESTURE_ONLY = new Set(["removeAnnotation", "removeAuthor", "removeDraftItem", "removeUserCalendar", "secureErase"]);
+  function isUserGesture(ev) {
+    if (!ev || ev.isTrusted !== true) return false;
+    return ev.type === "click" || (ev.type === "keydown" && (ev.key === "Enter" || ev.key === " "));
+  }
+
   function run(c, el, ev) {
+    if (GESTURE_ONLY.has(c.name) && !isUserGesture(ev)) {
+      console.warn(`data-on: ${c.name} runs only for a person's own click or Enter/Space`);
+      return undefined;
+    }
     const fn = ACTIONS[c.name];
     const f = typeof fn === "function" ? fn : window[c.name];
     if (typeof f !== "function") {
@@ -319,22 +337,35 @@
   ];
   for (const name of OO_ACTIONS) ACTIONS[name] = null;
 
+  const CLICK_IDS = new Set(["anno-import"]);
+  const SET_VALUE_IDS = new Set(["agenda-tag", "dumpread-title"]);
+
   // Small helpers for what inline handlers used to say in-line.
   const HELPERS = {
     ooPrevent(ev) { if (ev) ev.preventDefault(); },
     ooStop(ev) { if (ev) ev.stopPropagation(); },
     ooPreventStop(ev) { if (ev) { ev.preventDefault(); ev.stopPropagation(); } },
     ooCloseDialog(id) { const d = document.getElementById(id); if (d && d.close) d.close(); },
-    ooClickId(id) { const e = document.getElementById(id); if (e) e.click(); },
-    ooSetValue(id, v) { const e = document.getElementById(id); if (e) e.value = v; },
+    // The ids these two may touch are the ones the markup names today, no more: a binding an
+    // attacker injected could otherwise fill ANY form field or click ANY control by id and then
+    // call the handler that reads them (audit A-004). tests/test_oo_on_helper_allowlist.py holds
+    // each set equal to the literal ids actually bound.
+    ooClickId(id) { if (!CLICK_IDS.has(id)) return; const e = document.getElementById(id); if (e) e.click(); },
+    ooSetValue(id, v) { if (!SET_VALUE_IDS.has(id)) return; const e = document.getElementById(id); if (e) e.value = v; },
     ooClearValue(el) { if (el) el.value = ""; },
     ooBodyClass(cls, force) { document.body.classList.toggle(cls, force); },
     // A same-origin download in a new tab. Only a path on this app is accepted, so a
     // binding cannot be turned into an outbound link (those go through invariant #7's
-    // confirm, via a real <a href>).
+    // confirm, via a real <a href>). "Same-origin" is decided by RESOLVING the path the way
+    // the browser will, not by looking at its first characters: a URL parser reads a
+    // backslash as a slash, so a slash followed by a backslash and a host name starts with "/"
+    // and not "//" and still opens that host (audit A-010).
     ooOpenUrl(path) {
-      if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) return;
-      window.open(path, "_blank");
+      if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return;
+      let u;
+      try { u = new URL(path, location.origin); } catch (e) { return; }
+      if (u.origin !== location.origin) return;
+      window.open(u.href, "_blank", "noopener");
     },
   };
   for (const [k, f] of Object.entries(HELPERS)) ACTIONS[k] = f;
@@ -347,5 +378,5 @@
   const root = document.documentElement;
   for (const type of EVENTS) root.addEventListener(type, onEvent, true);
 
-  window.ooOn = {parse, EVENTS, ACTIONS, OO_ACTIONS};
+  window.ooOn = {parse, EVENTS, ACTIONS, OO_ACTIONS, CLICK_IDS, SET_VALUE_IDS, GESTURE_ONLY};
 })();

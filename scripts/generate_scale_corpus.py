@@ -21,13 +21,24 @@ Examples:
   python scripts/generate_scale_corpus.py --out /data/bench/oo-200mb/open_omniscience.db \
       --target-size 200MB
 
-  # A field-scale 50 GB ENCRYPTED corpus (realistic for the backup/unlock benchmark):
-  python scripts/generate_scale_corpus.py --out /mnt/scratch/oo-50gb/open_omniscience.db \
-      --target-size 50GB --passphrase "benchmark-only-passphrase"
+  # A field-scale 50 GB ENCRYPTED corpus (realistic for the backup/unlock benchmark); the
+  # passphrase comes from $OO_DB_PASSPHRASE, never from the command line:
+  OO_DB_PASSPHRASE=... python scripts/generate_scale_corpus.py \
+      --out /mnt/scratch/oo-50gb/open_omniscience.db --target-size 50GB
+  # ... or from standard input:
+  printf '%s\n' "$PASS" | python scripts/generate_scale_corpus.py \
+      --out /mnt/scratch/oo-50gb/open_omniscience.db --target-size 50GB --passphrase-stdin
 
   # An exact, byte-reproducible small corpus (unit-test / debugging):
   python scripts/generate_scale_corpus.py --out /tmp/oo/open_omniscience.db \
       --articles 5000 --end-date 2026-07-01
+
+PASSPHRASES NEVER GO ON THE COMMAND LINE (audit A-020's sibling; the arguments of a process are readable
+by every user of the machine through ps and land in shell history and CI logs). The corpus is encrypted
+when a passphrase is supplied by $OO_DB_PASSPHRASE (the name the app and scripts/run_scale_bench.py read)
+or by --passphrase-stdin, and is plaintext otherwise; the mode line printed before the run says which.
+The old --passphrase flag is kept ONLY to refuse it by name, and an unrecognized argument is reported by
+count, never printed: argparse would otherwise print back the value it could not place.
 
 The bench runner expects the db file named `open_omniscience.db` inside a data
 directory it will point OO_DATA_DIR at, so prefer --out <dir>/open_omniscience.db.
@@ -47,6 +58,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 _SIZE_RE = re.compile(r"^\s*([0-9]*\.?[0-9]+)\s*([kmgtKMGT]?)([bB]?)\s*$")
+_PASSPHRASE_ENV = "OO_DB_PASSPHRASE"
 _UNITS = {"": 1, "k": 1024, "m": 1024**2, "g": 1024**3, "t": 1024**4}
 
 
@@ -89,11 +101,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="latest article date; 'today' (default) populates the recent-window endpoints",
     )
     p.add_argument("--batch", type=int, default=2000, help="articles per insert transaction")
+    # Refused, not accepted: see the module docstring. Hidden from --help so nobody is invited to use it.
+    p.add_argument("--passphrase", default=None, help=argparse.SUPPRESS)
     p.add_argument(
-        "--passphrase",
-        default=None,
-        help="encrypt the corpus (SQLCipher) -- realistic for the backup/unlock benchmark; "
-        "omit for a faster plaintext corpus",
+        "--passphrase-stdin",
+        action="store_true",
+        help=f"read the corpus passphrase (SQLCipher) from standard input, one line; else ${_PASSPHRASE_ENV} "
+        "if set; with neither the corpus is a faster plaintext one",
     )
     p.add_argument(
         "--max-articles",
@@ -104,8 +118,34 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _passphrase(args, stdin) -> str | None:
+    """The corpus passphrase from standard input or the named environment variable; never from argv, never echoed."""
+    if args.passphrase_stdin:
+        line = stdin.readline().rstrip("\r\n")
+        return line or None
+    return os.environ.get(_PASSPHRASE_ENV) or None
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    # parse_known_args, not parse_args: argparse's own "unrecognized arguments: ..." error prints the arguments back, and
+    # an unknown flag may be a passphrase option under another spelling. Only a COUNT is printed.
+    args, unknown = build_parser().parse_known_args(argv)
+    if unknown:
+        print(
+            f"error: {len(unknown)} unrecognized argument(s) (not printed: they may carry a secret); see --help",
+            file=sys.stderr,
+        )
+        return 2
+    if args.passphrase is not None:
+        # Named and valueless: the value is in the caller's shell history already, and is not printed again here.
+        print(
+            "error: a passphrase is not accepted on the command line (a process's arguments are readable by other "
+            f"users and land in shell history). Set ${_PASSPHRASE_ENV}, or use --passphrase-stdin. "
+            "The value you passed was not used.",
+            file=sys.stderr,
+        )
+        return 2
+    passphrase = _passphrase(args, sys.stdin)
 
     out: Path = args.out
     if out.exists():
@@ -113,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # A plaintext corpus needs the explicit opt-out the connection factory honours.
-    if args.passphrase is None:
+    if passphrase is None:
         os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 
     from src.testing.corpus_gen import CorpusSpec, generate_corpus
@@ -129,13 +169,13 @@ def main(argv: list[str] | None = None) -> int:
         content_words=args.content_words,
         time_span_days=args.time_span_days,
         end_date=args.end_date,
-        passphrase=args.passphrase,
+        passphrase=passphrase,
         batch_articles=args.batch,
         max_articles=args.max_articles,
     )
     print(
         f"generating synthetic corpus -> {out}  "
-        f"({'encrypted' if args.passphrase else 'plaintext'}; run offline, app stopped)",
+        f"({'encrypted' if passphrase else 'plaintext'}; run offline, app stopped)",
         file=sys.stderr,
     )
     summary = generate_corpus(out, spec)

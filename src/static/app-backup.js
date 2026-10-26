@@ -3559,8 +3559,20 @@
       const protectedMode = $("fetch-mode") && $("fetch-mode").value === "protected";
       if ($("http-proxy")) $("http-proxy").required = protectedMode;
     }
-    async function saveFetchMode() {
-      const body = {fetch_mode: $("fetch-mode").value, http_proxy: $("http-proxy").value.trim()};
+    // The fields are read from the row the pressed button sits in, never by a bare id lookup:
+    // a binding an attacker injected would otherwise read (or be shadowed by) any element of the
+    // page with that id, and this one redirects every fetch (audit A-004).
+    async function saveFetchMode(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const row = btn && btn.closest ? btn.closest(".row") : null;
+      const mode = row && row.querySelector("#fetch-mode");
+      const proxy = row && row.querySelector("#http-proxy");
+      if (!mode || !proxy) return;
+      const body = {fetch_mode: mode.value, http_proxy: proxy.value.trim()};
+      // Routing every fetch through a proxy is an egress change: it is confirmed, and the
+      // way back to the default (transparent, no proxy) is not.
+      if ((body.fetch_mode === "protected" || body.http_proxy) &&
+          !confirm(t("Send every fetch through this proxy? You must run and trust the proxy yourself; protected mode cannot guarantee anonymity."))) return;
       try {
         await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
         toast("Fetch mode saved.");
@@ -3580,10 +3592,17 @@
         ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo.")
         : t("Disabled (the default): no topic query leaves this machine.");
     }
-    async function saveDiscoveryExternal() {
+    async function saveDiscoveryExternal(box) {
       // ETH-02/RM-03: the one external-service call is an explicit, knowing opt-in.
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const on = $("discovery-external").checked;
+      // The checkbox itself, handed in by its own binding: an element that is not it (an injected
+      // one) changes nothing (audit A-004).
+      if (!box || box.id !== "discovery-external" || box.type !== "checkbox") return;
+      const on = box.checked;
+      if (on && !confirm(t("Send your topic-discovery queries to DuckDuckGo? Your query leaves this machine."))) {
+        box.checked = false;
+        return;
+      }
       try {
         await api("/api/safety/settings",
           {method: "PUT", body: JSON.stringify({discovery_external_enabled: on})});
@@ -3591,7 +3610,7 @@
         _paintDiscoveryResult();
         toast(on ? t("External topic discovery enabled.") : t("External topic discovery disabled."));
       } catch (e) {
-        $("discovery-external").checked = !on;  // revert the visual state on failure
+        box.checked = !on;  // revert the visual state on failure
         toast(_failMsg("Save failed: {error}", e), "err");
       }
     }
@@ -3625,12 +3644,20 @@
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const msg = $("atrest-msg");
-      if (!$("atrest-consent").checked) { msg.textContent = t("Tick the consent box first."); return; }
+      // The fields come from the encrypt panel the pressed button sits in (never a bare id lookup:
+      // the first element of the page with that id would be read), and the button must be inside it
+      // (audit A-004). This encrypts the whole corpus under a passphrase with no recovery, so it
+      // asks, as panicWipe does.
+      const box = btn && btn.closest ? btn.closest("#atrest-encrypt") : null;
+      if (!box) return;
+      const field = (id) => box.querySelector("#" + id);
+      const msg = field("atrest-msg");
+      if (!field("atrest-consent").checked) { msg.textContent = t("Tick the consent box first."); return; }
+      if (!confirm(t("Encrypt the corpus with this passphrase? It will be required at every start and there is no recovery."))) return;
       btn.disabled = true; msg.textContent = t("Encrypting — this rewrites the whole database…");
       try {
         const r = await api("/api/system/encrypt-db", { method: "POST", body: JSON.stringify({
-          passphrase: $("atrest-pw1").value, confirm: $("atrest-pw2").value, consent: true })});
+          passphrase: field("atrest-pw1").value, confirm: field("atrest-pw2").value, consent: true })});
         msg.textContent = "";
         toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
         loadAtRestState();
@@ -3680,6 +3707,10 @@
     async function secureErase(passes) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("panic-result");
+      // The request below carries confirm:true itself, so the person's yes has to be asked HERE: the
+      // only prompt before this was in panicWipe, which the Single/Triple/Octuple buttons outlive
+      // (audit A-011).
+      if (!confirm(t("Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk."))) return;
       try {
         toast("Running full overwrite… this can take a while.", "warn");
         const r = await api("/api/safety/secure-erase",
