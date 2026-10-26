@@ -495,13 +495,11 @@ def _served_counts_cache_isolated():
     later test on the same bind is served instead of the live numbers it just
     wrote. Cleared on the way IN as well as out: a test that fails mid-way must
     not hand its warm entry to the next one."""
-    from src.api import insights, served_cache
+    from src.api import served_cache
 
     served_cache.invalidate()
-    insights._reset_status_scans_for_tests()
     yield
     served_cache.invalidate()
-    insights._reset_status_scans_for_tests()
 
 
 @pytest.fixture(autouse=True)

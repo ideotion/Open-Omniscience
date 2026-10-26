@@ -952,7 +952,6 @@ def _forget_status_scans() -> None:
         _STATUS_GENERATION[0] += 1
 
 
-_reset_status_scans_for_tests = _forget_status_scans
 served_cache.on_invalidate(_forget_status_scans)
 
 
