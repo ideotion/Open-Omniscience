@@ -30,6 +30,13 @@ _ROOT = Path(__file__).resolve().parents[1]
 #: the signals uvicorn takes, and a handler anywhere else for either of them would take them back
 _TAKEN = {"SIGINT", "SIGTERM"}
 
+#: THE ONE handler for SIGTERM outside uvicorn (0.5.1 item 41): ``src.api.database.install_stop_signal_cleanup``. It is installed BEFORE ``uvicorn.run``,
+#: so during serving uvicorn's capture has replaced it (the exemption's premise holds) and uvicorn puts it back and re-raises SIGTERM into it as it
+#: returns; the handler removes the backup route's plaintext snapshot, restores the default action and signals itself, so it never swallows the
+#: signal. What this file checks of it: it registers SIGTERM only, restores ``SIG_DFL`` and re-signals (``os.kill``), and ``_serve`` calls it before
+#: ``uvicorn.run``. Anything else that takes either signal is still a problem.
+_STOP_CLEANUP = ("src/api/database.py", "install_stop_signal_cleanup")
+
 #: modules that install handlers for those signals in a process of their own, and are imported by no server code (checked below): the OSM reference run
 #: is a CLI (scripts/osm_reference_run.py) whose handlers last for the length of its ``with`` and end its own process
 _OWN_PROCESS = {"src/osm/reference_run.py": "reference_run"}
@@ -43,6 +50,31 @@ def _signal_calls(tree: ast.AST):
 
 def _names_in(node: ast.AST) -> set[str]:
     return {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)} | {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _stop_cleanup_calls(tree: ast.AST, path: str) -> tuple[set[ast.Call], list[str]]:
+    """The signal calls of the one allowed stop-cleanup function (the SIGTERM registration and the restore of the default action), and what is wrong
+    with the function if it is not the shape described at ``_STOP_CLEANUP``. A call that is not one of those two stays unallowed and is reported by the caller."""
+    allowed_path, name = _STOP_CLEANUP
+    if path != allowed_path:
+        return set(), []
+    fns = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name]
+    if not fns:
+        return set(), []
+    allowed: set[ast.Call] = set()
+    problems: list[str] = []
+    for call in _signal_calls(fns[0]):
+        if call.func.attr != "signal" or len(call.args) < 2:
+            continue
+        first, second = _names_in(call.args[0]), _names_in(call.args[1])
+        if first & _TAKEN == {"SIGTERM"}:
+            allowed.add(call)
+        elif "SIG_DFL" in second:
+            allowed.add(call)
+    resignals = any(isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "kill" for c in ast.walk(fns[0]))
+    if not resignals:
+        problems.append(f"{path}: {name} never re-sends the signal, so it would swallow SIGTERM")
+    return allowed, problems
 
 
 def exemption_problems(sources: dict[str, str], pyproject: str) -> list[str]:
@@ -64,6 +96,15 @@ def exemption_problems(sources: dict[str, str], pyproject: str) -> list[str]:
         for kw in call.keywords:
             if kw.arg and "signal" in kw.arg.lower():
                 problems.append(f"src/api/main.py: uvicorn.run(...) is given {kw.arg}=, which changes who takes the signals")
+    cleanup_path, cleanup_name = _STOP_CLEANUP
+    if cleanup_path in sources and any(isinstance(n, ast.FunctionDef) and n.name == cleanup_name for n in ast.walk(ast.parse(sources[cleanup_path]))):
+        calls = [
+            c for c in ast.walk(serve_fn) if isinstance(c, ast.Call) and cleanup_name in _names_in(c.func)
+        ] if serve_fn is not None else []
+        if not calls:
+            problems.append(f"src/api/main.py: _serve() does not call {cleanup_name}, so the SIGTERM handler is never installed")
+        elif runs and min(c.lineno for c in calls) > min(r.lineno for r in runs):
+            problems.append(f"src/api/main.py: _serve() calls {cleanup_name} after uvicorn.run begins, where uvicorn would not put it back")
     if not re.search(r'^open-omniscience\s*=\s*"src\.api\.main:main"\s*$', pyproject, re.MULTILINE):
         problems.append("pyproject.toml: the open-omniscience script is not src.api.main:main")
 
@@ -81,7 +122,11 @@ def exemption_problems(sources: dict[str, str], pyproject: str) -> list[str]:
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef) and item.name in {"capture_signals", "install_signal_handlers", "handle_exit"}:
                         problems.append(f"{path}:{item.lineno}: a uvicorn Server subclass overrides {item.name}")
+        allowed, stop_problems = _stop_cleanup_calls(tree, path)
+        problems.extend(stop_problems)
         for call in _signal_calls(tree):
+            if call in allowed:
+                continue
             where = f"{path}:{call.lineno}"
             if call.func.attr == "set_wakeup_fd":
                 problems.append(f"{where}: signal.set_wakeup_fd")
@@ -126,10 +171,47 @@ _MAIN_OK = (
 )
 
 
+_DB_OK = (
+    "import os, signal\n"
+    "def install_stop_signal_cleanup():\n"
+    "    def _h(signum, frame):\n"
+    "        signal.signal(signum, signal.SIG_DFL)\n"
+    "        os.kill(os.getpid(), signum)\n"
+    "    signal.signal(signal.SIGTERM, _h)\n"
+)
+_MAIN_CLEANUP = _MAIN_OK.replace("    uvicorn.run(app)\n", "    install_stop_signal_cleanup()\n    uvicorn.run(app)\n")
+
+
 @pytest.mark.parametrize(
     ("label", "sources", "pyproject", "expect"),
     [
         ("sound", {"src/api/main.py": _MAIN_OK}, _PYPROJECT_OK, None),
+        ("sound with the stop cleanup", {"src/api/main.py": _MAIN_CLEANUP, "src/api/database.py": _DB_OK}, _PYPROJECT_OK, None),
+        ("the stop cleanup never called", {"src/api/main.py": _MAIN_OK, "src/api/database.py": _DB_OK}, _PYPROJECT_OK, "never installed"),
+        (
+            "the stop cleanup called after uvicorn.run",
+            {"src/api/main.py": _MAIN_OK.replace("    uvicorn.run(app)\n", "    uvicorn.run(app)\n    install_stop_signal_cleanup()\n"), "src/api/database.py": _DB_OK},
+            _PYPROJECT_OK,
+            "after uvicorn.run",
+        ),
+        (
+            "the stop cleanup taking SIGINT too",
+            {"src/api/main.py": _MAIN_CLEANUP, "src/api/database.py": _DB_OK + "    signal.signal(signal.SIGINT, print)\n"},
+            _PYPROJECT_OK,
+            "SIGINT",
+        ),
+        (
+            "the stop cleanup swallowing the signal",
+            {"src/api/main.py": _MAIN_CLEANUP, "src/api/database.py": _DB_OK.replace("        os.kill(os.getpid(), signum)\n", "")},
+            _PYPROJECT_OK,
+            "swallow",
+        ),
+        (
+            "a second SIGTERM handler beside the allowed one",
+            {"src/api/main.py": _MAIN_CLEANUP, "src/api/database.py": _DB_OK + "def other():\n    signal.signal(signal.SIGTERM, print)\n"},
+            _PYPROJECT_OK,
+            "SIGTERM",
+        ),
         ("a SIGINT handler planted elsewhere", {"src/api/main.py": _MAIN_OK, "src/x.py": "import signal\nsignal.signal(signal.SIGINT, signal.default_int_handler)\n"}, _PYPROJECT_OK, "SIGINT"),
         ("a SIGTERM handler planted elsewhere", {"src/api/main.py": _MAIN_OK, "src/x.py": "import signal\nsignal.signal(signal.SIGTERM, lambda *a: None)\n"}, _PYPROJECT_OK, "SIGTERM"),
         ("a loop signal handler", {"src/api/main.py": _MAIN_OK, "src/x.py": "def f(loop):\n    loop.add_signal_handler(2, f)\n"}, _PYPROJECT_OK, "add_signal_handler"),
