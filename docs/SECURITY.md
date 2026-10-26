@@ -393,10 +393,13 @@ down is a RECORD of that date and carries its own disposition table.)*
   and validated before the fetch, and — since 2026-09-07 — every address the request actually
   resolves or connects to is validated as it happens, closing the DNS-rebinding window
   between the two (`src/ingest/ssrf_guard.py`).
-- **The local API.** A cross-origin state-changing request is refused (403) on `Origin`/
-  `Referer`; a `Host` header that does not name this loopback API is refused (421, a
-  DNS-rebinding guard); every non-Swagger response carries `nosniff`,
-  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
+- **The local API.** A state-changing request whose `Origin` (or `Referer`, when no `Origin` is
+  sent) does not name this server is refused (403): it must carry the same hostname and the same
+  port as the `Host` header, so another web app on a different loopback port is cross-origin
+  too. A `Host` header that does not name this loopback API is refused (421, a
+  DNS-rebinding guard); `OO_ALLOWED_HOSTS` (comma-separated hostnames, no port) is the escape
+  hatch for serving the app under another name and widens both checks; every non-Swagger
+  response carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
   `frame-ancestors 'none'`. CORS ships `allow_credentials=False`.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
   cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
@@ -457,7 +460,7 @@ ethical-fetch path and the evidence-verification guarantees above.
 > |---|---|---|---|
 > | S-001 | SSRF (CWE-918) | **Closed, including the residual.** Resolve-then-validate on the target, manual bounded redirects re-validated per hop on the page *and* robots paths. The `OO-D2-003` DNS-rebinding TOCTOU the report left open — the one thing "pin to the validated IP" was for — was live-reproduced and closed on 2026-09-07 by validating the address the connection *actually reaches*, not by pinning. | `src/ingest/__init__.py::_guard_target`, `::_guarded_redirect_get`, `src/ingest/ssrf_guard.py`, `tests/test_ssrf_connect_guard.py` |
 > | S-002 | Decompression-bomb / size DoS | **Closed.** `Content-Length` refused up front; the real (streamed) body is read in chunks against a running ceiling, so a gzip bomb is aborted mid-read rather than after materialising. | `src/ingest/__init__.py::_read_body` |
-> | S-003 | CSRF on no-body POSTs | **Closed.** A middleware refuses any state-changing method whose `Origin`/`Referer` is not loopback (403). A separate `Host`-header guard refuses a DNS-rebinding host with 421. | `src/api/main.py::csrf_and_security_headers` |
+> | S-003 | CSRF on no-body POSTs | **Closed.** A middleware refuses any state-changing method whose `Origin`/`Referer` does not name this server, host and port (403). A separate `Host`-header guard refuses a DNS-rebinding host with 421. | `src/api/main.py::csrf_and_security_headers` |
 > | S-004 | CSV formula injection | **Closed.** Exported cells beginning `= + - @` or a control char are prefixed with `'`. | `src/utils/security.py::csv_safe_cell`, `tests/test_security_hardening.py` |
 > | S-005 | `javascript:` URI in an `href` | **Closed.** A strict http(s) scheme allowlist runs on every ingested URL rendered as a link, server-side and in the reader. | `src/utils/security.py::safe_href` (call sites: `src/api/main.py`, `src/api/law.py`, `src/services/duckduckgo.py`) |
 > | S-006 | No CSP / security headers | **Closed, including the residual (2026-09-28).** `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with `frame-ancestors 'none'` ship on every non-Swagger response. The residual (NET-04) was `script-src 'unsafe-inline'`, held there by 656 inline `on*=` handlers and six inline `<script>` blocks. 0.5 row I (Q1127 = a) retired all of them: handlers became `data-on-*` bindings that `/static/oo-on.js` parses against an allowlist and never evaluates, and each inline block became a file. `script-src` is now `'self'` alone, so no nonce was needed. `style-src` keeps `'unsafe-inline'`, which was not ruled. | `src/api/main.py::_CSP`, `tests/test_inline_handler_ratchet.py`, `tests/test_security_hardening.py::test_script_src_allows_no_inline_script` |

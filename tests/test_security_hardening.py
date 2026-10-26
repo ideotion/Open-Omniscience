@@ -142,9 +142,11 @@ def test_cross_origin_state_change_is_refused(client):
 
 def test_same_origin_and_no_origin_allowed(client):
     assert client.post("/api/briefing/refresh").status_code == 200
+    # The Origin a browser at the app's own address sends carries the port the Host header carries (TestClient's own Host
+    # is ``testserver``, so the address is stated).
     assert (
         client.post(
-            "/api/briefing/refresh", headers={"Origin": "http://127.0.0.1:8000"}
+            "/api/briefing/refresh", headers={"Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:8000"}
         ).status_code
         == 200
     )
@@ -228,13 +230,118 @@ def test_a_loopback_origin_is_not_undone_by_a_foreign_referer(client):
     # The Origin decides alone when it is sent (the long-standing behaviour, pinned so the rewrite keeps it).
     r = client.post(
         "/api/briefing/refresh",
-        headers={"Origin": "http://localhost:8000", "Referer": "https://evil.example/"},
+        headers={"Host": "localhost:8000", "Origin": "http://localhost:8000", "Referer": "https://evil.example/"},
     )
     assert r.status_code == 200
 
 
 def test_safe_methods_ignore_a_null_origin(client):
     assert client.get("/api/health", headers={"Origin": "null"}).status_code in (200, 404)
+
+
+# --- audit 0.5.0 A-001: the Origin must name THIS server, port included --------- #
+# The guard compared the Origin's HOSTNAME with the loopback names and nothing else, so any other web app on the machine
+# (a dev server, a notebook, a local UI on ``localhost:9999``) passed as a "loopback origin". A browser tells two pages apart
+# by scheme, host and port; the Host header carries the host and the port of the server it reached, so the Origin (or the
+# Referer, when no Origin is sent) must name the same host and the same effective port (80 / 443 by scheme when none is
+# written).
+def _from(client, origin=None, referer=None, host="localhost:8000", path="/api/briefing/refresh", **kw):
+    headers = {"Host": host}
+    if origin is not None:
+        headers["Origin"] = origin
+    if referer is not None:
+        headers["Referer"] = referer
+    return client.post(path, headers=headers, **kw)
+
+
+@pytest.mark.parametrize(
+    "host,origin",
+    [
+        ("localhost:8000", "http://localhost:8000"),
+        ("127.0.0.1:8000", "http://127.0.0.1:8000"),
+        ("[::1]:8000", "http://[::1]:8000"),
+        ("localhost:9123", "http://localhost:9123"),  # OO_PORT is not 8000
+        ("LocalHost:8000", "http://localhost:8000"),  # names are case-insensitive
+        ("localhost", "http://localhost"),  # no port written on either side: the scheme's own
+        ("localhost:80", "http://localhost"),
+    ],
+)
+def test_an_origin_naming_this_server_is_allowed(client, host, origin):
+    assert _from(client, origin=origin, host=host).status_code == 200, (host, origin)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:9999",  # another local web app
+        "http://127.0.0.1:1",
+        "http://localhost",  # port 80, not 8000
+        "http://127.0.0.1:80",
+        "http://localhost:8001",
+        "http://localhost:99999",  # not a port at all
+        "http://localhost:abc",
+        "ftp://localhost:8000",  # not a web origin
+        "http://127.0.0.1:8000",  # the same server by another name: the Host header names localhost
+    ],
+)
+def test_a_loopback_origin_on_another_port_or_name_is_refused(client, origin):
+    r = _from(client, origin=origin)
+    assert r.status_code == 403, origin
+    assert "Cross-origin" in r.json()["detail"]
+
+
+def test_a_referer_alone_is_held_to_the_same_rule(client):
+    assert _from(client, referer="http://localhost:9999/index.html").status_code == 403
+    assert _from(client, referer="http://127.0.0.1:1/").status_code == 403
+    assert _from(client, referer="http://localhost:8000/index.html").status_code == 200
+
+
+def test_a_foreign_port_cannot_reach_a_json_route_with_a_body_that_names_no_content_type(client):
+    """The route takes a JSON body, and FastAPI parses a body with no Content-Type as JSON, so the request is a CORS
+    "simple" one (an untyped Blob) that needs no preflight. The Origin check is what stops it. ``online: false`` is the
+    direction that is safe to send: if the guard ever lets it through, the kill switch is engaged and the test says so."""
+    from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+
+    before = kill_switch_active()
+    try:
+        r = client.post(
+            "/api/system/network",
+            content=b'{"online": false}',
+            headers={"Host": "localhost:8000", "Origin": "http://localhost:9999"},
+        )
+        assert r.status_code == 403
+        assert "content-type" not in {k.lower() for k in r.request.headers}, "the request must carry no Content-Type"
+        assert kill_switch_active() == before, "the refused request changed the network mode"
+    finally:
+        (activate_kill_switch if before else clear_kill_switch)()
+
+
+def test_oo_allowed_hosts_names_are_accepted_as_an_origin_and_still_port_checked(client, monkeypatch):
+    """A-017: the Host guard accepted a LAN self-hoster's name, the CSRF check refused it, so their own UI could not post."""
+    host = "myhost.lan:8000"
+    assert _from(client, origin="http://myhost.lan:8000", host=host).status_code in (403, 421)  # not listed yet
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "myhost.lan")
+    assert _from(client, origin="http://myhost.lan:8000", host=host).status_code == 200
+    assert _from(client, origin="http://myhost.lan:9999", host=host).status_code == 403
+    assert _from(client, origin="http://evil.example:8000", host=host).status_code == 403
+
+
+def test_the_two_readers_agree_on_odd_values():
+    from src.api.main import _host_header_parts, _origin_parts
+
+    assert _origin_parts("http://localhost:8000") == ("localhost", 8000)
+    assert _origin_parts("https://localhost") == ("localhost", 443)
+    assert _origin_parts("http://[::1]:8000/x?y#z") == ("::1", 8000)
+    assert _origin_parts("HTTP://LocalHost") == ("localhost", 80)
+    for bad in ("", "null", "file:///x", "about:blank", "data:text/html,x", "ftp://localhost", "http://localhost:99999", "http://localhost:x", "http://"):
+        assert _origin_parts(bad) is None, bad
+    assert _host_header_parts("localhost:8000", "http") == ("localhost", 8000)
+    assert _host_header_parts("localhost", "https") == ("localhost", 443)
+    assert _host_header_parts("[::1]:8000", "http") == ("::1", 8000)
+    assert _host_header_parts("[::1]", "http") == ("::1", 80)
+    assert _host_header_parts("::1", "http") == ("::1", 80)  # a raw IPv6 literal has no port
+    for bad in ("localhost:", "localhost:abc", "localhost:0", "localhost:65536", "localhost:-1", "[::1]x"):
+        assert _host_header_parts(bad, "http") is None, bad
 
 
 # --- R191: a 422 never echoes the request body ------------------------------- #

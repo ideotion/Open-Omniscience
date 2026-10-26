@@ -9,7 +9,7 @@ were rewritten through one fixed ``<name>.tmp``. Two servers on one data folder 
 half file when both wrote the one temp name.
 
 Now a writer takes :func:`file_lock` on ``<name>.lock`` (a sidecar that is never deleted, so there is no stale-lock case: the kernel releases the lock when the
-holder ends by any means) and replaces the file through :func:`atomic_replace` (a temp named for the process and the thread, flushed, then ``os.replace``). An
+holder ends by any means) and replaces the file through :func:`atomic_replace` (a temp named for the process and the thread, flushed, then ``os.replace``, then the folder flushed where the platform can). An
 append takes the lock SHARED (appends of one line do not tear on the filesystems measured, and a trim waits for them); a trim or a read-modify-write takes it
 EXCLUSIVE.
 
@@ -34,12 +34,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
+from src.utils.interrupts import wait as _wait
+
 #: How long a waiter sleeps between two non-blocking attempts at the operating-system lock, in seconds. It is a poll interval, not a limit: a wait has no end
 #: but the holder letting go. 50 ms keeps a waiter's cost under a thousandth of a core.
 _POLL_S = 0.05
 _SIDECAR = ".lock"
 
 _UNLOCKED_WARNED: set[str] = set()
+_DIR_FLUSH_SKIPPED: dict[str, int] = {}
 _STATS: dict[str, dict[str, float]] = {}
 #: Re-entrant (R144): the garbage collector can run a finalizer at any allocation, the finalizer may log, and the journal's write takes :func:`file_lock` on
 #: the thread that already holds this lock. What that re-entry may do is limited by :func:`_registry` (see there).
@@ -49,8 +52,12 @@ _IN_REGISTRY = threading.local()
 
 @dataclass
 class _Local:
-    """What this process knows of one lock file: how many hold it and in which mode."""
+    """What this process knows of one lock file: how many hold it and in which mode.
 
+    ``lock`` is the plain lock under ``cond`` and the one a section ENTERS (R144): ``Condition.__enter__`` and ``__exit__`` are Python frames, and an interrupt that
+    lands in them leaves the lock owned; ``with lock:`` is one bytecode. ``cond`` is only waited on and notified, with ``lock`` held."""
+
+    lock: threading.RLock
     cond: threading.Condition
     writer: int | None = None  # thread ident of the exclusive holder
     reader_threads: set[int] | None = None
@@ -92,7 +99,8 @@ def _local(key: str) -> _Local:
         if got is None:
             # ``setdefault`` and not a check then a set: a finalizer's re-entry may have registered this key while the object above was being built, and two
             # objects for one lock file would let two threads hold it at once.
-            got = _LOCALS.setdefault(key, _Local(cond=threading.Condition(threading.RLock()), reader_threads=set()))
+            lock = threading.RLock()
+            got = _LOCALS.setdefault(key, _Local(lock=lock, cond=threading.Condition(lock), reader_threads=set()))
         return got
 
 
@@ -142,6 +150,51 @@ def _warn_unlocked(path: Path, why: str) -> None:
         sys.stderr.flush()
 
 
+def directory_flush_skips() -> dict[str, int]:
+    """How many replaces did not flush their folder's entry, by the reason (a platform or filesystem that cannot, a folder that could not be opened). Empty
+    when every replace that asked for it was flushed."""
+    with _registry():
+        return dict(_DIR_FLUSH_SKIPPED)
+
+
+def _skip_directory_flush(why: str) -> None:
+    """Count a replace whose folder entry was not flushed, and say so ONCE per reason on stderr (not through ``logging``, for the reason ``_warn_unlocked``
+    gives). The reason names the cause and never a path."""
+    with _registry():
+        first = why not in _DIR_FLUSH_SKIPPED
+        _DIR_FLUSH_SKIPPED[why] = _DIR_FLUSH_SKIPPED.get(why, 0) + 1
+    if first:
+        with contextlib.suppress(Exception):
+            sys.stderr.write(f"file lock: a replaced file's folder entry is not flushed to disk ({why}); a power cut right after a replace can bring the old file back\n")
+            sys.stderr.flush()
+
+
+def _flush_directory(path: Path) -> None:
+    """Flush the folder that holds ``path`` so the rename ``os.replace`` just did survives a power cut (audit 0.5.0 A-030): the data was flushed before the
+    move, but the move itself is a change to the folder, and until the folder is flushed the old file can come back. POSIX only; where the platform or the
+    filesystem cannot, the replace stands and :func:`_skip_directory_flush` names why. Any other failure (EIO, a full disk reported only here) is raised, as the
+    file's own flush does: the new file is then in place and may not survive a power cut, which the caller is told."""
+    if sys.platform == "win32":
+        _skip_directory_flush("windows cannot flush a folder")
+        return
+    fd: int | None = None
+    try:
+        try:
+            fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        except OSError as fault:
+            _skip_directory_flush(f"the folder could not be opened: {type(fault).__name__}")
+            return
+        try:
+            os.fsync(fd)
+        except OSError as fault:
+            if not _fsync_unsupported(fault):
+                raise
+            _skip_directory_flush(f"the filesystem cannot flush a folder: {errno.errorcode.get(fault.errno or 0, 'unknown')}")
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def _note(name: str, field: str, seconds: float) -> None:
     if getattr(_IN_REGISTRY, "busy", False):
         _IN_REGISTRY.pending.append((name, field, seconds))
@@ -163,7 +216,11 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
     """Hold ``<path>.lock`` for the body: exclusive by default, shared with ``shared=True`` (appends). Not re-entrant: taking it again in the same thread raises
     ``RuntimeError`` rather than deadlocking.
 
-    Everything that can fail is inside the ``try`` that releases, so an interrupt at any line leaves nothing held."""
+    Everything that can fail is inside the ``try`` that releases, and the in-process gate is entered through the plain lock under its Condition, never
+    through the Condition (R144). MEASURED with real SIGALRM interrupts, one per call, CPython 3.13.14, 20 s each (``scripts/signal_leak_probe.py gate_file_lock``
+    and ``gate_file_lock_contended``): 0 of 65,901 interrupts left the lock owned with the file free and 0 of 66,074 with another thread holding it, with no
+    ``RuntimeError`` taking an interrupt's place; the ``with <Condition>`` form this replaced left 18 of 66,290 and 5 of 65,998 owned, and 7 of the second became a
+    ``RuntimeError`` (audit 0.5.0 A-005). The probe is the claim: re-run it on any new interpreter."""
     path = Path(path)
     me = threading.get_ident()
     loc: _Local | None = None
@@ -176,13 +233,14 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
         sidecar = path.with_name(path.name + _SIDECAR)
         loc = _local(os.path.realpath(sidecar))  # one key per file, whatever spelling of its path (relative, or through a symlink) a caller used
         held = Held(locked=False, reason="not taken")
-        with loc.cond:
+        with loc.lock:
+            # ``while True: if not <wanted>: break``, not ``while <wanted>:`` (R161): on CPython 3.13 the back-edge of the second sits outside the ``with``'s exception-table entry
             while True:
                 if loc.writer == me or (loc.reader_threads is not None and me in loc.reader_threads):
                     raise RuntimeError("file_lock is not re-entrant: this thread already holds it")
                 if loc.writer is None and (shared or not loc.reader_threads):
                     break
-                loc.cond.wait(_POLL_S)
+                _wait(loc.cond, loc.lock, _POLL_S)
             entering = True
             if shared:
                 assert loc.reader_threads is not None
@@ -221,7 +279,7 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
                     os.close(fd)
         finally:
             if entering and loc is not None:
-                with loc.cond:
+                with loc.lock:
                     if loc.writer == me:
                         loc.writer = None
                     if loc.reader_threads is not None:
@@ -271,9 +329,11 @@ def atomic_replace(
     fsync: bool = True,
     sweep_every_s: float = 0.0,
 ) -> None:
-    """Write ``data`` to a unique temp beside ``path``, flush it, and move it over ``path``. The caller holds :func:`file_lock` when the new content depends on
-    the old. A failure leaves the old file whole and removes the temp. ``fsync=False`` is for a state file rewritten every few seconds that is rebuilt after a power
-    cut anyway; ``sweep_every_s`` limits the dead-temp sweep to once per that many seconds per file (0: after every replace)."""
+    """Write ``data`` to a unique temp beside ``path``, flush it, move it over ``path`` and flush the folder. The caller holds :func:`file_lock` when the new
+    content depends on the old. A failure before the move leaves the old file whole and removes the temp; one of the folder's flush, after the move, is raised
+    with the new file already in place (see :func:`_flush_directory`). ``fsync=False`` is for a state file rewritten every few seconds that is rebuilt after a
+    power cut anyway: neither the file nor its folder is flushed. ``sweep_every_s`` limits the dead-temp sweep to once per that many seconds per file (0: after
+    every replace)."""
     path = Path(path)
     tmp = temp_name(path)
     try:
@@ -290,6 +350,8 @@ def atomic_replace(
                     if not _fsync_unsupported(fault):
                         raise
         os.replace(tmp, path)
+        if fsync:
+            _flush_directory(path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise

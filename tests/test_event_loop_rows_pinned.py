@@ -11,7 +11,9 @@ a script's main would have no uvicorn above it. This file pins the remaining row
 Three rows left this list when they were read for it (2026-10-17): ``DamageRegistry.incident_after_last_check`` and ``DamageRegistry.notes`` were
 converted (tests/test_r163_cli_loops.py keeps them converted), and ``storage_events.record`` was found NOT to be event-loop-only: besides the lifespan it is
 called by the write gate's hold bookkeeping (``writer._note_hold_end`` and ``_note_long_hold``, which run on whichever thread held the gate, a CLI's main
-thread included) and by the storage guard, so its two loops are owed the R163 conversion by the lane that owns the file (``r163-cli/wal``).
+thread included) and by the storage guard, so its two loops were owed the R163 conversion by the lane that owns the file (``r163-cli/wal``). THAT CONVERSION
+LANDED (commit 8bedf2c7a; ``tests/test_r163_storage_events_record.py`` keeps it converted), and the entry that still listed it as owed was removed with the
+audit 0.5.0 pass (A-032): the table below is empty, and a function added to it is owed a conversion by the lane named beside it.
 """
 
 from __future__ import annotations
@@ -27,10 +29,8 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 _ENTRY = "src/monitoring/session_history.py::start_liveness"
 _THE_ONLY_CALLER_ON_THE_MAIN_THREAD = "src/api/main.py::lifespan (async def) calls src/monitoring/forensics.py::record_session_start"
 
-# (file, function) -> the lane owed the conversion, and why the event-loop reason does not cover it
-_OWED_CONVERSION = {
-    ("monitoring/storage_events.py", "record"): "WAL (r163-cli/wal): also called by writer._note_hold_end / _note_long_hold and the storage guard, on any thread",
-}
+# (file, function) -> the lane owed the conversion, and why the event-loop reason does not cover it. Empty: every row this file once listed was converted.
+_OWED_CONVERSION: dict[tuple[str, str], str] = {}
 
 
 @pytest.fixture(scope="module")
@@ -61,7 +61,9 @@ def test_the_only_use_of_vitals_history_start_is_the_one_the_chain_assumes(sourc
     assert calls == {_ENTRY}, f"_vitals_start is called from somewhere other than start_liveness: {sorted(calls)}"
 
 
-@pytest.mark.parametrize(("rel", "name"), sorted(_OWED_CONVERSION))
-def test_each_owed_conversion_names_a_real_function(rel, name):
-    tree = ast.parse((_SRC / rel).read_text(encoding="utf-8"))
-    assert any(isinstance(n, ast.FunctionDef) and n.name == name for n in ast.walk(tree)), f"{rel}::{name} is gone: delete the owed entry"
+def test_each_owed_conversion_names_a_real_function():
+    """A loop over the table and not a parametrize: an empty table must PASS (a parametrize over nothing is reported as skipped, which reads as a check that
+    did not run)."""
+    for rel, name in sorted(_OWED_CONVERSION):
+        tree = ast.parse((_SRC / rel).read_text(encoding="utf-8"))
+        assert any(isinstance(n, ast.FunctionDef) and n.name == name for n in ast.walk(tree)), f"{rel}::{name} is gone: delete the owed entry"

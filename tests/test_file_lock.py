@@ -204,7 +204,7 @@ def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
     atomic_replace(f, "b", fsync=False, sweep_every_s=300.0)
     assert synced == [] and len(swept) == 1, "a throttled writer swept twice, or synced when told not to"
     atomic_replace(f, "c")
-    assert len(synced) == 1 and len(swept) == 2
+    assert len(synced) == 2 and len(swept) == 2, "a flushed replace flushes the file and then its folder"
     assert f.read_text(encoding="utf-8") == "c"
 
 
@@ -411,6 +411,126 @@ def test_a_failed_fsync_keeps_the_old_file_and_removes_the_temp_but_a_filesystem
         monkeypatch.setattr(file_lock.os, "fsync", none_here)
         atomic_replace(target, f"written-{code}")
         assert target.read_text(encoding="utf-8") == f"written-{code}"
+
+
+# --- audit 0.5.0 A-030: the folder is flushed after the move ---------------------------------------------------------------------------------------------- #
+# The file was flushed before ``os.replace``, but the replace itself is a change to the FOLDER: until the folder is flushed a power cut can bring the old file
+# back. The old file is whole either way (the docstring's promise), so this is durability of the new one, and it is best effort where the platform cannot.
+def _recording_fsync(monkeypatch, *, on_folder=None):
+    """Record every ``os.fsync`` and ``os.replace`` in order: ``("file" | "folder", ino)`` and ``("replace",)``. ``on_folder`` runs for a folder's fd (to raise)."""
+    import os
+    import stat
+
+    real_fsync, real_replace = os.fsync, os.replace
+    events: list[tuple] = []
+
+    def fsync(fd):
+        st = os.fstat(fd)
+        events.append(("folder" if stat.S_ISDIR(st.st_mode) else "file", st.st_ino))
+        if on_folder is not None and stat.S_ISDIR(st.st_mode):
+            on_folder(fd)
+        real_fsync(fd)
+
+    def replace(src, dst):
+        events.append(("replace",))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(file_lock.os, "fsync", fsync)
+    monkeypatch.setattr(file_lock.os, "replace", replace)
+    return events
+
+
+def test_a_flushed_replace_flushes_the_file_then_moves_it_then_flushes_the_folder(tmp_path, monkeypatch):
+    events = _recording_fsync(monkeypatch)
+    target = tmp_path / "state.json"
+    atomic_replace(target, "new")
+    assert [e[0] for e in events] == ["file", "replace", "folder"], events
+    assert events[2][1] == tmp_path.stat().st_ino, "the folder flushed is not the one that holds the file"
+    assert target.read_text(encoding="utf-8") == "new"
+
+
+def test_a_replace_that_does_not_ask_for_a_flush_flushes_neither_the_file_nor_the_folder(tmp_path, monkeypatch):
+    events = _recording_fsync(monkeypatch)
+    atomic_replace(tmp_path / "state.json", "new", fsync=False)
+    assert [e[0] for e in events] == ["replace"], events
+
+
+def test_a_filesystem_that_cannot_flush_a_folder_still_replaces_and_the_reason_is_counted_and_said_once(tmp_path, monkeypatch, capsys):
+    def einval(fd):
+        raise OSError(errno.EINVAL, "no folder flush here")
+
+    _recording_fsync(monkeypatch, on_folder=einval)
+    monkeypatch.setattr(file_lock, "_DIR_FLUSH_SKIPPED", {})
+    target = tmp_path / "state.json"
+    atomic_replace(target, "one")
+    atomic_replace(target, "two")
+    assert target.read_text(encoding="utf-8") == "two"
+    skips = file_lock.directory_flush_skips()
+    assert list(skips.values()) == [2] and "EINVAL" in next(iter(skips)), skips
+    err = capsys.readouterr().err
+    assert err.count("not flushed to disk") == 1 and "EINVAL" in err, "the reason is said once per reason, and names the cause"
+    assert str(tmp_path) not in err, "the note carries no folder"
+
+
+def test_a_folder_that_cannot_be_opened_is_skipped_with_the_cause_named(tmp_path, monkeypatch):
+    import os
+
+    real_open = os.open
+
+    def deny_folders(path, flags, *args, **kwargs):
+        if flags & getattr(os, "O_DIRECTORY", 0):
+            raise PermissionError(errno.EACCES, "no")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(file_lock.os, "open", deny_folders)
+    monkeypatch.setattr(file_lock, "_DIR_FLUSH_SKIPPED", {})
+    target = tmp_path / "state.json"
+    atomic_replace(target, "new")
+    assert target.read_text(encoding="utf-8") == "new"
+    assert list(file_lock.directory_flush_skips()) == ["the folder could not be opened: PermissionError"]
+
+
+def test_windows_is_skipped_by_name_and_the_file_is_still_flushed(tmp_path, monkeypatch):
+    events = _recording_fsync(monkeypatch)
+    monkeypatch.setattr(file_lock.sys, "platform", "win32")
+    monkeypatch.setattr(file_lock, "_DIR_FLUSH_SKIPPED", {})
+    atomic_replace(tmp_path / "state.json", "new")
+    assert [e[0] for e in events] == ["file", "replace"], events
+    assert list(file_lock.directory_flush_skips()) == ["windows cannot flush a folder"]
+
+
+def test_a_failed_folder_flush_is_raised_with_the_new_file_in_place_and_no_temp_left(tmp_path, monkeypatch):
+    """Any failure but 'this filesystem has no such flush' means the move may not survive a power cut, which the file's own flush also refuses to hide."""
+
+    def eio(fd):
+        raise OSError(errno.EIO, "input/output error")
+
+    _recording_fsync(monkeypatch, on_folder=eio)
+    target = tmp_path / "state.json"
+    target.write_text("old", encoding="utf-8")
+    with pytest.raises(OSError) as raised:
+        atomic_replace(target, "new")
+    assert raised.value.errno == errno.EIO
+    assert target.read_text(encoding="utf-8") == "new", "the move had happened; the caller is told it may not be durable"
+    assert [p.name for p in tmp_path.iterdir() if ".tmp" in p.name] == []
+
+
+def test_an_interrupt_in_the_folder_flush_closes_the_folder_it_opened(tmp_path, monkeypatch):
+    import os
+
+    seen: list[int] = []
+
+    def interrupted(fd):
+        seen.append(fd)
+        raise KeyboardInterrupt
+
+    _recording_fsync(monkeypatch, on_folder=interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        atomic_replace(tmp_path / "state.json", "new")
+    assert len(seen) == 1
+    with pytest.raises(OSError) as closed:
+        os.fstat(seen[0])
+    assert closed.value.errno == errno.EBADF, "the folder's descriptor was left open"
 
 
 def test_one_file_through_a_symlinked_folder_raises_instead_of_deadlocking(tmp_path):
