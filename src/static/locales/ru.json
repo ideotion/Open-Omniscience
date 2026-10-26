@@ -6552,6 +6552,7 @@
   "today": "сегодня",
   "tokens": "токенов",
   "tone": "тон",
+  "too large (use folder import)": "слишком большие (используйте импорт из папки)",
   "took {wall}, {gate} with writes paused": "заняло {wall}, из них {gate} с приостановленной записью",
   "top 3 sources hold {pct}% of articles": "3 крупнейших источника содержат {pct}% статей",
   "top {n} of {total}": "Топ {n} из {total}",
