@@ -90,7 +90,11 @@ def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
         limit = size if head_bytes is None else min(size, head_bytes)
         with open(path, "r+b", buffering=0) as f:
             written = 0
-            while written < limit:
+            # ``while True: if not <wanted>: break``, not ``while <wanted>:``: the back-edge of the second sits outside the ``with``'s exception table
+            # on CPython 3.13 (src/utils/interrupts.py; R161/R163)
+            while True:
+                if written >= limit:
+                    break
                 chunk = os.urandom(min(_CHUNK, limit - written))
                 f.write(chunk)
                 written += len(chunk)

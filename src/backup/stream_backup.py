@@ -2188,10 +2188,11 @@ def read_stream_backup(
                             _h.update(b)
 
                         decrypt_stream(src / vname, _sink, passphrase)
-                if h.hexdigest() != mm.get("plaintext_sha256"):
-                    raise VolumeError(
-                        f"member {mm['name']} failed its plaintext checksum after reassembly"
-                    )
+                if h.hexdigest() == mm.get("plaintext_sha256"):  # a guard clause keeps the loop's back-edge inside the try (src/utils/interrupts.py)
+                    continue
+                raise VolumeError(
+                    f"member {mm['name']} failed its plaintext checksum after reassembly"
+                )
             stage_a_timings["reassemble"] = round(time.monotonic() - t1, 3)
 
             t2 = time.monotonic()

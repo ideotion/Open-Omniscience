@@ -146,10 +146,11 @@ class _LocalGraph(Graph):
                 has_way_in.add(node)
             for used_as in {own, _ALIASES.get(node, own)}:
                 local_name = used_as.startswith("_") or used_as in local_only
-                if not local_name:
-                    for f in self.module_calls.get(used_as, ()):
-                        main.add(f"{node} called at the top level of {f}")
-                        has_way_in.add(node)
+                for f in self.module_calls.get(used_as, ()):
+                    if local_name and f != rel:  # a local name is followed inside its own file only, top-level calls included
+                        continue
+                    main.add(f"{node} called at the top level of {f}")
+                    has_way_in.add(node)
                 for caller in self.calls.get(used_as, ()):
                     cfile = caller.split("::")[0]
                     if local_name and cfile != rel:

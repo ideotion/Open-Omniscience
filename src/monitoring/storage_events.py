@@ -84,6 +84,7 @@ from typing import Any
 from src.monitoring import page_reading
 from src.monitoring.secret_scrub import log_failure, scrubbed
 from src.paths import data_dir
+from src.utils.interrupts import kept_items
 
 _LOG = logging.getLogger(__name__)
 
@@ -730,7 +731,7 @@ def end(kind: str, key: Any, fields: dict[str, Any] | None = None, *, tombstone:
             if fields:
                 cleaned = _clean(fields)
                 if isinstance(cleaned, dict):
-                    merged = {**event, **{k: v for k, v in cleaned.items() if k not in _OWNED}}
+                    merged = {**event, **kept_items(cleaned, lambda k, _v: k not in _OWNED)}
                     if _size(merged) <= MAX_EVENT_BYTES:
                         event.update(merged)
             event["open"] = False
