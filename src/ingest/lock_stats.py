@@ -43,15 +43,17 @@ cumulative totals, the seconds the lock was held and the thread-seconds spent wa
 :func:`live_reading` adds the part of a hold or a wait that is still open at the instant of the reading.
 Both totals only grow, so the DIFFERENCE between two readings is exact for the interval between them
 (open holds and open waits included), whatever else happened in it. Its marks are NOT all outside the
-hold: :func:`asking` runs before the lock is asked for and :func:`gave_up` when it was never taken, but
-:func:`holding` and :func:`released` run INSIDE the hold, each one clock read and a few additions under a
-private leaf lock. The cost was measured, not assumed: the three marks of one extraction take 1.5 microseconds
-together, about 1 microsecond of it inside the hold (two of the three marks), against a mean hold of 35 ms (8 KB
-pages) to 285 ms (64 KB); a 14-collector run of the real collector shows no difference in throughput, CPU per article
-or mean hold beyond the spread of three runs per tree (the figures are in the shipped row).
-``tests/test_lock_live_reading.py`` pins that the marks do no I/O and take no other lock. The gauge reads the clock
-under its own lock, so a mark and a reading are totally ordered and a reading can never see more held time than
-elapsed.
+hold: :func:`asking` runs before the lock is asked for and :func:`gave_up` (called by :func:`record`, after the lock is
+given up, and idempotent) when the thread is no longer waiting, but :func:`holding` and :func:`released` run INSIDE the
+hold, each one clock read and a few additions under a private leaf lock. The cost was measured, not assumed: the four
+marks of one extraction take about 2 to 3 microseconds together (medians 2.1 to 3.0 over six runs on two shared-vCPU
+machines), the two inside the hold about 1.1 to 1.7 (medians 1.1, 1.1, 1.7, 1.2, 1.2 and 1.2), against a mean hold of
+35 to 40 ms (8 KB pages) or 285 to 320 ms (64 KB); a 14-collector run of the real collector, base tree against gauge
+tree, five alternating runs per cell, is in the shipped row.
+``tests/test_lock_live_reading.py`` pins that the marks do no
+I/O and take no other lock, and that a step body contains no call, so one mark is applied whole or not at all when an
+interrupt arrives (:func:`_mark` says what an interrupt can still do). The gauge reads the clock under its own lock, so a
+mark and a reading are totally ordered and a reading can never see more held time than elapsed.
 """
 
 from __future__ import annotations
@@ -81,9 +83,10 @@ _LIVE_LOCK = threading.Lock()
 #: Threads between asking for the extraction lock and getting it: ``thread ident -> the clock when it asked``.
 #: A dict and not a running sum: ``(a + b) - b != a`` in floating point, so a sum of timestamps would drift.
 _waiters: dict[int, float] = {}
-#: ``depth`` = how many nested calls hold the (re-entrant) lock; ``since`` = the clock when the OUTERMOST one took
-#: it; ``occupied_s`` / ``waited_s`` = completed holds / completed waits, in seconds, for the life of the process.
-_live: dict = {"depth": 0, "since": None, "occupied_s": 0.0, "waited_s": 0.0}
+#: ``depth`` = how many nested calls hold the (re-entrant) lock; ``since`` / ``holder`` = the clock when the OUTERMOST
+#: one took it and its thread; ``occupied_s`` / ``waited_s`` = completed holds / completed waits, in seconds, for the life
+#: of the process.
+_live: dict = {"depth": 0, "since": None, "holder": None, "occupied_s": 0.0, "waited_s": 0.0}
 
 #: Characters encoded at a time when a page is not pure ASCII: the sum of the pieces is the length of the
 #: whole (a lone surrogate is one ``?`` wherever the cut falls), and no copy of a 10 MiB page is made.
@@ -116,46 +119,75 @@ def reset() -> None:
         _state.update(_EMPTY)  # every key stays present, so an unlocked read in record() never meets a gap
 
 
-def _mark(step: Callable[[float], None]) -> None:
-    """Run one mark of the live gauge under its private lock, with the clock read under that lock.
+def _mark(step: Callable[[float, int], None]) -> float | None:
+    """Run one mark of the live gauge under its private lock, with the clock read under that lock; returns that clock
+    reading, or ``None`` when the mark failed.
 
-    The one place the gauge swallows a failure: a statistic never replaces an extraction's result (nor, for the
-    two marks inside the hold, lengthens it by raising). A failed mark leaves the totals as they were; the
-    unmatched cases are clamped below rather than going negative. Only ``Exception`` is caught: an interrupt in
-    the main thread still propagates, and the ``finally`` that follows it in ``extract_article`` still closes the hold."""
+    The one place the gauge swallows a failure: a statistic never replaces an extraction's result (nor, for the two
+    marks inside the hold, lengthens it by raising). A failed mark leaves the totals as they were. Only ``Exception``
+    is caught: an interrupt in the main thread propagates. WHAT AN INTERRUPT CAN STILL DO (``KeyboardInterrupt`` lands
+    in the main thread, ``MemoryError`` anywhere): CPython 3.13 checks for one at a call's return and at the start of
+    a Python frame, so the step bodies below are written with no call in them (one mark is applied whole or not at
+    all), but a mark can still be skipped by an interrupt at its own entry. A skipped ``asking`` or ``holding`` leaves
+    a waiter that :func:`record` and the thread's next :func:`asking` close; a skipped ``released`` leaves a holder
+    that the next ``holding`` from ANOTHER thread closes (the lock cannot be held by two), and that stays until
+    restart when no other thread ever takes the lock. Best effort, said so: it needs a signal exactly there."""
+    ident = threading.get_ident()
     try:
         with _LIVE_LOCK:
-            step(now())
+            t = now()
+            step(t, ident)
+            return t
     except Exception:  # noqa: BLE001 - a statistic never replaces an extraction's result
-        return
+        return None
 
 
-def _on_ask(t: float) -> None:
-    _waiters[threading.get_ident()] = t
+# The step bodies contain no call (subscripts, comparisons and ``del`` only): see :func:`_mark`.
+def _on_ask(t: float, ident: int) -> None:
+    if ident in _waiters:  # a wait that was never closed (a skipped mark): close it here so the total never goes backwards
+        asked = _waiters[ident]
+        if t > asked:
+            _live["waited_s"] += t - asked
+    _waiters[ident] = t
 
 
-def _on_give_up(t: float) -> None:
-    asked = _waiters.pop(threading.get_ident(), None)
-    if asked is not None:
-        _live["waited_s"] += max(0.0, t - asked)
+def _on_give_up(t: float, ident: int) -> None:
+    if ident in _waiters:
+        asked = _waiters[ident]
+        del _waiters[ident]
+        if t > asked:
+            _live["waited_s"] += t - asked
 
 
-def _on_hold(t: float) -> None:
-    _on_give_up(t)  # the wait ends where the hold begins
-    _live["depth"] += 1
-    if _live["depth"] == 1:
-        _live["since"] = t
-
-
-def _on_release(t: float) -> None:
-    if _live["depth"] <= 0:  # an unmatched release (its ``holding`` failed): nothing to close, never negative
-        return
-    _live["depth"] -= 1
-    if _live["depth"] == 0:
+def _on_hold(t: float, ident: int) -> None:
+    if ident in _waiters:  # the wait ends where the hold begins (the body of _on_give_up, inlined: a call here is a window)
+        asked = _waiters[ident]
+        del _waiters[ident]
+        if t > asked:
+            _live["waited_s"] += t - asked
+    depth = _live["depth"]
+    if depth > 0 and _live["holder"] != ident:  # the lock cannot be held by two threads: the earlier hold's release was skipped
         since = _live["since"]
-        if since is not None:
-            _live["occupied_s"] += max(0.0, t - since)
+        if since is not None and t > since:
+            _live["occupied_s"] += t - since  # a reading already counted it as open until now, so the total stays continuous
+        depth = 0
+    _live["depth"] = depth + 1
+    if depth == 0:
+        _live["since"] = t
+        _live["holder"] = ident
+
+
+def _on_release(t: float, ident: int) -> None:
+    depth = _live["depth"]
+    if depth <= 0:  # an unmatched release (its ``holding`` was skipped): nothing to close, never negative
+        return
+    _live["depth"] = depth - 1
+    if depth == 1:
+        since = _live["since"]
         _live["since"] = None
+        _live["holder"] = None
+        if since is not None and t > since:
+            _live["occupied_s"] += t - since
 
 
 def asking() -> None:
@@ -164,8 +196,8 @@ def asking() -> None:
 
 
 def gave_up() -> None:
-    """The calling thread will not get the lock it asked for (the acquire raised). Idempotent: a thread that is not
-    waiting is left alone."""
+    """The calling thread is not waiting for the lock any more (its acquire raised, or :func:`holding` never closed the
+    wait). Idempotent: a thread that is not waiting is left alone."""
     _mark(_on_give_up)
 
 
@@ -175,10 +207,14 @@ def holding() -> None:
     _mark(_on_hold)
 
 
-def released() -> None:
-    """The calling thread is about to give the lock up. Call it as the last statement INSIDE the hold; the outermost
-    release closes the hold and adds its length to the total."""
-    _mark(_on_release)
+def released() -> float:
+    """The calling thread is giving the lock up: close its hold in the gauge and return the clock reading the hold ended
+    at (the ``released`` stamp :func:`record` takes, so the pass window and the gauge end a hold at the same instant,
+    with no call between the stamp and the close). Call it as the first statement of the ``finally`` INSIDE the hold; the
+    outermost release adds the hold's length to the total. A failed mark still returns a reading (the pass window keeps
+    the hold)."""
+    t = _mark(_on_release)
+    return now() if t is None else t
 
 
 def live_reading() -> dict:
@@ -216,8 +252,8 @@ def _utf8_size(html: str) -> int | None:
 
 def record(*, asked: float, got: float | None, released: float | None, html: str) -> None:
     """Add one finished hold. ``got``/``released`` are ``None`` when the lock was never taken."""
+    gave_up()  # idempotent: a thread that asked and never held (the acquire raised), or whose holding() was skipped, stays a waiter otherwise
     if got is None or released is None:
-        gave_up()  # asked and never held (the acquire raised): no waiter may stay registered in the live gauge
         return
     try:
         wait = max(0.0, got - asked)

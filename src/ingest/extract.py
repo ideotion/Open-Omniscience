@@ -128,8 +128,7 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
                 _release_frames(exc)
                 raise
             finally:
-                released = lock_stats.now()
-                lock_stats.released()
+                released = lock_stats.released()
     finally:
         # After the lock is given up, so the statistic adds nothing to a hold; numbers only, never the URL.
         lock_stats.record(asked=asked, got=got, released=released, html=html)

@@ -14,10 +14,13 @@ What each group of tests guards, and what fails without it:
 * the exactness claim, against an independent log built from the clock values the gauge itself used, under eight
   threads and a sampler (the totals double counted, a wait dropped, a hold closed twice, a reading that sees more
   held time than elapsed);
-* the cleanup (an exception, a ``BaseException`` and an interrupted acquire each leave no phantom holder or waiter);
+* the cleanup (an exception, a ``BaseException`` and an interrupted acquire each leave no phantom holder or waiter;
+  a SKIPPED mark leaves nothing behind that outlives the call, the totals never go backwards, and a holder whose release
+  was skipped is closed by the next take from another thread);
 * the window and the gauge stay apart (a pass ``reset()`` does not touch the gauge);
-* the marks sit where they say (``asking`` outside the lock, ``holding`` and ``released`` inside it, the clock read
-  under the gauge's own lock) and do nothing but arithmetic;
+* the marks sit where they say (``asking`` outside the lock and INSIDE the outer ``try``, ``holding`` and ``released``
+  inside the hold, the clock read under the gauge's own lock) and do nothing but arithmetic: the step bodies contain no
+  call at all, which is what makes one mark apply whole or not at all when an interrupt arrives;
 * a broken gauge never breaks an extraction.
 """
 
@@ -53,7 +56,9 @@ class _Clock:
 def _fresh_gauge(monkeypatch):
     """Every test starts with an idle gauge and leaves the process-wide one as it found it."""
     monkeypatch.setattr(lock_stats, "_waiters", {})
-    monkeypatch.setattr(lock_stats, "_live", {"depth": 0, "since": None, "occupied_s": 0.0, "waited_s": 0.0})
+    monkeypatch.setattr(
+        lock_stats, "_live", {"depth": 0, "since": None, "holder": None, "occupied_s": 0.0, "waited_s": 0.0}
+    )
     lock_stats.reset()
     yield
     lock_stats.reset()
@@ -176,18 +181,18 @@ def test_a_nested_extraction_deepens_the_hold_and_does_not_restart_or_double_cou
 # the totals are exact, whatever else happened in the interval
 # --------------------------------------------------------------------------
 def test_differences_of_readings_match_an_independent_log_under_eight_threads_and_a_sampler(monkeypatch):
-    """The log is built from the clock values the gauge ITSELF read (each extraction reads the clock six times in a
-    fixed order: asked, ask, got, hold, released, release), so what is checked is the accounting, not the clock: the
-    union of holds and the sum of waits inside any window, open ones included, to float rounding."""
-    reads: dict[str, list[float]] = {}  # by thread NAME: an ident is reused once its thread has ended
-    real = time.monotonic
+    """The log is built from the clock values the gauge ITSELF read, labelled by the mark that read them (the tape wraps
+    ``_mark`` and keeps the value it returns), so what is checked is the accounting and not the clock or the order of the
+    statements: the union of holds and the sum of waits inside any window, open ones included, to float rounding."""
+    reads: dict[str, list[tuple[str, float]]] = {}  # by thread NAME: an ident is reused once its thread has ended
+    real_mark = lock_stats._mark
 
-    def tape() -> float:
-        t = real()
-        reads.setdefault(threading.current_thread().name, []).append(t)
+    def tape(step):
+        t = real_mark(step)
+        reads.setdefault(threading.current_thread().name, []).append((step.__name__, t))
         return t
 
-    monkeypatch.setattr(lock_stats, "now", tape)
+    monkeypatch.setattr(lock_stats, "_mark", tape)
 
     def body(html, *, url=None):
         time.sleep(0.0005)
@@ -220,11 +225,11 @@ def test_differences_of_readings_match_an_independent_log_under_eight_threads_an
 
     holds: list[tuple[float, float]] = []
     waits: list[tuple[float, float]] = []
-    for i in range(8):
-        ticks = reads[f"hammer-{i}"]
-        assert len(ticks) == 25 * 6, "six clock reads per extraction, in a fixed order"
-        for i in range(0, len(ticks), 6):
-            _asked, ask, _got, hold, _rel, release = ticks[i : i + 6]
+    for n in range(8):
+        marks = reads[f"hammer-{n}"]
+        assert [m[0] for m in marks] == ["_on_ask", "_on_hold", "_on_release", "_on_give_up"] * 25, "four marks per extraction"
+        for i in range(0, len(marks), 4):
+            (_, ask), (_, hold), (_, release), (_, _closing) = marks[i : i + 4]
             waits.append((ask, hold))
             holds.append((hold, release))
     assert len(holds) == 8 * 25
@@ -331,12 +336,12 @@ def test_the_marks_run_on_the_right_side_of_the_lock(clock, monkeypatch):
 
         def spy(real=real, name=name):
             seen.append((name, _owned()))
-            return real()
+            return real()  # released() returns the clock reading the hold ended at
 
         monkeypatch.setattr(lock_stats, name, spy)
     monkeypatch.setattr(extract_mod, "_extract_locked", lambda html, *, url=None: _doc())
     extract_article(_PAGE)
-    assert seen == [("asking", False), ("holding", True), ("released", True)]
+    assert seen == [("asking", False), ("holding", True), ("released", True), ("gave_up", False)]
 
 
 def test_a_gave_up_runs_when_the_lock_was_never_taken(clock, monkeypatch):
@@ -384,14 +389,14 @@ def _calls(func) -> set[str]:
     return names
 
 
-def test_the_marks_inside_the_hold_call_nothing_but_arithmetic_and_the_clock():
-    """The two marks inside the hold (and the one that closes a wait) may not call anything that blocks, takes another
-    lock or does I/O: what they call is pinned by name."""
-    assert _calls(lock_stats._mark) == {"step", "now"}
-    assert _calls(lock_stats._on_ask) == {"threading.get_ident"}
-    assert _calls(lock_stats._on_give_up) == {"_waiters.pop", "threading.get_ident", "max"}
-    assert _calls(lock_stats._on_hold) == {"_on_give_up"}
-    assert _calls(lock_stats._on_release) == {"max"}
+def test_the_marks_inside_the_hold_call_nothing_but_the_clock_and_the_step_bodies_call_nothing_at_all():
+    """CPython 3.13 checks for a pending interrupt at a call's return and at the start of a Python frame, so a step body
+    with no call in it is applied whole or not at all; the marks inside the hold also may not block, take another lock or
+    do I/O. What each calls is pinned by name."""
+    assert _calls(lock_stats._mark) == {"step", "now", "threading.get_ident"}
+    assert _calls(lock_stats.released) == {"_mark", "now"}
+    for step in (lock_stats._on_ask, lock_stats._on_give_up, lock_stats._on_hold, lock_stats._on_release):
+        assert _calls(step) == set(), f"{step.__name__} has a call in it: a window for an interrupt between two of its stores"
 
 
 # --------------------------------------------------------------------------
@@ -415,3 +420,129 @@ def test_a_broken_gauge_never_breaks_an_extraction_and_says_so_when_read(clock, 
             lock_stats.live_reading()  # the caller writes the class of the failure, never a zero
     assert _idle(), "the failed marks changed nothing"
     assert lock_stats.snapshot()["holds"] == 2, "the pass window is a separate statistic and still counted both"
+
+
+# --------------------------------------------------------------------------
+# a skipped or failed mark: nothing outlives the call, and the totals never go backwards
+# --------------------------------------------------------------------------
+def test_a_skipped_holding_mark_leaves_no_waiter_after_the_call(clock, monkeypatch):
+    """The review's finding: ``holding`` fails before it closes the wait, ``released`` runs (clamped), and ``record`` used to
+    return without ``gave_up`` because the lock WAS taken, so the waiter stayed registered for the life of the process."""
+
+    def interrupted() -> None:
+        clock.t += 1.0
+        raise _Interrupt()
+
+    monkeypatch.setattr(lock_stats, "holding", interrupted)
+    monkeypatch.setattr(extract_mod, "_extract_locked", lambda html, *, url=None: _doc())
+    with pytest.raises(_Interrupt):
+        extract_article(_PAGE)
+    assert _idle(), "the waiter outlived the call"
+    before = lock_stats.live_reading()["waited_s"]
+    clock.t += 30.0
+    assert lock_stats.live_reading()["waited_s"] == before, "a waiter left behind keeps accruing wait for ever"
+
+
+def test_a_holding_mark_that_fails_quietly_also_leaves_no_waiter(clock, monkeypatch):
+    def broken(t, ident):
+        raise RuntimeError("the step failed")
+
+    monkeypatch.setattr(lock_stats, "_on_hold", broken)
+    monkeypatch.setattr(extract_mod, "_extract_locked", lambda html, *, url=None: _doc())
+    assert extract_article(_PAGE) is not None, "a statistic never replaces an extraction's result"
+    assert _idle()
+
+
+def test_mark_swallows_exception_but_not_base_exception(clock, monkeypatch):
+    monkeypatch.setattr(lock_stats, "_on_ask", lambda t, ident: (_ for _ in ()).throw(_Interrupt()))
+    with pytest.raises(_Interrupt):
+        lock_stats.asking()  # an interrupt in the main thread must still reach its handler
+    monkeypatch.setattr(lock_stats, "_on_ask", lambda t, ident: (_ for _ in ()).throw(RuntimeError("x")))
+    lock_stats.asking()  # an Exception is the statistic's own failure: swallowed
+
+
+def test_asking_is_inside_the_outer_try_so_an_interrupt_after_it_still_closes_the_wait(clock, monkeypatch):
+    """R171: the mark that takes shared state (a registered waiter) sits INSIDE the ``try`` whose ``finally`` gives it back."""
+    real = lock_stats.asking
+
+    def registers_then_is_interrupted() -> None:
+        real()
+        raise _Interrupt()
+
+    monkeypatch.setattr(lock_stats, "asking", registers_then_is_interrupted)
+    monkeypatch.setattr(extract_mod, "_extract_locked", lambda html, *, url=None: _doc())
+    with pytest.raises(_Interrupt):
+        extract_article(_PAGE)
+    assert _idle(), "asking() ran before the try: the waiter it registered has no finally to close it"
+
+
+def test_a_stale_waiter_is_closed_by_the_threads_next_ask_and_the_total_never_goes_backwards(clock):
+    lock_stats._waiters[threading.get_ident()] = 90.0  # a wait whose closing mark was skipped
+    before = lock_stats.live_reading()
+    assert before["waited_s"] == 10.0 and before["waiting"] == 1
+    lock_stats.asking()
+    after = lock_stats.live_reading()
+    assert after["waited_s"] == 10.0 and after["waiting"] == 1, "closed at the new ask: continuous, never backwards"
+    clock.t += 2.0
+    assert lock_stats.live_reading()["waited_s"] == 12.0
+
+
+def test_a_holder_whose_release_was_skipped_is_closed_by_the_next_take_from_another_thread(clock):
+    lock_stats.holding()  # this thread takes the lock at 100 and its release mark is skipped
+    clock.t += 5.0
+    phantom = lock_stats.live_reading()
+    assert phantom["occupied_s"] == 5.0 and phantom["holder_age_s"] == 5.0
+    done: list[dict] = []
+
+    def other() -> None:
+        lock_stats.holding()  # the real lock cannot be held by two threads: the earlier hold is over
+        done.append(lock_stats.live_reading())
+        clock.t += 2.0
+        lock_stats.released()
+
+    t = threading.Thread(target=other, name="other")
+    t.start()
+    t.join(_WAIT)
+    assert done[0]["occupied_s"] == 5.0 and done[0]["holder_age_s"] == 0.0, "continuous at the take: never backwards"
+    end = lock_stats.live_reading()
+    assert end["occupied_s"] == 7.0 and end["holder_age_s"] is None
+    assert lock_stats._live["depth"] == 0 and lock_stats._live["holder"] is None and lock_stats._live["since"] is None
+
+
+def test_released_returns_the_clock_the_hold_ended_at_and_the_window_and_gauge_end_a_hold_together(clock, monkeypatch):
+    def body(html, *, url=None):
+        clock.t += 2.0
+        return _doc()
+
+    monkeypatch.setattr(extract_mod, "_extract_locked", body)
+    extract_article(_PAGE)
+    assert lock_stats.snapshot()["hold_total_s"] == 2.0
+    assert lock_stats.live_reading()["occupied_s"] == 2.0
+    lock_stats.holding()
+    clock.t += 1.0
+    assert lock_stats.released() == clock.t, "the reading the hold ended at"
+    assert lock_stats._live["since"] is None and lock_stats._live["depth"] == 0
+
+
+def test_the_marks_sit_where_the_exception_table_needs_them():
+    """R171 by structure: ``asking`` is the first statement of the ``try`` whose ``finally`` calls ``record`` (a wait it
+    registers always has a ``finally`` to close it), ``holding`` is the first statement of the ``try`` INSIDE the lock (a hold it
+    opens always has a ``finally`` to close it), and ``released`` is the first statement of that ``finally``, assigned to the
+    stamp ``record`` takes (one call, so no interrupt can land between the stamp and the close)."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(extract_article)))
+    func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
+
+    def call_name(stmt: ast.stmt) -> str:
+        value = stmt.value if isinstance(stmt, (ast.Expr, ast.Assign)) else None
+        return ast.unparse(value.func) if isinstance(value, ast.Call) else ""
+
+    outer = next(n for n in func.body if isinstance(n, ast.Try))
+    assert [call_name(s) for s in outer.finalbody] == ["lock_stats.record"]
+    assert call_name(outer.body[0]) == "lock_stats.asking", "asking() must be the first statement INSIDE the outer try"
+    with_lock = outer.body[1]
+    assert isinstance(with_lock, ast.With) and ast.unparse(with_lock.items[0].context_expr) == "_LXML_LOCK"
+    inner = next(n for n in with_lock.body if isinstance(n, ast.Try))
+    assert call_name(inner.body[0]) == "lock_stats.holding", "holding() must be the first statement INSIDE the inner try"
+    first_final = inner.finalbody[0]
+    assert isinstance(first_final, ast.Assign) and call_name(first_final) == "lock_stats.released"
+    assert [ast.unparse(t) for t in first_final.targets] == ["released"], "the stamp record() takes is released()'s own reading"
