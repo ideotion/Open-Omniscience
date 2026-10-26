@@ -236,3 +236,42 @@ def test_a_backup_from_before_the_table_existed_merges_cleanly(tmp_path):
     results, _batch = merge_corpus(inc, live, _META)
     assert results["host_mismatch_confirmed"]["new"] == 0
     assert _rows(live) == [("example.net", T1, "mine")]
+
+
+# ------------------------------------------------- Opus read of PR 1492, folded
+def test_a_short_local_note_inside_an_incoming_one_or_the_label_survives_the_merge(tmp_path):
+    for local_note, inc_note in (("wire", "AP wire feed"), ("merge", "syndicated"), ("AP wire feed", "wire")):
+        inc, live = tmp_path / f"i{local_note[:3]}.db", tmp_path / f"l{local_note[:3]}.db"
+        with _corpus(live)() as s:
+            sid = _src(s, "example.com")
+            _pair(s, sid, "example.net", T2, local_note)
+            s.commit()
+        with _corpus(inc)() as s:
+            sid = _src(s, "example.com")
+            _pair(s, sid, "example.net", T1, inc_note)
+            s.commit()
+        _res, batch = merge_corpus(inc, live, _META)
+        (_site, _at, note), = _rows(live)
+        assert note == f"[from merge batch {batch}] {inc_note}\n{local_note}", note
+        merge_corpus(inc, live, _META)
+        assert _rows(live) == [(_site, _at, note)]  # and a re-restore still changes nothing
+
+
+def test_withdraw_accepts_any_spelling_the_confirm_accepted(world, monkeypatch):
+    c, sid = _client(monkeypatch, world), _sid(world)
+    assert c.post("/api/quarantine/host-pairs", json={"source_id": sid, "article_site": "CDN.example.net"}).status_code == 200
+    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=CDN.example.net").json() == {"removed": 1}
+
+
+def test_an_idn_site_stored_in_unicode_can_be_confirmed(world, monkeypatch):
+    sid = _sid(world)
+    with world() as s:
+        url = "https://www.bücher.de/x"
+        s.add(Article(url=url, canonical_url=url, source_id=sid, content=_BODY, hash="hidn",
+                      word_count=90, language="de", title="B"))
+        s.commit()
+    c = _client(monkeypatch, world)
+    r = c.post("/api/quarantine/host-pairs", json={"source_id": sid, "article_site": "bücher.de"})
+    assert r.status_code == 200, r.text
+    assert r.json()["article_site"] == "xn--bcher-kva.de"
+    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=bücher.de").json() == {"removed": 1}

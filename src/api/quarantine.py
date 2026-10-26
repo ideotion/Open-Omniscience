@@ -20,6 +20,7 @@ work only, no network -- never airplane/consent-gated (mirrors the reindex job's
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -278,13 +279,20 @@ def _canonical_site(site: str, source_domain: str | None) -> str | None:
 def _pair_is_a_current_mismatch(session, source_id: int, domain: str | None, site: str) -> bool:
     """True when at least one stored article of this source lives on ``site`` while the source's own
     site differs. Stops at the first such article; an unreadable or same-site URL never counts."""
+    from sqlalchemy import or_
+
     from src.database.models import Article
     from src.ingest.host_mismatch import check_host
 
-    needle = site.split(".")[0]  # a cheap pre-filter only; check_host decides
+    # A cheap pre-filter only; check_host decides. A stored URL may spell an IDN host in Unicode while the
+    # site is the punycode form check_host names, so both spellings of the first label are tried.
+    label = site.split(".")[0]
+    needles = {label}
+    with contextlib.suppress(UnicodeError, ValueError):
+        needles.add(label.encode("ascii").decode("idna"))
     q = (
         session.query(Article.url)
-        .filter(Article.source_id == source_id, Article.url.contains(needle))
+        .filter(Article.source_id == source_id, or_(*[Article.url.contains(n) for n in sorted(needles)]))
         .yield_per(500)
     )
     for (url,) in q:
@@ -349,9 +357,14 @@ def quarantine_host_pair_unconfirm(source_id: int = Query(..., ge=1), article_si
 
     session = _default_session()
     try:
+        from src.database.models import Source
+
+        domain = session.query(Source.domain).filter(Source.id == source_id).scalar()
+        # The same normaliser POST stored it under, so any spelling of the site withdraws it.
+        site = _canonical_site(article_site, domain) or article_site.strip().lower()
         removed = (
             session.query(HostMismatchConfirmed)
-            .filter(HostMismatchConfirmed.source_id == source_id, HostMismatchConfirmed.article_site == article_site.strip().lower())
+            .filter(HostMismatchConfirmed.source_id == source_id, HostMismatchConfirmed.article_site == site)
             .delete(synchronize_session=False)
         )
         session.commit()

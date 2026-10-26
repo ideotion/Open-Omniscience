@@ -2906,6 +2906,9 @@ def _record_inherited_sibling_verdicts(con, batch_id: int, inc_ids: list[int]) -
     con.execute("DROP TABLE IF EXISTS temp.sib_inherit")
 
 
+_BATCH_LABEL = re.compile(r"^\[from merge batch \d+\] ")
+
+
 def _merge_host_confirmations(con, batch_id: int) -> DomainResult:
     """The host-mismatch CONFIRMED pairs (R193), carried by a restore under R195.
 
@@ -2952,13 +2955,23 @@ def _merge_host_confirmations(con, batch_id: int) -> DomainResult:
         entries = sorted(groups[key], key=lambda e: (e[0], e[2]))  # confirmed_at order; local first on a tie
         earliest = entries[0][0]
         parts: list[str] = []
+        # Whole notes already on the local row, each line with any earlier batch label removed: an incoming
+        # note equal to one of them is a re-restore. EQUALITY, never substring: a short local note ("wire")
+        # inside a longer incoming one, or inside the label itself, is a different note and must survive.
+        seen: set[str] = set()
+        if key in local and local[key][1]:
+            for line in str(local[key][1]).split("\n"):
+                seen.add(_BATCH_LABEL.sub("", line))
         for _at, note, incoming in entries:
             if not note or not note.strip():
                 continue
-            text = (label + note) if incoming else note
-            if any(note in p for p in parts):
-                continue  # the same words are already there (a re-restore, or two copies of one note)
-            parts.append(text)
+            if incoming:
+                if note in seen:
+                    continue  # the same words are already there (a re-restore, or two copies of one note)
+                seen.add(note)
+                parts.append(label + note)
+            else:
+                parts.append(note)  # a local note is never dropped
         joined = "\n".join(parts) if parts else None
         if key in local:
             d.duplicate += 1
