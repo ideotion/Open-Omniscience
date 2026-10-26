@@ -652,3 +652,43 @@ def test_a_deferred_powershell_row_is_never_in_the_childs_command_line(tmp_path)
     assert len(set(scripts)) == 1, "the command line is the same fixed script whatever the row is"
 
 
+
+
+@posix_only
+def test_the_mkdir_lock_records_the_pid_of_the_shell_holding_it_without_bashpid(tmp_path):
+    """macOS ships bash 3.2, which has no BASHPID: `${BASHPID:-$$}` then recorded the LAUNCHER's pid for a lock held by its deferred child, so a second launcher
+    saw the launcher exit and took a lock over that the child still held. The recorded pid is the holder's own, with and without BASHPID."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    show = (f'. "{h}"; _show() {{ read -r mine _ < /proc/self/stat; printf "%s %s\\n" "$mine" "$(cat "{f}.lock.d/pid")"; }}; '
+            f'unset BASHPID; ( oo_rec_locked "{f}" _show ) ; ( BASHPID=; unset BASHPID; oo_rec_locked "{f}" _show )')
+    out = subprocess.run(["bash", "-c", show], env=env, capture_output=True, text=True, check=True, timeout=30).stdout.split("\n")
+    for line in [x for x in out if x]:
+        mine, recorded = line.split()
+        assert mine == recorded, f"the lock names pid {recorded}, held by {mine}"
+
+
+@posix_only
+def test_a_takeover_does_not_carry_off_a_lock_a_live_launcher_made_between_the_read_and_the_move(tmp_path):
+    """The takeover race of the mkdir lock: launcher A reads a dead owner, the lock is released and made again by a LIVE launcher B, and A's mv moves B's lock. The
+    interleaving is forced by a `mv` that makes B's lock just before the real one runs. A puts it back, runs nothing under it, and defers its row."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
+    live = subprocess.Popen(["sleep", "120"])
+    try:
+        script = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; mv() {{ printf "%s\\n" {live.pid} > "{lock}/pid"; command mv "$@"; }}; '
+                  f'oo_rec_append "{f}" \'{{"pid":5}}\' 0 0')
+        subprocess.run(["bash", "-c", script], env=env, check=True, timeout=30)
+        assert lock.is_dir() and (lock / "pid").read_text(encoding="utf-8").strip() == str(live.pid), "the live launcher's lock was put back"
+        assert {"pid": 5} not in _rows(f)[0], "and nothing was written under it"
+    finally:
+        live.kill()
+        live.wait()
+    assert _wait_for(lambda: {"pid": 5} in _rows(f)[0], 30), "the deferred row lands once the live holder is gone"
