@@ -212,7 +212,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   content-type middleware exists anywhere.
 - **36. A multi-round `.eml` import that fails midway** (audit A-006's fix, PR #1486): earlier rounds stay committed and the reply is a
   500 with no tally. The same was already true of the 200-row commits inside `ingest_emails`; a re-import is idempotent because
-  duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally.
+  duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally. **Pinned as a stated limit (R252, 0.5.1 item 36):** `tests/test_newsletter_import_partial.py` fixes what is true today (the earlier round stays stored, the reply is a 500 naming the storage failure with no tally, a re-import stores only what is missing); a partial tally in the reply stays a decision for whoever edits those tests.
 - **37. The `/api/database/figures` memo**: it was keyed without the engine identity, so the figures could be stale after a swap. **Done (PR #1500, merged `e80d08b74`):** the carried mentions count is tied to the file it counted (engine object, corpus epoch and a generation), the shape `/api/insights/status` has.
 - **38. Panic wipe and the served memo**: the panic wipe must call `served_cache.invalidate()` after the wipe, so the served figures and
   scan memo cannot answer with pre-wipe data. Done in PR #1496 (keyword lane).
