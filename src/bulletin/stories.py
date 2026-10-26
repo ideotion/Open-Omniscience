@@ -66,8 +66,10 @@ _MIN_ARTICLES = 2
 #: mentions each carries (78 on the field corpus, so about 70,000 rows) and no more, whatever the length of the period.
 #: MEASURED (audit-0.5.0/inputs/remeasure-stories-export, written corpora of 1.56 to 12.48 million mentions at 78 per article): the Python
 #: heap of the whole read is 30.2, 33.6 and 45.7 MB at 100, 300 and 900 articles a read (tracemalloc peak, 1.56 M mentions), so one read
-#: costs about 19 KB an article (248 B a mention row), 17 MB at 900; and 900 is also the fastest of the three (cold 38.0 s against 40.5 s
-#: at 300 and 43.7 s at 100 on 12.48 M mentions, warm 32.7 against 34.3 and 39.4 s). A larger chunk is not available: the variable limit.
+#: costs about 19 KB an article (248 B a mention row), 17 MB at 900. The three sizes are within noise of each other on time (12.48 M mentions cold:
+#: 43.7, 40.5 and 38.0 s at 100, 300 and 900 in this lane's run; 40.7, 38.1 and 40.9 s in RC2's re-measure on its own machine, a spread of about
+#: 7 % whose order flips between runs), so 900 is chosen as the bound, for the fewest statements, at 15 MB of heap more than 300. A larger chunk
+#: is not available: the variable limit.
 _ARTICLE_CHUNK = 900
 
 #: Keyword ids whose stoplist verdict is remembered between chunks. It protects memory: at about 100 bytes an entry the table stays near
@@ -80,8 +82,8 @@ _VERDICTS_KEPT = 100_000
 #: shares, which a yearly edition holds for the whole read, from a read that is not coming back; it is NOT a bound on a slow machine's
 #: patience. MEASURED (same folder): the read takes 3.0 microseconds a mention row cold and 2.6 warm on a 2.1 GHz virtual core, linear from
 #: 1.56 to 12.48 million mentions (38.0 s cold, 32.7 s warm at 12.48 M), which puts the field corpus (20.9 M mentions, 268,241 articles) at
-#: about 64 s cold and 55 s warm, an extrapolation and labelled as one. 600 s is about nine times that: a machine nine times slower than
-#: that core still finishes, and one that cannot reads as "stories unavailable". The cards of the same edition have 240 s for the whole
+#: about 64 s cold and 55 s warm (68 to 73 s at the 3.27 to 3.5 microseconds a row of RC2's re-measure on its own machine), an extrapolation and
+#: labelled as one. 600 s is about eight times that: a machine eight times slower than that core still finishes, and one that cannot reads as "stories unavailable". The cards of the same edition have 240 s for the whole
 #: card layer (``cards.DEFAULT_BUDGET_S``); this read has more because a yearly edition is generated once, and not polled.
 _DEADLINE_DEFAULT_S = 600.0
 
