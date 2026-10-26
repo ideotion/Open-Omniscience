@@ -481,8 +481,9 @@ def columnar_batch_mb() -> float:
     return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
 
 
-def _refresh_persisted_build() -> None:
-    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it.
+def _refresh_persisted_build() -> bool | None:
+    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when no connection could be opened (nothing was
+    refreshed, so the caller must not report a build nor release a hold); any other return means the refresh ran.
 
     A SINGLE connection is held for the process -- the columnar store's ATTACH open REJECTS a
     second in-process handle to the same file ("Unique file handle conflict"), so the in-memory
@@ -508,7 +509,7 @@ def _refresh_persisted_build() -> None:
     if opened_now:
         con = columnar.connect(passphrase=_persist_passphrase())  # opens the persisted file
     if con is None:
-        return  # secure backend / passphrase vanished mid-flight -> in-memory next time
+        return False  # secure backend / passphrase vanished mid-flight -> in-memory next time
     try:
         with session_scope() as s:
             token = serve_gate.change_token(s)
@@ -531,6 +532,7 @@ def _refresh_persisted_build() -> None:
                 pass
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
+    return True
 
 
 #: What one batch of the build costs in Python while it is being bound, in bytes per row. Measured
@@ -1216,7 +1218,14 @@ def _build_and_swap() -> str:
         ran = True
         persisted_run = _persisted_serve_active()
         if persisted_run:
-            _refresh_persisted_build()
+            if _refresh_persisted_build() is False:
+                # No connection was opened (the passphrase or the secure backend went away between the verdict and here): no build ran, so this is
+                # neither "built" nor the end of a failure run -- a hold an earlier failed refresh kept stands, and the in-memory path takes over.
+                with _LOCK:
+                    _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted"}
+                ran = False
+                outcome = "declined"
+                return outcome
         else:
             stopped = _build_inmemory_and_swap()
             from src.analytics import rollup_marker

@@ -165,3 +165,27 @@ def test_the_hold_is_about_the_store_the_failed_build_ran_for_not_the_store_read
     rollup_serve._build_and_swap()
     assert rollup_serve._STATE["stopped"]["store"] == "persisted"
     assert rollup_hold.read() is None
+
+
+def test_a_persisted_refresh_that_opened_no_connection_is_neither_built_nor_the_end_of_a_failure_run(monkeypatch):
+    """``_refresh_persisted_build`` returns without refreshing when the passphrase or backend vanished: that is no build, so no "built", and a run of failures stands."""
+    rollup_serve._STATE.update(failures=2, failure_class="OutOfMemoryException")
+    monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "failed")
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    assert rollup_serve._LAST_OUTCOME["value"] != "built"
+    assert rollup_serve._STATE["failures"] == 2 and rollup_serve._STATE["failure_class"] == "OutOfMemoryException", "a no-op ended the failure run"
+    skip = rollup_serve._STATE["last_skip"]
+    assert skip["reason"] == "persisted-unavailable" and skip["source"] == "persisted"
+    assert rollup_serve._STATE["stopped"] is None, "no build ran, so no failure hold is kept for it either"
+
+
+def test_a_refresh_that_ran_is_still_built(monkeypatch):
+    """Negative space: only an explicit False is the no-connection case, so a refresh that returns True (or nothing, as the stubs do) is a build."""
+    for returned in (True, None):
+        rollup_serve._STATE.update(failures=2, failure_class="OutOfMemoryException")
+        monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", lambda r=returned: r)
+        assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+        assert rollup_serve._build_and_swap() == "built"
+        assert rollup_serve._STATE["failures"] == 0
