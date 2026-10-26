@@ -9,8 +9,10 @@ names is the boundary; these are the rules that keep what the names themselves c
 
 * ``ooClickId`` / ``ooSetValue`` touch only the ids the markup names today (an injected binding could
   otherwise fill any form field by id and then call the handler that reads it);
-* a name that erases data and has no ``confirm(`` of its own body runs only for a person's click or
-  Enter/Space (``GESTURE_ONLY``), and the listed names are bound to click events only;
+* a name that erases or removes data, or stops a running job, and has no ``confirm(`` of its own body runs only
+  for a person's click or Enter/Space (``GESTURE_ONLY``), and the listed names are bound to click events only;
+  such a name is found by the VERBS inside it wherever they sit (``sgRemoveMember``, ``familyResetGroup``,
+  ``jobCancel``, ``excludeKeyword``), not by its first letters;
 * the handlers that read consent-bearing fields read them from the panel the pressed control sits in,
   never by a bare id lookup, and ask before the step that cannot be taken back;
 * ``/api/safety/secure-erase`` refuses until a panic wipe has run in this process, and runs one at a time.
@@ -32,7 +34,32 @@ _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
 _OO_ON = (_STATIC / "oo-on.js").read_text(encoding="utf-8")
 
-_DESTRUCTIVE = re.compile(r"^(delete|remove|secure|panic|uninstall|shutdown)")
+# The verbs that erase, remove or stop something. A name carries one when a camelCase word of it is one.
+_VERBS = frozenset(
+    {"delete", "remove", "reset", "disable", "cancel", "exclude", "clear", "erase", "wipe", "purge", "uninstall", "shutdown", "panic", "secure"}
+)
+
+# Names that carry a verb above yet touch only THIS TAB'S OWN view or this browser's own preference, and never the
+# server's data. They need neither a prompt nor a gesture; each says why, and the test below checks the body still makes
+# no mutating request. A name that gains one has to leave this table and be guarded.
+_VIEW_ONLY = {
+    "_anClearSense": "drops one word-sense pick from the open analysis",
+    "agExcludeBulk": "browser-local calendar-feed exclusions (localStorage)",
+    "agExcludeClear": "browser-local calendar-feed exclusions (localStorage)",
+    "agToggleExclude": "browser-local calendar-feed exclusions (localStorage)",
+    "bulkJobCancel": "this tab's own queue and its own in-flight request",
+    "bulkJobClearDone": "this tab's own queue list",
+    "cardResetTunable": "puts a briefing-card input back to its default value, saves nothing",
+    "clearIdxCompare": "empties the open comparison selection",
+    "clearSrcFilters": "empties the sources filter form and reloads the list",
+    "feedClearSeen": "browser-local feed position marks (localStorage)",
+    "kbReset": "browser-local keyboard shortcuts (localStorage)",
+    "onUninstallMode": "reads the uninstall PLAN (a GET) and shows it; the uninstall itself confirms",
+    "resetCustomPromptForm": "empties a form that has not been saved",
+    "resetLlmPrompt": "puts the default text in an editable box; nothing is stored until Save",
+    "resetMap": "the map's zoom box",
+    "resetUi": "browser-local appearance (localStorage)",
+}
 
 
 def _spa_texts() -> dict[str, str]:
@@ -64,22 +91,49 @@ def test_the_helper_ids_are_exactly_the_ids_the_markup_names(helper: str, table:
     assert used == allowed, f"{table} must be exactly the ids bound in markup: unlisted {sorted(used - allowed)}, dead {sorted(allowed - used)}"
 
 
+def _verb_names(names) -> list[str]:
+    return [n for n in names if _VERBS & {w.lower() for w in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", n)}]
+
+
+def test_the_verb_finder_sees_the_names_the_old_prefix_rule_missed() -> None:
+    missed = ["sgRemoveMember", "kxRemoveTag", "familyResetGroup", "lawSetWatched", "disableUnmanagedLanguages", "jobCancel", "excludeKeyword"]
+    assert _verb_names(missed) == ["sgRemoveMember", "kxRemoveTag", "familyResetGroup", "disableUnmanagedLanguages", "jobCancel", "excludeKeyword"]
+    # lawSetWatched carries no verb: its destructive half is the argument, so it is listed by name below.
+    assert "lawSetWatched" in _set_literal("GESTURE_ONLY")
+    assert _verb_names(["deleteSource", "agExcludeClear", "_anClearSense", "xyzUninstallThing"]) == [
+        "deleteSource", "agExcludeClear", "_anClearSense", "xyzUninstallThing"
+    ]
+    assert _verb_names(["showTab", "loadTrends", "removedAll", "descendants"]) == []
+
+
 def test_every_destructive_name_confirms_in_its_own_body_or_is_gesture_only() -> None:
     gesture = _set_literal("GESTURE_ONLY")
     listed = set(_allowlist())
     assert gesture <= listed, f"GESTURE_ONLY names that are not allowlisted actions: {sorted(gesture - listed)}"
     js = app_js()
     unguarded = []
-    for name in sorted(listed):
-        if not _DESTRUCTIVE.match(name) or name in gesture:
+    for name in _verb_names(sorted(listed)):
+        if name in gesture or name in _VIEW_ONLY:
             continue
         body = function_body(js, name)
         if not re.search(r"\b(confirm|prompt)\(", body):
             unguarded.append(name)
     assert not unguarded, (
-        "these names erase or remove and neither confirm() in their own body nor sit in GESTURE_ONLY "
-        f"(an injected binding would run them with no click): {unguarded}"
+        "these names erase, remove, reset, cancel or exclude and neither confirm() in their own body, sit in GESTURE_ONLY, "
+        f"nor are on the view-only list with a reason (an injected binding would run them with no click): {unguarded}"
     )
+
+
+def test_the_view_only_list_names_real_verb_actions_that_still_make_no_mutating_request() -> None:
+    listed = set(_allowlist())
+    gesture = _set_literal("GESTURE_ONLY")
+    js = app_js()
+    dead = sorted(set(_VIEW_ONLY) - set(_verb_names(sorted(listed))))
+    assert not dead, f"on the view-only list but not a verb-named allowlisted action (dead entry): {dead}"
+    assert not set(_VIEW_ONLY) & gesture, f"both gesture-only and view-only: {sorted(set(_VIEW_ONLY) & gesture)}"
+    assert all(reason.strip() for reason in _VIEW_ONLY.values())
+    mutating = [n for n in sorted(_VIEW_ONLY) if re.search(r"method\s*:\s*[\"'](POST|PUT|DELETE|PATCH)[\"']", function_body(js, n))]
+    assert not mutating, f"view-only names that now make a mutating request: {mutating}"
 
 
 def test_a_gesture_only_name_is_bound_only_to_click_events() -> None:
