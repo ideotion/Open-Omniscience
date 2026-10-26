@@ -407,7 +407,7 @@ def test_the_hold_does_not_depend_on_the_write_gate(world, monkeypatch):
 def test_the_refusal_is_the_restores_own_refusal_so_the_journal_reads_it_as_refused():
     assert issubclass(merge.RestoreRefused, merge.RestoreAborted)
     src = ast.unparse(_func("_carry_and_swap"))
-    assert src.count("RestoreRefused(") == 3  # the hold, a stuck settings lock, and the library window; the generic handlers keep all as errors, not cancellations
+    assert src.count("RestoreRefused(") == 4  # the hold, a stuck settings lock, a second restore holding it (item 13), and the library window; the generic handlers keep all as errors, not cancellations
 
 
 # --------------------------------------------------------------------------- #

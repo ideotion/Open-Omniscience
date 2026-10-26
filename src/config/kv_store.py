@@ -154,6 +154,11 @@ class KvWriteBusy(RuntimeError):
     single-writer gate behind a long writer). Nothing was held."""
 
 
+class KvHoldTaken(RuntimeError):
+    """:func:`hold_writes` was asked while another restore holds settings writes (two restores reached the switch together). Nothing was
+    held and the first hold is untouched. A :class:`RuntimeError`, as the bare one it replaces was, so a caller that caught that still does."""
+
+
 #: The lock is a plain RLock and the Condition is built ON it, and the code takes ``with _hold_lock:``, never ``with _hold:``: a Condition's
 #: ``__enter__`` / ``__exit__`` are Python frames, where CPython delivers a signal, so a KeyboardInterrupt landing between "taken" and "will be
 #: released" left the lock taken for ever. Measured with real SIGALRM interrupts on CPython 3.13 ONLY: 15,174 of 43,142 left held in a tight loop
@@ -343,7 +348,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
         _refuse_if_stuck()
         with _hold_lock:
             if _hold_by is not None:
-                raise RuntimeError("settings writes are already held")
+                raise KvHoldTaken("settings writes are already held")
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
             _hold_file_bytes = file_bytes
