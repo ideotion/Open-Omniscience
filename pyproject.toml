@@ -33,12 +33,15 @@ classifiers = [
 # --- Core: the trustworthy spine. Lean enough to run on a modest AppVM. ---
 dependencies = [
     # Web / API
-    # The floor is written here because THIS app relies on one behaviour of fastapi: strict_content_type, on by default since 0.132.0, makes a
-    # route that takes a JSON model answer 422 to a body sent as text/plain, form-urlencoded or with no Content-Type, which is the second of
-    # the three layers (Host allow-set, Origin host+port, this) that keep a cross-site page from posting to the local API (docs/SECURITY.md).
-    # Read in the wheels: 0.131.0 has no strict_content_type, 0.132.0 has it as Default(True). Registry entry fastapi-strict-content-type;
-    # tests/test_external_freshness.py keeps the three places (this line, the registry, requirements.lock) from drifting apart.
-    "fastapi>=0.132.0",
+    # The floor is written here because THIS app relies on one behaviour of fastapi: strict_content_type, on by default since 0.132.0,
+    # makes a route that takes a JSON model answer 422 to a body sent with NO Content-Type (text/plain and form bodies were already
+    # refused before it). The floor is 0.133.0, not 0.132.0, because 0.132.0 requires starlette<1.0.0 and the starlette floor below is
+    # 1.5.0, so the resolver can never install that pair; 0.133.0 is the first release that allows starlette 1.x (pip refuses
+    # fastapi==0.132.0 with starlette>=1.5.0 and accepts 0.133.0). It is one of the layers that keep a cross-site page from posting to
+    # the local API (docs/SECURITY.md). Read in the wheels: 0.131.0 has no strict_content_type, 0.132.0 has it as Default(True).
+    # Registry entry fastapi-strict-content-type; tests/test_external_freshness.py keeps the three places (this line, the registry,
+    # requirements.lock) from drifting apart.
+    "fastapi>=0.133.0",
     # starlette is fastapi's own dependency; the floor is written here because THIS app depends on one behaviour of it. The whole API
     # sits behind GZipMiddleware (src/api/main.py), and the AI token streams are application/x-ndjson, which gzip compresses. A
     # release that does not flush the deflate stream per chunk holds a streamed reply back until several kilobytes have piled up

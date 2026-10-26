@@ -426,14 +426,16 @@ def test_malformed_json_422_does_not_echo_the_body(client):
         assert set(item) == {"type", "loc", "msg"}
 
 
-# --- audit 0.5.0 item 35: the second layer, a JSON route refuses a body that is not typed as JSON ----------------- #
-# A cross-site <form> or fetch(mode="no-cors") can send only a few Content-Types (text/plain, form-urlencoded, multipart) without a
-# preflight. FastAPI's strict_content_type (on by default since 0.132.0, which pyproject now floors) makes a route that takes a JSON
-# model answer 422 `model_attributes_type` to any of them, so the body never reaches the handler. MEASURED on the wheels (2026-10-26):
-# 0.131.0 already answers 422 to text/plain and form-urlencoded (the body is not parsed as JSON), and parses a body with NO Content-Type
-# as JSON and reaches the handler; 0.132.0 and later refuse that case too, so the no-Content-Type row is the one that fails below the
-# floor. It is a property of the installed dependency, not of this repo, so it is pinned here: the Origin guard (above) and the Host guard are the other two layers, and a
-# POST with no body (`/api/briefing/refresh`) has only the Origin guard to lean on. docs/SECURITY.md names all three.
+# --- audit 0.5.0 item 35: a JSON route refuses a body that is not typed as JSON ----------------------------------- #
+# A cross-site <form> or no-preflight fetch can send text/plain, form-urlencoded or multipart bodies, and a fetch given a Blob or
+# ArrayBuffer sends no Content-Type at all. FastAPI's strict_content_type (on by default since 0.132.0) makes a route that takes a JSON
+# model answer 422 `model_attributes_type` to a body not typed as JSON, so it never reaches the handler. MEASURED on the unpacked
+# wheels (2026-10-26): releases from 0.110.0 to 0.131.0 already answer 422 to text/plain, form-urlencoded and multipart bodies (a body
+# not typed as JSON is not parsed as JSON, so the model fails); the one case the setting adds is a body with NO Content-Type, which
+# those releases parse as JSON and hand to the handler. So the no-Content-Type row is the one that fails below the floor; the others
+# pass on any release and are kept as the statement of what is refused. It is a property of the installed dependency, not of this repo,
+# so it is pinned here: the Origin and Host guards (above) are the other layers, and a route with no body, or an optional one, has
+# nothing to type (docs/SECURITY.md names the counts).
 _JSON_ROUTE = "/api/newsletters/remove-imported"  # takes RemoveNewslettersBody; with confirm false the handler answers 400
 
 
@@ -443,11 +445,14 @@ _JSON_ROUTE = "/api/newsletters/remove-imported"  # takes RemoveNewslettersBody;
         {"Content-Type": "text/plain"},
         {"Content-Type": "application/x-www-form-urlencoded"},
         {"Content-Type": "text/plain;charset=UTF-8"},
-        {},  # no Content-Type at all
+        {"Content-Type": "multipart/form-data; boundary=oo"},
+        {},  # no Content-Type at all: the row that fails below the floor
     ],
 )
 def test_a_json_route_refuses_a_body_not_typed_as_json(client, headers):
     r = client.post(_JSON_ROUTE, content=b'{"confirm": false}', headers=headers)
+    if not headers:  # the row means nothing if the test client stamps a default type on a bytes body
+        assert "content-type" not in r.request.headers
     assert r.status_code == 422, (headers, r.status_code, r.text)
     assert r.json()["detail"][0]["type"] == "model_attributes_type"
 
