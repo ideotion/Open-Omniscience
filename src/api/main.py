@@ -925,6 +925,8 @@ async def csrf_and_security_headers(request: Request, call_next):
         # hostname, and the old test (``host is not None``) read that as "no Origin sent" and let it through. Only an
         # ABSENT header (a CLI, a server-side caller) is allowed; the Origin, when sent, decides alone, so a loopback
         # Referer cannot vouch for an Origin that is not loopback.
+        # A native <form method=post> navigation sends ``Origin: null`` and is refused too: the app's own UI posts with
+        # fetch (a real Origin) and has no POST form, so a future one must use fetch.
         sent = request.headers.get("origin")
         if sent is None:
             sent = request.headers.get("referer")

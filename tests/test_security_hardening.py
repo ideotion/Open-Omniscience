@@ -245,7 +245,7 @@ CANARY = "canary-passphrase-4f9c1e7a"
     "path,body",
     [
         ("/api/system/create-db", {"passphrase": CANARY}),  # `confirm` missing
-        ("/api/system/encrypt-db", {"passphrase": CANARY, "confirm": CANARY, "consent": "not-a-bool"}),
+        ("/api/system/encrypt-db", {"passphrase": CANARY, "consent": True}),  # `confirm` missing
         ("/api/system/unlock", {"pass": CANARY, "n": {"x": CANARY}}),  # `passphrase` missing
     ],
 )
@@ -266,3 +266,6 @@ def test_malformed_json_422_does_not_echo_the_body(client):
     )
     assert r.status_code == 422
     assert CANARY not in r.text
+    # pydantic's own answer here carries `input` and `ctx`; the key set is what fails on the old handler
+    for item in r.json()["detail"]:
+        assert set(item) == {"type", "loc", "msg"}
