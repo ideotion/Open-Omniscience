@@ -3707,34 +3707,48 @@ def map_data(
     return out
 
 
-def status(session) -> dict:
-    """Indexing status for the Insights tab.
-
-    Every count here is the REAL, EXACT value. The field's cost from this endpoint —
-    ``count(*) FROM keyword_mentions`` measured 724 ms × 172 polls = 124 s — is removed at
-    the ENDPOINT by a data-aware cache (:func:`src.api.insights._status_cache_key`) that
-    collapses repeat polls but invalidates on a commit by ANY connection (it reads
-    ``PRAGMA data_version`` on a pinned probe connection, so a write on a DIFFERENT pooled
-    connection than the poller's still bumps the key — the #595/A3 fix), NOT by trading the
-    exact count for a maintained-counter sum. (A counter-derived ``SUM(article_count)`` would
-    be cheaper per cold compute but can drift silently on a cascade delete — presenting a
-    wrong number as exact would breach the honesty non-negotiable — so the exact count stays;
-    a correctness-gated counter-serve is a possible future optimisation, but only once its
-    basis is tied to the corpus epoch, not the reconcile watermark.)"""
+def status_totals(session) -> dict:
+    """The index-backed part of :func:`status`: article, keyword and entity totals. No scan of ``keyword_mentions``."""
     total_articles = session.query(func.count(Article.id)).scalar() or 0
-    indexed = session.query(func.count(func.distinct(KeywordMentionRead.article_id))).scalar() or 0
     keywords = session.query(func.count(Keyword.id)).scalar() or 0
     entities = (
         session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
     )
-    mentions = session.query(func.count(KeywordMentionRead.id)).scalar() or 0
+    return {"total_articles": int(total_articles), "keywords": int(keywords), "entities": int(entities)}
+
+
+def status_indexed_articles(session) -> int:
+    """Distinct articles with at least one keyword mention: one full scan of the mention index."""
+    return int(session.query(func.count(func.distinct(KeywordMentionRead.article_id))).scalar() or 0)
+
+
+def status_mentions(session) -> int:
+    """Every keyword mention: the second full scan of the mention index."""
+    return int(session.query(func.count(KeywordMentionRead.id)).scalar() or 0)
+
+
+def status(session) -> dict:
+    """Indexing status for the Insights tab, complete and blocking.
+
+    Every count here is the REAL, EXACT value (a counter-derived ``SUM(article_count)`` would be cheaper per compute but can
+    drift silently on a cascade delete, and presenting a wrong number as exact would breach the honesty non-negotiable).
+
+    The two mention scans (:func:`status_indexed_articles`, :func:`status_mentions`) are the only O(n) part, and a route that is
+    polled must not call this on the request thread: ``/api/insights/status`` serves the totals at once and runs the two scans
+    in the background, carried for ten times their measured duration (see :mod:`src.api.insights`). This function stays the plain,
+    complete computation the tests and any caller that wants it blocking use."""
+    out = status_totals(session)
+    indexed = status_indexed_articles(session)
+    out["indexed_articles"] = indexed
+    out["remaining"] = out["total_articles"] - indexed
+    out["mentions"] = status_mentions(session)
     return {
-        "total_articles": int(total_articles),
-        "indexed_articles": int(indexed),
-        "remaining": int(total_articles) - int(indexed),
-        "keywords": int(keywords),
-        "entities": int(entities),
-        "mentions": int(mentions),
+        "total_articles": out["total_articles"],
+        "indexed_articles": out["indexed_articles"],
+        "remaining": out["remaining"],
+        "keywords": out["keywords"],
+        "entities": out["entities"],
+        "mentions": out["mentions"],
     }
 
 

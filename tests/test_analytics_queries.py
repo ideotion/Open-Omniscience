@@ -169,7 +169,12 @@ def test_insights_api_status_and_reindex(tmp_path):
     try:
         with TestClient(app) as client:
             st = client.get("/api/insights/status").json()
-            assert st["total_articles"] == 1 and st["remaining"] == 1
+            # A-002: the two index scans run in the background, so the first poll answers the exact totals and says the rest is
+            # being counted (null, not zero). This client's database is a fixture engine, not the app's, so the pass is checked
+            # on the blocking q.status the background pass runs (the served route is pinned in test_insights_status_served.py).
+            assert st["total_articles"] == 1 and st["remaining"] is None and st["index_counts_state"] == "computing"
+            with Sess() as s:
+                assert q.status(s)["remaining"] == 1
             re = client.post("/api/insights/reindex?limit=50").json()
             assert re["indexed"] == 1 and re["remaining"] == 0
             top = client.get("/api/insights/top?limit=5").json()

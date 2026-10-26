@@ -487,6 +487,16 @@ def _table_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return [t for t in entry.get("tables") or [] if isinstance(t, dict)]
 
 
+def _repair_named(repairs: list[dict[str, Any]], rec_id: str) -> dict[str, Any] | None:
+    """The attempt recorded under ``rec_id``, or ``None``. A function of its own for the reason of :func:`_table_records`: the search
+    loop sat in ``with self._lock`` in ``repair_upsert``, and a loop that ends in ``break`` and an ``else`` leaves a back-edge outside
+    the lock's exception-table entry on CPython 3.13."""
+    for rec in repairs:
+        if rec.get("id") == rec_id:
+            return rec
+    return None
+
+
 def _damaged_table_names(tables: list[dict[str, Any]]) -> list[str]:
     """The names of the tables read as damaged, for the same reason as :func:`_table_records`."""
     return [str(t.get("table")) for t in tables if t.get("verdict") == VERDICT_DAMAGED]
@@ -1630,12 +1640,11 @@ class DamageRegistry:
         try:
             self._ensure_loaded()
             with self._lock:
-                for rec in self._repairs:
-                    if rec.get("id") == rec_id:
-                        rec.update(fields)
-                        break
-                else:
+                rec = _repair_named(self._repairs, rec_id)
+                if rec is None:
                     self._repairs.append({"id": rec_id, "process": self._process, **fields})
+                else:
+                    rec.update(fields)
             self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
         except Exception as exc:  # noqa: BLE001 - a record that cannot be kept must never stop a repair
             _LOG.debug("database damage: could not record a repair attempt (%s)", type(exc).__name__)
@@ -1662,9 +1671,10 @@ class DamageRegistry:
             changed = 0
             with self._lock:
                 for rec in self._repairs:
-                    if rec.get("state") == "running" and rec.get("process") != self._process:
-                        rec.update(state="interrupted", finished_at=at)
-                        changed += 1
+                    if rec.get("state") != "running" or rec.get("process") == self._process:
+                        continue
+                    rec.update(state="interrupted", finished_at=at)
+                    changed += 1
             if changed:
                 self._single_flight(_FLUSH_JOB, self._flush_latest, rerun=True)
             return changed
