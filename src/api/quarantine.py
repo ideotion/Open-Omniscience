@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from src.monitoring.secret_scrub import http_detail
 
@@ -77,9 +78,10 @@ def quarantine_status() -> dict:
     return get_quarantine_manager().status()
 
 
-def _sample_row(article_id: int, rows: dict, host_signal: bool) -> dict:
+def _sample_row(article_id: int, rows: dict, host_signal: bool, confirmed: dict | None = None) -> dict:
     """One sampled article: id, title, URL and whether it is already marked; for the host-mismatch
-    signal also its source's domain and the two registrable sites that were compared."""
+    signals also its source's domain and the two registrable sites that were compared, and, for a pair
+    a person has confirmed, when and with what note."""
     from src.ingest.host_mismatch import check_host
 
     if article_id not in rows:
@@ -89,6 +91,9 @@ def _sample_row(article_id: int, rows: dict, host_signal: bool) -> dict:
     if host_signal:
         pair = check_host(r[2], r[4])
         row |= {"source_domain": r[4], "source_site": pair.source_site, "article_site": pair.article_site}
+        hit = (confirmed or {}).get((int(r[5]), pair.article_site))
+        if hit is not None:
+            row |= {"state": "confirmed", "confirmed_at": hit[0], "note": hit[1]}
     return row
 
 
@@ -102,7 +107,7 @@ def quarantine_samples(
     is the candidates with the smallest hash of (signal, id), so the same corpus gives the same rows;
     it is a spot-check, not an error rate. ``limit`` above the kept sample is clamped, and says so."""
     from src.analytics.quarantine_job import SAMPLE_PER_SIGNAL, _default_session, get_quarantine_manager
-    from src.database.models import Article, Source
+    from src.database.models import Article, HostMismatchConfirmed, Source
 
     mgr = get_quarantine_manager()
     kept = mgr.sample_ids()
@@ -118,18 +123,27 @@ def quarantine_samples(
             rows = {
                 int(r[0]): r
                 for r in session.query(
-                    Article.id, Article.title, Article.url, Article.quarantined, Source.domain
+                    Article.id, Article.title, Article.url, Article.quarantined, Source.domain,
+                    Article.source_id,
                 ).outerjoin(Source, Source.id == Article.source_id).filter(Article.id.in_(ids))
             } if ids else {}
-            host_signal = sig == "host_mismatch"  # report-only: its count is not a "reason:" tally
+            host_signal = sig in ("host_mismatch", "host_confirmed")  # report-only: not a "reason:" tally
+            confirmed: dict = {}
+            if host_signal and rows:
+                confirmed = {
+                    (int(sid), site): (at.isoformat() if at else None, note)
+                    for sid, site, at, note in session.query(
+                        HostMismatchConfirmed.source_id, HostMismatchConfirmed.article_site,
+                        HostMismatchConfirmed.confirmed_at, HostMismatchConfirmed.note,
+                    ).filter(HostMismatchConfirmed.source_id.in_({int(r[5]) for r in rows.values()}))
+                }
 
             measured = not host_signal or bool(status.get("include_host_mismatch"))
+            tally_key = {"host_mismatch": "host:mismatch", "host_confirmed": "host:confirmed"}.get(sig, f"reason:{sig}")
             out[sig] = {
-                "candidates": (
-                    int(tally.get("host:mismatch" if host_signal else f"reason:{sig}", 0)) if measured else None
-                ),
+                "candidates": int(tally.get(tally_key, 0)) if measured else None,
                 "shown": len(ids),
-                "rows": [_sample_row(i, rows, host_signal) for i in ids],
+                "rows": [_sample_row(i, rows, host_signal, confirmed) for i in ids],
             }
             if host_signal and not measured:
                 out[sig]["unknown"] = None
@@ -241,6 +255,130 @@ def quarantine_source_furniture(
                 "'known' lines are ones the rules already strip. Local read, nothing marked or removed"
             ),
         }
+    finally:
+        session.close()
+
+
+class HostPairBody(BaseModel):
+    source_id: int = Field(ge=1)
+    article_site: str = Field(min_length=1, max_length=255)
+    #: Free text, shown as typed and never parsed. The bound keeps one row small (a restore JOINS the notes
+    #: of one pair from several corpora, so the stored note can legitimately grow past it).
+    note: str | None = Field(default=None, max_length=2000)
+
+
+def _canonical_site(site: str, source_domain: str | None) -> str | None:
+    """The article site exactly as :func:`src.ingest.host_mismatch.check_host` would name it (the one
+    normaliser), or None when the text names no readable site."""
+    from src.ingest.host_mismatch import check_host
+
+    return check_host(f"https://{site.strip()}/", source_domain).article_site
+
+
+def _pair_is_a_current_mismatch(session, source_id: int, domain: str | None, site: str) -> bool:
+    """True when at least one stored article of this source lives on ``site`` while the source's own
+    site differs. Stops at the first such article; an unreadable or same-site URL never counts."""
+    from src.database.models import Article
+    from src.ingest.host_mismatch import check_host
+
+    needle = site.split(".")[0]  # a cheap pre-filter only; check_host decides
+    q = (
+        session.query(Article.url)
+        .filter(Article.source_id == source_id, Article.url.contains(needle))
+        .yield_per(500)
+    )
+    for (url,) in q:
+        c = check_host(url, domain)
+        if c.state == "mismatch" and c.article_site == site:
+            return True
+    return False
+
+
+@router.post("/host-pairs")
+def quarantine_host_pair_confirm(body: HostPairBody) -> dict:
+    """Record that ``source_id`` legitimately publishes on ``article_site``. Loopback and local: no
+    request is made, no article is marked. Refused (409) unless the pair is a mismatch right now, so the
+    table cannot collect pairs the report would never show. Confirming again keeps the FIRST
+    ``confirmed_at`` and replaces the note only when a new one is given."""
+    from datetime import UTC, datetime
+
+    from src.analytics.quarantine_job import _default_session
+    from src.database.models import HostMismatchConfirmed, Source
+
+    session = _default_session()
+    try:
+        src = session.query(Source.id, Source.domain).filter(Source.id == body.source_id).first()
+        if src is None:
+            raise HTTPException(status_code=404, detail="No such source.")
+        site = _canonical_site(body.article_site, src[1])
+        if site is None:
+            raise HTTPException(status_code=422, detail="That is not a readable site name.")
+        existing = (
+            session.query(HostMismatchConfirmed)
+            .filter(HostMismatchConfirmed.source_id == body.source_id, HostMismatchConfirmed.article_site == site)
+            .first()
+        )
+        if existing is None and not _pair_is_a_current_mismatch(session, body.source_id, src[1], site):
+            raise HTTPException(
+                status_code=409,
+                detail="Nothing to confirm: no stored article of this source lives on that site while "
+                "the source's own site differs.",
+            )
+        if existing is None:
+            existing = HostMismatchConfirmed(
+                source_id=body.source_id, article_site=site,
+                confirmed_at=datetime.now(UTC).replace(tzinfo=None), note=body.note,
+            )
+            session.add(existing)
+        elif body.note is not None:
+            existing.note = body.note
+        session.commit()
+        return {
+            "source_id": body.source_id, "article_site": site,
+            "confirmed_at": existing.confirmed_at.isoformat(), "note": existing.note,
+        }
+    finally:
+        session.close()
+
+
+@router.delete("/host-pairs")
+def quarantine_host_pair_unconfirm(source_id: int = Query(..., ge=1), article_site: str = Query(..., min_length=1)) -> dict:
+    """Withdraw a confirmation. Idempotent: ``removed`` is 0 when there was none."""
+    from src.analytics.quarantine_job import _default_session
+    from src.database.models import HostMismatchConfirmed
+
+    session = _default_session()
+    try:
+        removed = (
+            session.query(HostMismatchConfirmed)
+            .filter(HostMismatchConfirmed.source_id == source_id, HostMismatchConfirmed.article_site == article_site.strip().lower())
+            .delete(synchronize_session=False)
+        )
+        session.commit()
+        return {"removed": int(removed)}
+    finally:
+        session.close()
+
+
+@router.get("/host-pairs")
+def quarantine_host_pairs(source_id: int | None = Query(None, ge=1)) -> dict:
+    """Every confirmed pair (or one source's), with when and the note as typed. Read-only and local."""
+    from src.analytics.quarantine_job import _default_session
+    from src.database.models import HostMismatchConfirmed
+
+    session = _default_session()
+    try:
+        q = session.query(
+            HostMismatchConfirmed.source_id, HostMismatchConfirmed.article_site,
+            HostMismatchConfirmed.confirmed_at, HostMismatchConfirmed.note,
+        ).order_by(HostMismatchConfirmed.confirmed_at, HostMismatchConfirmed.id)
+        if source_id is not None:
+            q = q.filter(HostMismatchConfirmed.source_id == source_id)
+        rows = [
+            {"source_id": int(sid), "article_site": site, "confirmed_at": at.isoformat() if at else None, "note": note}
+            for sid, site, at, note in q
+        ]
+        return {"confirmed": len(rows), "rows": rows}
     finally:
         session.close()
 
