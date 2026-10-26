@@ -295,9 +295,10 @@ def install_source_outlet_id(conn: Connection) -> dict[str, Any]:
         }
         made = 0
         for name, sql in SOURCE_OUTLET_ID_TRIGGERS.items():
-            if name not in have:
-                conn.exec_driver_sql(sql)
-                made += 1
+            if name in have:
+                continue
+            conn.exec_driver_sql(sql)
+            made += 1
         stale: int = conn.exec_driver_sql(_OUTLET_STALE_SQL).scalar_one()
         if stale:
             conn.exec_driver_sql(_OUTLET_HEAL_SQL)

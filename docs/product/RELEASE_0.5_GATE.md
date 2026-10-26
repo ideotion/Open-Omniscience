@@ -1,6 +1,6 @@
 # Release gate — v0.5.0 · The investigator's desk
 
-**Status: CLOSED at the `v0.5.0` tag (2026-10-26) with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
+**Status: CLOSED on the commit `v0.5.0` names, `eea913e7a` (2026-10-26; the tag push is the maintainer's and was pending when this line was written), with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
 checkable inventory for closing the `0.5` cycle. It exists now because the maintainer ruled (Q112 = a, Q1204 =
 a) that the gate files for 0.4–0.9 are written in one session from the answered sheet
 ([`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -103,11 +103,11 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 
 ## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-26, `R185`–`R187`)
 
-`v0.5.0` is tagged with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
+`v0.5.0` is cut on `eea913e7a` (tag push pending the maintainer) with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
 Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
 that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag and 30–34 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, 24–29, 35 and 37 by the lanes' rulings and 30–34 and 36 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -131,13 +131,13 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–23) and by the close-out audit (30–34).**
+**Items added at the tag (12–23), by the lanes' rulings (24–29, 35, 37) and by the close-out audit (30–34, 36).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
   the Windows locked-folder raw copy (inferred, not observed); the Windows msvcrt polling lock and the NFS/FUSE flock in
   `src/safety/file_lock.py` (a filesystem that cannot lock runs unlocked with one stderr warning naming the file); the launcher's
-  stderr-filter summary-row exposure (measured 0 to 9 ms idle over 22 launches, no figure under load).
+  stderr-filter summary-row exposure (reported by RC2 as 0 to 9 ms idle over 22 launches on 17 Oct, from a hand run with no raw table kept, so INFERRED rather than evidenced; no figure under load).
 - **13. `hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
   is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
   a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
@@ -152,10 +152,10 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   stay default-off.
 - **17. PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
   lock move together or not at all.
-- **18. The audit** (`R189`): a workflow of agents audits quality, performance and vulnerability after the tag; its report and findings
-  ledger are in the project folder, and a clear defect is fixed under `R185`. Known leads handed to it:
-  `audit-0.5.0/inputs/open-items.md` section E (E3, the Ed25519 signing key written unencrypted, `src/reporting/evidence.py:62-72`, and E4,
-  an unbounded `.eml` read in `POST /api/newsletters/import`, first; E7, the Origin port compare, is the first fix candidate).
+- **18. The audit** (`R189`): done 2026-10-26 on `eea913e7a` by a workflow of 20 agents for quality, performance and vulnerability: 38
+  findings, 14 confirmed (3 high, 4 medium, 7 low), 0 refuted, 24 unverified and triaged. The report, the findings ledger (its PR column
+  names the fix PR of each fixed finding) and the triage are in the project folder, `audit-0.5.0/`; a clear defect was fixed under
+  `R185`, a design change is a proposal in `audit-0.5.0/inputs/open-items.md`, and the proposals await the maintainer.
 - **19. Not browser-verified**: the custody late-entries line (PR #1462) and the null-Origin refusal (PR #1469); built and
   test-verified, the real-browser step is open item 19.
 - **20. Limits stated in PR bodies**: #1455 (the governor climb was not exercised in the measured pass, the 240 s and 100-completion
@@ -179,6 +179,15 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   «absent -> Natural Earth, never an error»; nothing the person sees is wrong, and no manifest or static listing exists to ask first.
   The 404s stop when row E's operator build lands the files (the 0.5.1 item that already exists). Record:
   `plan-row-j/proposal-item23-osm-admin-presence-2026-10-26.md` (the `/api/health` presence flag, not built).
+- **24. `swap_window` inline release** (`R199`): the inline-release form is on main (the `R199` row); 0.5.1 confirms it on real written
+  state at the 20, 24 and 28 M cells (item 15).
+- **25. Early dispose** (`R202`): the engine disposes early at shutdown, shipped; 0.5.1 verifies it under the persistent-OOM run (item 28).
+- **26. The YAML loader field** (`R207`): the feedparser/YAML loader field stays as it is in 0.5.0 by design; deferred.
+- **27. Lease heartbeat**: the several-servers-per-data-folder leases (`R176`) have no heartbeat yet; the plan is
+  `rc-diagnostics/plan-r183-leases-2026-10-26.md` in the project folder; deferred.
+- **28. Persistent-OOM double run**: under a persistent out-of-memory one request can start the rollup build twice; a stated limit, the
+  fix is 0.5.1.
+- **29. The FTS settle-it check**: there is no check yet that the full-text index settled after an interrupted repair; deferred.
 - **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3275-3297`): its cost at the
   field catalogue (86k sources) is not measured; measure first, then a column projection that keeps what callers of the full form see.
 - **31. A declined rollup spawns a build thread on every served read** (audit A-026, `src/analytics/rollup_serve.py:1421`): needs the
@@ -190,6 +199,12 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   owner lanes; `session_state.json` is the one whose torn write changes the next boot's verdict.
 - **34. The launcher's «0 to 9 ms idle over 22 launches»** (audit A-034, item 12 above): RC2's own list is its only source, no raw timing
   table is in the tree; RC2 states it as inferred or commits the table.
+- **35. Request-origin defence** (a proposal, not a defect): the Origin/Sec-Fetch check is the only cross-site request defence, and no
+  content-type middleware exists anywhere.
+- **36. A multi-round `.eml` import that fails midway** (audit A-006's fix, PR #1486): earlier rounds stay committed and the reply is a
+  500 with no tally. The same was already true of the 200-row commits inside `ingest_emails`; a re-import is idempotent because
+  duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally.
+- **37. The `/api/database/figures` memo**: it is keyed without the engine identity, so the figures can be stale after a swap; 0.5.1.
 ---
 
 ## 2. The rows
