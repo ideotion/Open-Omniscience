@@ -22,6 +22,7 @@ import atexit
 import importlib.util
 import os
 import shutil
+import sys
 import tempfile
 
 _ISOLATED = tempfile.mkdtemp(prefix="oo-tests-")
@@ -44,6 +45,9 @@ if os.environ.get("PYTEST_XDIST_WORKER") and os.environ.get("OO_DATA_DIR") == os
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
 if os.environ["OO_DATA_DIR"] == _ISOLATED and not os.environ.get("PYTEST_XDIST_WORKER"):
     os.environ[_DEFAULT_MARK] = _ISOLATED
+# The directory this process was started on. ``src.database.session`` binds its engine to ``OO_DATA_DIR`` at its first import, so
+# ``_engine_binds_to_the_suite_directory`` below compares what it bound to against THIS, not against the variable (a test moves that).
+_SUITE_DATA_DIR = os.environ["OO_DATA_DIR"]
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
 # Never start the offline-maintenance timer either: the boot-upkeep tests that unset
@@ -150,6 +154,10 @@ if _MISSING_EXTRAS:
 
 
 import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above
+# Bind the app's engine to the suite's directory NOW, before any test body can move ``OO_DATA_DIR``: ``src.database.session`` binds at its
+# first import and never again, and a full run gets this by accident (collection imports it at module level) while a selection does not.
+# After every env default the session reads, before the first fixture. ``_engine_binds_to_the_suite_directory`` below is the net.
+import src.database.session  # noqa: E402, F401 - imported for its binding
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -187,6 +195,38 @@ def _the_test_process_is_not_held_to_a_core_limit_and_no_filter_is_put_in_front_
     patch.setattr(secret_scrub, "protect_handler", protect_handler)
     yield
     patch.undo()
+
+
+@pytest.fixture(autouse=True)
+def _engine_binds_to_the_suite_directory(request):
+    """The test that imports ``src.database.session`` FIRST must do it while ``OO_DATA_DIR`` is still the suite's directory.
+
+    The session binds its engine (and ``DATA_DIR``) to the variable once, at that import, while the settings store reads the variable
+    on every call. A test that moves the variable to its ``tmp_path`` and then imports ``src.api.main`` (or anything that reaches the
+    session) in a run where nothing imported it earlier binds the engine to its own tmp_path for the rest of the process: the app then
+    stamps and reads one store while ``store_form()`` reads another, and a LATER test fails on a value it never touched (measured
+    2026-10-17: ``tests/test_init_steps.py`` before ``tests/test_country_migration.py`` read the country form as alpha-2 in a store the
+    app had stamped alpha-3). A full run is safe by accident, since collection imports the session at module level before any test
+    body; a selection is not. This fails the test that bound it, by name, at its own teardown, and says what to do.
+
+    Only the FIRST binding is looked at (a later test cannot move it), and a run where the module was imported before the test began
+    (collection, an earlier test, the guard itself) costs one dictionary lookup."""
+    already = "src.database.session" in sys.modules
+    yield
+    if already:
+        return
+    session = sys.modules.get("src.database.session")
+    if session is None:
+        return
+    from pathlib import Path
+
+    bound = Path(str(session.DATA_DIR)).resolve()
+    if bound != Path(_SUITE_DATA_DIR).resolve():
+        raise AssertionError(
+            f"{request.node.nodeid} imported src.database.session while OO_DATA_DIR pointed away from the suite's directory, so the "
+            f"process's engine is bound to {bound} for good (the suite's is {_SUITE_DATA_DIR}). Import src.database.session (or "
+            "src.api.main) BEFORE moving OO_DATA_DIR, in a module-level import or in the fixture that sets it."
+        )
 
 
 @pytest.fixture(autouse=True)

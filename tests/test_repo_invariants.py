@@ -5799,7 +5799,7 @@ def test_concept_map_two_tier_browse_and_clickable_countries():
     # "not mapped" bucket drill all resolve through the SAME shared function.
     assert "onCountry: (iso) => _conceptDrillCountry(ringId, iso)" in js
     assert '<tr style="cursor:pointer" data-on-click="_conceptDrillCountry(' in js
-    assert 'data-on-click="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
+    assert 'data-on-click="_conceptDrillCountry(${esc(JSON.stringify(ringId))}, null)"' in js, (
         "the not-mapped/unlocated bucket must be a clickable drill, never a dead-end div"
     )
     assert "/api/insights/ring-country-articles" in js
