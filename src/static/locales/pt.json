@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "Apagar os originais? Só são removidos os ficheiros já confirmados na pasta da aplicação — tudo o que não foi copiado permanece. Isto não pode ser desfeito.",
   "Delete this download and its file?": "Excluir este download e seu arquivo?",
   "Delete this edition? The corpus is untouched — only the document goes.": "Eliminar esta edição? O corpus fica intacto — só o documento desaparece.",
+  "Delete this extractor? This cannot be undone.": "Excluir este extrator? Esta ação não pode ser desfeita.",
   "Delete this watch and its history?": "Eliminar esta vigilância e o seu histórico?",
   "Deleted.": "Excluído.",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "Apaga apenas os ficheiros cuja cópia na pasta da aplicação está confirmada. Execute primeiro a cópia.",

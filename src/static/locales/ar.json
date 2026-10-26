@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "حذف النسخ الأصلية؟ لن تُحذف إلا الملفات المؤكد وجودها في مجلد التطبيق — وكل ما لم يُنسخ يبقى كما هو. لا يمكن التراجع عن هذا الإجراء.",
   "Delete this download and its file?": "حذف هذا التنزيل وملفه؟",
   "Delete this edition? The corpus is untouched — only the document goes.": "حذف هذا الإصدار؟ لن يُمس المتن — المستند وحده هو ما يُحذف.",
+  "Delete this extractor? This cannot be undone.": "هل تريد حذف هذا المستخرِج؟ لا يمكن التراجع عن هذا الإجراء.",
   "Delete this watch and its history?": "حذف هذه المراقبة وسجلّها؟",
   "Deleted.": "تم الحذف.",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "يحذف فقط الملفات التي تأكّد نسخها إلى مجلد التطبيق. نفّذ النسخ أولاً.",

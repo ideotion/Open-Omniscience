@@ -37,10 +37,12 @@ def quarantine_start(
     include_prose_gate: bool = Query(True),
     include_stubs: bool = Query(False),
     include_host_mismatch: bool = Query(False),
+    confirm: bool = Query(False, description="must be true with write=true: the write is a bulk hide with no reverse route"),
 ) -> dict:
     """Start the retroactive quarantine job. ``write=False`` (default): pure detection,
     no database mutation. ``write=True``: additionally stamps each detected candidate,
-    idempotently (an already-quarantined row is skipped, never re-stamped). 409 if a run
+    idempotently (an already-quarantined row is skipped, never re-stamped); it needs ``confirm=true``, because the
+    stamp hides every detected article and no route reverses it (400 otherwise). 409 if a run
     is already in progress.
 
     ``include_prose_gate`` (default True = unchanged) selects the CRITERIA the run applies.
@@ -59,6 +61,13 @@ def quarantine_start(
     so it marks nothing even with ``write=true`` (see :mod:`src.ingest.host_mismatch`)."""
     from src.analytics.quarantine_job import get_quarantine_manager
 
+    if write and not confirm:
+        # The stamp hides every detected article from the readers that honour it, and no route un-stamps one:
+        # the data is kept, the hiding is not undoable from here. A dry run (the default) needs nothing.
+        raise HTTPException(
+            status_code=400,
+            detail="confirm=true is required with write=true: the write hides every detected article and no route reverses it.",
+        )
     try:
         # Forwarded only when asked for, so the manager is called exactly as before otherwise.
         extra: dict[str, Any] = {"include_stubs": True} if include_stubs else {}

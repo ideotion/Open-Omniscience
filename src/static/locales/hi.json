@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "मूल फ़ाइलें हटाएँ? केवल वे फ़ाइलें हटाई जाती हैं जिनकी ऐप फ़ोल्डर में उपस्थिति पुष्ट है — जो कॉपी नहीं हुईं वे बनी रहती हैं। इसे पूर्ववत नहीं किया जा सकता।",
   "Delete this download and its file?": "इस डाउनलोड और इसकी फ़ाइल को हटाएं?",
   "Delete this edition? The corpus is untouched — only the document goes.": "यह संस्करण हटाएँ? कोष अछूता रहता है — केवल दस्तावेज़ जाता है।",
+  "Delete this extractor? This cannot be undone.": "क्या इस एक्सट्रैक्टर को हटाएँ? इसे पूर्ववत नहीं किया जा सकता।",
   "Delete this watch and its history?": "इस निगरानी और इसका इतिहास हटाएँ?",
   "Deleted.": "हटाया गया।",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "केवल वे फ़ाइलें हटाता है जिनकी ऐप फ़ोल्डर में प्रति पुष्ट हो चुकी है। पहले प्रतिलिपि चलाएँ।",

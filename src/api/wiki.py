@@ -242,7 +242,20 @@ def _pin_to_hot(wiki: str, title: str, page_id: int | None) -> dict:
 
 
 @router.delete("/pages/{page_id}")
-def delete_page(page_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_page(
+    page_id: int,
+    confirm: bool = Query(False, description="must be true: deleting a page deletes its captured revisions"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Stop watching a page AND drop every revision captured for it (the relationship cascades).
+
+    Refuses without ``confirm=true``: the captured history is the part that cannot be fetched again.
+    """
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="confirm=true is required: deleting a watched page also deletes its captured revisions.",
+        )
     page = db.query(WikiPage).filter_by(id=page_id).first()
     if page is None:
         raise HTTPException(status_code=404, detail=f"Page {page_id} not found.")

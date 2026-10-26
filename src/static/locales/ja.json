@@ -1330,6 +1330,7 @@
   "Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.": "元のファイルを削除しますか？アプリのフォルダーに存在することが確認されたファイルのみが削除されます。コピーされなかったものはそのまま残ります。この操作は取り消せません。",
   "Delete this download and its file?": "このダウンロードとそのファイルを削除しますか？",
   "Delete this edition? The corpus is untouched — only the document goes.": "この号を削除しますか？コーパスはそのままで、消えるのは文書だけです。",
+  "Delete this extractor? This cannot be undone.": "この抽出器を削除しますか？この操作は元に戻せません。",
   "Delete this watch and its history?": "このウォッチと履歴を削除しますか？",
   "Deleted.": "削除しました。",
   "Deletes only the files confirmed already copied into the app folder. Run the copy first.": "アプリのフォルダーへのコピーが確認されたファイルのみを削除します。先にコピーを実行してください。",

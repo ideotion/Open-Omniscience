@@ -61,7 +61,10 @@ def test_source_crud_via_router(client):
     client.put(f"/api/sources/{sid}", json={"priority": 1})
     assert client.get(f"/api/sources/{sid}").json()["priority"] == 1
     # delete
-    assert client.delete(f"/api/sources/{sid}").status_code == 200
+    refused = client.delete(f"/api/sources/{sid}")
+    assert refused.status_code == 400 and "confirm=true" in refused.json()["detail"]
+    assert client.get(f"/api/sources/{sid}").status_code == 200, "a refused delete must leave the source"
+    assert client.delete(f"/api/sources/{sid}?confirm=true").status_code == 200
     assert client.get(f"/api/sources/{sid}").status_code == 404
 
 
