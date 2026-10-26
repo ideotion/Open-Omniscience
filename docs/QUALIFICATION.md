@@ -11,7 +11,7 @@ read the counts AND the samples.
   `&include_host_mismatch=true` to also count articles stored on a different site than their source's own.
   A 409 means a run is already in progress: wait for it. Nothing else heavy should run beside it.
 - `GET /api/quarantine/status` shows `articles_total`, `articles_done` and the `tally` (`scanned`,
-  `quarantined`, `already_quarantined`, `reason:<signal>`, and `host:mismatch` / `host:unknown`).
+  `quarantined`, `already_quarantined`, `reason:<signal>`, and `host:mismatch` / `host:confirmed` / `host:unknown`).
 - `POST /api/quarantine/pause`, `resume` and `cancel` control the run (`/api/quarantine/{action}`).
 
 ## Read what the rules picked
@@ -22,6 +22,14 @@ read the counts AND the samples.
 - Host mismatch is REPORT-ONLY: it marks nothing even with `write=true`, because a page on another site can
   be a good article (syndication, redirect, wire feed). Each row shows the source's domain and the two
   sites compared; `unknown` is never counted as a mismatch.
+- A person who has read a mismatch and knows the source legitimately publishes on that site can CONFIRM the
+  pair: `POST /api/quarantine/host-pairs` (`source_id`, `article_site`, optional `note`),
+  `GET /api/quarantine/host-pairs` to list them, `DELETE` to withdraw one. A confirmed pair is a side
+  table keyed by (source, article site), never a tag on the source; the report then counts it as
+  `host:confirmed` and lists it under `signal=host_confirmed` with its date and note instead of hiding it.
+  Only a pair that is a mismatch right now can be confirmed (409 otherwise). A restore carries the pairs: the
+  earliest confirmation date wins and notes from both corpora are joined, each incoming note labelled with
+  its merge batch.
 
 ## Reports that are not part of a run
 - `GET /api/quarantine/raw-id-sources`: sources whose whole name is a bare Wikidata Q-id, with article

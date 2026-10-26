@@ -2128,7 +2128,7 @@ _MERGE_HANDLED = {
     "article_analyses", "article_mentioned_dates", "wiki_pages", "wiki_revisions",
     "law_documents", "law_revisions", "commodity_prices", "market_extraction_rules",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
-    "source_qualification_attempts",
+    "source_qualification_attempts", "host_mismatch_confirmed",
     # 2026-08-03, from the P0 validation on the operator's 16.5 GB corpus: these rode
     # inside every artifact and no handler copied them, so a FRESH-INSTALL restore
     # dropped them. Each has a unique constraint the schema itself defines, so its
@@ -2906,6 +2906,99 @@ def _record_inherited_sibling_verdicts(con, batch_id: int, inc_ids: list[int]) -
     con.execute("DROP TABLE IF EXISTS temp.sib_inherit")
 
 
+_BATCH_LABEL = re.compile(r"^\[from merge batch \d+\] ")
+
+
+def _merge_host_confirmations(con, batch_id: int) -> DomainResult:
+    """The host-mismatch CONFIRMED pairs (R193), carried by a restore under R195.
+
+    Operator data: a person decided that a source legitimately publishes on another site, and a restore
+    must not lose that. ``source_id`` is REMAPPED through ``temp.map_sources``, never copied raw. A pair
+    is (source, the article's registrable site), so the rule is per pair:
+
+    * Only the incoming corpus has it: the row is INSERTED, tracked in ``merged_rows`` like every other
+      carried row, so an undo of this restore removes it.
+    * Both corpora have it, or two incoming sources collapse onto one local source: ONE row remains. The
+      EARLIEST ``confirmed_at`` wins, and the notes are joined in ``confirmed_at`` order. A note that came
+      from the incoming corpus is prefixed ``[from merge batch N]`` so the joined text still says whose
+      words each part is; a note already on the local row is kept exactly as it was. A note that is the
+      same text as one already present is not repeated, so restoring the same backup twice changes
+      nothing. THE JOIN IS AN UPDATE OF A PRE-EXISTING ROW: an undo removes the rows the batch inserted
+      and leaves that row, with its labelled note, in place.
+    """
+    d = DomainResult()
+    if not _inc_has_table(con, "host_mismatch_confirmed"):
+        return d  # a backup written before the table existed carries none: nothing to merge, no row owed
+    rows = con.execute(
+        "SELECT ms.new, i.article_site, i.confirmed_at, i.note FROM inc.host_mismatch_confirmed i"
+        " JOIN temp.map_sources ms ON ms.old = i.source_id ORDER BY i.confirmed_at, i.id"
+    ).fetchall()
+    if not rows:
+        return d
+    label = f"[from merge batch {batch_id}] "
+    local = {
+        (sid, site): (at, note)
+        for sid, site, at, note in con.execute(
+            "SELECT source_id, article_site, confirmed_at, note FROM main.host_mismatch_confirmed"
+        )
+    }
+    # (source, site) -> list of (confirmed_at, note-or-None, came_from_incoming), local entry first.
+    groups: dict[tuple[int, str], list[tuple[str, str | None, bool]]] = {}
+    for key, (at, note) in local.items():
+        groups[key] = [(at, note, False)]
+    touched: set[tuple[int, str]] = set()
+    for sid, site, at, note in rows:
+        groups.setdefault((sid, site), []).append((at, note, True))
+        touched.add((sid, site))
+    fresh: list[tuple[int, str, str, str | None]] = []
+    for key in sorted(touched):
+        entries = sorted(groups[key], key=lambda e: (e[0], e[2]))  # confirmed_at order; local first on a tie
+        earliest = entries[0][0]
+        parts: list[str] = []
+        # Whole notes already on the local row, each line with any earlier batch label removed: an incoming
+        # note equal to one of them is a re-restore. EQUALITY, never substring: a short local note ("wire")
+        # inside a longer incoming one, or inside the label itself, is a different note and must survive.
+        seen: set[str] = set()
+        if key in local and local[key][1]:
+            for line in str(local[key][1]).split("\n"):
+                seen.add(_BATCH_LABEL.sub("", line))
+        for _at, note, incoming in entries:
+            if not note or not note.strip():
+                continue
+            if incoming:
+                if note in seen:
+                    continue  # the same words are already there (a re-restore, or two copies of one note)
+                seen.add(note)
+                parts.append(label + note)
+            else:
+                parts.append(note)  # a local note is never dropped
+        joined = "\n".join(parts) if parts else None
+        if key in local:
+            d.duplicate += 1
+            if (earliest, joined) != local[key]:
+                con.execute(
+                    "UPDATE main.host_mismatch_confirmed SET confirmed_at = ?, note = ?"
+                    " WHERE source_id = ? AND article_site = ?",
+                    (earliest, joined, key[0], key[1]),
+                )
+        else:
+            fresh.append((key[0], key[1], earliest, joined))
+    if fresh:
+        con.execute("DROP TABLE IF EXISTS temp.host_conf_final")
+        con.execute(
+            "CREATE TEMP TABLE host_conf_final (source_id INTEGER, article_site TEXT,"
+            " confirmed_at TEXT, note TEXT)"
+        )
+        con.executemany("INSERT INTO temp.host_conf_final VALUES (?, ?, ?, ?)", fresh)
+        d.new = _insert_tracked(
+            con, batch_id, "host_mismatch_confirmed",
+            "INSERT INTO main.host_mismatch_confirmed (source_id, article_site, confirmed_at, note)"
+            " SELECT f.source_id, f.article_site, f.confirmed_at, f.note FROM temp.host_conf_final f",
+        )
+        con.execute("DROP TABLE IF EXISTS temp.host_conf_final")
+    return d
+
+
 def _merge_sources(con, batch_id, results) -> None:
     _refuse_feeds_a_legacy_store_cannot_hold(con)
     r = DomainResult()
@@ -3209,6 +3302,7 @@ def _merge_sources(con, batch_id, results) -> None:
         0, _count(con, "SELECT COUNT(*) FROM inc.source_qualification_attempts") - q.new
     )
     results["source_qualification_attempts"] = q
+    results["host_mismatch_confirmed"] = _merge_host_confirmations(con, batch_id)
     results["sources"] = r
 
 
