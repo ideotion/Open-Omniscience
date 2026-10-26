@@ -165,3 +165,53 @@ def test_the_hold_is_about_the_store_the_failed_build_ran_for_not_the_store_read
     rollup_serve._build_and_swap()
     assert rollup_serve._STATE["stopped"]["store"] == "persisted"
     assert rollup_hold.read() is None
+
+
+def test_a_persisted_refresh_that_opened_no_connection_is_neither_built_nor_the_end_of_a_failure_run(monkeypatch):
+    """``_refresh_persisted_build`` returns without refreshing when the passphrase or backend vanished: that is no build, so no "built", and a run of failures stands."""
+    rollup_serve._STATE.update(failures=2, failure_class="OutOfMemoryException")
+    monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", lambda: False)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "failed")
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    assert rollup_serve._build_and_swap() == "declined"
+    assert rollup_serve._LAST_OUTCOME["value"] != "built"
+    assert rollup_serve._STATE["failures"] == 2 and rollup_serve._STATE["failure_class"] == "OutOfMemoryException", "a no-op ended the failure run"
+    skip = rollup_serve._STATE["last_skip"]
+    assert skip["reason"] == "persisted-unavailable" and skip["source"] == "persisted"
+    assert rollup_serve._STATE["stopped"] is None, "no build ran, so no failure hold is kept for it either"
+
+
+def test_a_refresh_that_ran_is_still_built(monkeypatch):
+    """Negative space: only an explicit False is the no-connection case, so a refresh that returns True (or nothing, as the stubs do) is a build."""
+    for returned in (True, None):
+        rollup_serve._STATE.update(failures=2, failure_class="OutOfMemoryException")
+        monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", lambda r=returned: r)
+        assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+        assert rollup_serve._build_and_swap() == "built"
+        assert rollup_serve._STATE["failures"] == 0
+
+
+def test_the_real_refresh_does_not_open_a_store_without_the_passphrase_or_the_secure_backend(monkeypatch):
+    """``columnar.connect`` given no passphrase returns an in-memory connection: recorded as the persisted store, it would be reported as built."""
+    from src.analytics import columnar
+
+    def connect(**_kw):
+        raise AssertionError("connect was called although the passphrase is gone")
+
+    monkeypatch.setattr(columnar, "connect", connect)
+    monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
+    monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: None)
+    assert rollup_serve._refresh_persisted_build() is False
+    assert rollup_serve._STATE["persisted"] is False and rollup_serve._STATE["con"] is None
+    monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: "pw")
+    monkeypatch.setattr(columnar, "secure_crypto_available", lambda: False)
+    assert rollup_serve._refresh_persisted_build() is False
+
+
+def test_an_engine_that_gives_no_connection_declines_too(monkeypatch):
+    from src.analytics import columnar
+
+    monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
+    monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: "pw")
+    monkeypatch.setattr(columnar, "connect", lambda **_kw: None)
+    assert rollup_serve._refresh_persisted_build() is False
