@@ -32,6 +32,7 @@ methods of one name in one file are two rows."""
 from __future__ import annotations
 
 import ast
+import builtins
 import dis
 import types
 from collections.abc import Iterator
@@ -146,7 +147,12 @@ def _caught_names(handler: ast.ExceptHandler) -> set[str] | None:
     if handler.type is None:
         return None
     nodes = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-    return {n.id if isinstance(n, ast.Name) else n.attr if isinstance(n, ast.Attribute) else "?" for n in nodes}
+    names: set[str] = set()
+    for n in nodes:
+        name = n.id if isinstance(n, ast.Name) else n.attr if isinstance(n, ast.Attribute) else "?"
+        # A handler named through a variable or a constant (``except _INTERRUPTS``) may catch anything: read it as catching, so the head is listed.
+        names.add("KeyboardInterrupt" if name == "?" or (isinstance(n, ast.Name) and not hasattr(builtins, name) and (name[0] == "_" or name.isupper())) else name)
+    return names
 
 
 def _cleanup_around(scope: ast.AST, node: ast.AST) -> bool:
@@ -168,7 +174,7 @@ def _cleanup_around(scope: ast.AST, node: ast.AST) -> bool:
 
 def _cleanup_covered(text: str, filename: str) -> set[str]:
     """The qualified names of the scopes with a flagged head that has a cleanup construct around it in the same scope. A head no AST node can be matched
-    to is counted as covered: the classifier fails closed."""
+    to, and a code object no scope has a name for, is counted as covered: the classifier fails closed."""
     flagged = _flagged_heads(text, filename)
     if not flagged:
         return set()
@@ -176,7 +182,10 @@ def _cleanup_covered(text: str, filename: str) -> set[str]:
     covered: set[str] = set()
     for qualname, heads in flagged.items():
         scope = scopes.get(qualname)
-        if scope is None:  # a generator expression or a lambda: its own frame, the interrupt is caught at its consumer
+        if scope is None:
+            if qualname.endswith(("<genexpr>", "<lambda>")):  # its own frame: the interrupt is caught at its consumer
+                continue
+            covered.add(qualname)  # a name no scope has (a ``global`` def, say): fail closed
             continue
         for lineno in heads:
             matched = False
@@ -275,6 +284,26 @@ def under_keyboard_interrupt(items):
         raise
     return out
 
+_INTERRUPTS = (KeyboardInterrupt,)
+
+def under_an_aliased_handler(items):
+    out = []
+    try:
+        for x in items:
+            if x:
+                out.append(x)
+    except _INTERRUPTS:
+        raise
+    return out
+
+def outer():
+    global later
+    def later(items):
+        with LOCK:
+            for x in items:
+                if x:
+                    pass
+
 def comprehension_under_with(items):
     with LOCK:
         return [x for x in items if x]
@@ -339,6 +368,8 @@ def test_the_classifier_sees_the_shapes_it_claims_to():
         "under_finally",
         "under_base_exception",
         "under_keyboard_interrupt",
+        "under_an_aliased_handler",
+        "later",
         "comprehension_under_with",
         "First.run",
         "<module>",

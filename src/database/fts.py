@@ -805,10 +805,12 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     article's ``title`` + ``content`` from the base table through the SQLCipher codec — a
     corpus-scaled cost that RECURRED on every boot (an index build would be one-time, this
     recurred). The field's unlock took 981 s, then 1,645 s, on two consecutive boots on
-    2026-07-09, on a 11.7 GB / 268,241-article database (docs/product/SCALE_ROADMAP.md P0.4,
-    which records the unlock as a whole and does not split it by phase); this rebuild was
-    named as the cause from the code and fixed against a synthetic corpus only (the 2026-07-10
-    row of docs/ledger/shipped.csv, "awaiting live validation"). But the index is kept
+    2026-07-09 (docs/product/SCALE_ROADMAP.md P0.4; the first export's database was 11.7 GB /
+    268,241 articles, the second's size is not recorded). That record is of the unlock as a
+    whole and does not split it by phase, so the share of it this rebuild took was never
+    measured; the fix was validated afterwards, on the maintainer's live runs (unlock 602 ms in
+    docs/product/RELEASE_0.2_GATE.md, 323 ms on 1,048,725 articles / 21.0 GB on 2026-08-12 in
+    docs/ledger/shipped.csv). But the index is kept
     current INCREMENTALLY by the ``article_fts_ai/ad/au`` triggers, so once populated it
     never needs a full rebuild on a normal boot.
 
