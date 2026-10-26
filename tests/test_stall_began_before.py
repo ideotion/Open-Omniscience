@@ -75,3 +75,30 @@ def test_a_record_without_one_costs_nothing_and_an_unreadable_time_is_skipped(ro
 
 def test_the_report_says_what_the_list_means():
     assert "began_before" in sf._assemble([], [])["method"]
+
+
+def test_the_numbers_are_exact_and_bounded_by_the_slack(rows):
+    # request 5 s ending at _END, so it opened at _END - 5 s and the window opens a second earlier; a 9 s row ending 2 s before the end
+    rows += [_row(_END - timedelta(seconds=2), 9_000.0, "INSERT holder")]
+    got = sf._statement_evidence(5_000.0, now=_END)
+    (held,) = got["began_before"]
+    # it began 9 s before its end = 11 s before _END; the window opened 6 s before _END, so 5 s earlier: lower bound of the true 5 to 6 s
+    assert held["began_before_s"] == 5.0
+    # it covered from the window's opening to its end: 4 s of a 5 s request (an upper bound; the true value is 3 to 4 s)
+    assert held["overlap_share"] == 0.8
+
+
+def test_a_row_that_only_touches_the_slack_is_not_listed(rows):
+    rows += [_row(_END - timedelta(seconds=6), 9_000.0, "INSERT holder")]  # ended exactly where the window opens: no overlap
+    got = sf._statement_evidence(5_000.0, now=_END)
+    assert got["found"] is False and "began_before" not in got
+
+
+def test_a_time_that_is_not_finite_is_no_evidence_and_never_reaches_the_json(rows):
+    import json
+
+    rows += [_row(_END, float("nan"), "S1"), _row(_END, float("inf"), "S2"), _row(_END, 9_000.0, "INSERT holder")]
+    got = sf._statement_evidence(5_000.0, now=_END)
+    assert [h["sql"] for h in got["began_before"]] == ["INSERT holder"]
+    json.dumps(got, allow_nan=False)
+    assert "began_before" not in sf._statement_evidence(float("nan"), now=_END)

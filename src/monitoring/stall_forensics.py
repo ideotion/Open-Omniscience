@@ -38,6 +38,7 @@ still file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from collections import deque
@@ -157,8 +158,10 @@ def _statement_evidence(duration_ms: float, now: datetime | None = None) -> dict
                 continue
             if dur <= duration_ms:
                 inside.append(r)
-            else:
-                longer.append(_began_before(r, ended, dur, end.timestamp(), opened, duration_ms))
+            elif math.isfinite(dur) and math.isfinite(duration_ms):  # a NaN or infinite time is not strict JSON and is no evidence of anything
+                entry = _began_before(r, ended, dur, end.timestamp(), opened, duration_ms)
+                if entry is not None:
+                    longer.append(entry)
         # Evidence only, and absent when empty so a record without one costs nothing: it never feeds ``found``, the share or ``classify``.
         earlier = {"began_before": sorted(longer, key=lambda e: -e["duration_ms"])[:_BEGAN_BEFORE_ROWS]} if longer else {}
         if not inside:
@@ -185,16 +188,22 @@ def _statement_evidence(duration_ms: float, now: datetime | None = None) -> dict
 _BEGAN_BEFORE_ROWS = 2
 
 
-def _began_before(row: dict[str, Any], ended: float, dur_ms: float, request_end: float, opened: float, duration_ms: float) -> dict[str, Any]:
+def _began_before(row: dict[str, Any], ended: float, dur_ms: float, request_end: float, opened: float, duration_ms: float) -> dict[str, Any] | None:
     """A statement longer than the request that ended inside it: began ``began_before_s`` before the request opened, and covered
-    ``overlap_share`` of the request (clamped, so it can never read as more than all of it, the 1.023 that made the share rule)."""
+    ``overlap_share`` of the request (clamped, so it can never read as more than all of it, the 1.023 that made the share rule).
+
+    Both are measured from ``opened``, which is the request's start minus the one second of slack that ``at``'s whole-second resolution
+    needs, so ``overlap_share`` is an UPPER bound and ``began_before_s`` a LOWER bound, each within a second. A row with no overlap at all
+    (it ended exactly at ``opened``, inside the slack only) is no evidence of overlap and gives ``None``."""
     started = ended - dur_ms / 1000.0
     overlap_ms = (min(ended, request_end) - opened) * 1000.0
+    if not overlap_ms > 0.0 or not duration_ms > 0.0:
+        return None
     return {
         "duration_ms": round(dur_ms, 1),
         "sql": str(row.get("sql") or "")[:80],
         "began_before_s": round(max(opened - started, 0.0), 1),
-        "overlap_share": round(min(overlap_ms / duration_ms, 1.0), 3) if duration_ms > 0 else 0.0,
+        "overlap_share": round(min(overlap_ms / duration_ms, 1.0), 3),
     }
 
 
