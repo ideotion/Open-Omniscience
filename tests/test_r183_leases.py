@@ -168,11 +168,12 @@ def test_two_servers_writing_progress_never_leave_a_torn_marker(data):
 # --- the Opus read's findings on the first push (312c2b4b6) ---------------------------------------------------------------------------------------------------------
 
 
-def test_a_renamed_host_on_the_same_machine_is_judged_by_its_pid_not_held_forever(data):
-    """A hostname drifts (a network change, a recreated container) where the machine id does not: the same machine tag is judged by its pid."""
+def test_a_matching_machine_tag_does_not_override_another_hostname(data):
+    """Machine ids are copied with cloned images, so two hosts can share one: a different hostname stays unjudgeable (a swept neighbour is data loss; a drifted host is named and cleared by hand)."""
     machine = "m" * 16
     gone = {"pid": 2**22 - 3, "started": 1.0, "host": "old-" + platform.node(), "machine": machine}
-    assert process_owner.record_state(gone, machine=machine) == "dead"
+    assert process_owner.record_state(gone, machine=machine) == "unknown"
+    assert process_owner.record_state({**gone, "host": platform.node()}, machine=machine) == "dead"
     assert process_owner.record_state({**gone, "machine": "n" * 16}, machine=machine) == "unknown", "another machine's tag is still not ours to judge"
     assert process_owner.record_state({**gone, "machine": None}, machine=None) == "unknown", "no machine tag (macOS, Windows): a changed host cannot be judged"
 
@@ -194,7 +195,7 @@ def test_the_refusal_names_the_file_and_prints_the_owner_fields_unchanged(data):
     f = data / "leases" / "reindex.x.lease"
     f.write_text(json.dumps(other), encoding="utf-8")
     note = corpus_lease.foreign_note(["reindex"])
-    assert str(f) in note and '"pid": 7' in note and '"started": 12.5' in note and '"host": "elsewhere"' in note and "unknown" in note
+    assert "leases/reindex.x.lease" in note and str(data) not in note and '"pid": 7' in note and '"started": 12.5' in note and '"host": "elsewhere"' in note and "unknown" in note
     assert corpus_lease.foreign_note(["nothing-held"]) == ""
     with corpus_lease.corpus_lease("mine"):
         assert corpus_lease.foreign_note(["mine"]) == "", "this process's own lease is not a neighbour"
@@ -223,3 +224,38 @@ def test_an_empty_owner_record_is_not_kept_for_every_later_lease(data, monkeypat
     with corpus_lease.corpus_lease("b"):
         rec = json.loads(next((data / "leases").glob("b.*.lease")).read_text(encoding="utf-8"))
         assert rec.get("pid") == 1, "the second take asked again instead of reusing the empty answer"
+
+
+def test_a_lease_file_that_cannot_be_read_is_never_aged_out(data, monkeypatch):
+    (data / "leases").mkdir()
+    f = data / "leases" / "reindex.q.lease"
+    f.write_text(json.dumps({"pid": 1, "started": 1.0, "host": "h", "machine": None, "name": "reindex", "process": "q"}), encoding="utf-8")
+    old = time.time() - 3600
+    os.utime(f, (old, old))
+    real = Path.read_text
+
+    def deny(self, *a, **k):
+        if self.suffix == ".lease":
+            raise PermissionError
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", deny)
+    assert corpus_lease.active_leases() == ["reindex"] and f.exists(), "no read says nothing about the owner"
+
+
+def test_the_interrupt_cleanup_leaves_a_file_another_thread_now_owns(data, monkeypatch):
+    real = corpus_lease._write_file
+
+    def interrupted(name):
+        real(name)
+        # the gap after this thread's lock is released: another thread takes the same name
+        corpus_lease._HELD[name] = 1
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(corpus_lease, "_write_file", interrupted)
+    try:
+        with pytest.raises(KeyboardInterrupt), corpus_lease.corpus_lease("reindex"):
+            pass
+        assert len(list((data / "leases").glob("*.lease"))) == 1
+    finally:
+        corpus_lease._HELD.pop("reindex", None)

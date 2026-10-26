@@ -58,13 +58,10 @@ def record_state(data: Any, *, machine: str | None = None) -> str:
         theirs = data.get("machine")
     except (KeyError, TypeError, ValueError, AttributeError):
         return "unknown"
-    if theirs is not None and machine is not None and theirs == machine:
-        pass  # the same machine, whatever it is called now: a hostname drifts (a network change, a recreated container) where the machine id does not
-    else:
-        if host is not None and str(host) != platform.node():
-            return "unknown"  # another machine's job on a shared drive
-        if theirs is not None and theirs != machine:
-            return "unknown"  # the same name on another machine, or a tag this one cannot read
+    if host is not None and str(host) != platform.node():
+        return "unknown"  # another machine's job on a shared drive (a matching machine tag does not override this: machine ids are copied with cloned images)
+    if theirs is not None and theirs != machine:
+        return "unknown"  # the same name on another machine, or a tag this one cannot read
     try:
         import psutil
 

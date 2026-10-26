@@ -78,7 +78,7 @@ _OWNER: dict | None = None
 _SUFFIX = ".lease"
 #: How long a lease file that cannot be READ is still counted as held: ``_POLL_S`` x 40 = 10 s. WHAT IT PROTECTS: a shared drive whose rename is not atomic, where a
 #: reader can meet a live writer's file half written. On a local disk the write is a temp file renamed over the name, so a reader never sees a partial file and an empty or
-#: garbled file is a leftover (a power cut before the data reached the disk): past this age it is named in the log, swept, and no longer blocks a swap forever. The lease
+#: garbled file is a leftover (a power cut before the data reached the disk; a file that merely cannot be READ is never aged out): past this age it is named in the log, swept, and no longer blocks a swap forever. The lease
 #: carries NO heartbeat (a record with a readable owner has nothing to age by), so this bound applies only to a file with no owner to judge; a readable record of another host
 #: stays held and is named, with its owner fields, in the refusal (:func:`foreign_note`).
 _UNREADABLE_GRACE_S = _POLL_S * 40
@@ -112,7 +112,7 @@ def _write_file(name: str) -> None:
             _OWNER = process_owner.owner_record()
         path.parent.mkdir(parents=True, exist_ok=True)
         # fsync: the file is created fresh at every first take, so a power cut before the data reached the disk would leave an empty file (rename-over-existing is the case the
-        # filesystem protects); the cost is measured per batch, not per article
+        # filesystem protects); about 1 ms per first take, measured, per batch and not per article
         atomic_replace(path, json.dumps({**_OWNER, "name": name, "process": _PROCESS}), fsync=True)
     except Exception as exc:  # noqa: BLE001
         _warn_once(exc)
@@ -138,8 +138,11 @@ def _scan() -> list[tuple[str, Path, dict | None, str]]:
             name = str(rec["name"])
             if rec.get("process") == _PROCESS:
                 continue
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            name = f.name.split(".", 1)[0] or f.name  # unreadable: held under the name its file carries, until it is old enough to be a leftover
+        except OSError:
+            name = f.name.split(".", 1)[0] or f.name  # could not be read (permissions, a stale handle): says nothing about its owner, so held and never aged out
+            rec = None
+        except (ValueError, KeyError, TypeError, AttributeError):
+            name = f.name.split(".", 1)[0] or f.name  # read, but empty or garbled: held under the name its file carries, until it is old enough to be a leftover
             rec = None
             try:
                 age = time.time() - f.stat().st_mtime
@@ -171,7 +174,7 @@ def foreign_note(held: list[str]) -> str:
     parts = []
     for name, f, rec, state in rows:
         fields = json.dumps({k: rec.get(k) for k in ("pid", "started", "host", "machine")}) if rec is not None else "unreadable"
-        parts.append(f"{name}: {state}, owner {fields}, file {f}")
+        parts.append(f"{name}: {state}, owner {fields}, file leases/{f.name}")
     return " Held by another server on this data folder, or a leftover of one: " + "; ".join(parts) + ". Delete that lease file only if that server is not running."
 
 
@@ -209,7 +212,10 @@ def corpus_lease(name: str) -> Iterator[None]:
                     _remove_file(name)
         elif wrote:
             with _FILE_LOCK:  # the take did not complete: the file written for it must not outlive it
-                _remove_file(name)
+                with _LOCK:
+                    free = _HELD.get(name, 0) == 0  # another thread may have taken the name in the gap and own that file now
+                if free:
+                    _remove_file(name)
 
 
 def active_leases() -> list[str]:
