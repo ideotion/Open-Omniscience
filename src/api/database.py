@@ -223,24 +223,48 @@ _FIGURES_FAILURE_WINDOW_S = 900
 _FIGURES_COUNT_DUTY_FACTOR = 10
 
 _MENTIONS_LOCK = threading.Lock()
-#: The last finished count: {"bind", "count", "articles", "duration_s", "finished_at" (epoch s)}. In memory only, so after a restart
-#: the first count runs at once and is measured again; bound to the database it was counted over, so another database never
-#: inherits it.
+#: The last finished count: {"bind", "epoch", "count", "articles", "duration_s", "finished_at" (epoch s)}. In memory only, so after a
+#: restart the first count runs at once and is measured again. Bound to the database it was counted over by the engine OBJECT (a
+#: second engine never inherits it) AND by the corpus epoch AND by a generation that ``served_cache.invalidate()`` (a restore's
+#: swap, a VACUUM, a panic wipe) bumps. The engine object alone says nothing: a swap keeps the one module-level engine while the
+#: file under it is replaced (the trap ``source_country_rollup`` records), so a count taken over the old file would be carried as the
+#: new one's for ten times its own duration. The epoch is 0 on any file never bumped, so in practice the generation is what covers a
+#: swap; the epoch also separates two corpora a re-index, prune, fold or restore-merge has told apart.
 _MENTIONS_MEMO: dict = {}
+#: Bumped whenever the carried count is forgotten, so a count that was already running when the corpus was swapped does not store
+#: its number afterwards (and its payload is not cached: ``__discard__``).
+_MENTIONS_GENERATION = [0]
+
+
+def _forget_mentions() -> None:
+    """Forget the carried count. Run by ``served_cache.invalidate`` and by the tests: what was counted is about the file that was
+    there before."""
+    with _MENTIONS_LOCK:
+        _MENTIONS_MEMO.clear()
+        _MENTIONS_GENERATION[0] += 1
+
+
+served_cache.on_invalidate(_forget_mentions)
+
+
+def _figures_epoch(db: Session) -> int:
+    from src.analytics.corpus_epoch import get_corpus_epoch
+
+    return get_corpus_epoch(db)
 
 
 def _now_s() -> float:
     return time.time()
 
 
-def _carried_mentions(db: Session) -> dict | None:
+def _carried_mentions(db: Session, epoch: int) -> dict | None:
     """The previous count, when it is still inside its cost-proportional window and was counted over this database; else None."""
     with _MENTIONS_LOCK:
         memo = dict(_MENTIONS_MEMO)
     if not memo:
         return None
     try:
-        if db.get_bind() is not memo["bind"]:
+        if db.get_bind() is not memo["bind"] or memo["epoch"] != epoch:
             return None
     except Exception:  # noqa: BLE001 - any doubt about the database -> count again
         return None
@@ -248,13 +272,19 @@ def _carried_mentions(db: Session) -> dict | None:
     return memo if _now_s() - memo["finished_at"] < window else None
 
 
-def _remember_mentions(db: Session, count: int, articles: int, duration_s: float) -> dict | None:
+def _remember_mentions(
+    db: Session, epoch: int, generation: int, count: int, articles: int, duration_s: float,
+) -> dict | None:
     try:
         bind = db.get_bind()
     except Exception:  # noqa: BLE001 - without a bind the count cannot be told apart from another database's
         return None
-    memo = {"bind": bind, "count": count, "articles": articles, "duration_s": duration_s, "finished_at": _now_s()}
+    memo = {
+        "bind": bind, "epoch": epoch, "count": count, "articles": articles, "duration_s": duration_s, "finished_at": _now_s(),
+    }
     with _MENTIONS_LOCK:
+        if _MENTIONS_GENERATION[0] != generation:
+            return None  # the carried count was forgotten while this one ran: it may be about the file that was swapped out
         _MENTIONS_MEMO.clear()
         _MENTIONS_MEMO.update(memo)
     return memo
@@ -363,10 +393,13 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
     figures and starts no scan."""
     from src.database.maintenance import MemoryShort, StatementTimeout, statement_deadline
 
+    with _MENTIONS_LOCK:
+        generation = _MENTIONS_GENERATION[0]  # BEFORE the first read: an invalidate after this point makes every number below suspect
     out = _cheap_figures(db, now)
     if not out["articles"]:
         return out
-    carried = _carried_mentions(db)
+    epoch = _figures_epoch(db)
+    carried = _carried_mentions(db, epoch)
     if carried is not None:
         # Inside the window: refresh the cheap figures (they were just recomputed above) and carry the previous count, stamped
         # with when it was counted. A stale entry here starts NO scan.
@@ -392,15 +425,19 @@ def _compute_figures_counted(db: Session, now: datetime) -> dict:
             }
         )
         out["__ttl_s__"] = _FIGURES_FAILURE_WINDOW_S
+        with _MENTIONS_LOCK:
+            if _MENTIONS_GENERATION[0] != generation:
+                out["__discard__"] = True  # the corpus was swapped while the count ran: a failure about the old file is not this one's
         with contextlib.suppress(Exception):
             db.rollback()  # the interrupted statement leaves the transaction unusable for the next caller of this session
         return out
-    memo = _remember_mentions(db, n_mentions, out["articles"], max(time.monotonic() - started, 0.001))
+    memo = _remember_mentions(db, epoch, generation, n_mentions, out["articles"], max(time.monotonic() - started, 0.001))
     if memo is None:
         out[_COUNT_KEY] = n_mentions
         out["avg_keywords_per_article"] = round(n_mentions / out["articles"], 1)
         out["keyword_mentions_state"] = "counted"
         out["keyword_mentions_computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+        out["__discard__"] = True  # not carried and not cached (no bind, or the corpus was swapped mid-count): counted over a file that may be gone
     else:
         out.update(_mentions_fields(memo))
     return out
