@@ -218,7 +218,7 @@ def test_the_stage_a_real_build_had_reached_is_the_failure_holds_stage(monkeypat
     monkeypatch.setattr(columnar, "build_keyword_daily", build)
     monkeypatch.setattr(dbs, "session_scope", scope)
     monkeypatch.setattr(serve_gate, "change_token", lambda s: ("t", 1))
-    monkeypatch.setattr(rollup_marker, "begin", lambda **kw: None)
+    monkeypatch.setattr(rollup_marker, "begin", lambda **kw: True)  # begin() reports whether the build may start (R183)
     monkeypatch.setattr(rollup_marker, "clear", lambda: None)
     monkeypatch.setattr(rollup_serve, "_spill_setting", lambda: "")
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
