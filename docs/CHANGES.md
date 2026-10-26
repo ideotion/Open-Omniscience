@@ -60,8 +60,7 @@ values, and a person's own click-through of each surface. Figures quoted below a
   16.4 s; the operator's real run is a `0.5.1` item.
 - **A source is keyed on its feed** (row J): one outlet can hold several feeds, every gate that states
   independence counts outlets, a restore hands a verdict to a new sibling feed in the disqualified
-  direction only, and the outlet is kept as an integer by three triggers (#1425, #1430, #1433, and the
-  `outlet_id` change).
+  direction only, and the outlet is kept as an integer by three triggers (#1425, #1430, #1433, #1461).
 - **The in-memory keyword rollup no longer holds the corpus in memory** (the crash this cycle chased):
   staged in shards sized from the engine's own limit, declined as the limit rather than retried, and
   checkpointed before the aggregate (#1310, #1422, #1427).
