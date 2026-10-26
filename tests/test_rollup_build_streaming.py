@@ -1375,9 +1375,10 @@ def test_a_served_query_the_engine_refuses_is_counted_by_query_and_error_class_i
 
     columnar._SERVE_FALLBACKS.clear()
     con = _FakeCon(OutOfMemoryException("x"))
-    assert columnar.windowed_top_terms_raw(con, limit=5) == []
-    assert columnar.windowed_top_terms_raw(con, limit=5) == []
-    assert columnar.windowed_term_counts(con) == {}
+    # R194: the engine's out-of-memory error answers None (the caller goes live); it is still counted by class
+    assert columnar.windowed_top_terms_raw(con, limit=5) is None
+    assert columnar.windowed_top_terms_raw(con, limit=5) is None
+    assert columnar.windowed_term_counts(con) is None
     got = rollup_serve.status()["serve_fallbacks"]
     assert got["total"] == 3 and got["since"]
     assert {(r["query"], r["error"], r["count"]) for r in got["fallbacks"]} == {
