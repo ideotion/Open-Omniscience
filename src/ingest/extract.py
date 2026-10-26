@@ -25,6 +25,7 @@ from dateutil import parser as date_parser
 from trafilatura.settings import Document, set_date_params
 
 from src.ingest import lock_stats
+from src.monitoring.native_inflight import native_call
 
 
 @dataclass
@@ -123,10 +124,17 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
             got = lock_stats.now()
             try:
                 lock_stats.holding()
-                return _extract_locked(html, url=url)
-            except BaseException as exc:
-                _release_frames(exc)
-                raise
+                # RC2's black box (src/monitoring/native_inflight.py): the next boot can say libxml2 was running when the
+                # process aborted. Inside the lock, so a worker WAITING for it is not counted as in lxml; around the whole
+                # call AND the release of the trees of a raising one (``_release_frames`` frees them, which is libxml2's
+                # free), because the lock covers the parse, the walk and that release, and the faulting frame may be any
+                # of them. Never raises, never swallows the body's exception.
+                with native_call("lxml"):
+                    try:
+                        return _extract_locked(html, url=url)
+                    except BaseException as exc:
+                        _release_frames(exc)
+                        raise
             finally:
                 released = lock_stats.released()
     finally:
