@@ -73,6 +73,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # the urllib3 log scrub: it assigns None to a library record's exc_info (three places: the trace drop, the fallback) and reads the class name
     # of the exception the record carried; it stores the exception nowhere and writes the class name only
     "src/ingest/urllib3_log.py": {"sys.exc_info() reads the exception being handled": 3},
+    "src/database/corpus_lease.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},  # the lease-file warning names the exception CLASS only (type(exc).__name__), never its words
     "src/safety/file_lock.py": {"the caught exception 'fault' is used outside a scrubbing call": 2},  # reads the errno of an OSError to tell a busy lock from a filesystem that cannot lock, and a filesystem with no fsync from a failed one; its words are not used
     "src/scheduler/settings.py": {"getattr reaches key, a way round the scan of the log calls": 1},
     "src/scheduler/storage_guard.py": {"_LOG.warning is kept as a name, a log call the scan cannot read": 1,
