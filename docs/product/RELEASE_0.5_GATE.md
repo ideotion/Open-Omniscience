@@ -137,7 +137,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
   the Windows locked-folder raw copy (inferred, not observed); the Windows msvcrt polling lock and the NFS/FUSE flock in
   `src/safety/file_lock.py` (a filesystem that cannot lock runs unlocked with one stderr warning naming the file); the launcher's
-  stderr-filter summary-row exposure (measured 0 to 9 ms idle over 22 launches, no figure under load).
+  stderr-filter summary-row exposure (reported by RC2 as 0 to 9 ms idle over 22 launches on 17 Oct, from a hand run with no raw table kept, so INFERRED rather than evidenced; no figure under load).
 - **13. `hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
   is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
   a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
