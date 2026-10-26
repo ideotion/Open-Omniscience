@@ -750,14 +750,14 @@ def _failure_view() -> tuple[int, str | None]:
         return int(_STATE.get("failures") or 0), _STATE.get("failure_class")
 
 
-def _record_failure(error_class: str, stage: str | None) -> None:
+def _record_failure(error_class: str, stage: str | None, persisted: bool | None = None) -> None:
     """A build ended in an error that no hold maps (R172): keep a failure hold, released by what releases a ``duckdb-limit`` hold, so the very next
     request does not start the same build again. The hold lives in THIS process only: a restart retries once (a transient error must not keep the
     accelerator off), while the kept record carries the run of failures across it. The record's ``stage`` is the LAST REPORTED stage, not the raising
     statement (the key is the one a ``duckdb-limit`` hold uses, and it means the same there). The record carries the stage the build had last reported (None, and ``stage_why``, when it had
     reported none), the exception CLASS (passed as its name) and the run of consecutive failures; never the exception's text. The persisted store is not touched."""
-    if _persisted_serve_active():
-        return
+    if persisted is None:
+        persisted = _persisted_serve_active()
     cls = error_class
     with _LOCK:
         prior = int(_STATE.get("failures") or 0)
@@ -774,16 +774,20 @@ def _record_failure(error_class: str, stage: str | None) -> None:
         "duckdb_limit_mb": budget.get("duckdb_limit_mb"), "offload_allowed": budget.get("offload_allowed"),
         "epoch": _current_epoch(), "mentions_count": _current_mention_count(),
     }
+    if persisted:
+        # The persisted refresh failed (an out-of-memory in it is the case in the field): the same hold, in THIS process only. Nothing is
+        # written beside the persisted store (it is not touched), so a restart tries once more, as for the in-memory build.
+        record["store"] = "persisted"
     if stage:
         record["stage"] = stage
     else:
         record["stage_why"] = "not-recorded"
-    _keep_stopped(record)
+    _keep_stopped(record, write=not persisted)
     _note_decline("stopped", "build", record)
 
 
-def _keep_stopped(record: dict) -> None:
-    """Hold later builds back on ``record`` and keep it for the next process."""
+def _keep_stopped(record: dict, *, write: bool = True) -> None:
+    """Hold later builds back on ``record`` and keep it for the next process (``write=False``: for this process only)."""
     global _HOLD_LOOKED
     from src import __version__
     from src.analytics import rollup_hold
@@ -796,7 +800,8 @@ def _keep_stopped(record: dict) -> None:
             # and ends the run, so a failure run and a duckdb-limit hold are never in one report (the report's worst case stays what it was).
             _STATE["failures"], _STATE["failure_class"] = 0, None
         _HOLD_LOOKED = True
-    rollup_hold.write(record)
+    if write:
+        rollup_hold.write(record)
 
 
 def _release_stopped() -> None:
@@ -830,11 +835,12 @@ def _stopped_build_verdict() -> dict | None:
     stops, two measured rules and no timer: a corpus that outgrew DuckDB's limit with no offload allowed
     is retried when the budget's limit is LARGER than the one it stopped at; a build the memory guard
     stopped is retried when the machine has what that build had grown by, plus the guard's floor."""
-    if _persisted_serve_active():
-        return None
+    persisted = _persisted_serve_active()
     st = _stopped_hold()
     if not st:
         return None
+    if persisted != (st.get("store") == "persisted"):
+        return None  # a hold is about the store whose build made it: the in-memory build's stop says nothing of the persisted refresh, nor the reverse
     try:
         if st.get("reason") in _WALL_REASONS:
             # The wall is DuckDB's limit against the size of the corpus, and the epoch moves for reasons that do not
@@ -872,7 +878,8 @@ def _stopped_build_verdict() -> dict | None:
                         # backstop). The count the stop was measured at stays the base, so small drops add up.
                         _keep_stopped({**st, "epoch": now_epoch if now_epoch is not None else st.get("epoch"),
                                        "checked_at": time.time(),
-                                       "mentions_count": base if isinstance(base, int) else count})
+                                       "mentions_count": base if isinstance(base, int) else count},
+                                      write=not persisted)  # a persisted hold is this process's own: it is never written to the kept file
             return {"reason": st["reason"], "at": time.time(), "duckdb_limit_mb": limit,
                     "stopped_at": st.get("at"), "restored": bool(st.get("restored")),
                     "note": ("a build under this limit was already stopped by it" if st["reason"] == "duckdb-limit" else
@@ -1174,6 +1181,7 @@ def _build_and_swap() -> str:
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
     outcome = "failed"
     ran = False  # a build was started (not refused by a verdict): only then does ``last_outcome`` change
+    persisted_run = False  # which store the build that ran was for: the hold a failure keeps is about THAT store, not about a later reading
     _LAST_STAGE["value"] = None  # a decline of an earlier build left its stage here: this build reports its own or none
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
@@ -1206,7 +1214,8 @@ def _build_and_swap() -> str:
             outcome = "declined"
             return outcome
         ran = True
-        if _persisted_serve_active():
+        persisted_run = _persisted_serve_active()
+        if persisted_run:
             _refresh_persisted_build()
         else:
             stopped = _build_inmemory_and_swap()
@@ -1272,7 +1281,7 @@ def _build_and_swap() -> str:
         stage, _LAST_STAGE["value"] = _LAST_STAGE["value"], None
         try:
             if ran:  # an error in a verdict, before any build started, is no build that failed: it keeps no hold that would refuse real builds
-                _record_failure(type(exc).__name__, stage)  # the class only: the sink sweep's rule
+                _record_failure(type(exc).__name__, stage, persisted_run)  # the class only: the sink sweep's rule
         except Exception as hold_exc:  # noqa: BLE001 - a hold that cannot be kept must not turn a failed build into a crash
             log_failure(_LOG, "rollup serve: could not keep the failure hold", hold_exc, level=logging.WARNING)
         return outcome

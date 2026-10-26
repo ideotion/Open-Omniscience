@@ -165,7 +165,9 @@ def test_the_persisted_store_is_not_touched(monkeypatch):
     monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", lambda: (_ for _ in ()).throw(RuntimeError("p")))
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     assert rollup_serve._build_and_swap() == "failed"
-    assert rollup_serve._STATE["stopped"] is None and rollup_hold.read() is None
+    assert rollup_hold.read() is None, "nothing is written beside the persisted store, so a restart tries once more"
+    held = rollup_serve._STATE["stopped"]
+    assert held["reason"] == "build-failed" and held["store"] == "persisted", "the hold itself is this process's (item 28)"
 
 
 _WIDEST_STOP = {"reason": "duckdb-limit", "at": 1760000000.123456, "stage": "keywords", "duckdb_limit_mb": 1004.0, "offload_allowed": False,
