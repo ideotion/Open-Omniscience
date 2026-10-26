@@ -43,10 +43,18 @@ permission.
 
 from __future__ import annotations
 
+import json
+import logging
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
+
+from src.safety import process_owner
+
+_LOG = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 #: name -> how many holders (re-entrant per name; a worker may nest its own lease).
@@ -58,6 +66,79 @@ _HELD: dict[str, int] = {}
 DEFAULT_WAIT_S = 180.0
 _POLL_S = 0.25
 
+#: SEVERAL SERVERS ON ONE DATA FOLDER (R176, R183). The dict above is this process's; a swap in server A could not see server B's batch in flight and would swap the file
+#: under it. So the FIRST holder of a name in a process also writes ``<data>/leases/<name>.<process>.lease`` (the owner record: pid, start time, host, machine tag) and the
+#: LAST one removes it. A reader counts another process's file as held when its owner is ALIVE, or UNKNOWN (another host or machine on a shared drive, an unreadable record: a
+#: swap that cannot tell refuses and names it, it does not swap under someone). A file whose owner is DEAD is a leftover: it is ignored and swept (the takeover). Workers still
+#: never wait on any of this. A file that cannot be written logs once and the in-process lease stands (a missing record is not evidence).
+_PROCESS = uuid.uuid4().hex
+_FILE_LOCK = threading.Lock()
+_FILE_WARNED = False
+_OWNER: dict | None = None
+_SUFFIX = ".lease"
+
+
+def _dir() -> Path:
+    from src.paths import data_dir
+
+    return data_dir() / "leases"
+
+
+def _own_file(name: str) -> Path:
+    return _dir() / f"{name}.{_PROCESS}{_SUFFIX}"
+
+
+def _warn_once(exc: Exception) -> None:
+    global _FILE_WARNED
+    if not _FILE_WARNED:
+        _FILE_WARNED = True
+        _LOG.warning("corpus lease: could not update a lease file (%s); other servers cannot see this process's lease", type(exc).__name__)
+
+
+def _write_file(name: str) -> None:
+    """Write this process's lease file for ``name`` (the caller holds ``_FILE_LOCK``). Best effort: the in-process lease stands, a record that cannot be written is not evidence of anything."""
+    global _OWNER
+    try:
+        from src.safety.file_lock import atomic_replace
+
+        path = _own_file(name)
+        if _OWNER is None:
+            _OWNER = process_owner.owner_record()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_replace(path, json.dumps({**_OWNER, "name": name, "process": _PROCESS}), fsync=False)
+    except Exception as exc:  # noqa: BLE001
+        _warn_once(exc)
+
+
+def _remove_file(name: str) -> None:
+    try:
+        _own_file(name).unlink(missing_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        _warn_once(exc)
+
+
+def _foreign_leases() -> list[str]:
+    """Names held by OTHER processes (alive or unknown owner); sweeps the files of dead owners."""
+    held: set[str] = set()
+    try:
+        files = sorted(_dir().glob(f"*{_SUFFIX}"))
+    except OSError:
+        return []
+    for f in files:
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+            name = str(rec["name"])
+            if rec.get("process") == _PROCESS:
+                continue
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            name = f.name.split(".", 1)[0] or f.name  # unreadable: judged "unknown", so held, under the name its file carries
+            rec = None
+        if rec is not None and process_owner.record_state(rec, machine=process_owner.machine_tag()) == "dead":
+            f.unlink(missing_ok=True)  # the takeover: a dead owner's lease is a leftover
+            continue
+        held.add(name)
+    return sorted(held)
+
 
 @contextmanager
 def corpus_lease(name: str) -> Iterator[None]:
@@ -66,23 +147,36 @@ def corpus_lease(name: str) -> Iterator[None]:
     Wrap the smallest unit that owns a session -- one batch, not one run -- so a parked
     or idle worker holds nothing and the swap is not made to wait on a job that is
     doing nothing.
+
+    The FILE is written BEFORE the count is raised (a swap in another server that looks between the two sees the lease, never a gap) and removed AFTER it is lowered (it
+    lingers a moment, never early). An interrupt between lowering and removing leaves a file that other servers count as held until this process ends; they then sweep it.
     """
     took = False
     try:
-        with _LOCK:
-            _HELD[name] = _HELD.get(name, 0) + 1
-            took = True  # no call between the store and this line: an interrupt later (even in the lock's own exit) finds the lease taken and gives it back
+        with _FILE_LOCK:
+            with _LOCK:
+                first = _HELD.get(name, 0) == 0
+            if first:
+                _write_file(name)
+            with _LOCK:
+                _HELD[name] = _HELD.get(name, 0) + 1
+                took = True  # no call between the store and this line: an interrupt later (even in the lock's own exit) finds the lease taken and gives it back
         yield
     finally:
         if took:
-            with _LOCK:
-                _HELD[name] -= 1  # one statement with no call in it; a name at zero stays in the dict and is not listed (active_leases)
+            with _FILE_LOCK:
+                with _LOCK:
+                    _HELD[name] -= 1  # one statement with no call in it; a name at zero stays in the dict and is not listed (active_leases)
+                    last = _HELD[name] == 0
+                if last:
+                    _remove_file(name)
 
 
 def active_leases() -> list[str]:
-    """Names currently holding live-corpus work, sorted. Empty means quiescent."""
-    with _LOCK:
-        return sorted(name for name, n in _HELD.items() if n > 0)
+    """Names currently holding live-corpus work, in this process or in another server on the same data folder, sorted. Empty means quiescent."""
+    with _FILE_LOCK, _LOCK:  # a release is complete (count lowered AND file removed) before it reads as released
+        own = {name for name, n in _HELD.items() if n > 0}
+    return sorted(own | set(_foreign_leases()))
 
 
 def wait_for_quiescence(
