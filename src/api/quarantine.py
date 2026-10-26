@@ -197,7 +197,8 @@ def quarantine_raw_id_sources(limit: int = Query(50, ge=1, le=200)) -> dict:
             "articles_in_shown": sum(int(counts.get(r[0], 0)) for r in shown),
             "method": (
                 "a source whose whole name is a Wikidata Q-id (the same test the label resolver uses); "
-                "local read, nothing fetched, renamed or marked"
+                "local read, nothing fetched, renamed or marked; rows are the lowest source ids first "
+                "(not the largest sources), and each article count includes quarantined articles"
             ),
         }
     finally:

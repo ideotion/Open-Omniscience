@@ -81,3 +81,11 @@ def test_the_route_is_a_get_that_does_not_shadow_the_action_route():
 
     methods = {(r.path, tuple(sorted(r.methods))) for r in router.routes}
     assert ("/api/quarantine/raw-id-sources", ("GET",)) in methods
+
+
+def test_limit_outside_one_to_two_hundred_is_refused_and_the_method_names_the_order(world, monkeypatch):
+    c = _client(monkeypatch, world)
+    assert c.get("/api/quarantine/raw-id-sources", params={"limit": 0}).status_code == 422
+    assert c.get("/api/quarantine/raw-id-sources", params={"limit": 201}).status_code == 422
+    method = c.get("/api/quarantine/raw-id-sources").json()["method"]
+    assert "lowest source ids" in method and "quarantined" in method
