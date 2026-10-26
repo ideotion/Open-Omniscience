@@ -50,7 +50,7 @@ _PINS = {
     "app-home.js": 1,
     "app-insights.js": 3,
     "app-living.js": 1,
-    "app-map.js": 8,
+    "app-map.js": 3,
     "app-markets.js": 6,
     "app-settings.js": 4,
     "investigate.js": 2,

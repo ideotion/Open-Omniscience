@@ -3162,7 +3162,7 @@
       const c = _osmLaneByA3()[r.alpha3];
       if (!c) return `<span class="muted" title="${esc(t("The continent extract is downloaded first, then read into the map data."))}">${esc(t("Not read yet"))}</span>`;
       if (c.status === "complete") {
-        return `<span class="pill ok">${esc(c.vintage ? osmTf("Read · data as of {date}", { date: c.vintage.slice(0, 10) }) : t("Read · the extract states no date"))}</span>`;
+        return `<span class="pill ok">${esc(c.vintage ? osmTf("Read · data as of {date}", { date: ooIsoDate(c.vintage) }) : t("Read · the extract states no date"))}</span>`;
       }
       if (c.status === "ingesting") return `<span class="pill">${esc(t("Reading…"))}</span>`;
       return `<span class="pill err" title="${esc(c.error || "")}">${esc(t("Reading failed"))}</span>`;
@@ -3282,7 +3282,7 @@
       const link = `<a href="#" data-on-click="openSettingsOsm();return false">${esc(t("Settings → OpenStreetMap"))}</a>`;
       el.innerHTML = done.length
         ? `${esc(t("OpenStreetMap places, roads and buildings:"))} ${done.map((c) => esc(c.vintage
-            ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: c.vintage.slice(0, 10) })
+            ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: ooIsoDate(c.vintage) })
             : osmTf("{country}, date not stated in the extract", { country: _osmPickLabel(c.alpha3, c.name) }))).join(" · ")} · ${link}`
         : `${esc(t("No OpenStreetMap country has been read yet."))} ${link}`;
     }
@@ -3388,7 +3388,7 @@
       const host = $("osm-comp-body"); if (!host || !_osmComp) return;
       host.innerHTML = _osmComp.map((c) => {
         const name = _osmPickLabel(c.country, c.name);
-        const head = c.vintage ? osmCompTf("{country}, as of {date}", { country: name, date: c.vintage.slice(0, 10) }) : name;
+        const head = c.vintage ? osmCompTf("{country}, as of {date}", { country: name, date: ooIsoDate(c.vintage) }) : name;
         if (c.status !== "complete") {
           return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("This country's figures could not be read."))}</div>`;
         }
@@ -3540,7 +3540,7 @@
         objects: fmtNum(k.objects_read || 0), versions: fmtNum(k.versions_read || 0),
         created: fmtNum(k.rows_created || 0), deleted: fmtNum(k.rows_deleted || 0),
         seconds: fmtNum(Math.round(c.ingest_seconds || 0)) });
-      const asOf = c.history_vintage ? osmTf("history as of {date}", { date: c.history_vintage.slice(0, 10) }) : t("the file states no date");
+      const asOf = c.history_vintage ? osmTf("history as of {date}", { date: ooIsoDate(c.history_vintage) }) : t("the file states no date");
       return `<li>${name} · <span class="pill ok">${esc(asOf)}</span> <span class="muted">${esc(facts)}</span></li>`;
     }
     function _renderOsmHistory() {
@@ -4154,7 +4154,7 @@
       if (!out || !d) return;
       const meta = [
         d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
-        d.rev_timestamp ? `${t("dump revision of")} ${esc(d.rev_timestamp.slice(0,10))}` : "",
+        d.rev_timestamp ? `${t("dump revision of")} ${esc(ooIsoDate(d.rev_timestamp))}` : "",
         esc(`${_dumpScanned(d.index_lines_scanned)} · ${_dumpSecs(d.scan_seconds)}`)
       ].filter(Boolean).join(" · ");
       // The readable view is offered only when the strip actually produced text: a page
