@@ -71,6 +71,18 @@ def test_no_single_quoted_esc_in_a_data_on_attribute() -> None:
     assert not bad, "use ${esc(JSON.stringify(x))} (the browser decodes &#39; back to ' before oo-on.js parses):\n" + "\n".join(bad)
 
 
+def test_no_double_quoted_interpolation_inside_a_single_quoted_data_on_attribute() -> None:
+    """The mirror image: ``data-on-click='f("${esc(x)}")'``. esc() writes a double quote as &quot;, which the browser decodes back to
+    a double quote and closes the grammar's string, exactly as &#39; does in the other shape. The JSON form carries its own quotes."""
+    attr = re.compile(r"data-on-[a-z]+='[^'\n]*")
+    bad = []
+    for p in _scripts():
+        for m in attr.finditer(p.read_text(encoding="utf-8")):
+            if '"${' in m.group(0):
+                bad.append(f"{p.name}: {m.group(0)[:100]}")
+    assert not bad, "use ${esc(JSON.stringify(x))} with no quotes around it:\n" + "\n".join(bad)
+
+
 def test_a_raw_single_quoted_interpolation_is_a_value_the_code_chooses() -> None:
     found: set[tuple[str, str]] = set()
     for p in _scripts():

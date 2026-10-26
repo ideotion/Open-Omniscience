@@ -296,7 +296,7 @@ _NOT_A_RENDERING: dict[tuple[str, str], str] = {
     (
         "app-map.js",
         "esc(c.country)",
-    ): "the stored code as the per-region select's data attribute and as a click-handler argument (osmCountAdmin1); the visible country cell beside them goes through ooCountryCell",
+    ): "the stored code as the per-region select's data attribute (data-osm-comp-key); the click-handler argument has its own key below; the visible country cell goes through ooCountryCell",
     (
         "app-map.js",
         "esc(JSON.stringify(c.country))",
