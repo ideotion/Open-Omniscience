@@ -1367,7 +1367,7 @@
         <div><label for="feed-datecol">Date column <span class="muted">(opt)</span></label><input id="feed-datecol" placeholder="auto (col 1)"></div>
         <div><label for="feed-valcol">Value column <span class="muted">(opt)</span></label><input id="feed-valcol" placeholder="auto (col 2)"></div>
       </div>
-      <button data-on-click="importCustomFeed()">Import custom feed</button>
+      <button data-on-click="importCustomFeed(this)">Import custom feed</button>
       <div class="hint">Default mapping is column&nbsp;1 = date, column&nbsp;2 = value (the FRED convention). Works with any CSV; a missing value (a dot or a blank cell) is skipped, never stored as zero.</div>
       <div id="feed-result" class="hint"></div>
       </div>
@@ -2795,7 +2795,7 @@
       <label for="ing-url">…or ingest a single article URL</label>
       <div class="row">
         <div><input id="ing-url" placeholder="For example: https://example.com/article"></div>
-        <div style="flex:0 0 auto;"><button data-on-click="ingestUrl()">Ingest URL</button></div>
+        <div style="flex:0 0 auto;"><button data-on-click="ingestUrl(this)">Ingest URL</button></div>
       </div>
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
       <div id="ingest-result" class="hint"></div>
@@ -3481,7 +3481,7 @@
           </select></div>
         <div style="flex:2"><label for="http-proxy">Proxy URL <span class="muted">(required for protected)</span></label>
           <input id="http-proxy" placeholder="socks5://127.0.0.1:9050 (e.g. Tor)"></div>
-        <div style="flex:0 0 auto;align-self:end"><button data-on-click="saveFetchMode()">Save fetch mode</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button data-on-click="saveFetchMode(this)">Save fetch mode</button></div>
       </div>
       <div class="hint" style="color:var(--warn)">Protected mode cannot guarantee anonymity — you must
         run and trust the proxy yourself. SOCKS proxies need the optional [safety] extra.</div>
@@ -3494,7 +3494,7 @@
       <div class="row">
         <div style="flex:0 0 auto">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="discovery-external" data-on-change="saveDiscoveryExternal()">
+            <input type="checkbox" id="discovery-external" data-on-change="saveDiscoveryExternal(this)">
             Allow topic-discovery queries to DuckDuckGo
           </label>
         </div>

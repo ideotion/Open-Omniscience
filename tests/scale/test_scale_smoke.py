@@ -92,6 +92,9 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
         "OO_DATA_DIR": str(corpus_dir),
         "OO_NO_SCHEDULER": "1",
         "OO_AUTOSEED": "0",
+        # Passphrases reach the runner through the environment, never argv (audit A-020, the passphrase rule).
+        "OO_DB_PASSPHRASE": "scale-smoke-corpus-pass",
+        "OO_BENCH_BACKUP_PASSPHRASE": "scale-smoke-only-pass",
     }
     env.pop("OO_DB_PLAINTEXT", None)
     env.pop("OO_ALLOWED_HOSTS", None)  # the suite lists ``testserver`` there; the tool must reach the app the way an operator's run does (R226)
@@ -100,8 +103,6 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
             sys.executable,
             str(_REPO_ROOT / "scripts" / "run_scale_bench.py"),
             "--corpus", str(corpus_dir),
-            "--corpus-passphrase", "scale-smoke-corpus-pass",
-            "--backup-passphrase", "scale-smoke-only-pass",
             "--gate",
             "--out", str(report_path),
             "--repeats", "4",
