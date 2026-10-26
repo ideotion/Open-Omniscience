@@ -895,12 +895,15 @@ _STATUS_TTL_S = 15
 _STATUS_KEY = "insights:status"
 
 #: The statement deadline of EACH background scan, in seconds. It protects the pooled connection and the read snapshot a scan
-#: holds (an open read pins the WAL from checkpointing), not the request, which no longer waits on it. The figures count, the same
-#: ``count`` shape over the same index, measured 55 s and 182 s on the 12 M-row field corpus under different load (diagnostics of
-#: 2026-10-16). The OTHER scan here, ``count(distinct article_id)``, measured 1.2 to 1.4 times the ``count(id)`` cold on a synthetic
-#: 12 M-row plaintext index (2.2 to 2.6 s against 1.6 to 1.9 s, caches dropped, 2026-10-26; warm they are equal), so its worst is
-#: INFERRED at 1.4 x 182 s = 255 s on the field box (the ratio is measured, the field number is not). 400 s is 1.6 times that, the
-#: margin the figures count has over its worst. ``OO_STATUS_SCAN_DEADLINE_S`` changes it; 0 disables it.
+#: holds (an open read pins the WAL from checkpointing), not the request, which no longer waits on it. The field's worst measured
+#: ``count(id)`` over this index is 182 s (diagnostics of 2026-10-16: ``SELECT count(keyword_mentions_all.id)``, 182,137 ms, on an
+#: ENCRYPTED store -- ``at_rest_state: "unlocked-encrypted"``, 6.7 GB file, 2 CPUs -- so no plaintext-to-SQLCipher factor applies
+#: to it); the figures count, the same shape, measured 55 s under less load. The OTHER scan here, ``count(distinct article_id)``,
+#: measured 1.2 to 1.4 times ``count(id)`` cold on a synthetic 12 M-row PLAINTEXT index (2026-10-26), and 1.2 to 1.7 times on
+#: RC2's SQLCipher indexes at 12 M and 36 M rows (``rc-diagnostics/remeasure-a002-2026-10-26.md``; ratios transfer, its absolute
+#: seconds do not). So its worst on the field box is INFERRED at 1.4 x 182 = 255 s (310 s at the 1.7 worst ratio): a floor-ish
+#: estimate, not a bound. 400 s is 1.6 times 255 s and 1.3 times 310 s. A scan that passes it is a named, retried failure, not
+#: a wrong number. ``OO_STATUS_SCAN_DEADLINE_S`` changes it; 0 disables it.
 _STATUS_SCAN_DEADLINE_S = 400.0
 
 #: A finished pair of scans is carried, not repeated, for this many times its own measured duration: the same factor #1439 gave the
