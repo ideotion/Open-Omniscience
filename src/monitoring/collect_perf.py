@@ -1212,6 +1212,64 @@ class CollectionMonitor:
         return summary
 
 
+#: What a closed governor window keeps in the diagnostics: the window's own record (``gov_window``) with the permit count it
+#: ended at and moved to, and the running stored count, each under the name the log row already carries it by, except the
+#: collector rate: the log's ``download_rate_kbps`` is the closing TICK's instantaneous rate, which sits beside the window's own
+#: mean (``collector_kbps``), so the compact row says which it is.
+_WINDOW_ROW_TICK_KEYS = ("ts", "pass_id", "permits", "permits_next", "articles_stored")
+_WINDOW_ROW_TICK_RENAMED = (("download_rate_kbps", "closing_tick_kbps"),)
+
+
+def window_history(limit: int | None = None) -> dict:
+    """The closed governor windows the log still holds, oldest first, one compact row each, with what was kept of them.
+
+    The log has one row per tick (1.5 s or longer) and the window record rides the one tick that closed a window (a window
+    is read after 240 s, so at most one tick in 160), so a diagnostics copy that keeps the newest 200 ticks, or the 17 of the
+    quick one, shows one window or none: not the staircase of permit counts and rates a pass walked, which is what says
+    where a machine settled and what each count paid. This reads the whole file (the cap is ``_CAP_LINES`` rows) and parses
+    only the rows that closed a window.
+
+    Returns ``{"windows", "held", "kept", "partial", "reason"}``. ``limit`` keeps the newest that many; ``held`` is how many the
+    log holds and ``partial`` says ``kept`` is fewer. A log that is missing or cannot be read gives ``windows: None`` and the
+    reason, never an empty list: no window and no way to know are different facts. A row that is damaged (not JSON, not an
+    object, undecodable bytes) is skipped and counted in ``skipped_rows``."""
+    out: dict = {"windows": None, "held": None, "kept": None, "partial": None, "reason": None}
+    try:
+        path = _log_path()
+        if not path.exists():
+            out["reason"] = "no collection-performance log on disk"
+            return out
+        rows: list[dict] = []
+        skipped = 0
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for ln in fh:
+                if '"gov_window"' not in ln:
+                    continue
+                try:
+                    row = json.loads(ln)
+                except ValueError:
+                    skipped += 1
+                    continue
+                window = row.get("gov_window") if isinstance(row, dict) else None
+                if not isinstance(window, dict):
+                    skipped += 1
+                    continue
+                compact = {k: row.get(k) for k in _WINDOW_ROW_TICK_KEYS}
+                compact.update({new: row.get(old) for old, new in _WINDOW_ROW_TICK_RENAMED})
+                compact.update(window)
+                rows.append(compact)
+    except Exception as exc:  # noqa: BLE001
+        out["reason"] = f"the collection-performance log could not be read ({type(exc).__name__})"
+        return out
+    kept = rows if limit is None else rows[-limit:] if limit > 0 else []
+    out.update(windows=kept, held=len(rows), kept=len(kept), partial=len(kept) < len(rows))
+    if skipped:
+        out["skipped_rows"] = skipped
+    if not rows:
+        out["reason"] = "no window closed in the rows the log holds (a pass in target mode closes none)"
+    return out
+
+
 def recent_samples(limit: int = 200) -> list[dict]:
     """The newest perf log lines (for the debug bundle). Best-effort."""
     try:

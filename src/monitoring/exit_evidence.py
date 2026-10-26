@@ -51,6 +51,7 @@ from src.monitoring.kernel_log import (
     published_lines,
 )
 from src.paths import data_dir
+from src.safety.file_lock import file_lock, locked_append
 
 _LOG = logging.getLogger(__name__)
 
@@ -843,18 +844,22 @@ def arm_crash_trace() -> dict[str, Any]:
         return {"armed": True, "path": str(path)}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            if path.stat().st_size > _TRACE_MAX_BYTES:
-                os.replace(path, path.with_name(CRASH_TRACE + ".1"))
-        except FileNotFoundError:
-            pass
-        # Line-buffered and kept open for the life of the process: faulthandler writes
-        # to the file DESCRIPTOR from inside a signal handler, where no Python code runs.
         from src.monitoring.session_history import machine_boot_id
 
-        fh = open(path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115 - held open on purpose
-        header = _TRACE_HEADER.format(pid=os.getpid(), boot=machine_boot_id() or "-", at=_now())
-        fh.write("\n" + header + "\n")
+        # The rotation and the header are one section under the file's lock (R176): two servers booting on one folder cannot both rotate, and a header is never
+        # written into a file the other is renaming. The handle is then held open for the life of the process and written by faulthandler from a signal handler,
+        # where no lock can be taken, so a server that rotates AFTER another opened the file leaves that one writing into ``crash_trace.log.1``: its lines are kept, in the older file.
+        with file_lock(path):
+            try:
+                if path.stat().st_size > _TRACE_MAX_BYTES:
+                    os.replace(path, path.with_name(CRASH_TRACE + ".1"))
+            except FileNotFoundError:
+                pass
+            # Line-buffered and kept open for the life of the process: faulthandler writes
+            # to the file DESCRIPTOR from inside a signal handler, where no Python code runs.
+            fh = open(path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115 - held open on purpose
+            header = _TRACE_HEADER.format(pid=os.getpid(), boot=machine_boot_id() or "-", at=_now())
+            fh.write("\n" + header + "\n")
         faulthandler.enable(file=fh, all_threads=True)
         _TRACE_HANDLE = fh
         return {"armed": True, "path": str(path)}
@@ -888,8 +893,7 @@ def note_fatal_exception(exc: BaseException) -> None:
 
         clean = scrubbed_text(record_traceback(exc))
         text = clean[-_FATAL_TEXT_CHARS:] if clean is not None else f"{type(exc).__name__}: {WITHHELD}"
-        with open(crash_trace_path(), "a", encoding="utf-8") as fh:
-            fh.write(f"Uncaught exception ended the server at {_now()}:\n{text}\n")
+        locked_append(crash_trace_path(), f"Uncaught exception ended the server at {_now()}:\n{text}\n")
     except Exception as err:  # noqa: BLE001 - never mask the exception being reported
         # The reason, not the traceback: this runs inside the handler of the fatal exception, so a logged traceback would
         # print the fatal exception's message through ``__context__``, unscrubbed, next to a body that scrubs the same text.

@@ -77,6 +77,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure, scrubbed_name
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _LOG = logging.getLogger(__name__)
 
@@ -204,8 +205,7 @@ def _append(rec: dict[str, Any]) -> None:
         with _LOCK:
             p = ledger_path()
             p.parent.mkdir(parents=True, exist_ok=True)
-            with open(p, "a", encoding="utf-8", newline="\n") as fh:
-                fh.write(json.dumps(rec, separators=(",", ":"), default=str) + "\n")
+            locked_append(p, json.dumps(rec, separators=(",", ":"), default=str) + "\n", newline="\n")
     except OSError as exc:
         log_failure(_LOG, "session ledger: could not append", exc, level=logging.DEBUG)
 
@@ -236,14 +236,13 @@ def compact_if_needed(max_lines: int = MAX_LINES) -> int:
     try:
         with _LOCK:
             p = ledger_path()
-            lines = p.read_text(encoding="utf-8").splitlines()
-            if len(lines) <= max_lines:
-                return 0
-            keep = lines[-max_lines:]
-            tmp = p.with_suffix(".jsonl.tmp")
-            tmp.write_text("\n".join(keep) + "\n", encoding="utf-8", newline="\n")
-            os.replace(tmp, p)
-            return len(lines) - len(keep)
+            with file_lock(p):
+                lines = p.read_text(encoding="utf-8").splitlines()
+                if len(lines) <= max_lines:
+                    return 0
+                keep = lines[-max_lines:]
+                atomic_replace(p, "\n".join(keep) + "\n", newline="\n")
+                return len(lines) - len(keep)
     except OSError:
         return 0
 
@@ -275,9 +274,7 @@ def _write_liveness(now_wall: float, now_mono: float, now_bt: float | None = Non
     try:
         p = liveness_path()
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(rec), encoding="utf-8")
-        os.replace(tmp, p)
+        atomic_replace(p, json.dumps(rec), fsync=False, sweep_every_s=300.0)
     except OSError as exc:
         log_failure(_LOG, "session ledger: could not write liveness", exc, level=logging.DEBUG)
 

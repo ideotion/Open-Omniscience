@@ -25,6 +25,7 @@ from dateutil import parser as date_parser
 from trafilatura.settings import Document, set_date_params
 
 from src.ingest import lock_stats
+from src.monitoring.native_inflight import native_call
 
 
 @dataclass
@@ -110,22 +111,32 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
 
     ``url`` improves trafilatura's metadata resolution (e.g. canonical link). One extraction runs
     at a time in the process (:data:`_LXML_LOCK`), whatever the number of collect workers; how long
-    each waited and held is counted per pass in :mod:`src.ingest.lock_stats`.
+    each waited and held is counted per pass in :mod:`src.ingest.lock_stats`, and its live gauge is
+    marked three times around the lock (``asking`` before it, ``holding`` and ``released`` inside the hold).
     """
     if not html or not html.strip():
         return None
     asked = lock_stats.now()
     got = released = None
     try:
+        lock_stats.asking()
         with _LXML_LOCK:
             got = lock_stats.now()
             try:
-                return _extract_locked(html, url=url)
-            except BaseException as exc:
-                _release_frames(exc)
-                raise
+                lock_stats.holding()
+                # RC2's black box (src/monitoring/native_inflight.py): the next boot can say libxml2 was running when the
+                # process aborted. Inside the lock, so a worker WAITING for it is not counted as in lxml; around the whole
+                # call AND the release of the trees of a raising one (``_release_frames`` frees them, which is libxml2's
+                # free), because the lock covers the parse, the walk and that release, and the faulting frame may be any
+                # of them. Never raises, never swallows the body's exception.
+                with native_call("lxml"):
+                    try:
+                        return _extract_locked(html, url=url)
+                    except BaseException as exc:
+                        _release_frames(exc)
+                        raise
             finally:
-                released = lock_stats.now()
+                released = lock_stats.released()
     finally:
         # After the lock is given up, so the statistic adds nothing to a hold; numbers only, never the URL.
         lock_stats.record(asked=asked, got=got, released=released, html=html)

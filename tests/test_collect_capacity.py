@@ -144,6 +144,8 @@ def test_a_nonsense_stored_ceiling_is_refused(state, bad):
 
 
 def test_an_unwritable_state_path_does_not_raise(tmp_path):
+    # A parent that is a file, so no directory can be made there (the file lock makes a missing directory, so a merely absent one is writable now).
+    (tmp_path / "nope").write_text("a file", encoding="utf-8")
     missing = tmp_path / "nope" / "deeper" / "collect_capacity.json"
     # No exception: the pass that just finished is worth more than the hint.
     capacity.record_pass(

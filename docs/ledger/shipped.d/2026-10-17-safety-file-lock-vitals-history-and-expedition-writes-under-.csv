@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-17,safety/file_lock,vitals_history and expedition writes under the cross-process file lock (R176 step 2),"shipped (draft PR)",PR #1454; R176,src/monitoring/vitals_history.py; src/monitoring/expedition.py; tests/test_vitals_history.py; tests/test_expedition_log.py,Before: vitals_history and expedition trimmed or appended with no lock across processes. After: it takes src.safety.file_lock and a unique temp; a test with a second process pins that no line is lost.

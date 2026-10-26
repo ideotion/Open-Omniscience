@@ -112,7 +112,7 @@ def _load_safe_yaml(text: str):
     bans that token outright, and rightly -- a rule a reviewer has to read an argument to
     apply is a rule that gets misapplied. This is not a way around that rule, it is a
     stricter reading of it: PyYAML exposes no C-loader variant of ``safe_load``, so the
-    loader is fixed HERE, at module level, as one of the two safe classes and nothing
+    loader is fixed at module level (chosen in ``src.utils.safe_yaml``, bound here), as one of the two safe classes and nothing
     else, with no per-call-site ``Loader=`` argument for a later edit to get wrong. Pinned
     by ``test_seed_sources.py``, which asserts the class AND feeds it a
     ``!!python/object/apply`` payload to prove the refusal rather than assume it.

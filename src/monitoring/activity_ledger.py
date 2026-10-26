@@ -61,7 +61,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 from collections.abc import Callable
@@ -72,6 +71,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure, scrubbed
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _LOG = logging.getLogger(__name__)
 
@@ -494,8 +494,7 @@ def _append(rec: dict[str, Any]) -> None:
     with _LOCK:
         p = ledger_path()
         p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "a", encoding="utf-8", newline="\n") as fh:
-            fh.write(json.dumps(rec, ensure_ascii=False, separators=(",", ":"), default=str) + "\n")
+        locked_append(p, json.dumps(rec, ensure_ascii=False, separators=(",", ":"), default=str) + "\n", newline="\n")
 
 
 def record(action: str, result: Any = None, settings: Any = None) -> dict[str, Any] | None:
@@ -538,13 +537,12 @@ def compact_if_needed(max_lines: int = MAX_LINES) -> int:
     try:
         with _LOCK:
             p = ledger_path()
-            lines = p.read_text(encoding="utf-8").splitlines()
-            if len(lines) <= max_lines:
-                return 0
-            keep = lines[-max_lines:]
-            tmp = p.with_suffix(".jsonl.tmp")
-            tmp.write_text("\n".join(keep) + "\n", encoding="utf-8", newline="\n")
-            os.replace(tmp, p)
-            return len(lines) - len(keep)
+            with file_lock(p):
+                lines = p.read_text(encoding="utf-8").splitlines()
+                if len(lines) <= max_lines:
+                    return 0
+                keep = lines[-max_lines:]
+                atomic_replace(p, "\n".join(keep) + "\n", newline="\n")
+                return len(lines) - len(keep)
     except OSError:
         return 0
