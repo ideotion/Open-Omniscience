@@ -107,7 +107,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
 that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag and 30–34 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -131,7 +131,7 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–23).**
+**Items added at the tag (12–23) and by the close-out audit (30–34).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
@@ -179,7 +179,17 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   «absent -> Natural Earth, never an error»; nothing the person sees is wrong, and no manifest or static listing exists to ask first.
   The 404s stop when row E's operator build lands the files (the 0.5.1 item that already exists). Record:
   `plan-row-j/proposal-item23-osm-admin-presence-2026-10-26.md` (the `/api/health` presence flag, not built).
-
+- **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3275-3297`): its cost at the
+  field catalogue (86k sources) is not measured; measure first, then a column projection that keeps what callers of the full form see.
+- **31. A declined rollup spawns a build thread on every served read** (audit A-026, `src/analytics/rollup_serve.py:1421`): needs the
+  mem-low measurement before any change.
+- **32. The «130 GB corpus» label on the full-text rebuild timing** (audit A-027, `src/database/fts.py:807, 990`, `OPEN_QUEUE.md:619`): the
+  report's evidence points to the 11.7 GB database (268,241 articles) with the data folder, backups included, near 130 GB; it cannot
+  be settled from the tree, so the wording stays until the record's author says which size the 981 to 1,645 s was taken at.
+- **33. Fixed-name `.tmp` writers of files two servers share** (audit A-031, `src/monitoring/forensics.py:295`): already allowlisted with
+  owner lanes; `session_state.json` is the one whose torn write changes the next boot's verdict.
+- **34. The launcher's «0 to 9 ms idle over 22 launches»** (audit A-034, item 12 above): RC2's own list is its only source, no raw timing
+  table is in the tree; RC2 states it as inferred or commits the table.
 ---
 
 ## 2. The rows

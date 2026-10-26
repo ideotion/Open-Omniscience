@@ -160,3 +160,59 @@ def test_canonical_bytes_is_stable():
     a = canonical_bytes({"b": 1, "a": 2})
     b = canonical_bytes({"a": 2, "b": 1})
     assert a == b == b'{"a":2,"b":1}'
+
+
+# ---- audit 0.5.0 A-018: a failed unwrap of the ML-DSA key is a wrong passphrase unless the file is a legacy plaintext key ----
+
+class _FakeMldsa:
+    PUBLIC_KEY_SIZE = 10
+
+    @staticmethod
+    def generate_keypair():
+        return b"P" * 10, b"S" * 30
+
+
+def _fake_pqc(monkeypatch):
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+
+
+def test_a_wrong_passphrase_on_the_wrapped_mldsa_key_raises_instead_of_signing_with_garbage(tmp_path, monkeypatch):
+    _fake_pqc(monkeypatch)
+    _signer(tmp_path, monkeypatch, "right-pass")  # creates both keys wrapped under it
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(signing._wrap(b"P" * 10 + b"S" * 30, b"other-pass"))
+    try:
+        _signer(tmp_path, monkeypatch, "right-pass")
+    except signing.SigningError as exc:
+        assert "wrong passphrase" in str(exc) and "other-pass" not in str(exc)
+    else:  # pragma: no cover - the defect: the wrapped blob was split into a garbage key pair
+        raise AssertionError("a wrong passphrase on the wrapped ML-DSA key must not load")
+
+
+def test_a_legacy_plaintext_mldsa_key_of_the_exact_length_still_loads_under_a_passphrase(tmp_path, monkeypatch):
+    _fake_pqc(monkeypatch)
+    _signer(tmp_path, monkeypatch, "pass-1")
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(b"P" * 10 + b"S" * 30)  # what the key file was before the database had a passphrase
+    s = _signer(tmp_path, monkeypatch, "pass-1")
+    assert s.key_protection == "plaintext-0600" and s.is_hybrid
+
+
+def test_a_plaintext_looking_mldsa_key_of_any_other_length_is_refused(tmp_path, monkeypatch):
+    _fake_pqc(monkeypatch)
+    _signer(tmp_path, monkeypatch, "pass-1")
+    (tmp_path / "ml.key").write_bytes(b"P" * 10 + b"S" * 31)
+    try:
+        _signer(tmp_path, monkeypatch, "pass-1")
+    except signing.SigningError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("a blob that is neither wrapped under this passphrase nor the exact plaintext length must be refused")
+
+
+def test_the_right_passphrase_loads_the_wrapped_mldsa_key_and_is_not_legacy(tmp_path, monkeypatch):
+    _fake_pqc(monkeypatch)
+    _signer(tmp_path, monkeypatch, "pass-1")
+    s = _signer(tmp_path, monkeypatch, "pass-1")
+    assert s.key_protection == "aes256gcm-scrypt" and s.is_hybrid
