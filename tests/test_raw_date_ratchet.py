@@ -61,9 +61,10 @@ _PINS = {
 
 
 def _files():
+    """EVERY script the app serves: all ``*.js`` and ``*.html`` under src/static, vendored libraries
+    excluded (third-party code is not ours to pin). Inline ``<script>`` blocks live in the html files."""
     return sorted(
-        [*_STATIC.glob("app-*.js"), _STATIC / "investigate.js", _STATIC / "ootimeline.js",
-         _STATIC / "reader.js", _STATIC / "taskmanager.js"]
+        p for ext in ("*.js", "*.html") for p in _STATIC.rglob(ext) if "vendor" not in p.relative_to(_STATIC).parts
     )
 
 
@@ -107,3 +108,12 @@ def test_the_swapped_sites_use_the_helper_and_the_helper_lives_in_the_first_modu
     for name in ("app-home.js", "app-analysis.js", "app-claim.js", "app-corpus.js", "app-insights.js",
                  "app-shell.js", "app-living.js"):
         assert "ooIsoDate" in (_STATIC / name).read_text(encoding="utf-8"), name
+
+
+def test_the_scan_covers_every_served_script_and_page():
+    names = {p.relative_to(_STATIC).as_posix() for p in _files()}
+    for must in ("app-core.js", "reader.js", "taskmanager.js", "i18n.js", "ooviz.js", "oosky.js", "unlock.js",
+                 "data-volume.js", "guis/gallery.js", "index.html", "investigate.html", "taskmanager.html",
+                 "unlock.html"):
+        assert must in names, must
+    assert not any("vendor/" in n for n in names)
