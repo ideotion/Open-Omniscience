@@ -11,9 +11,11 @@ from src.api import backup_v2
 
 
 def test_a_file_over_the_cap_is_refused_before_a_byte_is_read(tmp_path, monkeypatch):
+    # The check is `size > cap`; a small cap exercises it without a 2 GiB sparse file,
+    # which a filesystem without sparse-file support would really allocate.
+    monkeypatch.setattr(backup_v2, "_MAX_RESTORE_BYTES", 1024)
     big = tmp_path / "huge.bak"
-    with big.open("wb") as fh:
-        fh.truncate(backup_v2._MAX_RESTORE_BYTES + 1)  # sparse: no disk is spent
+    big.write_bytes(b"x" * (backup_v2._MAX_RESTORE_BYTES + 1))
     monkeypatch.setattr(backup_v2, "check_memory_before_staging", lambda: None)
 
     def never(self, *a, **k):
