@@ -25,8 +25,12 @@ Only the narration step reads article text, and only for the articles it narrate
 
 from __future__ import annotations
 
+import heapq
 import logging
-from datetime import datetime
+import os
+from array import array
+from collections.abc import Iterator
+from datetime import datetime, time
 from typing import Any
 
 from sqlalchemy import and_, func
@@ -57,6 +61,121 @@ _JOIN_AT = 0.34
 #: the period. Single articles are still counted everywhere else.
 _MIN_ARTICLES = 2
 
+#: Articles whose mention rows are read in one statement. It protects two things: SQLite's bound-variable limit (999, so 900 is the
+#: figure every chunked IN list in this package keeps under), and the memory of one read, which is this many articles times the
+#: mentions each carries (78 on the field corpus, so about 70,000 rows) and no more, whatever the length of the period.
+#: MEASURED (audit-0.5.0/inputs/remeasure-stories-export, written corpora of 1.56 to 12.48 million mentions at 78 per article): the Python
+#: heap of the whole read is 30.2, 33.6 and 45.7 MB at 100, 300 and 900 articles a read (tracemalloc peak, 1.56 M mentions), so one read
+#: costs about 19 KB an article (248 B a mention row), 17 MB at 900. The three sizes are within noise of each other on time (12.48 M mentions cold:
+#: 43.7, 40.5 and 38.0 s at 100, 300 and 900 in this lane's run; 40.7, 38.1 and 40.9 s in RC2's re-measure on its own machine, a spread of about
+#: 7 % whose order flips between runs), so 900 is chosen as the bound, for the fewest statements, at 15 MB of heap more than 300. A larger chunk
+#: is not available: the variable limit.
+_ARTICLE_CHUNK = 900
+
+#: Keyword ids whose stoplist verdict is remembered between chunks. It protects memory: at about 100 bytes an entry the table stays near
+#: 10 MB however many distinct keywords the period holds, and when it fills it is emptied and refilled by the next chunks (a verdict
+#: is a pure function of the keyword's normalised term, so forgetting one costs a lookup, never a different answer).
+_VERDICTS_KEPT = 100_000
+
+
+#: The longest the mention read of one edition may run by default. It protects the request thread and the one connection the app
+#: shares, which a yearly edition holds for the whole read, from a read that is not coming back; it is NOT a bound on a slow machine's
+#: patience. MEASURED (same folder): the read takes 3.0 microseconds a mention row cold and 2.6 warm on a 2.1 GHz virtual core, linear from
+#: 1.56 to 12.48 million mentions (38.0 s cold, 32.7 s warm at 12.48 M), which puts the field corpus (20.9 M mentions, 268,241 articles) at
+#: about 64 s cold and 55 s warm (68 to 73 s at the 3.27 to 3.5 microseconds a row of RC2's re-measure on its own machine), an extrapolation and
+#: labelled as one. 600 s is about eight times that: a machine eight times slower than that core still finishes, and one that cannot reads as "stories unavailable". The cards of the same edition have 240 s for the whole
+#: card layer (``cards.DEFAULT_BUDGET_S``); this read has more because a yearly edition is generated once, and not polled.
+_DEADLINE_DEFAULT_S = 600.0
+
+
+def _stories_deadline_s() -> float:
+    """``OO_BULLETIN_STORIES_DEADLINE_S`` (default :data:`_DEADLINE_DEFAULT_S`): the longest the mention read of one edition may run, in seconds.
+
+    The deadline's progress handler also stops a read that takes the machine to the memory guard's floor. The edition that cannot
+    finish reads as "stories unavailable", with the error class, instead of as a button that never comes back. Clamped finite and
+    positive, and to an hour, as the diagnostics deadlines are."""
+    import math
+
+    try:
+        v = float(os.environ.get("OO_BULLETIN_STORIES_DEADLINE_S", _DEADLINE_DEFAULT_S))
+    except ValueError:
+        return _DEADLINE_DEFAULT_S
+    if not math.isfinite(v) or v <= 0:
+        return _DEADLINE_DEFAULT_S
+    return min(v, 3600.0)
+
+
+def _period_article_ids(session, period: Period) -> array:
+    """The ids of the articles the period holds, sorted, from the ``articles`` clock index alone.
+
+    ``ix_article_observed`` is ``coalesce(published_at, created_at)`` (``_CLOCK`` is written exactly as it defines it), which is
+    how ``period.py`` defines the period. The read this replaced chose MENTION rows by their ``observed_on``, the date
+    ``store.py`` stamps from that clock when the article is indexed (``(published_at or created_at).date()``); the two agree
+    unless the article's clock moved after it was indexed (the law corpus's heal clears ``published_at`` without re-indexing) or
+    the mention carries no date. For those articles this read follows the ARTICLE's clock: it keeps the article in the period its
+    clock names, with all of its mentions, where the old read followed each mention's stamped date. That is a stated difference
+    of audit 0.5.0 A-003, with the orphan one (mention rows whose article row is gone were counted, and are not now). An index
+    range over the clock reads no article row page; a stand-in (the placeholder a salvage copy writes for a lost article) is left
+    out through the hash index, as the mention read did through its article ids. A quarantined article is NOT left out here, as it
+    was not before: that is D22's slice. The ids come back as an ``array('q')``, eight bytes each, resident for the whole read
+    (2 MB at the field's 268,241 articles); the list they are sorted from exists only while it is sorted (about 36 bytes an
+    entry). Sorted, so each chunk of the mention read lands on neighbouring pages of the covering index."""
+    lo = datetime.combine(period.start, time.min)
+    hi = datetime.combine(period.end, time.min)
+    clock = _CLOCK
+    ids = array(
+        "q",
+        (
+            int(aid)
+            for (aid,) in session.query(Article.id)
+            .filter(and_(clock >= lo, clock < hi), not_a_stand_in_article_id(Article.id))
+            .yield_per(10_000)
+        ),
+    )
+    return array("q", sorted(ids))
+
+
+def _visible_sets(session, period: Period) -> Iterator[tuple[int, set[int]]]:
+    """Each in-period article that has mention rows, with its characterising keyword ids; one chunk of articles in memory at a time.
+
+    The period's articles are taken first (:func:`_period_article_ids`); their mention rows are then read ``_ARTICLE_CHUNK``
+    articles at a time through the covering index ``ix_mention_article_count`` (``article_id, count, keyword_id``), the stoplist
+    verdict is asked of the keywords of that chunk only, and each article is reduced to its top ``_TERMS_PER_ARTICLE`` before the
+    next chunk is read. What is resident is one chunk of rows plus the verdict table, never the period's mentions: this replaced a
+    single ``.all()`` over every mention of the period, which a yearly edition on a field corpus made several gigabytes (audit
+    0.5.0, A-003).
+
+    An article whose every keyword is hidden is yielded with an EMPTY set, so the period's article count stays exact; an article
+    with no mention row at all is not yielded, as before."""
+    from src.analytics.queries import _hidden_predicate
+
+    is_hidden = _hidden_predicate()
+    verdicts: dict[int, bool] = {}
+    ids = _period_article_ids(session, period)
+    for start in range(0, len(ids), _ARTICLE_CHUNK):
+        chunk = ids[start : start + _ARTICLE_CHUNK].tolist()
+        per: dict[int, list[tuple[int, int]]] = {}
+        for aid, kid, cnt in session.query(
+            KeywordMentionRead.article_id, KeywordMentionRead.keyword_id, KeywordMentionRead.count
+        ).filter(KeywordMentionRead.article_id.in_(chunk)):
+            per.setdefault(int(aid), []).append((int(cnt or 0), int(kid)))
+        # One lookup per keyword this chunk has not yet been judged on, small columns only, under the variable cap. A keyword the
+        # table does not hold is judged visible, as it was when only the ones found were tested.
+        unjudged = sorted({kid for pairs in per.values() for _c, kid in pairs} - verdicts.keys())
+        for i in range(0, len(unjudged), 900):
+            part = unjudged[i : i + 900]
+            for kid in part:
+                verdicts[kid] = False
+            for kid, norm in session.query(Keyword.id, Keyword.normalized_term).filter(Keyword.id.in_(part)):
+                if is_hidden(norm):
+                    verdicts[int(kid)] = True
+        for aid in sorted(per):
+            pairs = [p for p in per[aid] if not verdicts[p[1]]]
+            pairs.sort(key=lambda p: (-p[0], p[1]))
+            yield aid, {kid for _c, kid in pairs[:_TERMS_PER_ARTICLE]}
+        if len(verdicts) > _VERDICTS_KEPT:
+            verdicts.clear()
+
 
 def article_keyword_sets(session, period: Period) -> dict[int, set[int]]:
     """Each in-period article's characterising keyword ids.
@@ -72,44 +191,42 @@ def article_keyword_sets(session, period: Period) -> dict[int, set[int]]:
     terms a story names as shared would have listed it. The shared terms are the
     intersection of these sets, so they inherit the rule. The listing's length rule applies too:
     two-letter terms (`eu`, `un`, `ai`) no longer take part in grouping.
-    """
-    from src.analytics.queries import _hidden_predicate
 
-    lo, hi = period.start, period.end
-    rows = (
-        session.query(
-            KeywordMentionRead.article_id, KeywordMentionRead.keyword_id, KeywordMentionRead.count
-        )
-        .filter(
-            and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi),
-            # the mentions kept for a lost article: a stand-in is no article, so it joins no story, is no source of one (``single_source`` could
-            # flip on its placeholder source) and is not read for narration
-            not_a_stand_in_article_id(KeywordMentionRead.article_id),
-        )
-        .all()
-    )
-    # One lookup per DISTINCT keyword, small columns only, chunked under the variable cap.
-    is_hidden = _hidden_predicate()
-    distinct = sorted({int(kid) for _aid, kid, _cnt in rows})
-    hidden_ids: set[int] = set()
-    for i in range(0, len(distinct), 900):
-        for kid, norm in session.query(Keyword.id, Keyword.normalized_term).filter(
-            Keyword.id.in_(distinct[i : i + 900])
-        ):
-            if is_hidden(norm):
-                hidden_ids.add(int(kid))
-    # An article whose every keyword is hidden stays in the answer with an EMPTY set: the period's
-    # article count (``articles_in_period``) is exact, and ``cluster_articles`` skips an empty set.
-    per: dict[int, list[tuple[int, int]]] = {int(aid): [] for aid, _kid, _cnt in rows}
-    for aid, kid, cnt in rows:
-        if int(kid) in hidden_ids:
+    The WHOLE answer, one set per article of the period: what it holds grows with the period. The edition does not use it
+    (:func:`build_stories` keeps only the sets it compares, :func:`_richest_sets`); it is the reference the tests compare that
+    path against."""
+    return dict(_visible_sets(session, period))
+
+
+def _richest_sets(session, period: Period, max_articles: int) -> tuple[dict[int, set[int]], int, int]:
+    """The sets of the ``max_articles`` richest articles, and how many articles there were: ``(kept, articles_in_period, with_terms)``.
+
+    ``articles_in_period`` counts every article that has mention rows (one whose keywords are all hidden too); ``with_terms``
+    those with a non-empty set, the ones that can be compared. The rule for which to keep is the one the comparison always
+    had: most visible keywords first, the lowest id among equals. It is applied as the sets arrive, with a heap of
+    ``max_articles`` entries whose root is the worst article kept, so what is resident is ``max_articles`` sets of at most
+    ``_TERMS_PER_ARTICLE`` ids plus one chunk of mention rows, however many articles the period holds (the period's article COUNT
+    is still exact: it is a counter, not a list)."""
+    heap: list[tuple[int, int]] = []  # (visible keywords, -article id); the smallest is the worst article kept
+    kept: dict[int, set[int]] = {}
+    total = with_terms = 0
+    for aid, terms in _visible_sets(session, period):
+        total += 1
+        if not terms:
             continue
-        per.setdefault(int(aid), []).append((int(cnt or 0), int(kid)))
-    out: dict[int, set[int]] = {}
-    for aid, pairs in per.items():
-        pairs.sort(key=lambda p: (-p[0], p[1]))
-        out[aid] = {kid for _c, kid in pairs[:_TERMS_PER_ARTICLE]}
-    return out
+        with_terms += 1
+        if max_articles < 1:
+            continue
+        entry = (len(terms), -aid)
+        if len(heap) < max_articles:
+            heapq.heappush(heap, entry)
+        elif entry > heap[0]:
+            _n, worst = heapq.heapreplace(heap, entry)
+            del kept[-worst]
+        else:
+            continue
+        kept[aid] = terms
+    return kept, total, with_terms
 
 
 def cluster_articles(
@@ -167,17 +284,17 @@ def build_stories(
 
     ``limit`` bounds the stories RETURNED, and likewise says so.
     """
-    sets = article_keyword_sets(session, period)
-    total_articles = len(sets)
-    # An article with no visible keyword (empty set) is counted in the period and compared on nothing.
-    compared = {a: s for a, s in sets.items() if s}
-    bounded = False
-    if len(compared) > max_articles:
-        # Take the articles with the richest keyword sets: an article with two
-        # indexed terms cannot characterise a story anyway. Deterministic tie-break.
-        keep = sorted(compared, key=lambda a: (-len(compared[a]), a))[:max_articles]
-        compared = {a: compared[a] for a in keep}
-        bounded = True
+    from src.database.maintenance import statement_deadline
+
+    deadline_s = _stories_deadline_s()
+    # The mention read is the one step that touches the corpus at its size. It holds a chunk of articles at a time and keeps only the
+    # richest ``max_articles`` sets (an article with two indexed terms cannot characterise a story anyway; deterministic tie-break:
+    # most visible keywords, then the lowest id), and the deadline bounds how long it may hold the request thread and the shared
+    # connection and stops it if it takes the machine to the memory guard's floor. The clustering below is Python over at most
+    # ``max_articles`` sets and needs neither. An article with no visible keyword (empty set) is counted in the period and compared on nothing.
+    with statement_deadline(session, deadline_s):
+        compared, total_articles, with_terms = _richest_sets(session, period, max_articles)
+    bounded = with_terms > len(compared)
 
     clusters = cluster_articles(compared, threshold=threshold)
     shown = clusters[:limit]
@@ -232,6 +349,19 @@ def build_stories(
         "articles_in_period": total_articles,
         "articles_compared": len(compared),
         "comparison_bounded": bounded,
+        "read_bound": {
+            "max_articles": max_articles,
+            "terms_per_article": _TERMS_PER_ARTICLE,
+            "articles_per_read": _ARTICLE_CHUNK,
+            "deadline_s": deadline_s,
+            "method": (
+                "the period's articles are taken from the article clock index and their mention rows are read "
+                f"{_ARTICLE_CHUNK} articles at a time, each reduced to its top {_TERMS_PER_ARTICLE} visible keywords before the "
+                f"next read: what is held is the keyword sets of the richest {max_articles:,} articles, one read and eight bytes "
+                f"for each article of the period. The read is stopped after {deadline_s:g} s, and the edition then says its "
+                "stories could not be built."
+            ),
+        },
         "threshold": threshold,
         "method": (
             f"articles grouped by the overlap of their top {_TERMS_PER_ARTICLE} indexed "

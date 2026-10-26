@@ -13,18 +13,22 @@ commodity table yet) gets an honest, smaller picture rather than a crash.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import os
+import shutil
 import tempfile
 import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
-from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from src.api import served_cache
 from src.database.session import engine, get_db
@@ -603,36 +607,211 @@ def vacuum() -> dict:
     return report
 
 
+#: A snapshot directory this old is a crashed server's. It is the line between "a download still in flight" and "a leftover":
+#: another server on the same data folder (R176) may be streaming its own snapshot, and no download of one lasts a day (an
+#: 11.7 GB file at 1 MB/s is about 3.3 hours), so a younger directory is never touched and an older one is removed. It also bounds
+#: how long a claim whose response was never run can keep the endpoint busy.
+_BACKUP_STALE_AFTER_S = 24 * 3600
+_BACKUP_DIR_PREFIX = ".oo-backup-"
+_BACKUP_LOCK = threading.Lock()
+#: The download in flight in THIS process (not in another server on the same data folder, R176: each makes its own, and the
+#: free-space gate is each one's own look at the volume): (its claim token, when it was claimed), or None. The token is what a
+#: request holds: only the request whose token is recorded can free the claim, so a download that outlives its claim (taken over
+#: after :data:`_BACKUP_STALE_AFTER_S`) cannot free the takeover's.
+_backup_flight: tuple[object, float] | None = None
+
+
+def _refuse_cross_site(request: Request) -> None:
+    """403 unless this GET comes from the app's own page or from a caller that is not a browser.
+
+    A browser cannot be stopped from sending a GET to a loopback address, and the response of this one is the whole corpus written
+    out in plaintext, so the route has to refuse for itself the requests a page of another site makes (an ``<img src>`` or a
+    ``fetch`` to ``http://127.0.0.1:PORT/api/database/backup`` costs the machine a full snapshot even where the browser then hides
+    the answer). Every one of these must pass; what the refusal reads:
+
+    * ``Host``: one of the names the app's DNS-rebinding guard serves (the loopback names, the test client's, ``OO_ALLOWED_HOSTS``).
+      A page on a name that an attacker rebinds to 127.0.0.1 is SAME-ORIGIN with itself, so the checks below pass for it and only
+      this one stops it; the middleware stops it too, and the route does not depend on that.
+    * ``Sec-Fetch-Site`` when the browser sends it: ``same-origin`` (the app's own page) and ``none`` (an address typed or a bookmark)
+      pass; ``same-site`` (another port or host on this machine) and ``cross-site`` do not.
+    * ``Origin``, else ``Referer``, when sent: its host and port must be the request's own ``Host``. ``Origin: null`` names no
+      host and is refused.
+    * Neither sent: a command line, a script or a navigation from this page, which carries no ``Referer`` under the app's own
+      ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods. **The stated limit,
+      in two forms:** a browser that does not send Fetch Metadata (Firefox before 90, Safari before 16.4, an old embedded webview),
+      and any browser asked for a name that is not a "potentially trustworthy" address (an ``OO_ALLOWED_HOSTS`` name over plain
+      HTTP: browsers attach Fetch Metadata only to loopback and HTTPS targets), send none of the three for
+      ``<img src=... referrerpolicy="no-referrer">``, so that request is served: the page still cannot read the answer, but the
+      machine writes the snapshot. The one-at-a-time slot and the free-space gate bound what that costs.
+    """
+    from src.api.main import _allowed_hosts, _host_without_port
+
+    refusal = HTTPException(
+        status_code=403,
+        detail="Refused: the corpus snapshot is served to the app's own page, not to a request from another site or origin.",
+    )
+    if _host_without_port(request.headers.get("host", "")) not in _allowed_hosts():
+        raise refusal
+    site = request.headers.get("sec-fetch-site")
+    if site is not None and site.strip().lower() not in ("same-origin", "none"):
+        raise refusal
+    sent = request.headers.get("origin")
+    if sent is None:
+        sent = request.headers.get("referer")
+    if sent is None:
+        return
+    try:
+        netloc = urlsplit(sent).netloc.lower()
+    except ValueError:
+        raise refusal from None
+    if not netloc or netloc != request.headers.get("host", "").strip().lower():
+        raise refusal
+
+
+def _claim_backup_slot() -> object:
+    """One snapshot at a time in this process: 429 while another is being made or streamed. Returns the claim's token.
+
+    A snapshot is a full copy of the corpus on the data volume, so two at once is twice the disk and twice the reads of a store
+    the collector is writing into. The claim is released when the response ends, however it ends; a claim older than
+    :data:`_BACKUP_STALE_AFTER_S` is taken over: a response that never ran, or one still streaming after a day, which the token
+    keeps from freeing the takeover's claim. It is a per-process rule: two servers on one data folder (R176) can each hold one."""
+    global _backup_flight
+    token = object()
+    with _BACKUP_LOCK:
+        if _backup_flight is not None and (time.monotonic() - _backup_flight[1]) < _BACKUP_STALE_AFTER_S:
+            raise HTTPException(
+                status_code=429,
+                detail="Another corpus snapshot is being made or downloaded; retry when it has finished.",
+            )
+        _backup_flight = (token, time.monotonic())
+    return token
+
+
+def _release_backup_slot(token: object, workdir: Path | None) -> None:
+    """Remove the snapshot directory (if one was made) and free the claim ``token`` holds. Idempotent; never raises.
+
+    The directory is this request's own and is removed whatever became of the claim; the claim is freed only if it is still this
+    request's, so a download that was taken over (a day or more in flight) does not free the takeover's."""
+    global _backup_flight
+    if workdir is not None:
+        shutil.rmtree(workdir, ignore_errors=True)
+    with _BACKUP_LOCK:
+        if _backup_flight is not None and _backup_flight[0] is token:
+            _backup_flight = None
+
+
+def _sweep_stale_snapshots(data_dir: Path) -> None:
+    """Remove the snapshot directories a crashed server left (older than :data:`_BACKUP_STALE_AFTER_S`). Never raises."""
+    cutoff = time.time() - _BACKUP_STALE_AFTER_S
+    try:
+        names = os.listdir(data_dir)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(_BACKUP_DIR_PREFIX):
+            continue
+        path = data_dir / name
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+class _SnapshotResponse(FileResponse):
+    """A file response that removes its snapshot directory when it ends, however it ends (sent, client gone, error, cancelled).
+
+    The removal runs in a worker thread, shielded from the cancellation of the task (a server shutting down, a cancel scope
+    around the response; a disconnected client is not relied on to cancel it, and on a stack that only drops the sends the file
+    is read to its end first): deleting a corpus-sized file can take seconds on some file systems (btrfs, ZFS, a USB disk) and
+    must neither stall the event loop nor be skipped."""
+
+    def __init__(self, path: Path, workdir: Path, token: object, **kwargs) -> None:
+        super().__init__(path, **kwargs)
+        self._workdir = workdir
+        self._token = token
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # shielded: a cancelled task (shutdown, a cancel scope) must still get its directory removed and its claim freed
+            await asyncio.shield(run_in_threadpool(_release_backup_slot, self._token, self._workdir))
+
+
 @router.get("/backup")
-def download_backup() -> FileResponse:
+def download_backup(request: Request) -> FileResponse:
     """Stream a consistent SQLite snapshot of the corpus as a download.
 
     Uses the online backup API, so the snapshot is valid even while the app is
     running. Refuses (HTTP 400) on non-SQLite backends rather than pretending.
+
+    Audit 0.5.0, A-008. The snapshot is a PLAINTEXT copy of the whole corpus, so it is written where the corpus already lives, in a
+    private directory (``.oo-backup-*``, owner-only) next to the database, not in the operating system's temporary directory
+    (often a RAM disk, often world-listable, never covered by the data folder's own protections). It is refused for a request
+    from another site (:func:`_refuse_cross_site`), made one at a time (:func:`_claim_backup_slot`), and not started when the
+    data volume has less free space than the file and its log, the most a snapshot can write (507, with both figures; a figure
+    that cannot be read is not a refusal, and the response says it was not checked). The directory is removed when the
+    response ends, and a leftover from a crashed server older than a day is removed by the next request.
     """
-    from src.backup.sqlite_backup import BackupError, backup_to
+    from src.backup.sqlite_backup import BackupError, backup_to, live_db_path
+    from src.database.connect import is_encrypted_file
 
-    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    # Snapshot into a temp file, then hand it to FileResponse and delete after send.
-    fd, tmp = tempfile.mkstemp(prefix="oo-backup-", suffix=".db")
-    import os as _os
-
-    # Close the open descriptor BEFORE unlinking/reopening the path: Windows
-    # cannot delete a file that still has an open handle (WinError 32).
-    _os.close(fd)
-    Path(tmp).unlink(missing_ok=True)  # mkstemp created it; backup_to recreates cleanly
+    _refuse_cross_site(request)
+    token = _claim_backup_slot()
+    workdir: Path | None = None
     try:
-        backup_to(Path(tmp))
-    except BackupError as exc:
-        Path(tmp).unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
-
-    return FileResponse(
-        tmp,
-        media_type="application/x-sqlite3",
-        filename=f"open-omniscience-backup-{ts}.db",
-        background=BackgroundTask(lambda: Path(tmp).unlink(missing_ok=True)),
-    )
+        try:
+            db_path = live_db_path()
+        except BackupError as exc:
+            raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+        data_dir = db_path.parent
+        _sweep_stale_snapshots(data_dir)
+        space_checked = True
+        # An encrypted store is refused by ``backup_to`` before it writes a byte, whatever the space; only a snapshot that will
+        # really be written is measured against the volume.
+        if not is_encrypted_file(db_path):
+            needed = 0
+            for part, may_be_absent in ((db_path, False), (Path(str(db_path) + "-wal"), True)):
+                try:
+                    needed += part.stat().st_size
+                except FileNotFoundError:
+                    # no log file is a log of zero bytes; a missing database file is a figure that is not known
+                    space_checked = space_checked and may_be_absent
+                except OSError:
+                    space_checked = False  # a size that cannot be read leaves the figure short, and the response says so
+            try:
+                free = int(shutil.disk_usage(data_dir).free)
+            except OSError:
+                free, space_checked = None, False
+            if free is not None and free < needed:
+                raise HTTPException(
+                    status_code=507,
+                    detail=(
+                        f"Not enough free space on the data volume for a snapshot: {free:,} bytes free, "
+                        f"{'up to' if space_checked else 'at least'} {needed:,} needed (the database file and its log"
+                        f"{'' if space_checked else ', one of whose sizes could not be read'}). "
+                        "Free some space, or use the streaming backup in Settings."
+                    ),
+                )
+        workdir = Path(tempfile.mkdtemp(prefix=_BACKUP_DIR_PREFIX, dir=data_dir))
+        snapshot = workdir / "snapshot.db"
+        try:
+            backup_to(snapshot)
+        except BackupError as exc:
+            raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return _SnapshotResponse(
+            snapshot,
+            workdir,
+            token,
+            media_type="application/x-sqlite3",
+            filename=f"open-omniscience-backup-{ts}.db",
+            headers=None if space_checked else {"X-OO-Free-Space-Check": "not-read"},
+        )
+    except BaseException:
+        _release_backup_slot(token, workdir)
+        raise
 
 
 # NOTE: the destructive POST /api/database/restore (replace the live corpus with
