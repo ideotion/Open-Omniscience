@@ -35,6 +35,7 @@ from starlette.concurrency import run_in_threadpool
 from src.api import served_cache
 from src.database.session import engine, get_db
 from src.monitoring.secret_scrub import http_detail
+from src.utils.interrupts import kept_items
 
 router = APIRouter(prefix="/api/database", tags=["database"])
 
@@ -720,8 +721,11 @@ def _remove_live_snapshot_dirs() -> None:
     Python joins its non-daemon threads BEFORE it runs the exit hooks, so a worker thread that was still writing a snapshot when a
     forced stop closed the loop has finished by now, and the file it wrote is what this removes. Only the pid that made a directory
     removes it: a forked child that inherited the table must not take its parent's live download."""
+    me = os.getpid()
     with _BACKUP_LOCK:
-        mine = [path for path, pid in _live_snapshot_dirs.items() if pid == os.getpid()]
+        # kept_items, not a filtered comprehension: this runs as an exit hook and inside the SIGTERM handler, and a comprehension's back-edge
+        # under a `with` is outside the lock's exception-table entry (src/utils/interrupts.py; tests/test_loop_heads_reach.py)
+        mine = list(kept_items(_live_snapshot_dirs, lambda _path, pid: pid == me))
         for path in mine:
             del _live_snapshot_dirs[path]
     for path in mine:
