@@ -101,7 +101,9 @@ def serve_enabled() -> bool:
         return False
     from src.analytics import columnar
 
-    return columnar.duckdb_available()
+    # ``OO_COLUMNAR=0`` switches the engine off (``columnar.open_store`` answers "off"); a serve that stayed enabled would spawn a build thread
+    # per kick that can only find no connection, and report itself enabled beside a rollup that can never exist.
+    return columnar.duckdb_available() and os.getenv("OO_COLUMNAR") != "0"
 
 
 def status() -> dict:

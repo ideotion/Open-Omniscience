@@ -158,3 +158,15 @@ def test_an_engine_that_is_off_is_a_decline_with_no_hold_never_built(monkeypatch
     skip = rollup_serve._STATE["last_skip"]
     assert skip["reason"] == rollup_serve.ENGINE_OFF and skip["source"] == "engine"
     assert rollup_serve._STATE["con"] is None
+
+
+def test_the_map_serve_is_not_enabled_when_the_engine_is_off_either(monkeypatch):
+    """Same gate gap as the keyword rollup: ``OO_COLUMNAR=0`` switched the engine off but the map serve stayed enabled and kicked a build per call."""
+    from src.analytics import map_serve
+
+    monkeypatch.delenv("OO_COLUMNAR_MAP_SERVE", raising=False)
+    assert map_serve.serve_enabled() is True, "negative space: the engine on, the serve is on"
+    monkeypatch.setenv("OO_COLUMNAR", "0")
+    assert map_serve.serve_enabled() is False
+    monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "1")
+    assert map_serve.serve_enabled() is False, "forced on cannot turn an engine that is off back on"
