@@ -114,7 +114,9 @@ async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends
                 f"{17 * _MAX_PRICE_CSV_BYTES // (1024 * 1024)} MiB. Nothing was imported; split the file."
             ),
         )
-    parsed = parse_price_csv(raw.decode("utf-8", errors="replace"))
+    # The parse is pure CPU and measured at about 44 s for 1.3 M rows (about 14 s at the cap): it runs OFF the event loop,
+    # like the DB half below, or every other request waits for it (audit 0.5.0 A-038, found while measuring A-019).
+    parsed = await run_in_threadpool(lambda: parse_price_csv(raw.decode("utf-8", errors="replace")))
     if not parsed.points and parsed.errors:
         raise HTTPException(status_code=400, detail="; ".join(parsed.errors[:5]))
     # S3.6: this handler MUST stay `async def` -- it awaits the upload stream -- so its
