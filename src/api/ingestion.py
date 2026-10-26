@@ -413,6 +413,8 @@ _MAX_UPLOAD_FILES = 5000
 # in the import result); folder import is the path for a message that size.
 # _EML_BATCH_BYTES protects the same memory across files: messages are read and stored in rounds
 # whose held bytes stay under it, so a thousand ordinary newsletters no longer sit in memory at once.
+# Worst case for one round: 64 MiB held + the parse of a message at the cap (36 MiB x 7.8 = about
+# 281 MiB) = about 345 MiB, plus up to 36 MiB for the next file's read before it is stored.
 # That also answers the "total byte budget" the audit asked for: memory is bounded by this round
 # size, not by the upload, so no cap on the upload's total is needed (a 1.5 GB import of 5,000
 # ordinary newsletters is legitimate and is not refused). What the request body costs on disk

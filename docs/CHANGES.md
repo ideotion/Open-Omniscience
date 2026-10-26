@@ -14,7 +14,7 @@ the connection pool and the evidence the app keeps when it ends badly.
 [`docs/product/RELEASE_0.5_GATE.md`](product/RELEASE_0.5_GATE.md), is built and verified as far as a sandbox can verify it
 (fixtures, generated stores, and Chromium walks on seeded plaintext stores, plus the per-release encrypted click-through, run on
 `21a888c42`: both seeded states walked in through the real unlock screen and measured encrypted at rest, and nothing found was caused
-by encryption; the walk's two product findings are open items 22 and 23), except two artifacts that are not built at all: row C's gazetteer (S4) and
+by encryption; the walk's two product findings are item 22, open, and item 23, closed as by design), except two artifacts that are not built at all: row C's gazetteer (S4) and
 row E's admin-boundary files, both of which wait on an operator build. What only a real install can supply is
 listed as named open items for `0.5.1`: the real pre-migration restore (row B, J), the reference-VM OSM
 ingest and the gazetteer and admin-boundary artifact builds (rows C, D, E, L), the Wikipedia walk run for a

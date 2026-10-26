@@ -172,10 +172,13 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   characters reordered. A possible product defect (the walk rated it P1): the date inside the RTL probe lacks the U+2068 … U+2069 bidi
   isolates the recorded lesson calls for. Not caused by encryption as far as the walk can tell, but it was not re-run on a plaintext
   store to confirm. Owner: the qualification lane, after the tag.
-- **23. The world-map lenses request files that do not ship** (found by the item 21 walk): switching a lens fetches
-  `osm_admin0.json`, `osm_admin1.json`, `osm_borders/admin0.world.json` and `osm_borders/admin1.world.json` (`app-map.js:364,369`),
-  none of which ship, so a fresh install logs four console 404s per switch. Low severity (P3); the files are generated from an OSM import, so this is row
-  E's unbuilt admin-boundary artifact showing through.
+- **23. The world-map lenses request files that do not ship, closed as by design** (found by the item 21 walk, ruled `R213`):
+  on an install without the operator-built boundary files, the map asks for `osm_admin0.json`, `osm_admin1.json`,
+  `osm_borders/admin0.world.json` and `osm_borders/admin1.world.json` (`app-map.js:351-372`) once per page load (the loader caches
+  its answer for the page session; the walk reloaded the page between lenses), and the four 404s show in the console. The design says
+  «absent -> Natural Earth, never an error»; nothing the person sees is wrong, and no manifest or static listing exists to ask first.
+  The 404s stop when row E's operator build lands the files (the 0.5.1 item that already exists). Record:
+  `plan-row-j/proposal-item23-osm-admin-presence-2026-10-26.md` (the `/api/health` presence flag, not built).
 
 ---
 
