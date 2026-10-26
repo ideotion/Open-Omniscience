@@ -224,6 +224,29 @@ def _name(session, sid):
 
 
 @pytest.mark.parametrize("outlet_ids_unwritten", [False, True], ids=["healed", "outlet_id-NULL"])
+def test_story_propagation_candidates_are_ranked_by_outlets_so_one_sites_feeds_cannot_crowd_out_a_story(
+    tmp_path, monkeypatch, outlet_ids_unwritten
+):
+    """The candidate prefilter ranks terms by outlet count and keeps ``max_terms``: read as feeds, a term carried by four feeds
+    of one site (six 'sources', three outlets) outranks a term carried by four real outlets and crowds it out of the list. On a
+    store the boot step has not reached (``outlet_id`` NULL, R177) the gate must still rank by outlets. (The items' own counts are
+    recounted in Python, so only this ranking shows the difference.)"""
+    from src.analytics.story_propagation import find_story_propagation
+
+    session = _kw_session(tmp_path, monkeypatch)
+    bbc = [_feed(session, n, "bbc.com", f"https://bbc.com/{n}") for n in ("a", "b", "c", "d")]
+    named = {d: _feed(session, d, f"{d}.example", f"https://{d}.example/rss") for d in ("dw", "zdf", "ard", "ndr")}
+    session.commit()
+    if outlet_ids_unwritten:
+        session.execute(Source.__table__.update().values(outlet_id=None))  # an UPDATE of outlet_id alone fires no trigger
+        session.commit()
+    _mention_spread(session, "crowder", [(bbc[0], 8), (bbc[1], 7), (bbc[2], 6), (bbc[3], 5), (named["dw"], 4), (named["zdf"], 1)])
+    _mention_spread(session, "realstory", [(named["dw"], 8), (named["zdf"], 6), (named["ard"], 4), (named["ndr"], 1)])
+    items = find_story_propagation(session, max_terms=1)["items"]
+    assert [i["term"] for i in items] == ["realstory"]
+
+
+@pytest.mark.parametrize("outlet_ids_unwritten", [False, True], ids=["healed", "outlet_id-NULL"])
 def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path, outlet_ids_unwritten):
     """Two feeds of one site citing a page are one path (single_origin); a second OUTLET makes two. Also on a store the boot
     step has not reached (``outlet_id`` NULL), where the board must not read each feed as an outlet (R177, R146)."""

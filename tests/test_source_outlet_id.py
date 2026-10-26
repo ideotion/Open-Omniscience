@@ -136,6 +136,31 @@ def test_the_boot_step_adds_the_column_heals_stale_rows_and_is_idempotent(tmp_pa
     assert ensure_source_outlet_id(engine) == {"added": False, "triggers": 0, "healed": 0}
 
 
+def test_a_refusal_part_way_leaves_no_triggers_and_no_half_state(tmp_path, monkeypatch):
+    """The three triggers and the heal are one transaction (the independent read's F1). A third trigger that is refused used to
+    leave two of them standing with no heal: a store whose non-NULL values nothing corrects, which ``outlets_unhealed`` (it
+    looks for NULL rows) cannot see. All or none: none leaves every row NULL, which the gates read exactly."""
+    engine = _engine(tmp_path)
+    with engine.begin() as conn:
+        for dom, feed in [("a.com", "1"), ("a.com", "2"), ("b.com", "")]:
+            _insert(conn, dom, feed)
+        for name in SOURCE_OUTLET_ID_TRIGGERS:
+            conn.exec_driver_sql(f"DROP TRIGGER {name}")
+        conn.exec_driver_sql("UPDATE sources SET outlet_id = NULL")
+    names = list(SOURCE_OUTLET_ID_TRIGGERS)
+    broken = {**SOURCE_OUTLET_ID_TRIGGERS, names[-1]: "CREATE TRIGGER this is not sql"}
+    monkeypatch.setattr("src.database.source_identity.SOURCE_OUTLET_ID_TRIGGERS", broken)
+    result = ensure_source_outlet_id(engine)
+    assert result["state"] == "refused"
+    with engine.connect() as conn:
+        assert not _triggers(conn), "two triggers stood with no heal"
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM sources WHERE outlet_id IS NOT NULL").scalar_one() == 0
+    monkeypatch.undo()
+    assert ensure_source_outlet_id(engine) == {"added": False, "triggers": 3, "healed": 3}  # the next boot completes it
+    with engine.connect() as conn:
+        assert not _wrong(conn)
+
+
 def test_a_store_that_never_had_the_column_gets_it_and_a_correct_value_for_every_row(tmp_path):
     path = tmp_path / "old.db"
     raw = sqlite3.connect(path)
