@@ -37,14 +37,23 @@ _ROUTES = {
 
 def test_the_panel_can_only_start_a_dry_run():
     assert "write=true" not in _JS and "write=1" not in _JS
-    starts = re.findall(r'"/api/quarantine/start[^"]*"', _JS)
+    # Any quote style: a template literal or a concatenation must not slip a variable write flag past this.
+    starts = re.findall(r"""["'`]/api/quarantine/start[^"'`]*["'`]""", _JS)
     assert starts == ['"/api/quarantine/start?write=false"'], starts
+    assert not re.search(r"write\s*=\s*\$\{|write=['\"`]\s*\+", _JS), "a write flag must never be a variable"
     # No other module of the app starts a run on the panel's behalf.
     assert "include_prose_gate" not in _JS
 
 
+def test_a_paused_run_that_has_writing_on_is_not_resumable_from_here():
+    """Resume continues in the paused run's OWN mode, so offering it for a write run would let the page
+    write without ever spelling write=true."""
+    assert 'st.state === "paused" && st.dry_run === true' in _JS
+    assert 'show("maint-resume", st && st.state === "paused");' not in _JS
+
+
 def test_every_request_is_an_existing_loopback_quarantine_route():
-    urls = set(re.findall(r'"(/api/[^"?]*)', _JS))
+    urls = set(re.findall(r"""["'`](/api/[^"'`?]*)""", _JS))
     # "/api/quarantine/" is the pause / resume / cancel route's prefix; the reader path is a link, not a request.
     allowed = _ROUTES | {"/api/quarantine/", "/api/articles/${encodeURIComponent(r.id)}/view"}
     assert urls <= allowed, urls - allowed
@@ -73,6 +82,8 @@ def test_the_caveat_is_visible_and_nothing_hides_it():
 
 def test_the_polling_stops_with_the_fold():
     assert "sec.open" in _JS, "a folded section must not keep a timer going"
+    # ...and reopening it re-reads, because the Advanced loader only runs once per page.
+    assert 'addEventListener("toggle"' in _JS
 
 
 def test_the_renderers_behave():

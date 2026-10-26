@@ -65,7 +65,8 @@
       keys.sort((a, b) => order(a) - order(b) || (a < b ? -1 : 1));
       const rows = keys.map((k) =>
         `<tr><td>${esc(_maintTallyLabel(k, t, tf))}</td><td class="num">${esc(fmtNum(tally[k]))}</td></tr>`).join("");
-      return `<table class="maint-tally"><tbody>${rows}</tbody></table>`;
+      return `<table class="maint-tally"><tbody>${rows}</tbody></table>`
+        + `<div class="hint">${esc(t("A rule with no candidate is not listed: that means zero, not unmeasured."))}</div>`;
     }
 
     // A sample row: the title opens the LOCAL reader (invariant #6). The stored URL is
@@ -77,10 +78,10 @@
       const bits = [];
       if (r.already_marked) bits.push(esc(t("already quarantined")));
       if (r.source_site || r.article_site) {
-        bits.push(esc(tf(t("source site {a} · stored on {b}"), { a: r.source_site || "?", b: r.article_site || "?" })));
+        bits.push(esc(tf(t("source site {a} · stored on {b}"), { a: "\u2068" + (r.source_site || "?") + "\u2069", b: "\u2068" + (r.article_site || "?") + "\u2069" })));
       }
       if (r.state === "confirmed") bits.push(esc(t("confirmed by you")));
-      return `<li><a href="/api/articles/${encodeURIComponent(r.id)}/view" target="_blank" rel="noopener">${esc(title)}</a>`
+      return `<li><a href="/api/articles/${encodeURIComponent(r.id)}/view" target="_blank" rel="noopener" dir="auto">${esc(title)}</a>`
         + (bits.length ? ` <span class="hint">— ${bits.join(" · ")}</span>` : "")
         + `<div class="hint" dir="ltr">${esc(r.url || "")}</div></li>`;
     }
@@ -96,7 +97,7 @@
           : esc(tf(t("{shown} shown of {n} candidates"), { shown: fmtNum(s.shown || 0), n: fmtNum(s.candidates) }));
         const note = s.note ? `<div class="hint">${esc(s.note)}</div>` : "";
         const rows = (s.rows || []).map((r) => maintSampleRowHtml(r, t, tf)).join("");
-        return `<h4 class="lib-sub">${esc(sig)} — ${head}</h4>${note}<ul class="maint-sample">${rows}</ul>`;
+        return `<h4 class="lib-sub"><span dir="ltr">${esc(sig)}</span> — ${head}</h4>${note}<ul class="maint-sample">${rows}</ul>`;
       });
       return parts.join("") + (data.method ? `<div class="hint">${esc(data.method)}</div>` : "");
     }
@@ -115,7 +116,7 @@
     function maintFurnitureHtml(d, t, tf) {
       if (!d) return "";
       const src = d.source || {};
-      const head = `<div>${esc(tf(t("{name}: {k} of {n} articles read"), { name: src.name || String(src.id), k: fmtNum(d.sampled || 0), n: fmtNum(d.articles_in_source || 0) }))}</div>`;
+      const head = `<div>${esc(tf(t("{name}: {k} of {n} articles read"), { name: "\u2068" + (src.name || String(src.id)) + "\u2069", k: fmtNum(d.sampled || 0), n: fmtNum(d.articles_in_source || 0) }))}</div>`;
       const c = d.candidates || [];
       if (!c.length) return head + `<div class="hint">${esc(t("No repeated line reaches the threshold."))}</div>`;
       const rows = c.map((r) =>
@@ -147,9 +148,12 @@
       const run = $("maint-run"); if (run) run.innerHTML = maintRunHtml(st, t, tf);
       const tl = $("maint-tally"); if (tl) tl.innerHTML = maintTallyHtml(st && st.tally, t, tf);
       const live = !!(st && (st.state === "running" || st.state === "paused"));
+      if (live) { const sm = $("maint-samples"); if (sm) sm.textContent = t("Samples appear when the run stops."); }
       const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? "" : "none"; };
       show("maint-pause", st && st.state === "running");
-      show("maint-resume", st && st.state === "paused");
+      // A resume continues in the paused run's OWN mode, so a paused run that has writing on must
+      // not be resumable from here: the panel offers no way to write, resume included.
+      show("maint-resume", st && st.state === "paused" && st.dry_run === true);
       show("maint-cancel", live);
       const go = $("maint-start"); if (go) go.disabled = live;
     }
@@ -210,4 +214,14 @@
       catch (e) { el.textContent = e && e.status === 404 ? t("No such source.") : ((e && e.message) || String(e)); }
     }
 
-    function loadMaintenance() { maintRefresh(); maintLoadRawIds(); }
+    // The Advanced loader runs once per page, so reopening the section after a fold would show the
+    // state it was folded in. Re-read when it opens, and wire that once.
+    let _maintWired = false;
+    function loadMaintenance() {
+      if (!_maintWired) {
+        const sec = document.querySelector('details[data-adv="maintenance"]');
+        if (sec) sec.addEventListener("toggle", () => { if (sec.open) maintRefresh(); });
+        _maintWired = true;
+      }
+      maintRefresh(); maintLoadRawIds();
+    }

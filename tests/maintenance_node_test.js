@@ -47,7 +47,7 @@ const R = (() => { const m = { exports: {} }; new Function("module", "exports", 
 const t = (s) => s;
 const tf = (s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]);
 const decode = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&");
-const visible = (h) => decode(String(h).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+const visible = (h) => decode(String(h).replace(/[\u2068\u2069]/g, "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 const noJunk = (h, what) => {
   for (const bad of ["undefined", "null", "NaN", "[object Object]"]) assert.ok(!visible(h).includes(bad), `${what} drew "${bad}": ${h}`);
 };
@@ -117,5 +117,18 @@ noJunk(fu, "furniture");
 assert.ok(visible(fu).includes("S: 10 of 40 articles read") && visible(fu).includes("already stripped by the rules"));
 assert.strictEqual((fu.match(/already stripped/g) || []).length, 1, "only the known line carries it");
 assert.ok(visible(R.maintFurnitureHtml({ source: { id: 5 }, sampled: 3, articles_in_source: 3, candidates: [] }, t, tf)).includes("No repeated line reaches the threshold."));
+
+// -- every string field is escaped (the XSS fuzz) ----------------------------------
+const X = "<img src=x onerror=1>";
+const fuzz = [
+  R.maintRunHtml({ state: X, error: X, articles_total: 5, articles_done: 1, dry_run: true }, t, tf),
+  R.maintTallyHtml({ [X]: 1, ["reason:" + X]: 2 }, t, tf),
+  R.maintSamplesHtml({ signals: { [X]: { candidates: 1, shown: 1, note: X, unknown: 0,
+    rows: [{ id: 1, title: X, url: X, source_site: X, article_site: X, state: "confirmed" }] } }, method: X }, t, tf),
+  R.maintRawIdsHtml({ raw_id_sources: 1, articles_in_shown: 1, method: X, rows: [{ source_id: 1, name: X, domain: X, articles: 1 }] }, t, tf),
+  R.maintFurnitureHtml({ source: { id: 1, name: X }, sampled: 1, articles_in_source: 1, method: X,
+    candidates: [{ line: X, articles: 1, known: true }] }, t, tf),
+];
+fuzz.forEach((h, i) => assert.ok(!h.includes("<img"), `renderer ${i} let markup through: ${h}`));
 
 console.log("maintenance: all checks passed");
