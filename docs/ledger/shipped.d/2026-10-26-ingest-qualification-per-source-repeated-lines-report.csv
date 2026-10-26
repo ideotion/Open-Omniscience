@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-26,ingest/qualification,Read-only list of short lines that repeat across one source's articles,shipped,PR #1465; follows PR #1463,src/ingest/furniture.py src/api/quarantine.py tests/test_source_furniture_learning.py,"GET /api/quarantine/source-furniture lists lines of 12 words or fewer recurring in at least min_share and 3 bodies of one source (newest N read), marking those the rules already catch. Local and read-only: nothing stripped, marked or learned automatically; a person adds lines to the rule lists by hand."
