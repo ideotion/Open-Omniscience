@@ -93,6 +93,7 @@ import time
 import uuid
 import weakref
 from collections import deque
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -487,7 +488,7 @@ def _table_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return [t for t in entry.get("tables") or [] if isinstance(t, dict)]
 
 
-def _repair_named(repairs: list[dict[str, Any]], rec_id: str) -> dict[str, Any] | None:
+def _repair_named(repairs: Iterable[dict[str, Any]], rec_id: str) -> dict[str, Any] | None:
     """The attempt recorded under ``rec_id``, or ``None``. A function of its own for the reason of :func:`_table_records`: the search
     loop sat in ``with self._lock`` in ``repair_upsert``, and a loop that ends in ``break`` and an ``else`` leaves a back-edge outside
     the lock's exception-table entry on CPython 3.13."""

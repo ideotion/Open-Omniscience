@@ -361,7 +361,11 @@ def _live_rows() -> list[dict[str, Any]]:
     with _LOCK:
         # Snapshots, never the live dict: a collected fairy's checkin can pop a row from
         # inside this block (the lock is re-entrant).
-        dead = [k for k, rec in list(_LIVE.items()) if not _still_out(rec)]
+        dead = []
+        for k, rec in list(_LIVE.items()):
+            if _still_out(rec):  # guard clause, so the loop's back-edge stays inside the ``with``
+                continue
+            dead.append(k)
         for k in dead:
             _LIVE.pop(k, None)
         _PRUNED += len(dead)
