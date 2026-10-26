@@ -60,9 +60,9 @@ function engine(map) {
   return { t, tf };
 }
 
-function load({ map, lang, withI18n = true }) {
+function load({ map, lang, withI18n = true, dir }) {
   const window = withI18n ? { OOI18N: engine(map) } : {};
-  const document = { documentElement: { lang } };
+  const document = { documentElement: { lang, dir } };
   const fmtNum = (x) => "#" + x;              // proves numbers go through the app formatter
   const src = [
     objLiteral("_CARD_TYPE_LABELS"),
@@ -79,6 +79,8 @@ let passed = 0;
 function check(name, fn) { fn(); passed++; console.log("ok -", name); }
 
 const fr = load({ map: FR, lang: "fr" });
+const AR = JSON.parse(fs.readFileSync(
+  path.join(__dirname, "..", "src", "static", "locales", "ar.json"), "utf-8"));
 
 // The laundering card of L-1, as the producer ships it (numbers are numbers, names data).
 const LAUNDER = {
@@ -178,6 +180,24 @@ check("without the i18n engine every field is its English", () => {
   const bare = load({ map: FR, lang: "fr", withI18n: false });
   assert.strictEqual(bare.cardText(LAUNDER, "summary"), LAUNDER.summary);
   assert.strictEqual(bare.cardTitle(LAUNDER).indexOf("une seule origine"), -1);
+});
+
+// ITEM 22 (found by the encrypted click-through, reproduced on a PLAINTEXT store): an ISO date interpolated into an
+// Arabic sentence renders reordered (14-12-2025) unless it rides in a first strong isolate. The recorded lesson,
+// measured in a real browser first (per-character x positions), then pinned here on the REAL Arabic key.
+check("under Arabic a date var rides in U+2068..U+2069; a left-to-right reader's text is byte-identical", () => {
+  const key = "Near-identical text first seen {first} reappeared {resurfaced} (by the same source) — a {days}-day gap. "
+    + "It may be an anniversary piece or an evergreen re-run, or old content recycled as new. Read both and judge.";
+  assert.ok(AR[key], "the Arabic key must exist");
+  const card = { i18n: { summary: [{ t: key, v: { first: "2025-12-14", resurfaced: "2026-10-23", days: 312 } }] } };
+  const rtl = load({ map: AR, lang: "ar", dir: "rtl" }).cardText(card, "summary");
+  assert.ok(rtl.indexOf("\u20682025-12-14\u2069") !== -1, rtl);
+  assert.ok(rtl.indexOf("\u20682026-10-23\u2069") !== -1, rtl);
+  assert.ok(rtl.indexOf("#312") !== -1 && rtl.indexOf("\u2068#312") === -1, "a number keeps going through fmtNum, unisolated: " + rtl);
+  const ltr = load({ map: FR, lang: "fr", dir: "ltr" }).cardText(card, "summary");
+  assert.ok(ltr.indexOf("\u2068") === -1 && ltr.indexOf("2025-12-14") !== -1, ltr);
+  const noDir = load({ map: FR, lang: "fr" }).cardText(card, "summary");
+  assert.strictEqual(noDir, ltr);
 });
 
 console.log(passed + " checks passed");
