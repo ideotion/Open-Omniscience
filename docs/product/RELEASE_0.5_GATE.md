@@ -104,10 +104,10 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 ## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-26, `R185`–`R187`)
 
 `v0.5.0` is tagged with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
-Chromium walks on seeded plaintext stores, `R126`), except two artifacts that are not built at all, row C's gazetteer (S4) and row E's
-admin-boundary files, which wait on an operator build; the per-release encrypted click-through was not run on a 0.5 tree (item 21). A row's closing artifact is the PR it names; the real-install step is a **named
+Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
+that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–21 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -131,7 +131,7 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–21).**
+**Items added at the tag (12–23).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
@@ -163,9 +163,19 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   checks only the first take of each section, the Retry-After figure was measured to 1 GB on one ext4 disk, Windows unmeasured); #1453
   (the gauge with the lock off, and other core counts, are not measured). Full text in `audit-0.5.0/inputs/open-items.md` section C,
   items B2–B3.
-- **21. The per-release encrypted click-through** (`CLAUDE.md`, ruled 2026-09-15, Q1149 = a): every Chromium walk of the 0.5 cycle ran
-  on a seeded store with `OO_DB_PLAINTEXT=1`; the only encrypted walk is `docs/audit/encrypted-clickthrough-2026-09-16`, which
-  predates 0.5. Run `OO_UIWALK_ENCRYPTED_PASS=… scripts/ui_clickthrough_run.py --require-encrypted` on a 0.5 tree.
+- **21. The per-release encrypted click-through, run and passed** (`CLAUDE.md`, ruled 2026-09-15, Q1149 = a; `R197`): run by the
+  qualification lane on `21a888c42` with `OO_UIWALK_ENCRYPTED_PASS=… scripts/ui_clickthrough_run.py --require-encrypted`. Both seeded
+  states walked in through the real unlock screen and measured encrypted at rest by the app's own header read. 174 coverage rows: 149
+  verified, 14 partial, 11 blocked; nothing found was caused by encryption. Evidence:
+  `qualification/encrypted-walk-21a888c42/` in the project folder. Closed; items 22 and 23 are what the walk found in the product.
+- **22. A right-to-left date renders reordered** (found by the item 21 walk): under Arabic the Home date `2025-12-14` is drawn with its
+  characters reordered. A possible product defect (the walk rated it P1): the date inside the RTL probe lacks the U+2068 … U+2069 bidi
+  isolates the recorded lesson calls for. Not caused by encryption as far as the walk can tell, but it was not re-run on a plaintext
+  store to confirm. Owner: the qualification lane, after the tag.
+- **23. The world-map lenses request files that do not ship** (found by the item 21 walk): switching a lens fetches
+  `osm_admin0.json`, `osm_admin1.json`, `osm_borders/admin0.world.json` and `osm_borders/admin1.world.json` (`app-map.js:364,369`),
+  none of which ship, so a fresh install logs four console 404s per switch. Low severity (P3); the files are generated from an OSM import, so this is row
+  E's unbuilt admin-boundary artifact showing through.
 
 ---
 
