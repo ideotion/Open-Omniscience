@@ -247,6 +247,15 @@ def _stamps(db, art, column) -> set:
     return {v for (v,) in db.query(column).filter(KeywordMention.article_id == art.id)}
 
 
+@pytest.fixture()
+def deduces_english(monkeypatch):
+    """A law indexed before its catalogue stated a language carries the DEDUCED one on its mentions. The deduction is
+    `py3langid`'s (the `[analysis]` extra), which a core install does not have: there the same law is stamped NULL (unknown,
+    never a silent "en"), so a test that starts from "the mentions say en" has to pin the deduction rather than lean on
+    which extras the lane installed (the Core-only lane found it). The heal under test is the same either way."""
+    monkeypatch.setattr("src.analytics.langdetect.detect_language", lambda *_a, **_k: "en")
+
+
 def _indexed_while_carrying_a_poll_date(db, doc, when: datetime) -> Article:
     """The state the heal exists for: a law article indexed while its `published_at` was still
     the date WE polled the page (the pre-2026-08-07 behaviour), so its mentions carry that day."""
@@ -282,7 +291,7 @@ def test_the_publication_date_heal_re_stamps_the_mentions_it_moved(db):
     assert _stamps(db, art, KeywordMention.observed_on) == {art.created_at.date()}
 
 
-def test_the_language_heal_re_stamps_the_mention_language(db):
+def test_the_language_heal_re_stamps_the_mention_language(db, deduces_english):
     from src.law.corpus import upsert_law_corpus_article
 
     doc = _law_doc_with_text(db)
@@ -371,7 +380,7 @@ def _catalog_stating_french(tmp_path: Path) -> tuple[Path, Path]:
     return catalog, tmp_path / "no-such-generated.yml"
 
 
-def test_the_catalog_language_heal_re_stamps_the_mention_language_of_the_article_it_healed(db, tmp_path):
+def test_the_catalog_language_heal_re_stamps_the_mention_language_of_the_article_it_healed(db, tmp_path, deduces_english):
     """`register_documents` heals the linked article's language itself, because the tracker no longer re-syncs an unchanged
     document; without a re-index the article read French and its mentions English (0.5.1 item 39)."""
     from src.analytics.corpus_epoch import get_corpus_epoch
@@ -396,7 +405,9 @@ def test_the_catalog_language_heal_re_stamps_the_mention_language_of_the_article
     assert get_corpus_epoch(db) == before + 1, "the second registration found nothing to heal"
 
 
-def test_a_failed_re_index_after_the_catalog_language_heal_never_breaks_the_registration(db, tmp_path, monkeypatch, caplog):
+def test_a_failed_re_index_after_the_catalog_language_heal_never_breaks_the_registration(
+    db, tmp_path, monkeypatch, caplog, deduces_english
+):
     from src.analytics.corpus_epoch import get_corpus_epoch
     from src.law.catalog import register_documents
     from src.law.corpus import upsert_law_corpus_article
