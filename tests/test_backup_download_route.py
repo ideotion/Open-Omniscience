@@ -397,7 +397,23 @@ def _snapshot_response(data_dir: Path):
 _SCOPE = {"type": "http", "method": "GET", "headers": [], "extensions": {}}
 
 
+def _scope(spec_version: str) -> dict:
+    """The same request on a server speaking another ASGI spec version. Starlette 1.8 and later watch ``receive()`` themselves while
+    a file response streams, but only when the server speaks a spec older than 2.4 (the default when ``scope["asgi"]`` is absent);
+    1.5 to 1.7 never do. The tests that depend on a long-lived stream are run on both sides of that line."""
+    return {**_SCOPE, "asgi": {"version": "3.0", "spec_version": spec_version}}
+
+
+_SPEC_VERSIONS = ["2.0", "2.4"]
+
+
 async def _receive():
+    """A client that stays connected: the server has nothing to say through ``receive()`` until the response is over (it is
+    cancelled when it is). The tests below must not hand a stack that watches for ``http.disconnect`` a disconnect they did not mean."""
+    await asyncio.Event().wait()
+
+
+async def _receive_gone():
     return {"type": "http.disconnect"}
 
 
@@ -413,7 +429,8 @@ def test_a_response_that_fails_at_its_first_message_still_removes_the_directory_
     assert dbapi._backup_flight is None
 
 
-def test_a_response_that_fails_in_the_middle_of_the_body_still_removes_the_directory_and_frees_the_slot(data_dir):
+@pytest.mark.parametrize("spec_version", _SPEC_VERSIONS)
+def test_a_response_that_fails_in_the_middle_of_the_body_still_removes_the_directory_and_frees_the_slot(data_dir, spec_version):
     workdir, resp = _snapshot_response(data_dir)
 
     async def drops_the_body(message):
@@ -421,12 +438,13 @@ def test_a_response_that_fails_in_the_middle_of_the_body_still_removes_the_direc
             raise OSError("connection reset")
 
     with pytest.raises(OSError, match="connection reset"):
-        asyncio.run(resp(_SCOPE, _receive, drops_the_body))
+        asyncio.run(resp(_scope(spec_version), _receive, drops_the_body))
     assert not workdir.exists()
     assert dbapi._backup_flight is None
 
 
-def test_a_response_that_is_cancelled_still_removes_the_directory_and_frees_the_slot(data_dir):
+@pytest.mark.parametrize("spec_version", _SPEC_VERSIONS)
+def test_a_response_that_is_cancelled_still_removes_the_directory_and_frees_the_slot(data_dir, spec_version):
     """A response task cancelled once (``wait_for`` here) still gets its directory removed and its claim freed. This case also
     passes without the shield, because a single cancellation is survivable; the cancel-scope case below is the one that pins it."""
     workdir, resp = _snapshot_response(data_dir)
@@ -437,13 +455,28 @@ def test_a_response_that_is_cancelled_still_removes_the_directory_and_frees_the_
                 await asyncio.sleep(30)
 
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(resp(_SCOPE, _receive, stalls), 0.3)
+            await asyncio.wait_for(resp(_scope(spec_version), _receive, stalls), 0.3)
         for _ in range(100):  # the removal runs in a worker thread that outlives the cancelled task by a moment
             if not workdir.exists() and dbapi._backup_flight is None:
                 return
             await asyncio.sleep(0.05)
 
     asyncio.run(run())
+    assert not workdir.exists()
+    assert dbapi._backup_flight is None
+
+
+@pytest.mark.parametrize("spec_version", _SPEC_VERSIONS)
+def test_a_client_that_disconnects_at_once_still_gets_its_directory_removed_and_its_slot_freed(data_dir, spec_version):
+    """However the stack answers an ``http.disconnect`` (Starlette 1.8 and later stop streaming and return when the server speaks
+    a spec older than 2.4; 1.5 to 1.7, and 2.4 servers, read the file to its end and drop the sends), the directory goes and the
+    claim is freed. Whether the file was read to its end is deliberately not asserted: it depends on the installed Starlette."""
+    workdir, resp = _snapshot_response(data_dir)
+
+    async def ok(message):
+        return None
+
+    asyncio.run(resp(_scope(spec_version), _receive_gone, ok))
     assert not workdir.exists()
     assert dbapi._backup_flight is None
 
