@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-26,tests/context-managers,owed context-manager entries deleted: the four owners landed,shipped,PR #1474; #1454; #1459,tests/test_contextmanager_acquire_before_try.py,"exclusive_window, active_staging, run_open and run_refusals_net were owed until #1454 and #1459 converted them. The scan passes without the entries, so both owed tables are now empty and the comments say so. Test-only."

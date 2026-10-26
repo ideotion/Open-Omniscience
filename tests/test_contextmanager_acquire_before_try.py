@@ -65,23 +65,14 @@ _ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-# Owed: the function takes shared state before its try today, and the lane that owns the file converts it in the hunk pair named (r163-cm/<lane>). The
-# entry passes both before and after that commit lands (the stale check skips it), so no bundle edits this file; it is deleted here, by the Q thread, once the
-# owner's commit is in the base. An owed name must still be a real context manager (test_each_owed_entry_names_a_real_context_manager).
-_OWED: dict[tuple[str, str], str] = {
-    ("scheduler/runner.py", "exclusive_window"): "WAL: r163-cm/wal, the scheduler stays held if the interrupt lands inside the pause",
-    ("backup/stream_backup.py", "active_staging"): "RC2: r163-cm/rc2, the path stays marked as a live job's staging",
-}
+# Owed: a function that takes shared state before its try today, whose owner converts it in a named hunk pair. Empty since #1454 and #1459 landed
+# the last four (exclusive_window, active_staging, run_open, run_refusals_net); the mechanism stays for the next lane that needs it. An owed name must still be
+# a real context manager (test_each_owed_entry_names_a_real_context_manager).
+_OWED: dict[tuple[str, str], str] = {}
 
-# Owed IF PRESENT: two context managers of #1421's run records (WAL) that take shared state before their try. They exist only on a tree that has that
-# PR, and this file must pass on a tree that has not (the follow-on alone) and on one that has. So, unlike _OWED, a name here need not exist: if the
-# file defines it, it must still be a @contextmanager; if it no longer takes anything before its try (WAL's conversion landed) the entry is REPORTED as
-# stale by a warning and does not fail, because the conversion merges after this file and its owner cannot edit it. Delete the entries here, by the Q
-# thread, once WAL's follow-on is in the base.
-_OWED_IF_PRESENT: dict[tuple[str, str], str] = {
-    ("monitoring/storage_events.py", "run_open"): "WAL: R171 in its follow-on, the run record's open is taken before the try",
-    ("monitoring/storage_events.py", "run_refusals_net"): "WAL: R171 in its follow-on, the refusal round's hold is taken before the try",
-}
+# Owed IF PRESENT: names that exist only on a tree carrying some other PR, so a name here need not exist. If the file defines it, it must still be a
+# @contextmanager; if it no longer takes anything before its try the entry is REPORTED as stale by a warning and does not fail. Empty since #1459.
+_OWED_IF_PRESENT: dict[tuple[str, str], str] = {}
 
 
 def _is_cm(fn: ast.AST) -> bool:
