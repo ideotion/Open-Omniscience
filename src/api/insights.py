@@ -923,7 +923,7 @@ _STATUS_MEMO_LOCK = _threading.Lock()
 #: (a restore's swap, a VACUUM) bumps. The engine object alone says nothing: a swap keeps the one module-level engine while the
 #: file under it is replaced (the trap ``source_country_rollup`` records). The epoch is 0 on any file never bumped, so it tells
 #: two young corpora apart only when a re-index, prune, fold or restore-merge has bumped one of them: in practice the generation
-#: is what covers a swap. A panic wipe calls neither (``panic.py`` only drops the settings cache): stated limit, 0.5.1. ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
+#: is what covers a swap, and the panic wipe calls ``served_cache.invalidate()`` too (0.5.1 item 38). ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
 #: difference of two readings taken together.
 _STATUS_MEMO: dict = {}
 #: When the last pair FAILED: {"bind", "epoch", "at" (epoch s), "payload" (the failure fields)}. It lives here, not in the cache
