@@ -438,10 +438,20 @@ def test_the_mkdir_lock_leaves_nothing_after_a_normal_exit(tmp_path):
     # that missed the lock handed its row to a detached child (R174). A single look right after the wait caught that lock in use (main red 9). The
     # lock must be GONE once they are done, so poll until the folder is the two files or the wait ends; a lock that never goes still fails.
     end = time.monotonic() + 30
+    stderr_rec = f.parent / "launcher_stderr.jsonl"
+
+    def settled() -> bool:
+        # every writer has finished only when all three exit rows AND all three summary rows are on disk (a deferred child's row is one of them),
+        # so a 50 ms look cannot land in the gap between one writer's lock and the next one's
+        exits = {r.get("pid") for r in _rows(f)[0]}
+        summaries = sum(1 for r in _rows(stderr_rec)[0] if r.get("summary"))
+        return all(p in exits for p in pids) and summaries == len(pids)
+
     names = sorted(x.name for x in f.parent.iterdir())
-    while names != want and time.monotonic() < end:
+    while (names != want or not settled()) and time.monotonic() < end:
         time.sleep(0.05)
         names = sorted(x.name for x in f.parent.iterdir())
+    assert settled(), "a launcher's row or a filter's summary never arrived"
     assert names == want, "the rows' files and nothing of the lock"
 
 
