@@ -1,0 +1,12 @@
+## 2026-10-26 — An upload that reads files whole costs the sum of the files plus about 7.8 times the largest one's parse; bound the round, not the upload
+
+**What was found.** `POST /api/newsletters/import` appended every uploaded `.eml` to one list and only then parsed any of it (the audit's A-006, routing 8). Only the file COUNT was capped (5,000); Starlette spools file parts to a temporary file with no byte cap, so `read()` pulled each whole part into RAM. The sibling PDF upload next to it had a per-file bound, which is how the gap read as an oversight, not a design.
+
+**What it measured.** `parse_email` on one newsletter-shaped message with a base64 attachment, in a fresh process, peak RSS above the bytes already read: 1.3 MiB message +10 MiB, 25.6 MiB +200 MiB, 50.9 MiB +397 MiB, 101.6 MiB +791 MiB, i.e. 7.5 to 7.8 times the message, linear, 5.4 s for 100 MiB. The messages are synthetic (no real mail corpus exists to measure); the ratio is the parser's, not the content's.
+
+**The rules.**
+1. **A cap names what it protects, and the measurement is next to it.** `_MAX_EML_BYTES` (36 MiB) is above what Gmail and Yahoo (25 MiB) and Outlook.com (about 34 MB) deliver and keeps ONE parse near 281 MiB; `_EML_BATCH_BYTES` (64 MiB) keeps the bytes held across files. `tests/test_newsletter_import_bound.py::test_the_caps_are_the_measured_ones` pins both relations.
+2. **Bound the round, not the upload.** Storing in rounds makes memory O(round), so no cap on the upload's total is needed, and a legitimate 1.5 GB import of 5,000 ordinary newsletters is not refused for a memory reason it does not have. What the request body costs on disk (the spool) is outside this bound and is stated, not hidden.
+3. **An oversize file is skipped unread and counted where the person reads it** (`tally.skipped_oversize`, one line in the import result), never refused for the whole request (the UI shows only `HTTP 413` for a non-OK answer, which would have lost the reason) and never dropped silently.
+4. **Keep the call text a guard pins.** `test_newsletter_eml_upload_runs_off_the_event_loop` asserts `await run_in_threadpool(ingest_emails, db, source, raws)` verbatim; the new helper keeps the parameter name `raws` rather than editing a shared guard file.
+5. **The folder-import path is a separate path** (`ingest_eml_files`, `read_bytes()`); it is not bounded by this change and is the documented route for a message over the cap.

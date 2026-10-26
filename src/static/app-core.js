@@ -2489,8 +2489,8 @@
         if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "queued") {
           const k = _dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);
-          if (idx > 0) acts.push(`<button class="tiny secondary" data-on-click="jobMove('${esc(k)}', -1, '${esc(j.kind)}')" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
-          if (idx >= 0 && idx < keys.length - 1) acts.push(`<button class="tiny secondary" data-on-click="jobMove('${esc(k)}', 1, '${esc(j.kind)}')" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
+          if (idx > 0) acts.push(`<button class="tiny secondary" data-on-click="jobMove(${esc(JSON.stringify(k))}, -1, ${esc(JSON.stringify(j.kind))})" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
+          if (idx >= 0 && idx < keys.length - 1) acts.push(`<button class="tiny secondary" data-on-click="jobMove(${esc(JSON.stringify(k))}, 1, ${esc(JSON.stringify(j.kind))})" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
           acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
         // Paused/failed downloads gain a Resume control (start() continues the

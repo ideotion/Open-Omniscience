@@ -507,7 +507,7 @@
           + " · " + _bulTf(nSrc === 1 ? "{n} source" : "{n} sources", {n: fmtNum(nSrc, 0)});
         return `<div style="margin:8px 0">
           <label class="row" style="${_BUL_CHECK_ROW}">
-            <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} data-on-change="bulletinToggleStory('${esc(s.key)}')">
+            <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} data-on-change="bulletinToggleStory(${esc(JSON.stringify(s.key))})">
             <span style="flex:1;min-width:0"><strong>${_bulStoryTermsHtml(s)}</strong>
               <span class="muted">${esc(counts)}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
@@ -911,8 +911,8 @@
           <div class="vr">
             <span>${esc(fd.provider)}${fd.year_pinned ? ` <span class="muted">· ${fd.year_pinned}</span>` : ""}</span>
             <b>${_verdictChip(fd.verdict, fd)}
-              <button class="ghost tiny" data-on-click="feedAction('${esc(fd.id)}','verify')">Verify</button>
-              <button class="secondary tiny" data-on-click="feedAction('${esc(fd.id)}','import')">Import</button></b>
+              <button class="ghost tiny" data-on-click="feedAction(${esc(JSON.stringify(fd.id))},'verify')">Verify</button>
+              <button class="secondary tiny" data-on-click="feedAction(${esc(JSON.stringify(fd.id))},'import')">Import</button></b>
           </div>
           <div class="hint" style="word-break:break-all;margin:0 0 4px"><a href="${esc(fd.url)}" target="_blank" rel="noopener noreferrer">${esc(fd.url)}</a></div>`).join("");
         const isExcl = excl.has(f.key);
@@ -988,7 +988,7 @@
       if (!d.feeds || !d.feeds.length) { box.innerHTML = ""; return; }
       box.innerHTML = `<h3 style="margin-bottom:6px">Your calendars</h3>` + d.feeds.map(f =>
         `<div class="vr"><span>${esc(f.name)} <span class="muted">· ${f.events}</span></span>` +
-        `<button class="ghost tiny" data-on-click="removeUserCalendar('${esc(f.key)}')">Remove</button></div>`).join("");
+        `<button class="ghost tiny" data-on-click="removeUserCalendar(${esc(JSON.stringify(f.key))})">Remove</button></div>`).join("");
     }
     async function removeUserCalendar(key) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1110,7 +1110,7 @@
       const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const conf = agConfPill(e);
-      const tags = (e.tags||[]).map(t => `<span class="ag-tag" data-on-click="ooSetValue('agenda-tag', '${esc(t)}');renderAgenda()">${esc(t)}</span>`).join("");
+      const tags = (e.tags||[]).map(t => `<span class="ag-tag" data-on-click="ooSetValue('agenda-tag', ${esc(JSON.stringify(t))});renderAgenda()">${esc(t)}</span>`).join("");
       const alsoIn = (e.also_in && e.also_in.length)
         ? ` <span class="pill" title="${esc(tfa("This event also appears in: {calendars}", {calendars: e.also_in.join(", ")}))}">`
           + `${esc(tfa("also in {n}", {n: e.also_in.length}))}</span>` : "";
@@ -1214,7 +1214,7 @@
       // so the i18n engine translates them live on a language switch.
       const chips = [`<button type="button" class="ag-catchip${_agCat === "" ? " on" : ""}" data-on-click="agSetCat('')">all</button>`];
       for (const c of (AG.categories || [])) {
-        chips.push(`<button type="button" class="ag-catchip${_agCat === c ? " on" : ""}" style="--cat:${agCatHue(c)}" data-on-click="agSetCat('${esc(c)}')"><span class="ag-catdot"></span>${esc(c)}</button>`);
+        chips.push(`<button type="button" class="ag-catchip${_agCat === c ? " on" : ""}" style="--cat:${agCatHue(c)}" data-on-click="agSetCat(${esc(JSON.stringify(c))})"><span class="ag-catdot"></span>${esc(c)}</button>`);
       }
       box.innerHTML = chips.join("");
     }

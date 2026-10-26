@@ -279,11 +279,11 @@ _NOT_A_RENDERING: dict[tuple[str, str], str] = {
     ): "the stored code as an onclick argument to the facet toggle — it is sent back to the API",
     (
         "app-insights.js",
-        "esc(r.country)",
+        "esc(JSON.stringify(r.country))",
     ): "the stored code as an onclick argument to _conceptDrillCountry",
     (
         "app-insights.js",
-        "esc(c.country)",
+        "esc(JSON.stringify(c.country))",
     ): "the stored code as an onclick argument to _conceptDrillCountry (the visible cell beside it is ooCountryCell)",
     (
         "app-analysis.js",
@@ -296,7 +296,11 @@ _NOT_A_RENDERING: dict[tuple[str, str], str] = {
     (
         "app-map.js",
         "esc(c.country)",
-    ): "the stored code as the per-region select's data attribute and as a click-handler argument (osmCountAdmin1); the visible country cell beside them goes through ooCountryCell",
+    ): "the stored code as the per-region select's data attribute (data-osm-comp-key); the click-handler argument has its own key below; the visible country cell goes through ooCountryCell",
+    (
+        "app-map.js",
+        "esc(JSON.stringify(c.country))",
+    ): "the stored code as the click-handler argument of osmCountAdmin1, written as a JSON string (R203); the visible country cell goes through ooCountryCell",
     (
         "app-map.js",
         "osmCountAdmin1(",

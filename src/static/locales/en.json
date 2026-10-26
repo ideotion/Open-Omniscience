@@ -6552,6 +6552,7 @@
   "today": "today",
   "tokens": "tokens",
   "tone": "tone",
+  "too large (use folder import)": "too large (use folder import)",
   "took {wall}, {gate} with writes paused": "took {wall}, {gate} with writes paused",
   "top 3 sources hold {pct}% of articles": "top 3 sources hold {pct}% of articles",
   "top {n} of {total}": "top {n} of {total}",

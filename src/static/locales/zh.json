@@ -6552,6 +6552,7 @@
   "today": "今天",
   "tokens": "词元",
   "tone": "情感倾向",
+  "too large (use folder import)": "过大（请使用文件夹导入）",
   "took {wall}, {gate} with writes paused": "耗时 {wall}，其中 {gate} 写入已暂停",
   "top 3 sources hold {pct}% of articles": "前 3 个来源占文章的 {pct}%",
   "top {n} of {total}": "前 {n} 个，共 {total} 个",
