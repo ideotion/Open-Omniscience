@@ -135,3 +135,33 @@ def test_a_hold_is_about_the_store_whose_build_made_it(monkeypatch):
     assert rollup_serve._stopped_build_verdict() is None, "in-memory active: a persisted failure is not its hold"
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: True)
     assert rollup_serve._stopped_build_verdict() is not None, "persisted active: its own failure holds"
+
+
+def test_a_recount_of_a_persisted_hold_never_writes_the_kept_file(monkeypatch):
+    """The wall's recount re-keeps the hold; for a persisted one that must stay in this process, or it overwrites an in-memory wall hold the file kept."""
+    _refresh_stub(monkeypatch)
+    _trending_shaped_pair()
+    assert rollup_hold.read() is None
+    held = rollup_serve._STATE["stopped"]
+    later = held["at"] + rollup_serve._BACKSTOP_S + 1
+    monkeypatch.setattr(rollup_serve.time, "time", lambda: later)
+    monkeypatch.setattr(rollup_serve, "_current_epoch", lambda: 8)  # the epoch moved and the count did not shrink: the hold stands, re-kept
+    assert rollup_serve._stopped_build_verdict() is not None
+    assert rollup_serve._STATE["stopped"]["epoch"] == 8 and rollup_serve._STATE["stopped"]["store"] == "persisted"
+    assert rollup_hold.read() is None, "the recount wrote a persisted hold to the kept file"
+
+
+def test_the_hold_is_about_the_store_the_failed_build_ran_for_not_the_store_read_afterwards(monkeypatch):
+    """The store toggles while the persisted refresh runs (the passphrase arrives, or goes): the failure is still the persisted refresh's."""
+    active = {"persisted": True}
+    monkeypatch.setattr(rollup_serve, "_persisted_serve_active", lambda: active["persisted"])
+
+    def refresh():
+        active["persisted"] = False
+        raise OutOfMemoryException("engine words that must not be kept")
+
+    monkeypatch.setattr(rollup_serve, "_refresh_persisted_build", refresh)
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)  # the dispatcher releases the build lock it is called holding
+    rollup_serve._build_and_swap()
+    assert rollup_serve._STATE["stopped"]["store"] == "persisted"
+    assert rollup_hold.read() is None

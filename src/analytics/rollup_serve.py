@@ -750,13 +750,14 @@ def _failure_view() -> tuple[int, str | None]:
         return int(_STATE.get("failures") or 0), _STATE.get("failure_class")
 
 
-def _record_failure(error_class: str, stage: str | None) -> None:
+def _record_failure(error_class: str, stage: str | None, persisted: bool | None = None) -> None:
     """A build ended in an error that no hold maps (R172): keep a failure hold, released by what releases a ``duckdb-limit`` hold, so the very next
     request does not start the same build again. The hold lives in THIS process only: a restart retries once (a transient error must not keep the
     accelerator off), while the kept record carries the run of failures across it. The record's ``stage`` is the LAST REPORTED stage, not the raising
     statement (the key is the one a ``duckdb-limit`` hold uses, and it means the same there). The record carries the stage the build had last reported (None, and ``stage_why``, when it had
     reported none), the exception CLASS (passed as its name) and the run of consecutive failures; never the exception's text. The persisted store is not touched."""
-    persisted = _persisted_serve_active()
+    if persisted is None:
+        persisted = _persisted_serve_active()
     cls = error_class
     with _LOCK:
         prior = int(_STATE.get("failures") or 0)
@@ -877,7 +878,8 @@ def _stopped_build_verdict() -> dict | None:
                         # backstop). The count the stop was measured at stays the base, so small drops add up.
                         _keep_stopped({**st, "epoch": now_epoch if now_epoch is not None else st.get("epoch"),
                                        "checked_at": time.time(),
-                                       "mentions_count": base if isinstance(base, int) else count})
+                                       "mentions_count": base if isinstance(base, int) else count},
+                                      write=not persisted)  # a persisted hold is this process's own: it is never written to the kept file
             return {"reason": st["reason"], "at": time.time(), "duckdb_limit_mb": limit,
                     "stopped_at": st.get("at"), "restored": bool(st.get("restored")),
                     "note": ("a build under this limit was already stopped by it" if st["reason"] == "duckdb-limit" else
@@ -1179,6 +1181,7 @@ def _build_and_swap() -> str:
     Returns ``built``, ``declined`` or ``failed`` (the background kick ignores it)."""
     outcome = "failed"
     ran = False  # a build was started (not refused by a verdict): only then does ``last_outcome`` change
+    persisted_run = False  # which store the build that ran was for: the hold a failure keeps is about THAT store, not about a later reading
     _LAST_STAGE["value"] = None  # a decline of an earlier build left its stage here: this build reports its own or none
     try:
         # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
@@ -1211,7 +1214,8 @@ def _build_and_swap() -> str:
             outcome = "declined"
             return outcome
         ran = True
-        if _persisted_serve_active():
+        persisted_run = _persisted_serve_active()
+        if persisted_run:
             _refresh_persisted_build()
         else:
             stopped = _build_inmemory_and_swap()
@@ -1277,7 +1281,7 @@ def _build_and_swap() -> str:
         stage, _LAST_STAGE["value"] = _LAST_STAGE["value"], None
         try:
             if ran:  # an error in a verdict, before any build started, is no build that failed: it keeps no hold that would refuse real builds
-                _record_failure(type(exc).__name__, stage)  # the class only: the sink sweep's rule
+                _record_failure(type(exc).__name__, stage, persisted_run)  # the class only: the sink sweep's rule
         except Exception as hold_exc:  # noqa: BLE001 - a hold that cannot be kept must not turn a failed build into a crash
             log_failure(_LOG, "rollup serve: could not keep the failure hold", hold_exc, level=logging.WARNING)
         return outcome
