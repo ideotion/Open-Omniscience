@@ -22,7 +22,7 @@ UNDER-APPROXIMATES a real cross-file call through such a name. And two files tha
 those, each with the exact entries it dismisses AND the one colliding name they are owed to, so a NEW entry through the same scope still fails. A call that
 resolves to ONE function through an import (``from x import f``, ``from x import f as _g``, ``import x as m`` then ``m.f()``), and a function handed to
 ``atexit.register`` or ``signal.signal``, ARE followed (:class:`_ResolvingGraph`), even when the name is a common one; a call through a re-export, an instance
-attribute or a name assigned from another call is not. ``atexit`` and ``signal-handler`` entries are listed like the other kinds. A forward reachability with every ambiguous name expanded was
+attribute or a name assigned from another call is not. A by-name edge from a ``scripts/`` file's top-level call counts as ``script`` here, so a name collision with one is listable, not a failure. ``atexit`` and ``signal-handler`` entries are listed like the other kinds. A forward reachability with every ambiguous name expanded was
 read once by hand when this file was written (16 extra rows, all collisions: ``subprocess.run`` in ``_run_ephemeral``, ``core_guard.engage`` calling its own
 ``status``); it is not rerun here.
 
@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ast
 import collections
+import functools
 import tomllib
 from pathlib import Path
 
@@ -60,7 +61,7 @@ _LISTED: dict[str, tuple[frozenset[str], str]] = {
     "src/entities/gazetteer_build.py::read_places": (frozenset({"script"}), "scripts/build_place_gazetteer.py, a build tool"),
     "src/ingest/pipeline.py::ingest_source": (frozenset({"script", "dev-tool"}), "src/testing/collect_soak.py and the collection bench script, harnesses that run one pass and exit"),
     "src/monitoring/expedition.py::_memory": (frozenset({"script"}), "scripts/country_migration_evidence.py's p0 step (build_p0_report, session_forensics, expedition.digest), an operator evidence tool that ends on the interrupt"),
-    "src/monitoring/swap.py::swap_readings": (frozenset({"script", "dev-tool"}), "the collection bench script and the soak harness reach it through MemoryGuard.poll (observe, release_residents); both are dev tools that end on the interrupt"),
+    "src/monitoring/swap.py::swap_readings": (frozenset({"script", "dev-tool"}), "the collection bench script and the soak harness reach it through MemoryGuard.poll (observe, release_residents); both are dev tools that end on the interrupt. (scripts/fault_harness.py is NOT a third entry: its proc.poll() is subprocess.Popen.poll, a by-name collision that the bench's script token already hides)"),
     "src/monitoring/vitals_history.py::start": (frozenset({"event-loop"}), "session_history.start_liveness calls it through an import alias (_vitals_start) from the lifespan (event loop, R165)"),
     "src/monitoring/forensics.py::_filesystem_type": (frozenset({"script", "event-loop"}), "the lifespan's data_dir_persistence (event loop, R165) and the migration evidence script"),
     "src/monitoring/secret_scrub.py::scrubbed_copy": (frozenset({"script"}), "the migration evidence and scale bench scripts (dev tools)"),
@@ -99,19 +100,20 @@ _DISMISSED: dict[str, tuple[frozenset[str], str, str]] = {
 
 class _ResolvingGraph(_LocalGraph):
     """:class:`_LocalGraph` plus the calls it cannot see by NAME: a function imported (``from x import f`` / ``from x import f as _g``), a function reached through
-    a module (``import x as m`` then ``m.f()``), and a function handed to ``atexit.register`` or ``signal.signal``. Each resolves to ONE function, so it is followed
-    even when its name is a common one (``start``, ``end``), which the by-name graph has to cut at the file edge."""
+    a module (``import x as m`` then ``m.f()``), and a function handed to ``atexit.register`` or ``signal.signal`` (called, aliased or used as a decorator). Each
+    resolves to a function the import names, so it is followed even when its name is a common one (``start``, ``end``), which the by-name graph has to cut at the
+    file edge. A name bound by SEVERAL imports in one file (function-local imports) keeps every target."""
 
     def __init__(self, sources):
         super().__init__(sources)
         self.precise_callers: dict[str, set[str]] = collections.defaultdict(set)  # target id -> ids of functions calling it through an import
         self.precise_modules: dict[str, set[str]] = collections.defaultdict(set)  # target id -> files calling it at the top level through an import
-        self.handlers: dict[str, set[str]] = collections.defaultdict(set)  # target id -> "atexit" / "signal-handler" registrations
+        self.handlers: dict[str, set[str]] = collections.defaultdict(set)  # target id -> "atexit in <file>" / "signal-handler in <file>"
         self._files = set(sources)
         for rel, text in sources.items():
             tree = ast.parse(text)
-            names, modules = self._imports(rel, tree)
-            self._resolve(tree, rel, [], names, modules)
+            names, modules, registrars = self._imports(rel, tree)
+            self._resolve(tree, rel, [], False, names, modules, registrars)
 
     def _module_file(self, dotted: str) -> str | None:
         base = dotted.replace(".", "/")
@@ -120,10 +122,11 @@ class _ResolvingGraph(_LocalGraph):
                 return cand
         return None
 
-    def _imports(self, rel: str, tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
-        """``(local name -> function id, local dotted name -> module file)`` for every import in the file, anywhere in it."""
-        names: dict[str, str] = {}
+    def _imports(self, rel: str, tree: ast.AST) -> tuple[dict[str, set[str]], dict[str, str], dict[str, str]]:
+        """``(local name -> function ids, local dotted name -> module file, local dotted name -> "atexit" / "signal-handler")`` for every import in the file."""
+        names: dict[str, set[str]] = collections.defaultdict(set)
         modules: dict[str, str] = {}
+        registrars: dict[str, str] = {}
         package = rel.rsplit("/", 1)[0].replace("/", ".") if "/" in rel else ""
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
@@ -133,18 +136,27 @@ class _ResolvingGraph(_LocalGraph):
                     base = ".".join([*up, base] if base else up)
                 for a in node.names:
                     local = a.asname or a.name
+                    if base == "atexit" and a.name == "register":
+                        registrars[local] = "atexit"
+                    elif base == "signal" and a.name == "signal":
+                        registrars[local] = "signal-handler"
                     file = self._module_file(base)
                     if file and f"{file}::{a.name}" in self.funcs:
-                        names[local] = f"{file}::{a.name}"
+                        names[local].add(f"{file}::{a.name}")
                     sub = self._module_file(f"{base}.{a.name}")
                     if sub:
                         modules[local] = sub
             elif isinstance(node, ast.Import):
                 for a in node.names:
+                    local = a.asname or a.name
+                    if a.name == "atexit":
+                        registrars[f"{local}.register"] = "atexit"
+                    elif a.name == "signal":
+                        registrars[f"{local}.signal"] = "signal-handler"
                     file = self._module_file(a.name)
                     if file:
-                        modules[a.asname or a.name] = file
-        return names, modules
+                        modules[local] = file
+        return names, modules, registrars
 
     @staticmethod
     def _dotted(node: ast.AST) -> str | None:
@@ -156,58 +168,59 @@ class _ResolvingGraph(_LocalGraph):
             return ".".join([node.id, *reversed(parts)])
         return None
 
-    def _resolve(self, node: ast.AST, rel: str, stack: list[str], names: dict[str, str], modules: dict[str, str]) -> None:
+    def _resolve(self, node: ast.AST, rel: str, stack: list[str], in_func: bool, names, modules, registrars) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 inner = [*stack, child.name]
                 owner = f"{rel}::{'.'.join(inner)}"
+                for deco in child.decorator_list:
+                    kind = registrars.get(self._dotted(deco.func if isinstance(deco, ast.Call) else deco) or "")
+                    if kind == "atexit":
+                        self.handlers[owner].add(f"atexit in {rel}")
                 for stmt in child.body:
-                    self._calls(stmt, rel, owner, names, modules)
-                self._resolve(child, rel, inner, names, modules)
+                    self._calls(stmt, rel, owner, names, modules, registrars)
+                self._resolve(child, rel, inner, True, names, modules, registrars)
             elif isinstance(child, ast.ClassDef):
-                self._resolve(child, rel, [*stack, child.name], names, modules)
+                self._resolve(child, rel, [*stack, child.name], in_func, names, modules, registrars)
             else:
-                if not stack:
-                    self._calls(child, rel, None, names, modules)
-                self._resolve(child, rel, stack, names, modules)
+                if not in_func:
+                    self._calls(child, rel, None, names, modules, registrars)
+                self._resolve(child, rel, stack, in_func, names, modules, registrars)
 
-    def _calls(self, node: ast.AST, rel: str, owner: str | None, names: dict[str, str], modules: dict[str, str]) -> None:
+    def _calls(self, node: ast.AST, rel: str, owner: str | None, names, modules, registrars) -> None:
         todo = [node]
         while todo:
             n = todo.pop()
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             if isinstance(n, ast.Call):
-                target = self._target(n.func, names, modules)
-                if target:
+                for target in self._targets(n.func, names, modules):
                     (self.precise_callers[target].add(owner) if owner else self.precise_modules[target].add(rel))
-                self._registration(n, rel)
+                self._registration(n, rel, names, modules, registrars)
             todo.extend(ast.iter_child_nodes(n))
 
-    def _target(self, func: ast.AST, names: dict[str, str], modules: dict[str, str]) -> str | None:
+    def _targets(self, func: ast.AST, names, modules) -> set[str]:
         if isinstance(func, ast.Name):
-            return names.get(func.id)
+            return set(names.get(func.id, ()))
         if isinstance(func, ast.Attribute):
             mod = self._dotted(func.value)
             file = modules.get(mod) if mod else None
             if file and f"{file}::{func.attr}" in self.funcs:
-                return f"{file}::{func.attr}"
-        return None
+                return {f"{file}::{func.attr}"}
+        return set()
 
-    def _registration(self, call: ast.Call, rel: str) -> None:
-        func = call.func
-        if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)):
+    def _registration(self, call: ast.Call, rel: str, names, modules, registrars) -> None:
+        kind = registrars.get(self._dotted(call.func) or "")
+        if not kind:
             return
-        kind, handler = None, None
-        if func.value.id == "atexit" and func.attr == "register" and call.args:
-            kind, handler = "atexit", call.args[0]
-        elif func.value.id == "signal" and func.attr == "signal" and len(call.args) > 1:
-            kind, handler = "signal-handler", call.args[1]
-        given = handler.id if isinstance(handler, ast.Name) else (handler.attr if isinstance(handler, ast.Attribute) else None)
-        if not given:
+        position = 0 if kind == "atexit" else 1
+        if len(call.args) <= position:
             return
-        same_file = [i for i in self.funcs if i.startswith(f"{rel}::") and i.split("::")[1].split(".")[-1] == given]
-        for ident in same_file or [i for i in self.funcs if i.split("::")[1].split(".")[-1] == given and not given.startswith("_")]:
+        handler = call.args[position]
+        found = self._targets(handler, names, modules)
+        if not found and isinstance(handler, ast.Name):  # a function of the same file, nested ones included
+            found = {i for i in self.funcs if i.startswith(f"{rel}::") and i.split("::")[1].split(".")[-1] == handler.id}
+        for ident in found:
             self.handlers[ident].add(f"{kind} in {rel}")
 
     def closure_local(self, entry, local_only):
@@ -241,7 +254,13 @@ class _ResolvingGraph(_LocalGraph):
                         main.add(f"{caller} (a script) calls {node}")
                     elif caller not in nodes:
                         pending.append(caller)
-        return sorted(nodes), sorted(workers), sorted(main), sorted(open_ends)
+        has_extra_way_in = {n for n in nodes if self.handlers.get(n) or self.precise_modules.get(n) or self.precise_callers.get(n)}
+        return sorted(nodes), sorted(workers), sorted(main), sorted(n for n in open_ends if n not in has_extra_way_in)
+
+
+@functools.cache
+def _repo_graph() -> _ResolvingGraph:
+    return _ResolvingGraph(read_sources())
 
 
 def _scopes_in_src() -> list[tuple[str, str]]:
@@ -302,7 +321,7 @@ def _tokens(graph: _LocalGraph, ident: str, ambiguous: frozenset[str], console: 
 
 
 def test_no_cleanup_covered_loop_outside_the_database_package_is_reachable_on_the_main_thread():
-    graph = _ResolvingGraph(read_sources())
+    graph = _repo_graph()
     ambiguous, console = _ambiguous(graph), _console_entries()
     problems: list[str] = []
     seen_scopes: set[str] = set()
@@ -352,7 +371,7 @@ def test_every_listed_row_has_a_reason_and_a_known_kind():
 
 def test_every_dismissed_token_is_owed_to_its_colliding_name():
     """A dismissal is only as wide as its collision: follow that one name inside its own file and every dismissed token must be gone."""
-    graph = _ResolvingGraph(read_sources())
+    graph = _repo_graph()
     ambiguous, console = _ambiguous(graph), _console_entries()
     for ident, (tokens, name, _why) in _DISMISSED.items():
         left = _tokens(graph, ident, ambiguous | {name}, console)
@@ -360,7 +379,7 @@ def test_every_dismissed_token_is_owed_to_its_colliding_name():
 
 
 def test_the_console_script_is_a_function_of_the_graph():
-    graph = _ResolvingGraph(read_sources())
+    graph = _repo_graph()
     for entry in _console_entries():
         assert entry in graph.funcs, f"pyproject [project.scripts] names {entry}, which the graph does not know"
 
@@ -368,7 +387,7 @@ def test_the_console_script_is_a_function_of_the_graph():
 def test_the_reach_finder_sees_a_chain_it_was_written_to_find():
     """Anti-vacuity on the real repo: ``heal_bulk_build`` was reachable from the console script (``main`` -> ``_serve`` -> ``init_db``) until this file's change
     converted it. Its caller chain is still there, so the finder must still report the entry."""
-    graph = _ResolvingGraph(read_sources())
+    graph = _repo_graph()
     ambiguous, console = _ambiguous(graph), _console_entries()
     tokens = _tokens(graph, "src/analytics/bulk_build.py::heal_bulk_build", ambiguous, console)
     assert "main:src/api/main.py::main" in tokens, tokens
@@ -435,3 +454,42 @@ def test_an_unrelated_call_of_the_same_name_is_not_followed():
     plant = {"src/work.py": "def start():\n    pass\n", "src/other.py": "async def handler(p):\n    p.start()\n"}
     graph = _ResolvingGraph(plant)
     assert _tokens(graph, "src/work.py::start", _ambiguous(graph), frozenset()) == set()
+
+
+def test_registration_shapes_the_first_read_missed_are_entries_too():
+    work = "def target():\n    pass\n"
+    shapes = {
+        "aliased signal module": ("import signal as _signal\nfrom src.work import target\n\ndef _stop(a, b):\n    target()\n\ndef go():\n    _signal.signal(2, _stop)\n", "signal-handler"),
+        "from atexit import register": ("from atexit import register\nfrom src.work import target\n\ndef _bye():\n    target()\n\ndef go():\n    register(_bye)\n", "atexit"),
+        "atexit decorator": ("import atexit\nfrom src.work import target\n\n@atexit.register\ndef _bye():\n    target()\n", "atexit"),
+        "handler given by import alias": ("import atexit\nfrom src.work import target as _go\n\ndef go():\n    atexit.register(_go)\n", "atexit"),
+    }
+    for label, (text, kind) in shapes.items():
+        graph = _ResolvingGraph({"src/work.py": work, "src/reg.py": text})
+        assert kind in _tokens(graph, "src/work.py::target", _ambiguous(graph), frozenset()), label
+
+
+def test_one_name_bound_by_several_imports_keeps_every_target():
+    plant = {
+        "src/a.py": "def go():\n    pass\n",
+        "src/b.py": "def go():\n    pass\n",
+        "src/use.py": "async def handler():\n    from src.a import go\n    go()\n\ndef other():\n    from src.b import go\n    go()\n",
+    }
+    graph = _ResolvingGraph(plant)
+    assert "src/use.py::other" in graph.closure_local("src/b.py::go", frozenset())[0]
+    assert "event-loop" in _tokens(graph, "src/a.py::go", _ambiguous(graph), frozenset())
+
+
+def test_a_class_body_call_through_an_import_runs_at_import_time():
+    plant = {"src/work.py": "def start():\n    pass\n", "src/boot.py": "from src.work import start\n\nclass A:\n    x = start()\n"}
+    graph = _ResolvingGraph(plant)
+    assert "main:src/work.py::start" in _tokens(graph, "src/work.py::start", _ambiguous(graph), frozenset())
+
+
+def test_a_handler_that_is_only_a_method_name_does_not_mark_every_function_of_that_name():
+    plant = {
+        "src/a.py": "def close():\n    pass\n",
+        "src/reg.py": "import atexit\n\ndef go(conn):\n    atexit.register(conn.close)\n",
+    }
+    graph = _ResolvingGraph(plant)
+    assert _tokens(graph, "src/a.py::close", _ambiguous(graph), frozenset()) == set()

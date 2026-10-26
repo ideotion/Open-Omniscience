@@ -51,7 +51,9 @@ def test_a_failed_later_round_leaves_the_earlier_rounds_stored_and_answers_500_w
         assert r.status_code == 500, r.text
         detail = r.json()["detail"]
         assert "failed while storing" in detail, detail
-        assert "tally" not in r.json(), "if the reply now carries a partial tally, this is the test to update (item 36)"
+        assert set(r.json()) == {"detail"} and "stored" not in detail.lower() and "tally" not in detail.lower(), (
+            "if the reply now carries a partial tally (as a key or inside the detail), this is the test to update (item 36)"
+        )
         assert _imported(c) == before + 2, "the first round is committed and stays"
 
 
