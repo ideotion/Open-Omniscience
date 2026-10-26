@@ -106,7 +106,7 @@ def _add_article(indexed: bool = False) -> None:
         u = f"https://{src.domain}/{uuid.uuid4().hex[:6]}"
         a = Article(
             url=u, canonical_url=u, source_id=src.id, title="T", content="tariff steel industry policy diplomacy",
-            hash=uuid.uuid4().hex[:16], language="en",
+            hash=uuid.uuid4().hex[:16], language="en", word_count=5,
             published_at=datetime(2026, 3, 1, tzinfo=UTC), created_at=datetime.now(UTC),
         )
         s.add(a)
@@ -270,13 +270,112 @@ def test_scans_made_over_one_database_are_never_carried_to_another(tmp_path):
     mine = SessionLocal()
     theirs = sessionmaker(bind=other, future=True)()
     try:
-        insights._remember_status_scans(mine, 5, 4, 40, 1.0)
-        assert insights._carried_status_scans(mine) is not None
-        assert insights._carried_status_scans(theirs) is None, "another database never inherits the counts"
+        insights._remember_status_scans(mine, 0, insights._STATUS_GENERATION[0], 5, 4, 40, 1.0)
+        assert insights._carried_status_scans(mine, 0) is not None
+        assert insights._carried_status_scans(theirs, 0) is None, "another database never inherits the counts"
     finally:
         mine.close()
         theirs.close()
         other.dispose()
+
+
+def test_counts_taken_before_the_last_write_are_recounted_when_their_window_ends_even_if_nothing_is_written_after(clock):
+    """Opus read finding 1. A refresh that carries the old pair stored the entry under the probe read AFTER the latest write; with
+    no write after it every later poll saw the probe unchanged, re-stamped the entry as verified and never recomputed, so counts
+    taken before that write were served for ever with ``verified_current: true``."""
+    clock.step = 10.0  # carried for 100 s
+    _add_article(indexed=True)
+    _poll()
+    _idle()
+    _add_article(indexed=True)  # a write inside the window; collection then stops for good
+    clock.advance(20)
+    _poll()
+    _idle()  # the carried refresh: totals fresh, pair carried
+    mid = _poll()
+    assert mid["verified_current"] is False, "a carried count is never vouched for by the write probe"
+    for _ in range(20):  # long past the window, with no further write
+        clock.advance(200)
+        _poll()
+        _idle()
+    late = _poll()
+    s = SessionLocal()
+    try:
+        exact = q.status(s)
+    finally:
+        s.close()
+    assert late["indexed_articles"] == exact["indexed_articles"] and late["mentions"] == exact["mentions"]
+    assert late["remaining"] == exact["remaining"]
+
+
+def test_an_invalidate_forgets_the_carried_pair_and_a_new_corpus_epoch_does_too(clock):
+    """Opus read finding 2. A restore swaps the file under the one module-level engine object, so identity alone never notices."""
+    from src.analytics.corpus_epoch import bump_corpus_epoch
+
+    clock.step = 10.0
+    _add_article(indexed=True)
+    _poll()
+    _idle()
+    insights._STATUS_MEMO["indexed"] = 999_999  # stands in for the replaced corpus's count on the same engine object
+    served_cache.invalidate()  # what run_restore's swap and a VACUUM do
+    assert insights._STATUS_MEMO == {} and insights._STATUS_FAILURE == {}
+    _poll()
+    _idle()
+    assert _poll()["indexed_articles"] != 999_999
+
+    insights._STATUS_MEMO["indexed"] = 888_888
+    s = SessionLocal()
+    try:
+        bump_corpus_epoch(s, reason="test")
+        s.commit()
+    finally:
+        s.close()
+    clock.advance(20)
+    _add_article()  # moves the probe so the entry is recomputed
+    _poll()
+    _idle()
+    assert _poll()["indexed_articles"] != 888_888, "a pair made at another epoch is not carried"
+
+
+def test_scans_that_were_running_when_the_corpus_was_swapped_are_not_remembered(monkeypatch):
+    """Opus read finding 2, the in-flight variant: a scan holding the old file open lands its numbers after the swap."""
+    real = q.status_mentions
+
+    def _swap_then_finish(session):
+        served_cache.invalidate()  # the restore's swap happens while this scan is reading
+        return real(session)
+
+    monkeypatch.setattr(q, "status_mentions", _swap_then_finish)
+    _poll()
+    _idle()
+    assert insights._STATUS_MEMO == {}, "the pair was counted over the file that was swapped out"
+    assert _poll()["index_counts_state"] in ("counted", "computing")
+
+
+def test_a_failure_does_not_freeze_the_cheap_totals(monkeypatch, clock):
+    """Opus read finding 4. The failure window is the scans' retry window, not the totals': they keep refreshing meanwhile."""
+    calls = []
+
+    def _fails(_session):
+        calls.append(1)
+        raise StatementTimeout("over its limit")
+
+    monkeypatch.setattr(q, "status_mentions", _fails)
+    _poll()
+    _idle()
+    failed = _poll()
+    assert failed["index_counts_state"] == "failed"
+    _add_article()
+    clock.advance(60)  # inside the 1,200 s window, past the 15 s interval
+    _poll()
+    _idle()
+    later = _poll()
+    assert later["total_articles"] == failed["total_articles"] + 1, "the totals refreshed inside the failure window"
+    assert later["index_counts_state"] == "failed" and len(calls) == 1, "and no scan was retried"
+    assert later["index_counts_failure"]["at"] == failed["index_counts_failure"]["at"]
+    clock.advance(insights._STATUS_FAILURE_WINDOW_S)  # nothing written: the window ending alone must start the retry
+    _poll()
+    _idle()
+    assert len(calls) == 2, "the window ending is noticed on an idle store"
 
 
 def test_the_route_keeps_every_field_the_page_reads():
@@ -328,3 +427,13 @@ def test_every_word_the_header_uses_for_an_unknown_scan_is_already_keyed_in_all_
         for key in keys:
             assert key in d, f"{code}: {key!r}"
             assert sorted(re.findall(r"\{(\w+)\}", d[key])) == sorted(re.findall(r"\{(\w+)\}", key)), (code, key)
+
+
+def test_the_background_top_up_does_not_wait_for_a_count_that_may_take_minutes():
+    """Opus read finding 3. ``null > 0`` is false, so with the counts unknown (computing, or failed) the legacy-backlog top-up never
+    started; it decides from the indexer's own ``never_attempted`` and needs no scan."""
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "src" / "static" / "app-insights.js").read_text(encoding="utf-8")
+    assert "(s.remaining == null || s.remaining > 0) && !_indexing) autoIndexInsights()" in js
+    assert "s.remaining > 0 && !_indexing" not in js

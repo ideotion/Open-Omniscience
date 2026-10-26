@@ -1705,7 +1705,9 @@
           $("ins-status").innerHTML = _insStatusFrame(null);
         }
         _paintInsStatus(s);
-        if (s.remaining > 0 && !_indexing) autoIndexInsights();  // background top-up; no button (§6)
+        // background top-up; no button (§6). An unknown count (null: still counting, or the count failed) is not "nothing to index":
+        // the top-up decides from the indexer's own never_attempted, so it must not wait on a scan that may take minutes.
+        if ((s.remaining == null || s.remaining > 0) && !_indexing) autoIndexInsights();
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = _failMsg("Status unavailable: {error}", e); }
       loadLandscape();
     }

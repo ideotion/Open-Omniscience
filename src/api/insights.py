@@ -911,16 +911,25 @@ _STATUS_SCAN_DEADLINE_S = 500.0
 #: need. The window is shorter than ``_STATUS_TTL_S`` only when the scans take under 1.5 s, where they simply repeat.
 _STATUS_SCAN_DUTY_FACTOR = 10
 
-#: How long a scan that failed is NOT retried, in seconds: 1,200 s, which the 500 s deadline does not outgrow (a failing corpus holds
-#: a connection and a snapshot for at most 500 s in every 1,700 s). The figures use 900 s for their 300 s deadline.
+#: How long a scan that failed is NOT retried, in seconds: 1,200 s. Each of the two scans has its OWN deadline, so a pair that
+#: fails on its second scan has spent up to twice the deadline (1,000 s) before it is thrown away: a failing corpus holds a
+#: connection and a snapshot for at most 1,000 s in every 2,200 s. The figures use 900 s for their 300 s deadline.
 _STATUS_FAILURE_WINDOW_S = 1200
 
 _STATUS_MEMO_LOCK = _threading.Lock()
-#: The last finished scans: {"bind", "total_articles", "indexed", "mentions", "duration_s", "finished_at" (epoch s)}. In memory
-#: only, so after a restart the first scans run at once and are measured again; bound to the database they scanned, so another
-#: database never inherits them. ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
+#: The last finished scans: {"bind", "epoch", "total_articles", "indexed", "mentions", "duration_s", "finished_at" (epoch s)}. In
+#: memory only, so after a restart the first scans run at once and are measured again. Bound to the database they scanned by the
+#: engine OBJECT (a second engine never inherits them) AND by the corpus epoch: a restore, an unlock or a wipe keeps the one
+#: module-level engine object while the file under it is replaced, so identity alone says nothing (the trap
+#: ``source_country_rollup`` records). ``total_articles`` is read right after the distinct-article scan, so ``remaining`` is the
 #: difference of two readings taken together.
 _STATUS_MEMO: dict = {}
+#: When the last pair FAILED: {"bind", "epoch", "at" (epoch s), "payload" (the failure fields)}. It lives here, not in the cache
+#: entry's TTL, so the cheap totals keep refreshing while the failure stands; a retry happens when the window ends.
+_STATUS_FAILURE: dict = {}
+#: Bumped whenever the carried state is forgotten, so a scan that was already running when the corpus was swapped does not
+#: store its numbers afterwards.
+_STATUS_GENERATION = [0]
 
 
 def _status_now_s() -> float:
@@ -932,11 +941,23 @@ def _status_clock() -> float:
     return _time.monotonic()
 
 
-def _reset_status_scans_for_tests() -> None:
-    """Forget the carried scans (test hook): the memo is bound to an engine OBJECT, but a test that reuses one engine across
-    cases must not inherit another case's counts inside the carry window."""
+def _forget_status_scans() -> None:
+    """Forget the carried scans and any recorded failure. Run by ``served_cache.invalidate`` (a restore's swap, a VACUUM) and by
+    the tests: what was counted is about the file that was there before."""
     with _STATUS_MEMO_LOCK:
         _STATUS_MEMO.clear()
+        _STATUS_FAILURE.clear()
+        _STATUS_GENERATION[0] += 1
+
+
+_reset_status_scans_for_tests = _forget_status_scans
+served_cache.on_invalidate(_forget_status_scans)
+
+
+def _corpus_epoch(db: Session) -> int:
+    from src.analytics.corpus_epoch import get_corpus_epoch
+
+    return get_corpus_epoch(db)
 
 
 def _status_scan_deadline_s() -> float:
@@ -946,31 +967,48 @@ def _status_scan_deadline_s() -> float:
         return _STATUS_SCAN_DEADLINE_S
 
 
-def _carried_status_scans(db: Session) -> dict | None:
+def _same_database(db: Session, held: dict, epoch: int) -> bool:
+    """Whether ``held`` (the memo or the failure record) was made over the database ``db`` reads now."""
+    try:
+        return bool(held) and db.get_bind() is held["bind"] and held["epoch"] == epoch
+    except Exception:  # noqa: BLE001 - any doubt about the database -> scan again
+        return False
+
+
+def _carried_status_scans(db: Session, epoch: int) -> dict | None:
     """The previous scans, when still inside their cost-proportional window and made over this database; else None."""
     with _STATUS_MEMO_LOCK:
         memo = dict(_STATUS_MEMO)
-    if not memo:
-        return None
-    try:
-        if db.get_bind() is not memo["bind"]:
-            return None
-    except Exception:  # noqa: BLE001 - any doubt about the database -> scan again
+    if not _same_database(db, memo, epoch):
         return None
     return memo if _status_now_s() - memo["finished_at"] < _STATUS_SCAN_DUTY_FACTOR * memo["duration_s"] else None
 
 
-def _remember_status_scans(db: Session, total: int, indexed: int, mentions: int, duration_s: float) -> dict | None:
+def _held_status_failure(db: Session, epoch: int) -> dict | None:
+    """The recorded failure, while its retry window stands over this database; else None (and the scans run again)."""
+    with _STATUS_MEMO_LOCK:
+        failure = dict(_STATUS_FAILURE)
+    if not _same_database(db, failure, epoch):
+        return None
+    return failure if _status_now_s() - failure["at"] < _STATUS_FAILURE_WINDOW_S else None
+
+
+def _remember_status_scans(
+    db: Session, epoch: int, generation: int, total: int, indexed: int, mentions: int, duration_s: float,
+) -> dict | None:
     try:
         bind = db.get_bind()
     except Exception:  # noqa: BLE001 - without a bind the scans cannot be told apart from another database's
         return None
     memo = {
-        "bind": bind, "total_articles": total, "indexed": indexed, "mentions": mentions,
+        "bind": bind, "epoch": epoch, "total_articles": total, "indexed": indexed, "mentions": mentions,
         "duration_s": duration_s, "finished_at": _status_now_s(),
     }
     with _STATUS_MEMO_LOCK:
+        if _STATUS_GENERATION[0] != generation:
+            return None  # the carried state was forgotten while these scans ran: they may be about the file that was swapped out
         _STATUS_MEMO.clear()
+        _STATUS_FAILURE.clear()
         _STATUS_MEMO.update(memo)
     return memo
 
@@ -992,17 +1030,27 @@ def _compute_status(db: Session) -> dict:
     """The background computation: the index-backed totals, then the two mention scans, each under a statement deadline.
 
     A scan that cannot finish is a NAMED failure (``index_counts_state: "failed"`` with its kind, deadline, time and retry window),
-    and the entry stands for that window (``__ttl_s__``) instead of being tried again per poll. A finished pair is carried for
-    ``_STATUS_SCAN_DUTY_FACTOR`` times its measured duration, so a stale entry inside that window recomputes the totals and
-    starts no scan."""
+    and the failure is held for that window instead of being tried again per poll. A finished pair is carried for
+    ``_STATUS_SCAN_DUTY_FACTOR`` times its measured duration. Either way a recompute inside the window refreshes the cheap totals
+    and starts no scan, and the entry is stored UNVERIFIED (``__unverified__``): the write probe vouches for the totals, never for
+    a count taken earlier, so the window ending is noticed even when nothing was written."""
     from src.api.database import _failure_kind
     from src.database.maintenance import MemoryShort
 
     out = q.status_totals(db)
-    carried = _carried_status_scans(db)
+    epoch = _corpus_epoch(db)
+    carried = _carried_status_scans(db, epoch)
     if carried is not None:
         out.update(_status_scan_fields(carried))
+        out["__unverified__"] = True
         return out
+    held = _held_status_failure(db, epoch)
+    if held is not None:
+        out.update(held["payload"])
+        out["__unverified__"] = True
+        return out
+    with _STATUS_MEMO_LOCK:
+        generation = _STATUS_GENERATION[0]
     deadline = _status_scan_deadline_s()
     started = _status_clock()
     try:
@@ -1012,25 +1060,30 @@ def _compute_status(db: Session) -> dict:
         with statement_deadline(db, deadline):
             mentions = q.status_mentions(db)
     except Exception as exc:  # noqa: BLE001 - a failed scan is recorded, never raised into a poller
-        out.update(
-            {
-                "indexed_articles": None,
-                "remaining": None,
-                "mentions": None,
-                "index_counts_state": "failed",
-                "index_counts_failure": {
-                    "kind": _failure_kind(type(exc), MemoryShort, StatementTimeout),
-                    "deadline_s": deadline,
-                    "at": datetime.now(UTC).isoformat(timespec="seconds"),
-                    "retry_after_s": _STATUS_FAILURE_WINDOW_S,
-                },
-            }
-        )
-        out["__ttl_s__"] = _STATUS_FAILURE_WINDOW_S
+        fields = {
+            "indexed_articles": None,
+            "remaining": None,
+            "mentions": None,
+            "index_counts_state": "failed",
+            "index_counts_failure": {
+                "kind": _failure_kind(type(exc), MemoryShort, StatementTimeout),
+                "deadline_s": deadline,
+                "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "retry_after_s": _STATUS_FAILURE_WINDOW_S,
+            },
+        }
+        out.update(fields)
+        out["__unverified__"] = True
+        with contextlib.suppress(Exception):
+            bind = db.get_bind()
+            with _STATUS_MEMO_LOCK:
+                if _STATUS_GENERATION[0] == generation:
+                    _STATUS_FAILURE.clear()
+                    _STATUS_FAILURE.update({"bind": bind, "epoch": epoch, "at": _status_now_s(), "payload": fields})
         with contextlib.suppress(Exception):
             db.rollback()  # the interrupted statement leaves the transaction unusable for the next caller of this session
         return out
-    memo = _remember_status_scans(db, total, indexed, mentions, max(_status_clock() - started, 0.001))
+    memo = _remember_status_scans(db, epoch, generation, total, indexed, mentions, max(_status_clock() - started, 0.001))
     if memo is None:
         out.update(
             {
@@ -1039,6 +1092,7 @@ def _compute_status(db: Session) -> dict:
                 "mentions": mentions,
                 "index_counts_state": "counted",
                 "index_counts_computed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "__unverified__": True,  # not carried (no bind, or the corpus was swapped mid-scan): the next poll counts again
             }
         )
     else:
