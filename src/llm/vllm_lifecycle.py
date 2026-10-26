@@ -51,6 +51,7 @@ from pathlib import Path
 from src.llm.weights_pin import PinMismatch as _PinMismatch
 from src.monitoring.secret_scrub import log_failure, record_text, scrubbed
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock
 
 _LOG = logging.getLogger(__name__)
 
@@ -652,20 +653,11 @@ def _atomic_write_text(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` via a sibling temp + ``os.replace``.
 
     The project's standing convention for any file whose HALF-WRITTEN state would be
-    misread (``_atomic_copy`` / the manifest swap). Used here for the install marker
+    misread (``_atomic_copy`` / the manifest swap). Since R176 it is ``file_lock.atomic_replace`` (a temp named for the process and the thread). Used here for the install marker
     (a torn one used to read as "installed") and the journal trim (a torn one used to
     destroy the whole history). The temp is cleaned if the replace itself fails, so a
     validated temp is never orphaned."""
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        with tmp.open("w", encoding="utf-8") as fh:
-            fh.write(text)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except Exception:
-        tmp.unlink(missing_ok=True)
-        raise
+    atomic_replace(path, text)
 
 
 def _write_marker(version: str) -> None:
@@ -845,19 +837,20 @@ def record_install_attempt(
         line = json.dumps(_scrub_history(record), ensure_ascii=False, separators=(",", ":"))
         path = _history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-        # Bounded by construction: keep only the newest _ATTEMPTS_CAP attempts.
-        # The file is <= _ATTEMPTS_CAP lines, so trimming on every append is
-        # cheap -- unlike the 2000-line rolling error log, which amortises it.
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) > _ATTEMPTS_CAP:
-            # ATOMIC (2026-07-29): the APPEND above degrades safely by design (a torn
-            # tail is one unparseable line, which install_history skips), but a
-            # truncate-then-write TRIM has a window in which the file is EMPTY -- and a
-            # crash there destroys the whole history. That is the one thing a journal
-            # whose stated purpose is surviving a crash must not do to itself.
-            _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
+        with file_lock(path):  # the append and the trim are one section: a second server's attempt cannot fall between the trim's read and its swap (R176)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+            # Bounded by construction: keep only the newest _ATTEMPTS_CAP attempts.
+            # The file is <= _ATTEMPTS_CAP lines, so trimming on every append is
+            # cheap -- unlike the 2000-line rolling error log, which amortises it.
+            lines = path.read_text(encoding="utf-8").splitlines()
+            if len(lines) > _ATTEMPTS_CAP:
+                # ATOMIC (2026-07-29): the APPEND above degrades safely by design (a torn
+                # tail is one unparseable line, which install_history skips), but a
+                # truncate-then-write TRIM has a window in which the file is EMPTY -- and a
+                # crash there destroys the whole history. That is the one thing a journal
+                # whose stated purpose is surviving a crash must not do to itself.
+                _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
     except Exception as exc:  # noqa: BLE001 - must NEVER break the install it records
         _history_disabled = True
         _history_disabled_reason = record_text(exc, typed=True, limit=200)
@@ -1979,14 +1972,15 @@ def _record_start_attempt(record: dict) -> None:
     try:
         path = _start_history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        _migrate_start_history(path)
         # the server's log excerpt and its arguments enter the journal here, so the held passphrase (and a credential shape) is taken out here
         line = json.dumps(_scrub_history(record), ensure_ascii=False, separators=(",", ":"))
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) > _ATTEMPTS_CAP:
-            _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
+        with file_lock(path):  # the one-time move, the append and the trim are one section (R176)
+            _migrate_start_history(path)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+            lines = path.read_text(encoding="utf-8").splitlines()
+            if len(lines) > _ATTEMPTS_CAP:
+                _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
     except Exception as exc:  # noqa: BLE001 - never break a start to record it
         log_failure(_LOG, "could not record a vLLM start attempt", exc, level=logging.INFO)
 

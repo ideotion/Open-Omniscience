@@ -23,6 +23,7 @@ from src.briefing.card import BUCKET_LABELS, BUCKETS
 from src.briefing.producers import register_default_producers
 from src.briefing.registry import run_all_bounded
 from src.monitoring.secret_scrub import log_failure
+from src.safety.file_lock import atomic_replace, holding
 
 _LOG = logging.getLogger(__name__)
 
@@ -347,12 +348,10 @@ def dismissed_ids() -> set[str]:
 
 
 def _save_dismissed(ids: set[str]) -> None:
-    path = _dismissed_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"version": CACHE_VERSION, "ids": sorted(ids)}, indent=2), "utf-8")
-    tmp.replace(path)
+    atomic_replace(_dismissed_path(), json.dumps({"version": CACHE_VERSION, "ids": sorted(ids)}, indent=2), encoding="utf-8")
 
 
+@holding(lambda: _dismissed_path())
 def dismiss(card_id: str) -> set[str]:
     ids = dismissed_ids()
     ids.add(card_id)
@@ -360,6 +359,7 @@ def dismiss(card_id: str) -> set[str]:
     return ids
 
 
+@holding(lambda: _dismissed_path())
 def restore(card_id: str) -> set[str]:
     ids = dismissed_ids()
     ids.discard(card_id)
@@ -497,10 +497,7 @@ def _refresh_briefing(session, on_progress=None) -> dict:
 
 
 def _write_cache(payload: dict) -> None:
-    path = _cache_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
-    tmp.replace(path)
+    atomic_replace(_cache_path(), json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", fsync=False)
 
 
 def _read_cache() -> dict | None:

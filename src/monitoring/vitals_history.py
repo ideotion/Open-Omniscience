@@ -65,6 +65,7 @@ from typing import Any
 from src.monitoring.secret_scrub import log_failure
 from src.monitoring.session_history import boottime
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger(__name__)
 
@@ -243,17 +244,17 @@ _LOCK = threading.RLock()
 # which takes an asyncio error inside an asyncio error; one line lost per such event is the
 # price of never waiting for itself.)
 _LOG_LOCK = threading.RLock()
-# ONE WRITER OF THE FILE AT A TIME. ``flush`` writes ``vitals_history.json.tmp`` and renames it over the file;
-# two flushes that overlap (the liveness thread's, a clean end's, the exit hook's, a thread a test left
-# running) write the SAME temporary name: the second truncates what the first is still writing, or
+# ONE WRITER OF THE FILE AT A TIME. ``flush`` writes a temporary and renames it over the file;
+# before R176 two flushes that overlapped (the liveness thread's, a clean end's, the exit hook's, a thread a test left
+# running) wrote the SAME temporary name: the second truncates what the first is still writing, or
 # renames it away from under the first, and the file the rename leaves is torn or the first flush
 # fails with "No such file or directory". A torn file starts the next boot with an empty history
 # (``start`` reads a damaged file as none), which loses the 48 hours and the tails of the last
 # sessions the file exists to keep. The whole flush runs under this lock, the snapshot included, so a
 # later flush always holds the newer state and the bookkeeping after a write belongs to that write; the
 # order is ``_FLUSH_LOCK`` then ``_LOCK`` then ``_LOG_LOCK``, and nothing that holds ``_LOCK`` calls
-# ``flush``. It covers the threads of ONE process: two processes recording into one data folder would
-# still race. Re-entrant because a plain lock would make a handler that flushes on the thread inside a
+# ``flush``. It covers the threads of ONE process; the temporary is now named for the process and the thread (R176), so two
+# processes recording into one data folder cannot tear the file, and the later write wins. Re-entrant because a plain lock would make a handler that flushes on the thread inside a
 # flush wait for itself for ever; the nested flush that allows writes the same temporary name as the one it
 # interrupted and can tear the file, so nothing may flush from a signal handler or a finalizer, and
 # nothing does today (the SIGHUP handler does not).
@@ -985,9 +986,7 @@ def flush() -> None:
                 doc.update({"schema": SCHEMA, "saved_at": _iso(time.time())})
                 target = _path()
                 target.parent.mkdir(parents=True, exist_ok=True)
-                tmp = target.with_suffix(".json.tmp")
-                tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-                os.replace(tmp, target)
+                atomic_replace(target, json.dumps(doc, separators=(",", ":")), fsync=False, sweep_every_s=300.0)
             except Exception as exc:
                 with _LOCK:
                     _LAST_FLUSH = time.monotonic() - FLUSH_S + FLUSH_RETRY_S

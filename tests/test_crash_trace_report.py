@@ -773,3 +773,43 @@ def test_a_seed_whose_marks_cannot_be_read_still_writes_the_session_it_seeds(dd,
     end = sh._close_previous({"state": "running", "pid": 7, "started_at": "2023-11-14T22:13:20Z"}, None)
     kinds = [r["kind"] for r in sh.read_records()]
     assert kinds == ["boot", "end"] and end["clean"] is False and "previous_peaks" not in end
+
+
+def test_the_trace_rotation_and_header_run_under_the_files_lock_and_a_fatal_note_is_appended_under_it(dd, monkeypatch):
+    """R176: two servers booting on one folder could both rotate the trace, and a header could land in a file the other was renaming."""
+    import faulthandler
+    import os
+
+    held = []
+    real_lock = ee.file_lock
+
+    class Spy:
+        def __init__(self, path):
+            self.cm = real_lock(path)
+
+        def __enter__(self):
+            held.append(True)
+            return self.cm.__enter__()
+
+        def __exit__(self, *exc):
+            held.pop()
+            return self.cm.__exit__(*exc)
+
+    seen_while_held = []
+    real_replace = os.replace
+    monkeypatch.setattr(ee, "file_lock", Spy)
+    monkeypatch.setattr(ee.os, "replace", lambda a, b: (seen_while_held.append(bool(held)), real_replace(a, b))[1])
+    monkeypatch.setattr(ee, "_TRACE_HANDLE", None)
+    monkeypatch.setattr(faulthandler, "enable", lambda **kw: None)
+    ee.crash_trace_path().write_text("x" * (ee._TRACE_MAX_BYTES + 1), encoding="utf-8")
+    out = ee.arm_crash_trace()
+    try:
+        assert out["armed"] is True
+        assert seen_while_held == [True], "the trace was rotated outside the file's lock"
+        assert (dd / "diagnostics" / "crash_trace.log.1").exists()
+    finally:
+        if ee._TRACE_HANDLE is not None:
+            ee._TRACE_HANDLE.close()
+            ee._TRACE_HANDLE = None
+    ee.note_fatal_exception(RuntimeError("boom"))
+    assert "Uncaught exception ended the server" in ee.crash_trace_path().read_text(encoding="utf-8")

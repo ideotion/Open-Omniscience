@@ -34,6 +34,7 @@ def quarantine_start(
     write: bool = Query(False),
     include_prose_gate: bool = Query(True),
     include_stubs: bool = Query(False),
+    include_host_mismatch: bool = Query(False),
 ) -> dict:
     """Start the retroactive quarantine job. ``write=False`` (default): pure detection,
     no database mutation. ``write=True``: additionally stamps each detected candidate,
@@ -49,12 +50,18 @@ def quarantine_start(
     or an app restart continues under the SAME criteria, never a silently different set.
 
     ``include_stubs`` (default False) adds the thin-body menu / subscriber-prompt signals. Run it
-    with ``write=False`` first: that is the per-signal count the operator reviews before a write."""
+    with ``write=False`` first: that is the per-signal count the operator reviews before a write.
+
+    ``include_host_mismatch`` (default False) also COUNTS and SAMPLES articles stored on a site other
+    than their source's own. It is report-only: it is a fact about where a page lives, not a verdict,
+    so it marks nothing even with ``write=true`` (see :mod:`src.ingest.host_mismatch`)."""
     from src.analytics.quarantine_job import get_quarantine_manager
 
     try:
         # Forwarded only when asked for, so the manager is called exactly as before otherwise.
         extra: dict[str, Any] = {"include_stubs": True} if include_stubs else {}
+        if include_host_mismatch:
+            extra["include_host_mismatch"] = True
         return get_quarantine_manager().start(
             write=write, include_prose_gate=include_prose_gate, **extra
         )
@@ -70,6 +77,21 @@ def quarantine_status() -> dict:
     return get_quarantine_manager().status()
 
 
+def _sample_row(article_id: int, rows: dict, host_signal: bool) -> dict:
+    """One sampled article: id, title, URL and whether it is already marked; for the host-mismatch
+    signal also its source's domain and the two registrable sites that were compared."""
+    from src.ingest.host_mismatch import check_host
+
+    if article_id not in rows:
+        return {"id": article_id, "present": False}
+    r = rows[article_id]
+    row = {"id": article_id, "title": r[1], "url": r[2], "already_marked": bool(r[3])}
+    if host_signal:
+        pair = check_host(r[2], r[4])
+        row |= {"source_domain": r[4], "source_site": pair.source_site, "article_site": pair.article_site}
+    return row
+
+
 @router.get("/samples")
 def quarantine_samples(
     signal: str | None = Query(None), limit: int = Query(20, ge=1)
@@ -80,11 +102,12 @@ def quarantine_samples(
     is the candidates with the smallest hash of (signal, id), so the same corpus gives the same rows;
     it is a spot-check, not an error rate. ``limit`` above the kept sample is clamped, and says so."""
     from src.analytics.quarantine_job import SAMPLE_PER_SIGNAL, _default_session, get_quarantine_manager
-    from src.database.models import Article
+    from src.database.models import Article, Source
 
     mgr = get_quarantine_manager()
     kept = mgr.sample_ids()
-    tally = mgr.status()["tally"]
+    status = mgr.status()
+    tally = status["tally"]
     wanted = {signal: kept.get(signal, [])} if signal else kept
     n = min(limit, SAMPLE_PER_SIGNAL)
     session = _default_session()
@@ -94,18 +117,34 @@ def quarantine_samples(
             ids = ids[:n]
             rows = {
                 int(r[0]): r
-                for r in session.query(Article.id, Article.title, Article.url, Article.quarantined)
-                .filter(Article.id.in_(ids))
+                for r in session.query(
+                    Article.id, Article.title, Article.url, Article.quarantined, Source.domain
+                ).outerjoin(Source, Source.id == Article.source_id).filter(Article.id.in_(ids))
             } if ids else {}
+            host_signal = sig == "host_mismatch"  # report-only: its count is not a "reason:" tally
+
+            measured = not host_signal or bool(status.get("include_host_mismatch"))
             out[sig] = {
-                "candidates": int(tally.get(f"reason:{sig}", 0)),
+                "candidates": (
+                    int(tally.get("host:mismatch" if host_signal else f"reason:{sig}", 0)) if measured else None
+                ),
                 "shown": len(ids),
-                "rows": [
-                    {"id": i, "title": rows[i][1], "url": rows[i][2], "already_marked": bool(rows[i][3])}
-                    if i in rows else {"id": i, "present": False}
-                    for i in ids
-                ],
+                "rows": [_sample_row(i, rows, host_signal) for i in ids],
             }
+            if host_signal and not measured:
+                out[sig]["unknown"] = None
+                out[sig]["note"] = (
+                    "this run did not ask for host-mismatch (start it with include_host_mismatch=true): "
+                    "the counts are not measured, which is not the same as zero."
+                )
+            elif host_signal:
+                out[sig]["unknown"] = int(tally.get("host:unknown", 0))
+                out[sig]["note"] = (
+                    "a page on another site than its source's own is a fact about where it lives, not "
+                    "a verdict: it may be a syndicated item, a redirect or a wire feed. Nothing is marked "
+                    "for it, even with write=true. 'unknown' counts articles whose source or URL has no "
+                    "readable site and are not counted as mismatches."
+                )
     finally:
         session.close()
     return {
@@ -122,6 +161,88 @@ def quarantine_samples(
         ),
         "run": {"state": mgr.status()["state"], "dry_run": mgr.status()["dry_run"]},
     }
+
+
+@router.get("/raw-id-sources")
+def quarantine_raw_id_sources(limit: int = Query(50, ge=1, le=200)) -> dict:
+    """Stored sources whose NAME is a bare Wikidata identifier (``Q11858063``) and how many articles
+    sit under each. READ-ONLY and local: no request is made and nothing is renamed, marked or
+    quarantined. A bare identifier as a name is a display and attribution defect of the SOURCE row,
+    not a verdict on its articles; naming the label is the separate, consented
+    ``POST /api/sources/resolve-qid-names`` (at most one Wikidata request per 10 s), which also
+    renames nothing without review. Use this first to see how many sources and articles it concerns."""
+    from sqlalchemy import func
+
+    from src.analytics.quarantine_job import _default_session
+    from src.catalog.qid_labels import looks_like_bare_qid
+    from src.database.models import Article, Source
+
+    session = _default_session()
+    try:
+        rows = [(int(i), n, d, e) for i, n, d, e in session.query(Source.id, Source.name, Source.domain, Source.enabled)]
+        flagged = [r for r in rows if looks_like_bare_qid(r[1])]
+        shown = sorted(flagged)[:limit]
+        counts = dict(
+            session.query(Article.source_id, func.count(Article.id))
+            .filter(Article.source_id.in_([r[0] for r in shown])).group_by(Article.source_id)
+        ) if shown else {}
+        return {
+            "examined": len(rows),
+            "raw_id_sources": len(flagged),
+            "shown": len(shown),
+            "rows": [
+                {"source_id": i, "name": n, "domain": d, "enabled": bool(e), "articles": int(counts.get(i, 0))}
+                for i, n, d, e in shown
+            ],
+            "articles_in_shown": sum(int(counts.get(r[0], 0)) for r in shown),
+            "method": (
+                "a source whose whole name is a Wikidata Q-id (the same test the label resolver uses); "
+                "local read, nothing fetched, renamed or marked; rows are the lowest source ids first "
+                "(not the largest sources), and each article count includes quarantined articles"
+            ),
+        }
+    finally:
+        session.close()
+
+
+@router.get("/source-furniture")
+def quarantine_source_furniture(
+    source_id: int = Query(..., ge=1),
+    sample: int = Query(200, ge=10, le=1000),
+    min_share: float = Query(0.3, gt=0.0, le=1.0),
+) -> dict:
+    """Short lines that repeat across ONE source's stored bodies (menu entries, ad slots, banners):
+    candidates for a person to read and, if they are furniture, to add to the rule lists by hand.
+    READ-ONLY and local; it marks and strips nothing, and a repeated line is not a verdict on the
+    articles that carry it (a recurring column title is a repeated line too)."""
+    from src.analytics.quarantine_job import _default_session
+    from src.database.models import Article, Source
+    from src.ingest.furniture import learn_repeated_lines
+
+    session = _default_session()
+    try:
+        src = session.query(Source.id, Source.name, Source.domain).filter(Source.id == source_id).first()
+        if src is None:
+            raise HTTPException(status_code=404, detail="No such source.")
+        total = session.query(Article.id).filter(Article.source_id == source_id).count()
+        texts = [c for (c,) in session.query(Article.content).filter(Article.source_id == source_id)
+                 .order_by(Article.id.desc()).limit(sample)]
+        learned = learn_repeated_lines(texts, min_share=min_share)
+        return {
+            "source": {"id": src[0], "name": src[1], "domain": src[2]},
+            "articles_in_source": total,
+            "sampled": len(texts),
+            **learned,
+            "min_share": min_share,
+            "method": (
+                f"the {len(texts)} newest articles of this source (not a random sample, so a recent template "
+                "change shows more than an old one); a line is listed when it is at most "
+                "12 words and appears in at least min_share of the non-empty bodies read (the examined count) and in 3 or more of them; "
+                "'known' lines are ones the rules already strip. Local read, nothing marked or removed"
+            ),
+        }
+    finally:
+        session.close()
 
 
 @router.post("/{action}")

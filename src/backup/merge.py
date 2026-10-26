@@ -2285,6 +2285,7 @@ _MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
     # a handover, not a gap.
     "sources.article_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
     "sources.counter_reconciled_at": "the reconciliation's own stamp; set by the reconcile, never copied",
+    "sources.outlet_id": "derived from domain and id by three triggers on sources (R177); an incoming id means nothing here, and the INSERT fires them",
     "keywords.article_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
     "keywords.mention_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
     "keywords.last_reconciled_at": "the reconciliation's own stamp; set by the reconcile, never copied",
@@ -5731,7 +5732,7 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
     WHERE THE HOLD STARTS. After :func:`_checkpoint_before_swap` returned (it holds nothing now, but a settings save is not what it
     waits for either way). A restore that cannot start the hold within ``_SWAP_SETTINGS_HOLD_S`` (a save is in flight, perhaps queued
     behind a long writer for the gate) refuses and nothing was written to the corpus; ``0`` does not wait at all."""
-    from src.config.kv_store import KvWriteBusy, hold_writes, kv_invalidate
+    from src.config.kv_store import KvLockStuck, KvWriteBusy, hold_writes, kv_invalidate
     from src.database.library_generation import LibraryBusy
 
     with ExitStack() as hold:
@@ -5741,6 +5742,14 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
             raise RestoreRefused(
                 f"a setting was still being saved after {_SWAP_SETTINGS_HOLD_S:.0f}s (your corpus is being written to) — nothing was "
                 "written to your corpus. Let the running job finish, and import again."
+            ) from None
+        except KvLockStuck:
+            # The settings lock was left held by an operation that ended without letting it go (R144(b)): nothing waits it out, and the
+            # words are fixed (the lock's own text names an operation, a kind of thread and a time, none of which a restore repeats). Without this
+            # the restore ended as a failure.
+            raise RestoreRefused(
+                "the settings lock was left held by an operation that has ended, so settings writes cannot be held for the switch — nothing "
+                "was written to your corpus. Restart Open Omniscience, then import again."
             ) from None
         # Carry the settings the live file holds NOW into the copy that is about to become it, as late as the swap allows: under the
         # hold nothing can be saved to the live file between this read and the replace.

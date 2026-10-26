@@ -72,6 +72,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import UNICODE_WITHHELD, record_text
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace, file_lock
 
 _LOG = logging.getLogger(__name__)
 
@@ -462,16 +463,10 @@ def _write_all(lines: list[dict[str, Any]]) -> None:
     so that the begin line of the run that triggered the rewrite is not lost to a power cut that
     left the old name pointing at a half-written file."""
     target = _path()
-    tmp = target.with_name(target.name + ".tmp")
     text = "".join(json.dumps(d, separators=(",", ":")) + "\n" for d in lines)
     # newline="\n": text mode would write each LF as CRLF on Windows, and ``_trim`` counts one byte a newline,
     # so the file would pass the ceiling it is trimmed to.
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fp:
-        fp.write(text)
-        fp.flush()
-        with contextlib.suppress(OSError):
-            os.fsync(fp.fileno())
-    os.replace(tmp, target)
+    atomic_replace(target, text, newline="\n")
     _sync_folder(target.parent)
 
 
@@ -485,27 +480,28 @@ def _append(rec: dict[str, Any], *, trim_runs: int | None = None) -> bool:
         with _LOCK:
             target = _path()
             target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                size = target.stat().st_size
-            except OSError:
-                size = 0
-            if trim_runs is not None or size + len(line) > MAX_FILE_BYTES:
-                lines, cut = _read_lines_marked(target)
-                trimmed = _trim(lines, KEEP_RUNS if trim_runs is None else trim_runs, len(line) + 1)
-                if cut or len(trimmed) != len(lines):  # a file read only from its end is rewritten whole
-                    _write_all(trimmed)
-            with open(target, "a+b") as fp:
-                fp.seek(0, os.SEEK_END)
-                if fp.tell() > 0:
-                    fp.seek(-1, os.SEEK_END)
-                    last = fp.read(1)
+            with file_lock(target):  # the size check, the trim and the append are one section: another server's trim cannot fall between them
+                try:
+                    size = target.stat().st_size
+                except OSError:
+                    size = 0
+                if trim_runs is not None or size + len(line) > MAX_FILE_BYTES:
+                    lines, cut = _read_lines_marked(target)
+                    trimmed = _trim(lines, KEEP_RUNS if trim_runs is None else trim_runs, len(line) + 1)
+                    if cut or len(trimmed) != len(lines):  # a file read only from its end is rewritten whole
+                        _write_all(trimmed)
+                with open(target, "a+b") as fp:
                     fp.seek(0, os.SEEK_END)
-                    if last != b"\n":
-                        fp.write(b"\n")
-                fp.write(line)
-                fp.flush()
-                with contextlib.suppress(OSError):
-                    os.fsync(fp.fileno())
+                    if fp.tell() > 0:
+                        fp.seek(-1, os.SEEK_END)
+                        last = fp.read(1)
+                        fp.seek(0, os.SEEK_END)
+                        if last != b"\n":
+                            fp.write(b"\n")
+                    fp.write(line)
+                    fp.flush()
+                    with contextlib.suppress(OSError):
+                        os.fsync(fp.fileno())
         return True
     except Exception as err:  # noqa: BLE001 - a record about the diagnostics never fails them
         # The reason, not the traceback: this runs inside the handler of the build's own failure (``end_run`` is called

@@ -311,7 +311,7 @@ def test_quarantine_api_wiring_composes_end_to_end():
     routes = {prefix_m.group(1) + d for d in decorated}
     assert routes == {
         "/api/quarantine/start", "/api/quarantine/status", "/api/quarantine/samples",
-        "/api/quarantine/{action}",
+        "/api/quarantine/raw-id-sources", "/api/quarantine/source-furniture", "/api/quarantine/{action}",
     }
 
     # the router is actually included by _wiring.py, not merely defined.

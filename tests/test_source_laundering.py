@@ -162,9 +162,11 @@ def test_source_laundering_endpoint(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_several_feeds_of_one_outlet_are_one_voice_not_several(db):
+@pytest.mark.parametrize("outlet_ids_unwritten", [False, True], ids=["healed", "outlet_id-NULL"])
+def test_several_feeds_of_one_outlet_are_one_voice_not_several(db, outlet_ids_unwritten):
     """Row J (R146): independence is counted in OUTLETS. Four sources of three domains citing one origin are THREE
-    independent outlets; two of them being the same site's feeds must not read as corroboration."""
+    independent outlets; two of them being the same site's feeds must not read as corroboration. The NULL case is a store
+    the boot step has not reached (R177): the gate must still read the exact form, not each feed as an outlet."""
     db.add_all([
         Source(id=1, name="BBC News", domain="bbc.com", rss_url="https://bbc.com/en/rss"),
         Source(id=2, name="BBC Arabic", domain="bbc.com", rss_url="https://bbc.com/ar/rss"),
@@ -172,6 +174,9 @@ def test_several_feeds_of_one_outlet_are_one_voice_not_several(db):
         Source(id=4, name="Reuters", domain="reuters.com", rss_url="https://reuters.com/rss"),
     ])
     db.commit()
+    if outlet_ids_unwritten:
+        db.execute(Source.__table__.update().values(outlet_id=None))  # an UPDATE of outlet_id alone fires no trigger
+        db.commit()
     for aid, sid in enumerate((1, 2, 3, 4), start=1):
         _art_citing(db, aid, sid, "https://origin.example/claim")
     out = find_source_laundering(db, min_sources=3, min_articles=3)

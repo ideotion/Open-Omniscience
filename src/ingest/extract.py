@@ -110,22 +110,25 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
 
     ``url`` improves trafilatura's metadata resolution (e.g. canonical link). One extraction runs
     at a time in the process (:data:`_LXML_LOCK`), whatever the number of collect workers; how long
-    each waited and held is counted per pass in :mod:`src.ingest.lock_stats`.
+    each waited and held is counted per pass in :mod:`src.ingest.lock_stats`, and its live gauge is
+    marked three times around the lock (``asking`` before it, ``holding`` and ``released`` inside the hold).
     """
     if not html or not html.strip():
         return None
     asked = lock_stats.now()
     got = released = None
     try:
+        lock_stats.asking()
         with _LXML_LOCK:
             got = lock_stats.now()
             try:
+                lock_stats.holding()
                 return _extract_locked(html, url=url)
             except BaseException as exc:
                 _release_frames(exc)
                 raise
             finally:
-                released = lock_stats.now()
+                released = lock_stats.released()
     finally:
         # After the lock is given up, so the statistic adds nothing to a hold; numbers only, never the URL.
         lock_stats.record(asked=asked, got=got, released=released, html=html)

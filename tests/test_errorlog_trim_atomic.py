@@ -101,6 +101,28 @@ def test_a_failed_swap_removes_its_own_temp_and_the_journal_stays(journal, monke
     assert not list(journal.parent.glob("app_errors.jsonl.tmp.*"))
 
 
+def test_a_trim_never_loses_a_line_appended_by_another_process(journal):
+    """K4 (R176): an append between a trim's read and its swap was lost. The trim now holds the journal's lock, and the other process's append waits for it."""
+    _big(journal, 4000)
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {str(Path(errorlog.__file__).parents[2])!r})
+        os.environ["OO_DATA_DIR"] = {str(journal.parent)!r}
+        from src.safety.file_lock import locked_append
+        for i in range(300):
+            locked_append(__import__("pathlib").Path({str(journal)!r}), '{{"appended":%d}}' % i + chr(10))
+        """
+    )
+    child = subprocess.Popen([sys.executable, "-c", script])
+    while child.poll() is None:
+        errorlog._trim(journal)
+    child.wait()
+    got = [ln for ln in journal.read_text(encoding="utf-8").splitlines() if ln.startswith('{"appended"')]
+    assert got == [f'{{"appended":{i}}}' for i in range(300 - len(got), 300)], "an appended line was lost or reordered by a trim"
+    assert len(got) > 0
+
+
 def test_a_record_raised_while_the_journal_is_locked_by_the_same_thread_is_written_after_it_not_waited_for(journal, monkeypatch):
     """The garbage collector runs a finalizer (SQLAlchemy's reports a collected connection) inside the trim; the finalizer logs; the record came back into the
     locked ``_append`` on the same thread and waited for its own lock for ever (a full-suite run of 17 Oct, 20 minutes)."""
@@ -114,7 +136,7 @@ def test_a_record_raised_while_the_journal_is_locked_by_the_same_thread_is_writt
             fired.append(1)
             errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "nested-record"})
 
-    monkeypatch.setattr(errorlog, "_sweep_dead_temps", a_finalizer_that_logs)
+    monkeypatch.setattr("src.safety.file_lock.sweep_dead_temps", a_finalizer_that_logs)
     done = threading.Event()
     threading.Thread(target=lambda: (errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "outer-record"}), done.set()), daemon=True).start()
     assert done.wait(20), "the journal waited on a lock its own thread holds"
@@ -151,13 +173,16 @@ def test_an_interrupt_leaving_the_locked_append_still_writes_the_records_held_me
     _big(journal, 6000)
     fired = []
 
-    def interrupted(path):
+    real = errorlog.locked_append
+
+    def interrupted(path, text, **kw):
         if not fired:
             fired.append(1)
             errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "held-record"})
             raise KeyboardInterrupt
+        return real(path, text, **kw)
 
-    monkeypatch.setattr(errorlog, "_sweep_dead_temps", interrupted)
+    monkeypatch.setattr(errorlog, "locked_append", interrupted)
     with pytest.raises(KeyboardInterrupt):
         errorlog._append({"at": "2026-10-17T00:00:00+00:00", "n": "outer-record"})
     assert '"held-record"' in journal.read_text(encoding="utf-8")

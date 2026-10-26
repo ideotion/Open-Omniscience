@@ -81,6 +81,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure, record_text, scrubbed_name
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger(__name__)
 
@@ -807,9 +808,7 @@ def _read_why(path: Path | None = None) -> tuple[dict[str, Any] | None, str | No
 def _write(state: dict[str, Any], path: Path | None = None) -> None:
     target = path or _path()
     try:
-        tmp = target.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-        os.replace(tmp, target)
+        atomic_replace(target, json.dumps(state, indent=1), fsync=False, sweep_every_s=300.0)
     except OSError as exc:
         log_failure(_LOG, f"could not persist {target.name}", exc, level=logging.DEBUG)
 

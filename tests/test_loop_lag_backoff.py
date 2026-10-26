@@ -130,7 +130,9 @@ def test_the_governor_cuts_one_permit_and_names_loop_lag():
 def test_a_more_certain_harm_keeps_its_own_name():
     """Four reasons, not one blurred 'contention'. A reader of the perf log has to be
     able to tell which lever moved the permits, because the remedies differ."""
-    g = BandwidthGovernor(mode="maximum", w_max=50)
+    # Target mode names all four. In MAXIMUM mode writer and CPU saturation are decided per window, so a tick that carries one of
+    # them with loop lag is named for the flag that acts: loop lag.
+    g = BandwidthGovernor(mode="target", w_max=50)
     g._sem.set_permits(20)
     assert g.observe(100.0, mem_low=True, loop_lagging=True)[1] == "mem-low"
     g._sem.set_permits(20)
@@ -139,6 +141,11 @@ def test_a_more_certain_harm_keeps_its_own_name():
     assert g.observe(100.0, cpu_saturated=True, loop_lagging=True)[1] == "cpu-saturated"
     g._sem.set_permits(20)
     assert g.observe(100.0, loop_lagging=True)[1] == "loop-lag"
+    m = BandwidthGovernor(mode="maximum", w_max=50)
+    m._sem.set_permits(20)
+    assert m.observe(100.0, mem_low=True, loop_lagging=True)[1] == "mem-low"
+    m._sem.set_permits(20)
+    assert m.observe(100.0, writer_saturated=True, loop_lagging=True)[1] == "loop-lag"
 
 
 def test_the_floor_holds():

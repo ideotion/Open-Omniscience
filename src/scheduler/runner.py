@@ -1057,6 +1057,8 @@ def run_scrape_once(
                 # capacity relaxes the ceiling one doubling after a clean pass.
                 ramp_ceiling=_learned,
             )
+            # Bound before the monitor is built: its ``sources_fn`` below reads it from another thread.
+            done = 0
             monitor = CollectionMonitor(
                 governor=governor,
                 pass_id=started.isoformat(timespec="seconds"),
@@ -1064,6 +1066,10 @@ def run_scrape_once(
                 # Per-component memory gauges (P0.3 E1): the fetcher's host
                 # caches are per-pass state; their growth rides every sample.
                 cache_stats_fn=getattr(fetcher, "cache_stats", None),
+                articles_fn=lambda: agg.get("stored", 0),
+                # Every source that RETURNED (a failed, empty or deferred one too): a pass whose sources mostly error would
+                # otherwise never close a window and never act on saturation. ``done`` is bound before the monitor is built.
+                sources_fn=lambda: done,
             )
 
             def _worker(source, source_id):
@@ -1110,7 +1116,6 @@ def run_scrape_once(
                 finally:
                     governor.release()
 
-            done = 0
             futures: list = []
             read_futures: set = set()
             monitor.start()

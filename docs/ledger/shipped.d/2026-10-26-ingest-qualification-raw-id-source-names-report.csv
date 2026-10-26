@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-26,ingest/qualification,Read-only report of sources named by a bare Wikidata ID,shipped,PR #1463; follows PR #1458,src/api/quarantine.py tests/test_quarantine_raw_id_sources.py,"GET /api/quarantine/raw-id-sources lists sources whose name satisfies looks_like_bare_qid with article counts and the method. Local and read-only: no network call, nothing renamed or quarantined; renaming stays with the consented resolver."

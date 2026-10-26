@@ -801,3 +801,14 @@ def test_what_the_watch_adds_to_the_member_is_small(rig):
     out = session_hwm.diagnostics_member(10**7)
     added = _compact(out["this_session"]["watched"]) + _compact(out["previous_session"]["watched"])
     assert added < 1_000, added
+
+
+def test_the_marks_file_is_replaced_through_a_unique_temp(dd, monkeypatch):
+    """R176: two servers on one folder shared one fixed ``.json.tmp``; the temp now carries the pid and thread."""
+    import os
+
+    seen = []
+    real = os.replace
+    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    session_hwm._write({"k": 1})
+    assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen

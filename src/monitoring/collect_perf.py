@@ -377,8 +377,16 @@ class CollectionMonitor:
         writer_stats_fn=None,
         now_fn=None,
         cache_stats_fn=None,
+        articles_fn=None,
+        sources_fn=None,
     ) -> None:
         self._gov = governor
+        #: () -> articles stored so far in this pass: the maximum-mode climb's signal (R180), and logged beside each governor window.
+        self._articles_fn = articles_fn
+        #: () -> source completions so far in this pass: how many sources a window has seen, so a window is read only once its
+        #: count can be.
+        self._sources_fn = sources_fn
+        self._last_window_seen = None
         self._pass_id = pass_id
         self._mode = mode
         self._now = now_fn or time.monotonic
@@ -541,6 +549,30 @@ class CollectionMonitor:
             except Exception as exc:  # noqa: BLE001 - a monitoring fault must never abort a pass
                 log_failure(_LOG, "collect_perf tick failed", exc, level=logging.DEBUG)
 
+    @staticmethod
+    def _count(fn) -> int | None:
+        """A running count from a pass callback, or None when there is no callback or it cannot answer (never a guess)."""
+        if fn is None:
+            return None
+        try:
+            return int(fn())
+        except Exception:  # noqa: BLE001 - an instrument that cannot answer says nothing
+            return None
+
+    def _window_fields(self) -> dict:
+        """The maximum-mode governor's window decision, on the tick that closed it (about one tick in a hundred, so the log does
+        not grow per tick): what the rule SAW (mean rate, previous rate, saturated shares) beside what it did, and the
+        articles stored so far."""
+        window = getattr(self._gov, "last_window", None)
+        if window is None or window is self._last_window_seen:
+            return {}
+        self._last_window_seen = window
+        out = {"gov_window": window}
+        stored = self._count(self._articles_fn)
+        if stored is not None:
+            out["articles_stored"] = stored
+        return out
+
     def _tick(self) -> None:
         rate = self._measure_rate()
         vit = self._vitals_fn() or {}
@@ -646,6 +678,14 @@ class CollectionMonitor:
             cpu_saturated=cpu_saturated,
             mem_low=mem_low,
             loop_lagging=loop_lagging,
+            # MAXIMUM mode climbs on the articles STORED per window (R180), read once the window holds enough source completions;
+            # the collector's own bytes rate rides along in the window record and is the fallback when no article count is passed.
+            # Never the whole process's rate: a wiki-dump or OSM download pulling megabytes a second would read as "the rate rose"
+            # for a reason that has nothing to do with the permits. (Target mode ignores all three and keeps tracking the process
+            # figure it has tracked since Q1012.)
+            window_rate=rate,
+            articles_total=self._count(self._articles_fn),
+            sources_total=self._count(self._sources_fn),
         )
 
         # Aggregates for the summary.
@@ -705,6 +745,7 @@ class CollectionMonitor:
             "inflight_fetches": inflight,
             "inflight_hosts": inflight_hosts,
             "adjust_reason": reason,
+            **self._window_fields(),
             "writer_gate": {
                 "waiters": waiters,
                 "peak_waiters": wstats.get("peak_waiters"),
@@ -1169,6 +1210,64 @@ class CollectionMonitor:
         _append_jsonl(summary)
         _trim_jsonl()
         return summary
+
+
+#: What a closed governor window keeps in the diagnostics: the window's own record (``gov_window``) with the permit count it
+#: ended at and moved to, and the running stored count, each under the name the log row already carries it by, except the
+#: collector rate: the log's ``download_rate_kbps`` is the closing TICK's instantaneous rate, which sits beside the window's own
+#: mean (``collector_kbps``), so the compact row says which it is.
+_WINDOW_ROW_TICK_KEYS = ("ts", "pass_id", "permits", "permits_next", "articles_stored")
+_WINDOW_ROW_TICK_RENAMED = (("download_rate_kbps", "closing_tick_kbps"),)
+
+
+def window_history(limit: int | None = None) -> dict:
+    """The closed governor windows the log still holds, oldest first, one compact row each, with what was kept of them.
+
+    The log has one row per tick (1.5 s or longer) and the window record rides the one tick that closed a window (a window
+    is read after 240 s, so at most one tick in 160), so a diagnostics copy that keeps the newest 200 ticks, or the 17 of the
+    quick one, shows one window or none: not the staircase of permit counts and rates a pass walked, which is what says
+    where a machine settled and what each count paid. This reads the whole file (the cap is ``_CAP_LINES`` rows) and parses
+    only the rows that closed a window.
+
+    Returns ``{"windows", "held", "kept", "partial", "reason"}``. ``limit`` keeps the newest that many; ``held`` is how many the
+    log holds and ``partial`` says ``kept`` is fewer. A log that is missing or cannot be read gives ``windows: None`` and the
+    reason, never an empty list: no window and no way to know are different facts. A row that is damaged (not JSON, not an
+    object, undecodable bytes) is skipped and counted in ``skipped_rows``."""
+    out: dict = {"windows": None, "held": None, "kept": None, "partial": None, "reason": None}
+    try:
+        path = _log_path()
+        if not path.exists():
+            out["reason"] = "no collection-performance log on disk"
+            return out
+        rows: list[dict] = []
+        skipped = 0
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for ln in fh:
+                if '"gov_window"' not in ln:
+                    continue
+                try:
+                    row = json.loads(ln)
+                except ValueError:
+                    skipped += 1
+                    continue
+                window = row.get("gov_window") if isinstance(row, dict) else None
+                if not isinstance(window, dict):
+                    skipped += 1
+                    continue
+                compact = {k: row.get(k) for k in _WINDOW_ROW_TICK_KEYS}
+                compact.update({new: row.get(old) for old, new in _WINDOW_ROW_TICK_RENAMED})
+                compact.update(window)
+                rows.append(compact)
+    except Exception as exc:  # noqa: BLE001
+        out["reason"] = f"the collection-performance log could not be read ({type(exc).__name__})"
+        return out
+    kept = rows if limit is None else rows[-limit:] if limit > 0 else []
+    out.update(windows=kept, held=len(rows), kept=len(kept), partial=len(kept) < len(rows))
+    if skipped:
+        out["skipped_rows"] = skipped
+    if not rows:
+        out["reason"] = "no window closed in the rows the log holds (a pass in target mode closes none)"
+    return out
 
 
 def recent_samples(limit: int = 200) -> list[dict]:

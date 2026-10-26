@@ -598,10 +598,17 @@ def init_db() -> None:
     # whether the store can hold several feeds of one domain. Additive column + backfill, then one
     # cascade-proof table rebuild; a refusal is logged by class and the store keeps one feed per domain.
     _init_step("import:source_identity")
-    from src.database.source_identity import ensure_source_composite_key
+    from src.database.source_identity import ensure_source_composite_key, ensure_source_outlet_id
 
     _init_step("ensure_source_composite_key")
     ensure_source_composite_key(engine)
+
+    # R177: the integer outlet id on sources (and its three triggers). After the rebuild above, which replays the triggers
+    # an old table held. A refusal of the ADD COLUMN itself fails every Source query (the model maps the column, as with any
+    # self-healed column); a refusal of the triggers or the heal leaves NULL rows, which a gate reads exactly while any exist
+    # (``outlets_unhealed``) until the next boot.
+    _init_step("ensure_source_outlet_id")
+    ensure_source_outlet_id(engine)
 
     # R71 (b): the natural key of a restored text-keyed row (places, Wikidata items).
     _init_step("ensure_merged_rows_row_key_column")

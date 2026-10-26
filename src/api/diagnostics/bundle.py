@@ -167,7 +167,22 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: How many of the newest collection-performance ticks the SLIM bundle keeps. The log is one line per
 #: tick and covers about five minutes in 330 KB (the Lenovo bundle); the hours and days are
 #: ``vitals.json``'s, so what the bundle keeps is the last minutes of the collector itself.
-_DEBUG_BUNDLE_SLIM_PERF_TICKS = 20
+#: It was 20 and the whole bundle's 200 (``recent_samples``' default); each gave up the ticks that pay for the window rows
+#: below. The budget is serialised bytes of the largest shape: a window row at its widest and a tick row at its least, both
+#: built by tests/test_collect_perf_window_history.py from the real writers (the tick from ``CollectionMonitor._tick`` with no
+#: vitals at all, which is a supported state), plus the member's own envelope. It is uncompressed ``debug-bundle.json`` bytes. Deflated,
+#: a tick row compresses better than a window row (its sentences repeat), and a review measured the slim copy about 700 B
+#: larger of about 2 KB: the claim is "net zero before compression", not "the zip is the same size".
+_DEBUG_BUNDLE_SLIM_PERF_TICKS = 17
+_DEBUG_BUNDLE_PERF_TICKS = 192
+
+#: How many of the newest closed governor windows each copy keeps (``collect_perf.window_history``), and the member says how
+#: many the log held and whether it is partial. The count is what the ticks given up pay for, not what the log can hold: a
+#: window closes after 240 s AND 100 sources, a tick takes 1.5 s or longer, so a full 5,000-row log holds at least 31 and
+#: has no upper bound a slow machine cannot exceed. The slim copy keeps the newest 11 (at least 44 minutes of a pass), the
+#: staircase of permit counts and rates that a handful of ticks cannot show.
+_DEBUG_BUNDLE_SLIM_PERF_WINDOWS = 11
+_DEBUG_BUNDLE_PERF_WINDOWS = 31
 
 #: The storage guard's state carries the damage record whole (``database_damage``: incidents, notes, the last
 #: incident), and ``database-damage.json`` is that same record as a member of the archive in its own right. Where
@@ -246,6 +261,7 @@ def debug_bundle(
     from src.events.feeds import load_imports, load_verdicts
     from src.monitoring import feed_preflight
     from src.monitoring.collect_perf import recent_samples as _collect_perf_samples
+    from src.monitoring.collect_perf import window_history as _collect_perf_windows
     from src.monitoring.errorlog import recent_errors
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
@@ -466,8 +482,15 @@ def debug_bundle(
         # The bandwidth governor's own log — what to read when collection is slow.
         "collect_perf": _member(
             "collect_perf",
-            (lambda: _collect_perf_samples(limit=_DEBUG_BUNDLE_SLIM_PERF_TICKS))
-            if slim else _collect_perf_samples,
+            lambda: _collect_perf_samples(limit=_DEBUG_BUNDLE_SLIM_PERF_TICKS if slim else _DEBUG_BUNDLE_PERF_TICKS),
+        ),
+        # One compact row per closed governor window (permits, the stored-articles rate it read, what it decided): the
+        # staircase the newest ticks above cannot show. Paid for by the ticks those members no longer keep.
+        "collect_perf_windows": _member(
+            "collect_perf_windows",
+            lambda: _collect_perf_windows(
+                limit=_DEBUG_BUNDLE_SLIM_PERF_WINDOWS if slim else _DEBUG_BUNDLE_PERF_WINDOWS
+            ),
         ),
         # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
@@ -537,6 +560,7 @@ def debug_bundle(
                 for key, member in _DEBUG_BUNDLE_STANDS_ALONE.items()
             },
             "collect_perf_newest_ticks": _DEBUG_BUNDLE_SLIM_PERF_TICKS,
+            "collect_perf_newest_windows": _DEBUG_BUNDLE_SLIM_PERF_WINDOWS,
             "why": (
                 "this copy is the one inside the Diagnostics archive: a section that is a member of "
                 "the archive in its own right is named here (`see`), not written twice, and the "
