@@ -41,7 +41,7 @@ def _selected() -> list[tuple[str, str]]:
 
 
 def test_the_ratchet_selects_what_it_claims_to():
-    # anti-vacuity: the 28 loops of maintenance.py's column steps are in it, and so are the named functions
+    # anti-vacuity: the 28 column-step loops of maintenance.py are among the functions chosen (31 today, with other main-thread steps), and so are the named functions
     chosen = _selected()
     names = {n for _r, n in chosen}
     assert len([1 for r, _n in chosen if r.endswith("maintenance.py")]) >= 28, chosen
