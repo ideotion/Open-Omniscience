@@ -116,6 +116,35 @@ def backfill_feed_keys(conn: Connection) -> int:
     return len(changed)
 
 
+def _names_not_in(names: list[str], other: list[str]) -> list[str]:
+    """``[n for n in names if n not in other]``. A function of its own because a comprehension is inlined into its caller on CPython 3.13 and the
+    back-edge of its filter-skip then sits outside the exception table of the ``try`` in ``upgrade_sources_to_composite_key`` (R205): an
+    interrupt there would skip the ``finally`` that turns foreign-key enforcement back on."""
+    return [n for n in names if n not in other]
+
+
+def _names_in(names: list[str], other: list[str]) -> list[str]:
+    """``[n for n in names if n in other]``, for the same reason as :func:`_names_not_in`."""
+    return [n for n in names if n in other]
+
+
+def _required_columns_without_default(new_table: Table, old_cols: list[str]) -> list[str]:
+    """The columns the new table needs that the old one lacks and that have no default, for the same reason as :func:`_names_not_in`."""
+    return [c.name for c in new_table.columns
+            if c.name not in old_cols and not c.nullable and c.server_default is None and c.default is None]
+
+
+def _extra_schema_objects(conn: Connection) -> list[tuple[str, str]]:
+    """The indexes and triggers of ``sources`` the model does not declare, to be recreated after the rebuild, for the same reason as
+    :func:`_names_not_in`."""
+    return [
+        (n, s) for n, s in conn.exec_driver_sql(
+            "SELECT name, sql FROM sqlite_master WHERE tbl_name='sources' AND sql IS NOT NULL"
+            " AND type IN ('index','trigger')").fetchall()
+        if n not in {ix.name for ix in _SOURCES.indexes}
+    ]
+
+
 def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transaction: bool = False) -> dict[str, Any]:
     """Rebuild ``sources`` with ``UNIQUE (domain, feed_key)``. ``conn`` must have no transaction open: it is refused,
     never committed on the caller's behalf, unless ``commit_open_transaction`` -- which only the Alembic revision
@@ -159,21 +188,15 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         old_cols = _columns(conn, "sources")
         new_table = _SOURCES.to_metadata(MetaData(), name=_NEW)
         new_cols = [c.name for c in new_table.columns]
-        unknown = [c for c in old_cols if c not in new_cols]
+        unknown = _names_not_in(old_cols, new_cols)
         if unknown:
             # Copying only the shared columns would drop these silently, and local data never gives way (R100).
             raise SourceIdentityRefused(f"sources holds columns this build does not know: {', '.join(unknown)}; not dropping them")
-        copy = [c for c in new_cols if c in old_cols]
-        missing = [c.name for c in new_table.columns
-                   if c.name not in old_cols and not c.nullable and c.server_default is None and c.default is None]
+        copy = _names_in(new_cols, old_cols)
+        missing = _required_columns_without_default(new_table, old_cols)
         if missing:
             raise SourceIdentityRefused(f"sources lacks columns the new table needs with no default: {', '.join(missing)}")
-        extra = [
-            (n, s) for n, s in conn.exec_driver_sql(
-                "SELECT name, sql FROM sqlite_master WHERE tbl_name='sources' AND sql IS NOT NULL"
-                " AND type IN ('index','trigger')").fetchall()
-            if n not in {ix.name for ix in _SOURCES.indexes}
-        ]
+        extra = _extra_schema_objects(conn)
         conn.exec_driver_sql("BEGIN IMMEDIATE")
         began = True
         conn.exec_driver_sql(f"DROP TABLE IF EXISTS {_NEW}")
