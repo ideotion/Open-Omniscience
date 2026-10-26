@@ -1,4 +1,4 @@
-"""/status is cached data-aware; the mention count stays EXACT (honesty) (Item 8 P1).
+"""/status: the mention count stays EXACT (honesty) (Item 8 P1; the caching moved to the background pass, A-002).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
 
 from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
@@ -118,76 +117,7 @@ def test_status_returns_the_real_progress_numbers(db):
     assert st["keywords"] > 0
 
 
-def test_status_cache_key_invalidates_across_connections(tmp_path):
-    """The #595/A3 fix, in the shape production actually takes: the WRITER commits on a
-    DIFFERENT connection than the poller, over a FILE-backed store with a real pool that
-    hands out fresh connections. The pinned data_version probe must still bump the key.
-
-    The old same-connection probe passed a same-session test yet went blind here: a poll on
-    a fresh pooled connection after another connection's commit re-read total_changes()==0
-    and a connection-local data_version, so the key never moved and the stale count was
-    served for the whole TTL. NullPool = a fresh connection per session, exactly the
-    production overflow pool that closes connections on return (verified: under it the old
-    probe returns the SAME key across the write; this fix returns a bumped one)."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'oo.db'}", future=True, poolclass=NullPool)
-    Base.metadata.create_all(engine)
-    with engine.connect() as c:  # WAL, like production, so a writer never blocks the probe
-        c.exec_driver_sql("PRAGMA journal_mode=WAL")
-    Sess = sessionmaker(bind=engine, future=True)
-
-    poller_a = Sess()
-    k1 = insights._status_cache_key(poller_a)
-    assert insights._status_cache_key(Sess()) == k1, "no write between polls -> the same key (a cache HIT)"
-
-    # A DIFFERENT session/connection writes and commits (the production shape).
-    writer = Sess()
-    writer.add(Source(name="S", domain="x.test"))
-    writer.commit()
-    writer.close()
-
-    # A FRESH poller on a FRESH connection must see the bumped key (never the stale count).
-    k3 = insights._status_cache_key(Sess())
-    assert k3 != k1, "a commit on another connection must bump the key so progress stays live"
-
-    # A different DB (its own engine) must never collide with this one's cached status.
-    engine2 = create_engine(f"sqlite:///{tmp_path / 'oo2.db'}", future=True)
-    Base.metadata.create_all(engine2)
-    assert insights._status_cache_key(sessionmaker(bind=engine2, future=True)()) != k3
-    engine.dispose()
-    engine2.dispose()
-
-
-def test_status_endpoint_serves_fresh_count_after_a_cross_connection_write(tmp_path):
-    """End-to-end: two polls of the cached endpoint straddling a commit on a DIFFERENT
-    connection return DIFFERENT (live) counts — the cache never serves the stale number
-    through a write it could not see on the poller's own fresh connection."""
-    if insights._CACHE_TTL_S <= 0:
-        pytest.skip("insights read-cache disabled in this env")
-    engine = create_engine(f"sqlite:///{tmp_path / 'oo.db'}", future=True, poolclass=NullPool)
-    Base.metadata.create_all(engine)
-    with engine.connect() as c:
-        c.exec_driver_sql("PRAGMA journal_mode=WAL")
-    Sess = sessionmaker(bind=engine, future=True)
-
-    first = insights.insights_status(Sess())
-    assert first["keywords"] == 0 and first.get("cached") is False
-
-    writer = Sess()
-    writer.add(Keyword(term="Election", normalized_term="election", language="en"))
-    writer.commit()
-    writer.close()
-
-    second = insights.insights_status(Sess())
-    assert second["keywords"] == 1, "the fresh poll must reflect the other connection's commit"
-    assert second.get("cached") is False, "the key changed -> a real recompute, not a stale hit"
-    engine.dispose()
-
-
-def test_status_endpoint_caches_identical_polls(db):
-    _seed(db, n=2)
-    if insights._CACHE_TTL_S <= 0:
-        pytest.skip("insights read-cache disabled in this env")
-    first = insights.insights_status(db)
-    second = insights.insights_status(db)
-    assert first["mentions"] == second["mentions"]
-    assert first.get("cached") is False and second.get("cached") is True
+# The endpoint's caching (a data-aware key on PRAGMA data_version, invalidated by any commit) was retired by audit 0.5.0 A-002: a
+# commit per batch made every poll a miss, so every poll ran the two whole-index scans. The route now serves the totals at once and
+# runs the scans in the background (tests/test_insights_status_served.py pins the cold start, the carry window, the failure window
+# and the cross-connection write). The counts' exactness is still pinned above, on the blocking q.status the background pass runs.
