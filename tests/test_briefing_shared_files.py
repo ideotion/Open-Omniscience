@@ -53,7 +53,9 @@ def test_two_processes_pinning_cards_lose_no_card(dd):
 def test_two_processes_recording_reasons_lose_no_reason(dd):
     child = _child(dd, "from src.briefing import dismiss_reasons as r\nfor i in range(40):\n    r.record_reason(f'child-{i}', 'x')\n")
     n = 0
-    while child.poll() is None:
+    # the store keeps the newest _MAX_ENTRIES by design, so a parent that spins past it while a slow child is still importing would see its
+    # own oldest reasons trimmed (CI: parent-1001 on a loaded runner); the parent stops before the store can trim anything
+    while child.poll() is None and n < dismiss_reasons._MAX_ENTRIES - 40:
         dismiss_reasons.record_reason(f"parent-{n}", "x")
         n += 1
     child.wait()
