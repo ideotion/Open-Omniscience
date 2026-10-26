@@ -377,8 +377,16 @@ class CollectionMonitor:
         writer_stats_fn=None,
         now_fn=None,
         cache_stats_fn=None,
+        articles_fn=None,
+        sources_fn=None,
     ) -> None:
         self._gov = governor
+        #: () -> articles stored so far in this pass: the maximum-mode climb's signal (R180), and logged beside each governor window.
+        self._articles_fn = articles_fn
+        #: () -> source completions so far in this pass: how many sources a window has seen, so a window is read only once its
+        #: count can be.
+        self._sources_fn = sources_fn
+        self._last_window_seen = None
         self._pass_id = pass_id
         self._mode = mode
         self._now = now_fn or time.monotonic
@@ -541,6 +549,30 @@ class CollectionMonitor:
             except Exception as exc:  # noqa: BLE001 - a monitoring fault must never abort a pass
                 log_failure(_LOG, "collect_perf tick failed", exc, level=logging.DEBUG)
 
+    @staticmethod
+    def _count(fn) -> int | None:
+        """A running count from a pass callback, or None when there is no callback or it cannot answer (never a guess)."""
+        if fn is None:
+            return None
+        try:
+            return int(fn())
+        except Exception:  # noqa: BLE001 - an instrument that cannot answer says nothing
+            return None
+
+    def _window_fields(self) -> dict:
+        """The maximum-mode governor's window decision, on the tick that closed it (about one tick in a hundred, so the log does
+        not grow per tick): what the rule SAW (mean rate, previous rate, saturated shares) beside what it did, and the
+        articles stored so far."""
+        window = getattr(self._gov, "last_window", None)
+        if window is None or window is self._last_window_seen:
+            return {}
+        self._last_window_seen = window
+        out = {"gov_window": window}
+        stored = self._count(self._articles_fn)
+        if stored is not None:
+            out["articles_stored"] = stored
+        return out
+
     def _tick(self) -> None:
         rate = self._measure_rate()
         vit = self._vitals_fn() or {}
@@ -646,6 +678,14 @@ class CollectionMonitor:
             cpu_saturated=cpu_saturated,
             mem_low=mem_low,
             loop_lagging=loop_lagging,
+            # MAXIMUM mode climbs on the articles STORED per window (R180), read once the window holds enough source completions;
+            # the collector's own bytes rate rides along in the window record and is the fallback when no article count is passed.
+            # Never the whole process's rate: a wiki-dump or OSM download pulling megabytes a second would read as "the rate rose"
+            # for a reason that has nothing to do with the permits. (Target mode ignores all three and keeps tracking the process
+            # figure it has tracked since Q1012.)
+            window_rate=rate,
+            articles_total=self._count(self._articles_fn),
+            sources_total=self._count(self._sources_fn),
         )
 
         # Aggregates for the summary.
@@ -705,6 +745,7 @@ class CollectionMonitor:
             "inflight_fetches": inflight,
             "inflight_hosts": inflight_hosts,
             "adjust_reason": reason,
+            **self._window_fields(),
             "writer_gate": {
                 "waiters": waiters,
                 "peak_waiters": wstats.get("peak_waiters"),
