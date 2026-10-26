@@ -69,7 +69,7 @@ from src.catalog.provenance import (
     PROVENANCE_CLASSES,
     provenance_of,
 )
-from src.config.kv_store import KvLockStuck, KvWriteRefused
+from src.config.kv_store import KvWriteRefused
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -1195,14 +1195,17 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
 
 
 @app.exception_handler(KvWriteRefused)
-async def settings_write_refused_handler(request: Request, exc: KvWriteRefused):
+async def settings_write_refused_handler(request: Request, refused: KvWriteRefused):
     """A settings save refused, with nothing written, because a restore is switching the corpus file: a 503 whose JSON ``detail`` the
-    UI shows as for any refused save (its text is fixed and carries nothing from the engine), with a ``Retry-After``.
+    UI shows as for any refused save (its text is fixed and carries nothing from the engine).
 
-    A stuck settings lock (:class:`KvLockStuck`) gets the same 503 and the same fixed words and NO ``Retry-After``: the header promises that a
-    retry can succeed, and a lock left held clears only with a restart, so no figure is true of it."""
-    headers = {} if isinstance(exc, KvLockStuck) else {"Retry-After": "30"}
-    return JSONResponse(status_code=503, content={"detail": http_detail(exc)}, headers=headers)
+    ``Retry-After`` is sent only when the refusal carries a figure (``refused.retry_after_s``): a save refused at once during a restore's hold,
+    where the figure is made from the live file's size (see ``kv_store.RETRY_AFTER_BASE_S``). A save that waited the full ``KV_WRITE_WAIT_S``
+    (30 s; that is its own wait, not a measurement of anything) gets none, and neither does a stuck settings lock (:class:`KvLockStuck`), which
+    clears only with a restart: no header can promise a retry there. No client reads this header on a 503 today (``app-core.js`` reads it for a
+    429 only), so it changes nothing a user sees."""
+    headers = {} if refused.retry_after_s is None else {"Retry-After": str(refused.retry_after_s)}
+    return JSONResponse(status_code=503, content={"detail": http_detail(refused)}, headers=headers)
 
 
 @app.exception_handler(Exception)

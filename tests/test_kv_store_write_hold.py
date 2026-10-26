@@ -36,6 +36,7 @@ def _reset_hold_state() -> None:
     with kv_store._hold_lock:
         kv_store._inflight.clear()
         kv_store._hold_by = None
+        kv_store._hold_file_bytes = None
 
 
 @pytest.fixture
@@ -708,4 +709,96 @@ def test_the_api_answers_a_refused_save_as_a_503_with_the_fixed_words():
     response = asyncio.run(settings_write_refused_handler(request, kv_store.KvWriteRefused(kv_store._REFUSED_TEXT)))
     assert response.status_code == 503
     assert kv_store._REFUSED_TEXT.encode("utf-8").decode("utf-8") in response.body.decode("utf-8")
-    assert response.headers["retry-after"] == "30"
+    assert "retry-after" not in response.headers, "a refusal that carries no figure sends no header: 30 was the save's own wait, not a measurement"
+    timed = asyncio.run(settings_write_refused_handler(request, kv_store.KvWriteRefused(kv_store._REFUSED_TEXT, 3)))
+    assert timed.status_code == 503 and timed.headers["retry-after"] == "3"
+
+
+GIB = 2**30
+
+
+def test_the_retry_after_is_one_second_plus_half_a_second_per_gib_rounded_up_and_absent_when_the_size_is_unknown():
+    assert kv_store._retry_after_s(None) is None
+    assert kv_store._retry_after_s(0) == 1
+    assert kv_store._retry_after_s(GIB) == 2  # 1.5
+    assert kv_store._retry_after_s(2 * GIB) == 2  # 2.0 exactly: not rounded to 3
+    assert kv_store._retry_after_s(3 * GIB) == 3  # 2.5
+    assert kv_store._retry_after_s(50 * GIB) == 26  # 26.0: the extrapolated rate, which the constants' comment says was not measured there
+
+
+def test_a_save_refused_at_once_carries_the_figure_made_from_the_size_the_hold_read(store, monkeypatch):
+    """A thread that holds the single-writer gate is refused while the hold is mid-flight, so its ``Retry-After`` is the figure of the live file."""
+    monkeypatch.setenv("OO_KV_STRICT_GATE_ORDER", "0")
+    monkeypatch.setattr(kv_store, "KV_WRITE_WAIT_S", _PATIENCE_S)
+    monkeypatch.setattr(kv_store, "_live_file_bytes", lambda: 3 * GIB)
+    refused: list[kv_store.KvWriteRefused] = []
+
+    def gate_holder() -> None:
+        with write_lock():
+            try:
+                kv_store.kv_set_json("settings.fast", {"v": 5})
+            except kv_store.KvWriteRefused as exc:
+                refused.append(exc)
+
+    with kv_store.hold_writes(1):
+        t = threading.Thread(target=gate_holder)
+        t.start()
+        t.join(_PATIENCE_S)
+    assert len(refused) == 1 and refused[0].retry_after_s == 3
+    assert kv_store._hold_file_bytes is None, "the size outlived the hold"
+
+
+def test_a_save_that_waited_the_full_wait_and_was_refused_gets_no_figure(store, monkeypatch):
+    monkeypatch.setattr(kv_store, "KV_WRITE_WAIT_S", 0.2)
+    monkeypatch.setattr(kv_store, "_live_file_bytes", lambda: 3 * GIB)
+    errors: list[BaseException] = []
+
+    def save() -> None:
+        try:
+            kv_store.kv_set_json("settings.refused", {"v": 3})
+        except BaseException as exc:  # noqa: BLE001 - handed to the test
+            errors.append(exc)
+
+    with kv_store.hold_writes(1):
+        t = threading.Thread(target=save)
+        t.start()
+        t.join(_PATIENCE_S)
+    assert len(errors) == 1 and isinstance(errors[0], kv_store.KvWriteRefused)
+    assert errors[0].retry_after_s is None, "after the full wait the time left is unknown: nothing measured supports a number"
+
+
+def test_a_hold_that_could_not_read_the_file_size_refuses_at_once_without_a_figure(store, monkeypatch):
+    monkeypatch.setenv("OO_KV_STRICT_GATE_ORDER", "0")
+    monkeypatch.setattr(kv_store, "KV_WRITE_WAIT_S", _PATIENCE_S)
+    monkeypatch.setattr(kv_store, "_db_path", lambda: str(store.parent / "no-such-file.db"))
+    assert kv_store._live_file_bytes() is None
+    refused: list[kv_store.KvWriteRefused] = []
+
+    def gate_holder() -> None:
+        with write_lock():
+            try:
+                kv_store.kv_set_json("settings.fast", {"v": 5})
+            except kv_store.KvWriteRefused as exc:
+                refused.append(exc)
+
+    with kv_store.hold_writes(1):
+        t = threading.Thread(target=gate_holder)
+        t.start()
+        t.join(_PATIENCE_S)
+    assert len(refused) == 1 and refused[0].retry_after_s is None
+
+
+def test_the_live_file_size_is_its_size_on_disk(store):
+    assert kv_store._live_file_bytes() == store.stat().st_size
+
+
+def test_a_refused_second_hold_leaves_the_first_holds_size_alone(store, monkeypatch):
+    """The size the Retry-After is made from belongs to the hold that is live: a second hold is refused before it can overwrite it."""
+    monkeypatch.setattr(kv_store, "_live_file_bytes", lambda: 3 * GIB)
+    with kv_store.hold_writes(0):
+        assert kv_store._hold_file_bytes == 3 * GIB
+        monkeypatch.setattr(kv_store, "_live_file_bytes", lambda: 7 * GIB)
+        with pytest.raises(RuntimeError, match="already held"), kv_store.hold_writes(0):
+            pass
+        assert kv_store._hold_file_bytes == 3 * GIB, "the refused second hold replaced the live hold's size"
+    assert kv_store._hold_file_bytes is None
