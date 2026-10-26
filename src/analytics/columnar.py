@@ -1530,14 +1530,17 @@ def _kind_where(kind: str | None, params: list) -> str:
 
 def windowed_term_counts(
     con, *, start_day=None, end_day=None, kind: str | None = None
-) -> dict[int, tuple[int, int]]:
+) -> dict[int, tuple[int, int]] | None:
     """Per-keyword windowed ``(mentions, articles_upper_bound)`` from the rollup.
 
     ``mentions`` is EXACT (== live SUM(count) over the window). ``articles_upper_bound`` is
     ``SUM(articles_on_day)`` — an UPPER BOUND on the window's distinct-article count (see the
     module honesty note). ``start_day`` inclusive / ``end_day`` inclusive; either may be None
-    for an open bound (None/None = all history). Returns ``{}`` if the rollup is absent (the
-    caller falls back to the live query). Counts only, no score.
+    for an open bound (None/None = all history). Counts only, no score.
+
+    ON AN ENGINE ERROR (R194): ``{}`` for an ordinary error (the serve answers empty, and the fallback is counted), ``None``
+    for the engine's out-of-memory error (``OutOfMemoryException``), which the serve reads as "answer from the live scan". A
+    FATAL engine error also returns ``{}`` here; the serve then drops the instance (``take_serve_fatal``) and goes live.
     """
     where = []
     params: list = []
@@ -1553,10 +1556,10 @@ def windowed_term_counts(
             "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "  # nosec B608 - only the constant WHERE fragments (d.day >= ?/<= ?) are concatenated; every value is a bound ? param
             "FROM keyword_daily d" + kw + " GROUP BY keyword_id", params
         ).fetchall()
-    except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+    except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> empty; the engine's memory wall -> live (R194)
         _note_serve_fallback("term-counts", type(exc).__name__, _serve_fatal_kind(type(exc).__name__, (
             _ALLOCATION_FATAL_PHRASE in str(exc))), con)
-        return {}
+        return None if type(exc).__name__ == _PLAIN_OOM_CLASS else {}
     return {int(r[0]): (int(r[1]), int(r[2])) for r in rows}
 
 
@@ -1636,21 +1639,25 @@ def serve_fallback_counts() -> dict:
 
 def windowed_top_terms_raw(
     con, *, start_day=None, end_day=None, kind: str | None = None, limit: int = 20
-) -> list[dict]:
+) -> list[dict] | None:
     """The ranked windowed most-mentioned rows from the rollup — the shape the live
     ``top_terms`` produces BEFORE the Python hidden-word / family / ring layers, so the seam
     (D3) can apply those unchanged and stay byte-identical.
 
     Ordered by ``mentions`` DESC (the live order). ``mentions`` EXACT; ``articles`` the
-    upper bound. Returns ``[]`` if the rollup / metadata are absent. Counts only, no score.
+    upper bound. Counts only, no score.
+
+    ON AN ENGINE ERROR (R194): ``[]`` for an ordinary error (empty on error; the fallback is counted), ``None`` for the
+    engine's out-of-memory error (``OutOfMemoryException``), which the serve reads as "answer from the live scan". A FATAL
+    engine error also returns ``[]`` here; the serve then drops the instance (``take_serve_fatal``) and goes live.
     """
     sql, params = _top_terms_query(start_day, end_day, kind, limit)
     try:
         rows = con.execute(sql, params).fetchall()
-    except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+    except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> empty; the engine's memory wall -> live (R194)
         _note_serve_fallback("top-terms", type(exc).__name__, _serve_fatal_kind(type(exc).__name__, (
             _ALLOCATION_FATAL_PHRASE in str(exc))), con)
-        return []
+        return None if type(exc).__name__ == _PLAIN_OOM_CLASS else []
     return [
         {"term": r[0], "normalized": r[1], "kind": r[2], "language": r[3],
          "mentions": int(r[4]), "articles": int(r[5])}
@@ -1812,7 +1819,7 @@ def keyword_daily_parity(
     """
     from sqlalchemy import text as _sql
 
-    roll = windowed_term_counts(con, start_day=start_day, end_day=end_day)
+    roll = windowed_term_counts(con, start_day=start_day, end_day=end_day) or {}  # None (out of memory) reads as before: no rows
     clauses = ["observed_on IS NOT NULL"]
     p: dict = {}
     bounded = scan_bound is not _UNBOUNDED
