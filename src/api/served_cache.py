@@ -91,6 +91,12 @@ _BUILD_LOCKS_GUARD = threading.Lock()
 # Published as ``recount_running_s``, so a client can say "the server is busy"
 # only when a recount has MEASURABLY failed to finish, never from age alone.
 _RECOUNT_STARTED: dict[str, float] = {}
+# Bumped by :func:`invalidate` under ``_LOCK`` (the whole cache, or one key). A compute captures ``_generation(key)`` BEFORE it reads
+# the database and :func:`_store` refuses, under the same lock, to store what was computed across a bump: a swap that lands after a
+# compute's last own check and before its store would otherwise cache the old file's numbers on the same engine object. The counters
+# are never reset (a Python int does not overflow); a key that was never invalidated reads (all, 0).
+_GEN_ALL = [0]
+_GEN_KEYS: dict[str, int] = {}
 # Only a handful of fixed keys exist (they are module constants at the call
 # sites, never user input), but bound the dict anyway.
 _MAX_KEYS = 16
@@ -192,9 +198,18 @@ def _recount_started(key: str) -> float | None:
         return _RECOUNT_STARTED.get(key)
 
 
-def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> None:
+def _generation(key: str) -> tuple[int, int]:
+    """The invalidation generation a compute of ``key`` is about to start under; see ``_GEN_ALL``."""
+    with _LOCK:
+        return _GEN_ALL[0], _GEN_KEYS.get(key, 0)
+
+
+def _store(key: str, payload: dict, bind: object | None, probe: int | None, generation: tuple[int, int] | None = None) -> None:
     """Cache ``payload``. An entry with no bind is not stored: it could never pass
-    the bind gate, so it would occupy a slot that can never be served."""
+    the bind gate, so it would occupy a slot that can never be served.
+
+    ``generation``, when given, is what :func:`_generation` read before the payload's compute began: if the cache was invalidated
+    since (checked under the lock the store takes), the payload may be about a file that was swapped out and is not stored."""
     now = time.time()
     # A payload may carry ``__ttl_s__``: how long THIS entry stands before a recompute is considered. It is how a recorded
     # failure holds its stated window instead of being retried at the endpoint's normal interval (the retry is a scan).
@@ -211,6 +226,8 @@ def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> N
     if bind is None:
         return
     with _LOCK:
+        if generation is not None and generation != (_GEN_ALL[0], _GEN_KEYS.get(key, 0)):
+            return
         _CACHE[key] = {
             "payload": payload,
             "built_at": now,
@@ -235,8 +252,9 @@ def refresh(key: str, compute, *, probe: int | None = None) -> dict | None:
         from src.database.session import session_scope
 
         with session_scope() as s:
+            generation = _generation(key)  # BEFORE the compute reads anything
             fresh = compute(s)
-            _store(key, fresh, _bind_of(s), change_probe() if probe is None else probe)
+            _store(key, fresh, _bind_of(s), change_probe() if probe is None else probe, generation)
             return fresh
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
         log_failure(_LOG, f"served-cache background refresh failed for {key}", exc, level=logging.WARNING)
@@ -345,8 +363,9 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
             return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=time.time(),
                              verified=later is not None and later == snapshot["probe"],
                              recount_started=_recount_started(key))
+        generation = _generation(key)  # BEFORE the compute reads anything
         fresh = compute(session)
-        _store(key, fresh, _bind_of(session), probe)
+        _store(key, fresh, _bind_of(session), probe, generation)
         built = {"payload": fresh, "built_at": time.time()}
         later = change_probe()
         return _decorate(built, ttl_s=ttl_s, cached=False, now=time.time(),
@@ -364,8 +383,10 @@ def invalidate(key: str | None = None) -> None:
     with _LOCK:
         if key is None:
             _CACHE.clear()
+            _GEN_ALL[0] += 1
         else:
             _CACHE.pop(key, None)
+            _GEN_KEYS[key] = _GEN_KEYS.get(key, 0) + 1
     # State a caller keeps BESIDE the cache (a carried scan) is about the same corpus the entry was, so it goes with it.
     for hook in tuple(_INVALIDATE_HOOKS):
         try:
