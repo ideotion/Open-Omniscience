@@ -171,11 +171,12 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: giving up the ticks that pay for them. The budget is serialised bytes of the largest shape: a window row at its widest (400 B)
 #: and a tick row at its least, plus the member's own envelope, uncompressed ``debug-bundle.json`` bytes (deflated, a tick row compresses
 #: better than a window row, and a review measured the slim copy about 700 B larger of about 2 KB: the claim is "net zero before
-#: compression", not "the zip is the same size"). The tick figure is a RECORDED CONSTANT, not the tick a test builds today: 1,552 B,
-#: the least a real tick measured at the time of the trade (the event-loop watchdog measuring; Export's re-measure,
-#: /mnt/project-files/audit-0.5.0/inputs/remeasure-1464.md), pinned in tests/test_collect_perf_window_history.py. A later trim of the
-#: tick only makes the zip smaller than it was; a pin against the live tick would fail on it. 31 widest windows with their envelope
-#: (12,501 B) are paid by 9 ticks (13,968 B), 11 by 3 (4,656 B): so 191 and 17.
+#: compression", not "the zip is the same size"). The tick figure is a RECORDED CONSTANT, not the tick a test builds today: 1,552 B, the least a maximum-mode tick measured at the
+#: time of the trade (the event-loop watchdog measuring; Export's re-measure of #1464 found production ticks at 1,653 B or more, and
+#: 1,478 B for a target-mode tick with no vitals, which only a log mixing both modes could make the newest ticks given up: that paper
+#: case is not covered by the pin). It is pinned in tests/test_collect_perf_window_history.py. A later trim of the tick only makes the
+#: zip smaller than it was; a pin against the live tick would fail on it. 31 widest windows with their envelope and the two keys that
+#: carry them (about 12,560 B) are paid by 9 ticks (13,968 B), 11 by 3 (4,656 B): so 191 and 17.
 _DEBUG_BUNDLE_SLIM_PERF_TICKS = 17
 _DEBUG_BUNDLE_PERF_TICKS = 191
 

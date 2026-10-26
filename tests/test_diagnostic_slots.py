@@ -817,3 +817,19 @@ def test_a_member_far_over_its_budget_is_named_over_budget_cut_on_record_boundar
     assert all(v["bytes"] <= 4_000_000 for v in manifest["volumes"]) and len(manifest["volumes"]) >= 2
     (dest,) = [Path(p) for p in dv.reassemble_cut_members(vol_dir, tmp_path / "back")]
     assert json.loads(dest.read_text(encoding="utf-8")) == giant_member(100_000), "nothing was dropped"
+
+
+def test_a_windows_member_that_failed_gives_up_no_ticks_either(db, monkeypatch):
+    """A failed read (the member's own ``{error}``) is not a log that holds windows: the copies keep their old tick counts."""
+    import src.monitoring.collect_perf as cp
+
+    asked = []
+    monkeypatch.setattr(cp, "recent_samples", lambda limit=200: asked.append(limit) or [])
+
+    def boom(limit=None):
+        raise RuntimeError("unreadable")
+
+    monkeypatch.setattr(cp, "window_history", boom)
+    slim, whole = _bundle(db, True), _bundle(db, False)
+    assert asked == [20, 200]
+    assert "error" in slim["collect_perf_windows"] and "error" in whole["collect_perf_windows"]

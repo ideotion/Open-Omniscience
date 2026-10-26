@@ -79,10 +79,11 @@ def _real_window_and_tick(tmp_path, monkeypatch):
     return gov, json.loads(line), len(line) + 1
 
 
-#: The least a real tick row measured when the windows were paid for: the event-loop watchdog measuring, no vitals (Export's re-measure,
-#: /mnt/project-files/audit-0.5.0/inputs/remeasure-1464.md; the tick this test builds, ``_real_window_and_tick``, has no ``start()`` and so
-#: is not the least a real tick is). A RECORDED constant, not the live tick: a later trim of the tick only makes the zip smaller than it was
-#: when the trade was made, and a pin against the live tick would fail on that.
+#: The least a MAXIMUM-MODE tick row measured when the windows were paid for: the event-loop watchdog measuring, no vitals (Export's
+#: re-measure of #1464: production ticks 1,653 B or more; a target-mode tick with no vitals 1,478 B, which only a log mixing both modes could
+#: make the newest ticks given up, so that paper case is not covered). The tick this test builds, ``_real_window_and_tick``, has no
+#: ``start()`` and so is not the least. A RECORDED constant, not the live tick: a later trim of the tick only makes the zip smaller than it
+#: was when the trade was made, and a pin against the live tick would fail on that.
 _LEAST_TICK_BYTES_AT_THE_TRADE = 1552
 
 
@@ -106,6 +107,8 @@ def test_the_window_rows_cost_no_more_bytes_than_the_ticks_each_copy_gave_up(tmp
               "cpu_saturated_share": 0.99, "decision": "saturated-at-floor"}
     row = len(json.dumps(widest, separators=(",", ":"))) + 1
     envelope = len(json.dumps({"windows": [], "held": 99999, "kept": 99999, "partial": True, "reason": None, "skipped_rows": 99999}))
+    # the two keys that carry the windows, which the feature adds beside the rows
+    envelope += len('"collect_perf_windows":') + len('"collect_perf_newest_windows":11,')
     assert d._DEBUG_BUNDLE_SLIM_PERF_WINDOWS * row + envelope <= (
         d._DEBUG_BUNDLE_SLIM_PERF_TICKS_NO_WINDOWS - d._DEBUG_BUNDLE_SLIM_PERF_TICKS) * _LEAST_TICK_BYTES_AT_THE_TRADE
     assert d._DEBUG_BUNDLE_PERF_WINDOWS * row + envelope <= (
