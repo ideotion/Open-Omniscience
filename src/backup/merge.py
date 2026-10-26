@@ -5835,7 +5835,13 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
     WHERE THE HOLD STARTS. After :func:`_checkpoint_before_swap` returned (it holds nothing now, but a settings save is not what it
     waits for either way). A restore that cannot start the hold within ``_SWAP_SETTINGS_HOLD_S`` (a save is in flight, perhaps queued
     behind a long writer for the gate) refuses and nothing was written to the corpus; ``0`` does not wait at all."""
-    from src.config.kv_store import KvLockStuck, KvWriteBusy, hold_writes, kv_invalidate
+    from src.config.kv_store import (
+        KvHoldTaken,
+        KvLockStuck,
+        KvWriteBusy,
+        hold_writes,
+        kv_invalidate,
+    )
     from src.database.library_generation import LibraryBusy
 
     with ExitStack() as hold:
@@ -5845,6 +5851,12 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
             raise RestoreRefused(
                 f"a setting was still being saved after {_SWAP_SETTINGS_HOLD_S:.0f}s (your corpus is being written to) — nothing was "
                 "written to your corpus. Let the running job finish, and import again."
+            ) from None
+        except KvHoldTaken:
+            # A second restore reached the switch while the first was holding settings writes (audit 0.5.0, item 13): the same refusal as its
+            # neighbours (another writer is active), not a bare RuntimeError that the API reported as "restore failed". Nothing was written yet.
+            raise RestoreRefused(
+                "another restore is already switching your corpus — nothing was written to your corpus. Wait for it to finish, then import again."
             ) from None
         except KvLockStuck:
             # The settings lock was left held by an operation that ended without letting it go (R144(b)): nothing waits it out, and the
