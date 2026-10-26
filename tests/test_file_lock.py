@@ -402,3 +402,34 @@ def test_a_failed_fsync_keeps_the_old_file_and_removes_the_temp_but_a_filesystem
     monkeypatch.setattr(file_lock.os, "fsync", einval)
     atomic_replace(target, "new")
     assert target.read_text(encoding="utf-8") == "new"
+
+    for code in (errno.ENOSYS, errno.EOPNOTSUPP):  # the other ways a filesystem says it has no fsync
+
+        def none_here(fd, code=code):
+            raise OSError(code, "no fsync here")
+
+        monkeypatch.setattr(file_lock.os, "fsync", none_here)
+        atomic_replace(target, f"written-{code}")
+        assert target.read_text(encoding="utf-8") == f"written-{code}"
+
+
+def test_one_file_through_a_symlinked_folder_raises_instead_of_deadlocking(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    outcome: list[BaseException | str] = []
+
+    def run() -> None:
+        with lock(real / "a.json"):
+            try:
+                with lock(link / "a.json"):
+                    outcome.append("took it twice")
+            except RuntimeError as fault:
+                outcome.append(fault)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(10)
+    assert not t.is_alive(), "the second spelling waited for ever on the operating-system lock this thread holds"
+    assert isinstance(outcome[0], RuntimeError)

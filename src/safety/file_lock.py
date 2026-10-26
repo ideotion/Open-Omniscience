@@ -101,7 +101,7 @@ def _contended(fault: OSError) -> bool:
 
 
 def _fsync_unsupported(fault: OSError) -> bool:
-    return fault.errno in (errno.EINVAL, errno.ENOTSUP)
+    return fault.errno in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS)
 
 
 def _try_os_lock(fd: int, shared: bool) -> None:
@@ -174,7 +174,7 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
     got_at = began
     try:
         sidecar = path.with_name(path.name + _SIDECAR)
-        loc = _local(os.path.abspath(sidecar))  # one key per file, whatever spelling of its path a caller used
+        loc = _local(os.path.realpath(sidecar))  # one key per file, whatever spelling of its path (relative, or through a symlink) a caller used
         held = Held(locked=False, reason="not taken")
         with loc.cond:
             while True:
