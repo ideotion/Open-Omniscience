@@ -137,6 +137,9 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **`hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
   is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
   a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
+- **A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
+  only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
+  bodies have one version.
 - **The source-qualification dry run** (`R184`): the operator step in `qualification/dry-run-note-2026-10-17.md`; its stub signals
   stay default-off.
 - **PR #1456** (the dependabot ruff floor): left open and untouched at the tag (`R190`); the registry entry, `pyproject.toml` and the
