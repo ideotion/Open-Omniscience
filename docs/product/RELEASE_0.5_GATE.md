@@ -107,7 +107,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
 that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
-real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, 24–29, 35 and 37 by the lanes' rulings and 30–34 and 36 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
+real-install step is 0.5.1 open item N (§1c)*. Items 1–11 are §1c's; items 12–23 are added at the tag, 24–29, 35 and 37–46 by the lanes' rulings and 30–34 and 36 by the close-out audit (R215), below the table. A row heading that still reads OPEN names a row whose only remaining clause is its 0.5.1 open item in the table above; headings keep the wording of the day the row was built.
 
 | Row | Stands at the tag | 0.5.1 open item |
 |---|---|---|
@@ -131,7 +131,7 @@ report and the agreement comparison on the reference corpus) and Q515's cost; th
 egress-blocked in the sandbox, the pins ship blank and refusing by design), T9 (a collection pass online) and T10. Rows A, C, E,
 H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer step, on the same footing.
 
-**Items added at the tag (12–23), by the lanes' rulings (24–29, 35, 37) and by the close-out audit (30–34, 36).**
+**Items added at the tag (12–23), by the lanes' rulings (24–29, 35, 37–46) and by the close-out audit (30–34, 36).**
 
 - **12. Launchers and locks on real systems** (RC2's six): the macOS/bash 3.2 launcher run (the mkdir-lock owner token and its takeover
   race); the PowerShell 5.1 and cmd.exe launchers; a real Windows console (Ctrl-C stop and summary rows, the `Global\` mutex name);
@@ -205,6 +205,39 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   500 with no tally. The same was already true of the 200-row commits inside `ingest_emails`; a re-import is idempotent because
   duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally.
 - **37. The `/api/database/figures` memo**: it is keyed without the engine identity, so the figures can be stale after a swap; 0.5.1.
+- **38. Panic wipe and the served memo**: the panic wipe must call `served_cache.invalidate()` after the wipe, so the served figures and
+  scan memo cannot answer with pre-wipe data. Done in PR #1496 (keyword lane).
+- **39. The law corpus heal and the article-date rule**: `src/law/corpus.py` heal clears `published_at` without re-indexing, so the
+  article-date rule (`coalesce(published_at, created_at)`) can move an article between periods; the heal must re-index or keep the
+  date; 0.5.1 (Export lane, which owns the date rule).
+- **40. Boot sweeps and the `.oo-backup-` prefix**: the boot sweeps in `stream_backup` and `forensics` do not know the `.oo-backup-`
+  prefix, so a snapshot left by a crash survives until the next backup-route call; 0.5.1 (Export lane).
+- **41. A graceful-shutdown cancel during a long snapshot** leaves `.oo-backup-*/snapshot.db` until the next route call, at least 24 h
+  later; the threadpool shields the native cancel; 0.5.1 (Export lane).
+- **42. The backup route and a client that goes away** (a stated limit, R235): `GET /api/database/backup` keeps streaming after the client
+  disconnects when Starlette is at the 1.5 to 1.7 floor; measured on a 20 GB sparse snapshot, 1.7.0 had not released after 60 s, 1.8.0
+  released in 0.02 s and 1.10.0 in 0.03 s, so the limit holds only for that floor. Raising the floor to 1.8.0 is a version-coupling
+  change (registry, `pyproject.toml` and the lock together) and a proposal, written in `audit-0.5.0/inputs/open-items.md` as «A-008 item
+  42 proposal»; 0.5.1 (Export lane).
+- **43. `tests/test_figures_cold_start.py` fails after the 58 files before it in the API shard** (Export lane, 0.5.1): its two tests (a cold
+  route answers without the count and then carries it; a count past its deadline is a named failure held for its window) fail only when
+  run after the 58 files that precede them in the API shard, and pass alone; identical on main before #1487. An order dependence on
+  main, not bisected.
+- **44. A Thorough diagnostics build has no scan budget**: it runs 16 scans of up to 300 s each, so by the deadlines alone it can hold
+  the collection pause for up to 80 minutes (a ceiling from the constants, not an observation). Observed: 53.5 minutes of build, 50.7 of
+  them paused, at 12 M mentions on a 2-core machine (the user's 0.4.0 zip of 2026-10-16); 145 s and 246 s on a 4-vCPU lab at 1.56 M and
+  3.12 M mentions, one run each. The zip stays small: 58 to 59 files, under 3 MB uncompressed and under 0.5 MB as an archive, the largest
+  member about 0.5 MB against the 12 MB per-member cap. Quick is held to 600 s of scans. Not measured: a current-tree Thorough build on a
+  real written store, an encrypted store, a corpus past 12 M mentions. 0.5.1 takes the first real zip; whether Thorough should carry a
+  budget is a decision for then, not a defect now. Record: `rc-diagnostics/max-mode-zip-limits-export.md` in the project folder.
+- **45. `duckdb_limit_mb` is decimal megabytes** (measured on DuckDB 2.0.0: `SET memory_limit='1000MB'` reads back as 953.6 MiB): the
+  figure is applied to DuckDB as `f"{n}MB"` (`src/analytics/columnar.py`) and compared in `rollup_serve.py`'s affordability check with
+  `avail_mb`, which is mebibytes (`psutil` bytes / 1024^2). The two differ by 4.9 %, in the safe direction (the check overstates what the build
+  can take). Left as it is; any new reader of the field should treat it as MB (10^6 bytes).
+- **46. A right-to-left date reordered outside the keyed card frames** (qual lane, 0.5.1, a proposal): `app-home.js` lines 367, 674 and 881 feed
+  meta lines, and about 40 `slice(0, 10)` sites in `app-analysis`, `app-corpus` and the claim code interpolate a raw ISO date after an Arabic
+  name. The proposal is one shared `ooIsoDate()` helper that isolates the date under RTL, plus a ratchet test over the sites. Item 22's fix
+  (the qualification lane's next PR) covers the keyed card frame point only.
 ---
 
 ## 2. The rows

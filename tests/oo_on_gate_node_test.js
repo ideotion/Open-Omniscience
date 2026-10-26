@@ -37,7 +37,14 @@ console.error = (m) => warned.push(String(m));
 eval(fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8"));
 
 const ran = [];
-for (const n of ["secureErase", "removeAuthor", "removeAnnotation", "removeUserCalendar", "removeDraftItem", "deleteSource"]) {
+const GESTURE = [
+  "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
+  "excludeKeyword", "familyResetGroup", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched", "osmPickRemove",
+  "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "removeAnnotation", "removeAuthor",
+  "removeDraftItem", "removeUserCalendar", "revertAllCollapse", "schedulerStop", "secureErase", "sgRemoveMember",
+  "stopVllm", "unattendedStop",
+];
+for (const n of [...GESTURE, "deleteSource"]) {
   global[n] = (...a) => ran.push(n + ":" + a.join(","));
 }
 
@@ -85,7 +92,7 @@ assert.deepStrictEqual(touched, []);
 
 // 2. The gesture-only names: a person's click (or Enter/Space on a focused control) runs them; an
 //    error/load/toggle/focus/hover event, a synthetic click and any other key do not.
-const NAMES = ["secureErase(8)", "removeAuthor('a')", "removeAnnotation(0)", "removeUserCalendar('k')", "removeDraftItem('d')"];
+const NAMES = GESTURE.map((n) => n + (n === "secureErase" ? "(8)" : n === "lawSetWatched" ? "('a', false)" : "('a')"));
 for (const call of NAMES) {
   const name = call.split("(")[0];
   ran.length = 0;
@@ -112,8 +119,7 @@ fire("error", el({ "data-on-error": "deleteSource(1)" }));
 assert.strictEqual(ran.length, 1, "a name outside the gesture set kept working");
 
 // 3. The set the dispatcher holds is the set this test names.
-assert.deepStrictEqual(Array.from(window.ooOn.GESTURE_ONLY).sort(),
-  ["removeAnnotation", "removeAuthor", "removeDraftItem", "removeUserCalendar", "secureErase"]);
+assert.deepStrictEqual(Array.from(window.ooOn.GESTURE_ONLY).sort(), [...GESTURE].sort());
 assert.deepStrictEqual(Array.from(window.ooOn.SET_VALUE_IDS).sort(), ["agenda-tag", "dumpread-title"]);
 assert.deepStrictEqual(Array.from(window.ooOn.CLICK_IDS).sort(), ["anno-import"]);
 

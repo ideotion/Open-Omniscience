@@ -1685,12 +1685,19 @@
     function _cardFrameVars(fr) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tr = (fr && fr.tr) || [], md = (fr && fr.md) || [], v = (fr && fr.v) || {}, out = {};
+      const rtl = document.documentElement.dir === "rtl";
       Object.keys(v).forEach(k => {
         if (v[k] == null) return;
         if (tr.indexOf(k) !== -1) out[k] = t(String(v[k]));
         else if (md.indexOf(k) !== -1) out[k] = _cardMonthDay(v[k]);
         else if (typeof v[k] === "number" && typeof fmtNum === "function") out[k] = fmtNum(v[k]);
-        else out[k] = String(v[k]);
+        // DATA that is not a number (an ISO date, a keyword, a title) rides in a FIRST STRONG ISOLATE in a
+        // right-to-left line (item 22). After an Arabic letter a punctuation-joined run such as 2025-12-14 is
+        // laid out as 14-12-2025 -- a misread date, not an ugly one -- because the hyphen is no longer
+        // joined to the digits; the isolate keeps the value one run in its own direction. Plain characters
+        // (they survive esc() and a title), and only where the line is right-to-left: a left-to-right
+        // reader's text stays byte-identical.
+        else out[k] = rtl ? "\u2068" + String(v[k]) + "\u2069" : String(v[k]);
       });
       return out;
     }

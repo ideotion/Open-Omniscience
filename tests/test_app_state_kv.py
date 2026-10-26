@@ -202,6 +202,18 @@ def test_a_read_leaves_a_leftover_wal_byte_for_byte_and_still_reads_the_value(tm
     except kv_store.KvReadError as exc:
         got, why = None, f"the read failed ({exc})"
     files = {f.name: f.stat().st_size for f in sorted(tmp_path.iterdir())}
+    if got != {"theme": "dark"}:
+        # A None has several silent causes (a store path that is not this one, a non-SQLite DATABASE_URL, a first-run fold of "no such table"): say which one met
+        # THIS process, and what a direct read-only read of the file this test wrote answers (the files above are the ones the stand-in left, so a read that finds
+        # nothing here with a different path, or an error here with None above, names the layer that dropped the value).
+        import os
+
+        try:
+            direct = repr(kv_store._read_value(str(db), "settings.app", read_only=True))
+        except Exception as exc:  # noqa: BLE001 - diagnostics only
+            direct = f"{type(exc).__name__}: {exc}"
+        why += (f"; kv path {kv_store._db_path()!r} (this test wrote {str(db)!r}); DATABASE_URL set: {bool(os.environ.get('DATABASE_URL'))}; "
+                f"a direct read-only read of the file: {direct}")
     assert got == {"theme": "dark"}, f"{why}; files in the data dir (bytes): {files}; stdlib sqlite {sqlite3.sqlite_version}"
     assert wal.exists() and hashlib.sha256(wal.read_bytes()).hexdigest() == before
 
