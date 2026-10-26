@@ -1619,6 +1619,8 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
       const n = (id, key) => {
+        // null is "not known yet" (the index scans run in the background), not zero: a zero would read as an empty index.
+        if (s && s[key] == null && s.index_counts_state) return `<span id="${id}" data-v="">${esc(_insUnknownText(s))}</span>`;
         const v = Math.round((s && s[key]) || 0);
         return `<span id="${id}" data-v="${v}">${fmtNum(v, 0)}</span>`;
       };
@@ -1643,14 +1645,49 @@
       return "· " + esc(tf("{n} to index", { n: "\u0001" }))
         .replace("\u0001", () => `<strong>${fmtNum(s.remaining, 0)}</strong>`);
     }
+    // The three figures that need a full pass over the mention index (indexed, remaining, mentions) are computed in the background
+    // and carried between passes, so the server states which of three things they are: counted at a time, being counted, or not
+    // counted with the reason. The words are the Library tile's (same keys, already translated); the long form rides the hover bubble.
+    function _insUnknownText(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      return s.index_counts_state === "failed" ? t("not counted") : t("counting…");
+    }
+    function _insCountsNote(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const clock = iso => { if (!iso) return "—"; try { return new Date(iso).toLocaleTimeString(); } catch (e) { return iso; } };
+      if (s.index_counts_state === "computing") {
+        return t("Counting every keyword mention in the background since {t}; the other figures are exact now.")
+          .replace("{t}", clock(s.pending_since));
+      }
+      if (s.index_counts_state === "failed" && s.index_counts_failure) {
+        const f = s.index_counts_failure;
+        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", String(f.deadline_s))
+          : f.kind === "memory-short" ? t("stopped because the machine was nearly out of memory") : String(f.kind);
+        return t("Not counted: the keyword-mention count stopped ({why}) at {t}; it is tried again after {m} min.")
+          .replace("{why}", why).replace("{t}", clock(f.at)).replace("{m}", String(Math.round((f.retry_after_s || 0) / 60)));
+      }
+      if (s.index_counts_state === "counted" && s.index_counts_computed_at) {
+        return t("Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.")
+          .replace("{t}", clock(s.index_counts_computed_at))
+          .replace("{m}", String(Math.max(1, Math.round((s.index_counts_recount_after_s || 0) / 60))));
+      }
+      return "";
+    }
     function _paintInsStatus(s) {
-      animateCount($("ins-n-indexed"), s.indexed_articles);
+      const known = (id, v) => {
+        const el = $(id);
+        if (v == null && s.index_counts_state) { el.dataset.v = ""; el.textContent = _insUnknownText(s); }
+        else animateCount(el, v);
+      };
+      known("ins-n-indexed", s.indexed_articles);
       animateCount($("ins-n-total"), s.total_articles);
       animateCount($("ins-n-keywords"), s.keywords);
       animateCount($("ins-n-entities"), s.entities);
-      animateCount($("ins-n-mentions"), s.mentions);
+      known("ins-n-mentions", s.mentions);
       $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
       $("ins-remaining").innerHTML = _insRemainingHtml(s);
+      const note = _insCountsNote(s);
+      for (const id of ["ins-pill", "ins-n-mentions"]) { const el = $(id); if (el) { if (note) el.title = note; else el.removeAttribute("title"); } }
     }
     // A language switch redraws the frame from the last status, at its current values:
     // no fetch, and no tween back up from zero.
