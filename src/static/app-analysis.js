@@ -2345,7 +2345,7 @@
           return `<div class="an-card" data-aid="${a.id}"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
             + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}`
             + `<div class="an-card-meta">${esc(a.source || "")} · ${_anLangCell(a)} · `
-            + `${esc((a.published_at || "").slice(0, 10))} · ${esc(TFW("{n} words", {n: words}))}${_toneChip(a)}</div>`
+            + `${esc(ooIsoDate(a.published_at))} · ${esc(TFW("{n} words", {n: words}))}${_toneChip(a)}</div>`
             + qr + `</div>`;
         }
         return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
@@ -2711,7 +2711,7 @@
     function _anSourcesHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (d.sources || []).map((s) => {
-        const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
+        const span = (s.first && s.last) ? `${ooIsoDate(s.first)} – ${ooIsoDate(s.last)}` : "—";
         const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
         return `<tr><td>${esc(s.name || s.domain || "")}</td>`
           + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
@@ -3094,7 +3094,7 @@
           <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} data-on-change="_synthCount()">
           <span style="flex:1">
             <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
-            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc((a.published_at || "").slice(0, 10)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
+            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc(ooIsoDate(a.published_at)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
               · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
           </span>
         </label>`).join("");
@@ -3160,7 +3160,7 @@
       const members = (r.members || []).map((m) => `
         <li style="padding:6px 0;border-bottom:1px solid var(--line)">
           <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
-          <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10)) || t("undated")} · ${m.language ? ooLangCell(m.language) : "?"}
+          <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc(ooIsoDate(m.published_at)) || t("undated")} · ${m.language ? ooLangCell(m.language) : "?"}
             · <a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>
         </li>`).join("");
       $("synth-win-body").innerHTML = `
@@ -3193,13 +3193,13 @@
     function _synthAsHtml() {
       const t = _synthT(); const r = _synthData; if (!r) return "";
       const rows = (r.members || []).map((m) =>
-        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10))} · ${esc(ooLangCode(m.language || ""))}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
+        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc(ooIsoDate(m.published_at))} · ${esc(ooLangCode(m.language || ""))}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
       return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t("Synthesis"))}</title>`
         + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#1a1a1a}`
         + `.meta{color:#666;font-size:13px}blockquote{color:#555;border-left:3px solid #ddd;padding-left:12px}`
         + `pre{white-space:pre-wrap;font:inherit}ul{padding-left:18px}li{margin:6px 0}</style></head><body>`
         + `<h1>${esc(t("Synthesis"))}</h1>`
-        + `<p class="meta">${ooLabelHtml(esc(t("Local model")), esc(r.model || "?"))} · ${esc(_synthCountLabel(t, r.member_count))} · ${new Date().toISOString().slice(0, 10)}</p>`
+        + `<p class="meta">${ooLabelHtml(esc(t("Local model")), esc(r.model || "?"))} · ${esc(_synthCountLabel(t, r.member_count))} · ${ooIsoDate(new Date().toISOString())}</p>`
         + `<pre>${esc(r.result || "")}</pre>`
         + `<blockquote>${esc(r.caveat || "")}</blockquote>`
         + `<h2>${esc(t("Synthesized corpus"))}</h2><ul>${rows}</ul></body></html>`;
@@ -3780,7 +3780,7 @@
         ? tf("Words within {d} edits (1 for words of {n} letters or fewer) among your keywords seen in at least {m} articles. Nearest first, then the one in more articles.",
           {d: lim.max_distance, n: lim.short_word, m: lim.min_articles})
         : "";
-      const built = d.built_at ? tf("Suggestion table built {when}.", {when: String(d.built_at).slice(0, 16).replace("T", " ")}) : "";
+      const built = d.built_at ? tf("Suggestion table built {when}.", {when: ooIsoDateTime(d.built_at)}) : "";
       return `<div class="adv-dym note">${esc(t("Did you mean"))} `
         + `<button type="button" class="tiny" data-adv-dym="${esc(d.query)}" data-i18n-dyn>${esc(d.query)}</button>`
         + `<div class="adv-caveat">${esc(t(d.caveat || ""))} ${esc(built)}</div>`
@@ -4133,7 +4133,7 @@
         return `<li><button type="button" class="ghost tiny" data-adv-hist="${i}">`
           + `<span data-i18n-dyn>${esc(e.query || t("(filtered)"))}</span></button>`
           + (bits.length ? ` <span class="muted">${esc(bits.join(" · "))}</span>` : "")
-          + ` <span class="muted">${esc(String(e.at || "").slice(0, 16).replace("T", " "))}</span></li>`;
+          + ` <span class="muted">${esc(ooIsoDateTime(e.at))}</span></li>`;
       }).join("") : `<li class="muted">${esc(_advHist && _advHist.enabled ? t("No searches kept yet.") : t("History is off."))}</li>`;
     }
     // Records a search the reader RAN -- only when they turned history on. Best effort:
@@ -4473,7 +4473,7 @@
       if (d.place_id) {
         html += `<p><button type="button" class="tiny secondary" data-on-click="openPlaceCard(${esc(JSON.stringify(d.place_id))})">${esc(t("Open the place card"))}</button></p>`;
       }
-      html += `<div class="muted small">${esc(d.vintage ? tf("OpenStreetMap data of {date}", {date: d.vintage.slice(0, 10)}) : t("The extract states no date"))}</div>`;
+      html += `<div class="muted small">${esc(d.vintage ? tf("OpenStreetMap data of {date}", {date: ooIsoDate(d.vintage)}) : t("The extract states no date"))}</div>`;
       html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;
       $("pc-body").innerHTML = html;
     }
@@ -4539,11 +4539,11 @@
       // Where the Place came from: a mention the gazetteer resolved, or a notable object of an
       // OSM country read into this machine (Q817) -- each states its own date.
       const origin = d.origin === "osm-lane"
-        ? (d.osm && d.osm.vintage ? tf("OpenStreetMap data of {date}", {date: String(d.osm.vintage).slice(0, 10)}) : t("The extract states no date"))
+        ? (d.osm && d.osm.vintage ? tf("OpenStreetMap data of {date}", {date: ooIsoDate(d.osm.vintage)}) : t("The extract states no date"))
         : (d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"));
       html += `<div class="muted small">${esc(tf("Mentioned in {n} articles", {n: d.articles || 0}))}`
         + ` · ${esc(origin)}`
-        + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: String(d.item.as_of).slice(0, 10)}))}` : "")
+        + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: ooIsoDate(d.item.as_of)}))}` : "")
         + `</div>`;
       if (d.articles || d.qid) {
         html += `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">`

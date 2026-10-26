@@ -1249,7 +1249,7 @@
         tgt.innerHTML = `<div class="cs-arts-h muted">${d.count} article(s) cite this${d.count>d.articles.length?` (showing ${d.articles.length})`:""}:</div>` +
           d.articles.map(a => `<div class="cs-art">
             <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(a.title || a.url)}</a>
-            <span class="muted"> — ${esc(a.source || "")}${a.published_at?" · "+esc(a.published_at.slice(0,10)):""}</span>
+            <span class="muted"> — ${esc(a.source || "")}${a.published_at?" · "+esc(ooIsoDate(a.published_at)):""}</span>
             ${a.url?` · ${extLink(a.url, "source ↗", "muted")}`:""}</div>`).join("");
       } catch (e) { tgt.innerHTML = `<div class="muted" style="padding:6px 0">Could not load: ${esc(e.message)}</div>`; }
     }
@@ -1280,7 +1280,7 @@
         }
         const rows = clusters.map(c => {
           const place = esc(c.place || "—") + (c.place_country ? ` <span class="muted">(${ooCountryCell(c.place_country)})</span>` : "");
-          const win = esc((c.window_start || "").slice(0, 10)) + " → " + esc((c.window_end || "").slice(0, 10));
+          const win = esc(ooIsoDate(c.window_start)) + " → " + esc(ooIsoDate(c.window_end));
           const srcNames = (c.source_names || []).map(esc).join(", ");
           const srcShown = srcNames.length > 160 ? srcNames.slice(0, 160) + "…" : srcNames;
           // Title is clickable -> the exact converging article set (function exists).

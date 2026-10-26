@@ -56,6 +56,7 @@ const FNS = [
 ];
 const src =
   extractConst("esc") + "\n" +
+  "var document = {documentElement: {dir: 'ltr'}};\n" + extract("ooIsoDate") + "\n" +
   "var window = {};\n" +
   "function ooCountryCell(v, o) { return '<span>CC(' + esc(v) + ')</span>'; }\n" +
   "function ooLangCell(v, o) { return '<span>LC(' + esc(v) + ')</span>'; }\n" +

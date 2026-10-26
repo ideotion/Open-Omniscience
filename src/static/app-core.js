@@ -25,6 +25,19 @@
     // an apostrophe in scraped content would otherwise break out (audit 0.0.9).
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])));
+    // An ISO date (or "YYYY-MM-DD HH:MM") put into a sentence or a "name · date" line. Under a
+    // right-to-left document an Arabic letter before it makes the digits Arabic numbers (rule W2)
+    // and the hyphen stops joining them, so 2025-12-14 draws as 14-12-2025; wrapped in a
+    // first-strong isolate (U+2068..2069) it stays one run in its own order. Left-to-right text is
+    // byte-identical. A date ALONE in its own cell needs none. 0.5.1 item 46 (#1498 was the keyed frames).
+    function ooIsoDate(s, n) {
+      const v = String(s == null ? "" : s).slice(0, n || 10);
+      return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
+    }
+    function ooIsoDateTime(s) {
+      const v = String(s == null ? "" : s).slice(0, 16).replace("T", " ");
+      return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
+    }
     // Render an ingested URL as a link only if it is plain http(s) — esc() does NOT
     // neutralize a javascript:/data: scheme, which would execute on click (S-005).
     const safeUrl = (u) => {

@@ -70,7 +70,7 @@ function evidenceLinkBlockSource() {
 // extracted -- exactly as lead_provenance_node_test.js redeclares esc() in its own
 // prelude. The vulnerable call sites (extLink(), the evidence-link block) ARE
 // extracted from the real source, below.
-const HELPERS = `
+const HELPERS = "const document = {documentElement: {dir: 'ltr'}};\n" + fnSource("ooIsoDate") + `
   const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
     c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c])));
   const safeUrl = (u) => {

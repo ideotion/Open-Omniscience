@@ -649,7 +649,10 @@
   }
 
   function itemHtml(an, key) {
+    // First-strong isolate under a right-to-left page: an Arabic letter before an ISO timestamp turns
+    // its digits into Arabic numbers and un-joins the hyphen (0.5.1 item 46; app-core.js ooIsoDateTime).
     var when = (an.created_at || "").slice(0, 16).replace("T", " ");
+    if (when && document.documentElement.dir === "rtl") when = "\u2068" + when + "\u2069";
     var tgt = (key === "translation" && an.target_language) ? " → " + esc(an.target_language) : "";
     if (key === "translation") {
       // ≈ first, always: a machine translation is a reading of the article, never the

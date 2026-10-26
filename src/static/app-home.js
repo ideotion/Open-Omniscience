@@ -364,7 +364,7 @@
         `<button type="button" class="an-facet" data-on-click="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
         + `title="${esc(t("Mentions in this article — open this keyword's corpus."))}">`
         + `${esc(k.term)} <span class="muted">${k.count}</span></button>`).join(" ");
-      const when = (a.published_at || "").slice(0, 10);
+      const when = ooIsoDate(a.published_at);
       const lang = a.language || a.detected_language || "";
       // Ruling 12: expanding is a class toggle over text ALREADY in the payload -- a feed
       // that fetches on every "read more" stutters, and a reader who opened one card has
@@ -671,7 +671,7 @@
         }
         box.innerHTML = arts.map(a => {
           const src = (a.source || {});
-          const date = String(a.created_at || "").slice(0, 10);
+          const date = ooIsoDate(a.created_at);
           const meta = [esc(src.name || src.domain || ""), esc(date)].filter(Boolean).join(" · ");
           // REAL substance figures (counts, never a score): word count (flagged when the
           // language is unsegmented, where word_count is meaningless) + cited sources.
@@ -878,7 +878,7 @@
       if (!panel || !box || !rows) return;
       if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
       box.innerHTML = rows.map(a => {
-        const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
+        const meta = [esc(a.source || ""), esc(ooIsoDate(a.published_at))].filter(Boolean).join(" · ");
         return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
           + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
       }).join("");
@@ -1127,7 +1127,7 @@
       let stale;
       if (d.hazards_available) {
         const age = (d.hazards_age_hours != null) ? " (" + esc(t("{h}h old").replace("{h}", Math.round(d.hazards_age_hours))) + ")" : "";
-        const asof = d.hazards_as_of ? esc(String(d.hazards_as_of).slice(0, 16).replace("T", " ")) : "—";
+        const asof = d.hazards_as_of ? esc(ooIsoDateTime(d.hazards_as_of)) : "—";
         stale = `<span class="hint">${ooLabelHtml(esc(t("Hazard snapshot")), asof + age)}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
       } else {
         stale = `<span class="hint">${esc(t("No local hazard snapshot — silence is not safety."))}</span>`;
@@ -1912,7 +1912,7 @@
         ? `<div class="sig">${esc(sig.metric)} = ${esc(_sigValueText(sig.value))}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
       const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).slice(0, 3).map(e => {
         const label = esc(e.title || e.url);
-        const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
+        const meta = [e.source, ooIsoDate(e.published_at)].filter(Boolean).map(esc).join(" · ");
         // External evidence opens the LOCAL preview first (invariant #6
         // extension, maintainer-repeated first target): never a bare jump.
         const ext = e.url && /^https?:\/\//i.test(e.url);
@@ -2223,7 +2223,7 @@
       });
       const prov = d.provenance || {};
       const facts = [
-        prov.fetched_at ? prov.fetched_at.slice(0, 16).replace("T", " ") + " UTC" : "",
+        prov.fetched_at ? ooIsoDateTime(prov.fetched_at) + " UTC" : "",
         d.cached ? t("cached copy") : "",
         (sig && sig.geocode) ? `geocode: ${sig.geocode}` : ""
       ].filter(Boolean).join(" · ");

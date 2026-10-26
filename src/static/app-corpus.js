@@ -1496,7 +1496,7 @@
       const nT = (d.terms || []).length;
       const rows = it.slice(0, 10).map((a) =>
         `<li><a href="/api/articles/${encodeURIComponent(a.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(a.title || t("(untitled)"))}</a>`
-        + ` <span class="muted small">${esc([a.source, a.published_at ? String(a.published_at).slice(0, 10) : ""].filter(Boolean).join(" · "))}</span>`
+        + ` <span class="muted small">${esc([a.source, a.published_at ? ooIsoDate(a.published_at) : ""].filter(Boolean).join(" · "))}</span>`
         + ` <span class="muted small">· ${esc(tf("{k} of {n} terms, {m} mentions", {k: a.distinct_terms, n: nT, m: a.mentions}))}</span></li>`).join("");
       const tr = d.trend || {};
       return `<div class="vsect" style="margin-top:10px">${esc(t("Where the terms cluster"))}</div>`
