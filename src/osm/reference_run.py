@@ -995,6 +995,14 @@ def run(**kwargs: Any) -> tuple[dict, Path | None]:
         return _run(**kwargs)
 
 
+def _inherited_environment() -> dict[str, str]:
+    """The environment a phase inherits, without the settings that would point it at the operator's own data or key. A function of its own
+    because a comprehension is inlined into its caller on CPython 3.13, and the back-edge of its filter-skip then sits outside the exception
+    table of the ``try`` in ``_run`` (R163): an interrupt there would skip the ``finally`` that deletes the throwaway store."""
+    return {k: v for k, v in os.environ.items()
+            if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR", "DATABASE_URL")}
+
+
 def _run(
     *,
     extract: Path,
@@ -1171,8 +1179,7 @@ def _run(
         if on_start is not None:
             with contextlib.suppress(OSError):  # a closed terminal must not end the run before it starts
                 on_start(run_dir)
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("OO_DB_PLAINTEXT", "OO_DATA_VOLUME_ID", "OO_DB_PASSPHRASE", "OO_DATA_DIR", "DATABASE_URL")}
+        env = _inherited_environment()
         # Temporary and spill files stay on the filesystem the guard reads (and are deleted with the store).
         env.update({"OO_DATA_DIR": str(data_dir), "OO_DB_PASSPHRASE": passphrase, "PYTHONUNBUFFERED": "1",
                     "TMPDIR": str(tmp_dir), "SQLITE_TMPDIR": str(tmp_dir)})

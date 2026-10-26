@@ -171,6 +171,13 @@ def build_border(extract: Extract, alpha2: str) -> tuple[Relation, Border, dict]
     return rel, border, facts
 
 
+def _present(found: list) -> list:
+    """The locations that exist, in order. A function of its own because a comprehension is inlined into its caller on CPython 3.13, and the
+    back-edge of its filter-skip then sits outside the exception table of the ``try`` in ``ingest_country`` (R163): an interrupt there would
+    skip the ``finally`` that closes the location store. In its own frame an interrupt just propagates."""
+    return [p for p in found if p is not None]
+
+
 def _row(obj: Node | Way | Relation, *, kind, pkey, pval, notable, alpha3, lat, lon, geom, node_count, members) -> dict:
     scalars, families, blob = T.split_tags(obj.tags)
     row = {
@@ -281,7 +288,7 @@ def ingest_country(
                 if kind is None:
                     continue
                 found = [locations.get(r) for r in obj.refs]
-                pts = [p for p in found if p is not None]
+                pts = _present(found)
                 if not pts or len(pts) != len(found):
                     # A way whose vertices lie (partly) outside the box, or were cut from the
                     # extract. Counted, never drawn with a hole in it.
