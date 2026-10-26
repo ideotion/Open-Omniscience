@@ -105,7 +105,7 @@ def test_the_background_refresh_does_not_cache_a_compute_a_swap_straddled():
 
 
 def test_invalidating_one_key_leaves_another_keys_compute_alone():
-    """A keyed invalidate is about that key only, so a long count of another key is not thrown away for it."""
+    """A keyed invalidate bumps only that key's generation in the served cache, so another key's store is not refused for it (the module hooks run whatever the key, and no caller uses a keyed invalidate today)."""
 
     def other_key_swap(session):
         served_cache.invalidate("t:a")
