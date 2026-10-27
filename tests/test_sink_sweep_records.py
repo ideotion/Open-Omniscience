@@ -950,6 +950,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/law/track.py': {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('track_document', 'if not is_integrity_error(exc):'): 2,
+        # the two batch trackers hand the caught exception to the R294 back-off, whose body is read by this same scan and uses it only
+        # through record_text (the stored status) and log_failure; no text of it is made here
+        ('track_watched', '_back_off_after_crash(session, doc_id, exc)'): 1,
+        ('auto_track_due', '_back_off_after_crash(session, doc_id, exc)'): 1,
     },
     'src/llm/backend.py': {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
@@ -1095,6 +1099,9 @@ _S5_NOT_RECORDS: dict[str, dict[str, int]] = {
     },
     'src/law/track.py': {
         'getattr reaches field, a way round the scan of the log calls': 1,
+        # the R294 fetched marker lives on the session's own ``info`` dict (a pop and a set in track_document, a pop in
+        # _back_off_after_crash): three, none a log call
+        'session.info is kept as a name, a log call the scan cannot read': 3,
     },
     'src/markets/extract.py': {
         're.error is kept as a name, a log call the scan cannot read': 1,

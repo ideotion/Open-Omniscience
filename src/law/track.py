@@ -23,6 +23,8 @@ import re
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
+from sqlalchemy import inspect as sa_inspect
+
 from src.database.models import LawDocument, LawRevision
 from src.database.write import is_integrity_error
 from src.law.model import mint_lane_key
@@ -37,6 +39,9 @@ _MAX_DIFF_LINES = 4000  # cap stored diff size (bounded, like the crawler)
 # The fetcher's refusal under the kill switch (src/ingest/__init__.py raises it at four sites). A fetch
 # error is "a refusal that made no request" only when its text STARTS with this sentence.
 _KILL_SWITCH_REFUSAL = "network kill switch is active"
+# ``session.info`` key: ``(document id, the attempt's own time)`` of the document whose fetch last returned a result
+# (see ``_back_off_after_crash``).
+_FETCHED_KEY = "oo.law.track.fetched_document_id"
 _WS_RE = re.compile(r"[ \t]+")
 
 
@@ -300,6 +305,9 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     from src.ingest import CrawlDelayDeferred, FetchError, kill_switch_active
 
     now = datetime.now(UTC)
+    # A marker belongs to ONE attempt: cleared before anything that can fail, so no earlier fetch (a real failed request
+    # commits a NEW time and leaves the marker alone) may vouch for this one (R294).
+    session.info.pop(_FETCHED_KEY, None)
     # ``last_checked_at`` says a check HAPPENED; ``last_status`` says how the latest ATTEMPT ended.
     # The two part company when no request was made (the kill switch refused it, or the host's
     # own Crawl-delay put the fetch off): the attempt is recorded in the status, but stamping the
@@ -344,6 +352,9 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         session.commit()
         return {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
 
+    # a request was made and answered: a crash from here on is a failed check (R294); the time lets the back-off tell
+    # a crash that left this attempt's outcome committed from one that did not
+    session.info[_FETCHED_KEY] = (doc.id, now)
     text, reason, parsed = _document_text(result, retrieved_on=now.date().isoformat())
     # Kept for the extractor-change check below. Only HTML has chrome to strip, so a
     # PDF body leaves this None and the check is simply skipped -- never a re-baseline
@@ -609,6 +620,42 @@ def _batch_extractor(extractor):
     return BaselineExtractor()
 
 
+def _naive_utc(moment: datetime) -> datetime:
+    """The stored form of a time: the column is a plain ``DateTime``, so a read-back value has no zone."""
+    return moment.astimezone(UTC).replace(tzinfo=None) if moment.tzinfo else moment
+
+
+def _back_off_after_crash(session, doc_id, exc) -> None:
+    """A document whose processing RAISED (R294) was fetched, so it is a real check that failed.
+
+    ``track_document`` stamps ``last_checked_at`` before it fetches and commits only on its own return paths;
+    the batch trackers' ``session.rollback()`` after an exception discarded that stamp, so the document stayed
+    at the head of ``auto_track_due``'s least-recently-checked order, was fetched again on every pass with no
+    24 h back-off, and (measured) two such documents at the head of a batch of two kept a healthy one from
+    ever being reached. Stamp it the way a failed request is stamped. Only when ``track_document`` got a result
+    from the fetch: an exception from anywhere else (the document's own read, the commit of a deferral or of a
+    kill-switch refusal) made no request, and stamping it would be the lie R293 removed. And only when no check
+    at or after this attempt's start is committed: a crash AFTER the attempt's own commit (the corpus indexing, the
+    lane row) leaves its outcome, "baseline captured" or "changed", standing, and so does a newer check another
+    session committed meanwhile.
+    Never raises: a database that is itself failing leaves the document where it was, and the pass goes on."""
+    marker = session.info.pop(_FETCHED_KEY, None)
+    if not marker or marker[0] != doc_id:
+        return
+    try:
+        doc = session.get(LawDocument, doc_id)
+        if doc is None:
+            return
+        if doc.last_checked_at is not None and _naive_utc(doc.last_checked_at) >= _naive_utc(marker[1]):
+            return  # a check at or after this attempt's start is committed (its own, or a newer one): its outcome stands
+        doc.last_checked_at = datetime.now(UTC)
+        doc.last_status = f"error: {record_text(exc)}"
+        session.commit()
+    except Exception as exc2:  # noqa: BLE001 - the back-off is best effort, the batch goes on
+        log_failure(_LOG, f"law tracking: document {doc_id} could not be backed off", exc2, level=logging.WARNING)
+        session.rollback()
+
+
 def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None) -> dict:
     """Track all watched legal documents, returning an aggregate tally.
 
@@ -637,11 +684,15 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
         "unchanged": 0,
     }
     for doc in docs:
+        # The identity, not ``doc.id``: after any commit the documents are expired and an attribute read goes to the
+        # database, where a one-off failure would escape the loop here instead of being one counted error below.
+        doc_id = sa_inspect(doc).identity[0]
         try:
             res = track_document(session, fetcher, doc, extractor=extractor)
         except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
-            log_failure(_LOG, f"law tracking: document {doc.id} failed", exc, level=logging.WARNING)
+            log_failure(_LOG, f"law tracking: document {doc_id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned transaction so it can't roll back the batch
+            _back_off_after_crash(session, doc_id, exc)
             tally["errors"] += 1
             continue
         status = res.get("status")
@@ -742,6 +793,7 @@ def auto_track_due(
         except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
             log_failure(_LOG, f"law auto-track: document {doc_id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned txn so one dup can't roll back the WHOLE pass
+            _back_off_after_crash(session, doc_id, exc)
             tally["errors"] += 1
             asked += 1
             continue
