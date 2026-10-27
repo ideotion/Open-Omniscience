@@ -50,7 +50,8 @@ _LEFTOVER_WAL_STAND_IN = (
 
 def _leave_a_wal(db) -> None:
     """Write the stand-in store, then drop what a reader in this process cached while the file was being written: the cache is
-    single-process by contract, and this writer is a second process."""
+    single-process by contract, and this writer is a second process. Both halves stay: the transaction removes the table-without-row snapshot,
+    and the invalidate removes a stale absent that any other reader cached, each sufficient alone (mutation-checked), neither redundant."""
     import subprocess
     import sys
 
