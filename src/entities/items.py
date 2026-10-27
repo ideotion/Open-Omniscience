@@ -261,6 +261,12 @@ def fetch_items(
                 break
             parsed = parse_entities(getter(entities_url(batch)), batch)
         except Exception as exc:  # noqa: BLE001 - one failed batch is counted, never fatal
+            if _kill_switch_active():
+                # The failure is the SWITCH's, whatever shape the error took (a Stop inside the request arrives as the raw requests error, which
+                # no sentence match recognises, R298): not this batch's outcome. It is not counted as refused and stays pending, and the run says
+                # which stop it was. Without this, a Stop landing on the LAST batch was a plain "done" with a refused count and no note (R337).
+                airplane = True
+                break
             refused += len(batch)
             done += len(batch)
             log_failure(_LOG, f"wikidata item batch of {len(batch)} failed", exc, level=logging.INFO)
