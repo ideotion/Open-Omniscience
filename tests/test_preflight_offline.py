@@ -215,6 +215,10 @@ class _CutOnLast:
     def _guard_target(self, host):
         return None
 
+    def fetch(self, url, **_kw):
+        """The market-sample path goes through ``fetch()``; the cut lands on the url named as the last one."""
+        return self._guarded_redirect_get(url) and type("R", (), {"content": "x"})()
+
     def _guarded_redirect_get(self, url, **_kw):
         if url == self._last:
             import requests
@@ -257,3 +261,140 @@ def test_a_stop_that_cuts_the_last_feed_host_leaves_the_feed_preflight_pending()
         clear_kill_switch()
     assert summary["complete"] is False and summary["skipped_offline"] >= 1
     assert not feed_preflight.has_run_before()
+
+
+def test_a_stop_that_cuts_the_robots_read_is_not_filed_as_the_hosts_verdict(db):
+    """The robots-read guard on its own: the cut lands on robots.txt, and a homepage that would still answer must not rescue the record."""
+    src = _mk(db, learned=True)
+    try:
+        summary = preflight.preflight_sources(db, _CutOnLast(f"https://{src.domain}/robots.txt", engage=True), limit=5)
+    finally:
+        clear_kill_switch()
+    assert summary["complete"] is False and not preflight.has_run_before()
+
+
+def _feed_fetcher_and_stub(monkeypatch, *, calendar_status: str, market_cut: bool, engage_on_calendar: bool = False):
+    """Every robots read answers; the calendar sample answers ``calendar_status``; the market sample is cut when ``market_cut``."""
+    market = [t for t in feed_preflight._feed_targets()[0] if t["host"]]
+    fetcher = _CutOnLast(market[0]["url"] if market_cut else "never", engage=True)
+
+    def _verify(_fetcher, _key):
+        if engage_on_calendar:
+            activate_kill_switch()
+        return {"status": calendar_status}
+
+    monkeypatch.setattr("src.events.feeds.verify_feed", _verify)
+    return fetcher
+
+
+def test_the_calendar_sample_stops_on_a_skipped_offline_verdict_and_counts_what_was_not_asked(monkeypatch):
+    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="skipped_offline", market_cut=False)
+    summary = feed_preflight.run_feed_preflight(fetcher)
+    assert summary["complete"] is False and summary["skipped_offline"] >= 2, "every sampled feed from the cut on was not asked"
+    assert not feed_preflight.has_run_before()
+
+
+def test_the_calendar_sample_discards_a_failure_that_coincides_with_a_stop(monkeypatch):
+    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="unreachable", market_cut=False, engage_on_calendar=True)
+    try:
+        summary = feed_preflight.run_feed_preflight(fetcher)
+    finally:
+        clear_kill_switch()
+    assert summary["complete"] is False and not feed_preflight.has_run_before()
+
+
+def test_the_calendar_sample_keeps_an_ordinary_failure_when_the_switch_is_clear(monkeypatch):
+    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="unreachable", market_cut=False)
+    summary = feed_preflight.run_feed_preflight(fetcher)
+    assert summary["complete"] is True and feed_preflight.has_run_before()
+
+
+def test_the_market_sample_stops_when_a_stop_cuts_its_fetch(monkeypatch):
+    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="ok", market_cut=True)
+    try:
+        summary = feed_preflight.run_feed_preflight(fetcher)
+    finally:
+        clear_kill_switch()
+    assert summary["complete"] is False and summary["skipped_offline"] >= 1
+    assert not feed_preflight.has_run_before()
+
+
+# --- source A checked, source B refused: A's metadata must not survive on EITHER caller ---------------------------------
+
+
+def _two_committed_sources():
+    """Two committed sources ahead of everything else in the shared store (priority sorts first), each with a learned ``False``."""
+    from src.database.session import session_scope
+
+    init_db()
+    ids: list[int] = []
+    with session_scope() as s:
+        for n, prio in (("a", -2000), ("b", -1999)):
+            src = Source(
+                name=f"Rollback {n}", domain=f"rollback-{n}-{uuid.uuid4().hex[:6]}.example", language="en", enabled=True, priority=prio
+            )
+            s.add(src)
+            s.flush()
+            s.add(SourceMetadata(source_id=src.id, robots_allowed=False))
+            ids.append(src.id)
+        domains = [s.get(Source, i).domain for i in ids]  # type: ignore[union-attr]
+    return ids, domains
+
+
+def _drop_sources(ids):
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        s.query(SourceMetadata).filter(SourceMetadata.source_id.in_(ids)).delete(synchronize_session=False)
+        s.query(Source).filter(Source.id.in_(ids)).delete(synchronize_session=False)
+
+
+def _learned(ids):
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        return [s.query(SourceMetadata).filter_by(source_id=i).one().robots_allowed for i in ids]
+
+
+def test_the_first_run_job_rolls_back_source_a_when_source_b_is_refused():
+    from src.monitoring import preflight_job
+
+    ids, domains = _two_committed_sources()
+
+    class _Ctx:
+        stopping = False
+
+        def set_progress(self, **_kw):
+            return None
+
+    try:
+        try:
+            out = preflight_job._worker(cast(Any, _Ctx()), fetcher=_CutOnLast(f"https://{domains[1]}/robots.txt", engage=True))
+        finally:
+            clear_kill_switch()
+        assert out["sources"]["complete"] is False
+        assert _learned(ids) == [False, False], "source A's verdict (robots allow -> True) survived the refusal of source B"
+        assert not preflight.has_run_before()
+    finally:
+        _drop_sources(ids)
+
+
+def test_the_route_rolls_back_source_a_when_source_b_is_refused(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    ids, domains = _two_committed_sources()
+    fetcher = _CutOnLast(f"https://{domains[1]}/robots.txt", engage=True)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda *a, **k: fetcher)
+    headers = {"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/", "Origin": "http://127.0.0.1"}
+    try:
+        try:
+            with TestClient(app, base_url="http://127.0.0.1") as c:
+                r = c.post("/api/sources/preflight?limit=2", headers=headers)
+        finally:
+            clear_kill_switch()
+        assert r.status_code == 200 and r.json()["complete"] is False
+        assert _learned(ids) == [False, False], "the route committed source A's verdict although the sweep was refused"
+    finally:
+        _drop_sources(ids)

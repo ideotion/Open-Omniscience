@@ -1666,11 +1666,12 @@ def discover_rss_feeds(
         if kill_switch_active():
             # Airplane mode: nobody was asked, so no source "has no feed" (it used to answer 200 "0 sources" for sources it never
             # asked about). ``skipped_offline`` is present only when the kill switch caused it (R296/R313).
+            not_asked = len(manager.rss_discovery_candidates(source_ids))
             return {
                 "total_checked": 0,
                 "with_rss_found": 0,
                 "results": [],
-                "skipped_offline": len(manager.rss_discovery_candidates(source_ids)),
+                **({"skipped_offline": not_asked} if not_asked else {}),  # the verify_due_feeds idiom: only when non-zero
                 "message": _DISCOVERY_OFFLINE,
             }
         results = manager.discover_rss_feeds(source_ids, timeout=timeout)

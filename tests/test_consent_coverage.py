@@ -236,7 +236,6 @@ EGRESS: tuple[Row, ...] = (
     ),
     Row(("wiki.py", "track_page"), ("trackWikiPage",), "named"),
     Row(("wiki.py", "track_now"), ("trackWikiNow",), "named"),
-    # --- gap: KNOWN defects, pinned as they behave today (a fix is a visible edit of this table) ----------------------
     Row(
         ("stats.py", "refresh_stat_subscriptions"),
         ("refreshStatSubs",),
@@ -245,6 +244,7 @@ EGRESS: tuple[Row, ...] = (
         pinned_by="tests/test_stat_subscriptions.py::test_refresh_is_airplane_gated_no_socket",
         why="the route is a one-line wrapper over refresh_due, which opens no socket offline and counts skipped_offline",
     ),
+    # --- gap: KNOWN defects, pinned as they behave today (a fix is a visible edit of this table): NONE at present ------
 )
 
 

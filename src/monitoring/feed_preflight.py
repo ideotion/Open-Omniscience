@@ -226,10 +226,11 @@ def run_feed_preflight(
             picked.append(t)
         return picked
 
+    calendar_picked, market_picked = _sample(calendar), _sample(market)
     calendar_checked = 0
     if progress is not None:
         progress(len(hosts), len(hosts), "sampling calendar feeds")
-    for t in _sample(calendar):
+    for i, t in enumerate(calendar_picked):
         if should_stop is not None and should_stop():
             return {
                 "hosts": len(hosts),
@@ -241,7 +242,12 @@ def run_feed_preflight(
 
             verdict = verify_feed(fetcher, t["key"])
             if verdict.get("status") == "skipped_offline" or (verdict.get("status") != "ok" and kill_switch_active()):
-                return {"hosts": len(hosts), "complete": False, "skipped_offline": 1, "stopped": _OFFLINE_STOP}
+                return {
+                    "hosts": len(hosts),
+                    "complete": False,
+                    "skipped_offline": len(calendar_picked) - i + len(market_picked),  # every sampled feed from here on
+                    "stopped": _OFFLINE_STOP,
+                }
             records.append({**t, **verdict})
             calendar_checked += 1
         except Exception as exc:  # noqa: BLE001
@@ -250,7 +256,7 @@ def run_feed_preflight(
     market_checked = 0
     if progress is not None:
         progress(len(hosts), len(hosts), "sampling market feeds")
-    for t in _sample(market):
+    for i, t in enumerate(market_picked):
         if should_stop is not None and should_stop():
             return {
                 "hosts": len(hosts),
@@ -265,7 +271,12 @@ def run_feed_preflight(
             rec["bytes"] = len(body.encode("utf-8", "ignore"))
         except Exception as exc:  # noqa: BLE001
             if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
-                return {"hosts": len(hosts), "complete": False, "skipped_offline": 1, "stopped": _OFFLINE_STOP}
+                return {
+                    "hosts": len(hosts),
+                    "complete": False,
+                    "skipped_offline": len(market_picked) - i,
+                    "stopped": _OFFLINE_STOP,
+                }
             rec["status"] = "unreachable"
             rec["error"] = record_text(exc, limit=200, typed=False)
         records.append(rec)
