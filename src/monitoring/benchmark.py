@@ -413,8 +413,12 @@ def _store_and_corpus(session: Session) -> tuple[dict, dict]:
         "articles": int(session.query(func.count(Article.id)).scalar() or 0),
         "sources": int(session.query(func.count(Source.id)).scalar() or 0),
         "keywords": int(session.query(func.count(Keyword.id)).scalar() or 0),
+        # ``count(1)``, NOT a bare ``count(*)``: this runs inside the diagnostics bundle's per-member statement deadline (``benchmark.json``
+        # is a member), and a bare count is one VM opcode the deadline's progress handler is never asked during, so it ran whole under a
+        # millionth of a second over 1,240,657 mentions (the handler consulted 0 times); ``count(1)`` loops and is stopped. The error it
+        # raises is caught by ``run_benchmark`` and reported as ``corpus.error``, the same honest degrade as any context failure.
         "keyword_mentions": int(
-            session.execute(text("SELECT COUNT(*) FROM keyword_mentions")).scalar() or 0
+            session.execute(text("SELECT count(1) FROM keyword_mentions")).scalar() or 0
         ),
     }
     return store, corpus
