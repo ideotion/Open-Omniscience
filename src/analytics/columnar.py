@@ -95,7 +95,9 @@ import shutil
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from src.monitoring.secret_scrub import log_failure, passphrase_bytes, record_text
 
@@ -627,12 +629,35 @@ def status(passphrase: str | None = None) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class OpenedStore:
+    """What :func:`open_store` opened, REPORTED BY THE OPENER and never inferred from the connection (a persisted DuckDB connection and an
+    in-memory one look the same to a caller).
+
+    ``kind`` is ``"persisted"`` (the encrypted file), ``"memory"`` (an in-memory store) or ``"off"`` (the engine is unavailable: ``con`` is None).
+    ``fallback_reason`` is set only when a persisted store WAS asked for (a passphrase was given) and a memory store was handed back instead: a
+    CODE, never an exception's text (``"no-secure-backend"``, ``"encryption-gate-failed"``, ``"persisted-open-failed"``). A deliberate in-memory
+    request (no passphrase) has no fallback reason."""
+
+    con: Any
+    kind: str
+    fallback_reason: str | None = None
+
+
 def connect(passphrase: str | None = None, *, spill=None, snapshot: dict | None = None):
+    """The connection :func:`open_store` opened, or ``None`` when the engine is unavailable. Callers that must know WHICH store they got (a
+    persisted open can fall back to memory) call :func:`open_store`."""
+    return open_store(passphrase, spill=spill, snapshot=snapshot).con
+
+
+def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | None = None) -> OpenedStore:
     """Open the derived columnar engine — a persisted ENCRYPTED store when that is
     securely possible offline, else an in-memory store. NEVER a plaintext file on disk.
 
-    Returns a DuckDB connection, or ``None`` when the engine is unavailable (duckdb
-    absent / ``OO_COLUMNAR=0``) so the caller falls back to the live query. The returned
+    Returns an :class:`OpenedStore`: ``kind`` says which store ``con`` is (``persisted``,
+    ``memory`` or ``off``, the last with ``con`` None when duckdb is absent / ``OO_COLUMNAR=0``
+    so the caller falls back to the live query), and ``fallback_reason`` is a code when a
+    persisted store was asked for and an in-memory one was opened instead. The returned
     connection's working schema lives in the attached encrypted database ``oo`` when
     persisted, or the default in-memory catalog when not.
 
@@ -646,11 +671,16 @@ def connect(passphrase: str | None = None, *, spill=None, snapshot: dict | None 
     :func:`budget_snapshot`) is the build's own reading of the budget; none reads it afresh.
     """
     if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
-        return None
+        return OpenedStore(None, "off")
     import duckdb
 
+    fallback: str | None = None
+
     # Persisted-encrypted ONLY when a SECURE backend is available AND the gate proves it.
-    if passphrase and secure_crypto_available():
+    secure = bool(passphrase) and secure_crypto_available()
+    if passphrase and not secure:
+        fallback = "no-secure-backend"
+    if passphrase and secure:
         store_dir = _store_dir()
         path = store_dir / _STORE_FILENAME
         encryption_key = ""  # derived below; named so that a failure's text is scrubbed of it as well as of the passphrase
@@ -672,9 +702,11 @@ def connect(passphrase: str | None = None, *, spill=None, snapshot: dict | None 
                     ensure_store_meta(con)
                     _LOG.info("columnar engine: rebuilt persisted store (was %s)", marker)
                 _LOG.info("columnar engine: persisted encrypted store at %s", path)
-                return con
+                return OpenedStore(con, "persisted")
+            fallback = "encryption-gate-failed"
             _LOG.warning("columnar engine: encryption gate failed; using in-memory store")
         except Exception as exc:  # noqa: BLE001 - any failure -> drop the disposable file, in-memory
+            fallback = "persisted-open-failed"
             try:
                 path.unlink(missing_ok=True)
             except OSError:
@@ -691,7 +723,7 @@ def connect(passphrase: str | None = None, *, spill=None, snapshot: dict | None 
     con = duckdb.connect(database=":memory:", config=_offline_config(spill, snapshot))
     ensure_store_meta(con)
     _LOG.info("columnar engine: in-memory store (no secure persisted encryption offline)")
-    return con
+    return OpenedStore(con, "memory", fallback)
 
 
 def _attach_persisted(path, encryption_key):
