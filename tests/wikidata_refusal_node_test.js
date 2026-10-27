@@ -31,6 +31,12 @@ function extract(name) {
 }
 
 const REFUSED = "Refused: airplane mode is on. Turn the network on to fetch Wikidata items.";
+// THE SENTENCE THE ROUTES RAISE, as the Python side defines it (`NETWORK_REFUSED` in src/ingest/fetch_verdict.py; R328). The pytest driver passes
+// it in, so a rewording of the constant that leaves the reader's pattern behind turns this red. Only the cases that carry NO status reach the text
+// (the route's own refusal is a 409, taken by status before the text is read), so those are the ones that go red; a direct `node` run falls back
+// to this copy and says so.
+const FROM_CONSTANT = typeof process.env.OO_NETWORK_REFUSED === "string" && process.env.OO_NETWORK_REFUSED.length > 0;
+const SENTENCE = FROM_CONSTANT ? process.env.OO_NETWORK_REFUSED : "network refused: airplane mode is engaged";
 
 async function press(err) {
   const st = { textContent: "" };
@@ -49,21 +55,22 @@ function http(status, message) {
 
 (async () => {
   // The refusals: the route's own 409, and a message that starts with our sentences (bare, or the socket guard's).
-  assert.strictEqual(await press(http(409, "network refused: airplane mode is engaged")), REFUSED);
+  assert.strictEqual(await press(http(409, SENTENCE)), REFUSED);
   assert.strictEqual(await press(http(409, "anything at all")), REFUSED, "a 409 from this route is the kill switch");
-  assert.strictEqual(await press(new Error("network refused: airplane mode is engaged")), REFUSED);
+  assert.strictEqual(await press(new Error(SENTENCE)), REFUSED, "a message that STARTS with the constant's sentence is the kill switch");
+  assert.strictEqual(await press(new Error(SENTENCE + " (kill switch)")), REFUSED, "a writer that builds on the sentence keeps it as its opening words");
   assert.strictEqual(await press(new Error("  Airplane mode is engaged: refusing a network connection to 'www.wikidata.org'")), REFUSED);
 
   // The controls: the same words INSIDE another failure stay that failure's text.
   for (const msg of [
     "502 Bad Gateway: the page said airplane mode is engaged: refusing a network connection",
     "Redirect to https://h.test/airplane mode is engaged",
-    "the upstream answered: network refused: airplane mode is engaged",
+    "the upstream answered: " + SENTENCE,
     "please turn airplane mode off",
   ]) {
     const got = await press(http(502, msg));
     assert.ok(got.startsWith("Wikidata fetch failed:") && got.endsWith(msg), "a quoted phrase is not a refusal: " + got);
   }
   assert.strictEqual(await press(http(500, "boom")), "Wikidata fetch failed: boom");
-  console.log("wikidata_refusal_node_test.js: OK");
+  console.log("wikidata_refusal_node_test.js: OK (sentence from " + (FROM_CONSTANT ? "the constant" : "this file's own copy") + ")");
 })().catch((e) => { console.error(e); process.exit(1); });

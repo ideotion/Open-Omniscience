@@ -45,6 +45,14 @@ _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
 # words before " -- "), which is also what a caller that appends its own detail to the sentence still starts with.
 KILL_SWITCH_REFUSAL_HEAD = "network kill switch is active"
 KILL_SWITCH_REFUSAL = f"{KILL_SWITCH_REFUSAL_HEAD} -- collection stopped by operator"
+# THE PRE-CHECK'S REFUSAL SENTENCE, defined once (R328, the R317 defect in a second place). The routes and loaders that refuse UP FRONT, before any
+# request is built (``if kill_switch_active(): raise ...``), said it as a literal each: eight HTTP 409 ``detail``s, the four statistics fetchers, the
+# catalogue, entity and ring loaders, the mailbox import (the count is pinned in tests/test_kill_switch_refusal_constant.py). The one reader of the text
+# in ``src/`` is ``_wikidataRefusedByAirplaneMode`` in ``src/static/app-insights.js``: it takes a 409 STATUS as the refusal, and a message with no status
+# that STARTS with our own sentence (R298), the second branch being a copy of this text that nothing tied to the writers. It is NOT
+# ``KILL_SWITCH_REFUSAL`` (the fetcher's sentence, raised in the middle of a fetch) and NOT the socket guard's (``airplane mode is engaged: refusing
+# a network connection ...``); ``_OFFLINE_RE`` below does not read it, and a longer sentence a writer builds on it keeps it as its opening words.
+NETWORK_REFUSED = "network refused: airplane mode is engaged"
 # OUR OWN SENTENCES, recognised at the START of the text, never as a phrase anywhere in it (R298): the same words can appear INSIDE another
 # failure's text (a redirect target, a status line a server wrote, a URL), and that failure is the host's, not the person's airplane mode.
 #   1. the kill switch's refusal (``KILL_SWITCH_REFUSAL`` above), raised in ``src/ingest/__init__.py`` and ``src/safety/fetcher.py``, optionally

@@ -435,12 +435,13 @@ def fetch_wikidata(
     the run goes on. The three counts add up to what was asked.
     """
     from src.analytics.ring_loader import RateGate
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch is None:
         kill_switch = _kill_switch_active  # looked up now, so a test (or a caller) can replace it
     if kill_switch():
         raise AirplaneRefusal(
-            "network refused: airplane mode is engaged (the gazetteer's Wikidata join makes no request "
+            f"{NETWORK_REFUSED} (the gazetteer's Wikidata join makes no request "
             "while the kill switch is on)"
         )
     rg = gate or RateGate(stop=should_stop)

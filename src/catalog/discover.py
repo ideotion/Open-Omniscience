@@ -26,6 +26,7 @@ from collections.abc import Callable, Iterable
 from src.catalog.build import generate_catalog, load_query_config
 from src.catalog.wikidata import WDQS_ENDPOINT, WDQS_HOSTS, build_query, iso3_crosscheck
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
+from src.ingest.fetch_verdict import NETWORK_REFUSED
 
 _TIMEOUT_S = 90
 _PROVENANCE = "wikidata-discovery"
@@ -93,7 +94,7 @@ def discover_sources(
     ``{"added", "countries", ...generate_catalog stats}``.
     """
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
 
     from src.database.models import Source
     from src.database.writer import connection_first, write_lock

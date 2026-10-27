@@ -120,6 +120,7 @@ def resolve_labels(
 
     from src.ingest import kill_switch_active
     from src.ingest.airplane import AirplaneModeError
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
     from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 
     active = kill_switch or kill_switch_active
@@ -127,7 +128,7 @@ def resolve_labels(
 
     if active():
         raise AirplaneRefusal(
-            "network refused: airplane mode is engaged, so Wikidata labels cannot be "
+            f"{NETWORK_REFUSED}, so Wikidata labels cannot be "
             "resolved. Nothing was fetched and no row was declined for it."
         )
 

@@ -353,11 +353,12 @@ def load_rings_from_wikidata(
     denominator ("concepts Wikidata should have had") is not a number anyone has.
     """
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     # Before a session exists, so the refusal is testable with no socket anywhere near it.
     if kill_switch_active():
         raise AirplaneRefusal(
-            "network refused: airplane mode is engaged (the Wikidata ring load makes no "
+            f"{NETWORK_REFUSED} (the Wikidata ring load makes no "
             "request while the kill switch is on)"
         )
 

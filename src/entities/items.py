@@ -51,11 +51,13 @@ _TIMEOUT_S = 30
 #: stated in the payload, never a silent truncation.
 _ENTITY_SCAN_CAP = 5_000
 
-#: The refusal, in the words every surface shows (the UI keys its own ×12 twin).
-REFUSAL = (
-    "network refused: airplane mode is engaged (the Wikidata item fetch makes no request "
-    "while the kill switch is on)"
-)
+
+def refusal() -> str:
+    """The refusal, in the words every surface shows (the UI keys its own ×12 twin). Built where it is raised, from the one pre-check
+    sentence (R328): a module constant would make this module import ``src.ingest`` (and ``requests``) just to be imported."""
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
+
+    return f"{NETWORK_REFUSED} (the Wikidata item fetch makes no request while the kill switch is on)"
 
 
 class AirplaneRefusal(RuntimeError):
@@ -235,7 +237,7 @@ def fetch_items(
     failure never aborts the run; it is counted under ``refused`` with no guess about why.
     """
     if _kill_switch_active():
-        raise AirplaneRefusal(REFUSAL)
+        raise AirplaneRefusal(refusal())
 
     getter = get or _default_getter
     rg = gate or RateGate(stop=should_stop)

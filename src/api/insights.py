@@ -4541,11 +4541,12 @@ def ring_load(
     Wikidata for their own setting (invariant #14e's corollary).
     """
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
         raise HTTPException(
             status_code=409,
-            detail="network refused: airplane mode is engaged",
+            detail=NETWORK_REFUSED,
         )
     want = [x for x in (languages or "").replace(",", " ").split() if x] or None
     try:
