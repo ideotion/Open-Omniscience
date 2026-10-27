@@ -47,12 +47,13 @@ GUARDED = [
     ("src.api.wiki", "/api/wiki/dumps/sizes"),
     ("src.api.custody", "/api/custody/export"),
     ("src.api.annotations", "/api/annotations/export"),
+    ("src.api.geo", "/api/geo/downloads/size"),
 ]
 
 
 def _request(headers: dict[str, str]) -> Request:
     raw = [(k.lower().encode(), v.encode()) for k, v in {"host": "127.0.0.1:8000", **headers}.items()]
-    return Request({"type": "http", "method": "GET", "path": "/", "headers": raw})
+    return Request({"type": "http", "method": "GET", "path": "/", "scheme": "http", "server": ("127.0.0.1", 8000), "headers": raw})
 
 
 @pytest.mark.parametrize(("module", "path"), GUARDED)
@@ -174,3 +175,60 @@ def test_with_the_switch_off_a_down_stays_down(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(monitoring, "kill_switch_active", lambda: False)
     out = monitoring.sources_health(limit=1, db=_Rows(), fetcher=object())
     assert out["summary"] == {"down": 2}
+
+
+def _request_on(scheme: str, headers: dict[str, str]) -> Request:
+    raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+    return Request({"type": "http", "method": "GET", "path": "/", "scheme": scheme, "server": ("oo.lan", 443), "headers": raw})
+
+
+def test_a_proxy_that_names_the_default_port_in_host_is_the_same_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The follow-on to the Opus read of R278: ``Host: oo.lan:443`` and ``Origin: https://oo.lan`` name one server.
+
+    The raw string compare this replaced refused that pair on a GET while the POST middleware let it through.
+    """
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "oo.lan")
+    assert refuse_cross_site_get(_request_on("https", {"host": "oo.lan:443", "origin": "https://oo.lan"})) is None
+    assert refuse_cross_site_get(_request_on("https", {"host": "oo.lan", "origin": "https://oo.lan:443"})) is None
+    assert refuse_cross_site_get(_request_on("http", {"host": "oo.lan:80", "referer": "http://oo.lan/page"})) is None
+
+
+@pytest.mark.parametrize(
+    ("scheme", "headers"),
+    [
+        ("https", {"host": "oo.lan:443", "origin": "https://oo.lan:8443"}),
+        ("https", {"host": "oo.lan:443", "origin": "https://evil.example"}),
+        ("https", {"host": "oo.lan:443", "origin": "ftp://oo.lan:443"}),
+        ("https", {"host": "oo.lan", "origin": "https://oo.lan:99999"}),
+    ],
+)
+def test_a_different_port_host_or_scheme_is_still_a_different_server(
+    monkeypatch: pytest.MonkeyPatch, scheme: str, headers: dict[str, str]
+) -> None:
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "oo.lan")
+    with pytest.raises(HTTPException) as exc:
+        refuse_cross_site_get(_request_on(scheme, headers))
+    assert exc.value.status_code == 403
+
+
+def test_the_osm_size_read_makes_no_head_for_a_foreign_page_and_one_for_the_own_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A-014 (R284): a cross-site GET of ``/api/geo/downloads/size`` reached the outbound HEAD and answered 200."""
+    from src.api.main import app
+    from src.geo import osm_downloads
+
+    heads: list[str] = []
+
+    class _Manager:
+        def size_reading(self, code: str) -> dict:
+            heads.append(code)
+            return {"code": code, "bytes": 1}
+
+    monkeypatch.setattr(osm_downloads, "get_manager", lambda: _Manager())
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        foreign = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "cross-site", "Referer": "https://evil.example/x"})
+        no_metadata = client.get("/api/geo/downloads/size?code=planet", headers={"Origin": "https://evil.example"})
+        own = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/"})
+        script = client.get("/api/geo/downloads/size?code=planet")
+    assert foreign.status_code == 403 and no_metadata.status_code == 403
+    assert heads == ["planet", "planet"]
+    assert own.status_code == 200 and script.status_code == 200

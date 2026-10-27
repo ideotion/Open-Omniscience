@@ -34,6 +34,13 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 
 @pytest.fixture(autouse=True)
 def _held(monkeypatch):
+    # The store module takes the passphrase out of the environment into ``S._TAKEN`` when it is first IMPORTED, so importing it
+    # after the variable is set (the first test of a process that has not imported it) leaves the test's passphrase held by the
+    # process for every later test file: ``test_runs_log_sinks`` then finds it among the holders of the shapes it scans. Import
+    # first, and give the test its own copy of the holder.
+    import src.database.connect  # noqa: F401 - imported for the take it makes at import
+
+    monkeypatch.setattr(S, "_TAKEN", dict(S._TAKEN))
     monkeypatch.setenv("OO_DB_PASSPHRASE", PASS)
     monkeypatch.setattr("src.database.connect._passphrase", None)
 
