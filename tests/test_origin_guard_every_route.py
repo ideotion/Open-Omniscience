@@ -21,6 +21,7 @@ loop reaches must not touch the network or hide the list of operations that got 
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 
@@ -30,10 +31,20 @@ from fastapi.testclient import TestClient
 _METHODS = ("post", "put", "patch", "delete")
 _FOREIGN = {"Origin": "http://evil.example"}
 _REFUSAL = "Cross-origin state-changing request refused (loopback only)."
-# The number of state-changing operations the schema listed on 2026-10-26 and again on 2026-10-27 (main 26ce1da6a). A floor, not an exact count: new routes are welcome and
-# are covered by the same loop; fewer than this means the finder stopped seeing routes (a framework change in how the schema is
-# built), which would turn every assertion below into a loop over nothing.
-_OPERATIONS_FLOOR = 317
+# The number of state-changing operations the schema listed on 2026-10-26 and again on 2026-10-27 (main 26ce1da6a). A floor, not an
+# exact count: new routes are welcome and are covered by the same loop; fewer than this means the finder stopped seeing routes (a
+# framework change in how the schema is built), which would turn every assertion below into a loop over nothing. The Core-only
+# install (no [analysis] extra) mounts 11 fewer (the commodity, statistical-analysis and article-similarity routes are disabled
+# there, and say so at boot): 306, measured by CI's Core-only lane and reproduced by blocking numpy/pandas/scipy/sklearn/statsmodels.
+_OPERATIONS_FLOOR_FULL = 317
+_OPERATIONS_FLOOR_CORE_ONLY = 306
+
+
+def _analysis_extra_installed() -> bool:
+    return all(importlib.util.find_spec(m) is not None for m in ("numpy", "pandas", "scipy", "sklearn", "statsmodels"))
+
+
+_OPERATIONS_FLOOR = _OPERATIONS_FLOOR_FULL if _analysis_extra_installed() else _OPERATIONS_FLOOR_CORE_ONLY
 
 
 @pytest.fixture()
@@ -71,7 +82,7 @@ def test_the_schema_walk_still_sees_the_routes():
     ops = _operations(app)
     assert len(ops) >= _OPERATIONS_FLOOR, (
         f"the OpenAPI schema lists {len(ops)} state-changing operations, fewer than the {_OPERATIONS_FLOOR} it listed on "
-        "2026-10-26: either routes were removed (lower the floor, with a reason) or the walk went blind"
+        "2026-10-27 for this install: either routes were removed (lower the floor, with a reason) or the walk went blind"
     )
 
 
