@@ -553,6 +553,20 @@ def _persisted_declined(why: str) -> bool:
     return False
 
 
+def _void_built_epoch(con) -> None:
+    """Make the persisted store's next refresh a full rebuild: ``-1`` is no corpus epoch, so ``refresh_keyword_daily`` finds it unequal.
+
+    Called only when the final comparison of a refresh that ran its merge fails; a stop BEFORE the merge changed nothing and clears nothing. A
+    failure here is logged, not raised: the stop that called it is the error the caller must see.
+    """
+    from src.analytics import columnar
+
+    try:
+        columnar._set_meta(con, "keyword_daily.built_epoch", -1)
+    except Exception as exc:  # noqa: BLE001 - the library replacement is the failure being reported; this is its repair
+        log_failure(_LOG, "rollup serve: could not void the persisted rollup's built epoch", exc, level=logging.WARNING)
+
+
 def _refresh_persisted_build() -> bool | None:
     """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined: the
     passphrase or the secure backend is gone since the dispatcher chose this path, the engine is off, or the opener handed back an in-memory store
@@ -575,6 +589,7 @@ def _refresh_persisted_build() -> bool | None:
     serve during the very first build falls back to live (never an empty half-built table)."""
     from src.analytics import columnar, serve_gate
     from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.database import library_generation
     from src.database.session import session_scope
 
     with _LOCK:
@@ -602,11 +617,24 @@ def _refresh_persisted_build() -> bool | None:
     if con is None:
         return _persisted_declined("engine-off")  # a store cached in ``_STATE`` is never None here; this narrows the type and refuses the impossible
     try:
+        # The library's generation, read before the refresh's session reads a row (``_require_library_unchanged``): a swap that lands later
+        # stops the refresh at its next batch, before the merge, and again before the store is recorded as serving.
+        stamp = library_generation.current()
         with session_scope() as s:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
-                columnar.refresh_keyword_daily(con, s, corpus_epoch=epoch)
+                columnar.refresh_keyword_daily(
+                    con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
+                )
+                # the merge ran for a while: the store is not RECORDED as serving. A cached connection is the one the refresh just changed, so it
+                # keeps serving those tables; the untouched token makes the next gate check refresh it, and that refresh must be a FULL one, since an
+                # equal epoch would make it an incremental merge that never revisits what the new file's rows changed: the built epoch is voided.
+                try:
+                    _require_library_unchanged(stamp)
+                except library_generation.StaleLibraryError:
+                    _void_built_epoch(con)
+                    raise
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
                 _STATE["con"] = con
                 _STATE["persisted"] = True
