@@ -98,3 +98,39 @@ def test_a_broken_overlay_is_still_an_empty_overlay_not_a_crash(tmp_path):
     bad = tmp_path / "bad.yml"
     bad.write_text("verdicts: [unclosed\n", encoding="utf-8")
     assert qo.load_overlay(bad) == {}
+
+
+@pytest.mark.parametrize("cls", _LOADERS)
+def test_the_status_read_parses_the_overlay_once_and_reports_the_same_header(cls, overlay_path, monkeypatch):
+    # Before: load_overlay parsed the file and the header read parsed it again (about 3.9 s for 5,580 rows on the pure loader).
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+    used = _spy(monkeypatch, cls)
+    status = qo.overlay_status(session, path=overlay_path)
+    assert used == [cls]
+    assert status["file"]["generated_at"] == str(yaml.safe_load(overlay_path.read_text("utf-8"))["generated_at"])
+    assert status["file"]["exists"] is True
+    assert status["shipped_qualified"] + status["shipped_disqualified"] == _ROWS
+
+
+def test_the_status_header_of_an_absent_or_broken_overlay_is_unchanged(tmp_path):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+    absent = qo.overlay_status(session, path=tmp_path / "nope.yml")
+    assert absent["file"]["exists"] is False and absent["file"]["generated_at"] is None
+    bad = tmp_path / "bad.yml"
+    bad.write_text("verdicts: [unclosed\n", encoding="utf-8")
+    broken = qo.overlay_status(session, path=bad)
+    assert broken["file"]["exists"] is True and broken["file"]["generated_at"] is None
