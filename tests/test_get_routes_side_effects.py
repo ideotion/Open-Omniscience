@@ -625,13 +625,19 @@ def test_an_unnamed_thread_started_by_serve_canary_is_recorded(tmp_path):
     """Finding F4 is fixed (#1556 names the canary's interrupt timer), so the monitor no longer skips an unnamed thread started from
     ``serve_canary``: a bare ``Thread-N`` from there is recorded like any other, and a named one is recorded under its name."""
 
+    started: list[str] = []
+
     def serve_canary():
-        threading.Thread(target=lambda: None).start()  # unnamed again: must be seen
-        threading.Thread(target=lambda: None, name="rollup-canary-timer").start()
+        bare = threading.Thread(target=lambda: None)  # unnamed again: must be seen
+        bare.start()
+        named = threading.Thread(target=lambda: None, name="rollup-canary-timer")
+        named.start()
+        started.extend([bare.name, named.name])
 
     with _Monitor([tmp_path]) as mon:
         serve_canary()
-    assert "rollup-canary-timer" in mon.threads and [n for n in mon.threads if n.startswith("Thread-")], mon.threads
+    # the started threads' OWN names, so an unrelated bare Thread-N (the boot-sequence timer) cannot satisfy it
+    assert started[0].startswith("Thread-") and started[0] in mon.threads and "rollup-canary-timer" in mon.threads, (started, mon.threads)
 
 
 def test_the_rollup_allowance_holds_only_where_duckdb_imports(monkeypatch):

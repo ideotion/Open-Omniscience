@@ -23,8 +23,12 @@ What it pins: the multipart set by route; the raw-body readers by function (an A
 ``.form()`` / ``.json()`` on a name that is a request); every operation's declared shape being one of the three; and the per-shape counts
 as floors on both install profiles (R283).
 
-Stated limits: the scan sees a request read through a variable named ``request`` or ``req`` (the names the app uses); a handler that
-builds a ``starlette.requests.Request`` from a scope, or reads ``receive`` directly, is invisible to it. A route that declares a JSON body
+Stated limits: the scan sees a request read through a name that is ``request``, ``req`` or ``http_request`` (``req`` names pydantic models in
+``src/`` today, so a ``req.json()`` there would be a false positive to list), or through any parameter annotated ``Request``; a handler
+that reads ``self.request``, builds a ``starlette.requests.Request`` from a scope, reads ``receive`` directly, or shares a function name with
+another in the same file (one key) is invisible or merged. Every state-changing route is assumed to be in the schema: a route declared with
+``include_in_schema=False`` would be invisible here (today all hidden routes are GET). The stated layers are the Host allow-set and the Origin
+layer; "the Origin layer alone" below means the layer that stands in front of the parser beyond the Host check. A route that declares a JSON body
 but is never given one (every field optional) is a JSON-shape route here; its behaviour with no body is the Origin ratchet's business
 (``tests/test_origin_guard_every_route.py``).
 """
@@ -44,7 +48,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 # (METHOD, path) -> why this route takes a multipart body. A fifth entry is a new simple-request surface: add it only with the sentence that
 # says what bounds the upload and what the Origin layer is the only guard for.
 _MULTIPART: dict[tuple[str, str], str] = {
-    ("POST", "/api/catalog/import"): "a source-catalogue sheet upload; a missing file part answers 200 with zero rows",
+    ("POST", "/api/catalog/import"): "a source-catalogue sheet upload; the file part is required (422 without it, 400 for an empty file), bounded at _MAX_IMPORT_BYTES after the read",
     ("POST", "/api/diagnostics/source-qualification-merge"): "per-instance qualification exports; every part is optional, so an empty POST answers 200 (it computes, it writes no file)",
     ("POST", "/api/commodities/{symbol}/prices/import-csv"): "a price CSV, bounded read of 16 MiB; the commodity router needs the [analysis] extra",
     ("POST", "/api/verify/image-metadata"): "an image for EXIF extraction, bounded read of 50 MiB; no write",
@@ -57,19 +61,20 @@ _NEEDS_ANALYSIS_EXTRA = {("POST", "/api/commodities/{symbol}/prices/import-csv")
 _RAW_BODY_READERS: dict[str, tuple[tuple[str, str], str]] = {
     "src/api/claims.py::verify_claim_trail_bundle": (
         ("POST", "/api/claims/trail-bundle/verify"),
-        "a trail bundle is posted as the raw ZIP body; a pure check (no database, no write) bounded at MAX_VERIFY_BYTES. Accepts any Content-Type "
+        "a trail bundle is posted as the raw ZIP body; a pure check (no database, no write); the ANSWER is bounded at MAX_VERIFY_BYTES (413) but the "
+        "whole body is read first and no middleware limits request size. Accepts any Content-Type "
         "(measured 2026-10-27: text/plain, form and multipart all reach the parser); proposal to answer 415 is in the audit folder, not decided",
     ),
     "src/api/ingestion.py::import_newsletters": (
         ("POST", "/api/newsletters/import"),
         "local .eml files ingested anonymised into the corpus; parses request.form() itself, so the schema shows no body and any Content-Type "
-        "or none answers 200 (an empty POST still gets-or-creates the 'Imported newsletters (.eml)' source row); per-file bound _MAX_EML_BYTES; "
+        "or none answers 200 (an empty POST still gets-or-creates the 'Imported newsletters (.eml)' source row); per-file bound _MAX_EML_BYTES on the in-memory read, not on the upload; "
         "a declared `files: list[UploadFile]` would put it in the multipart group (proposal, not decided)",
     ),
     "src/api/ingestion.py::upload_pdfs": (
         ("POST", "/api/documents/pdf/upload"),
         "local PDFs ingested into the corpus; parses request.form() itself, any Content-Type or none answers 200; per-file bound _MAX_PDF_BYTES "
-        "(200 MiB); same declared-UploadFile proposal as the newsletter import",
+        "(200 MiB) on the in-memory read, not on the upload; same declared-UploadFile proposal as the newsletter import",
     ),
 }
 
@@ -97,12 +102,22 @@ def _shape(op: dict) -> str:
     return "+".join(kinds) or "empty-body-declaration"
 
 
+def _fresh_app():
+    """A private app wired by the app's own ``wire``: the shared ``src.api.main.app`` is mutated by other tests (one mounts a temporary
+    route on it), and an exact-set check must not read a process-global."""
+    from fastapi import FastAPI
+
+    from src.api._wiring import wire
+
+    app = FastAPI()
+    wire(app)
+    return app
+
+
 def _operations() -> list[tuple[str, str, str]]:
     """(METHOD, path, shape) for every state-changing operation of the app's own schema."""
-    from src.api.main import app
-
     out = []
-    for path, ops in app.openapi()["paths"].items():
+    for path, ops in _fresh_app().openapi()["paths"].items():
         for method, op in ops.items():
             if method in _METHODS:
                 out.append((method.upper(), path, _shape(op)))
@@ -123,20 +138,31 @@ def _raw_readers_in(source: str, name: str) -> set[str]:
     found: set[str] = set()
     tree = ast.parse(source)
 
-    def walk(node: ast.AST, enclosing: str | None) -> None:
+    def request_params(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+        """Parameters annotated ``Request`` (plain or dotted), whatever they are called."""
+        out = set()
+        for a in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs]:
+            ann = a.annotation
+            if (isinstance(ann, ast.Name) and ann.id == "Request") or (isinstance(ann, ast.Attribute) and ann.attr == "Request"):
+                out.add(a.arg)
+        return out
+
+    def walk(node: ast.AST, enclosing: str | None, names: frozenset[str]) -> None:
         for child in ast.iter_child_nodes(node):
-            inner = child.name if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef) else enclosing
+            inner, inner_names = enclosing, names
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                inner, inner_names = child.name, names | request_params(child)
             if (
                 isinstance(child, ast.Call)
                 and isinstance(child.func, ast.Attribute)
                 and child.func.attr in _READ_METHODS
                 and isinstance(child.func.value, ast.Name)
-                and child.func.value.id in _REQUEST_NAMES
+                and child.func.value.id in names
             ):
                 found.add(f"{name}::{enclosing or '<module>'}")
-            walk(child, inner)
+            walk(child, inner, inner_names)
 
-    walk(tree, None)
+    walk(tree, None, _REQUEST_NAMES)
     return found
 
 
@@ -190,16 +216,32 @@ def test_each_raw_reader_serves_a_route_that_declares_no_body(operations):
         )
 
 
+def test_each_raw_reader_is_the_endpoint_of_its_listed_route():
+    """The table's function -> route pairs are checked against the schema's operation ids (FastAPI builds one from the endpoint's function
+    name and the path), so swapping two rows cannot pass."""
+    ids = {
+        (method.upper(), path): op.get("operationId", "")
+        for path, ops in _fresh_app().openapi()["paths"].items()
+        for method, op in ops.items()
+        if method in _METHODS
+    }
+    for func, (route, _reason) in _RAW_BODY_READERS.items():
+        name = func.split("::")[1]
+        assert ids.get(route, "").startswith(name + "_"), f"{func} is not the endpoint of {route}: operation id {ids.get(route)!r}"
+
+
 def test_the_scanner_finds_a_raw_reader_and_only_a_raw_reader():
     """Liveness, so a green scan is not a blind one: the readers it must see, and the uses it must not."""
     seen = _raw_readers_in(
         "async def handler(request):\n    data = await request.body()\n"
         "async def streaming(req):\n    async for chunk in req.stream():\n        pass\n"
         "async def forms(request):\n    return await request.form()\n"
-        "async def js(request):\n    return await request.json()\n",
+        "async def js(request):\n    return await request.json()\n"
+        "async def renamed(r: Request):\n    return await r.body()\n"
+        "async def dotted(incoming: starlette.requests.Request):\n    return await incoming.form()\n",
         "x.py",
     )
-    assert seen == {"x.py::handler", "x.py::streaming", "x.py::forms", "x.py::js"}, seen
+    assert seen == {"x.py::handler", "x.py::streaming", "x.py::forms", "x.py::js", "x.py::renamed", "x.py::dotted"}, seen
     quiet = _raw_readers_in(
         "def a(request):\n    return request.url.path\n"
         "def b(response):\n    return response.json()\n"  # an HTTP client's reply, not a request
@@ -210,5 +252,5 @@ def test_the_scanner_finds_a_raw_reader_and_only_a_raw_reader():
 
 
 def test_the_real_scan_runs_over_real_files():
-    """The AST scan of ``src/`` must be looking at files: it finds the one known reader, so an empty glob cannot pass the exact-set test."""
+    """An empty glob must not pass: the real scan finds the known readers."""
     assert "src/api/claims.py::verify_claim_trail_bundle" in _raw_readers(_ROOT)
