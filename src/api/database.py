@@ -203,7 +203,8 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
 
 
 # The Library figures get their OWN longer interval: the single full
-# keyword_mentions COUNT measured 43 s on the field corpus, so it must not ride
+# keyword_mentions COUNT measured 43 s on the field corpus (on the bare statement it used until 2026-10-27;
+# superseded, pending), so it must not ride
 # the 4 s stats poll. Before S3.2 that was a plain time cache whose expiry
 # recomputed INLINE -- so once a minute one poll still waited out the whole scan
 # on the request thread. It now goes through served_cache like /stats: the last
@@ -214,7 +215,12 @@ _FIGURES_TTL_S = 60
 #: The statement deadline of the background keyword-mentions count, in seconds. It protects the pooled connection and the read
 #: snapshot the count holds (an open read pins the WAL from checkpointing), not the request, which no longer waits on it. The
 #: count measured 55 s and 182 s on the same 12 M-row field corpus under different load (diagnostics of 2026-10-16), so the
-#: default is 300 s, 1.6 times the worst measured. ``OO_FIGURES_COUNT_DEADLINE_S`` changes it; 0 disables it.
+#: default is 300 s, 1.6 times the worst measured. ``OO_FIGURES_COUNT_DEADLINE_S`` changes it; 0 disables it. THE FIGURES ABOVE WERE
+#: MEASURED ON THE BARE ``count(*)`` this count used until 2026-10-27, which the deadline could not stop (one VM opcode); the statement is
+#: ``count(id)`` now, which the deadline stops, and no figure has been taken on it at that size (superseded, pending). THE DEADLINE IS NOW
+#: LIVE FOR THIS COUNT: before, it never fired, so a count that needed more than 300 s finished and was carried; now it is stopped at the
+#: deadline and the figure stays failed for ``_FIGURES_FAILURE_WINDOW_S`` before a retry, which is what this deadline was documented to
+#: do. Whether a field corpus reaches 300 s on ``count(id)`` is not measured.
 _FIGURES_COUNT_DEADLINE_S = 300.0
 
 #: How long a count that failed is NOT retried, in seconds: 900 s is three deadlines, so a corpus whose count cannot finish holds
@@ -224,7 +230,7 @@ _FIGURES_FAILURE_WINDOW_S = 900
 
 #: A finished count is carried, not repeated, for this many times its own measured duration. It protects the collectors' CPU on a
 #: 2-core box: the COUNT is one scan, so repeating it every ``factor x duration`` caps its duty cycle at ``1 / factor`` of one core
-#: (10 -> at most 10 %; with the 55 s measured on the field corpus, one count per ~9 min). The cheap figures keep their own 60 s
+#: (10 -> at most 10 %; with the 55 s measured on the field corpus on the bare statement, superseded, pending: one count per ~9 min). The cheap figures keep their own 60 s
 #: interval; only the COUNT waits. The window is longer than ``_FIGURES_TTL_S`` only when the count is slower than 6 s.
 _FIGURES_COUNT_DUTY_FACTOR = 10
 
@@ -360,7 +366,12 @@ def _mentions_count(db: Session) -> int:
 
     from src.database.derived_views import KeywordMentionRead
 
-    return int(db.execute(select(func.count()).select_from(KeywordMentionRead)).scalar() or 0)
+    # ``count(id)``, NOT a bare ``count(*)``: SQLite runs a bare count as ONE virtual-machine opcode, and ``statement_deadline`` is a
+    # progress handler asked once per 20,000 opcodes, so the deadline around this call stopped nothing (it ran whole under a 1e-6 s
+    # deadline over 1,240,657 mentions; a counting handler at the real interval was consulted 0 times over it and 186 times over a free
+    # run of ``count(id)``, which raises the typed timeout under that deadline). ``id`` is the primary key, never NULL, so the number is
+    # the same. tests/test_deadline_bound_statements.py pins the bound.
+    return int(db.execute(select(func.count(KeywordMentionRead.id))).scalar() or 0)
 
 
 def _compute_figures(db: Session, now: datetime) -> dict:

@@ -413,8 +413,14 @@ def _store_and_corpus(session: Session) -> tuple[dict, dict]:
         "articles": int(session.query(func.count(Article.id)).scalar() or 0),
         "sources": int(session.query(func.count(Source.id)).scalar() or 0),
         "keywords": int(session.query(func.count(Keyword.id)).scalar() or 0),
+        # ``count(1)``, NOT a bare ``count(*)``: this runs inside the diagnostics bundle's per-member statement deadline (``benchmark.json``
+        # is a member), and a bare count is one VM opcode the deadline's progress handler is never asked during, so it ran whole under a
+        # 1e-6 s deadline over 1,240,657 mentions (the handler consulted 0 times); ``count(1)`` loops and is stopped. When it is, the
+        # driver's ``OperationalError`` is caught by ``run_benchmark`` (the ``StatementTimeout`` translation happens only as the exception
+        # leaves the deadline block) and ``store`` and ``corpus`` are recorded as that class-only error, which does not name the deadline
+        # and drops the store facts already read; the cases that follow report the passed deadline themselves.
         "keyword_mentions": int(
-            session.execute(text("SELECT COUNT(*) FROM keyword_mentions")).scalar() or 0
+            session.execute(text("SELECT count(1) FROM keyword_mentions")).scalar() or 0
         ),
     }
     return store, corpus
