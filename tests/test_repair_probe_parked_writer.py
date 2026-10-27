@@ -26,14 +26,16 @@ WHAT THE TESTS HOLD.
 
 WHY IT IS A LIMIT AND NOT A DEFECT. A thread holds SQLite's write lock only inside a transaction that took it (a write, or a ``BEGIN
 IMMEDIATE``). The gated writers (every ORM flush, ORM-issued DML and textual write, the explicit ``write_lock()`` sites, and the settings saves:
-``kv_store.kv_set_json`` and ``kv_delete`` run under ``write_lock()`` on a raw connection) cannot be in that state when the repair's window
-opens: the repair holds the gate for the whole repair, a gated writer takes its connection BEFORE the gate (``writer.connection_first``), and the
-gate is released only at its commit or rollback, so a gate holder waited for by ``write_lock()`` has already ended its transaction. What can
+``kv_store.kv_set_json`` and ``kv_delete`` take ``write_lock()`` and then a raw ``connect()``, which never passes ``connecting()``) cannot be in
+that state when the repair's window opens: the repair holds the gate for the whole repair, a gated writer's pooled connection is taken BEFORE the
+gate (``writer.connection_first``), and the gate is released only at its commit or rollback, so a gate holder waited for by ``write_lock()`` has
+already ended its transaction. What can
 reach the probe's wait is a writer the gate does not see (a Core or raw-driver write transaction) that then (a) asks the guarded engine for a
-SECOND connection, or (b) enters a gated operation. In ``src/`` the writers the gate does not see are the DDL and derived-store steps that
-``database/library_generation.py`` itself names (``spell_index``, ``fts``, ``maintenance``, ``migrate``; ``source_identity`` opens ``BEGIN
-IMMEDIATE`` on a Core connection), which run at launch and unlock, before the boot steps of which the repair is one, and again as ``init_db`` after
-a restore's swap and after a repair's own swap. That no such step runs on another thread during a repair, and that none opens a second pooled
+SECOND connection, or (b) enters a gated operation. In ``src/`` the writers the gate does not see are the DDL steps of ``init_db``
+(``maintenance.ensure_*``, ``migrate``, ``fts.ensure_fts``; ``source_identity`` opens ``BEGIN IMMEDIATE`` on a Core connection), which run at
+launch and unlock, before the boot steps of which the repair is one, and again as ``init_db`` after a restore's swap and after a repair's own swap.
+(``library_generation.py``'s module docstring also lists ``spell_index`` and the ``fts`` rebuilds; those run through ``session_scope`` text
+statements and under ``write_lock()``, so they are gated, and that list is stale.) That no such step runs on another thread during a repair, and that none opens a second pooled
 connection or enters the gate while it holds the lock, is read from the call sites, not proved. ``scheduler/hygiene.py`` runs a PASSIVE
 checkpoint outside the gate, which takes no write lock. A sweep of the test suite for a nested open made while the first connection had written
 (shape (a) only: 136,587 checkouts, 103,477 of them by a thread that already held another, 668 of those with the held connection inside a
@@ -41,15 +43,17 @@ transaction that had changed rows) found every one held by an ORM session and no
 waits for no SQLite lock.
 
 WHAT IT DOES NOT COVER. Windows, where the file steps wait (up to ``_SWAP_HANDLE_WAIT_S``, 300 s; ``_retry_while_locked`` retries a sharing
-violation, winerror 32 and 33) for every handle on the live file to close: a thread parked in ``connecting()`` with a connection checked out holds
+or lock violation, winerror 32 and 33) for every handle on the live file to close: a thread parked in ``connecting()`` with a connection checked out holds
 its handle, whether or not it wrote, and a thread queued on the gate with a connection checked out does the same, for the repair's file steps
 (``swap_in_corpus`` runs under the gate) as for the restore's. That is the shape ``backup.merge`` measured (``_carry_and_swap``) and the rollup
 build's boundary check avoids on purpose (``rollup_serve._require_library_unchanged`` never waits for the window); it is not exercised here. The
 engine of ``read_snapshot`` is a second guarded engine (``guarded_creator`` + ``attach``): a rule keyed on a connection count must cover both.
 
 No test here reads a clock for its verdict: the ORDER is asserted (the creator had not run for the second connection when the probe failed and the
-writer was inside the wait; it had when the window was over), and the 0.5 s is the probe's own busy timeout, which the property does not depend on.
-The control's 5 s is only the time its mutant takes to fail (a refusal that does not invalidate leaves the lock held until the probe gives up).
+writer was inside the wait or queued on the gate; it had when the window was over), and the 0.5 s is the probe's own busy timeout, which the property does not
+depend on.
+The control's probe waits ``HANG_GUARD_S`` like every other bound in the suite: a healthy run is let through in milliseconds, and only a mutant (a refusal
+that does not invalidate leaves the lock held until the probe gives up) pays it.
 """
 
 from __future__ import annotations
@@ -64,13 +68,13 @@ from sqlalchemy import create_engine, text
 from src.backup.merge import swap_in_corpus
 from src.database import library_generation as gen
 from src.database import repair
-from src.database.writer import write_lock
-from tests.wallclock_helpers import HANG_GUARD_S
+from src.database.writer import write_gate_waiters, write_lock
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 #: The probe's busy timeout in the forced cases (production: 30 s). The property is the ORDER around it, not the figure.
 _PROBE_BUSY_S = 0.5
 #: The control's: a probe that is let through waits only as long as the writer takes (milliseconds); this is how long its mutant takes to fail.
-_CONTROL_BUSY_S = 5.0
+_CONTROL_BUSY_S = HANG_GUARD_S
 
 
 def _store(path: Path) -> None:
@@ -203,7 +207,8 @@ def test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_
     assert world.untouched()
 
 
-def test_a_thread_that_wrote_outside_the_gate_and_then_needs_the_gate_makes_the_probe_wait_out_its_busy_timeout(forced):
+def test_a_thread_that_wrote_outside_the_gate_and_then_needs_the_gate_makes_the_probe_wait_out_its_busy_timeout(forced, monkeypatch):
+    monkeypatch.delenv("OO_WRITE_GATE", raising=False)  # the shape rests on the gate being on (``OO_WRITE_GATE=0`` makes ``write_lock()`` a no-op)
     world = forced
     holding, window_open, entering = threading.Event(), threading.Event(), threading.Event()
     seen: dict[str, object] = {}
@@ -230,6 +235,9 @@ def test_a_thread_that_wrote_outside_the_gate_and_then_needs_the_gate_makes_the_
     def check() -> None:
         window_open.set()
         assert entering.wait(HANG_GUARD_S)
+        # the probe starts once the writer is queued on the gate (or, if the gate let it through, has finished)
+        wait_until(lambda: write_gate_waiters() >= 1 or "got_the_gate_after_the_probe" in seen)
+        assert write_gate_waiters() >= 1, "the writer must be queued on the gate when the probe runs (the gate let it through)"
         try:
             world.probe.moved()
         except sqlite3.OperationalError as exc:
