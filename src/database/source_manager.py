@@ -54,6 +54,7 @@ from src.database.stand_in import not_a_stand_in_source
 
 # Import logging config
 from src.utils.logging_config import setup_logging
+from src.utils.safe_yaml import load_safe_yaml
 
 logger = setup_logging("source_manager")
 
@@ -1046,7 +1047,7 @@ class SourceManager:
             Dictionary with counts of added, updated, and skipped sources
         """
         with open(file_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = load_safe_yaml(f.read())
 
         sources_data = data.get("sources", [])
 
