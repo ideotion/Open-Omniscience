@@ -1489,7 +1489,7 @@
           let change = "";
           if (first && last && first.price) {
             const pct = (last.price - first.price) / first.price * 100;
-            change = `<span class="pill ${pct>=0?'ok':'err'}">${ooLtrIsolate((pct>=0?'+':'') + pct.toFixed(1))}%</span>`;
+            change = `<span class="pill ${pct>=0?'ok':'err'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`;
           }
           const lv = last ? `${fmtNum(last.price)} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
           // The TITLE is its own clickable affordance: it investigates the
