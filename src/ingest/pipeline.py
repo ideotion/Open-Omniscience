@@ -519,8 +519,9 @@ def ingest_source(
 ) -> dict[str, int]:
     """Ingest a source's RSS/Atom feed (the feed is fetched through the ethical path).
 
-    Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline: 1``
-    is present ONLY when the kill switch (airplane mode) refused the feed fetch, so an all-zero tally
+    Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline``
+    is present ONLY when the kill switch (airplane mode) refused something: 1 for the feed fetch itself, or, for a Stop pressed mid-feed, the
+    number of entries that were never asked for. So an all-zero tally
     that means "nothing was fetched" is told apart from one that means "the feed had nothing new".
     The key is absent otherwise (no permanent zero line) and every other key is unchanged.
     """
@@ -583,10 +584,15 @@ def ingest_source(
     from src.ingest.batch import ArticleBatch, collect_batch_size
 
     batch = ArticleBatch(session, source) if collect_batch_size() > 0 else None
+    stopped = False  # latched: the batch flush below can wait seconds on the writer gate, and a Stop cleared in that wait must not undo it
     try:
-        for link in links:
+        for done, link in enumerate(links):
             if kill_switch_active():
-                break  # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one
+                stopped = True
+                # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one, but they are COUNTED
+                # (``skipped_offline``, as the feed-GET refusal and the wiki and law trackers do), so the stop stays visible in the tally
+                tally["skipped_offline"] = tally.get("skipped_offline", 0) + (len(links) - done)
+                break
             outcome = ingest_url(session, source, link, fetcher=fetcher, batch=batch)
             if outcome.result is IngestResult.STAGED:
                 continue  # resolved at flush; merged from batch.tally below
@@ -618,11 +624,11 @@ def ingest_source(
     # no autoflush, no gate — and the de-churn backoff (a 200 that stored ZERO
     # new articles delays this feed's next re-check, capped, self-resetting)
     # reads the true post-flush stored count.
-    if kill_switch_active():
+    if stopped or kill_switch_active():
         # STOPPED, not finished: entries after the Stop were never asked for, so recording this pass would store the validator (the next pass
         # then gets a 304 and never asks for them) and climb the backoff. The row stays as it was; the next pass reads the feed again with
-        # the OLD validator, and the dedup step skips what was already stored. (A Stop cleared again within the pass is the one-request
-        # window stated for the law tracker; the switch is read once, here.)
+        # the OLD validator, and the dedup step skips what was already stored. The Stop seen by the loop is latched; a Stop pressed after the
+        # loop (during the flush) is read here. (A Stop cleared again within a request's flight is the window stated for the law tracker.)
         _commit_feed_bookkeeping(session)
         return tally
     _record_feed_state(session, source.id, feed_resp)

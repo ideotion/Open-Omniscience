@@ -197,6 +197,22 @@ def test_a_stop_in_a_sitemap_page_ends_that_outlets_walk_and_stamps_nothing(db, 
     assert stamped == [] and out["sitemap_urls_ingested"] == 0, "the page the Stop cut was counted as an attempt"
 
 
+def test_a_page_stored_before_the_stop_is_counted_as_an_attempt(db, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from src.ingest import pipeline
+
+    def ingest(session, source, link, **kw):  # a page that was fetched and stored, the Stop pressed while it was being stored
+        activate_kill_switch()
+        return SimpleNamespace(result=pipeline.IngestResult.STORED)
+
+    monkeypatch.setattr(pipeline, "ingest_url", ingest)
+    urls = [f"https://a.example/p-{i}" for i in (1, 2, 3)]
+    out, stamped, _ = _crawl(db, tmp_path, sitemap_urls=urls)
+    assert out["sitemap_urls_ingested"] == 1, "a stored page was not counted"
+    assert stamped == [], "the outlet was stamped crawled although its walk was stopped"
+
+
 # ---------------------------------------------------------------------- D2: the feed pass
 
 
@@ -227,18 +243,40 @@ def test_a_real_article_failure_still_records_the_feed_the_control(db, tmp_path)
     assert len({u for u, _ in calls if "/story-" in u}) == 3, "the control did not walk the three entries"
 
 
-def test_a_stop_mid_feed_stores_no_validator_climbs_no_backoff_and_asks_no_more_entries(db, tmp_path):
-    row = _source(db)
+@pytest.mark.parametrize("seeded", [False, True])
+def test_a_stop_mid_feed_stores_no_validator_climbs_no_backoff_and_asks_no_more_entries(db, tmp_path, seeded):
+    row = _source(db, seed=seeded)
     calls: list = []
     tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, calls, cut_on="/story-1", feed=True))
     st = _state(db, row.id)
-    assert st is None or (st.etag is None and not st.consecutive_unchanged and st.skip_until is None), (
-        f"a Stop was recorded as the feed's behaviour: etag={getattr(st, 'etag', None)!r}"
-    )
+    if seeded:
+        assert st.etag == "old" and st.consecutive_unchanged == 4 and st.skip_until is not None, "a Stop was recorded as the feed's behaviour"
+    else:
+        assert st is None, f"a Stop created a feed state: etag={st.etag!r}"
     assert {u for u, _ in calls if "/story-" in u} == {f"https://{FEED_HOST}/story-1"}, "the entries after the Stop were walked through a refusal"
-    assert tally["fetch_failed"] >= 1 and kill_switch_active()
-    clear_kill_switch()
-    assert st is None or feed_is_due(st), "the stopped feed would not be taken again by the scheduler"
+    assert tally["fetch_failed"] == 1 and kill_switch_active()
+    assert tally.get("skipped_offline") == 2, "the two entries never asked for are not visible in the tally"
+    if seeded:
+        clear_kill_switch()
+        assert feed_is_due(st), "the stopped feed would not be taken again by the scheduler"
+
+
+def test_a_stop_cleared_during_the_flush_still_leaves_the_row_alone(db, tmp_path, monkeypatch):
+    # the loop saw the Stop and broke; the batch flush then waits on the writer gate, and the Stop is cleared in that wait: the decision
+    # was made when the loop broke and is not re-asked of a switch that has changed since
+    from src.ingest import batch as batch_mod
+
+    real_flush = batch_mod.ArticleBatch.flush
+
+    def flush(self):
+        clear_kill_switch()
+        return real_flush(self)
+
+    monkeypatch.setattr(batch_mod.ArticleBatch, "flush", flush)
+    row = _source(db, seed=True)
+    ingest_source(db, row, fetcher=_fetcher(tmp_path, [], cut_on="/story-1", feed=True))
+    st = _state(db, row.id)
+    assert st.etag == "old" and st.consecutive_unchanged == 4, "a Stop cleared during the flush was recorded as the feed's behaviour"
 
 
 def test_a_stop_mid_feed_stops_walking_the_entries(db, tmp_path, monkeypatch):

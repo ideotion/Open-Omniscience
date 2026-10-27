@@ -1604,7 +1604,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     from src.database.models import Source
     from src.ingest import kill_switch_active
     from src.ingest.crawl import CrawlConfig, crawl_source
-    from src.ingest.pipeline import ingest_url
+    from src.ingest.pipeline import IngestResult, ingest_url
     from src.ingest.sitemap import discover_sitemap_urls, update_source_sitemap_url
 
     max_pages = min(settings.crawl_max_pages, _CRAWL_SUPPLEMENT_MAX_PAGES)
@@ -1630,9 +1630,13 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
             if sm_report.urls:
                 attempted = 0
                 for url in sm_report.urls[:max_pages]:
-                    ingest_url(session, source, url, fetcher=fetcher)
+                    outcome = ingest_url(session, source, url, fetcher=fetcher)
                     if kill_switch_active():
-                        break  # the page just refused or cut was not an attempt, and the rest would each be refused
+                        # a page the Stop refused or cut was not an attempt; one that was fetched and stored before it was, and the rest of the
+                        # walk would each be refused
+                        if outcome.result is not IngestResult.FETCH_FAILED:
+                            attempted += 1
+                        break
                     attempted += 1
                 sitemap_urls_ingested += attempted
             else:
