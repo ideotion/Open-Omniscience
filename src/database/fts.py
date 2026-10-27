@@ -1184,9 +1184,11 @@ def _fts_probe_deadline_s() -> float:
 
 def _fts_count_deadline_s() -> float:
     """Deadline for each count ``fts_status`` takes, the articles' and the index's own population
-    (OO_FTS_COUNT_DEADLINE_S, default 15s). The deadline is a progress handler, which SQLite consults only
-    in a row loop: it stops ``count(1)`` (step 3) and cannot stop a bare ``count(*)`` (step 4's shadow-table
-    count), which is one opcode, bounded only by the size of the table it walks."""
+    (OO_FTS_COUNT_DEADLINE_S, default 15s). The deadline is a progress handler, which SQLite consults once per
+    20,000 virtual-machine opcodes: it stops ``count(1)`` (step 3), a loop of three opcodes per row, and cannot
+    stop a bare ``count(*)`` (step 4's shadow-table count), which is nine opcodes in all, the whole walk done
+    inside ONE of them (``OP_Count``), so the handler is never consulted before it returns; that count is
+    bounded only by the size of the table it walks."""
     try:
         return max(0.5, float(_os.getenv("OO_FTS_COUNT_DEADLINE_S", "15")))
     except (TypeError, ValueError):
@@ -1223,8 +1225,8 @@ def fts_status(session: Session) -> dict:
         (``tests/test_fts_status.py`` compares them over a full, a shrunken, an emptied and a partial index; an index
         missing entries is not covered: the new count would read it short, and ``quick_check`` does not see that
         either). It is ``count(1)`` and not ``count(*)`` on purpose: SQLite runs a bare ``count(*)`` as ONE opcode that
-        the progress-handler deadline can never interrupt (measured: the handler was consulted 0 times, against 30
-        for ``count(1)`` over the same covering index), so only ``count(1)`` keeps ``count_status: timed_out``
+        the progress-handler deadline can never interrupt (measured at 200,000 articles: the handler was consulted 0 times, against
+        30 for ``count(1)`` over the same covering index), so only ``count(1)`` keeps ``count_status: timed_out``
         reachable. Measured 2026-10-27 on 1,000,000 articles: 9.6 to 11.9 s cold for the FTS statement (a table scan,
         which follows the article TEXT, and 3 to 5 s from its 15 s deadline) against 0.24 to 0.33 s cold for this count (five
         cold runs, median 0.29 s; it follows the NUMBER of articles; warm it is a row loop of 16 to 24 ms where
@@ -1317,9 +1319,10 @@ def fts_status(session: Session) -> dict:
 
     # 3) ROWS: the articles' count (best-effort; a slow COUNT is reported as timed_out, never "absent"). It is the number
     #    ``count(*) FROM article_fts`` gave for this external-content table, taken from a covering index instead of by
-    #    reading every article row (about 0.25 s against 9.6 to 11.9 s cold at 1 M articles; limits in the docstring).
-    #    ``count(1)``, not ``count(*)``: a bare ``count(*)`` is one opcode and the deadline's progress handler is never
-    #    consulted while it runs, so the block around it would bound nothing (tests/test_fts_status.py pins this).
+    #    reading every article row (0.24 to 0.33 s against 9.6 to 11.9 s cold at 1 M articles; limits in the docstring).
+    #    ``count(1)``, not ``count(*)``: a bare ``count(*)`` does its walk inside one opcode and the deadline's progress
+    #    handler is never consulted while it runs, so the block around it would bound nothing (tests/test_fts_status.py
+    #    pins this by running the real deadline, at a tiny value, over enough rows).
     try:
         with statement_deadline(session, seconds=_fts_count_deadline_s()):
             n = session.execute(text("SELECT count(1) FROM articles")).scalar()

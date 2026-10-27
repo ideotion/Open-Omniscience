@@ -9,10 +9,11 @@ two can't disagree), the row COUNT is best-effort with an honest status, and a p
 MALFORMED index is detected as unhealthy (a re-index heals it) rather than misread as absent.
 
 Since 0.5.1 the row COUNT is the articles' (``SELECT count(1) FROM articles``, a covering-index scan), not
-``count(*) FROM article_fts`` (a table scan of every article row for an external-content index): the same number,
-measured at 0.2 to 0.3 s cold against 9.6 to 11.9 s at 1,000,000 articles on a store whose indexes agree with their table (the tests
-below name where it is compared, where its plan is pinned and where its interruptibility is: ``count(1)``, not ``count(*)``, which
-SQLite runs as one opcode that the deadline's progress handler never sees).
+``count(*) FROM article_fts`` (a table scan of every article row for an external-content index): the same number on a store whose
+indexes agree with their table, measured at 0.24 to 0.33 s cold against 9.6 to 11.9 s at 1,000,000 articles (one machine, one encrypted
+synthetic store; the figures and their limits are in the ``fts_status`` docstring). The tests below name where the number is compared,
+where the plan is pinned, where the deadline's value is pinned and where the deadline is shown to STOP the statement: ``count(1)``,
+not ``count(*)``, which SQLite runs as one opcode that the deadline's progress handler never sees.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -526,8 +527,9 @@ def test_a_prefix_index_over_many_articles_is_named_partial_and_the_articles_are
     """Export's construction (a front part of the articles indexed, the rest not), at test size. The reads are the articles' count (``rows``),
     the two highest ids and the index's own count. Statements are taken at the cursor, not at ``session.execute``, so any route to the
     engine is seen: ``count(1) FROM articles`` runs exactly once (it was refused outright until 0.5.1, when the premise that it is a
-    corpus scan was withdrawn, and it is now what the figure is read from), its plan is the covering-index scan (the 0.25 s cold figure
-    rests on it: ``count(content)`` or ``NOT INDEXED`` would read every article row and turn the plan red, a ``WHERE`` keeps a covering plan and is caught by the exact text), and nothing counts
+    corpus scan was withdrawn, and it is now what the figure is read from), its plan is a covering-index scan (the 0.24 to 0.33 s cold figure
+    rests on it: ``count(content)``, ``NOT INDEXED`` or a ``WHERE`` on an unindexed column would read every article row and turn the plan red; ``count(id)``,
+    ``count(created_at)`` or a ``WHERE`` on an indexed column keep a covering plan, and only the exact-text assertion catches those), and nothing counts
     ``article_fts`` itself, the statement it replaced."""
     import re
 
@@ -641,17 +643,17 @@ def test_a_partial_index_still_reads_partial_inferred_whether_or_not_the_article
         assert st["rows"] == 2 and st["count_status"] == "ok"
 
 
-def test_the_articles_count_runs_inside_the_count_deadline_and_not_the_probe_one(monkeypatch):
-    """Lexical, and of the VALUE: the count behind ``rows`` is read inside a ``statement_deadline`` block (not bare) given
-    ``_fts_count_deadline_s()`` (not the 5 s probe deadline, not a number that never fires). That the block can actually STOP the
-    statement is the next test's: this one cannot see it."""
+def test_each_count_runs_inside_the_count_deadline_and_not_the_probe_one(monkeypatch):
+    """Lexical, and of the VALUE: the articles' count behind ``rows`` and the statement that reads the index's ends are each read inside a
+    ``statement_deadline`` block (not bare) given ``_fts_count_deadline_s()`` (not the 5 s probe deadline, not a number that never fires).
+    That a block can actually STOP its statement is the next test's, for the first of the two; this one cannot see it."""
     from src.database import fts as fts_module
     from src.database import maintenance
 
     monkeypatch.setattr(fts_module, "_fts_count_deadline_s", lambda: 7.25)
     s = _corpus()
     open_blocks: list[float] = []
-    seen: list[list[float]] = []
+    seen: dict[str, list[list[float]]] = {"articles": [], "ends": []}
     real_deadline = maintenance.statement_deadline
 
     @contextlib.contextmanager
@@ -667,54 +669,56 @@ def test_the_articles_count_runs_inside_the_count_deadline_and_not_the_probe_one
 
     def fake(stmt, *a, **k):
         if _ARTICLES_COUNT in str(stmt):
-            seen.append(list(open_blocks))
+            seen["articles"].append(list(open_blocks))
+        if "max(id) FROM articles" in str(stmt):
+            seen["ends"].append(list(open_blocks))
         return orig(stmt, *a, **k)
 
     monkeypatch.setattr(maintenance, "statement_deadline", watching)
     s.execute = fake  # type: ignore[method-assign]
     st = fts_status(s)
-    assert st["rows"] == 1 and st["count_status"] == "ok"
-    assert seen == [[7.25]], seen
+    assert st["rows"] == 1 and st["count_status"] == "ok" and st["indexed_status"] == "ok"
+    assert seen == {"articles": [[7.25]], "ends": [[7.25]]}, seen
 
 
-def test_the_articles_count_is_a_row_loop_so_the_deadline_can_stop_it():
-    """``statement_deadline`` is a progress handler, and SQLite consults it only in a loop. A bare ``count(*)`` is ONE opcode: measured
-    over a covering index, the handler was consulted 0 times where ``count(1)`` over the same index looped 30 times (200,000 articles),
-    and a 0.5 s deadline around ``count(*)`` over 6,000,000 rows returned after 0.74 s with no StatementTimeout. A block around it would
-    bound nothing, and ``count_status: timed_out`` could not come from a real count. So the statement the code issued (taken at the
-    cursor, not typed here) is run again under a handler that asks to be consulted at every step, and it must be."""
-    from sqlalchemy import event
+def test_the_deadline_stops_the_articles_count_over_enough_rows(monkeypatch):
+    """The bound itself, with the REAL deadline and no fake: ``statement_deadline`` is a progress handler SQLite consults once per 20,000
+    opcodes, and a bare ``count(*)`` is nine opcodes in all (the walk is done inside one of them), so it returns before the handler is ever
+    asked, where ``count(1)`` is three opcodes per row and is. Over 30,000 articles with the count deadline at a millionth of a second, the
+    shipped statement must come back ``timed_out`` with no ``rows``; respelled ``count(*)`` it comes back whole (``ok``, 30,000), and this
+    fails. (A handler asked at EVERY opcode, as an earlier version of this test did, is consulted 9 times by ``count(*)`` and shows nothing:
+    it is the real interval and enough rows that tell them apart.) ``indexed_status`` is left unasserted: step 4's own bare count is not
+    stoppable and its block may or may not be asked.)"""
+    from src.database import fts as fts_module
 
+    monkeypatch.setattr(fts_module, "_fts_count_deadline_s", lambda: 1e-6)
     s = _corpus()
-    for i in range(2, 8):
-        s.add(Article(
-            url=f"u{i}", canonical_url=f"u{i}", source_id=1, title=f"Story {i}", content=f"story number {i}",
-            hash=f"h{i}", language="en", created_at=datetime.now(UTC),
-        ))
+    s.execute(text("DROP TRIGGER article_fts_ai"))  # a bulk insert that the index is not asked to follow: only the count is under test
+    s.execute(Article.__table__.insert(), [
+        {
+            "url": f"b{i}", "canonical_url": f"b{i}", "source_id": 1, "title": f"Story {i}", "content": "x",
+            "hash": f"hb{i}", "language": "en", "created_at": datetime.now(UTC),
+        }
+        for i in range(30_000)
+    ])
     s.commit()
-    statements: list[str] = []
-    engine = s.get_bind()
+    assert s.execute(text("SELECT count(*) FROM articles")).scalar() == 30_001
+    st = fts_status(s)
+    assert st["count_status"] == "timed_out" and st["rows"] is None, st
+    assert st["present"] is True, "a slow count is never read as absence"
 
-    def spy(_conn, _cursor, statement, _parameters, _context, _executemany):
-        statements.append(statement)
 
-    event.listen(engine, "before_cursor_execute", spy)
-    try:
-        assert fts_status(s)["rows"] == 7
-    finally:
-        event.remove(engine, "before_cursor_execute", spy)
-    counts = [x for x in statements if _ARTICLES_COUNT in x]
-    assert len(counts) == 1, counts
-    raw = s.connection().connection.dbapi_connection
-    consulted: list[int] = []
+def test_the_count_deadline_is_fifteen_seconds_floored_at_half_a_second_and_read_from_the_environment(monkeypatch):
+    """The value the two blocks above are given. Its default, its floor and its fallback are what a deadline that never fires (a default of
+    a billion) or fires before the statement can start (a floor of zero) would change."""
+    from src.database.fts import _fts_count_deadline_s
 
-    def handler():
-        consulted.append(1)
-        return 0  # never abort: only whether SQLite asked
-
-    raw.set_progress_handler(handler, 1)
-    try:
-        assert s.execute(text(counts[0])).scalar() == 7
-    finally:
-        raw.set_progress_handler(None, 0)
-    assert consulted, "the deadline's progress handler was never consulted while the count ran: the block around it bounds nothing"
+    monkeypatch.delenv("OO_FTS_COUNT_DEADLINE_S", raising=False)
+    assert _fts_count_deadline_s() == 15.0
+    monkeypatch.setenv("OO_FTS_COUNT_DEADLINE_S", "30")
+    assert _fts_count_deadline_s() == 30.0
+    monkeypatch.setenv("OO_FTS_COUNT_DEADLINE_S", "0.1")
+    assert _fts_count_deadline_s() == 0.5
+    for bad in ("", "soon"):
+        monkeypatch.setenv("OO_FTS_COUNT_DEADLINE_S", bad)
+        assert _fts_count_deadline_s() == 15.0, bad
