@@ -195,6 +195,7 @@ class _SlowWatch:
 
     def _arm(self) -> None:
         timer = threading.Timer(SLOW_STEP_S, self._fire)
+        timer.name = "oo-boot-slow-watch"  # a named thread can be attributed; an anonymous Thread-N cannot
         timer.daemon = True
         with self._lock:
             if self._stopped:
