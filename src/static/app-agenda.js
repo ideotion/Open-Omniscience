@@ -1135,7 +1135,7 @@
         };
         const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || famName(id) || id);
         const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : (famName(id) || id)).join("\n");
-        const label = names[0] + (names.length > 1 ? ` +${names.length - 1}` : "");
+        const label = names[0] + (names.length > 1 ? ` ${ooLtrIsolate("+" + (names.length - 1))}` : "");
         prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(tfa("from {feed}", {feed: label}))}</span>`;
       } else if (e.imported && e.family_name) {
         prov = ` <span class="pill" title="${esc(T("Imported calendar folder"))}">${esc(tfa("from {feed}", {feed: e.family_name}))}</span>`;
@@ -1300,7 +1300,7 @@
         const isCur = y === curY && m === curM;
         const chips = evs.slice(0, 4).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e))}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
-        const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
+        const more = evs.length > 4 ? `<span class="ag-more">${ooLtrIsolate("+" + (evs.length - 4))}</span>` : "";
         cards += `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" data-on-click="agOpenMonth(${m})" title="${esc(name)}">
           <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
       }
@@ -1327,7 +1327,7 @@
       const isCur = y === curY && m === curM;
       const chips = evs.slice(0, 4).map(e =>
         `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e))}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
-      const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
+      const more = evs.length > 4 ? `<span class="ag-more">${ooLtrIsolate("+" + (evs.length - 4))}</span>` : "";
       return `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" data-on-click="agOpenMonthYear(${y},${m})" title="${esc(name)}">
         <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
     }
@@ -1532,7 +1532,7 @@
           : "";
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
-        const more = evs.length > 3 ? `<span class="ag-more">+${evs.length - 3}</span>` : "";
+        const more = evs.length > 3 ? `<span class="ag-more">${ooLtrIsolate("+" + (evs.length - 3))}</span>` : "";
         return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" data-on-click="agShowDay(${c.d})">
           <span class="ag-dn">${c.d}</span>${moonHtml}${seasonHtml}${chips}${more}</div>`;
       }).join("") + `</div>`;
@@ -1591,7 +1591,7 @@
         const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);
         const chips = evs.slice(0, 6).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 30 ? e.title.slice(0, 29) + "…" : e.title)}</span>`).join("");
-        const more = evs.length > 6 ? `<span class="ag-more">+${evs.length - 6}</span>` : "";
+        const more = evs.length > 6 ? `<span class="ag-more">${ooLtrIsolate("+" + (evs.length - 6))}</span>` : "";
         return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" data-on-click="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
           <div class="ag-wd">${esc(wd)} <span class="ag-wd-d">${esc(dn)}</span>${moonHtml}</div>${chips}${more}</div>`;
       }).join("") + `</div>`;

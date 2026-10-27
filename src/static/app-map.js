@@ -4382,7 +4382,7 @@
             <td class="muted" style="font-size:12px">${c.timestamp?esc(c.timestamp.slice(0,16).replace("T"," ")):"—"}</td>
             <td><strong>${esc(c.wiki)}</strong> · ${esc(c.title)}</td>
             <td class="muted">${esc(c.editor||"—")}${c.editor_anon?' <span class="pill warn">anon</span>':''}</td>
-            <td class="${(c.delta_bytes||0)<0?'':''}" style="color:${(c.delta_bytes||0)<0?'var(--err)':'var(--ok)'}">${c.delta_bytes==null?'—':(c.delta_bytes>0?'+':'')+c.delta_bytes}</td>
+            <td class="${(c.delta_bytes||0)<0?'':''}" style="color:${(c.delta_bytes||0)<0?'var(--err)':'var(--ok)'}">${c.delta_bytes==null?'—':ooLtrIsolate((c.delta_bytes>0?'+':'')+c.delta_bytes)}</td>
             <td>${(c.flag_reasons||[]).map(r=>`<span class="pill warn">${esc(r)}</span>`).join(" ")}</td>
             <td class="muted">${c.ores_damaging!=null?_oresCell(c.ores_damaging):'—'}</td>
             <td style="white-space:nowrap">

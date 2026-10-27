@@ -1195,7 +1195,7 @@
       const changed = Number(tn.value) !== Number(tn.default);
       // The range is SHOWN, not just enforced: an operator should be able to read
       // the bounds without discovering them by being corrected.
-      const range = `${tn.lo}–${tn.hi}${tn.unit ? " " + esc(tn.unit) : ""}`;
+      const range = `${ooLtrIsolate(tn.lo + "–" + tn.hi)}${tn.unit ? " " + esc(tn.unit) : ""}`;
       return `<div class="card-tune" data-prod="${esc(prod)}" data-key="${esc(tn.key)}">
         <label class="sl" for="ct-${esc(prod)}-${esc(tn.key)}">${esc(tn.label)}</label>
         <input id="ct-${esc(prod)}-${esc(tn.key)}" type="number" class="card-tune-in"

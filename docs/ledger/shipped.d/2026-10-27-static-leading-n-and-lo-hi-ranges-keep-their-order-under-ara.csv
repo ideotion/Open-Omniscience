@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-27,static,Leading +N and lo-hi ranges keep their order under Arabic,shipped,PR #1528,src/static/app-core.js tests/test_raw_number_ratchet.py tests/oo_ltr_isolate_node_test.js,"ooLtrIsolate wraps 13 measured sites (leading +N chips and signs, two lo-hi ranges after translated text) in a first-strong isolate under rtl only; ltr is byte-identical; a zero-slack ratchet pins the remainder; percent placement is left as an open typography question."

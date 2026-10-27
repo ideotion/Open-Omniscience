@@ -1516,7 +1516,7 @@
     function conjContrastHtml(c, t, tf) {
       const side = (s2) => `${_conjExpr(s2)} (n=${s2 ? s2.n_combined : 0})`;
       const rows = (c.contrasts || []).slice(0, 15).map((r) =>
-        `<tr><td dir="auto">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${r.delta > 0 ? "+" : ""}${r.delta}</td></tr>`).join("");
+        `<tr><td dir="auto">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${ooLtrIsolate((r.delta > 0 ? "+" : "") + r.delta)}</td></tr>`).join("");
       if (!rows) return `<div class="muted">${esc(t("No keyword to compare: one side is empty or its articles carry no other keyword."))}</div>`;
       return `<div class="muted small">A = ${esc(side(c.a))} · B = ${esc(side(c.b))}</div>`
         + `<table class="data" style="margin-top:4px"><thead><tr><th>${esc(t("Keyword"))}</th><th>A</th><th>B</th>`

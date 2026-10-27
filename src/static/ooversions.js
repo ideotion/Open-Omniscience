@@ -145,7 +145,7 @@
   function versionOption(v, t, tf) {
     const when = v.valid_from || "—";
     let s = when + " · " + t(v.label || "a revision");
-    if (v.delta_bytes != null) s += " · " + tf("{n} bytes", { n: (v.delta_bytes > 0 ? "+" : "") + v.delta_bytes });
+    if (v.delta_bytes != null) s += " · " + tf("{n} bytes", { n: ooLtrIsolate((v.delta_bytes > 0 ? "+" : "") + v.delta_bytes) });
     if (!v.has_text) s += " · " + t("text not stored");
     return s;
   }

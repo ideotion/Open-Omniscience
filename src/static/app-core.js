@@ -38,6 +38,14 @@
       const v = String(s == null ? "" : s).slice(0, 16).replace("T", " ");
       return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
     }
+    // A compound number token that must keep its left-to-right order beside Arabic text: a
+    // leading "+N" (the plus is drawn on the far side of the digits) or a "lo–hi" range (drawn
+    // hi–lo). First-strong isolate, only under a right-to-left page; left-to-right output is the
+    // input unchanged, and an empty value stays empty. The same shape as ooIsoDate.
+    function ooLtrIsolate(s) {
+      const v = String(s == null ? "" : s);
+      return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
+    }
     // Render an ingested URL as a link only if it is plain http(s) — esc() does NOT
     // neutralize a javascript:/data: scheme, which would execute on click (S-005).
     const safeUrl = (u) => {
@@ -2206,7 +2214,7 @@
       const planHtml = (plan.planned_total || plan.estimated_seconds != null || plan.state === "computing") ?
         sect(esc(t9("Next pass"))) + _planNoteHtml(plan, t9, tf) +
         (plan.state === "computing" ? "" : row(esc(t9("Targets")), `${plan.planned_total || 0}`)) +
-        (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
+        (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">${ooLtrIsolate("+" + extra)}</span>` : ""}</div>` : "") +
         (plan.estimated_seconds != null
           ? row(esc(t9("Estimated duration")), `${_fmtDur(plan.estimated_seconds)}`) +
             `<div class="vnote">${esc(_estimateMethodText(plan, tf))}</div>`
@@ -2584,7 +2592,7 @@
             _planNoteHtml(plan, t, tfQ) +
             `<div class="cap-chips">` +
             ups.map(d => `<span class="cap-chip">${esc(d)}</span>`).join("") +
-            (more ? `<span class="cap-chip muted">+${more}</span>` : "") + `</div>` +
+            (more ? `<span class="cap-chip muted">${ooLtrIsolate("+" + more)}</span>` : "") + `</div>` +
             `<div class="muted" style="font-size:11px;padding:2px 0 6px">` +
             esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) +
             `</div>`;
