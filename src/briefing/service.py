@@ -13,11 +13,13 @@ can be restored and a later recompute re-applies the user's choice, not overwrit
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import threading
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 from src.briefing.card import BUCKET_LABELS, BUCKETS
 from src.briefing.producers import register_default_producers
@@ -59,6 +61,13 @@ register_default_producers()
 # --------------------------------------------------------------------------- #
 _refresh_lock = threading.Lock()
 _refresh_state: dict[str, int | bool | str] = {"refreshing": False, "done": 0, "total": 0, "paused": ""}
+#: The background rebuild's thread, kept so a caller can find it without walking ``threading.enumerate()`` (a test that must not leave it
+#: running, a later shutdown step). Set under ``_refresh_lock`` when the thread is started; it stays set after the thread ends (``is_alive()`` says
+#: whether it is still running). Nothing in ``shutdown.py`` joins it today: the daemon thread dies with the process, as before.
+_refresh_thread: threading.Thread | None = None
+#: The cache file a background rebuild writes, fixed when its thread STARTS (``_ensure_background_refresh``) and read by ``_cache_path`` in that
+#: thread alone (a ContextVar set inside the thread). Unset everywhere else, where the path is resolved from the data folder at each use, as before.
+_run_cache_path: contextvars.ContextVar[Path | None] = contextvars.ContextVar("oo_briefing_run_cache_path", default=None)
 
 
 def _log_pinned() -> bool:
@@ -73,9 +82,14 @@ def _log_pinned() -> bool:
         return False
 
 
-def _bg_refresh() -> None:
+def _bg_refresh(cache_path: Path) -> None:
     """Recompute the briefing in a daemon thread with its OWN session, publishing
-    per-producer progress. Best-effort: a failure is logged, never crashes the app."""
+    per-producer progress. Best-effort: a failure is logged, never crashes the app.
+
+    ``cache_path`` is where the caller meant the cache to be when it started this thread, and every read and write of the cache in this run
+    goes there. A thread that asked ``data_dir()`` again at its write could land the cache in a different folder than the one it started in
+    (a data folder changed while it ran, a test that moved ``OO_DATA_DIR`` and left the thread behind)."""
+    _run_cache_path.set(cache_path)
     from src.database.session import session_scope
 
     def _progress(done: int, total: int, _name: str) -> None:
@@ -106,13 +120,21 @@ def _bg_refresh() -> None:
 def _ensure_background_refresh() -> None:
     """Start ONE background recompute if none is running (idempotent under the
     concurrent Home polls)."""
+    global _refresh_thread
+    try:
+        cache_path = _cache_path()  # resolved once, here, for the whole run (see _bg_refresh)
+    except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the app
+        log_failure(_LOG, "background briefing refresh not started: the cache folder could not be resolved", exc, level=logging.WARNING)
+        return
     with _refresh_lock:
         if _refresh_state["refreshing"]:
             return
         _refresh_state["refreshing"] = True
         _refresh_state["done"] = 0
         _refresh_state["total"] = 0
-    threading.Thread(target=_bg_refresh, name="oo-briefing-refresh", daemon=True).start()
+        thread = threading.Thread(target=_bg_refresh, args=(cache_path,), name="oo-briefing-refresh", daemon=True)
+        _refresh_thread = thread
+    thread.start()
 
 
 def _refresh_status() -> dict:
@@ -137,6 +159,9 @@ def _refresh_status() -> dict:
 
 
 def _cache_path():
+    fixed = _run_cache_path.get()
+    if fixed is not None:
+        return fixed
     from src.paths import data_dir
 
     return data_dir() / "briefing_cache.json"

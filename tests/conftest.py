@@ -404,6 +404,38 @@ def _stop_leaked_liveness_thread(timeout: float = 5.0) -> None:
         sh._THREAD = None
 
 
+#: WHAT THIS BOUND PROTECTS: the wait for a briefing rebuild a test started (a GET of /api/briefing on a stale cache, a scheduler pass) to
+#: finish before the next test begins. A rebuild is a run of whole-corpus scans on a test database, seconds at most; the bound is far above
+#: that and exists so a thread that never ends fails the test that left it, by name, instead of silently running into the next ones (R332: a
+#: leaked ``oo-briefing-refresh`` was alive in later tests and resolved its cache folder lazily, from whatever ``OO_DATA_DIR`` they had set).
+_BRIEFING_THREAD_JOIN_S = 30.0
+_BRIEFING_THREAD_NAMES = ("oo-briefing-refresh", "oo-briefing-bg")
+
+
+def _quiesce_briefing_threads(nodeid: str, timeout: float = _BRIEFING_THREAD_JOIN_S) -> None:
+    """Join the briefing rebuild threads a test left running, for at most ``timeout`` seconds in all; raise, naming the thread and the test,
+    for one that is still alive after that."""
+    import threading
+    import time
+
+    live = [t for t in threading.enumerate() if t.name in _BRIEFING_THREAD_NAMES and t is not threading.current_thread()]
+    end = time.monotonic() + timeout
+    for t in live:
+        t.join(timeout=max(0.0, end - time.monotonic()))
+    left = sorted(t.name for t in live if t.is_alive())
+    if left:
+        raise AssertionError(
+            f"{nodeid}: {', '.join(left)} still running {timeout:g} s after the test ended; a briefing rebuild must not outlive the test that started it"
+        )
+
+
+@pytest.fixture(autouse=True)
+def _briefing_threads_quiesced(request):
+    """No briefing rebuild thread runs into the next test (see ``_quiesce_briefing_threads``)."""
+    yield
+    _quiesce_briefing_threads(request.node.nodeid)
+
+
 @pytest.fixture(autouse=True)
 def _vitals_history_isolated():
     """The vitals history (``src.monitoring.vitals_history``, R119) is a process-global recorder
