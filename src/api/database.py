@@ -24,7 +24,6 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -644,8 +643,9 @@ def _refuse_cross_site(request: Request) -> None:
       this one stops it; the middleware stops it too, and the route does not depend on that.
     * ``Sec-Fetch-Site`` when the browser sends it: ``same-origin`` (the app's own page) and ``none`` (an address typed or a bookmark)
       pass; ``same-site`` (another port or host on this machine) and ``cross-site`` do not.
-    * ``Origin``, else ``Referer``, when sent: its host and port must be the request's own ``Host``. ``Origin: null`` names no
-      host and is refused.
+    * ``Origin``, else ``Referer``, when sent: judged by the POST middleware's own ``_foreign_origin`` (scheme-default ports
+      normalised, so a proxy's ``Host: NAME:443`` with ``Origin: https://NAME`` is the same server; the hostname must be one the
+      app serves; another port is another origin). ``Origin: null`` names no host and is refused.
     * Neither sent: a command line, a script or a navigation from this page, which carries no ``Referer`` under the app's own
       ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods. **The stated limit,
       in two forms:** a browser that does not send Fetch Metadata (Firefox before 90, Safari before 16.4, an old embedded webview),
@@ -654,7 +654,7 @@ def _refuse_cross_site(request: Request) -> None:
       ``<img src=... referrerpolicy="no-referrer">``, so that request is served: the page still cannot read the answer, but the
       machine writes the snapshot. The one-at-a-time slot and the free-space gate bound what that costs.
     """
-    from src.api.main import _allowed_hosts, _host_without_port
+    from src.api.main import _allowed_hosts, _foreign_origin, _host_without_port
 
     refusal = HTTPException(
         status_code=403,
@@ -670,11 +670,7 @@ def _refuse_cross_site(request: Request) -> None:
         sent = request.headers.get("referer")
     if sent is None:
         return
-    try:
-        netloc = urlsplit(sent).netloc.lower()
-    except ValueError:
-        raise refusal from None
-    if not netloc or netloc != request.headers.get("host", "").strip().lower():
+    if _foreign_origin(request, sent):
         raise refusal
 
 

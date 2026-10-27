@@ -157,6 +157,20 @@ def test_a_host_the_operator_named_is_served_with_its_own_origin(monkeypatch):
         dbapi._refuse_cross_site(_request({"Origin": "http://evil.test:8000"}, host="corpus.lan:8000"))
 
 
+def test_behind_a_proxy_the_host_with_its_default_port_and_the_origin_without_it_are_the_same_server(monkeypatch):
+    """A TLS-terminating proxy hands the app ``Host: oo.lan:443`` while the browser's ``Origin`` leaves the default port out
+    (``https://oo.lan``). The route compared the two as raw strings and so refused the app's own page; it now judges the pair by the
+    POST middleware's ``_foreign_origin`` (scheme-default ports normalised), which is the same decision the state-changing routes make."""
+    monkeypatch.setenv("OO_ALLOWED_HOSTS", "oo.lan")
+    dbapi._refuse_cross_site(_request({"Sec-Fetch-Site": "same-origin", "Origin": "https://oo.lan"}, host="oo.lan:443"))
+    dbapi._refuse_cross_site(_request({"Referer": "https://oo.lan/index.html"}, host="oo.lan:443"))
+    dbapi._refuse_cross_site(_request({"Origin": "http://oo.lan:80"}, host="oo.lan"))  # the other spelling of the same pair
+    for foreign in ("https://evil.lan", "https://oo.lan:8443", "http://oo.lan", "null"):
+        with pytest.raises(HTTPException) as refused:
+            dbapi._refuse_cross_site(_request({"Origin": foreign}, host="oo.lan:443"))
+        assert refused.value.status_code == 403, foreign
+
+
 def test_origin_decides_when_a_request_sends_both_origin_and_referer():
     """``Origin`` is the browser's own statement of who is asking; the ``Referer`` is read only when there is no ``Origin``."""
     dbapi._refuse_cross_site(_request({"Origin": "http://testserver", "Referer": "http://evil.example/p"}))
