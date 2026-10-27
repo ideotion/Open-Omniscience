@@ -8,7 +8,7 @@ nothing. The table is DERIVED from the markup, never maintained by memory, and p
 binding that is not in the table is refused at run time (the button would do nothing), so the test names it before that
 happens, and an entry no markup binds is a door nothing needs.
 
-REGENERATE with ``python tests/test_oo_on_event_table.py`` (prints the literal for ``EVENT_ACTION_NAMES``).
+REGENERATE with ``python -m tests.test_oo_on_event_table`` (prints the literal for ``EVENT_ACTION_NAMES``).
 
 STATED LIMITS (they are not solved by a table; ``docs/ledger`` carries the audit record):
 
@@ -45,10 +45,14 @@ _OO_ON = _ROOT / "src" / "static" / "oo-on.js"
 _INTERPOLATED_CLICK = {
     "openCardCorpus": "app-home.js, the Lead card's and the carousel's Open corpus",
     "openCardCorpusQuery": "app-home.js, the same two, when the Lead carries no article ids",
+    "openAnalysisForIds": "app-agenda.js, a deduced event's title: data-on-click=\"ooStop(event);${openExpr}\"",
+    "openAnalysisFor": "app-agenda.js, the same title when the event carries no article ids",
 }
 
 # A binding whose NAME is an interpolation: the value begins with ``${`` or a ``${...}`` is followed by ``(``.
-_INTERPOLATED_NAME = re.compile(r"""data-on-(\w+)=\\?["']\s*\$\{|data-on-(\w+)=\\?["'][^"'\n]*?\$\{[^}]*\}\s*\(""")
+_INTERPOLATED_NAME = re.compile(
+    r"""data-on-(\w+)=\\?["']\s*\$\{|data-on-(\w+)=\\?["'][^"'\n]*?\$\{[^}]*\}\s*\(|data-on-(\w+)=\\?["'][^"'\n$]*;\s*\$\{[^}]*\}\s*\\?["']"""
+)
 
 
 def scanned_table() -> dict[str, list[str]]:
@@ -110,14 +114,16 @@ def test_the_scan_sees_single_quoted_double_quoted_and_nested_bindings() -> None
     assert got["click"] in (["showTab"], ["anParams"]) and got["change"] == ["setTheme"], got
     assert got["input"] == ["filterDoc"] and got["keydown"] == ["filterDoc", "ooClearValue"], got
     assert _INTERPOLATED_NAME.search('data-on-click="${action}"') and _INTERPOLATED_NAME.search('data-on-click="${fn}(1)"')
+    assert _INTERPOLATED_NAME.search('data-on-click="ooStop(event);${openExpr}"')
     assert not _INTERPOLATED_NAME.search("data-on-click=\"showTab('${x}')\"")
+    assert not _INTERPOLATED_NAME.search('data-on-click="agOpenMonth(${m})"')
 
 
 def test_the_table_in_oo_on_js_is_exactly_the_table_the_markup_needs() -> None:
     declared, scanned = declared_table(), scanned_table()
     assert declared == scanned, (
         "EVENT_ACTION_NAMES in src/static/oo-on.js is not the table the markup binds. "
-        "Regenerate with `python tests/test_oo_on_event_table.py`.\n"
+        "Regenerate with `python -m tests.test_oo_on_event_table`.\n"
         + "\n".join(
             f"  {event}: add {sorted(set(scanned.get(event, [])) - set(declared.get(event, [])))} "
             f"remove {sorted(set(declared.get(event, [])) - set(scanned.get(event, [])))}"
@@ -143,11 +149,14 @@ def test_every_binding_whose_name_is_interpolated_is_a_click_and_is_in_the_click
         if p.name == "oo-on.js":
             continue
         text = p.read_text(encoding="utf-8", errors="ignore")
-        sites += [(p.name, m.group(1) or m.group(2)) for m in _INTERPOLATED_NAME.finditer(text)]
+        sites += [(p.name, m.group(1) or m.group(2) or m.group(3)) for m in _INTERPOLATED_NAME.finditer(text)]
     assert sites, "the scan found no interpolated-name binding; the pattern or the markup changed"
     assert all(event == "click" for _, event in sites), [s for s in sites if s[1] != "click"]
     click = set(declared_table()["click"])
     assert set(_INTERPOLATED_CLICK) <= click
+    for name, where in _INTERPOLATED_CLICK.items():
+        home = _ROOT / "src" / "static" / where.split(",")[0]
+        assert name in home.read_text(encoding="utf-8"), f"{name} is no longer built in {home.name}: drop it from _INTERPOLATED_CLICK"
     assert {"startOsmDownload", "resumeOsm"} <= click, "app-map.js builds these two as ${fn}(code, this) on a click"
 
 

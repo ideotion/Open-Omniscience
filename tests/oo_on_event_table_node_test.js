@@ -29,6 +29,16 @@ console.error = (m) => warned.push(String(m));
 eval(fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8"));
 
 const { EVENTS, ACTIONS, EVENT_ACTIONS, GESTURE_ONLY } = window.ooOn;
+// The runtime sets are exactly the literal in the file: nothing is added to a Set outside EVENT_ACTION_NAMES.
+{
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8");
+  const lit = /const EVENT_ACTION_NAMES = \{([\s\S]*?)\n  \};/.exec(src)[1];
+  const fromLiteral = {};
+  for (const m of lit.matchAll(/\n    (\w+): \[([\s\S]*?)\],/g)) fromLiteral[m[1]] = [...m[2].matchAll(/"([\w$]+)"/g)].map((x) => x[1]).sort();
+  const runtime = {};
+  for (const [t, set] of Object.entries(EVENT_ACTIONS)) runtime[t] = [...set].sort();
+  assert.deepStrictEqual(runtime, fromLiteral, "EVENT_ACTIONS is not the literal EVENT_ACTION_NAMES");
+}
 const names = Object.keys(ACTIONS);                      // the 471 actions and the 9 helpers
 const ran = [];
 for (const n of names) { ACTIONS[n] = () => ran.push(n); }   // every name records itself, helpers included

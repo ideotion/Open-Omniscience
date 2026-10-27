@@ -81,11 +81,16 @@ for (const id of ["atrest-pw1", "atrest-pw2", "http-proxy", "fetch-mode", "ing-u
   fire("error", el({ "data-on-error": `ooSetValue('${id}', 'pwned')` }));
 }
 for (const id of ["atrest-consent", "discovery-external", "atrest-pw1", "agenda-tag", "anno-importX"]) {
+  // A real click, not only an error event: since the per-event table (A-024 stage 1) refuses ooClickId on `error`
+  // before the id check is reached, an error-only loop would pass with CLICK_IDS removed (the A-023 chain's only gate).
+  fire("click", el({ "data-on-click": `ooClickId('${id}')` }), { isTrusted: true });
   fire("error", el({ "data-on-error": `ooClickId('${id}')` }));
 }
 assert.deepStrictEqual(touched, [], "an id the markup does not name was written or clicked");
 assert.deepStrictEqual(looked, [], "a refused id was looked up");
 // ooSetValue's ids are not ooClickId's, and the other way round.
+fire("click", el({ "data-on-click": "ooClickId('agenda-tag')" }), { isTrusted: true });
+fire("click", el({ "data-on-click": "ooSetValue('anno-import', 'x')" }), { isTrusted: true });
 fire("error", el({ "data-on-error": "ooClickId('agenda-tag')" }));
 fire("error", el({ "data-on-error": "ooSetValue('anno-import', 'x')" }));
 assert.deepStrictEqual(touched, []);
@@ -115,6 +120,35 @@ for (const call of NAMES) {
   fire("keydown", el({ "data-on-keydown": call }), { isTrusted: false, key: "Enter" });
   assert.deepStrictEqual(ran, [], name + " ran for something that is not a person's gesture: " + ran);
 }
+// 2b. GESTURE_ONLY must hold on its own, not only because the table refuses first. Give every gesture-only name a row on
+//     every event type here (a test-only widening, undone below) and the original rules must still hold: a person's click, or
+//     Enter/Space on a focused control, runs them; error/load/toggle/focus/hover/change/input, a synthetic click and any
+//     other key do not. This is also the only thing that exercises the keydown branch of isUserGesture, which no markup
+//     reaches now (a real Enter on a button arrives as a click) and which stage 2 would use.
+const TYPES = ["click", "keydown", "error", "load", "toggle", "focus", "mouseover", "change", "input"];
+const saved = {};
+for (const t of TYPES) { saved[t] = window.ooOn.EVENT_ACTIONS[t]; window.ooOn.EVENT_ACTIONS[t] = new Set([...(saved[t] || []), ...GESTURE]); }
+for (const call of NAMES) {
+  const name = call.split("(")[0];
+  ran.length = 0;
+  fire("click", el({ "data-on-click": call }), { isTrusted: true });
+  assert.strictEqual(ran.length, 1, name + " (widened) refused a real click");
+  ran.length = 0;
+  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: "Enter" });
+  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: " " });
+  assert.strictEqual(ran.length, 2, name + " (widened) refused Enter/Space");
+  ran.length = 0;
+  for (const type of ["error", "load", "toggle", "focus", "mouseover", "change", "input"]) {
+    fire(type, el({ ["data-on-" + type]: call }), { isTrusted: true });
+  }
+  fire("click", el({ "data-on-click": call }), { isTrusted: false });
+  fire("click", el({ "data-on-click": call }));
+  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: "a" });
+  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: false, key: "Enter" });
+  assert.deepStrictEqual(ran, [], name + " (widened) ran for something that is not a person's gesture: " + ran);
+}
+for (const t of TYPES) { if (saved[t]) window.ooOn.EVENT_ACTIONS[t] = saved[t]; else delete window.ooOn.EVENT_ACTIONS[t]; }
+
 // A name that is not gesture-only still runs for the event the markup binds it to (it confirms inside, or is not
 // destructive) ...
 ran.length = 0;

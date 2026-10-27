@@ -368,7 +368,7 @@
   // row runs nothing (33 of the 38 EVENTS: an injected `<img src=x data-on-error="addSource()">` is a zero-click call
   // of any listed name without this, and a name bound to `click` cannot be reached through an injected `change`).
   // tests/test_oo_on_event_table.py holds the table equal to the markup both ways, with zero slack, and prints the
-  // literal to paste (`python tests/test_oo_on_event_table.py`); tests/oo_on_event_table_node_test.js runs every
+  // literal to paste (`python -m tests.test_oo_on_event_table`); tests/oo_on_event_table_node_test.js runs every
   // (event type, name) pair through the real dispatcher. NOT solved here, and stated: an event the browser itself
   // fires after a script's `el.click()` (a checkbox's `change`) is trusted, so that chain stays shut only through
   // CLICK_IDS; a binding an attacker injected that the person then CLICKS is a trusted click on any name the click
