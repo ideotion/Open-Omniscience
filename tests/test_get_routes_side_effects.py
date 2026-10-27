@@ -13,6 +13,7 @@ network kill switch engaged (the state the app boots in), while the monitors rec
 * a socket connect, ``connect_ex`` or UDP ``sendto``, and a DNS lookup (``getaddrinfo``, ``gethostbyname``, ``gethostbyname_ex``): blocked
   and recorded, loopback told apart from the rest,
 * a thread started (the rate limiter's own expiry timer, found by its stack, is not counted),
+* a program started (only three local queries are listed),
 * a file created, changed or REMOVED under the data directories,
 * a write statement through the app's engine (INSERT, UPDATE, DELETE, REPLACE, DDL, a ``WITH ... DELETE``, a ``PRAGMA x = y``), and
 * a change to the main database file as seen by a SECOND connection (``PRAGMA data_version``), which also catches a write that does not
@@ -32,7 +33,10 @@ refusal; the socket guard is the net beneath it and is not installed in a test).
   removes it after streaming (it has its own cross-site guard, R214);
 * effects are attributed by the request's time window, so work from a long-running background thread lands on a later route (the
   ambient tables absorb the known writers) and an effect after the last request is lost;
-* a file allowance matches the file's basename anywhere under the data folders, and a thread allowance matches by name only;
+* a file allowance matches the file's basename anywhere under the data folders, a REMOVED file is accounted for like a changed one, and a
+  thread allowance matches by name only;
+* the app's local-model autostart is off in the suite (``OO_LLM_AUTOSTART=0``), so a GET that would start a model server in production
+  is not run; programs are caught through ``subprocess.Popen``, ``os.system`` and ``os.posix_spawn`` (not a raw ``os.fork``);
 * the monitors see this process's own threads, files and sockets, not a subprocess.
 """
 
@@ -42,15 +46,21 @@ import _thread
 import errno
 import importlib.util
 import ipaddress
+import os
 import re
+import shlex
 import socket
 import sqlite3
+import subprocess
 import threading
 import traceback
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from src.database.statement_kind import is_plain_read
+from src.safety.file_lock import temp_name
 
 # The number of GET operations the schema listed on 2026-10-27. A floor: new routes are driven by the same loop; fewer means the walk
 # went blind (a framework change in how the schema is built) and every assertion below would loop over nothing. The Core-only
@@ -143,30 +153,38 @@ def _is_loopback(host: str) -> bool:
 
 
 def _final_names(name: str) -> set[str]:
-    """``storage_events.json.tmp`` (or ``storage_events.json.<token>.tmp``) is the temp file of an atomic write of ``storage_events.json``:
-    it is accounted for by the same line as the file it becomes. Both readings are returned, since ``.json`` and ``.<token>`` look alike."""
-    if not name.endswith(".tmp"):
-        return {name}
-    bare = name[: -len(".tmp")]
-    return {name, bare, re.sub(r"\.[0-9A-Za-z_-]+$", "", bare)}
+    """The files a temp file may be the atomic write of. ``src.safety.file_lock.temp_name`` names a temp ``<name>.tmp.<pid>.<thread>``
+    and some writers use a bare ``<name>.tmp``; either is accounted for by the same line as the file it becomes. Candidates are
+    returned (``.json`` and a ``.<token>`` look alike), and the name itself is always one."""
+    out = {name}
+    m = re.fullmatch(r"(.+?)\.tmp(?:\.\d+){0,2}", name)
+    if m:
+        bare = m.group(1)
+        out |= {bare, re.sub(r"\.[0-9A-Za-z_-]+$", "", bare)}
+    return out
 
 
-_WRITE_WORDS = ("INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER")
+_TRANSACTION_CONTROL = frozenset({"COMMIT", "END", "ROLLBACK", "BEGIN", "SAVEPOINT", "RELEASE"})
 
 
 def _write_kind(statement: str) -> str | None:
-    """The kind of write a SQL statement is (``INSERT items``), or None for a read. Comments are stripped first, a leading WITH is
-    searched for its write verb, and a PRAGMA only counts when it assigns."""
+    """The kind of write a SQL statement is (``INSERT items``), or None for a read. Comments are stripped, then the repo's own allow-list
+    classifier (``is_plain_read``, which treats an unknown statement as not a read) decides, so VACUUM [INTO], REINDEX, ATTACH,
+    ``wal_checkpoint`` and the ``PRAGMA x(v)`` setter are writes here. ``WITH`` is a read to that classifier, so a write verb is
+    searched for outside string literals and function calls."""
     s = re.sub(r"/\*.*?\*/|--[^\n]*", " ", statement, flags=re.S).strip()
     if not s:
         return None
-    head = s.split(None, 1)[0].upper()
-    if head == "WITH":
-        m = re.search(r"\b(INSERT|UPDATE|DELETE|REPLACE)\b", s, re.I)
-        head = m.group(1).upper() if m else head
-    elif head == "PRAGMA" and "=" not in s.split("\n", 1)[0]:
+    head = s.split(None, 1)[0].upper().rstrip(";(")
+    if head in _TRANSACTION_CONTROL:
         return None
-    if head not in _WRITE_WORDS and head != "PRAGMA":
+    if head == "WITH":
+        bare = re.sub(r"'(?:[^']|'')*'|\"[^\"]*\"", "''", s)
+        m = re.search(r"\b(INSERT|UPDATE|DELETE|REPLACE)\b(?!\s*\()", bare, re.I)
+        if not m:
+            return None
+        head = m.group(1).upper()
+    elif is_plain_read(s):
         return None
     m = re.search(r"(?:INTO|UPDATE|FROM|TABLE|INDEX|REPLACE)\s+(?:IF (?:NOT )?EXISTS\s+)?[\"`\[]?(\w+)", s, re.I)
     return f"{head} {m.group(1) if m else '?'}"
@@ -185,6 +203,7 @@ class _Monitor:
         self.threads: list[str] = []
         self.files: set[str] = set()
         self.sql_writes: list[str] = []
+        self.processes: list[str] = []
         self.db_changed = False
         self._saved: dict[tuple[object, str], object] = {}
 
@@ -254,6 +273,29 @@ class _Monitor:
             monitor.threads.append("<_thread.start_new_thread>")
             return real_raw_start(function, args) if kwargs is None else real_raw_start(function, args, kwargs)
 
+        def program_of(args) -> str:  # noqa: ANN001
+            first = args if isinstance(args, (str, bytes, os.PathLike)) else (list(args) or [""])[0]
+            if isinstance(first, str) and " " in first and not os.path.exists(first):
+                first = (shlex.split(first) or [""])[0]
+            return os.path.basename(os.fsdecode(first))
+
+        real_popen_init = subprocess.Popen.__init__
+
+        def popen_init(proc, args, *a, **k):  # noqa: ANN001
+            monitor.processes.append(program_of(args))
+            return real_popen_init(proc, args, *a, **k)
+
+        real_system = os.system
+        real_posix_spawn = getattr(os, "posix_spawn", None)
+
+        def system(command):  # noqa: ANN001
+            monitor.processes.append("os.system:" + program_of(command))
+            return real_system(command)
+
+        def posix_spawn(path, *a, **k):  # noqa: ANN001
+            monitor.processes.append(program_of(path))
+            return real_posix_spawn(path, *a, **k)
+
         from sqlalchemy import event
         from sqlalchemy.engine import Engine
 
@@ -272,6 +314,10 @@ class _Monitor:
         self._patch(socket, "gethostbyname_ex", lambda host, *a, **k: ([host], [], [gethostbyname(host)]))
         self._patch(threading.Thread, "start", start)
         self._patch(_thread, "start_new_thread", raw_start)
+        self._patch(subprocess.Popen, "__init__", popen_init)
+        self._patch(os, "system", system)
+        if real_posix_spawn is not None:
+            self._patch(os, "posix_spawn", posix_spawn)
         return self
 
     def __exit__(self, *exc) -> None:  # noqa: ANN002
@@ -310,10 +356,11 @@ def _get_operations(app) -> list[tuple[str, str]]:
 
 
 class _Walk:
-    def __init__(self, seen: dict[str, _Monitor], statuses: dict[str, int], schema_paths: set[str]) -> None:
+    def __init__(self, seen: dict[str, _Monitor], statuses: dict[str, int], schema_paths: set[str], watch_note: str | None) -> None:
         self.seen = seen
         self.statuses = statuses
         self.schema_paths = schema_paths
+        self.watch_note = watch_note  # None when the main database file was watched; else why not
 
 
 @pytest.fixture(scope="module")
@@ -326,6 +373,7 @@ def observed(tmp_path_factory):
     os.environ["OO_DATA_DIR"] = str(data)
     os.environ["OO_NO_SCHEDULER"] = "1"
     watchers: list[sqlite3.Connection] = []
+    watch_note: str | None = "the main database is not a SQLite file"
     try:
         from src.api.main import app
         from src.database import session as dbsession
@@ -344,11 +392,18 @@ def observed(tmp_path_factory):
         # killing the walk and every test that shares it.
         with TestClient(app, raise_server_exceptions=False) as client:
             db_file = getattr(dbsession, "DB_FILE", None)
-            if db_file and Path(db_file).exists():
-                watchers.append(sqlite3.connect(f"file:{db_file}?mode=ro", uri=True))
-                watchers[0].execute("PRAGMA data_version").fetchone()
-            # Warm up outside any monitor: the first 4xx of the process creates the error log's lock file and the first diagnostics call
-            # the crash black box, and which request that is depends on the tests that ran before this file.
+            if db_file and not Path(db_file).exists():
+                watch_note = f"MISSING: the main database file {db_file} does not exist after the app started"
+            elif db_file:
+                try:
+                    watchers.append(sqlite3.connect(f"file:{db_file}?mode=ro", uri=True))
+                    watchers[0].execute("PRAGMA data_version").fetchone()
+                    watch_note = None
+                except sqlite3.DatabaseError as exc:  # an encrypted store is not readable without its key
+                    watchers.clear()
+                    watch_note = f"the main database could not be opened for watching ({exc}); the file check is skipped"
+            # Warm up outside any monitor: the first 4xx of the process creates the error log's lock file, and which request first
+            # creates the crash black box (a diagnostics GET) depends on the tests that ran before this file; that file has its own ambient row.
             client.get("/api/no-such-route-warm-up", headers={"Host": "testserver"})
             activate_kill_switch()
             try:
@@ -358,7 +413,7 @@ def observed(tmp_path_factory):
                     seen[path] = mon
             finally:
                 clear_kill_switch()
-        yield _Walk(seen, statuses, schema_paths)
+        yield _Walk(seen, statuses, schema_paths, watch_note)
     finally:
         for w in watchers:
             w.close()
@@ -431,13 +486,33 @@ def test_no_get_issues_a_write_statement_through_the_engine(observed):
 
 def test_no_get_changes_the_main_database_file(observed):
     """The write detector above sees statements through the engine; this sees the file change from a second connection, so a raw
-    ``sqlite3`` write is found too. Skipped when the suite's database is not a SQLite file."""
-    from src.database import session as dbsession
-
-    if not getattr(dbsession, "DB_FILE", None):
-        pytest.skip("the main database is not a SQLite file")
+    ``sqlite3`` write is found too. Skipped when the suite's database is not a readable SQLite file; FAILS if the file is missing."""
+    if observed.watch_note:
+        assert not observed.watch_note.startswith("MISSING"), observed.watch_note
+        pytest.skip(observed.watch_note)
     bad = sorted(p for p, m in observed.seen.items() if m.db_changed and p not in _SQL_WRITES_ALLOWED)
-    assert not bad, f"these GETs changed the main database file (seen from a second connection, PRAGMA data_version): {bad}"
+    assert not bad, (
+        f"these GETs changed the main database file (seen from a second connection, PRAGMA data_version): {bad}. A "
+        "wal_checkpoint(TRUNCATE) with no content change also moves it (src/database/repair.py), so a background thread's checkpoint can "
+        "be reported against an innocent route: look at the route's own statements first"
+    )
+
+
+# Programs a GET may start, by basename, with the reason. Measured on 2026-10-27: about 30 GETs start one of these three.
+_PROGRAMS_ALLOWED = {
+    "nvidia-smi": "reads the GPU's name and memory (the /api/llm/*, /api/bulletin/* and diagnostics routes); a local query, no network",
+    "uname": "reads the processor name; a local query",
+    "xdg-user-dir": "reads the user's folders; a local query",
+}
+
+
+def test_every_started_program_is_a_listed_local_query(observed):
+    bad = {p: sorted(set(m.processes) - set(_PROGRAMS_ALLOWED)) for p, m in observed.seen.items()}
+    bad = {p: v for p, v in bad.items() if v}
+    assert not bad, (
+        "these GETs started a program that is not listed in _PROGRAMS_ALLOWED (a GET that shells out can reach the network past the kill "
+        f"switch; list it with its reason, or guard the route): {bad}"
+    )
 
 
 def test_the_hidden_gets_are_the_ones_driven():
@@ -547,9 +622,17 @@ def test_the_monitors_see_a_thread_a_file_a_removal_and_a_write(tmp_path):
         raw.close()
     watcher.close()
     assert {"probe-thread", "<_thread.start_new_thread>"} <= set(mon.threads), mon.threads
+    assert not mon.processes
     assert {"probe.txt", "doomed.txt"} <= mon.files, mon.files
     assert {"CREATE oo_monitor_probe", "INSERT oo_monitor_probe", "DELETE oo_monitor_probe"} <= set(mon.sql_writes), mon.sql_writes
     assert mon.db_changed
+
+
+def test_the_monitors_see_a_program_start(tmp_path):
+    with _Monitor([tmp_path]) as mon:
+        subprocess.run(["uname", "-p"], capture_output=True, check=False)
+        os.system("true")
+    assert mon.processes == ["uname", "os.system:true"], mon.processes
 
 
 def test_write_kind_reads_what_it_should():
@@ -559,10 +642,18 @@ def test_write_kind_reads_what_it_should():
     assert _write_kind("/* x */ -- y\nINSERT INTO a (x) VALUES (1)") == "INSERT a"
     assert _write_kind("WITH s AS (SELECT 1) DELETE FROM a") == "DELETE a"
     assert _write_kind("WITH s AS (SELECT 1) SELECT * FROM s") is None
+    assert _write_kind("WITH s AS (SELECT replace('a','b','c'), 'delete' AS \"update\") SELECT * FROM s") is None
+    assert _write_kind("WITH s AS (SELECT 1) INSERT INTO a SELECT * FROM s") == "INSERT a"
+    for write in ("VACUUM INTO '/tmp/x.db'", "REINDEX", "ATTACH 'x.db' AS y", "PRAGMA wal_checkpoint(TRUNCATE)", "PRAGMA user_version(3)",
+                  "PRAGMA journal_mode\n= WAL", "INSERT OR REPLACE INTO a (x) VALUES (1)", "REPLACE INTO a (x) VALUES (1)", "ANALYZE"):
+        assert _write_kind(write), write
+    for read in ("BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT s", "PRAGMA table_info(note)", "EXPLAIN SELECT 1", "SELECT 1"):
+        assert _write_kind(read) is None, read
 
 
 def test_an_atomic_write_temp_file_is_accounted_for_by_the_file_it_becomes():
+    real = temp_name(Path("/data/session_hwm.json")).name  # the form the app's atomic writers produce: <name>.tmp.<pid>.<thread>
+    assert "session_hwm.json" in _final_names(real), real
     assert "storage_events.json" in _final_names("storage_events.json.tmp")
-    assert "storage_events.json" in _final_names("storage_events.json.a1b2_c3.tmp")
     assert _final_names("app_errors.jsonl") == {"app_errors.jsonl"}
-    assert not _final_names("unlisted.tmp") & _AMBIENT_FILES
+    assert not _final_names("unlisted.tmp.12.34") & _AMBIENT_FILES
