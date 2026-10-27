@@ -8,7 +8,9 @@ Metadata is answered 403 BEFORE the handler runs, and that a request with none o
 
 from __future__ import annotations
 
+import ast
 import importlib
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -293,3 +295,52 @@ def test_a_foreign_request_leaves_runs_jsonl_as_it_was(route: str, monkeypatch: 
         assert (log_dir / "runs.jsonl").read_bytes() == before
     finally:
         runs.reset_for_tests()
+
+
+def _served_file_response_callers() -> list[tuple[str, str, bool]]:
+    """(file, function, guarded) for every function under ``src/`` that calls ``served_file_response``: ``guarded`` is true when the
+    function is a route whose decorator carries ``dependencies=[Depends(refuse_cross_site_get)]``."""
+    found: list[tuple[str, str, bool]] = []
+    root = Path(__file__).resolve().parent.parent / "src"
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            # any REFERENCE counts, not only a call: ``functools.partial(served_file_response, ...)`` or a callback hands it over unseen by a
+            # call-only scan; an aliased import is refused below because it would rename it out of this scan's sight
+            calls = any(
+                getattr(n, "attr", None) == "served_file_response" or getattr(n, "id", None) == "served_file_response"
+                for n in ast.walk(fn)
+            )
+            if not calls:
+                continue
+            guarded = any(
+                isinstance(d, ast.Call)
+                and any(
+                    kw.arg == "dependencies" and "refuse_cross_site_get" in ast.unparse(kw.value)
+                    for kw in d.keywords
+                )
+                for d in fn.decorator_list
+            )
+            found.append((str(path.relative_to(root.parent)), fn.name, guarded))
+    return found
+
+
+def test_every_route_that_serves_a_logged_file_is_guarded() -> None:
+    """``served_file_response`` appends to diagnostics/runs.jsonl, so a route that calls it without the guard lets another site's page
+    make the log grow (F3). A fourth such route fails here BY NAME, before anyone has planted a file for it."""
+    root = Path(__file__).resolve().parent.parent / "src"
+    aliased = [
+        f"{path.relative_to(root.parent)}"
+        for path in sorted(root.rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.name == "served_file_response" and alias.asname
+    ]
+    assert not aliased, f"import served_file_response under its own name so the guard pin can see it: {aliased}"
+    callers = _served_file_response_callers()
+    assert len(callers) >= 3, "the scan found fewer callers than the three F3 routes: it has stopped finding things"
+    unguarded = [f"{f}::{name}" for f, name, ok in callers if not ok]
+    assert not unguarded, f"call served_file_response only from a route with dependencies=[Depends(refuse_cross_site_get)]: {unguarded}"
