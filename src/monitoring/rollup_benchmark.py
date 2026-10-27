@@ -22,6 +22,7 @@ Counts + milliseconds only, never a score.
 
 from __future__ import annotations
 
+import contextlib
 import statistics
 import time
 from datetime import date, timedelta
@@ -119,11 +120,12 @@ def _run_guarded(session: Session, repeats: int, columnar) -> dict:
     # The in-progress marker, as the served build writes it: a benchmark that is killed (the #1310 end) leaves the record the next start's
     # last-build verdict reads, and another server's served build sees a benchmark running. ``begin`` refuses when another process's build runs.
     r = rollup_serve._readings()
-    if not rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=columnar.budget_snapshot()["duckdb_limit_mb"]):
+    snap = columnar.budget_snapshot()  # read ONCE: the marker, the connection and the build live on this reading (R147)
+    if not rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"]):
         return {"available": False, "declined": True, "reason": rollup_marker.ELSEWHERE, "source": "last-build",
                 "note": "Not run: another server's rollup build is running. Nothing was built."}
     try:
-        return _run_built(session, repeats, columnar)
+        return _run_built(session, repeats, columnar, snap)
     finally:
         rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
 
@@ -136,7 +138,9 @@ def _marker_progress(stage: str, rows_done: int) -> None:
     rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
 
 
-def _run_built(session: Session, repeats: int, columnar) -> dict:
+def _run_built(session: Session, repeats: int, columnar, snap: dict) -> dict:
+    from src.analytics import rollup_serve
+
     # -- corpus context (so the numbers are interpretable) ------------------------------- #
     from sqlalchemy import func
 
@@ -151,11 +155,28 @@ def _run_built(session: Session, repeats: int, columnar) -> dict:
     }
 
     # -- the one-time build (this is the amortized cost) --------------------------------- #
-    con = columnar.connect(passphrase=None)  # offline -> in-memory (never a plaintext file)
+    # The offload folder is the serve's rule (none for an encrypted corpus; a folder of this connection's own otherwise): left to DuckDB's default it
+    # would write derived data beside the working directory in the clear once the build reached its limit.
+    spill = rollup_serve._spill_setting()
+    try:
+        con = columnar.connect(passphrase=None, spill=spill, snapshot=snap)  # offline -> in-memory (never a plaintext file)
+    except BaseException:
+        rollup_serve._remove_spill(spill)
+        raise
     if con is None:
+        rollup_serve._remove_spill(spill)
         return {"available": False, "reason": "columnar engine unavailable"}
+    try:
+        return _measure(session, repeats, columnar, snap, con, corpus)
+    finally:
+        with contextlib.suppress(Exception):
+            con.close()
+        rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
+
+
+def _measure(session: Session, repeats: int, columnar, snap: dict, con, corpus: dict) -> dict:
     t0 = time.perf_counter()
-    build = columnar.build_keyword_daily(con, session, on_batch=_marker_progress)
+    build = columnar.build_keyword_daily(con, session, on_batch=_marker_progress, snapshot=snap)
     build_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
     # -- parity: is the rollup faithful on THIS corpus? ---------------------------------- #
@@ -190,11 +211,6 @@ def _run_built(session: Session, repeats: int, columnar) -> dict:
             # holds keywords the bounded live window no longer does)
             "keywords_live_minus_rollup": (live_n - roll_n) if live_n is not None and roll_n is not None else None,
         })
-
-    try:
-        con.close()
-    except Exception:  # noqa: BLE001
-        pass
 
     return {
         "available": True,

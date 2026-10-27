@@ -1243,19 +1243,23 @@ def build_now_and_wait() -> str:
     ``done`` for a build that declined or failed. That wait is real (the call blocks on the lock until the
     running build ends), and the one caller, ``boot_sequence._rollup_first_build``, acts on the outcome it
     returns; nothing relies on a rollup existing merely because this returned."""
-    while True:
-        if _BUILD_LOCK.acquire(blocking=False):
-            return _build_and_swap()  # releases _BUILD_LOCK
+    with _GEN_LOCK:  # one step with a served build's (bump, release): the counter read here is of the build whose lock this failed to take
+        took = _BUILD_LOCK.acquire(blocking=False)
         gen = _BUILD_GEN["n"]
-        with _BUILD_LOCK:  # the running build releases it in its own finally
-            if _BUILD_GEN["n"] != gen:
-                return _LAST_OUTCOME["value"]  # a served build ended while this waited: its outcome
-        # the holder was not a served build (the rollup benchmark): its release says nothing about a build, so take the lock for our own
+    if took:
+        return _build_and_swap()  # releases _BUILD_LOCK
+    _BUILD_LOCK.acquire()  # waits for the holder, and keeps the lock: nothing can start a build between the holder's release and the decision
+    if _BUILD_GEN["n"] != gen:
+        _BUILD_LOCK.release()
+        return _LAST_OUTCOME["value"]  # a served build ended while this waited: its outcome
+    # the holder was not a served build (the rollup benchmark): its release says nothing about a build, so the build is ours
+    return _build_and_swap()  # releases _BUILD_LOCK
 
 
 # Counts the served builds that have ended (bumped while ``_BUILD_LOCK`` is still held). A waiter that sees it unchanged after the lock came free
 # waited for something that was not a served build, and ``_LAST_OUTCOME`` is not the outcome of anything it waited for.
 _BUILD_GEN: dict = {"n": 0}
+_GEN_LOCK = threading.Lock()  # makes "bump the counter, release the build lock" one step to a waiter that is deciding whether the lock it lost was a served build's
 
 
 # The outcome of the build that last released _BUILD_LOCK. It is written while the lock is still
@@ -1430,8 +1434,9 @@ def _build_and_swap() -> str:
             with _LOCK:
                 _STATE["last_outcome"] = outcome
                 _STATE.pop("last_outcome_restored", None)
-        _BUILD_GEN["n"] += 1
-        _BUILD_LOCK.release()
+        with _GEN_LOCK:
+            _BUILD_GEN["n"] += 1
+            _BUILD_LOCK.release()
 
 
 def _trigger_build_async() -> None:
@@ -1445,8 +1450,9 @@ def _trigger_build_async() -> None:
         # The thread that would have released the lock never ran: release it here, or every later
         # build (and the boot sequence's wait for this one) blocks on it forever.
         _LAST_OUTCOME["value"] = "failed"
-        _BUILD_GEN["n"] += 1
-        _BUILD_LOCK.release()
+        with _GEN_LOCK:
+            _BUILD_GEN["n"] += 1
+            _BUILD_LOCK.release()
         log_failure(_LOG, "rollup serve: could not start the build thread", exc, level=logging.WARNING)
 
 

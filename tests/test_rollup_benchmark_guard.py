@@ -61,6 +61,10 @@ def _isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(columnar, "build_keyword_daily", never)
     yield
     rollup_serve._STATE.update(keep)
+    rollup_serve._BENCHMARK["running"] = False
+    if rollup_serve._BUILD_LOCK.locked():  # a test that leaves the build lock held hangs every later waiter and the interpreter's exit
+        rollup_serve._BUILD_LOCK.release()
+        pytest.fail("a test left the build lock held")
 
 
 def test_a_seeded_in_memory_stop_hold_makes_the_benchmark_decline_and_build_nothing(monkeypatch, empty_session):
@@ -183,7 +187,7 @@ def test_a_boot_wait_for_a_served_build_is_not_satisfied_by_a_benchmark_releasin
     monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "stale-previous-outcome")
     got: list = []
     with rollup_serve.benchmark_slot():
-        t = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+        t = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()), daemon=True)
         t.start()
         time.sleep(0.2)  # the waiter is blocked on the benchmark's lock
         assert not got
@@ -192,10 +196,15 @@ def test_a_boot_wait_for_a_served_build_is_not_satisfied_by_a_benchmark_releasin
 
 
 def test_a_served_build_that_ends_while_a_boot_wait_waits_still_gives_its_outcome(monkeypatch):
+    def not_ours():
+        rollup_serve._BUILD_LOCK.release()
+        raise AssertionError("the waiter started a build of its own")
+
+    monkeypatch.setattr(rollup_serve, "_build_and_swap", not_ours)
     monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "declined")
     got: list = []
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)  # stands for a running served build
-    t = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+    t = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()), daemon=True)
     t.start()
     time.sleep(0.2)
     rollup_serve._BUILD_GEN["n"] += 1  # the served build's finally does this while it still holds the lock
@@ -211,3 +220,64 @@ def test_inmemory_view_nests_and_restores_the_outer_setting():
             pass
         assert rollup_serve._STORE_VIEW.inmemory is True, "the inner exit cleared the outer view"
     assert rollup_serve._STORE_VIEW.inmemory is False
+
+
+def test_the_stale_numbers_provenance_does_not_say_a_rebuild_follows_a_benchmark():
+    with rollup_serve.benchmark_slot():
+        assert rollup_serve.basis(30)["rebuilding"] is False
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    try:
+        assert rollup_serve.basis(30)["rebuilding"] is True, "negative space: a served build still reads as a rebuild"
+    finally:
+        rollup_serve._BUILD_LOCK.release()
+
+
+def test_a_second_benchmark_declined_by_the_slot_does_not_clear_the_first_ones_flag():
+    with rollup_serve.benchmark_slot() as first:
+        assert first is True
+        with rollup_serve.benchmark_slot() as second:
+            assert second is False
+        assert rollup_serve._BENCHMARK["running"] is True and rollup_serve._BUILD_LOCK.locked()
+    assert rollup_serve._BENCHMARK["running"] is False
+
+
+def test_a_build_thread_that_cannot_start_counts_the_build_as_ended(monkeypatch):
+    class _NoThread:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(rollup_serve.threading, "Thread", _NoThread)
+    before = rollup_serve._BUILD_GEN["n"]
+    rollup_serve._trigger_build_async()
+    assert rollup_serve._BUILD_GEN["n"] == before + 1 and not rollup_serve._BUILD_LOCK.locked()
+
+
+def test_the_benchmark_connects_with_the_serves_offload_rule_and_one_snapshot_and_cleans_up(monkeypatch, empty_session):
+    """Left to DuckDB's default the offload folder is beside the working directory, in the clear, for an encrypted corpus: the serve passes its own rule."""
+    seen: dict = {}
+    removed: list = []
+
+    class Con(_Con):
+        closed = False
+
+        def close(self):
+            Con.closed = True
+
+    monkeypatch.setattr(rollup_serve, "_spill_setting", lambda: "SPILL-RULE")
+    monkeypatch.setattr(rollup_serve, "_remove_spill", lambda path: removed.append((path, Con.closed)))
+    monkeypatch.setattr(columnar, "connect", lambda *a, **k: (seen.update(k), Con())[1])
+
+    def build(con, session, on_batch=None, snapshot=None, **_k):
+        seen["build_snapshot"] = snapshot
+        raise RuntimeError("the build died")
+
+    monkeypatch.setattr(columnar, "build_keyword_daily", build)
+    with pytest.raises(RuntimeError):
+        run_rollup_benchmark(empty_session, repeats=1)
+    assert seen["spill"] == "SPILL-RULE"
+    assert seen["snapshot"] is seen["build_snapshot"] and seen["snapshot"] is not None, "the connection and the build did not share one budget reading"
+    assert Con.closed, "the connection was left open after the build raised"
+    assert removed == [("SPILL-RULE", True)], "the offload folder was not removed after the connection was closed"
