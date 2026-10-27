@@ -32,6 +32,7 @@ from the DB. That keeps it unit-testable without a database.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -40,7 +41,9 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import yaml
 
-from src.utils.safe_yaml import load_safe_yaml
+from src.utils.safe_yaml import YAMLDepthError, load_safe_yaml
+
+_LOG = logging.getLogger("analytics.equivalence")
 
 _PATH = Path(__file__).resolve().parents[2] / "configs" / "keyword_equivalents.yml"
 # Rings generated offline from Wikidata labels (scripts/generate_wikidata_rings.py).
@@ -132,6 +135,11 @@ def _read_yaml(path: Path) -> dict:
         return {}
     try:
         return load_safe_yaml(path.read_text("utf-8")) or {}
+    except YAMLDepthError as exc:
+        # Named, not silent: a ring file nested past the bound (a restored backup writes this file unparsed) is refused, and
+        # which file says where to look. The class name alone is logged (the sink guards), never the exception.
+        _LOG.warning("ring file %s is nested too deeply and its rings are not read (%s)", path.name, type(exc).__name__)
+        return {}
     except (OSError, yaml.YAMLError):
         return {}
 

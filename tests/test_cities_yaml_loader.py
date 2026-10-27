@@ -35,9 +35,11 @@ def test_the_loader_class_that_runs_is_the_one_the_shared_module_names(cls, tmp_
     used = []
 
     class Spy(cls):
-        def __init__(self, text):
+        # counted where the document is CONSTRUCTED: the depth guard builds a second loader for its event pass on libyaml,
+        # so instantiations are not parses
+        def get_single_data(self):
             used.append(cls)
-            super().__init__(text)
+            return super().get_single_data()
 
     monkeypatch.setattr(safe_yaml, "YAML_LOADER", Spy)
     p = _gazetteer(tmp_path)

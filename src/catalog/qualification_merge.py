@@ -60,7 +60,7 @@ from typing import Any
 import yaml
 
 from src.monitoring.secret_scrub import record_text, scrubbed
-from src.utils.safe_yaml import load_safe_yaml
+from src.utils.safe_yaml import YAMLDepthError, load_safe_yaml
 
 SHIPPABLE = ("qualified", "disqualified")
 
@@ -206,7 +206,7 @@ def repair_record_flags_of_export_bytes(data: bytes) -> dict:
         try:
             payload = json.loads(text)
         except ValueError:
-            payload = yaml.safe_load(text)
+            payload = load_safe_yaml(text)
     except (UnicodeDecodeError, yaml.YAMLError, ValueError, RecursionError):
         return {}
     return repair_record_flags(payload.get("basis")) if isinstance(payload, dict) else {}
@@ -262,7 +262,9 @@ def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeErro
     refused by name rather than guessed at.
     """
     try:
-        raw = yaml.safe_load(text)
+        raw = load_safe_yaml(text)
+    except YAMLDepthError as exc:  # before YAMLError: a document nested past the shared loader's bound is "too deep", not malformed
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=_TOO_DEEP) from exc
     except yaml.YAMLError as exc:
         raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=record_text(json_exc)) from exc
     except ValueError as exc:  # a date the YAML reader recognised but the calendar does not have
