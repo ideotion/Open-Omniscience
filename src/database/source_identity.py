@@ -285,6 +285,16 @@ _OUTLET_HEAL_SQL = (
 )
 
 
+def _trigger_body_matches(stored: str | None, wanted: str) -> bool:
+    """Whether the ``CREATE TRIGGER`` text SQLite kept for a trigger is the one this build would make. SQLite stores the statement as written
+    minus ``IF NOT EXISTS``, so both sides are compared with whitespace collapsed and that phrase taken out of ``wanted``. Case is kept: the
+    body is built by this module and a case-only edit is a change like any other. An unreadable (NULL) stored text does not match."""
+    if not stored:
+        return False
+    normalised = " ".join(wanted.split()).replace("CREATE TRIGGER IF NOT EXISTS ", "CREATE TRIGGER ", 1)
+    return " ".join(stored.split()) == normalised
+
+
 def install_source_outlet_id(conn: Connection) -> dict[str, Any]:
     """R177: the integer ``sources.outlet_id`` and the three triggers that keep it right, on ``conn``.
 
@@ -294,7 +304,7 @@ def install_source_outlet_id(conn: Connection) -> dict[str, Any]:
     the articles or the mentions: encrypted, alone, median of 7, a steady boot costs 4 ms at 7,000 sources, 65 ms at 70,000 and
     2.0 s at 700,000, and the first install (column, triggers, back-fill) 42 ms, 0.53 s and 8.1 s
     (``plan-row-j/outlet-id-plan-2026-10-17``). Writes ``outlet_id`` and nothing else: no verdict, no catalogue-owned field and no operator edit is
-    touched (R100, R167). Returns ``{"added", "triggers", "healed"}``; ``{"state": "absent"}`` with no sources table."""
+    touched (R100, R167). Returns ``{"added", "triggers", "healed"}`` (``triggers`` counts the triggers WRITTEN: made new, or replaced because the body an older build wrote differs from this build's); ``{"state": "absent"}`` with no sources table."""
     if conn.dialect.name != "sqlite":
         return {"state": "skipped"}
     if not conn.exec_driver_sql("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sources'").fetchone():
@@ -313,12 +323,18 @@ def install_source_outlet_id(conn: Connection) -> dict[str, Any]:
         conn.exec_driver_sql("BEGIN IMMEDIATE")
     try:
         have = {
-            r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='sources'").fetchall()
+            r[0]: r[1]
+            for r in conn.exec_driver_sql("SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name='sources'").fetchall()
         }
         made = 0
         for name, sql in SOURCE_OUTLET_ID_TRIGGERS.items():
             if name in have:
-                continue
+                if _trigger_body_matches(have[name], sql):
+                    continue
+                # a trigger of this name from an older build: ``IF NOT EXISTS`` can never replace it, so a changed body would reach new
+                # installs only (audit 0.5.0 item 14). Dropped and re-made inside the same transaction as the heal below, so no write
+                # sees the table with a missing trigger; the rows it wrote keep their values and the heal corrects any that are wrong.
+                conn.exec_driver_sql(f'DROP TRIGGER "{name}"')  # nosec B608 - a name from SOURCE_OUTLET_ID_TRIGGERS, not input
             conn.exec_driver_sql(sql)
             made += 1
         stale: int = conn.exec_driver_sql(_OUTLET_STALE_SQL).scalar_one()
@@ -338,7 +354,7 @@ def ensure_source_outlet_id(engine: Engine) -> dict[str, Any]:
     itself is refused, every ORM query on ``Source`` fails with "no such column" (as for any self-healed column); if only the
     triggers or the heal are refused, rows stay NULL and a gate reads them exactly (``outlets_unhealed``, then the lowest id of
     the row's own domain) until a later boot corrects them. Runs AFTER ``ensure_source_composite_key``: that rebuild replays any
-    trigger the old table held, and this step then finds nothing to add."""
+    trigger the old table held, and this step then adds what is missing and replaces any whose body is out of date."""
     if engine.url.get_backend_name() != "sqlite":
         return {"state": "skipped"}
     try:
