@@ -235,9 +235,10 @@ def test_a_read_leaves_a_leftover_wal_byte_for_byte_and_still_reads_the_value(tm
 
 
 #: Rounds the next test runs. Against the two-commit stand-in (``CREATE TABLE`` committed by itself, no invalidation) a polling reader
-#: left "no row" in the cache in 119 of 300 and 146 of 400 rounds measured (stdlib sqlite 3.45.1, ``rc-diagnostics/r236/``), so at the
-#: lower 30 percent a round misses it with probability 0.7, and 20 rounds all missing it is 0.7**20 = 0.08 percent: the number is what
-#: keeps a green run against the old stand-in a one-in-a-thousand event, not a habit.
+#: left "no row" in the cache in 119 of 300 and 146 of 400 rounds measured (stdlib sqlite 3.45.1, ``rc-diagnostics/r236/``), 40 and 37
+#: percent. Taking 30 percent as a floor BELOW both (a chosen margin, not a measurement) and the rounds as independent, a round misses
+#: it with probability 0.7, and 20 rounds all missing it is 0.7**20 = 0.08 percent: the number keeps a green run against the old
+#: stand-in a one-in-a-thousand event, not a habit.
 _POLLED_ROUNDS = 20
 
 
