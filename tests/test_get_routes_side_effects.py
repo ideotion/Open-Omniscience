@@ -566,6 +566,25 @@ def test_the_table_names_real_routes_with_reasons(observed):
     assert all(reason.strip() for _, _, reason in _ROUTES.values())
 
 
+def test_the_seeded_walk_names_every_route_this_walk_found_answering_4xx(observed):
+    """Identity, not a count: a route that answers 4xx on this database and is neither driven with data nor listed as not driven in
+    ``test_get_routes_side_effects_with_data.py`` is a handler whose body no walk measures. The other direction is not asserted (a route
+    named there may answer 2xx here after an earlier test left data behind)."""
+    from tests.test_get_routes_side_effects_with_data import (
+        _NEEDS_ANALYSIS_EXTRA,
+        _NOT_DRIVEN,
+        _placeholder_ids,
+        _urls,
+    )
+
+    named = set(_urls(_placeholder_ids())) | set(_NOT_DRIVEN) | set(_NEEDS_ANALYSIS_EXTRA)
+    four_xx = {p for p, s in observed.statuses.items() if 400 <= s < 500 and p in observed.schema_paths}
+    assert four_xx <= named, (
+        f"these GETs answered 4xx here and are not covered by the seeded walk (drive them in test_get_routes_side_effects_with_data.py, "
+        f"or list them in _NOT_DRIVEN with the reason): {sorted(four_xx - named)}"
+    )
+
+
 def test_the_monitors_see_a_get_that_reaches_the_network_when_the_switch_is_off(tmp_path, monkeypatch):
     """Liveness of the monitors, so a green run is not a blind one: with the kill switch CLEARED, ``/api/hazards`` goes for its two
     hosts, and the monitor must record both lookups. (With the switch engaged, the test above asserts it does not.)"""
