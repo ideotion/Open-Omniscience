@@ -89,6 +89,20 @@ def test_every_word_the_maps_use_has_a_translation_in_all_twelve_locales():
             assert loc.get(key), (f.stem, key)
 
 
+def test_every_import_report_kind_has_a_translation_in_all_twelve_locales():
+    """app-backup.js prints an import report's ``kind`` alone in a node, so the i18n walker translates it only if the
+    word is a locale key (R291). The words are the queue's own ``KINDS`` plus the report's ``import`` fallback."""
+    queue = (_ROOT / "src" / "backup" / "import_queue.py").read_text(encoding="utf-8")
+    kinds = re.search(r"^KINDS = \((.*?)\)", queue, re.M)
+    assert kinds, "src/backup/import_queue.py KINDS moved: update this test"
+    words = tuple(re.findall(r'"([a-z]+)"', kinds.group(1))) + ("import",)
+    assert words == ("corpus", "legacy", "blobs", "newsletters", "import"), words
+    for f in sorted((_STATIC / "locales").glob("*.json")):
+        loc = json.loads(f.read_text(encoding="utf-8"))
+        for key in words:
+            assert loc.get(key), (f.stem, key)
+
+
 def test_the_label_functions_behave():
     proc = subprocess.run(
         ["node", str(_ROOT / "tests" / "raw_token_labels_node_test.js")], capture_output=True, text=True, check=False

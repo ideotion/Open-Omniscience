@@ -56,5 +56,7 @@ for (const [k, en] of [["person", "Person"], ["org", "Organisation"], ["location
   assert.strictEqual(R.kwKindLabel(k), "T[" + en + "]", k);
 }
 assert.strictEqual(R.kwKindLabel("zzz"), "zzz", "a kind with no word is shown as sent");
+assert.strictEqual(R.kwKindLabel("toString"), "toString", "an inherited name is not a kind");
+assert.strictEqual(R.kwKindLabel(undefined), "");
 
 console.log("raw token labels: all checks passed");
