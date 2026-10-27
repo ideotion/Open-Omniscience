@@ -433,14 +433,17 @@ down is a RECORD of that date and carries its own disposition table.)*
   and no `Referer` (legacy only). The known side-effect `GET`s are closed by one dependency,
   `refuse_cross_site_get` (`src/api/cross_site.py`: Host, then `Sec-Fetch-Site`, then `Origin` /
   `Referer` judged by the middleware's own `_foreign_origin`, so default ports are normalised):
-  the heavy diagnostics (benchmarks, `rollup-benchmark`, `/all`, `/debug-bundle`, the selftests,
-  `recursive-loop`), the egress reads (`/api/hazards`, `/api/monitoring/health`,
+  the heavy diagnostics (`performance`, the benchmarks, `llm-bench`, `llm-throughput`, `rollup-benchmark`,
+  `/all`, `/debug-bundle`, the selftests, `recursive-loop`), the egress reads (`/api/hazards`, `/api/monitoring/health`,
   `/api/wiki/dumps/probe` and `/sizes`, `/api/geo/downloads/size`) and the exports that mint a signing
   key (`/api/custody/export`, `/api/annotations/export`) answer a foreign page 403 before their
   handler runs. `/api/database/backup` carries its own earlier copy (`_refuse_cross_site` in
   `src/api/database.py`). The stated limit of both is a browser that sends none of the three
   (Firefox before 90, Safari before 16.4, an `OO_ALLOWED_HOSTS` name over plain HTTP): that request is
-  served, and the page still cannot read the answer. Making these routes `POST` is a proposal. A
+  served, and the page still cannot read the answer. Behind a TLS-terminating proxy the app must see
+  `https` (the proxy forwards `X-Forwarded-Proto` from loopback) or the proxy must put the port in `Host`, or an
+  `Origin: https://NAME` is judged as port 443 against a Host read as port 80 and refused, as it already is on a POST.
+  Making these routes `POST` is a proposal. A
   `Sec-Fetch-Site` check in the MIDDLEWARE for every state-changing request is not built, because
   nothing has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user

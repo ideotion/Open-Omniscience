@@ -198,7 +198,7 @@ def test_a_proxy_that_names_the_default_port_in_host_is_the_same_server(monkeypa
     [
         ("https", {"host": "oo.lan:443", "origin": "https://oo.lan:8443"}),
         ("https", {"host": "oo.lan:443", "origin": "https://evil.example"}),
-        ("https", {"host": "oo.lan:443", "origin": "ftp://oo.lan"}),
+        ("https", {"host": "oo.lan:443", "origin": "ftp://oo.lan:443"}),
         ("https", {"host": "oo.lan", "origin": "https://oo.lan:99999"}),
     ],
 )
@@ -226,8 +226,9 @@ def test_the_osm_size_read_makes_no_head_for_a_foreign_page_and_one_for_the_own_
     monkeypatch.setattr(osm_downloads, "get_manager", lambda: _Manager())
     with TestClient(app, base_url="http://127.0.0.1") as client:
         foreign = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "cross-site", "Referer": "https://evil.example/x"})
+        no_metadata = client.get("/api/geo/downloads/size?code=planet", headers={"Origin": "https://evil.example"})
         own = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/"})
         script = client.get("/api/geo/downloads/size?code=planet")
-    assert foreign.status_code == 403
+    assert foreign.status_code == 403 and no_metadata.status_code == 403
     assert heads == ["planet", "planet"]
     assert own.status_code == 200 and script.status_code == 200
