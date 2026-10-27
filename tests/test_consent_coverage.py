@@ -11,9 +11,9 @@ table is the ruling:
   per-call refusal) and online the person already passed the one consent. What it OWES is the corollary: the refusal must be NAMED, never
   read as a quiet "0 results". That is a behaviour, so each ``named`` row is proved by a real refusal (kill switch engaged, a transport that
   reaches no socket) either in this file or in the test that the row names.
-* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. Two at present (see the rows):
-  the RSS discovery and the topic discovery read the person's airplane mode as the SOURCES having no feed. The two feed-verification rows were
-  gaps until R296 and the source preflight until R313 (G1); all three are ``named`` now.
+* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. None at present (see the rows). The two feed-verification rows were gaps until R296, the
+  source preflight until R313 (G1) and the RSS and topic discovery until R313 (G2): each read the person's airplane mode as a finding about the
+  sources. A gap row is how a NEW such defect is pinned before its fix PR.
 
 DISCOVERY runs the other way, in two steps, and a row records which step finds it (``found``):
 
@@ -220,29 +220,23 @@ EGRESS: tuple[Row, ...] = (
         found="hop",
         why="an incomplete sweep (`complete: false`, `skipped_offline`, `stopped` naming the kill switch); nothing logged or changed. No button calls it",
     ),
-    Row(("wiki.py", "track_page"), ("trackWikiPage",), "named"),
-    Row(("wiki.py", "track_now"), ("trackWikiNow",), "named"),
-    # --- gap: KNOWN defects, pinned as they behave today (a fix is a visible edit of this table) ----------------------
     Row(
         ("source_management.py", "discover_rss_feeds"),
         (),
-        "gap",
+        "named",
         found="hand",
-        why=(
-            "in airplane mode it answers 200 'Discovered RSS feeds for 0 sources' for sources it never asked about; reached through a "
-            "SourceManager method. No button calls it"
-        ),
+        why="refuses before it asks anyone: `skipped_offline` counts the sources not asked, `message` names the kill switch; reached through a SourceManager method. No button calls it",
     ),
     Row(
         ("source_management.py", "discover_sources_by_topic"),
         (),
-        "gap",
+        "named",
         found="hand",
-        why=(
-            "with the opt-in setting on, in airplane mode it answers 200 'Discovered 0 sources for topic ...' (the kill switch's refusal is "
-            "logged and swallowed by the DuckDuckGo wrapper); reached through a SourceManager method. No button calls it"
-        ),
+        why="behind the opt-in setting (403 first); then refuses before the search: `skipped_offline` 1, `message` names the kill switch. No button calls it",
     ),
+    Row(("wiki.py", "track_page"), ("trackWikiPage",), "named"),
+    Row(("wiki.py", "track_now"), ("trackWikiNow",), "named"),
+    # --- gap: KNOWN defects, pinned as they behave today (a fix is a visible edit of this table) ----------------------
     Row(
         ("stats.py", "refresh_stat_subscriptions"),
         ("refreshStatSubs",),
@@ -838,7 +832,7 @@ def _probe_run_source_preflight(c):
 
 
 def _probe_discover_rss_feeds(c):
-    """GAP: a source with no feed is 'checked' and reported as having none, while nothing was asked of its host."""
+    """A source with no feed is NOT reported as having none while nothing was asked of its host: the route refuses and counts."""
     from src.database.models import Source
 
     with c.sessionmaker() as s:
@@ -848,15 +842,14 @@ def _probe_discover_rss_feeds(c):
     j = r.json()
     return r, (
         r.status_code == 200
-        and j.get("total_checked") == 1
-        and j.get("with_rss_found") == 0
-        and "skipped_offline" not in j
-        and not _names_airplane_mode(r.text)
+        and j.get("total_checked") == 0
+        and j.get("skipped_offline") == 1
+        and _names_airplane_mode(j.get("message"))
     )
 
 
 def _probe_discover_sources_by_topic(c):
-    """GAP: with the opt-in setting on, the search fails on the kill switch inside the wrapper, which swallows it into an empty list."""
+    """With the opt-in setting on, the search is refused before it is made, not answered as an empty result."""
     from unittest import mock
 
     with mock.patch(
@@ -868,8 +861,8 @@ def _probe_discover_sources_by_topic(c):
     return r, (
         r.status_code == 200
         and j.get("count") == 0
-        and "skipped_offline" not in j
-        and not _names_airplane_mode(r.text)
+        and j.get("skipped_offline") == 1
+        and _names_airplane_mode(j.get("message"))
     )
 
 

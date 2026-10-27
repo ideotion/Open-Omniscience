@@ -906,6 +906,17 @@ class SourceManager:
 
     # ==================== SOURCE DISCOVERY ====================
 
+    def rss_discovery_candidates(self, source_ids: list[int] | None = None) -> list[Source]:
+        """The sources :meth:`discover_rss_feeds` would ask about: the listed ones, or every source without a feed."""
+        # A stand-in source is never probed: its "domain" is the text "(lost sources N)", and a request would be made for https://(lost sources N).
+        if source_ids:
+            return self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
+        return (
+            self.session.query(Source)
+            .filter(or_(Source.rss_url == None, Source.rss_url == ""), not_a_stand_in_source())
+            .all()
+        )
+
     def discover_rss_feeds(
         self, source_ids: list[int] | None = None, timeout: int = 10
     ) -> list[dict]:
@@ -919,17 +930,7 @@ class SourceManager:
         Returns:
             List of sources with discovered RSS feeds
         """
-        # A stand-in source is never probed: its "domain" is the text "(lost sources N)", and a request would be made for https://(lost sources N).
-        if source_ids:
-            sources = (
-                self.session.query(Source).filter(Source.id.in_(source_ids), not_a_stand_in_source()).all()
-            )
-        else:
-            sources = (
-                self.session.query(Source)
-                .filter(or_(Source.rss_url == None, Source.rss_url == ""), not_a_stand_in_source())
-                .all()
-            )
+        sources = self.rss_discovery_candidates(source_ids)
 
         source_list = [
             {
