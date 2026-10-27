@@ -10,7 +10,7 @@ DuckDB-only aggregate stage, where no SQLite connection is held at all) raised n
 mentions staged from the old one, and the mixed rollup was swapped in.
 
 THE FIX. ``_build_inmemory_and_swap`` reads ``library_generation.current()`` before its session reads a row; the build's per-batch hook compares it
-with the guard's own ``valid`` first thing, at every stage boundary the build crosses (after each batch of mentions, when the aggregate begins and
+with the guard's own ``valid`` (under its shared level, so a swap window that is open and then refused is waited out, not mistaken for a swap) first thing, at every stage boundary the build crosses (after each batch of mentions, when the aggregate begins and
 after each shard of it, when the keywords stage begins and ends), and once more before the finished rollup is swapped in. A mismatch raises
 ``StaleLibraryError``, which #1547's branch already turns into "no hold, the next request rebuilds".
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -130,12 +131,12 @@ def test_a_swap_in_the_aggregate_stage_is_refused_when_the_aggregate_and_the_key
     assert isinstance(_raised(hook, "keywords", 0), gen.StaleLibraryError), "before the keywords are read from the new file"
 
 
-def test_a_swap_during_the_final_checks_is_refused_before_the_rollup_is_swapped_in(world):
+def test_the_comparison_on_its_own_refuses_after_a_swap(world):
     stamp = gen.current()
     rollup_serve._require_library_unchanged(stamp)  # the last keywords batch passed; the compact and the serve check run now
     world.swap()
     with pytest.raises(gen.StaleLibraryError):
-        rollup_serve._require_library_unchanged(stamp)
+        rollup_serve._require_library_unchanged(stamp)  # the dispatcher's final check is pinned by the [final-checks] case below
 
 
 def test_no_swap_means_every_boundary_passes_and_a_swap_that_changed_nothing_gives_the_build_its_generation_back(world, tmp_path):
@@ -153,12 +154,91 @@ def test_no_swap_means_every_boundary_passes_and_a_swap_that_changed_nothing_giv
 def test_a_build_with_no_stamp_is_not_checked(world):
     assert _raised(rollup_serve._make_on_batch(), "mentions", 1) is None
     world.swap()
-    assert _raised(rollup_serve._make_on_batch(), "mentions", 2) is None  # a caller that passes no stamp (the benchmark's own hook) keeps its old behaviour
+    assert _raised(rollup_serve._make_on_batch(), "mentions", 2) is None  # a caller that passes no stamp keeps its old behaviour
+
+
+def _open_window_in_a_thread(new: Path, *, replace: bool):
+    """A swap window held by another thread until ``release`` is set: ``opened`` says it is open, ``done`` that it ended."""
+    opened, release, done = threading.Event(), threading.Event(), threading.Event()
+    problems: list[BaseException] = []
+
+    def hold() -> None:
+        try:
+            if replace:
+                with gen.swap_window(new):
+                    gen.disk_changing()
+                    opened.set()
+                    release.wait(10)
+                    os.replace(new, new.parent / "live.db")
+            else:
+                try:
+                    with gen.swap_window(new):
+                        opened.set()
+                        release.wait(10)
+                        raise RuntimeError("refused before anything changed")  # the repair's data-version check
+                except RuntimeError:
+                    pass
+        except BaseException as exc:  # noqa: BLE001 - reported to the test
+            problems.append(exc)
+            opened.set()
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=hold, daemon=True)
+    thread.start()
+    return opened, release, done, thread, problems
+
+
+def _hook_in_a_thread(hook):
+    result: list[BaseException | None] = []
+    returned = threading.Event()
+
+    def run() -> None:
+        result.append(_raised(hook, "mentions", 2))
+        returned.set()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return result, returned, thread
+
+
+def test_a_boundary_reached_inside_a_swap_window_that_is_then_refused_carries_on(world, tmp_path):
+    """While a window is open the generation is already moved: a bare comparison would stop the build for a swap that never happens."""
+    hook = rollup_serve._make_on_batch(gen.current())
+    new = tmp_path / "never-moved.db"
+    _store(new, "NEW")
+    opened, release, done, holder, problems = _open_window_in_a_thread(new, replace=False)
+    assert opened.wait(10)
+    result, returned, runner = _hook_in_a_thread(hook)
+    assert not returned.wait(0.3), "the boundary did not wait for the window: it answered from a generation that is moving"
+    release.set()
+    assert returned.wait(10) and done.wait(10)
+    runner.join(10)
+    holder.join(10)
+    assert not problems
+    assert result == [None], f"the build was stopped for a swap that did not happen: {result}"
+
+
+def test_a_boundary_reached_inside_a_swap_window_that_replaces_the_file_is_refused(world, tmp_path):
+    hook = rollup_serve._make_on_batch(gen.current())
+    new = tmp_path / "new.db"
+    _store(new, "NEW")
+    opened, release, done, holder, problems = _open_window_in_a_thread(new, replace=True)
+    assert opened.wait(10)
+    result, returned, runner = _hook_in_a_thread(hook)
+    assert not returned.wait(0.3)
+    release.set()
+    assert returned.wait(10) and done.wait(10)
+    runner.join(10)
+    holder.join(10)
+    assert not problems
+    assert len(result) == 1 and isinstance(result[0], gen.StaleLibraryError), result
 
 
 class _Con:
     def __init__(self):
         self.closed = False
+        self.past_the_swap = False  # the build went on after the boundary that follows the swap
 
     def execute(self, *_a, **_k):
         return self
@@ -193,9 +273,11 @@ def _stub_the_build(monkeypatch, world, *, swap_in: str):
             world.batch()
             world.swap()
             on_batch("mentions", 2)
+            con.past_the_swap = True
         elif swap_in == "aggregate":
             world.swap()
             on_batch("aggregate", 0)
+            con.past_the_swap = True
         return {"streamed_mentions": 2}
 
     def canary(_con):
@@ -218,7 +300,7 @@ def _stub_the_build(monkeypatch, world, *, swap_in: str):
     monkeypatch.setattr(rollup_serve, "_progress_end", lambda: None)
     monkeypatch.setattr(rollup_serve, "_remember_stage", lambda: None)
     monkeypatch.setattr(rollup_serve, "_count_in", lambda _s: 1000)
-    monkeypatch.setitem(rollup_serve._STATE, "con", None)
+    monkeypatch.setattr(rollup_serve, "_STATE", dict(rollup_serve._STATE, con=None))  # a copy: the swap-in below must not leave state for later tests
     return con
 
 
@@ -229,6 +311,38 @@ def test_the_build_is_stopped_and_nothing_is_swapped_in_when_the_swap_lands_at_e
         rollup_serve._build_inmemory_and_swap()
     assert rollup_serve._STATE["con"] is None, "a rollup no corpus produced was swapped in"
     assert con.closed, "the connection of a build that was stopped leaked"
+    assert not con.past_the_swap, "the hook did not stop the build at the boundary: only the final check caught it"
+
+
+@pytest.mark.parametrize("stop", ["declined", "duckdb-limit"])
+def test_a_build_that_stops_on_a_replaced_library_keeps_no_wall_of_the_new_corpus(monkeypatch, world, stop):
+    """A stop (a decline, DuckDB's own limit) after the swap would otherwise return a hold carrying the NEW file's count beside the old epoch."""
+    from src.analytics import columnar
+
+    con = _stub_the_build(monkeypatch, world, swap_in="none")
+
+    class OutOfMemoryException(Exception):  # DuckDB's class is matched by name
+        pass
+
+    def build(con_, s, *, on_batch, snapshot):
+        on_batch("mentions", 1)
+        world.swap()  # lands after the last boundary the hook sees
+        if stop == "declined":
+            raise columnar.BuildDeclined("memory-guard", {})
+        raise OutOfMemoryException("Out of Memory Error: failed to allocate")
+
+    counted: list[int] = []
+
+    def count(_s) -> int:
+        counted.append(1)
+        return 1000
+
+    monkeypatch.setattr(columnar, "build_keyword_daily", build)
+    monkeypatch.setattr(rollup_serve, "_count_in", count)
+    with pytest.raises(gen.StaleLibraryError):
+        rollup_serve._build_inmemory_and_swap()
+    assert not counted, "the hold was composed from the new corpus"
+    assert con.closed and rollup_serve._STATE["con"] is None
 
 
 def test_a_build_with_no_swap_is_swapped_in(monkeypatch, world):

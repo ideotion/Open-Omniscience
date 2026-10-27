@@ -471,6 +471,9 @@ def _build_inmemory_and_swap() -> dict | None:
                         raise RuntimeError("the serve check found the DuckDB instance unusable")
                     skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
             if skip is not None:
+                # a stop on a library that was replaced under the build is not a wall of the new corpus: its hold would carry the new file's
+                # count beside the old file's epoch. The refusal goes to the dispatcher, which answers it with no hold.
+                _require_library_unchanged(stamp)
                 skip.update({
                     # the limit and the machine total this build ran under, whatever stopped it (R147)
                     "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
@@ -1156,10 +1159,19 @@ def _require_library_unchanged(stamp: int | None) -> None:
     A build commits between batches, which hands its connection back to the pool, and the generation guard's checkout refusal is answered
     by a fresh connection on the NEW file, silently: only this comparison, at each stage boundary, turns a swap that landed there into the
     refusal the dispatcher already handles (``_library_replaced``). The stamp is compared with the guard's own ``valid`` (not a copy of
-    its rule): a swap that did not happen and changed nothing on disk gives the old generation back, and the build goes on."""
+    its rule): a swap that did not happen and changed nothing on disk gives the old generation back, and the build goes on.
+
+    The comparison is made under the guard's shared level (``connecting``), as the build's own checkout is: while a swap WINDOW is open the
+    generation is already moved (``bump`` runs first), so a bare comparison would refuse a build for a swap that is later refused before it
+    touches anything. Taking the level waits for the window to close, exactly as a connection opened in that window would, and the answer is
+    then the library's: no window can open while this thread holds the level."""
     from src.database import library_generation
 
-    if stamp is not None and not library_generation.valid(stamp):
+    if stamp is None:
+        return
+    with library_generation.connecting():
+        replaced = not library_generation.valid(stamp)
+    if replaced:
         raise library_generation.StaleLibraryError("the library file was replaced under the rollup build")
 
 
