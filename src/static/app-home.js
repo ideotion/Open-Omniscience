@@ -2207,10 +2207,20 @@
     };
     function _wxVarLabel(k, t) { return _WX_VAR_LABELS[k] ? t(_WX_VAR_LABELS[k]) : k; }
 
+    // The closed set of fetch verdicts the weather route can answer with (src/markets/csv_feeds.py
+    // classify_fetch_failure + parse-failed in src/weather/openmeteo.py). One node joins the verdict to the
+    // server's English note, so the i18n walker (exact-match text nodes only) never sees the word alone:
+    // it goes through t() here. A verdict this page has no word for is shown as the route sent it.
+    const _WX_VERDICT_WORDS = ["robots-disallowed", "robots-unavailable", "offline", "dead-series", "http-error",
+      "refused", "unreachable", "fetch-failed", "parse-failed"];
+    function _wxVerdictLabel(v, t) {
+      return _WX_VERDICT_WORDS.indexOf(v) !== -1 ? t(v) : String(v || "");
+    }
+
     function renderWeatherContext(box, d, sig) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       if (!d || !d.ok) {
-        const verdict = d ? `${d.verdict || ""} — ${d.verdict_note || ""}` : "";
+        const verdict = d ? `${_wxVerdictLabel(d.verdict, t)} — ${d.verdict_note || ""}` : "";
         box.innerHTML = `<div class="note err"><b>${esc(t("Weather fetch refused:"))}</b> <span>${esc(verdict)}</span></div>`;
         return;
       }

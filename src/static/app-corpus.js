@@ -388,7 +388,7 @@
              const members = (p.members && p.members.length > 1) ? p.members.join(", ") : "";
              const titleAttr = members ? ` title="${esc(t("Entity family:"))} ${esc(members)}"` : "";
              return `<tr class="ckw-row" data-term="${esc(p.normalized || p.term)}" style="cursor:pointer;border-bottom:1px solid var(--line)">
-               <td style="padding:4px 8px"><span${titleAttr}>${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(p.kind)}</span>` : ""}</td>
+               <td style="padding:4px 8px"><span${titleAttr}>${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(kwKindLabel(p.kind))}</span>` : ""}</td>
                <td style="text-align:right;padding:4px 8px">${fmt(p.cooccur)}</td>
                <td style="text-align:right;padding:4px 8px">${fmt(p.n_b)}</td>
                <td style="text-align:right;padding:4px 8px">${(p.pmi != null ? p.pmi.toFixed(2) : "—")}</td>
