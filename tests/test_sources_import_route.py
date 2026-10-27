@@ -9,6 +9,10 @@ Install layouts the path holds for: a SOURCE CHECKOUT (``<root>/src/api/source_m
 site-packages). STATED LIMIT: this suite runs on the checkout layout only; the wheel layout is argued from the packaging config and covered by the
 CI wheel smokes' install, not by a test here. The test runs the REAL import against the shipped catalog in a throwaway database, so a regression
 shows up as the 500, not as a mocked path.
+
+COST: about 35 s (three thousand rows, one lookup each). It is the only test that runs ``SourceManager.import_sources_from_yaml`` over the FULL shipped
+catalog: the other callers (``test_import_feed_siblings``, ``test_source_feed_identity_paths``, ``test_source_manager``) feed it a small file of their own,
+and the boot seeder (``seed_sources``) is a different code path that already joined list tags, so neither covers the route's path or the list-tags bug.
 """
 
 from __future__ import annotations
