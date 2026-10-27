@@ -3342,7 +3342,7 @@ def list_sources(
 
     # a stand-in source (a place-holder a repair wrote for a lost one) is not a source the user saved: never listed
     # The eight columns the row serves, and no entity: ``Source`` has 24 columns, and a whole-catalogue read built an ORM object for each
-    # of them (86,000 sources: 2.7-4.4 s and 184 MB peak, against 0.65-0.73 s and 46 MB for these eight; audit A-025, item 30).
+    # of them (86,000 synthetic sources, measured on two boxes: the route is about 2.3-2.6x faster with these eight; audit A-025, item 30).
     query = (
         db.query(
             Source.id, Source.name, Source.domain, Source.rss_url, Source.rate_limit_ms, Source.enabled, Source.priority, Source.tags

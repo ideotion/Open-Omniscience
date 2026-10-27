@@ -1,8 +1,7 @@
 """``GET /api/sources`` reads the eight columns it serves and builds no ``Source`` entity (audit 0.5.0 A-025, item 30).
 
 ``Source`` has 24 columns and the route serves eight of them. It used to load a full ORM entity per row and read eight attributes off each:
-at 86,000 sources 2.7-4.4 s and a 184 MB peak, against 0.65-0.73 s and 46 MB for the eight columns (a synthetic scratch store, tracemalloc on,
-so the times run high and real source text is longer). These tests pin the two things the change must not move: the response, row for row and
+at 86,000 synthetic sources the route is about 2.3-2.6x faster with the eight columns (two boxes; real source text is longer, so read the ratio). These tests pin the two things the change must not move: the response, row for row and
 type for type, and the SELECT's shape (the column list and no entity load), so a later edit cannot quietly put the entity back.
 
 The suite shares one store (the conftest binds the engine once), so the fixture seeds rows of its own with a distinctive domain on EVERY run,
