@@ -1010,7 +1010,9 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # read for a keyword to CLASSIFY the failure; the text goes nowhere
         ('classify_fetch_failure', 'low = str(exc).lower()'): 1,
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
-        ('import_feed', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
+        ('import_feed', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
+        # the same call plus the kill-switch read; the note's exception text is still record_text (R320)
+        ('classify_failed_check', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
     },
     'src/osm/view.py': {
         # a variable named e that is not an exception (a dict / an east bound) in a file that also catches one elsewhere
@@ -1056,7 +1058,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/weather/openmeteo.py': {
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
-        ('fetch_daily_slice', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
+        ('fetch_daily_slice', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
     },
 }
 _S5_NOT_RECORDS: dict[str, dict[str, int]] = {

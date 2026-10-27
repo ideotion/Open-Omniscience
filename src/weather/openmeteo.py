@@ -123,9 +123,9 @@ def fetch_daily_slice(
     try:
         fetched = fetcher.fetch(url, require_html=False)
     except Exception as exc:  # noqa: BLE001 - every refusal becomes a verdict, never a crash
-        from src.markets.csv_feeds import classify_fetch_failure
+        from src.markets.csv_feeds import classify_failed_check
 
-        verdict, note, retryable = classify_fetch_failure(exc)
+        verdict, note, retryable = classify_failed_check(exc)
         return {"ok": False, "verdict": verdict, "verdict_note": note,
                 "retryable": retryable, "requested_url": url, "label": label}
 

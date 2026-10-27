@@ -128,3 +128,34 @@ def test_a_robots_disallow_read_before_the_stop_is_kept_as_the_hosts_answer(sess
     with _switch(True):
         out = _import(session, _Fetcher(RobotsDisallowed("robots.txt disallows " + _URL)))
     assert out.verdict == "robots-disallowed"
+
+
+# --- the weather fetch shares the classifier (R313): a Stop is not Open-Meteo's outcome either ---
+
+
+def _slice(fetcher):
+    from datetime import date
+
+    from src.weather.openmeteo import fetch_daily_slice
+
+    return fetch_daily_slice(
+        45.0, 9.0, date(2024, 1, 1), date(2024, 1, 3), ["rain_sum"], fetcher=fetcher
+    )
+
+
+def test_a_stop_inside_a_proxied_weather_request_is_offline_not_the_archives_failure(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    with _switch(True):
+        out = _slice(_Fetcher(FetchFailed(_proxy_shape())))
+    assert out["ok"] is False and out["verdict"] == "offline" and out["retryable"] is False
+    assert "kill switch" in out["verdict_note"]
+
+
+def test_the_same_weather_failure_with_the_switch_clear_is_still_the_archives(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    out = _slice(_Fetcher(FetchFailed(_proxy_shape())))
+    assert out["verdict"] == "refused" and out["retryable"] is True

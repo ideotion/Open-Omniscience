@@ -245,6 +245,19 @@ def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
     return ("fetch-failed", msg, True)
 
 
+def classify_failed_check(exc: Exception) -> tuple[str, str, bool]:
+    """``classify_fetch_failure`` plus the switch read AFTER the failed check (R320): a failure while the kill switch is engaged is the
+    switch's, whatever shape the error took. A Stop that lands inside a request arrives as the raw requests error (``HTTPSConnectionPool(...)``,
+    or through an HTTP proxy ``request error for <url>: ('Connection aborted.', AirplaneModeError(...))``), which is not OUR sentence at the
+    start, so the anchored match in ``classify_fetch_failure`` rightly refuses it (R298) and the failure would be filed as the feed's own, then
+    retried after a sleep. The cost: a genuine failure coinciding with a Stop is reported offline, and the feed is simply tried again on the
+    next online pass. A robots DISALLOW was a real answer read before the Stop, so it stays. Every fetch-classifying caller uses this one."""
+    verdict, note, retryable = classify_fetch_failure(exc)
+    if verdict not in ("offline", "robots-disallowed") and kill_switch_active():
+        return _OFFLINE
+    return verdict, note, retryable
+
+
 def import_feed(
     session: Session,
     *,
@@ -273,15 +286,7 @@ def import_feed(
             fetched = fetcher.fetch(url, require_html=False)
             break
         except Exception as exc:  # noqa: BLE001 - any fetch failure is a feed problem, not a crash
-            verdict, note, retryable = classify_fetch_failure(exc)
-            if verdict != "offline" and verdict != "robots-disallowed" and kill_switch_active():
-                # A failed fetch while the switch is engaged is the switch's, whatever shape the error took: the raw requests error
-                # of a Stop that landed mid-request (``HTTPSConnectionPool(...)``, or through an HTTP proxy ``request error for <url>:
-                # ('Connection aborted.', AirplaneModeError(...))``) is not OUR sentence at the start, so the anchored match above
-                # rightly refuses it (R298) and the failure would be filed as the feed's own, then retried after a sleep. Read the
-                # switch after the check instead (R320). A genuine failure coinciding with a Stop is reported offline: the
-                # feed is simply tried again on the next online pass. A robots DISALLOW was a real answer, so it stays.
-                verdict, note, retryable = _OFFLINE
+            verdict, note, retryable = classify_failed_check(exc)
             # ONE bounded feed-level retry for transient verdicts, on top of
             # the fetcher's own backoff (a different moment often means a
             # different Tor circuit). Policy verdicts are never retried.
