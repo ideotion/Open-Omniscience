@@ -402,3 +402,208 @@ def test_a_failed_enumeration_on_one_feed_leaves_its_sibling_its_own_attempt(db,
                          ingest_fn=_ingest_always(IngestResult.STORED), discover_fn=discover)
     assert seen == [source.id, twin.id]  # the sibling got its attempt
     assert load_state(sp)["completed_outlets"] == ["example.com"]  # and its run to the end is what marks the outlet
+
+
+# --------------------------------------------------------------------------- #
+# A Stop is the person's setting, not the site's (R325 item 1 sweep, D3). The tick's own check at its head
+# covers only a Stop pressed before it: a Stop inside the enumeration (up to two robots reads and up to 5 sitemaps, 50 with
+# the full history) or inside one URL's flight reaches the recorder as an ordinary failure, and was written down as one --
+# an empty history (`done_sources`, which `enqueue_source` never re-queues) or a URL passed over for good. The tick says so
+# the way every other recorder does (R296/R313): `skipped_offline: 1`, present ONLY when the switch held something back.
+# --------------------------------------------------------------------------- #
+
+
+def _tick(db, sp, *, discover=None, ingest=None, fetcher=None):
+    return advance_backfill(db, fetcher=fetcher if fetcher is not None else object(), per_pass=5, state_path=sp,
+                            ingest_fn=ingest or _ingest_always(IngestResult.STORED),
+                            discover_fn=discover or _discover(_urls(3)))
+
+
+def _active_after_enumeration(db, source, sp, urls=3):
+    enqueue_source(source.id, state_path=sp)
+    _tick(db, sp, discover=_discover(_urls(urls)))
+    assert load_state(sp)["active"]["cursor"] == 0
+
+
+def test_a_stop_inside_the_enumeration_is_not_recorded_as_an_empty_history(db, source, tmp_path):
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+
+    def cut(fetcher, src, *, full_history):
+        activate_kill_switch()  # Stop pressed after the tick's own check, before the sitemaps answered
+        return []
+
+    out = _tick(db, sp, discover=cut)
+    assert out == {"enabled": True, "source_id": source.id, "skipped_offline": 1}
+    state = load_state(sp)
+    assert state["queue"] == [{"source_id": source.id, "full_history": False}], "the entry is still at the head of the queue"
+    assert source.id not in state.get("done_sources", [])
+    clear_kill_switch()
+    # the Stop cleared, the next tick enumerates again and the source gets its backfill
+    out = _tick(db, sp, discover=_discover(_urls(2)))
+    assert out["urls_found"] == 2 and load_state(sp)["active"]["source_id"] == source.id
+    assert "skipped_offline" not in out
+
+
+def test_a_stop_followed_by_an_enumeration_that_raised_is_not_recorded_as_an_empty_history(db, source, tmp_path):
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+
+    def cut_and_raise(fetcher, src, *, full_history):
+        activate_kill_switch()
+        raise ConnectionError("airplane mode is engaged")
+
+    out = _tick(db, sp, discover=cut_and_raise)
+    assert out["skipped_offline"] == 1
+    state = load_state(sp)
+    assert len(state["queue"]) == 1 and source.id not in state.get("done_sources", [])
+
+
+def test_a_part_read_enumeration_under_a_stop_is_not_walked_as_the_whole_archive(db, source, tmp_path):
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+
+    def cut_after_two(fetcher, src, *, full_history):
+        urls = _urls(2)  # the first sitemap answered, the rest were refused
+        activate_kill_switch()
+        return urls
+
+    out = _tick(db, sp, discover=cut_after_two)
+    assert out["skipped_offline"] == 1 and "urls_found" not in out
+    state = load_state(sp)
+    assert not state.get("active") and len(state["queue"]) == 1
+
+
+def test_an_honest_empty_enumeration_is_still_recorded_as_done(db, source, tmp_path):
+    """The control for the new key: with the switch never engaged an empty answer IS the site's, ends the source's backfill and
+    says nothing about the switch (the strict form of the same case is ``test_empty_sitemap_marks_the_source_done_immediately``)."""
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+    out = _tick(db, sp, discover=_discover([]))
+    assert out["done"] is True and source.id in load_state(sp)["done_sources"] and "skipped_offline" not in out
+
+
+def test_a_url_cut_by_a_stop_in_flight_is_not_passed_over(db, source, tmp_path):
+    sp = tmp_path / "s.json"
+    _active_after_enumeration(db, source, sp)
+
+    def cut(session, src, url, *, fetcher):
+        activate_kill_switch()
+        return IngestOutcome(url=url, result=IngestResult.FETCH_FAILED, article_id=None, detail="request error")
+
+    out = _tick(db, sp, ingest=cut)
+    assert out["attempted"] == 0 and out["cursor"] == 0 and out["tally"] == {} and out["skipped_offline"] == 1
+    active = load_state(sp)["active"]
+    assert active["cursor"] == 0 and active["tally"] == {}, "the cursor stays on the cut URL"
+    clear_kill_switch()
+    served = _ingest_always(IngestResult.STORED)
+    out = _tick(db, sp, ingest=served)
+    assert served.calls[0] == _urls(3)[0], "the next tick asks for the cut URL again"
+    assert "skipped_offline" not in out
+
+
+def test_a_url_that_raised_under_a_stop_is_not_passed_over_either(db, source, tmp_path):
+    sp = tmp_path / "s.json"
+    _active_after_enumeration(db, source, sp)
+
+    def cut(session, src, url, *, fetcher):
+        activate_kill_switch()
+        raise OSError("airplane mode is engaged: refusing a network connection")
+
+    out = _tick(db, sp, ingest=cut)
+    assert out["attempted"] == 0 and out["tally"] == {} and out["skipped_offline"] == 1
+    assert load_state(sp)["active"]["cursor"] == 0
+
+
+def test_a_url_that_finished_before_the_stop_keeps_its_place(db, source, tmp_path):
+    sp = tmp_path / "s.json"
+    _active_after_enumeration(db, source, sp)
+
+    def stored_then_stop(session, src, url, *, fetcher):
+        activate_kill_switch()  # Stop pressed just after this URL was stored
+        return IngestOutcome(url=url, result=IngestResult.STORED, article_id=None, detail=None)
+
+    out = _tick(db, sp, ingest=stored_then_stop)
+    assert out["attempted"] == 1 and out["cursor"] == 1 and out["tally"] == {"stored": 1}
+    assert out["skipped_offline"] == 1, "the two URLs after it were held back by the switch, and the tick says so"
+
+
+def test_a_real_failure_with_the_switch_never_engaged_is_still_passed_over(db, source, tmp_path):
+    """The control: a page that really failed is the page's, tallied and passed over (the backfill is best-effort)."""
+    sp = tmp_path / "s.json"
+    _active_after_enumeration(db, source, sp)
+    out = _tick(db, sp, ingest=_ingest_always(IngestResult.FETCH_FAILED))
+    assert out["attempted"] == 3 and out["cursor"] == 3 and out["tally"] == {"fetch_failed": 3} and out["done"] is True
+    assert "skipped_offline" not in out
+
+
+class _Resp:
+    def __init__(self, status=200, body=b"", ctype="text/html"):
+        self.status_code, self.headers, self.content = status, {"Content-Type": ctype}, body
+        self.text, self.encoding = body.decode("utf-8", "replace"), "utf-8"
+
+    def iter_content(self, chunk_size=16384):
+        yield self.content
+
+    def close(self):
+        pass
+
+
+def _real_fetcher(tmp_path, get, monkeypatch):
+    """The PRODUCTION fetcher over a scripted session: the robots read with its kill-switch branch, the refusals at the head of
+    ``declared_sitemaps()`` and ``fetch()`` and the robots cache run unchanged. ``_guard_target`` is replaced, and a cut in the
+    first request never reaches the retry loop (measured: ``session.get`` is called once and nothing sleeps)."""
+    from src.safety.fetcher import make_fetcher
+
+    monkeypatch.setenv("OO_FETCH_MIN_INTERVAL", "0")
+    f = make_fetcher(retry_backoff_s=0, robots_cache_path=tmp_path / "robots.json")
+    f._guard_target = lambda *a, **k: None  # the host is never resolved; the switch check stays the first line of fetch()
+    f.session.get = get
+    return f
+
+
+def test_a_stop_in_the_flight_of_the_REAL_enumeration_is_not_recorded_as_an_empty_history(db, source, tmp_path, monkeypatch):
+    import requests
+
+    def get(url, **_kw):
+        activate_kill_switch()  # the Stop lands in the first request; the socket guard would cut it just so
+        raise requests.exceptions.ConnectionError("Failed to establish a new connection: airplane mode is engaged")
+
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+    out = advance_backfill(db, _real_fetcher(tmp_path, get, monkeypatch), per_pass=5, state_path=sp)
+    assert out == {"enabled": True, "source_id": source.id, "skipped_offline": 1}
+    state = load_state(sp)
+    assert len(state["queue"]) == 1 and source.id not in state.get("done_sources", [])
+
+
+def test_an_honest_empty_enumeration_by_the_REAL_fetcher_is_still_done(db, source, tmp_path, monkeypatch):
+    def get(url, **_kw):
+        if url.endswith("/robots.txt"):
+            return _Resp(200, b"User-agent: *\nAllow: /\n", "text/plain")
+        return _Resp(404)  # no sitemap anywhere: the site's own answer
+
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+    out = advance_backfill(db, _real_fetcher(tmp_path, get, monkeypatch), per_pass=5, state_path=sp)
+    assert out["done"] is True and source.id in load_state(sp)["done_sources"] and "skipped_offline" not in out
+
+
+@pytest.mark.parametrize("cut_at", ["robots", "page"])
+def test_a_url_cut_in_the_REAL_ingest_is_not_passed_over(db, source, tmp_path, monkeypatch, cut_at):
+    """The URL case through ``ingest_url`` and the production fetcher: the Stop reaches the recorder as ``fetch_failed`` whether it
+    cut the robots read or the page itself -- the outcome set ``{fetch_failed, error}`` the tick holds back on is an assumption
+    about the fetcher, and this is what fails if the robots path ever raises ``RobotsUnavailable`` under the switch again."""
+    import requests
+
+    def get(url, **_kw):
+        if (cut_at == "robots") == url.endswith("/robots.txt"):
+            activate_kill_switch()
+            raise requests.exceptions.ConnectionError("Failed to establish a new connection: airplane mode is engaged")
+        return _Resp(200, b"User-agent: *\nAllow: /\n", "text/plain")
+
+    sp = tmp_path / "s.json"
+    _active_after_enumeration(db, source, sp)
+    out = advance_backfill(db, _real_fetcher(tmp_path, get, monkeypatch), per_pass=5, state_path=sp)
+    assert out["attempted"] == 0 and out["tally"] == {} and out["skipped_offline"] == 1
+    assert load_state(sp)["active"]["cursor"] == 0
