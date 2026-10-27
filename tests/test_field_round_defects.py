@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -107,13 +108,8 @@ def sched1(monkeypatch, tmp_path):
     runner.cancel_pending_resume()
 
 
-def _wait_for(cond, timeout=5.0) -> bool:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if cond():
-            return True
-        time.sleep(0.01)
-    return False
+def _wait_for(cond, timeout=HANG_GUARD_S) -> bool:
+    return wait_until(cond, timeout)
 
 
 def test_a_resume_that_runs_out_of_retries_stays_pending_and_happens_when_the_pass_exits(sched1, monkeypatch):
@@ -753,22 +749,22 @@ def test_a_slow_drain_never_holds_up_a_failing_ingest(custody, db, monkeypatch):
 
     (a,) = _stored(db, 1)
     pending.note_failed(a.id, error="TimeoutError: pool")
-    in_read, release = threading.Event(), threading.Event()
+    in_read, release, read_returned = threading.Event(), threading.Event(), threading.Event()
     real = pending._columns_for
 
     def _slow(ids, session_factory=None):
         in_read.set()
-        release.wait(5)
+        release.wait(10)
+        read_returned.set()
         return real(ids, session_factory)
 
     monkeypatch.setattr(pending, "_columns_for", _slow)
     t = threading.Thread(target=pending.drain, kwargs={"limit": 10}, daemon=True)
     t.start()
     try:
-        assert in_read.wait(5)
-        t0 = time.monotonic()
+        assert in_read.wait(20)
         assert pending.note_failed(999, error="meanwhile")
-        assert time.monotonic() - t0 < 1.0, "queueing never waits for a drain's read"
+        assert not read_returned.is_set(), "queueing never waits for a drain's read"
     finally:
         release.set()
         t.join(5)

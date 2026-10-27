@@ -29,6 +29,7 @@ import src.scheduler.storage_guard as sg
 from src.api import heavy, insights
 from src.api.heavy import HeavyBusy, HeavyPaused, guarded_read, run_heavy
 from src.scheduler.storage_guard import GIB, StorageGuard, storage_guard
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until, watch_flight_followers
 
 GUARD = storage_guard
 ROOT = Path(__file__).resolve().parents[1]
@@ -296,26 +297,29 @@ def test_a_guard_that_is_off_pauses_nothing(monkeypatch):
 #  what must keep working
 # --------------------------------------------------------------------------- #
 def test_a_duplicate_of_a_scan_already_running_shares_it_and_is_not_paused(monkeypatch):
-    monkeypatch.setenv("OO_HEAVY_FOLLOWER_WAIT_S", "5")
+    monkeypatch.setenv("OO_HEAVY_FOLLOWER_WAIT_S", str(3 * HANG_GUARD_S))
+    parked = watch_flight_followers(monkeypatch, heavy)
     inside, go = threading.Event(), threading.Event()
 
     def slow():
         inside.set()
-        assert go.wait(5)
+        assert go.wait(2 * HANG_GUARD_S)
         return "shared"
 
     out: dict[str, object] = {}
     leader = threading.Thread(target=lambda: out.__setitem__("leader", run_heavy(LISTED, slow)))
     leader.start()
-    assert inside.wait(5)
+    assert inside.wait(HANG_GUARD_S)
     pin_the_log()  # engaged AFTER the leader started its scan
     follower = threading.Thread(target=lambda: out.__setitem__("follower", run_heavy(LISTED, Counter("never"))))
     follower.start()
-    follower.join(0.3)
+    # let the leader go when the follower is observed waiting on its flight, not after a head start: a follower that arrives after the flight
+    # ended is a leader of its own scan, and on a pinned log that is a pause
+    assert parked.wait(HANG_GUARD_S), "the follower never reached the live flight"
     assert follower.is_alive(), "the follower waits for the running scan"
     go.set()
-    leader.join(5)
-    follower.join(5)
+    leader.join(HANG_GUARD_S)
+    follower.join(HANG_GUARD_S)
     assert out == {"leader": "shared", "follower": "shared"}
     counters = heavy.status()["counters"]
     assert counters["paused"] == 0 and counters["shared"] == 1 and counters["runs"] == 1
@@ -514,13 +518,8 @@ def _drive_the_rebuild(monkeypatch, *, built=None):
     return events
 
 
-def _until(condition, seconds=5.0):
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        if condition():
-            return True
-        time.sleep(0.02)
-    return False
+def _until(condition, seconds=HANG_GUARD_S):
+    return wait_until(condition, seconds, 0.02)
 
 
 def test_a_rebuild_while_the_log_is_pinned_scans_nothing_ends_at_once_and_the_view_says_paused(monkeypatch):

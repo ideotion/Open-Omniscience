@@ -12,12 +12,13 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import ast
-import time
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tests.diagnostics_source import diagnostics_source
+from tests.wallclock_helpers import HANG_GUARD_S
 
 _SECTIONS = (
     "runtime", "corpus", "scheduler", "network", "imports", "calendar_imports",
@@ -46,23 +47,34 @@ def test_a_raising_member_and_a_slow_member_yield_a_complete_bounded_bundle(monk
     from src.monitoring.errorlog import install
 
     install()
-    # A 1s per-member budget; one member raises, one sleeps 6s (>> budget).
-    monkeypatch.setenv("OO_DEBUG_BUNDLE_MEMBER_BUDGET_S", "1")
+    # One member raises, one is held far past the per-member budget. The budget is a wall-clock wait a NORMAL member must also
+    # fit under, so it is set to many times what a healthy member takes (milliseconds) rather than to the edge of it: a collection
+    # of a large process or a stolen slice that stretched a healthy member past a 1 s budget budgeted IT out ("runtime" missing).
+    budget_s = 5.0
+    monkeypatch.setenv("OO_DEBUG_BUNDLE_MEMBER_BUDGET_S", str(budget_s))
 
     def _boom(*a, **k):
         raise RuntimeError("member exploded")
 
+    slow_returned = threading.Event()
+    release_slow = threading.Event()
+
     def _slow(*a, **k):
-        time.sleep(6)
+        # Held until the test says so, for no longer than the guard: the member returns before the bundle does only if the bundle
+        # waited for it, which is the one way to be late.
+        release_slow.wait(HANG_GUARD_S)
+        slow_returned.set()
         return {"never": "returned"}
 
     monkeypatch.setattr(_lat, "summary", _boom)  # -> request_latency member
     monkeypatch.setattr(_fx, "session_forensics", _slow)  # -> session_forensics member
 
-    with TestClient(app) as c:
-        t0 = time.monotonic()
-        r = c.get("/api/diagnostics/debug-bundle")
-        elapsed = time.monotonic() - t0
+    try:
+        with TestClient(app) as c:
+            r = c.get("/api/diagnostics/debug-bundle")
+        bundle_came_back_first = not slow_returned.is_set()
+    finally:
+        release_slow.set()
 
     assert r.status_code == 200
     data = r.json()["data"]
@@ -77,13 +89,14 @@ def test_a_raising_member_and_a_slow_member_yield_a_complete_bounded_bundle(monk
 
     # the hung member was budgeted out honestly (not waited on)
     sf = data["session_forensics"]
-    assert sf.get("skipped") == "budget" and sf.get("budget_s") == 1.0
+    assert sf.get("skipped") == "budget" and sf.get("budget_s") == budget_s
 
     # a normal member is unaffected
     assert data["runtime"]["python"]
 
-    # BOUNDED: we did NOT wait the 6s sleep — one 1s skip + fast rest, well under 6s.
-    assert elapsed < 4.0, elapsed
+    # BOUNDED: the bundle came back while the member was still held (it did NOT wait for it). "Still held when
+    # the bundle returned" holds however long a paused or loaded process took to answer; an elapsed-time bound did not.
+    assert bundle_came_back_first, "the bundle waited for the member that is held past its budget"
 
 
 @pytest.mark.parametrize(

@@ -26,6 +26,7 @@ from src.database.pool_reserve import (
     collector_role,
     in_collector_role,
 )
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 POOL, OVERFLOW = 2, 4  # 6 in total: the collector's ceiling is 6 - _API_MARGIN
 
@@ -72,14 +73,12 @@ def test_collector_checkouts_stop_at_the_ceiling_and_leave_the_margin_free():
     def collector():
         with collector_role():
             held.append(eng.raw_connection())
-        barrier_done.wait(5)
+        barrier_done.wait(HANG_GUARD_S)
 
     threads = [threading.Thread(target=collector) for _ in range(ceiling)]
     for t in threads:
         t.start()
-    deadline = time.monotonic() + 3
-    while len(held) < ceiling and time.monotonic() < deadline:
-        time.sleep(0.01)
+    assert wait_until(lambda: len(held) >= ceiling), f"only {len(held)} of {ceiling} collectors got a connection"
     assert len(held) == ceiling
     assert pool.reservation()["collector_held"] == ceiling
 
@@ -101,7 +100,7 @@ def test_collector_checkouts_stop_at_the_ceiling_and_leave_the_margin_free():
 
 
 def test_a_slot_comes_back_when_the_connection_is_returned_and_a_waiter_proceeds():
-    eng = _engine(timeout=5)
+    eng = _engine(timeout=3 * HANG_GUARD_S)  # outlasts the join below: only the slot coming back can let the waiter through in time
     ceiling = POOL + OVERFLOW - _API_MARGIN
 
     conns = []
@@ -127,7 +126,7 @@ def test_a_slot_comes_back_when_the_connection_is_returned_and_a_waiter_proceeds
     time.sleep(0.2)
     assert not got, "the waiter must be queued while every slot is held"
     conns.pop().close()  # checkin releases the slot
-    t.join(3)
+    t.join(HANG_GUARD_S)
     assert len(got) == 1
     for c in conns + got:
         c.close()
@@ -266,7 +265,7 @@ def test_the_owner_of_the_write_gate_never_queues_for_a_slot():
     collector stalls for the pool timeout. The gate owner therefore passes, counted."""
     from src.database.writer import write_gate
 
-    eng = _engine(timeout=5.0)
+    eng = _engine(timeout=3 * HANG_GUARD_S)  # the pool's wait outlasts the join below: queueing for a slot is the only way to be late
     ceiling = collector_ceiling(POOL + OVERFLOW, _API_MARGIN)
     held = []
     with collector_role():
@@ -278,31 +277,28 @@ def test_the_owner_of_the_write_gate_never_queues_for_a_slot():
                 with collector_role():
                     c = eng.raw_connection()
                     held.append(c)
-                    g.wait(10)
+                    g.wait(3 * HANG_GUARD_S)
 
             threading.Thread(target=hold, daemon=True).start()
-    deadline = time.monotonic() + 3
-    while eng.pool.reservation()["collector_held"] < ceiling and time.monotonic() < deadline:
-        time.sleep(0.01)
+    assert wait_until(lambda: eng.pool.reservation()["collector_held"] >= ceiling), "the other threads never took every slot"
     assert eng.pool.reservation()["collector_held"] == ceiling
 
     got: list[float] = []
 
     def owner():
         with collector_role():
-            assert write_gate.acquire(timeout=2)
+            assert write_gate.acquire(timeout=HANG_GUARD_S)
             try:
-                t0 = time.monotonic()
                 c = eng.raw_connection()
-                got.append(time.monotonic() - t0)
+                got.append(True)
                 c.close()
             finally:
                 write_gate.release()
 
     t = threading.Thread(target=owner)
     t.start()
-    t.join(4)
-    assert got and got[0] < 1.0, "the gate owner queued for a slot"
+    t.join(HANG_GUARD_S)
+    assert got, "the gate owner queued for a slot"
     assert eng.pool.reservation()["collector_nested"] >= 1
 
 

@@ -32,6 +32,7 @@ from src.scheduler import memguard, runner
 from src.scheduler.memguard import MemoryGuard
 from src.scheduler.runner import run_scrape_once
 from src.scheduler.settings import SchedulerSettings
+from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread, wait_until
 
 _OVER = {"rss_mb": 9000.0, "mem_avail_mb": 100.0, "mem_total_mb": 10000.0}
 _HEALTHY = {"rss_mb": 1000.0, "mem_avail_mb": 6000.0, "mem_total_mb": 10000.0}
@@ -216,11 +217,10 @@ def test_engaged_guard_winds_a_pass_down_and_never_touches_the_gate(monkeypatch)
     runner._consume_deferred()
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_EmptyFeedSession())
-    t0 = time.monotonic()
-    res = run_scrape_once(session, fetcher, SchedulerSettings())
-    # Pause-not-die: the pass RETURNED promptly (nothing blocked, no deadlock),
-    # processed nothing, deferred everything with the honest reason.
-    assert time.monotonic() - t0 < 5.0
+    # Pause-not-die: the pass RETURNED (nothing blocked, no deadlock), under a guard that is not a
+    # measurement, processed nothing, deferred everything with the honest reason.
+    came_back, res = call_on_thread(run_scrape_once, session, fetcher, SchedulerSettings())
+    assert came_back, "the pass did not come back while the guard was engaged"
     assert res["sources_processed"] == 0
     assert res["recycled"] == "memory"
     assert res["deferred_next_pass"] == 4
@@ -255,9 +255,7 @@ def test_scheduler_loop_waits_while_engaged_and_resumes_on_recovery(monkeypatch)
         # into a flake that reads as a regression (`assert None == 'paused-low-
         # memory'` — the phase simply had not been set yet). The recovery half of
         # this same test already waits this way; this is the same shape.
-        deadline = time.monotonic() + 5.0
-        while runner.current_phase() != "paused-low-memory" and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runner.current_phase() == "paused-low-memory")
         # Paused loudly: the phase names the state, no pass ran, and status carries
         # the guard's numbers. Reaching the paused phase first makes the "no pass
         # ran" check stronger, not weaker — a pass that slipped through before the
@@ -268,9 +266,7 @@ def test_scheduler_loop_waits_while_engaged_and_resumes_on_recovery(monkeypatch)
         assert st["memory_guard"]["engaged"] is True
         # Memory recovers -> the loop resumes on its own (no restart needed).
         readings["v"] = _HEALTHY
-        deadline = time.monotonic() + 5.0
-        while runs["n"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runs["n"] > 0)
         assert runs["n"] >= 1
         assert sched.status()["memory_guard"]["engaged"] is False
     finally:
@@ -310,9 +306,7 @@ def test_active_reclaim_runs_while_paused_and_can_resume(monkeypatch):
     sched._mem_reclaim_interval_s = 0.0  # reclaim on every poll (test-fast)
     assert sched.start()
     try:
-        deadline = time.monotonic() + 5.0
-        while runs["n"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.02)
+        wait_until(lambda: runs["n"] > 0)
         assert reclaims["n"] >= 1  # active reclaim fired during the pause
         assert runs["n"] >= 1  # and collection RESUMED instead of sticking
         assert sched.status()["memory_guard"]["engaged"] is False
@@ -347,9 +341,12 @@ def test_stop_interrupts_a_memory_pause_promptly(monkeypatch):
         run_once_fn=lambda: {"ok": True},
         settings_provider=lambda: SchedulerSettings(continuous=True),
     )
-    sched._mem_pause_poll_s = 0.05
-    sched.start()
-    time.sleep(0.1)
-    t0 = time.monotonic()
-    assert sched.stop(timeout=5.0) is True
-    assert time.monotonic() - t0 < 2.0  # the pause wait is interruptible
+    sched._mem_pause_poll_s = 30.0  # only stop() can end this wait in time
+    assert sched.start()
+    deadline = time.monotonic() + HANG_GUARD_S
+    while runner.current_phase() != "paused-low-memory" and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert runner.current_phase() == "paused-low-memory"
+    assert sched.stop(timeout=HANG_GUARD_S) is True
+    # ``stop`` returns True once it has asked: the loop having ENDED inside the join is what says the pause wait is interruptible
+    assert not sched.is_running(), "the pause wait was not interrupted by stop()"

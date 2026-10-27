@@ -32,11 +32,13 @@ import threading
 
 import pytest
 
+from tests.wallclock_helpers import call_on_thread
+
 
 def _wal_store(tmp_path):
     """A real WAL-mode store, because this defect exists only in WAL."""
     path = tmp_path / "snap.db"
-    con = sqlite3.connect(path, isolation_level=None, timeout=30)
+    con = sqlite3.connect(path, isolation_level=None, timeout=30, check_same_thread=False)  # one test runs a statement on a thread
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=30000")
     con.execute("CREATE TABLE t(x INTEGER)")
@@ -55,8 +57,6 @@ def test_the_mechanism_a_read_snapshot_plus_a_commit_fails_instantly(tmp_path):
     """The premise, MEASURED. If this ever stops holding the fix has no subject —
     and the 0-second failure is why the busy_timeout in the connection string is
     irrelevant here, which is the part that misleads a reader."""
-    import time
-
     path, a = _wal_store(tmp_path)
     b = _second(path)
 
@@ -66,15 +66,20 @@ def test_the_mechanism_a_read_snapshot_plus_a_commit_fails_instantly(tmp_path):
     b.execute("INSERT INTO t VALUES(2)")
     b.execute("COMMIT")
 
-    t0 = time.monotonic()
-    with pytest.raises(sqlite3.OperationalError) as exc:
-        a.execute("INSERT INTO t VALUES(3)")
-    elapsed = time.monotonic() - t0
-    assert "locked" in str(exc.value).lower()
-    assert elapsed < 1.0, (
-        f"the busy handler is not consulted while a read transaction is open, so this "
-        f"must fail instantly despite busy_timeout=30000; took {elapsed:.3f}s"
+    def _insert() -> str | None:
+        try:
+            a.execute("INSERT INTO t VALUES(3)")
+        except sqlite3.OperationalError as exc:
+            return str(exc)
+        return None
+
+    # A statement whose busy handler IS consulted waits the 30 s timeout, longer than the guard: it is the only way to be late.
+    came_back, error = call_on_thread(_insert)
+    assert came_back, (
+        "the busy handler is not consulted while a read transaction is open, so this "
+        "must fail instantly despite busy_timeout=30000; it waited the guard out"
     )
+    assert error is not None and "locked" in error.lower()
 
 
 def test_the_fix_shape_no_commit_can_land_inside_the_window(tmp_path):

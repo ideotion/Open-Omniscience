@@ -12,10 +12,11 @@ shadow state; network-free (injected fake HTTP).
 from __future__ import annotations
 
 import threading
-import time
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 
 class _SlowResp:
@@ -30,7 +31,7 @@ class _SlowResp:
 
     def iter_content(self, _chunk):
         for _ in range(3):
-            self._gate.wait(5)
+            self._gate.wait(3 * HANG_GUARD_S)  # the held download outlasts the test body: it is let go when the test says so
             yield b"0123456789"
 
 
@@ -55,10 +56,7 @@ def osm_client(tmp_path, monkeypatch):
 def test_jobs_view_aggregates_osm_downloads(osm_client):
     client, mgr, gate = osm_client
     mgr.start("europe")
-    for _ in range(50):
-        if mgr.list() and mgr.list()[0]["status"] == "downloading":
-            break
-        time.sleep(0.02)
+    assert wait_until(lambda: mgr.list() and mgr.list()[0]["status"] == "downloading"), "the worker never marked it downloading"
     mgr.start("asia")  # queues (capacity 1)
 
     body = client.get("/api/jobs").json()
@@ -78,10 +76,7 @@ def test_jobs_view_aggregates_osm_downloads(osm_client):
 def test_osm_reorder_and_cancel_through_the_jobs_routes(osm_client):
     client, mgr, gate = osm_client
     mgr.start("europe")
-    for _ in range(50):
-        if mgr.list() and mgr.list()[0]["status"] == "downloading":
-            break
-        time.sleep(0.02)
+    assert wait_until(lambda: mgr.list() and mgr.list()[0]["status"] == "downloading"), "the worker never marked it downloading"
     mgr.start("asia")
     mgr.start("africa")
 

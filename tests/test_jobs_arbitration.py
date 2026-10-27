@@ -29,10 +29,11 @@ cancel routes to the owners with the Stop-button semantics stated honestly.
 from __future__ import annotations
 
 import threading
-import time
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 
 class _SlowResp:
@@ -47,7 +48,7 @@ class _SlowResp:
 
     def iter_content(self, _chunk):
         for _ in range(3):
-            self._gate.wait(5)
+            self._gate.wait(3 * HANG_GUARD_S)  # the held download outlasts the test body: it is let go when the test says so
             yield b"0123456789"
 
 
@@ -69,10 +70,7 @@ def slow_manager(tmp_path):
 def test_second_dump_queues_instead_of_competing(slow_manager):
     mgr, gate = slow_manager
     first = mgr.start("en")
-    for _ in range(50):  # wait until the worker marks it downloading
-        if mgr.list() and mgr.list()[0]["status"] == "downloading":
-            break
-        time.sleep(0.02)
+    assert wait_until(lambda: mgr.list() and mgr.list()[0]["status"] == "downloading"), "the worker never marked it downloading"
     second = mgr.start("fr")
     third = mgr.start("de")
     assert second["status"] == "queued" and third["status"] == "queued"
@@ -84,13 +82,11 @@ def test_second_dump_queues_instead_of_competing(slow_manager):
     assert new_order == ["de:pages-articles", "de:pages-articles".replace("de", "fr")]
 
     gate.set()  # let the en download finish -> the pump starts de next
-    for _ in range(100):
+    def _de_started() -> bool:
         statuses = {e["key"]: e["status"] for e in mgr.list()}
-        if statuses.get("en:pages-articles") == "done" and statuses.get(
-            "de:pages-articles"
-        ) in ("downloading", "done"):
-            break
-        time.sleep(0.02)
+        return statuses.get("en:pages-articles") == "done" and statuses.get("de:pages-articles") in ("downloading", "done")
+
+    wait_until(_de_started)
     statuses = {e["key"]: e["status"] for e in mgr.list()}
     assert statuses["en:pages-articles"] == "done"
     assert statuses["de:pages-articles"] in ("downloading", "done"), (
@@ -101,10 +97,7 @@ def test_second_dump_queues_instead_of_competing(slow_manager):
 def test_pausing_a_queued_dump_removes_it_from_the_order(slow_manager):
     mgr, gate = slow_manager
     mgr.start("en")
-    for _ in range(50):
-        if mgr.list() and mgr.list()[0]["status"] == "downloading":
-            break
-        time.sleep(0.02)
+    assert wait_until(lambda: mgr.list() and mgr.list()[0]["status"] == "downloading"), "the worker never marked it downloading"
     mgr.start("fr")
     assert mgr.queue_order() == ["fr:pages-articles"]
     assert mgr.pause("fr:pages-articles") is True
@@ -119,10 +112,7 @@ def test_queue_order_survives_a_reload(slow_manager, tmp_path):
 
     mgr, gate = slow_manager
     mgr.start("en")
-    for _ in range(50):
-        if mgr.list() and mgr.list()[0]["status"] == "downloading":
-            break
-        time.sleep(0.02)
+    assert wait_until(lambda: mgr.list() and mgr.list()[0]["status"] == "downloading"), "the worker never marked it downloading"
     mgr.start("fr")
     mgr.start("de")
     mgr.reorder(["de:pages-articles", "fr:pages-articles"])
@@ -153,10 +143,7 @@ def test_jobs_view_aggregates_dumps_with_queue_positions(client, monkeypatch, tm
     monkeypatch.setattr(dumps_mod, "_manager", mgr, raising=False)
     monkeypatch.setattr(dumps_mod, "get_manager", lambda: mgr)
     mgr.start("en")
-    for _ in range(50):
-        if mgr.list() and mgr.list()[0]["status"] == "downloading":
-            break
-        time.sleep(0.02)
+    assert wait_until(lambda: mgr.list() and mgr.list()[0]["status"] == "downloading"), "the worker never marked it downloading"
     mgr.start("fr")
     body = client.get("/api/jobs").json()
     assert body["network_busy"] is True

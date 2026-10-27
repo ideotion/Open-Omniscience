@@ -781,12 +781,21 @@ def _run_the_loop_over_a_long_hold(monkeypatch, seconds: float = 1.8, tick=None,
     monkeypatch.setattr(writer, "time", _ClockedTime(clock))
     calls: list[tuple[str, float]] = []
     real_tick, real_look = writer.watchdog_tick, writer.sample_holder_state
+    # Only THIS thread runs the loop. The module's names are patched for every thread, and the process's own watchdog (armed by the first hold of the
+    # whole run, a tick every 15 s) resolves them at call time: one of its wakes inside the ~50 ms this simulation takes was recorded as a tick of
+    # the loop at the simulated time it landed on (ticks [0.5, 1.0, 1.5, 1.68] on a Core-only run). Any other thread gets the no-op a gate with
+    # nothing to report returns, as tests/test_write_gate_phase.py's journal fixture does.
+    me = threading.get_ident()
 
     def recorded_tick(g, w):
+        if threading.get_ident() != me:
+            return w
         calls.append(("tick", clock.elapsed()))
         return (tick or real_tick)(g, w)
 
     def recorded_look(g, now=None):
+        if threading.get_ident() != me:
+            return False
         calls.append(("look", clock.elapsed()))
         return (look or real_look)(g, now)
 
@@ -812,6 +821,37 @@ def test_the_watchdog_loop_looks_every_second_of_a_long_hold_and_ticks_at_its_ow
     looks = sum(event["ws"])
     assert looks >= 60, f"one look every 0.02 s from the first tick's journal entry to 1.8 s, not one every 0.5 s: {event['ws']}"
     assert len(_at(calls, "tick")) == 3, f"the full tick stayed at its 0.5 s pace: {_at(calls, 'tick')}"
+
+
+@pytest.mark.usefixtures("journal")
+def test_another_thread_calling_the_watchdogs_functions_mid_window_is_not_a_call_of_the_loop(proc, monkeypatch):
+    """The process's own watchdog thread runs the same module functions the simulation patches, and one of its wakes can land inside the window
+    (a Core-only run recorded a fourth tick at 1.68 s). Here a thread of that name makes both calls at about 1.3 s of simulated time, on purpose
+    and at the same point every run: the loop's ticks are still its own three, and the stranger got the no-op answers back."""
+    proc.put("S", "futex_do_wait")
+    me = threading.get_ident()
+    real_look = writer.sample_holder_state
+    looked = {"n": 0}
+    stranger: dict[str, object] = {}
+
+    def stranger_calls():
+        stranger["tick"] = writer.watchdog_tick(writer.write_gate, 7.0)
+        stranger["look"] = writer.sample_holder_state(writer.write_gate)
+
+    def look(g, now=None):
+        if threading.get_ident() == me:
+            looked["n"] += 1
+            if looked["n"] == 40:
+                t = threading.Thread(target=stranger_calls, name="oo-write-gate-watchdog")
+                t.start()
+                t.join(30)
+                assert not t.is_alive(), "the stranger's calls came back"
+        return real_look(g, now)
+
+    calls = _run_the_loop_over_a_long_hold(monkeypatch, look=look)
+    assert _at(calls, "tick") == pytest.approx([0.5, 1.0, 1.5], abs=0.03), f"only the loop's own ticks are recorded: {_at(calls, 'tick')}"
+    assert stranger == {"tick": 7.0, "look": False}, f"another thread got the no-op answers, not the real ones: {stranger}"
+    assert looked["n"] >= 40, "the stranger really came in mid-window"
 
 
 @pytest.mark.usefixtures("journal")

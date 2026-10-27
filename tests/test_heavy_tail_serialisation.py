@@ -29,6 +29,7 @@ import pytest
 
 from src.scheduler.runner import BackgroundScheduler
 from src.scheduler.settings import SchedulerSettings
+from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
 
 
 @pytest.fixture()
@@ -91,8 +92,8 @@ def test_the_briefing_refresh_waits_for_the_lane_instead_of_running_beside_it(
         assert live == {"lane"}, f"the briefing refresh ran beside the lane: {live}"
 
     lane_release.set()
-    sched._lane_thread.join(5)
-    sched._briefing_thread.join(5)
+    sched._lane_thread.join(HANG_GUARD_S)
+    sched._briefing_thread.join(HANG_GUARD_S)
     assert overlap == [], overlap
     # ...and it RAN, rather than being skipped: waiting is the point.
     assert sched._heavy_tail_waits == 0
@@ -105,11 +106,10 @@ def test_a_lone_consumer_is_not_delayed(monkeypatch, sched):
     done = threading.Event()
     monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda _s: done.set())
 
-    t0 = time.monotonic()
     sched._refresh_briefing_async()
-    assert done.wait(3), "an uncontended refresh never ran"
-    assert time.monotonic() - t0 < 2.0
-    sched._briefing_thread.join(5)
+    # The wait for the other consumer is 900 s by default: a refresh that waited for a lock nobody holds is late by that much.
+    assert done.wait(HANG_GUARD_S), "an uncontended refresh waited for a lock nobody holds"
+    sched._briefing_thread.join(HANG_GUARD_S)
 
 
 def test_the_wait_is_bounded_and_the_give_up_is_counted(monkeypatch, sched):
@@ -117,15 +117,36 @@ def test_the_wait_is_bounded_and_the_give_up_is_counted(monkeypatch, sched):
     monkeypatch.setenv("OO_HEAVY_TAIL_WAIT_S", "0.1")
     sched._heavy_tail_lock.acquire()
     try:
-        t0 = time.monotonic()
-        assert sched._acquire_heavy_tail("test consumer") is False
-        assert time.monotonic() - t0 < 2.0
+        # An unbounded wait never returns while the lock is held, so the guard is what tells it from the 0.1 s bound.
+        came_back, got = call_on_thread(sched._acquire_heavy_tail, "test consumer")
+        assert came_back, "the wait for the other consumer was not bounded"
+        assert got is False
         assert sched._heavy_tail_waits == 1
     finally:
         sched._heavy_tail_lock.release()
     # ...and once it is free again, the very next caller gets in.
     assert sched._acquire_heavy_tail("test consumer") is True
     sched._heavy_tail_lock.release()
+
+
+def test_the_wait_asks_the_lock_for_exactly_the_bound_it_was_given(monkeypatch, sched):
+    """What the bounded wait ASKS of the lock, read directly: a wait of 3 s for a bound of 0.1 s comes back inside the guard of the test
+    above just the same, and a machine that stalls for a second cannot be told from one that waits too long by timing it."""
+    monkeypatch.setenv("OO_HEAVY_TAIL_WAIT_S", "0.1")
+    asked: list[float] = []
+
+    class _HeldElsewhere:
+        def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+            asked.append(timeout)
+            return False
+
+        def release(self) -> None:
+            raise AssertionError("released a lock it never got")
+
+    monkeypatch.setattr(sched, "_heavy_tail_lock", _HeldElsewhere())
+    assert sched._acquire_heavy_tail("test consumer") is False
+    assert asked == [0.1]
+    assert sched._heavy_tail_waits == 1
 
 
 def test_a_lane_that_gives_up_says_so_rather_than_reporting_a_run(monkeypatch, sched):
@@ -141,7 +162,7 @@ def test_a_lane_that_gives_up_says_so_rather_than_reporting_a_run(monkeypatch, s
     sched._heavy_tail_lock.acquire()
     try:
         sched._kick_housekeeping_lane()
-        sched._lane_thread.join(5)
+        sched._lane_thread.join(HANG_GUARD_S)
     finally:
         sched._heavy_tail_lock.release()
     assert sched._last_lane_result == {"skipped": "another heavy tail consumer is running"}

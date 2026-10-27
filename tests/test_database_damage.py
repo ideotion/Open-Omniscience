@@ -44,6 +44,7 @@ from src.database.damage import (
 )
 from src.scheduler import runner
 from src.scheduler import storage_guard as sg
+from tests.wallclock_helpers import HANG_GUARD_S, record_asked_joins, wait_until
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = 4096
@@ -1332,36 +1333,36 @@ def test_the_pass_loop_waits_in_the_damage_phase_and_leaves_when_the_operator_re
 def test_the_latch_is_set_before_the_record_and_the_record_does_not_hold_it_up(tmp_path, monkeypatch):
     """The failing statement's thread may hold the write gate and the drive may be the failing one: the
     latch (memory) is set first and read freely, and the record's write is waited for a bounded time."""
-    import time as _time
-
     monkeypatch.setattr(damage, "RECORD_WAIT_S", 0.3)
+    joins = record_asked_joins(monkeypatch, damage)
     reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
     release = threading.Event()
     entered = threading.Event()
+    returned = threading.Event()
 
     def _stuck_flush(doc):
         entered.set()
         release.wait(10.0)
+        returned.set()
 
     monkeypatch.setattr(reg, "_flush", _stuck_flush)
     result: dict = {}
 
     def _call():
-        t0 = _time.monotonic()
         result["noted"] = _note(reg)
-        result["waited"] = _time.monotonic() - t0
+        result["write_still_stuck"] = not returned.is_set()
 
     t = threading.Thread(target=_call, daemon=True)
     t.start()
     try:
         assert entered.wait(5.0), "the record was never written"
-        t0 = _time.monotonic()
         assert reg.latched(FILE_CORPUS), "the latch waits on the drive"
         assert reg.notes() and reg.state()["latched"] == [FILE_CORPUS]
-        assert _time.monotonic() - t0 < 0.2, "a reader of the latch queued behind the record's write"
-        t.join(5.0)
+        assert not returned.is_set(), "a reader of the latch queued behind the record's write"
+        t.join(15.0)
         assert not t.is_alive() and result["noted"] is True
-        assert result["waited"] < 3.0, "the failing statement was held by a hung drive"
+        assert result["write_still_stuck"], "the failing statement was held by a hung drive"
+        assert joins == [0.3], f"the failing statement waits for the record for exactly RECORD_WAIT_S: {joins}"
     finally:
         release.set()
 
@@ -1542,26 +1543,18 @@ def test_an_incident_of_another_process_is_its_own_record_even_when_no_session_i
 def test_reading_the_record_never_happens_under_the_registrys_lock(tmp_path, monkeypatch):
     """``latched`` is read on every unit of collection work: the first read of a prior record (a file
     read, on a drive that may be the failing one) must not make it wait."""
-    import time as _time
-
     path = tmp_path / "rec.json"
     path.write_text(json.dumps({"schema": 1, "files": {}, "incidents": []}), encoding="utf-8")
     release = threading.Event()
     entered = threading.Event()
-
-    def _slow_path():
-        entered.set()
-        release.wait(10.0)
-        return path
-
-    reg = DamageRegistry(path_fn=_slow_path)
+    returned = threading.Event()
+    reg = DamageRegistry(path_fn=_stuck_path(tmp_path, entered, release, returned))
     t = threading.Thread(target=reg.state, daemon=True)
     t.start()
     try:
         assert entered.wait(5.0)
-        t0 = _time.monotonic()
         assert reg.latched(FILE_CORPUS) is False
-        assert _time.monotonic() - t0 < 0.2, "a latch read queued behind the record's first read"
+        assert not returned.is_set(), "a latch read queued behind the record's first read"
     finally:
         release.set()
         t.join(5.0)
@@ -1596,26 +1589,28 @@ def test_the_method_names_the_blind_spot_of_a_damaged_first_page_encrypted_or_no
 # --------------------------------------------------------------------------- #
 #  the record path: one thread per job, the latch first, the write outside the lock
 # --------------------------------------------------------------------------- #
-def _settle(reg, timeout: float = 5.0) -> None:
-    import time as _time
-
-    end = _time.monotonic() + timeout
-    while _time.monotonic() < end:
+def _settle(reg, timeout: float = HANG_GUARD_S) -> None:
+    def idle() -> bool:
         with reg._lock:
-            if not reg._jobs:
-                return
-        _time.sleep(0.01)
-    raise AssertionError("a record job is still running")
+            return not reg._jobs
+
+    if not wait_until(idle, timeout):
+        raise AssertionError("a record job is still running")
 
 
 def _record_threads() -> list:
     return [t for t in threading.enumerate() if t.name == "oo-damage-record" and t.is_alive()]
 
 
-def _stuck_path(tmp_path, entered: threading.Event, release: threading.Event):
+def _stuck_path(tmp_path, entered: threading.Event, release: threading.Event, returned: threading.Event | None = None):
+    """A path function that parks until released. ``returned`` is set when it comes back: a test asks "did the caller come back while the
+    drive was STILL stuck", which no pause of the test process can change, where "did it come back within N s" can."""
+
     def _path():
         entered.set()
         release.wait(10.0)
+        if returned is not None:
+            returned.set()
         return tmp_path / "rec.json"
 
     return _path
@@ -1762,20 +1757,17 @@ def test_a_retry_that_arrives_while_the_record_is_being_written_is_written_too(t
 def test_the_write_is_not_made_under_the_registrys_lock(tmp_path, monkeypatch):
     """``latched`` and ``state`` are read on every unit of collection work: a write that hangs inside the
     real ``_flush`` must not make them wait."""
-    import time as _time
-
     monkeypatch.setattr(damage, "RECORD_WAIT_S", 0.2)
-    entered, release = threading.Event(), threading.Event()
-    path_fn = _stuck_path(tmp_path, entered, release)
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+    path_fn = _stuck_path(tmp_path, entered, release, returned)
     reg = DamageRegistry(path_fn=path_fn)
     reg._reset_for_tests(path_fn=path_fn)  # loaded: only the WRITE asks for the path
     t = threading.Thread(target=_note, args=(reg,), daemon=True)
     t.start()
     try:
         assert entered.wait(5.0), "the write never started"
-        t0 = _time.monotonic()
         assert reg.latched(FILE_CORPUS) and reg.state()["latched"] == [FILE_CORPUS]
-        assert _time.monotonic() - t0 < 0.1, "a reader of the latch queued behind the record's write"
+        assert not returned.is_set(), "a reader of the latch queued behind the record's write"
     finally:
         release.set()
         t.join(5.0)
@@ -1784,20 +1776,18 @@ def test_the_write_is_not_made_under_the_registrys_lock(tmp_path, monkeypatch):
 def test_the_latch_is_set_even_when_the_first_read_of_the_record_hangs(tmp_path, monkeypatch):
     """The first incident of a process used to read the earlier session's record on the failing thread BEFORE
     the latch: a hung drive then held both."""
-    import time as _time
-
     monkeypatch.setattr(damage, "RECORD_WAIT_S", 0.2)
-    entered, release = threading.Event(), threading.Event()
-    reg = DamageRegistry(path_fn=_stuck_path(tmp_path, entered, release))  # not loaded yet
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+    reg = DamageRegistry(path_fn=_stuck_path(tmp_path, entered, release, returned))  # not loaded yet
     t = threading.Thread(target=_note, args=(reg,), daemon=True)
     t.start()
     try:
         assert entered.wait(5.0), "the record thread never reached the read"
-        t0 = _time.monotonic()
         assert reg.latched(FILE_CORPUS)
-        assert _time.monotonic() - t0 < 0.1
-        t.join(5.0)
+        assert not returned.is_set(), "the latch waited for the record's first read"
+        t.join(15.0)
         assert not t.is_alive(), "the failing statement was held longer than the bound"
+        assert not returned.is_set(), "the failing statement waited for the hung read, not the bound"
     finally:
         release.set()
 

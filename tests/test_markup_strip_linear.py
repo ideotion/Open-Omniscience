@@ -16,6 +16,7 @@ import time
 import pytest
 
 from src.analytics.extract import _strip_style_script, strip_markup
+from tests.wallclock_helpers import CPU_CLOCK, HANG_GUARD_S, call_on_thread
 
 # The pattern as it shipped before 2026-08-05, kept HERE as the oracle: the new
 # implementation must agree with it everywhere, and differ only in time.
@@ -99,17 +100,17 @@ def test_unclosed_openers_do_not_take_quadratic_time() -> None:
     always correct, only unusably slow.
     """
     text = ("<style>" * (412351 // 7))[:412351]
-    t0 = time.monotonic()
+    t0 = CPU_CLOCK()
     _strip_style_script(text)
-    assert time.monotonic() - t0 < 10.0
+    assert CPU_CLOCK() - t0 < 10.0  # the thread's own CPU time: a pause or a stolen slice is not the quadratic pattern's cost
 
 
 def test_realistic_unclosed_script_spam_is_fast_through_strip_markup() -> None:
     """The whole public path, not just the helper (measured 25.7 s -> 0.007 s)."""
     text = ("<script type='x'> var a=1; alpha beta " * (412351 // 38))[:412351]
-    t0 = time.monotonic()
+    t0 = CPU_CLOCK()
     strip_markup(text)
-    assert time.monotonic() - t0 < 10.0
+    assert CPU_CLOCK() - t0 < 10.0
 
 
 def test_text_without_style_or_script_is_returned_unchanged_and_identical() -> None:
@@ -141,12 +142,17 @@ def _manager(tmp_path):
 
 
 def test_yield_returns_immediately_when_no_exclusive_hold(tmp_path, monkeypatch) -> None:
+    from src.analytics import reindex_job as rj
+
     mgr = _manager(tmp_path)
     sched = _FakeScheduler(held=False)
     monkeypatch.setattr("src.scheduler.runner.get_scheduler", lambda: sched)
-    t0 = time.monotonic()
-    mgr._yield_to_exclusive()
-    assert time.monotonic() - t0 < 1.0
+    monkeypatch.setattr(rj, "_EXCLUSIVE_POLL_S", 3 * HANG_GUARD_S)  # a single park outlasts the guard
+    try:
+        came_back, _ = call_on_thread(mgr._yield_to_exclusive)
+    finally:
+        mgr.pause()  # releases a parked call, if the defect parked one
+    assert came_back, "the re-index parked with no exclusive hold to wait for"
     assert mgr.status()["parked_for_exclusive"] is False
 
 
@@ -203,9 +209,14 @@ def test_an_unavailable_scheduler_never_parks_the_job(tmp_path, monkeypatch) -> 
     def _boom():
         raise RuntimeError("no scheduler here")
 
+    from src.analytics import reindex_job as rj
+
     mgr = _manager(tmp_path)
     monkeypatch.setattr("src.scheduler.runner.get_scheduler", _boom)
-    t0 = time.monotonic()
-    mgr._yield_to_exclusive()
-    assert time.monotonic() - t0 < 1.0
+    monkeypatch.setattr(rj, "_EXCLUSIVE_POLL_S", 3 * HANG_GUARD_S)  # a single park outlasts the guard
+    try:
+        came_back, _ = call_on_thread(mgr._yield_to_exclusive)
+    finally:
+        mgr.pause()
+    assert came_back, "an unreadable scheduler parked the re-index"
     assert mgr.status()["parked_for_exclusive"] is False
