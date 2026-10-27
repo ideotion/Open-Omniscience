@@ -35,7 +35,14 @@ from src.ingest.fetch_verdict import (
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 _TAIL = "collection stopped by operator"
+_HEAD_WORDS = "kill switch is active"
 _DEFINITION = "src/ingest/fetch_verdict.py"
+# The only other files under ``src/`` that spell the opening words, each with its OWN sentence (not the fetcher's refusal), and why. A file added
+# here is a conscious decision that it is not a second copy of the reader's pattern (``src/law/track.py`` was one, and now says the constant).
+_OWN_SENTENCES = {
+    "src/wiki/ores.py": "the ORES scorer's note: 'the network kill switch is active (airplane mode)'",
+    "src/wiki/stream.py": "the dump stream's stop: 'network kill switch is active (airplane mode) -- {doing} was refused'",
+}
 # A Stop through an HTTP proxy, as OSM measured it (R320): the request error is wrapped, not our sentence.
 _PROXY_SHAPED_STOP = (
     "request error for https://h.test/a: ('Connection aborted.', AirplaneModeError(\"airplane mode is engaged: refusing a network "
@@ -60,9 +67,25 @@ def _switch_clear():
 
 
 def _string_constants(path: Path):
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            yield node.value
+    """Every string (and bytes) constant in the code of ``path``, lower-cased, docstrings left out: a docstring quotes the sentence, it does not
+    raise it, and a lesson or a comment that quotes it must not fail the scan. What it does NOT see: a sentence assembled from pieces (``+``, an
+    f-string placeholder in the middle), which a reader of the diff has to catch."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and id(node) not in docstrings:
+            if isinstance(node.value, bytes):
+                yield node.value.decode("latin-1").lower()
+            elif isinstance(node.value, str):
+                yield node.value.lower()
 
 
 def test_the_constants_say_what_the_sentence_always_said():
@@ -71,20 +94,34 @@ def test_the_constants_say_what_the_sentence_always_said():
     assert is_kill_switch_refusal(KILL_SWITCH_REFUSAL) and classify_fetch_failure(KILL_SWITCH_REFUSAL) == "offline"
 
 
-def test_no_other_file_under_src_spells_the_sentence_out():
-    """A literal copy of the sentence is where the drift would start. The AST read sees code, not the comments and docstrings that quote it."""
-    holders = sorted(
+def _holders(needle: str) -> list[str]:
+    return sorted(
         str(path.relative_to(_SRC.parent)).replace("\\", "/")
         for path in _SRC.rglob("*.py")
-        if any(_TAIL in value for value in _string_constants(path))
+        if any(needle in value for value in _string_constants(path))
     )
-    assert holders == [_DEFINITION], f"the refusal sentence is spelled out outside its definition: {holders}"
 
 
-@pytest.mark.parametrize("relative", ["src/ingest/__init__.py", "src/safety/fetcher.py", "src/law/track.py"])
-def test_the_writers_and_the_law_tracker_hold_no_copy_of_the_opening_words(relative):
-    spelled = [v for v in _string_constants(_SRC.parent / relative) if "kill switch is active" in v]
-    assert spelled == [], f"{relative} spells the refusal's opening words out instead of saying the constant: {spelled}"
+def test_no_other_file_under_src_spells_the_sentence_out():
+    """A literal copy of the sentence is where the drift would start. The scan reads code, case-folded, bytes included, so a docstring or a
+    comment that quotes the sentence does not fail it and a capitalised or bytes copy does not slip past it."""
+    assert _holders(_TAIL) == [_DEFINITION], "the refusal sentence is spelled out outside its definition"
+    elsewhere = [  # a JS, HTML, JSON or YAML file under src/ is not a Python module, but it could carry the sentence as well
+        str(path.relative_to(_SRC.parent)).replace("\\", "/")
+        for path in _SRC.rglob("*")
+        if path.suffix in {".js", ".html", ".json", ".yml", ".yaml"} and _TAIL in path.read_text(encoding="utf-8", errors="replace").lower()
+    ]
+    assert elsewhere == [], f"the refusal sentence is spelled out in a non-Python file: {elsewhere}"
+
+
+def test_no_other_file_under_src_holds_the_opening_words_as_a_pattern_of_its_own():
+    """The shape ``src/law/track.py`` had: a second module keeps the HEAD of the sentence to recognise it, and a rewording at the definition
+    leaves that copy matching a sentence nobody raises. EVERY file under ``src/`` is scanned, not a list of the ones known today; the files
+    that hold the words for a sentence of their own are named above, each with its reason."""
+    assert _holders(_HEAD_WORDS) == sorted([_DEFINITION, *_OWN_SENTENCES]), (
+        "a file under src/ spells the refusal's opening words; say KILL_SWITCH_REFUSAL / KILL_SWITCH_REFUSAL_HEAD instead, or, if it is a "
+        "sentence of its own, add it to _OWN_SENTENCES with the reason"
+    )
 
 
 def test_every_raise_site_raises_the_constant_and_the_reader_reads_it():
@@ -137,7 +174,7 @@ def test_the_reader_is_built_from_the_head_and_accepts_exactly_what_it_accepted(
         "NETWORK KILL SWITCH IS ACTIVE -- collection stopped",
         "network kill switch is active",
         "network kill switch is active (airplane mode) -- a download was refused",
-        "network kill switch is activated",
+        "network kill switch is actively refusing",
         "the network kill switch is active",
         "xnetwork kill switch is active",
         "HTTP 503 for https://h.test/a (server said: " + KILL_SWITCH_REFUSAL + ")",
@@ -167,3 +204,54 @@ def test_a_stop_through_an_http_proxy_is_not_widened_into_a_match():
     assert classify_fetch_failure(_PROXY_SHAPED_STOP) != "offline"
     assert not fetch_verdict._OFFLINE_RE.match(_PROXY_SHAPED_STOP)
 
+
+
+def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
+    """``track_document`` tests ``startswith(KILL_SWITCH_REFUSAL_HEAD)``, which is NARROWER than ``is_kill_switch_refusal`` on purpose (R293, and
+    the PR that made the constant says so). The socket guard's sentence as ``requests`` wraps it is a refusal for the predicate, and with the
+    switch CLEAR again the tracker must still read it as an ordinary failed request that stamps its back-off: moving the tracker onto the
+    predicate is a widening of R293 and a decision of its own, so this pins today's behaviour until someone makes it."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, LawDocument
+    from src.law.track import track_document
+
+    wrapped = (
+        "request error for https://gazette.test/act1: HTTPSConnectionPool(host='gazette.test'): Failed to establish a new connection: "
+        "airplane mode is engaged: refusing a network connection to 'gazette.test'"
+    )
+    assert is_kill_switch_refusal(wrapped), "premise: the predicate reads this shape as a refusal"
+
+    class _Raises:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def fetch(self, url, **_kw):
+            raise self.exc
+
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    doc = LawDocument(
+        jurisdiction="uk", title="Act", url="https://gazette.test/act1", watched=True, last_status="unchanged",
+        last_checked_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    before = doc.last_checked_at  # read back from the store, the way the tracker sees it
+
+    out = track_document(db, _Raises(FetchFailed(wrapped)), doc)  # the switch is CLEAR here
+    db.refresh(doc)
+    assert out["status"] == "error" and "offline" not in out
+    assert doc.last_checked_at > before, "a failed request made by the tracker keeps its stamp"
+
+    # control: the fetcher's own sentence IS the refusal that made no request, and restores the stamp
+    doc.last_checked_at = before
+    db.commit()
+    out = track_document(db, _Raises(FetchFailed(KILL_SWITCH_REFUSAL)), doc)
+    db.refresh(doc)
+    assert out["offline"] is True and doc.last_checked_at == before
