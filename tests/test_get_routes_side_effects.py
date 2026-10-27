@@ -97,6 +97,19 @@ _AMBIENT_FILES = frozenset(
         "briefing_cache.json",  # derived: the briefing refresh thread writes it whenever a request started one
     }
 )
+# The lazy rollup build (R308). With the `[columnar]` extra (duckdb) the first demand for a rollup builds it in a daemon thread, BY DESIGN
+# (src/analytics/rollup_serve.py, map_serve.py: derived data, rebuildable, never served stale), and the build writes its in-progress marker
+# (src/analytics/rollup_marker.py) while it runs. Which GET's time window sees the thread or the marker depends on which request asked first
+# and on the build's own timing, so a per-route line would name a different innocent route on every run: these are ambient, and only on an
+# install that has duckdb. Without it the builds never start, and the Core/no-columnar profile keeps the stricter premise that a GET starts
+# no rollup thread and writes no marker (a build thread there is a failure, not an allowance).
+def _columnar_installed() -> bool:
+    return importlib.util.find_spec("duckdb") is not None
+
+
+_COLUMNAR_FILES = frozenset({"rollup_build.json", "rollup_build.json.lock"})
+_COLUMNAR_THREAD = re.compile(r"rollup-build|map-rollup-build|rollup-canary-peak")
+
 # The main database file (and its WAL) is touched by a checkpoint or a connection close without any write statement, so a file change
 # is not evidence of a write: the SQL monitor is the write detector.
 _MAIN_DB = re.compile(r"open_omniscience\.db(-wal|-shm)?")
@@ -262,8 +275,13 @@ class _Monitor:
             raise OSError(f"blocked by the side-effect monitor: {host!r}")
 
         def start(thread, *a, **k):  # noqa: ANN001
-            stack = "".join(f.filename for f in traceback.extract_stack(limit=12))
-            if "limits/storage/memory" not in stack.replace("\\", "/"):  # the rate limiter's own expiry timer
+            frames = traceback.extract_stack(limit=12)
+            stack = "".join(f.filename for f in frames)
+            # FINDING F4 (routed to keyword, which owns src/analytics/columnar.py): the rollup canary's interrupt timer is a bare
+            # threading.Timer, so it carries the anonymous name Thread-N and no table can name it. Skipped here by the function that
+            # starts it, and ONLY while unnamed; once it is named (like its sibling rollup-canary-peak) this exception goes.
+            canary_timer = thread.name.startswith("Thread-") and any(f.name == "serve_canary" for f in frames)
+            if "limits/storage/memory" not in stack.replace("\\", "/") and not canary_timer:  # the rate limiter's own expiry timer
                 monitor.threads.append(thread.name)
             return real_start(thread, *a, **k)
 
@@ -463,12 +481,12 @@ def _file_and_thread_problems(seen: dict[str, _Monitor], routes: dict[str, tuple
     problems = []
     for path, m in seen.items():
         files_ok, threads_ok, _reason = routes.get(path, (frozenset(), frozenset(), ""))
-        for name in sorted(n for n in m.files if not _final_names(n) & (_AMBIENT_FILES | files_ok)):
+        for name in sorted(n for n in m.files if not _final_names(n) & (_AMBIENT_FILES | files_ok | (_COLUMNAR_FILES if _columnar_installed() else frozenset()))):
             if _MAIN_DB.fullmatch(name):
                 continue
             problems.append((path, "file", name))
         for name in sorted(set(m.threads)):
-            if _AMBIENT_THREAD.fullmatch(name):
+            if _AMBIENT_THREAD.fullmatch(name) or (_columnar_installed() and _COLUMNAR_THREAD.fullmatch(name)):
                 continue
             if any(re.fullmatch(pat.replace("*", ".*"), name) for pat in threads_ok):
                 continue
@@ -598,6 +616,22 @@ def test_the_monitors_see_a_get_that_reaches_the_network_when_the_switch_is_off(
         with _Monitor([tmp_path]) as mon:
             client.get("/api/hazards", headers={"Host": "testserver"})
     assert {"earthquake.usgs.gov", "www.gdacs.org"} <= set(mon.lookups), mon.lookups
+
+
+def test_the_canary_timer_exception_is_only_for_an_unnamed_thread_started_by_serve_canary(tmp_path):
+    def serve_canary():
+        threading.Thread(target=lambda: None).start()  # unnamed, from the one function the exception names
+        threading.Thread(target=lambda: None, name="rollup-canary-peak").start()  # named: still recorded
+
+    def somewhere_else():
+        threading.Thread(target=lambda: None).start()
+
+    with _Monitor([tmp_path]) as mon:
+        serve_canary()
+    assert mon.threads == ["rollup-canary-peak"], mon.threads
+    with _Monitor([tmp_path]) as mon:
+        somewhere_else()
+    assert len(mon.threads) == 1 and mon.threads[0].startswith("Thread-"), mon.threads
 
 
 def test_the_monitors_see_every_socket_call_they_patch(tmp_path):
