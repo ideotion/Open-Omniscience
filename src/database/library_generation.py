@@ -333,7 +333,30 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     ``tests/test_library_generation_writers_run_in_the_window.py`` pins, over ``src/``, that a writer is called, referenced or stored to only from
     inside a window. In THIS function the window starts after ``_LOCK.exclusive(...)`` returns: the reset of the flag above that call would let a
     swap that is only WAITING reset the flag of the swap that holds the window, and the earlier connections would be given back after a disk change
-    (that placement is a red-without in the pin, and it is run)."""
+    (that placement is a red-without in the pin, and it is run).
+
+    THE HOLD HAS NO TIME BOUND, AND NONE IS ADDED HERE (ruled R326, 27 Oct 2026; the reasons and the cells are in
+    ``docs/ledger/lessons.d/2026-10-27-the-swap-window-hold-has-no-time-bound.md``). BOUNDED: the WAIT for the window (``timeout``,
+    :data:`WINDOW_WAIT_S` = 60 s, then :class:`LibraryBusy`) and, for the restore and the repair, the two file steps of
+    ``backup.merge.swap_in_corpus`` (one shared deadline, ``_SWAP_HANDLE_WAIT_S`` = 300 s, ``OO_SWAP_HANDLE_WAIT_S``). NOT BOUNDED: the first
+    ``dispose_engine()`` of that body, one ``os.replace`` attempt, the encrypt body (``database/encrypt_tool.py``: ``disk_changing``, two
+    unlinks, one ``os.replace``, no waiting budget), and the connection opens that stand behind the window, which wait in steps of
+    :data:`_RECHECK_S` for as long as it is held. WHY NO TIMER: the body runs on its caller's thread inside file-system calls and a SQLite
+    close, which nothing can cancel; giving the window back while the body still runs is the interleaving the window exists to prevent (a
+    connection opened between the removal of the live log names and the replace); and failing the waiting opens early would turn every
+    request during a legitimate long hold into an error, on a number nobody measured.
+
+    HOW LONG, MEASURED (the app's own engine, ``dispose_engine()`` as the body, a leftover log of N MiB on the pool's one connection, which
+    is the last on the file; a 4-core virtual disk, SQLite 3.45.1 plain and SQLCipher 4.12.0 on SQLite 3.51.1, one or two cells each): 0.001 s
+    with no log, 0.9 to 1.0 s at 100 MiB, 0.7 to 2.6 s at 300 MiB, 5.6 to 8.1 s at 1,000 MiB, warm and cold, plain and encrypted. On a plain
+    store other threads keep running and a connection open waits for the end of the window; on an encrypted one the whole process stands
+    still for the hold (``sqlcipher3``'s ``close()`` keeps the GIL for the checkpoint it runs on the last connection: the worst gap of a
+    ticker thread equalled the dispose in every encrypted cell). The field's 90.8 s for a 1.41 GB log at one unlock (``shutdown_checkpoint.py``,
+    another disk) was NOT reproduced, and nothing here is extrapolated to a size, a disk or a load nobody measured. The restore and the repair
+    fold the log into the file BEFORE the window and refuse when they cannot (``backup.merge._checkpoint_before_swap``, the repair's
+    ``_empty_the_log``), so the window should find only the frames written between that fold and the window; how many a real restore leaves
+    there is NOT measured. The one hold the code can leave unbounded is the call that gives the window back (the residual named above): a stopped
+    pool there is loud (the pool's waits and ``pool_timeout``), not silent, and a detector that names it is a proposal, not built."""
     global _DISK_CHANGED
     # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
