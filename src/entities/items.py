@@ -232,7 +232,9 @@ def fetch_items(
     """Fetch ``qids`` into the cache, one batch per request, R8-spaced. Returns counts.
 
     Refuses up front under airplane mode, by name, before any request is built. One batch's
-    failure never aborts the run; it is counted under ``refused`` with no guess about why.
+    failure never aborts the run; it is counted under ``refused`` with no guess about why,
+    unless the kill switch is engaged by then: that stop is the switch's, not the batch's, so the
+    batch stays pending and ``stopped_by_airplane_mode`` is true (R337).
     """
     if _kill_switch_active():
         raise AirplaneRefusal(REFUSAL)
