@@ -624,7 +624,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/analytics/watches.py": 1,
     "src/catalog/discover.py": 1,
     "src/catalog/qualification_integrity.py": 1,
-    "src/catalog/qualification_merge.py": 12,
+    "src/catalog/qualification_merge.py": 13,
     "src/config/app_settings.py": 3,
     "src/custody/anchor.py": 2,
     "src/law/adapters/clml.py": 3,
