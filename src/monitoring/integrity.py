@@ -236,7 +236,8 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
     # (healthy=false) so a re-index can heal it.
     from src.database.fts import fts_status
 
-    fts = fts_status(session)
+    # The article count is taken BEFORE the index's: a row ingested between the two reads can then only
+    # push ``delta`` below zero (an index ahead of a count), never read as a document the index missed.
     arts = None
     try:
         with statement_deadline(session, seconds=15):
@@ -244,20 +245,23 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
         arts = int(_a) if _a is not None else 0
     except Exception:  # noqa: BLE001 - a slow/failed article count degrades only the delta
         arts = None
+    fts = fts_status(session)
     fts_rows = fts.get("rows")
+    indexed = fts.get("indexed_documents")
     report["fts"] = {
         "present": fts.get("present"),
         "healthy": fts.get("healthy"),
         "articles": arts,
         "fts_rows": fts_rows,
+        "indexed_documents": indexed,
+        "indexed_status": fts.get("indexed_status"),
+        "index_state": fts.get("index_state"),
         "count_status": fts.get("count_status"),
         "error": fts.get("error"),
-        "delta": None if (arts is None or fts_rows is None) else arts - fts_rows,
+        "delta": None if (arts is None or indexed is None) else arts - indexed,
         "note": (
-            "Presence is read from the schema, never a COUNT (which on a large FTS index can "
-            "time out and would then be misread as absent). article_fts is kept in sync by "
-            "triggers; a large delta means the index is stale (re-run the FTS rebuild); "
-            "healthy=false means the index is damaged (a re-index heals it)."
+            "fts_rows reads articles, not the index; indexed_documents is the index's own count; "
+            "delta = articles - indexed_documents (large: rebuild); healthy=false: damaged, empty or partial (re-index heals)."
         ),
     }
 
