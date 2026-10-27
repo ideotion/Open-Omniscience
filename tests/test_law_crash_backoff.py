@@ -9,7 +9,9 @@ of two, two such documents at the head meant a healthy one behind them was never
 
 What stays: a deferral is not a check (R293), and a pass is never aborted by the back-off failing. The back-off
 applies only when the fetch RETURNED a result: an exception from anywhere else (the document's own read, the commit
-of a deferral or of a kill-switch refusal) made no request, and stamping it would be the lie R293 removed.
+of a deferral or of a kill-switch refusal) made no request, and stamping it would be the lie R293 removed. And only
+when the attempt left nothing committed: a crash after its own commit (the corpus indexing, the lane row) keeps the
+outcome it recorded.
 """
 
 from __future__ import annotations
@@ -20,10 +22,10 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Base, LawDocument
+from src.database.models import Base, LawDocument, LawRevision
 from src.ingest import CrawlDelayDeferred, FetchFailed, FetchResult, clear_kill_switch
 from src.law import track as track_mod
-from src.law.track import auto_track_due, track_watched
+from src.law.track import _FETCHED_KEY, _back_off_after_crash, auto_track_due, track_watched
 
 _BODY = " ".join(
     f"Section {i}: every person shall have the right to liberty and security." for i in range(40)
@@ -209,8 +211,9 @@ def test_an_earlier_fetch_of_the_same_document_cannot_vouch_for_a_later_non_chec
 
 def test_a_back_off_that_fails_does_not_abort_the_pass(db, monkeypatch):
     """The back-off is best effort: the database that failed the document may fail the back-off too."""
-    crasher = _doc(db, "crash1", days_ago=None)
-    healthy = _doc(db, "healthy", days_ago=None)
+    crasher = _doc(db, "crash1", days_ago=5)  # the older check time puts it first: the order is the query's, not a tie's
+    healthy = _doc(db, "healthy", days_ago=3)
+    before = crasher.last_checked_at
     real_commit, calls = db.commit, {"n": 0}
 
     def commit():
@@ -224,5 +227,125 @@ def test_a_back_off_that_fails_does_not_abort_the_pass(db, monkeypatch):
     assert out["errors"] == 1 and out["baselines"] == 1, out
     db.refresh(crasher)
     db.refresh(healthy)
-    assert crasher.last_checked_at is None, "the back-off did not land, and the pass went on"
+    assert crasher.last_checked_at == before, "the back-off did not land, and the pass went on"
     assert healthy.last_status == "baseline captured"
+
+
+@pytest.mark.parametrize("attr", ["_record_lane", "_ingest_to_corpus"])
+def test_a_crash_after_the_attempts_own_commit_keeps_the_outcome_it_recorded(db, monkeypatch, attr):
+    """The baseline is committed, then the lane row (or the corpus indexing) raises. The document WAS baselined and its
+    stamp is in the database: the back-off must not overwrite "baseline captured" with an error."""
+    doc = _doc(db, "healthy1", days_ago=None)
+
+    def boom(*a, **kw):
+        raise RuntimeError("lane db unavailable")
+
+    monkeypatch.setattr(track_mod, attr, boom)
+    out = track_watched(db, _Serves())
+    assert out["errors"] == 1, out
+    db.refresh(doc)
+    assert doc.last_status == "baseline captured", doc.last_status
+    assert doc.last_checked_at is not None and doc.last_hash is not None
+    assert auto_track_due(db, _Serves(), batch=5)["due"] == 0, "the stamp is in the database: not asked again for 24 h"
+
+
+@pytest.mark.parametrize(
+    "run", [lambda db: track_watched(db, _Serves()), lambda db: auto_track_due(db, _Serves(), batch=5)],
+    ids=["track_watched", "auto_track_due"],
+)
+def test_the_back_off_is_made_after_the_rollback_not_before(db, monkeypatch, run):
+    """A crash with half-finished attributes pending (the baseline text set, its revision about to be flushed): committing
+    the back-off before the rollback would persist that half-finished attempt. After the rollback it is gone."""
+    doc = _doc(db, "healthy1", days_ago=None)
+    real_flush = db.flush
+
+    def flush(*a, **kw):
+        if any(isinstance(o, LawRevision) for o in db.new):
+            raise RuntimeError("database is locked")  # the flush that would write the baseline revision
+        return real_flush(*a, **kw)
+
+    monkeypatch.setattr(db, "flush", flush)
+    out = run(db)
+    assert out["errors"] == 1, out
+    db.refresh(doc)
+    assert doc.baseline_text is None and doc.last_hash is None and doc.latest_text is None, "no half-finished attempt"
+    assert doc.last_status.startswith("error: ") and doc.last_checked_at is not None
+    assert db.query(LawRevision).count() == 0
+
+
+def test_a_marker_naming_another_document_does_not_vouch(db):
+    """Unit-level pin of the id check: a marker left by another document's attempt cannot stamp this one."""
+    doc = _doc(db, "healthy1", days_ago=3)
+    before = doc.last_checked_at
+    db.info[_FETCHED_KEY] = (doc.id + 100, datetime.now(UTC))
+    _back_off_after_crash(db, doc.id, RuntimeError("database is locked"))
+    db.refresh(doc)
+    assert doc.last_checked_at == before and doc.last_status == "unchanged"
+    assert _FETCHED_KEY not in db.info, "the marker is spent either way"
+
+
+def test_a_fetch_that_went_well_does_not_vouch_for_the_next_documents_unread_row(db, monkeypatch):
+    """The likeliest sequence in one pass: document A is fetched fine, then document B's row cannot be read. No request
+    was made for B, so B is not a check, whatever marker A's attempt left on the session."""
+    a = _doc(db, "healthy-a", days_ago=5)  # the older check time puts it first
+    b = _doc(db, "healthy-b", days_ago=3)
+    before = b.last_checked_at
+    real_get, calls = db.get, {"b": 0}
+
+    def get(model, ident, *args, **kw):
+        if ident == b.id:
+            calls["b"] += 1
+            if calls["b"] == 1:
+                raise RuntimeError("database is locked")  # the walk's read only: a back-off could read it again
+        return real_get(model, ident, *args, **kw)
+
+    monkeypatch.setattr(db, "get", get)
+    fetcher = _Serves()
+    out = auto_track_due(db, fetcher, batch=5)
+    assert fetcher.requests == ["healthy-a.test"], "B was never asked"
+    assert out["errors"] == 1 and out["baselines"] == 1, out
+    db.refresh(b)
+    assert b.last_checked_at == before and b.last_status == "unchanged"
+    db.refresh(a)
+    assert a.last_status == "baseline captured"
+
+
+def test_with_a_batch_of_three_the_healthy_document_behind_two_crashers_is_reached_on_the_same_pass(db):
+    """The other half of "a crash spends its slot": the batch is the number of requests, so a third slot reaches it."""
+    _doc(db, "crash1", days_ago=None)
+    _doc(db, "crash2", days_ago=None)
+    healthy = _doc(db, "healthy", days_ago=3)
+    fetcher = _Serves()
+    out = auto_track_due(db, fetcher, batch=3)
+    assert out["errors"] == 2 and out["baselines"] == 1, out
+    db.refresh(healthy)
+    assert healthy.last_status == "baseline captured"
+    assert sorted(fetcher.requests) == ["crash1.test", "crash2.test", "healthy.test"]
+
+
+def test_one_unreadable_row_after_a_commit_is_one_counted_error_not_a_dead_manual_pass(db, monkeypatch):
+    """track_watched takes the document's id without a query: after a commit the documents are expired, and reading an
+    attribute then goes to the database, where a one-off failure used to escape the loop (and fail POST /api/law/track)."""
+    _doc(db, "healthy-a", days_ago=5)
+    second = _doc(db, "healthy-b", days_ago=3)
+    before = second.last_checked_at
+    state = {"armed": False}
+    real_td, real_execute = track_mod.track_document, db.execute
+
+    def track_document(session, fetcher, doc, **kw):
+        out = real_td(session, fetcher, doc, **kw)
+        state["armed"] = True  # the first document is done; its commit expired every other document
+        return out
+
+    def execute(*a, **kw):
+        if state["armed"]:
+            state["armed"] = False
+            raise RuntimeError("database is locked")  # the next read of an expired document
+        return real_execute(*a, **kw)
+
+    monkeypatch.setattr(track_mod, "track_document", track_document)
+    monkeypatch.setattr(db, "execute", execute)
+    out = track_watched(db, _Serves())
+    assert out["errors"] == 1 and out["baselines"] == 1, out
+    db.refresh(second)
+    assert second.last_checked_at == before, "no request was made for it: not a check"

@@ -638,7 +638,7 @@ def _refuse_cross_site(request: Request) -> None:
     ``fetch`` to ``http://127.0.0.1:PORT/api/database/backup`` costs the machine a full snapshot even where the browser then hides
     the answer). Every one of these must pass; what the refusal reads:
 
-    * ``Host``: one of the names the app's DNS-rebinding guard serves (the loopback names, the test client's, ``OO_ALLOWED_HOSTS``).
+    * ``Host``: one of the names the app's DNS-rebinding guard serves (the loopback names and ``OO_ALLOWED_HOSTS``).
       A page on a name that an attacker rebinds to 127.0.0.1 is SAME-ORIGIN with itself, so the checks below pass for it and only
       this one stops it; the middleware stops it too, and the route does not depend on that.
     * ``Sec-Fetch-Site`` when the browser sends it: ``same-origin`` (the app's own page) and ``none`` (an address typed or a bookmark)
