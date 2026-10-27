@@ -368,6 +368,17 @@ def tags_for_keyword(session: Session, normalized: str) -> dict[str, list[str]]:
     return out
 
 
+#: Keywords one chunk of the baseline-tag backfill reads (id, language and normalised term, nothing else). WHAT IT PROTECTS: the backfill is an
+#: operator action with no bound, and reading the table as entities held every keyword of it at once: on 1,500,000 seeded keywords 33.8 s and
+#: 2,951 MB of Python allocation (3,272 MB of resident growth) against 3.7 s and 12.5 MB as these columns in chunks. A chunk is the unit, not the
+#: table's row count, which is the quantity nobody bounds: 20,000 rows of the widest shape the columns allow (a 10-character language and a
+#: 255-character term) peak at 11.8-12.0 MB of Python allocation, about 600 B a row, whatever the table holds (the READ side: the new tags stay pending in the session until the one commit, autoflush being off, so memory still grows with the tags added, as it did). No clock decides where a chunk ends.
+#: STATED LIMIT: the chunks are id-ordered with a cursor, so a keyword inserted with an id BELOW the cursor between two chunks is not seen until the
+#: next run (idempotent, so the cost is one run). The app's own inserts take the next autoincrement id, always above every existing one; only an
+#: insert with an explicit id (a merge import) can land below it.
+_BASELINE_BACKFILL_CHUNK = 20_000
+
+
 def backfill_baseline_tags(session: Session, *, limit: int | None = None) -> dict:
     """Apply curated baseline tags to EXISTING keywords (the retroactive pass).
 
@@ -377,27 +388,46 @@ def backfill_baseline_tags(session: Session, *, limit: int | None = None) -> dic
     present (same keyword/axis/tag) is skipped. The existing-rows query runs ONLY for
     keywords that actually match the baseline (most do not), so it is cheap. Reads the
     same bundled baseline — never invents a tag; counts only, no score."""
-    q = session.query(Keyword)
-    if limit:
-        q = q.limit(limit)
     scanned = tagged_keywords = tags_added = 0
-    for kw in q:
-        scanned += 1
-        pairs = baseline_tags(kw.language, kw.normalized_term)
-        if not pairs:
-            continue
-        existing = {
-            (r.axis, r.tag)
-            for r in session.query(KeywordTag).filter_by(keyword_id=kw.id, source="baseline")
-        }
-        added = 0
-        for axis, tag in pairs:
-            if (axis, tag) not in existing:
-                session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
-                added += 1
-        if added:
-            tagged_keywords += 1
-            tags_added += added
+    after_id = 0
+    if limit is not None and limit < 0:
+        limit = None  # as before: ``q.limit(-1)`` is no limit in SQLite
+    while True:
+        take = min(_BASELINE_BACKFILL_CHUNK, limit - scanned) if limit else _BASELINE_BACKFILL_CHUNK
+        if take <= 0:
+            break
+        # The three columns the match reads, one id-ordered chunk at a time: neither the entity nor the whole table (see the constant).
+        chunk = (
+            session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
+            .filter(Keyword.id > after_id)
+            .order_by(Keyword.id)
+            .limit(take)
+            .all()
+        )
+        if not chunk:
+            break
+        after_id = int(chunk[-1][0])
+        for kid, language, normalized_term in chunk:
+            scanned += 1
+            pairs = baseline_tags(language, normalized_term)
+            if not pairs:
+                continue
+            existing = {
+                (axis, tag)
+                for axis, tag in session.query(KeywordTag.axis, KeywordTag.tag).filter_by(
+                    keyword_id=kid, source="baseline"
+                )
+            }
+            added = 0
+            for axis, tag in pairs:
+                if (axis, tag) not in existing:
+                    session.add(KeywordTag(keyword_id=kid, axis=axis, tag=tag, source="baseline"))
+                    added += 1
+            if added:
+                tagged_keywords += 1
+                tags_added += added
+        if len(chunk) < take:  # a short chunk is the end of the table: no read to learn it again
+            break
     if tags_added:
         session.commit()
     return {"scanned": scanned, "tagged_keywords": tagged_keywords, "tags_added": tags_added}

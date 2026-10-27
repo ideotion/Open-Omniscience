@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import Row
 from sqlalchemy.orm import Session
 
 from src.catalog.qualification import STATUS_QUALIFIED
@@ -90,8 +91,17 @@ def tag_coverage(
     window = timedelta(hours=max(1, int(fresh_window_hours)))
 
     # One row per RSS source that has ever been fetched.
-    states: dict[int, FeedFetchState] = {
-        st.source_id: st for st in session.query(FeedFetchState).all()
+    # The four columns the loop below reads, not the entity: the validators (etag, last_modified) are strings of up to 512 and 128
+    # characters a row and this panel reads neither. 86,000 feed states, same seeded store and shipped statements: 1,216-1,312 ms and 152.5 MB of
+    # Python allocation as entities against 548-571 ms and 47.9 MB as columns (keyword-lane/entity-load-sweep-part2-2026-10-27.md, re-measured).
+    states: dict[int, Row] = {
+        st.source_id: st
+        for st in session.query(
+            FeedFetchState.source_id,
+            FeedFetchState.last_checked_at,
+            FeedFetchState.skip_until,
+            FeedFetchState.last_status,
+        )
     }
 
     tags: dict[str, dict] = {}
