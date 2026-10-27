@@ -74,17 +74,16 @@ def test_the_merge_readers_run_the_loader_class_the_shared_module_names(cls, mon
     assert used == [cls]
 
 
-def test_the_upload_readers_keep_the_pure_loader(monkeypatch):
-    # An uploaded export is attacker-sized input. libyaml's loader does not raise RecursionError on deep nesting: on this
-    # box a 100,000-deep "- - - x" document segfaults the process (20,000 deep parses), where the pure loader refuses it
-    # with RecursionError, which the readers turn into a 400. So these two sites must never reach the shared loader.
-    def boom(_text):
-        raise AssertionError("an upload was parsed with the shared (libyaml) loader")
-
-    monkeypatch.setattr(qm, "load_safe_yaml", boom)
-    text = _rendered(5)
-    assert len(qm._rows_from_export_yaml(text, "x.yml", None)) == 5
-    assert qm.repair_record_flags_of_export_bytes(text.encode()) == {}
+@pytest.mark.parametrize("cls", _LOADERS)
+def test_a_deeply_nested_upload_is_refused_as_too_deep_not_a_crash_on_both_loader_paths(cls, monkeypatch):
+    # The upload readers share the loader now that it carries the depth guard. libyaml alone segfaulted on this 200 KB upload
+    # (see tests/test_safe_yaml_depth_guard.py); they must answer with the "nested too deeply" refusal on either path.
+    monkeypatch.setattr(safe_yaml, "YAML_LOADER", cls)
+    deep = ("- " * 100_000 + "x").encode()
+    with pytest.raises(qm.MergeInputError) as err:
+        qm.rows_from_export_bytes(deep, "deep.yml")
+    assert "nested too deeply" in str(err.value)
+    assert qm.repair_record_flags_of_export_bytes(deep) == {}
 
 
 @pytest.mark.parametrize("cls", _LOADERS)
