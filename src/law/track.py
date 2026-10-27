@@ -294,6 +294,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     ingested into the corpus through the one ``index_article`` hook.
     """
     from src.ingest import FetchError
+    from src.ingest.fetch_verdict import classify_fetch_failure
 
     now = datetime.now(UTC)
     doc.last_checked_at = now
@@ -306,7 +307,10 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     except FetchError as exc:
         doc.last_status = f"fetch error: {record_text(exc)}"
         session.commit()
-        return {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
+        out = {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
+        if classify_fetch_failure(record_text(exc)) == "offline":
+            out["offline"] = True  # the kill switch refused it: not the document's failure (the tallies count it apart)
+        return out
     except Exception as exc:  # noqa: BLE001 - record, never crash the batch
         doc.last_status = f"error: {record_text(exc)}"
         session.commit()
@@ -578,7 +582,12 @@ def _batch_extractor(extractor):
 
 
 def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None) -> dict:
-    """Track all watched legal documents, returning an aggregate tally."""
+    """Track all watched legal documents, returning an aggregate tally.
+
+    ``skipped_offline`` is present ONLY when the kill switch (airplane mode) refused at least one document. Those documents
+    still count in ``documents`` and ``errors`` exactly as before (the old fields are unchanged); the extra key is what lets
+    a caller say "nothing was fetched" instead of "23 errors" (invariant #14e's corollary).
+    """
     from src.database.query import capped
 
     extractor = _batch_extractor(extractor)
@@ -612,6 +621,8 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
                 tally["flagged"] += 1
         elif status == "error":
             tally["errors"] += 1
+            if res.get("offline"):
+                tally["skipped_offline"] = tally.get("skipped_offline", 0) + 1
         elif status == "unchanged":
             tally["unchanged"] += 1
     return tally
@@ -691,6 +702,8 @@ def auto_track_due(
                 tally["flagged"] += 1
         elif status == "error":
             tally["errors"] += 1
+            if res.get("offline"):
+                tally["skipped_offline"] = tally.get("skipped_offline", 0) + 1
         elif status == "unchanged":
             tally["unchanged"] += 1
     return tally

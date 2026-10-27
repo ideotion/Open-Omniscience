@@ -4355,7 +4355,14 @@
       $("wiki-progress").textContent = "Tracking watched pages…";
       try {
         const r = await api(`/api/wiki/track-now?ores=${_ores()}`, {method:"POST"});
-        $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`;
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+        const off = r.skipped_offline || 0;     // pages the kill switch refused: not "0 new edits" (invariant #14e's corollary)
+        if (off && !r.pages) {
+          $("wiki-progress").textContent = t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.");
+          toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); loadWiki(); return;
+        }
+        $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`
+          + (off ? " " + ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("{n} not fetched (airplane mode)", {n: off}) : off + " not fetched (airplane mode)") : "");
         toast("Tracking complete."); loadWiki();
       } catch (e) { $("wiki-progress").textContent=""; toast(_failMsg("Track now failed: {error}", e), "err"); }
     }

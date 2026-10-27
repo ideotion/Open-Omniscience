@@ -517,7 +517,10 @@ def ingest_source(
 ) -> dict[str, int]:
     """Ingest a source's RSS/Atom feed (the feed is fetched through the ethical path).
 
-    Returns a tally keyed by IngestResult value, plus the feed entry count.
+    Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline: 1``
+    is present ONLY when the kill switch (airplane mode) refused the feed fetch, so an all-zero tally
+    that means "nothing was fetched" is told apart from one that means "the feed had nothing new".
+    The key is absent otherwise (no permanent zero line) and every other key is unchanged.
     """
     # STAGED is transient by contract (resolved at flush) — it must never
     # appear as a permanent zero line in a user-facing tally.
@@ -538,12 +541,17 @@ def ingest_source(
         feed_resp = fetcher.fetch(
             source.rss_url, require_html=False, extra_headers=extra_headers or None
         )
-    except FetchError:
+    except FetchError as exc:
         # Feed itself blocked/unavailable: nothing to ingest, but not an article
         # failure. A transient error is NOT a "feed is quiet" signal — reset any
         # backoff so a recovered feed is re-checked at the normal cadence.
         _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
+        # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
+        # say so (invariant #14e's corollary), by the same classifier the per-article
+        # ``ff:offline`` count uses. The scheduler sums this key like any other int.
+        if classify_fetch_failure(record_text(exc, typed=False)) == "offline":
+            tally["skipped_offline"] = 1
         return tally
 
     if feed_resp.status_code == 304:
