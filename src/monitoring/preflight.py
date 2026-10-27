@@ -29,6 +29,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
+from src.ingest import kill_switch_active
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import record_text
 
@@ -48,7 +49,10 @@ def has_run_before() -> bool:
 
 
 def _skipped_offline(rec: dict, refusal: str) -> dict:
-    """The record of a source nobody asked: airplane mode refused the check, so the source's reachability and robots are UNKNOWN, which
+    """The record of a source nobody asked (a check that FAILED while the kill switch is engaged is read as the switch's, whatever shape
+    the error took: ``_guarded_redirect_get`` is not wrapped by the fetcher, so a Stop that lands during the request arrives as the raw
+    ``HTTPSConnectionPool(...)`` requests error, which the anchored sentence match rightly does not admit; the cost is one genuine
+    failure discarded when it coincides with a Stop, and the run is retried whole on the next online pass): airplane mode refused the check, so the source's reachability and robots are UNKNOWN, which
     is a different fact from unreachable (the same idiom as feed verification: ``skipped_offline``, present only when the kill switch
     caused it)."""
     rec["verdict"] = "skipped_offline"
@@ -90,7 +94,7 @@ def _check_one(fetcher, source) -> dict:
     try:
         fetcher._guard_target(urlparse(base).hostname)
     except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)):  # classified on the WHOLE scrubbed text, before any cut (R298)
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
@@ -120,7 +124,7 @@ def _check_one(fetcher, source) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - per-source problems must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)):  # classified on the WHOLE scrubbed text, before any cut (R298)
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
@@ -134,7 +138,7 @@ def _check_one(fetcher, source) -> dict:
         rec["homepage_status"] = resp.status_code
         rec["reachable"] = 200 <= resp.status_code < 400
     except Exception as exc:  # noqa: BLE001
-        if is_kill_switch_refusal(record_text(exc)):  # classified on the WHOLE scrubbed text, before any cut (R298)
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["reachable"] = False
         rec["homepage_error"] = record_text(exc, limit=200, typed=False)

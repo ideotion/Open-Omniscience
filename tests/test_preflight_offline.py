@@ -181,3 +181,79 @@ def test_kick_declines_while_the_kill_switch_is_engaged(monkeypatch):
     clear_kill_switch()
     preflight_job.kick()
     assert started, "kick must still start the job when the switch is clear"
+
+
+# --- a Stop that lands DURING the last request (Export's read of #1570) -------------------------------------------------
+
+
+_RAW_CUT = (
+    "HTTPSConnectionPool(host='{host}', port=443): Max retries exceeded with url: /{path} (Caused by NewConnectionError("
+    "'<urllib3.connection.HTTPSConnection object at 0x7f0>: Failed to establish a new connection: airplane mode is engaged: "
+    "refusing a network connection to '{host}'.'))"
+)
+
+
+class _Resp:
+    def __init__(self, status_code: int = 200, text: str = "User-agent: *\nAllow: /") -> None:
+        self.status_code = status_code
+        self.text = text
+
+
+class _CutOnLast:
+    """A fetcher whose LAST request dies the way a Stop does: the socket guard cuts it and ``requests`` raises its own error, which
+    ``_guarded_redirect_get`` (not wrapped by the fetcher, unlike ``fetch()``) passes up raw and which begins ``HTTPSConnectionPool(``
+    -- not our sentence, so the anchored match rightly refuses it. ``engage`` says whether the switch is engaged at that moment."""
+
+    user_agent = "OpenOmniscienceBot/test"
+    session = None
+    timeout = 5
+
+    def __init__(self, last_url: str, engage: bool) -> None:
+        self._last = last_url
+        self._engage = engage
+
+    def _guard_target(self, host):
+        return None
+
+    def _guarded_redirect_get(self, url, **_kw):
+        if url == self._last:
+            import requests
+
+            if self._engage:
+                activate_kill_switch()
+            host = url.split("/")[2]
+            raise requests.ConnectionError(_RAW_CUT.format(host=host, path=url.split("/", 3)[3]))
+        return _Resp(), url
+
+
+def test_a_stop_that_cuts_the_last_request_of_the_source_half_is_not_a_finished_sweep(db):
+    """THE EXACT CUT: the homepage ping of the final source. Before the per-check switch read this ended ``complete: True``, wrote a
+    one-record log and set ``has_run_before()``."""
+    src = _mk(db, learned=True)
+    fetcher = _CutOnLast(f"https://{src.domain}/", engage=True)
+    try:
+        summary = preflight.preflight_sources(db, fetcher, limit=5)
+    finally:
+        clear_kill_switch()
+    assert summary["complete"] is False and summary["skipped_offline"] == 1
+    assert not preflight.has_run_before(), "a sweep cut by the switch stamped the first-run preflight as done"
+    assert db.query(SourceMetadata).filter_by(source_id=src.id).one().robots_allowed is True
+
+
+def test_the_same_raw_error_with_the_switch_clear_is_still_the_hosts_failure(db):
+    """The boundary: without an engaged switch the raw requests error is an ordinary failure, filed and logged as before."""
+    src = _mk(db, learned=True)
+    summary = preflight.preflight_sources(db, _CutOnLast(f"https://{src.domain}/", engage=False), limit=5)
+    assert summary["complete"] is True and "skipped_offline" not in summary
+    assert preflight.has_run_before()
+
+
+def test_a_stop_that_cuts_the_last_feed_host_leaves_the_feed_preflight_pending():
+    hosts = sorted({t["host"] for t in sum(feed_preflight._feed_targets(), []) if t["host"]})
+    fetcher = _CutOnLast(f"https://{hosts[-1]}/robots.txt", engage=True)
+    try:
+        summary = feed_preflight.run_feed_preflight(fetcher)
+    finally:
+        clear_kill_switch()
+    assert summary["complete"] is False and summary["skipped_offline"] >= 1
+    assert not feed_preflight.has_run_before()

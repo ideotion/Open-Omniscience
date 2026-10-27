@@ -31,6 +31,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
+from src.ingest import kill_switch_active
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
@@ -114,7 +115,7 @@ def _check_host_robots(fetcher, host: str) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - one host must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)):  # the WHOLE scrubbed text, before any cut (R298)
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
             # Never asked: not "unreachable". The sweep stops on it and logs nothing (run_feed_preflight).
             rec["robots"] = "skipped_offline"
             rec["skipped_offline"] = True
@@ -239,7 +240,7 @@ def run_feed_preflight(
             from src.events.feeds import verify_feed
 
             verdict = verify_feed(fetcher, t["key"])
-            if verdict.get("status") == "skipped_offline":
+            if verdict.get("status") == "skipped_offline" or (verdict.get("status") != "ok" and kill_switch_active()):
                 return {"hosts": len(hosts), "complete": False, "skipped_offline": 1, "stopped": _OFFLINE_STOP}
             records.append({**t, **verdict})
             calendar_checked += 1
@@ -263,7 +264,7 @@ def run_feed_preflight(
             rec["status"] = "ok" if body.strip() else "empty"
             rec["bytes"] = len(body.encode("utf-8", "ignore"))
         except Exception as exc:  # noqa: BLE001
-            if is_kill_switch_refusal(record_text(exc)):  # the WHOLE scrubbed text, before any cut (R298)
+            if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
                 return {"hosts": len(hosts), "complete": False, "skipped_offline": 1, "stopped": _OFFLINE_STOP}
             rec["status"] = "unreachable"
             rec["error"] = record_text(exc, limit=200, typed=False)
