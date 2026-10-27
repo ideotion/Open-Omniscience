@@ -36,9 +36,9 @@ function extractConst(name) {
   return APP.slice(at, APP.indexOf(";\n", at) + 1);
 }
 
-const NAMES = ["_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
+const NAMES = ["ooLabelHtml", "_maintStateLabel", "_maintServerTextHtml", "_maintMethodHtml", "_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
   "maintRawIdsHtml", "maintFurnitureHtml", "maintStartUrl"];
-const src = extractConst("esc") + "\n" +
+const src = "const window = {};\n" + extractConst("esc") + "\n" +
   "function fmtNum(v) { return String(v); }\n" +
   NAMES.map(extract).join("\n") + "\n" +
   "module.exports = {" + NAMES.join(", ") + "};";
@@ -85,6 +85,36 @@ assert.ok(visible(rh).includes("dry run: nothing was written") && visible(rh).in
 assert.ok(!visible(rh).includes("sites compared"));
 const wh = R.maintRunHtml({ state: "done", dry_run: false }, t, tf);
 assert.ok(visible(wh).includes("this run was started with writing on"), "a run that DID write says so");
+
+// -- the state word is the user's language, never the job's raw token (F1, R289) ---------
+const tr = (s) => "T[" + s + "]";
+for (const state of ["running", "paused", "done", "error", "cancelled"]) {
+  const h = R.maintRunHtml({ state, dry_run: true }, tr, tf);
+  assert.ok(visible(h).includes("T[" + state + "]"), `state ${state} was not passed through t(): ${h}`);
+  assert.ok(!visible(h).replace(/T\[[^\]]*\]/g, "").match(new RegExp("\\b" + state + "\\b")), `raw state word ${state} reached the page: ${visible(h)}`);
+}
+assert.ok(visible(R.maintRunHtml({ state: "queued-by-a-newer-server", dry_run: true }, tr, tf)).includes("queued-by-a-newer-server"),
+  "a state this panel has no word for is shown as the job sent it");
+assert.ok(!visible(R.maintRunHtml({ state: "toString", dry_run: true }, tr, tf)).includes("function"), "an inherited property name is not a state word");
+
+// the progress frame carries its own words, and a failed run's error text is labelled like a method
+const ph = R.maintRunHtml({ state: "done", dry_run: true, articles_total: 200, articles_done: 50, error: "boom <b>" }, tr, tf);
+assert.ok(visible(ph).includes("T[{done} of {total} articles read]".replace("{done}", "50").replace("{total}", "200")) || visible(ph).includes("50 of 200"), "progress line drawn: " + ph);
+assert.ok(ph.includes('class="card-caveat"') && /card-caveat">[^]*lang="en" dir="ltr">boom &lt;b&gt;/.test(ph), "the error text is its own LTR English span, escaped: " + ph);
+assert.ok(visible(ph).includes("T[Server text, in English]"), "and says so: " + ph);
+
+// -- the server's English sentences are labelled as such (F2, R289) ----------------------
+const METHOD = "the candidates with the smallest hash of (signal, id)";
+for (const h of [
+  R.maintSamplesHtml({ signals: { s: { candidates: 1, shown: 0, rows: [] } }, method: METHOD }, tr, tf),
+  R.maintRawIdsHtml({ raw_id_sources: 1, articles_in_shown: 1, rows: [], method: METHOD }, tr, tf),
+  R.maintFurnitureHtml({ source: { id: 1, name: "n" }, sampled: 1, articles_in_source: 1, candidates: [{ line: "a line", articles: 2, known: false }], method: METHOD }, tr, tf),
+]) {
+  assert.ok(h.includes('lang="en" dir="ltr"'), "the server sentence is its own left-to-right English span: " + h);
+  assert.ok(visible(h).includes("T[Server text, in English]"), "the label saying so is translated: " + h);
+  assert.ok(visible(h).includes(METHOD));
+}
+assert.ok(!R.maintSamplesHtml({ signals: { s: { candidates: 1, shown: 0, rows: [] } } }, tr, tf).includes("Server text"), "no method, no label");
 
 // -- samples ---------------------------------------------------------------------
 const sample = { signals: {

@@ -39,6 +39,29 @@
       return key;
     }
 
+    // The job's state word in the user's language. A state this panel has no word for is shown as the
+    // job sent it, never mapped onto the nearest known word (the same rule as the tally keys).
+    function _maintStateLabel(state, t) {
+      const known = {
+        "running": t("running"),
+        "paused": t("paused"),
+        "done": t("done"),
+        "error": t("error"),
+        "cancelled": t("cancelled"),
+      };
+      return Object.prototype.hasOwnProperty.call(known, state) ? known[state] : String(state);
+    }
+
+    // A "method" sentence the server wrote. It arrives in English whatever the page's language, so it
+    // is shown as sent, in its own left-to-right span, behind a small visible label saying so. The
+    // real fix, the API returning a method key the client translates, is a proposal (R289).
+    function _maintServerTextHtml(text, t) {
+      return ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(text)}</span>`);
+    }
+    function _maintMethodHtml(text, t) {
+      return `<div class="hint">${_maintServerTextHtml(text, t)}</div>`;
+    }
+
     function maintRunHtml(st, t, tf) {
       if (!st || !st.state || st.state === "idle") {
         return `<div class="hint">${esc(t("No run since this app started."))}</div>`;
@@ -51,8 +74,8 @@
       const prog = (typeof st.articles_total === "number" && st.articles_total > 0)
         ? ` · ${esc(tf(t("{done} of {total} articles read"), { done: fmtNum(st.articles_done || 0), total: fmtNum(st.articles_total) }))}`
         : "";
-      const err = st.error ? `<div class="card-caveat">${esc(String(st.error))}</div>` : "";
-      return `<div><b>${esc(t("State"))}:</b> ${esc(String(st.state))}${prog}</div>`
+      const err = st.error ? `<div class="card-caveat">${_maintServerTextHtml(String(st.error), t)}</div>` : "";
+      return `<div><b>${esc(t("State"))}:</b> ${esc(_maintStateLabel(st.state, t))}${prog}</div>`
         + `<div class="hint">${esc(crit)}</div>${err}`;
     }
 
@@ -99,7 +122,7 @@
         const rows = (s.rows || []).map((r) => maintSampleRowHtml(r, t, tf)).join("");
         return `<h4 class="lib-sub"><span dir="ltr">${esc(sig)}</span> — ${head}</h4>${note}<ul class="maint-sample">${rows}</ul>`;
       });
-      return parts.join("") + (data.method ? `<div class="hint">${esc(data.method)}</div>` : "");
+      return parts.join("") + (data.method ? _maintMethodHtml(data.method, t) : "");
     }
 
     function maintRawIdsHtml(d, t, tf) {
@@ -110,7 +133,7 @@
         + `<td class="num">${esc(String(r.source_id))}</td></tr>`).join("");
       return `<div>${esc(tf(t("{n} sources, {m} articles in the ones shown"), { n: fmtNum(d.raw_id_sources), m: fmtNum(d.articles_in_shown || 0) }))}</div>`
         + `<table class="maint-tally"><thead><tr><th>${esc(t("Name"))}</th><th>${esc(t("Domain"))}</th><th>${esc(t("Articles"))}</th><th>${esc(t("Source number"))}</th></tr></thead>`
-        + `<tbody>${rows}</tbody></table>` + (d.method ? `<div class="hint">${esc(d.method)}</div>` : "");
+        + `<tbody>${rows}</tbody></table>` + (d.method ? _maintMethodHtml(d.method, t) : "");
     }
 
     function maintFurnitureHtml(d, t, tf) {
@@ -123,7 +146,7 @@
         `<tr><td dir="auto">${esc(r.line)}</td><td class="num">${esc(fmtNum(r.articles))}</td>`
         + `<td>${r.known ? esc(t("already stripped by the rules")) : ""}</td></tr>`).join("");
       return head + `<table class="maint-tally"><thead><tr><th>${esc(t("Line"))}</th><th>${esc(t("Articles"))}</th><th></th></tr></thead>`
-        + `<tbody>${rows}</tbody></table>` + (d.method ? `<div class="hint">${esc(d.method)}</div>` : "");
+        + `<tbody>${rows}</tbody></table>` + (d.method ? _maintMethodHtml(d.method, t) : "");
     }
 
     // ---- DOM + network (loopback) -------------------------------------------------
