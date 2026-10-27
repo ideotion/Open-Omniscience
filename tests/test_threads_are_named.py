@@ -18,8 +18,9 @@ Stated limits (listed, not hidden): a thread made by a class that subclasses ``t
 today, and the first one fails ``test_no_class_subclasses_thread``); indirection (``functools.partial``) is unseen; the per-request threads
 of the ``ThreadingHTTPServer`` that ``src/safety/data_volume.py`` serves on the pre-boot drive page are ``Thread-N (process_request_thread)`` and
 ``ProcessPoolExecutor``'s manager thread (``src/analytics/reindex_parallel.py``) is a ``Thread-N``, both started by the standard library; a
-pool's workers are named by the pool and ``test_every_thread_pool_carries_a_prefix`` requires every ``ThreadPoolExecutor`` to pass a
-``thread_name_prefix``. ``asyncio.to_thread``, ``run_in_executor``, ``ThreadPool`` and ``_thread.start_new_thread`` do not appear in ``src/``.
+pool's workers are named by the pool and ``test_every_thread_pool_carries_a_prefix`` requires every ``ThreadPoolExecutor`` (followed through
+``concurrent.futures`` aliases) to pass a literal ``thread_name_prefix`` whose workers ``thread_family`` files under an ``oo-`` family; an empty or
+``None`` prefix, a non-``oo-`` prefix, ``functools.partial`` and a pool handed in from another module are not accepted or not seen, as that test says. ``asyncio.to_thread``, ``run_in_executor``, ``ThreadPool`` and ``_thread.start_new_thread`` do not appear in ``src/``.
 """
 
 from __future__ import annotations
@@ -194,37 +195,92 @@ def test_no_class_subclasses_thread():
     assert not subclasses, subclasses
 
 
-def _unprefixed_pools(source: str) -> list[int]:
-    """Line numbers of every ``ThreadPoolExecutor(...)`` in ``source`` that passes no ``thread_name_prefix``."""
-    return sorted(
-        n.lineno
-        for n in ast.walk(ast.parse(source))
-        if isinstance(n, ast.Call)
-        and "ThreadPoolExecutor" in (getattr(n.func, "id", None), getattr(n.func, "attr", None))
-        and not any(k.arg == "thread_name_prefix" for k in n.keywords)
-    )
+def _src_files():
+    """(repo-relative posix path, source text) for every Python file under ``src/`` outside ``static``: the ONE walk both pool tests share."""
+    for f in sorted((_ROOT / "src").rglob("*.py")):
+        rel = f.relative_to(_ROOT)
+        if "static" not in rel.parts:
+            yield rel.as_posix(), f.read_text(encoding="utf-8")
+
+
+def _pool_calls(source: str) -> list[ast.Call]:
+    """Every ``ThreadPoolExecutor(...)`` call, through ``concurrent.futures`` imports as written (``import concurrent.futures as cf``,
+    ``from concurrent.futures import ThreadPoolExecutor as TPE``)."""
+    tree = ast.parse(source)
+    modules: set[str] = set()
+    members: set[str] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            modules |= {a.asname or a.name for a in n.names if a.name == "concurrent.futures"}
+        elif isinstance(n, ast.ImportFrom) and n.module == "concurrent.futures":
+            members |= {a.asname or a.name for a in n.names if a.name == "ThreadPoolExecutor"}
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call):
+            continue
+        fn = n.func
+        bare = isinstance(fn, ast.Name) and fn.id in members
+        dotted = isinstance(fn, ast.Attribute) and fn.attr == "ThreadPoolExecutor" and ".".join(_dotted(fn.value)) in modules
+        if bare or dotted:
+            out.append(n)
+    return out
+
+
+def _dotted(node: ast.expr) -> list[str]:
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Attribute):
+        return [*_dotted(node.value), node.attr]
+    return []
+
+
+def _prefix_problem(call: ast.Call) -> str | None:
+    """Why a pool's prefix does not name its workers, else None: missing or empty (CPython then names them ThreadPoolExecutor-N), or a literal
+    that open_stats.thread_family does not file under an ``oo-`` family."""
+    from src.database import open_stats
+
+    for kw in call.keywords:
+        if kw.arg != "thread_name_prefix":
+            continue
+        v = kw.value
+        if isinstance(v, ast.Constant) and isinstance(v.value, str) and v.value:
+            return None if open_stats.thread_family(v.value + "_0").startswith("oo-") else f"prefix {v.value!r} is not an oo- family"
+        if isinstance(v, ast.JoinedStr) and v.values and isinstance(v.values[0], ast.Constant) and str(v.values[0].value).startswith("oo-"):
+            return None
+        return "prefix is empty, None or not a literal oo- name"
+    return "no thread_name_prefix"
+
+
+def _pool_problems(source: str) -> list[str]:
+    return [f"line {c.lineno}: {why}" for c in _pool_calls(source) if (why := _prefix_problem(c))]
 
 
 def test_every_thread_pool_carries_a_prefix():
     """A pool's workers are ``ThreadPoolExecutor-N`` unless it passes ``thread_name_prefix``: a family ``thread_family`` knows, but with no
-    purpose in it. The last two (``src/llm/concurrency.py``, ``src/ingest/segmented_download.py``) are ``oo-llmbatch`` and ``oo-segfetch`` now."""
-    found = []
-    for f in sorted((_ROOT / "src").rglob("*.py")):
-        rel = f.relative_to(_ROOT)
-        if "static" in rel.parts:
-            continue
-        found += [f"{rel.as_posix()}:{line}" for line in _unprefixed_pools(f.read_text(encoding="utf-8"))]
-    assert not found, f"a ThreadPoolExecutor with no thread_name_prefix (pass thread_name_prefix='oo-<purpose>'): {found}"
+    purpose in it. The last two (``src/llm/concurrency.py``, ``src/ingest/segmented_download.py``) are ``oo-llmbatch`` and ``oo-segfetch`` now.
+    Stated limits: a pool built through ``functools.partial`` or handed in from another module is unseen."""
+    problems = [f"{name}: {why}" for name, text in _src_files() for why in _pool_problems(text)]
+    assert not problems, f"a ThreadPoolExecutor whose workers are not named for their purpose (pass thread_name_prefix='oo-<purpose>'): {problems}"
+    assert sum(len(_pool_calls(text)) for _n, text in _src_files()) >= 3, "the scan stopped seeing the ThreadPoolExecutor constructors in src/"
 
 
-def test_the_pool_scan_sees_a_pool_and_only_an_unprefixed_one():
-    bare = "from concurrent.futures import ThreadPoolExecutor\nwith ThreadPoolExecutor(max_workers=2) as ex:\n    pass\n"
-    dotted = "import concurrent.futures as cf\nwith cf.ThreadPoolExecutor(2) as ex:\n    pass\n"
-    named = "from concurrent.futures import ThreadPoolExecutor\nwith ThreadPoolExecutor(2, thread_name_prefix='oo-x') as ex:\n    pass\n"
-    assert _unprefixed_pools(bare) == [2] and _unprefixed_pools(dotted) == [2] and _unprefixed_pools(named) == []
-    real = sum(len(re_all) for re_all in (
-        [n for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))) if isinstance(n, ast.Call) and "ThreadPoolExecutor" in (getattr(n.func, "id", None), getattr(n.func, "attr", None))]
-        for f in sorted((_ROOT / "src").rglob("*.py"))
-        if "static" not in f.relative_to(_ROOT).parts
-    ))
-    assert real >= 3, "the scan stopped seeing the ThreadPoolExecutor constructors in src/"
+def test_the_pool_scan_sees_each_unnamed_shape_and_accepts_a_named_one():
+    head = "from concurrent.futures import ThreadPoolExecutor\n"
+    assert _pool_problems(head + "with ThreadPoolExecutor(max_workers=2) as ex:\n    pass\n") == ["line 2: no thread_name_prefix"]
+    assert _pool_problems("import concurrent.futures as cf\nwith cf.ThreadPoolExecutor(2) as ex:\n    pass\n") == ["line 2: no thread_name_prefix"]
+    assert _pool_problems("from concurrent.futures import ThreadPoolExecutor as TPE\nTPE(2)\n") == ["line 2: no thread_name_prefix"]
+    assert _pool_problems(head + "ThreadPoolExecutor(2, thread_name_prefix='')\n") == ["line 2: prefix is empty, None or not a literal oo- name"]
+    assert _pool_problems(head + "ThreadPoolExecutor(2, thread_name_prefix=None)\n") == ["line 2: prefix is empty, None or not a literal oo- name"]
+    assert _pool_problems(head + "ThreadPoolExecutor(2, thread_name_prefix='fetch')\n") == ["line 2: prefix 'fetch' is not an oo- family"]
+    assert _pool_problems(head + "ThreadPoolExecutor(2, thread_name_prefix='oo-x')\n") == []
+    assert _pool_problems("from timeit import Timer\nclass ThreadPoolExecutor: ...\nThreadPoolExecutor()\n") == []  # not concurrent.futures'
+
+
+def test_stripping_one_real_pools_prefix_makes_the_scan_fail_on_that_line():
+    path = "src/llm/concurrency.py"
+    source = dict(_src_files())[path]
+    assert _pool_problems(source) == []
+    stripped = source.replace(', thread_name_prefix="oo-llmbatch"', "")
+    assert stripped != source
+    line = next(i for i, t in enumerate(stripped.splitlines(), 1) if "ThreadPoolExecutor(max_workers=workers)" in t)
+    assert _pool_problems(stripped) == [f"line {line}: no thread_name_prefix"]
