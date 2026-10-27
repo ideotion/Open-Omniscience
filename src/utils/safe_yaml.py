@@ -25,10 +25,61 @@ SAFE_YAML_LOADERS = tuple(
 YAML_LOADER = SAFE_YAML_LOADERS[0]
 
 
+# THE DEPTH BOUND, and what it protects: libyaml's COMPOSER recurses on the C stack, once per nesting level, with no limit of
+# its own. Measured 2026-10-27 on an 8 MiB stack (main thread and a worker thread alike, CPython 3.13, PyYAML 6.0.3): block
+# and flow mappings parse to 23,681 levels and crash the process at 23,925; sequences parse to 25,876 and crash at 26,364. That is
+# at most 8 MiB / 23,925 = 351 B of C stack per level. INFERRED, NOT MEASURED: a 512 KB stack (macOS secondary threads) crashes
+# near 1,490 levels and a 1 MB one (Windows) near 2,990, so the headroom below depends on the stack being at least 512 KB (the
+# app sets no ``threading.stack_size``). The pure-Python loader is not exposed: it raises RecursionError at about 500 levels
+# (400 parse, 500 raise, measured). The deepest real file under ``configs/`` nests 5 levels. 256 is 51x above that, 5.8x below the
+# inferred 512 KB crash depth and 93x below the measured 8 MiB one. A document past it is refused, never parsed.
+MAX_NESTING = 256
+
+
+class YAMLDepthError(yaml.YAMLError):
+    """A document nests deeper than :data:`MAX_NESTING`. A ``yaml.YAMLError``, so every caller that already refuses a malformed
+    document refuses this one the same way. The message carries no text of the document."""
+
+
+_OPENERS = (yaml.MappingStartEvent, yaml.SequenceStartEvent)
+_CLOSERS = (yaml.MappingEndEvent, yaml.SequenceEndEvent)
+
+
+def _uses_libyaml() -> bool:
+    c_loader = getattr(yaml, "CSafeLoader", None)
+    return c_loader is not None and issubclass(YAML_LOADER, c_loader)
+
+
+def _refuse_if_too_deep(text: str) -> None:
+    """Count nesting from libyaml's EVENT stream before anything is composed (the parser is a heap-allocated state machine and
+    does not recurse); raise as soon as the bound is passed, so a 100,000-deep document costs 257 events."""
+    loader = YAML_LOADER(text)
+    try:
+        depth = 0
+        while loader.check_event():
+            event = loader.get_event()
+            if isinstance(event, _OPENERS):
+                depth += 1
+                if depth > MAX_NESTING:
+                    raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels")
+            elif isinstance(event, _CLOSERS):
+                depth -= 1
+    finally:
+        loader.dispose()
+
+
 def load_safe_yaml(text: str):
-    """``yaml.safe_load``'s own body with the loader chosen above: the document's single value, ``None`` for an empty one."""
+    """``yaml.safe_load``'s own body with the loader chosen above: the document's single value, ``None`` for an empty one.
+
+    Raises :class:`YAMLDepthError` for a too-deep document on BOTH paths: libyaml's is refused past :data:`MAX_NESTING` before it
+    is composed (it would crash the process); the pure loader gets no pre-pass (measured: it would add 78% to its parse) and its
+    own RecursionError, at about 500 levels, is turned into the same error."""
+    if _uses_libyaml():
+        _refuse_if_too_deep(text)
     loader = YAML_LOADER(text)
     try:
         return loader.get_single_data()
+    except RecursionError:
+        raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels") from None
     finally:
         loader.dispose()

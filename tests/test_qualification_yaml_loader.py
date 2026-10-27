@@ -44,9 +44,11 @@ def _spy(monkeypatch, cls):
     used = []
 
     class Spy(cls):
-        def __init__(self, text):
+        # counted where the document is CONSTRUCTED: the depth guard builds a second loader for its event pass on libyaml,
+        # so instantiations are not parses
+        def get_single_data(self):
             used.append(cls)
-            super().__init__(text)
+            return super().get_single_data()
 
     monkeypatch.setattr(safe_yaml, "YAML_LOADER", Spy)
     return used
