@@ -3,40 +3,53 @@
 THE QUESTION (coordinator item 2 of 20:42Z). ``repair._swap`` hands ``swap_in_corpus`` a ``check`` that runs INSIDE the swap window, before
 anything changes on disk: ``_Probe.moved()``, which takes SQLite's write lock (``BEGIN IMMEDIATE``, on a connection opened with a 30 s busy
 timeout, ``repair._probe_open``) to ask whether any other connection committed since the copy began. Can a writer hold that lock while it is
-itself blocked in ``connecting()`` behind the window the probe runs in? Then neither can move: the probe waits for the lock, the writer waits for
-the window, and the window ends when the probe gives up.
+itself blocked behind the window the probe runs in? Then neither can move: the probe waits for the lock, the writer waits for the window (or for
+the gate the repair holds across it), and the window ends when the probe gives up.
 
-WHAT THE TWO TESTS HOLD.
+WHAT THE TESTS HOLD.
 
-* ``test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_probe_wait_out_its_busy_timeout`` FORCES it: a writer holds the
-  lock on a connection made before the window, and asks the guarded engine for a second one after the window opened. The second connection is not
-  made while the window is held (the creator has run once, for the first, when the probe fails), the probe fails with ``database is locked``
-  (the repair turns any failure of it into ``Declined("writer-busy")``, ``repair.py`` ``written_to_since``: the copy and its sidecar stay, nothing
-  is switched), the window ends, and only then does the writer's second connection open, on the live file. The wait is the probe's busy timeout:
-  30.085 s with the production 30 s (measured with the same shape on the app's own engine, 27 Oct 2026); this test gives the probe 0.5 s.
+* ``test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_probe_wait_out_its_busy_timeout`` FORCES the first shape: a writer
+  holds the lock on a connection made before the window, and asks the guarded engine for a second one after the window opened. The probe starts
+  only once the writer is parked inside the wait for the window (``gen._wait``, called from ``connecting()``): the second connection is not made
+  while the window is held (the creator has run once, for the first, when the probe fails), the probe fails with ``database is locked`` (the
+  repair turns any failure of it into ``Declined("writer-busy")``, ``repair.py`` ``written_to_since``: the copy and its sidecar stay, nothing is
+  switched), the window ends, and only then does the writer's second connection open, on the live file. The wait is the probe's busy timeout:
+  30.065 s with the production 30 s (measured with the same shape on the app's own engine, 27 Oct 2026); this test gives the probe 0.5 s.
+* ``test_a_thread_that_wrote_outside_the_gate_and_then_needs_the_gate_makes_the_probe_wait_out_its_busy_timeout`` FORCES the second shape, which
+  needs no second connection and is invisible to a pool-checkout sweep: ``repair.run`` holds the single-writer gate across the window
+  (``with write_lock():``), so a thread that wrote through a path the gate does not see and then enters ANY gated operation waits on the gate
+  while it holds SQLite's lock.
 * ``test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_through`` is the CONTROL, the case the design counts on: the
-  writer's next statement on a connection made before the window is refused as stale, the error unwinds, the connection rolls back, the lock is
-  free, and the probe's ``BEGIN IMMEDIATE`` goes through at once (measured 0.33 s of which 0.3 s was the writer's own delay).
+  writer's next statement on a connection made before the window is refused as stale, the refusal invalidates the connection (the driver
+  connection is closed, so SQLite's lock is free), and the probe's ``BEGIN IMMEDIATE`` goes through at once (measured 0.33 s of which 0.3 s was
+  the writer's own delay). The writer does NOT roll back before the probe has answered, so the refusal's ``invalidate()`` is what frees the lock.
 
-WHY IT IS A LIMIT AND NOT A DEFECT. A thread holds SQLite's write lock only inside a transaction that wrote. The gated writers (every ORM flush,
-ORM-issued DML and textual write, the explicit ``write_lock()`` sites) cannot be in that state when the repair's window opens: the repair holds
-the single-writer gate for the whole repair, a gated writer takes its connection BEFORE the gate (``writer.connection_first``), and the gate is
-released only at its commit or rollback, so a gate holder waited for by ``write_lock()`` has already ended its transaction. What can reach the
-probe's wait is a writer the gate does not see (a Core or raw-driver write transaction) that then asks the guarded engine for a SECOND
-connection. In ``src/`` the corpus writers the gate does not see are the settings saves (``kv_store``: one raw connection, opened outside the
-guard, no second connection under its transaction) and the ``init_db`` DDL steps (run at launch and at unlock, before the boot steps, of which the
-repair is one; that no other thread runs one during a repair is read from the call sites, not proved); ``scheduler/hygiene.py`` and
-``release.py`` open a raw connection for a checkpoint (under the gate) and for ``shrink_memory``, neither a row write. A sweep of the whole test suite for a nested open made while the first connection had written (136,587 checkouts, 103,477 of
-them by a thread that already held another, 668 of those with the held connection inside a transaction that had changed rows) found every one
-held by an ORM session and none by Core or raw code. The restore has no such read: its window waits for no SQLite lock.
+WHY IT IS A LIMIT AND NOT A DEFECT. A thread holds SQLite's write lock only inside a transaction that took it (a write, or a ``BEGIN
+IMMEDIATE``). The gated writers (every ORM flush, ORM-issued DML and textual write, the explicit ``write_lock()`` sites, and the settings saves:
+``kv_store.kv_set_json`` and ``kv_delete`` run under ``write_lock()`` on a raw connection) cannot be in that state when the repair's window
+opens: the repair holds the gate for the whole repair, a gated writer takes its connection BEFORE the gate (``writer.connection_first``), and the
+gate is released only at its commit or rollback, so a gate holder waited for by ``write_lock()`` has already ended its transaction. What can
+reach the probe's wait is a writer the gate does not see (a Core or raw-driver write transaction) that then (a) asks the guarded engine for a
+SECOND connection, or (b) enters a gated operation. In ``src/`` the writers the gate does not see are the DDL and derived-store steps that
+``database/library_generation.py`` itself names (``spell_index``, ``fts``, ``maintenance``, ``migrate``; ``source_identity`` opens ``BEGIN
+IMMEDIATE`` on a Core connection), which run at launch and unlock, before the boot steps of which the repair is one, and again as ``init_db`` after
+a restore's swap and after a repair's own swap. That no such step runs on another thread during a repair, and that none opens a second pooled
+connection or enters the gate while it holds the lock, is read from the call sites, not proved. ``scheduler/hygiene.py`` runs a PASSIVE
+checkpoint outside the gate, which takes no write lock. A sweep of the test suite for a nested open made while the first connection had written
+(shape (a) only: 136,587 checkouts, 103,477 of them by a thread that already held another, 668 of those with the held connection inside a
+transaction that had changed rows) found every one held by an ORM session and none by Core or raw code. The restore has no such read: its window
+waits for no SQLite lock.
 
-WHAT IT DOES NOT COVER. Windows, where the restore's file steps wait (up to ``_SWAP_HANDLE_WAIT_S``, 300 s) for every handle on the live file to
-close: a thread parked in ``connecting()`` with a connection checked out holds its handle, whether or not it wrote. That is the shape the rollup
-build's boundary check avoids on purpose (``rollup_serve._require_library_unchanged`` never waits for the window), and it is not exercised here
-(``_retry_while_locked`` retries only a Windows sharing violation).
+WHAT IT DOES NOT COVER. Windows, where the file steps wait (up to ``_SWAP_HANDLE_WAIT_S``, 300 s; ``_retry_while_locked`` retries a sharing
+violation, winerror 32 and 33) for every handle on the live file to close: a thread parked in ``connecting()`` with a connection checked out holds
+its handle, whether or not it wrote, and a thread queued on the gate with a connection checked out does the same, for the repair's file steps
+(``swap_in_corpus`` runs under the gate) as for the restore's. That is the shape ``backup.merge`` measured (``_carry_and_swap``) and the rollup
+build's boundary check avoids on purpose (``rollup_serve._require_library_unchanged`` never waits for the window); it is not exercised here. The
+engine of ``read_snapshot`` is a second guarded engine (``guarded_creator`` + ``attach``): a rule keyed on a connection count must cover both.
 
-No test here reads a clock for its verdict: the ORDER is asserted (the creator had not run for the second connection when the probe failed; it
-had when the window was over), and the 0.5 s is the probe's own busy timeout, which the property does not depend on.
+No test here reads a clock for its verdict: the ORDER is asserted (the creator had not run for the second connection when the probe failed and the
+writer was inside the wait; it had when the window was over), and the 0.5 s is the probe's own busy timeout, which the property does not depend on.
+The control's 5 s is only the time its mutant takes to fail (a refusal that does not invalidate leaves the lock held until the probe gives up).
 """
 
 from __future__ import annotations
@@ -51,10 +64,13 @@ from sqlalchemy import create_engine, text
 from src.backup.merge import swap_in_corpus
 from src.database import library_generation as gen
 from src.database import repair
+from src.database.writer import write_lock
 from tests.wallclock_helpers import HANG_GUARD_S
 
-#: The probe's busy timeout in the forced case (production: 30 s). The property is the ORDER around it, not the figure.
+#: The probe's busy timeout in the forced cases (production: 30 s). The property is the ORDER around it, not the figure.
 _PROBE_BUSY_S = 0.5
+#: The control's: a probe that is let through waits only as long as the writer takes (milliseconds); this is how long its mutant takes to fail.
+_CONTROL_BUSY_S = 5.0
 
 
 def _store(path: Path) -> None:
@@ -114,15 +130,26 @@ def forced(tmp_path, monkeypatch):
 
 @pytest.fixture
 def control(tmp_path, monkeypatch):
-    world = _World(tmp_path, monkeypatch, HANG_GUARD_S)  # a probe that is let through waits only as long as the writer takes
+    world = _World(tmp_path, monkeypatch, _CONTROL_BUSY_S)
     yield world
     world.close()
 
 
-def test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_probe_wait_out_its_busy_timeout(forced):
+def test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_probe_wait_out_its_busy_timeout(forced, monkeypatch):
     world = forced
-    holding, window_open, requested = threading.Event(), threading.Event(), threading.Event()
+    holding, window_open = threading.Event(), threading.Event()
+    parked = threading.Event()  # the writer is inside the wait for the window
+    answered = threading.Event()  # the writer's second open has an answer: it is parked, or (if connecting() let it through) it was opened
     seen: dict[str, object] = {}
+    real_wait = gen._wait
+
+    def _wait(*args, **kwargs):
+        if threading.current_thread().name == "writer":
+            parked.set()
+            answered.set()
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(gen, "_wait", _wait)
 
     def writer() -> None:
         c1 = world.engine.connect()
@@ -130,16 +157,18 @@ def test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_
         seen["in_transaction"] = c1.connection.driver_connection.in_transaction
         holding.set()
         window_open.wait(HANG_GUARD_S)
-        requested.set()
         try:
             c2 = world.engine.connect()  # a connection made after the window opened: parks in ``connecting()`` until it ends
         except BaseException as exc:  # noqa: BLE001 - handed to the test
             seen["second"] = exc
+            answered.set()
         else:
             seen["second"] = "opened"
+            answered.set()
             seen["second_sees"] = [r[0] for r in c2.execute(text("SELECT body FROM notes ORDER BY id"))]
             c2.close()
         c1.rollback()  # the window has ended: the first connection is valid again and gives the lock back
+        c1.invalidate()  # and its driver connection is closed here, not left to the garbage collector (it belongs to the pool the swap disposed)
         c1.close()
 
     thread = threading.Thread(target=writer, name="writer", daemon=True)
@@ -148,7 +177,8 @@ def test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_
 
     def check() -> None:
         window_open.set()
-        assert requested.wait(HANG_GUARD_S)
+        assert answered.wait(HANG_GUARD_S)
+        assert parked.is_set(), "the writer must be parked behind the window when the probe runs (connecting() let it through)"
         try:
             world.probe.moved()
         except sqlite3.OperationalError as exc:
@@ -173,9 +203,55 @@ def test_a_thread_that_opens_a_second_connection_under_its_write_lock_makes_the_
     assert world.untouched()
 
 
+def test_a_thread_that_wrote_outside_the_gate_and_then_needs_the_gate_makes_the_probe_wait_out_its_busy_timeout(forced):
+    world = forced
+    holding, window_open, entering = threading.Event(), threading.Event(), threading.Event()
+    seen: dict[str, object] = {}
+
+    def writer() -> None:
+        c1 = world.engine.connect()
+        c1.execute(text("INSERT INTO notes (body) VALUES ('written under the lock')"))  # a Core write: the gate does not see it
+        seen["in_transaction"] = c1.connection.driver_connection.in_transaction
+        holding.set()
+        window_open.wait(HANG_GUARD_S)
+        entering.set()
+        try:
+            with write_lock():  # any gated operation: the repair holds the gate across the window, so this waits for it
+                seen["got_the_gate_after_the_probe"] = "probe" in seen
+        finally:
+            c1.rollback()  # the window has ended, so the first connection is valid again; it gives the lock back
+            c1.invalidate()
+            c1.close()
+
+    thread = threading.Thread(target=writer, name="writer", daemon=True)
+    thread.start()
+    assert holding.wait(HANG_GUARD_S)
+
+    def check() -> None:
+        window_open.set()
+        assert entering.wait(HANG_GUARD_S)
+        try:
+            world.probe.moved()
+        except sqlite3.OperationalError as exc:
+            seen["probe"] = str(exc)
+            raise
+
+    # ``write_lock()`` is what ``repair.run`` takes around the whole repair
+    with pytest.raises(sqlite3.OperationalError, match="locked"), write_lock():
+        swap_in_corpus(world.working, world.live, check=check)
+    thread.join(HANG_GUARD_S)
+    assert not thread.is_alive()
+
+    assert seen["in_transaction"] is True, "the writer must hold SQLite's write lock for this to be the case under test"
+    assert "locked" in str(seen["probe"])
+    # The writer could not take the gate until the repair let go of it, which is after the probe gave up: the lock was held that whole time.
+    assert seen["got_the_gate_after_the_probe"] is True
+    assert world.untouched()
+
+
 def test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_through(control):
     world = control
-    holding, window_open, released = threading.Event(), threading.Event(), threading.Event()
+    holding, window_open, probed, released = (threading.Event() for _ in range(4))
     seen: dict[str, object] = {}
 
     def writer() -> None:
@@ -189,6 +265,9 @@ def test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_t
             seen["touched"] = type(exc).__name__
         else:
             seen["touched"] = "ran"
+        seen["invalidated"] = c1.invalidated
+        # No rollback of its own until the probe has answered: only the refusal's invalidation (the driver connection is closed) can have freed the lock.
+        probed.wait(HANG_GUARD_S)
         c1.rollback()
         c1.close()
         released.set()
@@ -200,7 +279,10 @@ def test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_t
 
     def check() -> None:
         window_open.set()
-        moved.append(world.probe.moved())  # waits only for the writer to let go
+        try:
+            moved.append(world.probe.moved())  # waits only for the writer's refusal
+        finally:
+            probed.set()
         raise repair.Declined("test-stop", "the check ends the swap here, so the file is not replaced")
 
     with pytest.raises(repair.Declined):
@@ -209,5 +291,6 @@ def test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_t
     assert released.is_set()
 
     assert seen["touched"] == "StaleLibraryError"
-    assert moved == [False], "the writer rolled back, so nothing was committed and the file did not move"
+    assert seen["invalidated"] is True
+    assert moved == [False], "the writer's row was never committed, so the file did not move"
     assert world.untouched()
