@@ -52,8 +52,6 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 from src.catalog.qualification import (
     CRITERIA_VERSION,
     CURATED_CRITERIA_VERSION,
@@ -68,6 +66,7 @@ from src.catalog.qualification import (
     record_admission,
 )
 from src.monitoring.secret_scrub import log_failure
+from src.utils.safe_yaml import load_safe_yaml
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -112,7 +111,7 @@ def load_overlay(path: Path | None = None) -> dict[str, dict]:
     if not p.exists():
         return {}
     try:
-        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        raw = load_safe_yaml(p.read_text(encoding="utf-8")) or {}
     except Exception as exc:  # noqa: BLE001 - a broken overlay must never block boot
         log_failure(_LOG, f"could not read the qualification overlay at {p}", exc, level=logging.WARNING)
         return {}
@@ -422,7 +421,7 @@ def overlay_status(session: Session, *, path: Path | None = None) -> dict:
     }
     if p.exists():
         try:
-            raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            raw = load_safe_yaml(p.read_text(encoding="utf-8")) or {}
             if isinstance(raw, dict):
                 stamp = raw.get("generated_at")
                 file_info["generated_at"] = str(stamp) if stamp else None

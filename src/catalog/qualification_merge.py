@@ -60,6 +60,7 @@ from typing import Any
 import yaml
 
 from src.monitoring.secret_scrub import record_text, scrubbed
+from src.utils.safe_yaml import load_safe_yaml
 
 SHIPPABLE = ("qualified", "disqualified")
 
@@ -351,7 +352,7 @@ def rows_from_bundle_bytes(
 def existing_from_text(text: str) -> dict[str, dict]:
     """The overlay already on disk (or shipped), keyed by domain. Empty text = no rows,
     which is how a first merge starts and is not an error."""
-    raw = yaml.safe_load(text) or {} if text.strip() else {}
+    raw = load_safe_yaml(text) or {} if text.strip() else {}
     return {
         str(r["domain"]): r
         for r in ((raw.get("verdicts") or []) if isinstance(raw, dict) else [])
