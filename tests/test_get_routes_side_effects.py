@@ -128,7 +128,7 @@ _AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|oo-boot-slow
 
 # Route -> (files it may create or change, thread names it may start, reason). A route can appear only if the effect was
 # MEASURED on 2026-10-27; the reason says why it is acceptable or names the finding that routes it.
-_DIAG_THREADS = frozenset({"dbg:*", "ThreadPoolExecutor-*", "all-diag-member"})
+_DIAG_THREADS = frozenset({"dbg:*", "ThreadPoolExecutor-*", "oo-llmbatch_*", "all-diag-member"})  # oo-llmbatch_N: llm.concurrency.run_concurrent (named since R324)
 _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/annotations/export": (
         frozenset({"annotations_ed25519.pem"}), frozenset(),

@@ -18,7 +18,7 @@ Stated limits (listed, not hidden): a thread made by a class that subclasses ``t
 today, and the first one fails ``test_no_class_subclasses_thread``); indirection (``functools.partial``) is unseen; the per-request threads
 of the ``ThreadingHTTPServer`` that ``src/safety/data_volume.py`` serves on the pre-boot drive page are ``Thread-N (process_request_thread)`` and
 ``ProcessPoolExecutor``'s manager thread (``src/analytics/reindex_parallel.py``) is a ``Thread-N``, both started by the standard library; a
-pool's workers are named by the pool and ``test_the_unprefixed_pools_are_exactly_the_listed_ones`` lists the two pools that pass no
+pool's workers are named by the pool and ``test_every_thread_pool_carries_a_prefix`` requires every ``ThreadPoolExecutor`` to pass a
 ``thread_name_prefix``. ``asyncio.to_thread``, ``run_in_executor``, ``ThreadPool`` and ``_thread.start_new_thread`` do not appear in ``src/``.
 """
 
@@ -194,20 +194,37 @@ def test_no_class_subclasses_thread():
     assert not subclasses, subclasses
 
 
-# The pools whose workers read as ThreadPoolExecutor-N: a family open_stats.thread_family knows, so not anonymous, but nameless as to purpose.
-# Their owners may add thread_name_prefix="oo-<purpose>" and delete the line here; a new unprefixed pool fails until it is read.
-_UNPREFIXED_POOLS = {"src/ingest/segmented_download.py", "src/llm/concurrency.py"}
+def _unprefixed_pools(source: str) -> list[int]:
+    """Line numbers of every ``ThreadPoolExecutor(...)`` in ``source`` that passes no ``thread_name_prefix``."""
+    return sorted(
+        n.lineno
+        for n in ast.walk(ast.parse(source))
+        if isinstance(n, ast.Call)
+        and "ThreadPoolExecutor" in (getattr(n.func, "id", None), getattr(n.func, "attr", None))
+        and not any(k.arg == "thread_name_prefix" for k in n.keywords)
+    )
 
 
-def test_the_unprefixed_pools_are_exactly_the_listed_ones():
-    found: set[str] = set()
+def test_every_thread_pool_carries_a_prefix():
+    """A pool's workers are ``ThreadPoolExecutor-N`` unless it passes ``thread_name_prefix``: a family ``thread_family`` knows, but with no
+    purpose in it. The last two (``src/llm/concurrency.py``, ``src/ingest/segmented_download.py``) are ``oo-llmbatch`` and ``oo-segfetch`` now."""
+    found = []
     for f in sorted((_ROOT / "src").rglob("*.py")):
         rel = f.relative_to(_ROOT)
         if "static" in rel.parts:
             continue
-        for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
-            if not isinstance(n, ast.Call) or "ThreadPoolExecutor" not in (getattr(n.func, "id", None), getattr(n.func, "attr", None)):
-                continue
-            if not any(k.arg == "thread_name_prefix" for k in n.keywords):
-                found.add(rel.as_posix())
-    assert found == _UNPREFIXED_POOLS, (sorted(found - _UNPREFIXED_POOLS), sorted(_UNPREFIXED_POOLS - found))
+        found += [f"{rel.as_posix()}:{line}" for line in _unprefixed_pools(f.read_text(encoding="utf-8"))]
+    assert not found, f"a ThreadPoolExecutor with no thread_name_prefix (pass thread_name_prefix='oo-<purpose>'): {found}"
+
+
+def test_the_pool_scan_sees_a_pool_and_only_an_unprefixed_one():
+    bare = "from concurrent.futures import ThreadPoolExecutor\nwith ThreadPoolExecutor(max_workers=2) as ex:\n    pass\n"
+    dotted = "import concurrent.futures as cf\nwith cf.ThreadPoolExecutor(2) as ex:\n    pass\n"
+    named = "from concurrent.futures import ThreadPoolExecutor\nwith ThreadPoolExecutor(2, thread_name_prefix='oo-x') as ex:\n    pass\n"
+    assert _unprefixed_pools(bare) == [2] and _unprefixed_pools(dotted) == [2] and _unprefixed_pools(named) == []
+    real = sum(len(re_all) for re_all in (
+        [n for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))) if isinstance(n, ast.Call) and "ThreadPoolExecutor" in (getattr(n.func, "id", None), getattr(n.func, "attr", None))]
+        for f in sorted((_ROOT / "src").rglob("*.py"))
+        if "static" not in f.relative_to(_ROOT).parts
+    ))
+    assert real >= 3, "the scan stopped seeing the ThreadPoolExecutor constructors in src/"
