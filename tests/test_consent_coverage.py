@@ -11,14 +11,14 @@ table is the ruling:
   per-call refusal) and online the person already passed the one consent. What it OWES is the corollary: the refusal must be NAMED, never
   read as a quiet "0 results". That is a behaviour, so each ``named`` row is proved by a real refusal (kill switch engaged, a transport that
   reaches no socket) either in this file or in the test that the row names.
-* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. Two at present (see the rows):
-  the source preflight and the RSS discovery read the person's airplane mode as the SOURCES being unreachable or having no feed. The two
+* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. Three at present (see the rows):
+  the source preflight, the RSS discovery and the topic discovery read the person's airplane mode as the SOURCES being unreachable or having no feed. The two
   feed-verification rows were gaps until R296 and are ``named`` now.
 
 DISCOVERY runs the other way, in two steps, and a row records which step finds it (``found``):
 
 * ``direct``: a route handler anywhere under ``src/api`` that names a fetch primitive in its own body (``get_fetcher``, ``make_fetcher``,
-  ``following_fetcher``, ``EthicalFetcher``, ``WikiClient``/``_client``, ``guarded_session``).
+  ``following_fetcher``, ``EthicalFetcher``, ``WikiClient``/``_client``, ``guarded_session``, ``following_session``/``GuardedSession``).
 * ``hop``: ONE hop further. A handler that calls a function which itself names a primitive in its own body, where the call is resolved the
   way Python resolves it: a name imported from a ``src`` module (``from src.x import f``; ``from src import m`` then ``m.f``) or a function
   defined in the handler's own file. Never a bare method name, which would match every ``get`` and ``close`` in the tree.
@@ -31,7 +31,11 @@ silent: it fails here until someone decides which of the two kinds it is.
 LIMITS, stated. The scan reaches EXACTLY ONE hop. A handler that reaches a fetcher through two functions (a job object's ``start`` calling
 a worker that calls a fetcher: the governments load, the Wikidata items fetch, the enrichment pass; a stats fetch whose fetching function
 does not itself name the guarded session), through a decorator, or through a method on an object, is invisible to it and is a ``hand``
-row, pinned by the proof its kind needs. The wiki-dump, OSM-download and AI-install managers (``wiki/dumps.py``,
+row, pinned by the proof its kind needs. Also invisible, with no live instance found by an AST sweep of ``src/api`` on 2026-10-27: a package
+``__init__`` re-export (only a ``def`` in the named file is followed), a fetching function passed by reference (``run_in_threadpool(f)``,
+``Thread(target=f)``), a ``src`` import inside a top-level ``try``/``if``, an unaliased ``import src.a.b`` used as ``src.a.b.f()``, and a
+handler that calls another fetching route handler. ``hand`` rows are checked for existence only (``test_every_row_names_a_route_handler_that_exists``);
+that the handler still fetches is not checked. The wiki-dump, OSM-download and AI-install managers (``wiki/dumps.py``,
 ``geo/osm_downloads.py``, ``llm/installer.py``) are NOT covered by this table at all: their routes reach a manager object, two functions
 from any fetcher, so the scan cannot see them and no row lists them (a stated gap, not a finding). The kill switch is the gate for ``named`` rows, the popup is
 not: an app already online fetches the moment the button is pressed, which is the ruled behaviour of the "online implies collecting"
@@ -66,6 +70,8 @@ _FETCH_REFS = {
     "WikiClient",
     "_client",
     "guarded_session",
+    "following_session",
+    "GuardedSession",
 }
 _METHODS = {"post", "put", "delete", "patch", "get"}
 _KILL = "kill switch"
@@ -139,6 +145,27 @@ EGRESS: tuple[Row, ...] = (
         found="hand",
         why="a job object whose worker fetches (two hops)",
     ),
+    Row(
+        ("source_management.py", "qualify_sources_bulk"),
+        ("qualifyBulkStart",),
+        "consent",
+        found="hand",
+        why="a job object whose worker builds a fetcher (two hops); the client reads its own status over loopback BEFORE the popup, on purpose",
+    ),
+    Row(
+        ("scheduler.py", "scheduler_start"),
+        ("schedulerStart",),
+        "consent",
+        found="hand",
+        why="clears the kill switch and starts the collection loop: the crossing online itself, no fetcher named in the handler",
+    ),
+    Row(
+        ("scheduler.py", "scheduler_run_now"),
+        ("schedulerRunNow", "firstRun"),
+        "consent",
+        found="hand",
+        why="clears the kill switch and runs one collection pass: the crossing online itself, no fetcher named in the handler",
+    ),
     # --- named: nothing asked, the refusal is named -------------------------------------------------------------------
     Row(("events.py", "feed_import"), ("feedAction",), "named"),
     Row(("events.py", "feed_verify"), ("feedAction",), "named"),
@@ -195,9 +222,9 @@ EGRESS: tuple[Row, ...] = (
         "gap",
         found="hop",
         why=(
-            "pressed in airplane mode it records EVERY enabled source as unreachable, writes the preflight log (which marks the first-run "
-            "preflight done) and answers with the sources' domains under `unreachable`; the refusal is only inside each record's robots_error. "
-            "No button calls it"
+            "pressed in airplane mode it records up to `limit` (default 50) enabled sources as unreachable, OVERWRITES each one's learned "
+            "`robots_allowed` with None, writes the preflight log (which marks the first-run preflight done) and answers with the sources' "
+            "domains under `unreachable`; the refusal is only inside each record's robots_error. No button calls it"
         ),
     ),
     Row(
@@ -208,6 +235,16 @@ EGRESS: tuple[Row, ...] = (
         why=(
             "in airplane mode it answers 200 'Discovered RSS feeds for 0 sources' for sources it never asked about; reached through a "
             "SourceManager method. No button calls it"
+        ),
+    ),
+    Row(
+        ("source_management.py", "discover_sources_by_topic"),
+        (),
+        "gap",
+        found="hand",
+        why=(
+            "with the opt-in setting on, in airplane mode it answers 200 'Discovered 0 sources for topic ...' (the kill switch's refusal is "
+            "logged and swallowed by the DuckDuckGo wrapper); reached through a SourceManager method. No button calls it"
         ),
     ),
     Row(
@@ -259,17 +296,63 @@ def _js_bodies(name: str) -> list[str]:
 
 _ASKS = re.compile(r"\bawait\s+(?:" + "|".join(_CONSENT) + r")\s*\(")
 _REQUEST = re.compile(r"\bapi\s*\(")
+#: What may stand directly before an ``await ensureOnline(``: an operator that USES the answer (``!await``, ``ok = await``, ``if (await``,
+#: ``a && await``). A statement-leading ``await ensureOnline(...);`` throws the answer away and fetches either way.
+_ANSWER_USED = set("!=(&|?:,")
 
 
-def asks_before_it_fetches(body: str) -> bool:
-    """The function AWAITS a consent function (a bare call would not wait for the answer) before its first ``api(`` request.
-    Comments are removed first. A body with no ``api(`` of its own (it hands the request to a helper) only needs the await."""
+def _route_chunks(route: str) -> list[str]:
+    """``/api/markets/feeds/{key}/import`` -> ``['/api/markets/feeds/', '/import']``: the static parts a client's request must contain."""
+    return [c for c in re.split(r"\{[^}]*\}", route) if len(c) > 1]
+
+
+def _calls_route(code: str, at: int, route: str) -> bool:
+    """Does the ``api(`` call opening at ``at`` request ``route``? Its static chunks must appear, in order, in the call's first argument,
+    which ends at the first ``,`` or ``)`` outside a string (a template literal's ``${...}`` stands in for a path parameter)."""
+    start = code.index("(", at) + 1
+    quote, end = "", start
+    while end < len(code):
+        ch = code[end]
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "\"'`":
+            quote = ch
+        elif ch in ",)":
+            break
+        end += 1
+    window = code[start:end]
+    pos = 0
+    for chunk in _route_chunks(route):
+        pos = window.find(chunk, pos)
+        if pos < 0:
+            return False
+        pos += len(chunk)
+    # the route must END there: `/qualify-bulk` is not `/qualify-bulk/status` (a query string, a concatenation or a template placeholder may follow)
+    return re.match(r"""["'`]?\s*(?:$|\?|\+|\$\{)""", window[pos:]) is not None
+
+
+def asks_before_it_fetches(body: str, route: str | None = None) -> bool:
+    """The function AWAITS a consent function, USES the answer, and does so before its request. Comments are removed first.
+
+    With ``route`` the request is the first ``api(`` call that asks for THAT route, so a loopback read of something else before the popup
+    (``qualifyBulkStart`` reads its own status first, over loopback, to refuse a job that cannot egress) does not count, and a client that
+    never requests the route fails (it was filed against the wrong handler). Without ``route`` the request is the first ``api(`` of any
+    kind, and a body with none of its own (it hands the request to a helper) only needs the await."""
     code = _strip_js_comments(body)
-    ask = _ASKS.search(code)
+    ask = next(
+        (
+            m
+            for m in _ASKS.finditer(code)
+            if (code[: m.start()].rstrip()[-1:] or ";") in _ANSWER_USED
+        ),
+        None,
+    )
     if not ask:
         return False
-    request = _REQUEST.search(code)
-    return request is None or ask.start() < request.start()
+    requests = [m for m in _REQUEST.finditer(code) if route is None or _calls_route(code, m.start(), route)]
+    if route is not None and not requests:
+        return False
+    return not requests or ask.start() < requests[0].start()
 
 
 def _names(node: ast.AST) -> set[str]:
@@ -375,6 +458,26 @@ def discovered_handlers() -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
     return direct, hop
 
 
+def route_of(handler: tuple[str, str]) -> str | None:
+    """The route a ``(file, function)`` row names: the module router's ``prefix=`` plus the decorator's path, or None when the file has no
+    routed function of that name. (The diagnostics routers get their ``/api/diagnostics`` prefix from the package, so theirs is the
+    decorator's path alone, which is all a client's request needs to contain.)"""
+    rel, name = handler
+    tree = ast.parse((_API / rel).read_text(encoding="utf-8"))
+    prefix = ""
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "APIRouter":
+            for k in n.keywords:
+                if k.arg == "prefix" and isinstance(k.value, ast.Constant):
+                    prefix = str(k.value.value)
+    for fn in _functions(tree):
+        if fn.name == name and _routed(fn):
+            for d in fn.decorator_list:
+                if isinstance(d, ast.Call) and d.args and isinstance(d.args[0], ast.Constant):
+                    return prefix + str(d.args[0].value)
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # the static half                                                             #
 # --------------------------------------------------------------------------- #
@@ -405,6 +508,14 @@ def test_every_fetching_route_handler_is_a_row_and_every_discovered_row_still_fe
     assert len(handlers) == len(set(handlers)), "a handler appears twice"
 
 
+@pytest.mark.parametrize("row", EGRESS, ids=lambda r: r.handler[1])
+def test_every_row_names_a_route_handler_that_exists(row):
+    """The ``hand`` rows are invisible to the scan BY DEFINITION, so nothing above notices one whose handler was renamed or deleted: the
+    limit test only asserts the scan does not see it, and a function that is gone is not seen either. This is the check that a row still
+    names a real route."""
+    assert route_of(row.handler), f"{row.handler}: no routed function of that name in src/api/{row.handler[0]}"
+
+
 def test_the_scan_reaches_exactly_one_hop():
     """The limit, pinned: the governments load reaches its fetcher through a job object's worker (two hops) and the stats fetch through a
     function that does not itself name the session, so neither may be found; a scan that grew a second hop would find them and force the
@@ -424,8 +535,11 @@ def test_a_consent_row_awaits_the_answer_in_the_body_of_every_client_function(ro
     for client in row.clients:
         bodies = _js_bodies(client)
         assert bodies, f"{client}: not found in the served JS -- renamed?"
-        assert all(asks_before_it_fetches(b) for b in bodies), (
-            f"{client} reaches {row.handler} and does not `await {' / '.join(_CONSENT)}(...)` in its own code before its request"
+        route = route_of(row.handler)
+        assert route, f"{row.handler}: no such route handler"
+        assert all(asks_before_it_fetches(b, route) for b in bodies), (
+            f"{client} is filed against {row.handler} ({route}) and either never requests that route or does not "
+            f"`{' / '.join('!await ' + c for c in _CONSENT)}(...)` and USE the answer in its own code before it does"
         )
 
 
@@ -441,6 +555,22 @@ def test_the_consent_predicate_reads_code_not_prose():
     assert not asks_before_it_fetches(
         "async function f() { await api('/x'); await ensureOnline('x'); }"
     )
+    # the answer must be USED: a discarded one fetches whether the person agreed or not
+    assert not asks_before_it_fetches("async function f() { await ensureOnline('x'); await api('/x'); }")
+    assert not asks_before_it_fetches("async function f() { if (go) await ensureOnline('x'); await api('/x'); }")
+    assert asks_before_it_fetches("async function f() { const ok = await ensureOnline('x'); if (!ok) return; await api('/x'); }")
+    assert asks_before_it_fetches("async function f() { if (typeof ensureOnline === 'function' && !await ensureOnline('x')) return; await api('/x'); }")
+
+
+def test_the_consent_predicate_follows_the_route():
+    """With the row's route, a loopback read of ANOTHER route before the popup is fine, and a client that never requests the route fails."""
+    body = 'async function f() { await api("/api/a/status"); if (!await ensureOnline("x")) return; await api("/api/a/go", {method: "POST"}); }'
+    assert not asks_before_it_fetches(body)  # no route: the first api( of any kind decides
+    assert asks_before_it_fetches(body, "/api/a/go")
+    assert not asks_before_it_fetches(body, "/api/b/other")
+    templated = 'async function f(k) { if (!await ensureOnline("x")) return; await api(`/api/m/feeds/${k}/import`); }'
+    assert asks_before_it_fetches(templated, "/api/m/feeds/{key}/import")
+    assert not asks_before_it_fetches(templated, "/api/m/feeds/{key}/verify")
 
 
 @pytest.mark.parametrize(
@@ -544,6 +674,21 @@ def _seed_source(c):
 
 def _kill(text) -> bool:
     return isinstance(text, str) and _KILL in text.lower()
+
+
+def _names_airplane_mode(text) -> bool:
+    """The kill switch by either of the app's own words for it (``network kill switch is active`` / ``airplane mode is engaged``)."""
+    return isinstance(text, str) and ("airplane mode" in text.lower() or _KILL in text.lower())
+
+
+def _top_level_names_it(j: dict) -> bool:
+    """Does the TOP LEVEL of an answer name the refusal: a string field, or a string in a list field? Records nested in a list of objects
+    (a per-source `robots_error`) are deliberately not read: that is exactly where the preflight hides it today."""
+    return any(
+        _names_airplane_mode(v)
+        or (isinstance(v, list) and any(_names_airplane_mode(x) for x in v if isinstance(x, str)))
+        for v in j.values()
+    )
 
 
 # Each probe returns (response, whether it says what the row claims). The predicates read the TOP LEVEL of the answer the button reads,
@@ -689,7 +834,12 @@ def _probe_run_source_preflight(c):
     _seed_source(c)
     r = c.post("/api/sources/preflight?limit=5", headers=_H)
     j = r.json()
-    return r, r.status_code == 200 and j.get("unreachable") == ["consent-probe.test"] and "skipped_offline" not in j
+    return r, (
+        r.status_code == 200
+        and j.get("unreachable") == ["consent-probe.test"]
+        and "skipped_offline" not in j
+        and not _top_level_names_it(j)
+    )
 
 
 def _probe_discover_rss_feeds(c):
@@ -701,8 +851,30 @@ def _probe_discover_rss_feeds(c):
         s.commit()
     r = c.post("/api/sources/discover/rss", headers=_H)
     j = r.json()
-    return r, r.status_code == 200 and j.get("total_checked") == 1 and j.get("with_rss_found") == 0 and not _kill(
-        r.text
+    return r, (
+        r.status_code == 200
+        and j.get("total_checked") == 1
+        and j.get("with_rss_found") == 0
+        and "skipped_offline" not in j
+        and not _names_airplane_mode(r.text)
+    )
+
+
+def _probe_discover_sources_by_topic(c):
+    """GAP: with the opt-in setting on, the search fails on the kill switch inside the wrapper, which swallows it into an empty list."""
+    from unittest import mock
+
+    with mock.patch(
+        "src.safety.settings.load_settings",
+        return_value=mock.Mock(discovery_external_enabled=True),
+    ):
+        r = c.post("/api/sources/discover/topic?topic=consent-probe", headers=_H)
+    j = r.json()
+    return r, (
+        r.status_code == 200
+        and j.get("count") == 0
+        and "skipped_offline" not in j
+        and not _names_airplane_mode(r.text)
     )
 
 
@@ -712,6 +884,7 @@ _PROBES = {
     ("source_management.py", "resolve_qid_names"): _probe_resolve_qid_names,
     ("source_management.py", "run_source_preflight"): _probe_run_source_preflight,
     ("source_management.py", "discover_rss_feeds"): _probe_discover_rss_feeds,
+    ("source_management.py", "discover_sources_by_topic"): _probe_discover_sources_by_topic,
     ("events.py", "feed_import"): _probe_feed_import,
     ("ingestion.py", "ingest_url_endpoint"): _probe_ingest_url,
     ("law.py", "law_track"): _probe_law_track,
