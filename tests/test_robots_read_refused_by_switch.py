@@ -152,6 +152,23 @@ def test_a_switch_engaging_mid_request_is_the_refusal_not_an_unreachable_host(tm
     _nothing_cached(f, tmp_path)
 
 
+def test_a_failure_that_is_not_the_refusal_is_raised_as_it_is_when_the_switch_is_set(tmp_path):
+    """Under a set switch a ``FetchError`` is re-raised unchanged, whatever its words (a redirect loop, a lookup the
+    airplane layer refused): it is not relabelled with the refusal sentence, and it is not cached either."""
+    f = _fetcher(tmp_path)
+    original = FetchFailed(f"too many redirects for {_HOST}/robots.txt")
+
+    def loops(url, **_kw):
+        activate_kill_switch()
+        raise original
+
+    f._guarded_redirect_get = loops  # type: ignore[method-assign]
+    with pytest.raises(FetchFailed) as exc:
+        f._get_robots(_HOST, urlparse(f"{_HOST}/act1"))
+    assert exc.value is original
+    _nothing_cached(f, tmp_path)
+
+
 def test_a_switch_engaging_mid_fetch_through_fetch_is_not_robots_unavailable(tmp_path):
     f = _fetcher(tmp_path)
 
@@ -251,6 +268,21 @@ def test_a_robots_answer_that_was_received_is_cached_even_if_stop_is_pressed_rig
     parser = f._get_robots(_HOST, urlparse(f"{_HOST}/act1"))
     assert parser is not None and not parser.can_fetch(f.user_agent, f"{_HOST}/private")
     assert _sidecar(tmp_path)[_HOST]["kind"] == "parsed"
+
+
+def test_a_403_that_was_received_is_cached_as_refused_even_if_stop_is_pressed_right_after(tmp_path):
+    """A 403 is an answer the host gave, so it never reaches the catch: it is cached with its cause like any answer."""
+    f = _fetcher(tmp_path)
+
+    def refuse_then_stop(url, **_kw):
+        resp = _Resp(403)
+        activate_kill_switch()
+        return resp, url
+
+    f._guarded_redirect_get = refuse_then_stop  # type: ignore[method-assign]
+    assert f._get_robots(_HOST, urlparse(f"{_HOST}/act1")) is None
+    assert f._robots_fails[_HOST] == 1
+    assert _sidecar(tmp_path)[_HOST]["cause"] == "refused"
 
 
 def test_a_real_failure_under_a_clear_switch_whose_text_names_it_is_still_a_host_failure(tmp_path):
