@@ -1602,6 +1602,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     source with no discoverable sitemap keeps the ORIGINAL BFS crawl
     unchanged -- this rung never regresses a source it previously covered."""
     from src.database.models import Source
+    from src.ingest import kill_switch_active
     from src.ingest.crawl import CrawlConfig, crawl_source
     from src.ingest.pipeline import ingest_url
     from src.ingest.sitemap import discover_sitemap_urls, update_source_sitemap_url
@@ -1616,13 +1617,22 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     pages_fetched = 0
     sitemap_urls_ingested = 0
     for source in candidates:
+        # A Stop is the person's setting, not an outcome of the outlet: the lane checks the switch once, before it starts, so a Stop pressed
+        # between two outlets (or inside one) is read HERE, by the switch itself and never by the words of a refusal (R320). An outlet
+        # stopped this way is not stamped, so it keeps its place at the front of the rotation.
+        if kill_switch_active():
+            break
         try:
             sm_report = discover_sitemap_urls(fetcher, source.domain, max_urls=max_pages)
             update_source_sitemap_url(session, source, sm_report)
+            if kill_switch_active():
+                break  # a discovery cut short by the Stop found "no sitemap" only because it was stopped: no BFS fallback either
             if sm_report.urls:
                 attempted = 0
                 for url in sm_report.urls[:max_pages]:
                     ingest_url(session, source, url, fetcher=fetcher)
+                    if kill_switch_active():
+                        break  # the page just refused or cut was not an attempt, and the rest would each be refused
                     attempted += 1
                 sitemap_urls_ingested += attempted
             else:
@@ -1633,6 +1643,8 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                     start_url=crawl_start_url_for(source),
                 )
                 pages_fetched += report.pages_fetched
+            if kill_switch_active():
+                break  # stopped inside this outlet's step: what it fetched is kept, but it was not crawled
             now = datetime.now(UTC)
             source.last_crawled_at = now
             # The outlet was crawled once; its other feeds are not due again before the rest of the rotation.

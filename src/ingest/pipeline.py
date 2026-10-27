@@ -80,6 +80,7 @@ from src.ingest import (
     FetchError,
     RobotsDisallowed,
     RobotsUnavailable,
+    kill_switch_active,
 )
 from src.ingest.extract import extract_article
 from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
@@ -546,7 +547,12 @@ def ingest_source(
         # Feed itself blocked/unavailable: nothing to ingest, but not an article
         # failure. A transient error is NOT a "feed is quiet" signal — reset any
         # backoff so a recovered feed is re-checked at the normal cadence.
-        _update_feed_backoff(session, source.id, reset=True)
+        #
+        # A STOP is neither: the person's own setting says nothing about the feed, so while the switch is engaged the backoff history is
+        # left as it was (a refusal used to erase a quiet feed's climb, so its next checks came back at the normal cadence). The decision is
+        # the switch read after the failure, never the words of the refusal (R320).
+        if not kill_switch_active():
+            _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
         # say so (invariant #14e's corollary), by the same classifier the per-article
@@ -579,6 +585,8 @@ def ingest_source(
     batch = ArticleBatch(session, source) if collect_batch_size() > 0 else None
     try:
         for link in links:
+            if kill_switch_active():
+                break  # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one
             outcome = ingest_url(session, source, link, fetcher=fetcher, batch=batch)
             if outcome.result is IngestResult.STAGED:
                 continue  # resolved at flush; merged from batch.tally below
@@ -610,6 +618,13 @@ def ingest_source(
     # no autoflush, no gate — and the de-churn backoff (a 200 that stored ZERO
     # new articles delays this feed's next re-check, capped, self-resetting)
     # reads the true post-flush stored count.
+    if kill_switch_active():
+        # STOPPED, not finished: entries after the Stop were never asked for, so recording this pass would store the validator (the next pass
+        # then gets a 304 and never asks for them) and climb the backoff. The row stays as it was; the next pass reads the feed again with
+        # the OLD validator, and the dedup step skips what was already stored. (A Stop cleared again within the pass is the one-request
+        # window stated for the law tracker; the switch is read once, here.)
+        _commit_feed_bookkeeping(session)
+        return tally
     _record_feed_state(session, source.id, feed_resp)
     if tally[IngestResult.STORED.value] > 0 or tally.get("errors", 0) > 0:
         # New content stored — or OUR store errored (skeptic finding D2): a
