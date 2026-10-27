@@ -119,6 +119,8 @@ _COLUMNAR_THREAD = re.compile(r"rollup-build|map-rollup-build|rollup-canary-peak
 # The main database file (and its WAL) is touched by a checkpoint or a connection close without any write statement, so a file change
 # is not evidence of a write: the SQL monitor is the write detector.
 _MAIN_DB = re.compile(r"open_omniscience\.db(-wal|-shm)?")
+# oo-boot-slow-watch is the boot sequence's 300 s (SLOW_STEP_S) watchdog Timer, re-armed while a step is slow: it protects the slow-step warning, and a
+# step that is slow while a route is walked must not put an unattributable thread on that route.
 # Threads the server itself runs: its worker pool, the boot sequence and its slow-step watchdog, the poll refresher and the served caches that several routes share
 # (derived data, rebuilt from what is stored).
 _AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|oo-boot-slow-watch|alerts-poll-refresh|served-cache-.*")
