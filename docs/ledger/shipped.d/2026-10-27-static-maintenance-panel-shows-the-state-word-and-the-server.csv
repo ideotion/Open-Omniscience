@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-27,static,Maintenance panel shows the state word and the server's English sentences honestly in Arabic,shipped,PR #1532,src/static/app-maintenance.js tests/maintenance_node_test.js,"The state line goes through t() (unknown states shown as sent) and the three server method sentences sit in a lang=en ltr span behind a translated 'Server text, in English' label; measured in a real Arabic Chromium run; the method-key API fix is a proposal (R289)."
