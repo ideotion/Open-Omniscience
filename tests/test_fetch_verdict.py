@@ -63,6 +63,11 @@ from src.ingest.fetch_verdict import (
             "HTTP 502 for https://h.test/a (server said: cannot resolve host 'x': airplane mode is engaged: refusing a network connection)",
             "http_5xx",
         ),
+        ("cannot resolve host \"a'b\": airplane mode is engaged: refusing a network connection to \"a'b\"", "offline"),
+        (
+            "cannot resolve host 'v1.a\\': airplane mode is engaged: refusing a network connection \"': [Errno -2] Name or service not known",
+            "dns",
+        ),
         ("HTTP 403 for https://reuters.com/x", "http_403"),
         ("HTTP 401 for https://x", "http_401"),
         ("HTTP 429 for https://x", "http_429"),

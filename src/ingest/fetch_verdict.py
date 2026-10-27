@@ -48,12 +48,14 @@ _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
 #      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words);
 #   3. the same guard sentence under OUR resolver wrapper (``EthicalFetcher._resolve_cached``), when the switch is engaged between the
 #      pre-fetch check and the lookup: "cannot resolve host '<host>': airplane mode is engaged: refusing a network connection ...". The host
-#      is the only part another party shapes, and a host cannot hold whitespace (a parser mismatch is refused before any lookup), so it cannot
-#      carry the ": airplane mode ..." tail; a gaierror's own text ("[Errno -2] ...") between the two never matches.
+#      is the only part another party shapes (a redirect's Location, a feed item's link: an IPvFuture "[v1.<anything>]" host reaches a lookup
+#      with spaces, colons and quotes in it), so the token takes NO whitespace and NO backslash: ``repr`` escapes an inner quote with a backslash,
+#      so a host that tries to close the quote early and continue in our words is refused, and a host holding both quote kinds fails SAFE
+#      (read as ``dns``). A gaierror's own text ("[Errno -2] ...") between the two never matches.
 _OFFLINE_RE = re.compile(
     r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
     r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
-    r"|^\s*cannot resolve host (?:'[^'\s]*'|\"[^\"\s]*\"): airplane mode is engaged: refusing a network connection",
+    r"|^\s*cannot resolve host (?:'[^'\s\\]*'|\"[^\"\s\\]*\"): airplane mode is engaged: refusing a network connection",
     re.IGNORECASE | re.DOTALL,
 )
 
