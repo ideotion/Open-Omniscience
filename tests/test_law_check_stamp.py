@@ -219,11 +219,15 @@ def test_a_crawl_delay_deferral_is_not_a_check_and_not_an_error(db):
 def test_the_tally_counts_a_deferral_under_its_own_key_in_both_trackers(db):
     _doc(db)
     watched = track_watched(db, _Raises(_deferral()))
-    # "documents" counts documents READ: a deferral read nothing, so it is not in it (the Activity Ledger
-    # prints "N document(s) read" from it, and a pass where every law was deferred must not read as a success)
+    # "documents" counts documents ATTEMPTED: a deferral made no attempt, so it is not in it (the Activity
+    # Ledger prints "N document(s) read" from it, and a pass where every law was deferred must not read as a
+    # success)
     assert watched["deferred"] == 1 and watched["errors"] == 0 and watched["documents"] == 0
     auto = auto_track_due(db, _Raises(_deferral()), batch=5)
     assert auto["deferred"] == 1 and auto["errors"] == 0 and auto["documents"] == 0
+    # every deferral is counted, not only the first
+    _doc(db, 2)
+    assert track_watched(db, _Raises(_deferral()))["deferred"] == 2
     # additive, and present only when it happened (the convention of ``skipped_offline``): a pass with
     # nothing deferred keeps the old shape
     assert "deferred" not in track_watched(db, _Serves())
@@ -344,5 +348,36 @@ def test_a_robots_disallow_is_a_real_answer_and_still_stamps(db):
     doc = _doc(db)
     before = doc.last_checked_at
     track_document(db, _Raises(RobotsDisallowed("robots.txt disallows this URL")), doc)
+    db.refresh(doc)
+    assert doc.last_checked_at > before
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "HTTP 503 for https://gazette.test/acts/Internet Kill Switch Act",
+        "redirect to unsupported URL: 'ftp://archive.test/Kill Switch Act.pdf'",
+        # the fetcher's own sentence, but INSIDE a real failure's text (a server echoing it back, a path naming it)
+        f"HTTP 502 for https://gazette.test/{_SWITCH_TEXT.replace(' ', '-')} (upstream said: {_SWITCH_TEXT})",
+        "request error for https://gazette.test/a: ('Connection aborted.', BadStatusLine('HTTP/1.1 kill switch\\r\\n'))",
+    ],
+)
+def test_a_real_failure_whose_words_merely_contain_the_phrase_still_stamps(db, text):
+    """The refusal is recognised by the fetcher's own sentence at the START of the text, never by a substring:
+    a real failure carries a URL, a redirect target or a server's status line (R293 read 2, S1)."""
+    doc = _doc(db)
+    before = doc.last_checked_at
+    out = track_document(db, _Raises(FetchFailed(text)), doc)
+    db.refresh(doc)
+    assert doc.last_checked_at > before, "a request was made and failed: its back-off must stand"
+    assert out["status"] == "error" and "offline" not in out
+    tally = track_watched(db, _Raises(FetchFailed(text)))
+    assert "skipped_offline" not in tally and tally["errors"] == 1
+
+
+def test_a_robots_disallow_on_an_address_that_says_kill_switch_still_stamps(db):
+    doc = _doc(db, host="kill-switch.test")
+    before = doc.last_checked_at
+    track_document(db, _Raises(RobotsDisallowed("robots.txt disallows https://kill-switch.test/Kill Switch Act")), doc)
     db.refresh(doc)
     assert doc.last_checked_at > before

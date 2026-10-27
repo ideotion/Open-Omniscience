@@ -34,6 +34,9 @@ _LOG = logging.getLogger(__name__)
 
 _MIN_TEXT = 200  # below this we treat extraction as failed, not a real document
 _MAX_DIFF_LINES = 4000  # cap stored diff size (bounded, like the crawler)
+# The fetcher's refusal under the kill switch (src/ingest/__init__.py raises it at four sites). A fetch
+# error is "a refusal that made no request" only when its text STARTS with this sentence.
+_KILL_SWITCH_REFUSAL = "network kill switch is active"
 _WS_RE = re.compile(r"[ \t]+")
 
 
@@ -295,7 +298,6 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     ingested into the corpus through the one ``index_article`` hook.
     """
     from src.ingest import CrawlDelayDeferred, FetchError, kill_switch_active
-    from src.ingest.fetch_verdict import classify_fetch_failure
 
     now = datetime.now(UTC)
     # ``last_checked_at`` says a check HAPPENED; ``last_status`` says how the latest ATTEMPT ended.
@@ -322,8 +324,11 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     except FetchError as exc:
         # A real failed request keeps its stamp (a back-off); a refusal by the switch made none. The switch
         # decides (a request already in flight when Stop was pressed fails with its own wording), and so
-        # does a text that names it (the switch may have been cleared again by now).
-        offline = classify_fetch_failure(record_text(exc)) == "offline"
+        # does the fetcher's own refusal sentence (the switch may have been cleared again by now). That
+        # sentence is matched at the START of the text, never as a substring: a real failure's text carries
+        # a URL, a redirect target or a server's status line, and a gazette whose address says "kill switch"
+        # must not read as a refusal that made no request (R293 read 2).
+        offline = record_text(exc).startswith(_KILL_SWITCH_REFUSAL)
         if offline or kill_switch_active():
             doc.last_checked_at = prior_checked_at
         doc.last_status = f"fetch error: {record_text(exc)}"
@@ -609,7 +614,9 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
 
     ``skipped_offline`` is present ONLY when the kill switch (airplane mode) refused at least one document. Those documents
     still count in ``documents`` and ``errors`` exactly as before (the old fields are unchanged); the extra key is what lets
-    a caller say "nothing was fetched" instead of "23 errors" (invariant #14e's corollary).
+    a caller say "nothing was fetched" instead of "23 errors" (invariant #14e's corollary). It counts the refusals whose text
+    is the fetcher's own sentence for it; a request already in flight when Stop was pressed fails with its own wording and is
+    counted under ``errors`` (its time is still given back, because the switch is active).
 
     ``deferred`` follows the same convention (R293): present ONLY when the host's own Crawl-delay put at least one document
     off. A deferral is neither an error nor a document attempted, so it is in neither ``errors`` nor ``documents``.
