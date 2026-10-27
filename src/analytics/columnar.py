@@ -2026,7 +2026,8 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     would be added twice by the next refresh). A raise there drops the stage table and propagates. The full path passes it on for the stages
     BEFORE its swap-in only (``"mentions"``, ``"aggregate"``): its ``"keywords"`` stage runs after the new ``keyword_daily`` replaced the old one
     and while ``keyword_meta`` is being rebuilt, so a stop there would leave a store that is served with most terms missing; that stage is not
-    hooked here (a stated limit, covered by the caller's final comparison before the store is recorded).
+    hooked here (a stated limit: the caller's final comparison only stops the store being RECORDED as serving; by then this path has written
+    ``keyword_meta`` rows read after the swap and set ``built_epoch``, which an equal corpus epoch never rebuilds).
     """
     ensure_store_meta(con)
     built_epoch = _get_meta(con, "keyword_daily.built_epoch")

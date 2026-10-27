@@ -129,7 +129,7 @@ def test_the_full_path_hooks_the_stages_before_its_swap_in_and_not_the_keywords_
             raise gen.StaleLibraryError("a stop after the swap-in")
 
     res = columnar.refresh_keyword_daily(con, session, corpus_epoch=1, batch_size=2, on_batch=hook)
-    assert res["mode"] == "full" and "keywords" not in seen and "mentions" in seen
+    assert res["mode"] == "full" and "keywords" not in seen and "mentions" in seen and "aggregate" in seen
     assert _counts(con) == _counts(_fresh_full(session)), "the full path was cut short"
 
 

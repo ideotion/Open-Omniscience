@@ -613,8 +613,8 @@ def _refresh_persisted_build() -> bool | None:
                 columnar.refresh_keyword_daily(
                     con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
                 )
-                # the merge ran for a while: the store is not RECORDED as serving (a cached store that was already serving keeps serving; the
-                # untouched token makes the next gate check refresh it)
+                # the merge ran for a while: the store is not RECORDED as serving. A cached connection is the one the refresh just changed, so it
+                # keeps serving those tables; the untouched token makes the next gate check refresh it, which repairs nothing when the epochs are equal.
                 _require_library_unchanged(stamp)
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
                 _STATE["con"] = con
