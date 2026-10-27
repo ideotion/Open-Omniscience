@@ -257,6 +257,18 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   meta lines, and about 40 `slice(0, 10)` sites in `app-analysis`, `app-corpus` and the claim code interpolate a raw ISO date after an Arabic
   name. Accepted as a call-site `ooIsoDate()` helper that isolates the date under RTL plus a zero-slack ratchet over the sites, **Done for the shipped slice (PR #1516, merged `f12cb4028`):** ten JS files, the `ooIsoDate` helper and a raw-date ratchet; PR #1520 (test-only, merged `4cd8f03db`) widened the ratchet over every `src/static` file. The remaining RTL number shapes were a separate sweep: the 11 measured defects (a leading «+N» chip, a dash range after translated text) are fixed in one qual PR (`R277`, PR #1528, merged `60b9e9c51`, which covers 13 sites), and a trailing percent beside text, with en-dash ranges drawn right-to-left alone (`R281`), is a typography question for a native Arabic reader and is not swept (`R276`). The sweep table is `qual-lane/item46-raw-date-sweep-2026-10-26.md`. The typography question for the user is written up in `qual-lane/rtl-typography-question-for-user-2026-10-27.md`; the Arabic probe's F3 to F5 were classified with no defect (F3 fine, F4 is that open question, F5 a seed coverage gap, `qual-lane/arabic-probe/F3-F5-classification-2026-10-27.md`). Item 22's fix
   (PR #1498) covered the keyed card frame point only.
+- **47. Two bundle members sit outside the member deadline: `selftests.json` and `merge-diag.json`** (a stated limit, `R322`): neither is a
+  query over the corpus, so neither grows with it and neither is cut by a statement deadline. WAL's cold walk on the encrypted 9.9 M-row
+  store (WAL's figures, not re-measured here): `selftests.json` 8.49 s, `merge-diag.json` 7.28 s (7.63 s and 5.61 s warm, plain). RC2's own
+  profile, plain store, cold process, one run: `selftests.json` 13.25 s, of which `keyword-selftest` 11.51 s, `recursive-loop` 1.4 s,
+  `llm-throughput-selftest` 0.32 s, the other ten about 0; inside `keyword-selftest` 9.64 s of 12.8 s is simplemma's
+  `_load_dictionary_from_disk` (9 dictionaries, reached through `lemma.py` `lemmatize`), and a second call in the same process takes
+  0.02 s, so the time is the one-time lemma dictionary load, the same cold load as the 6.6 s inside `GET /api/insights/associations`; a
+  warm or lazy once-per-process load is the keyword lane's file, not this one. `merge-diag.json` (`merge_diag(download=False, probe=True)`):
+  9.19 s, of which 6.19 s is `sqlcipher3` `Connection.execute` (48 calls), 0.92 s `executemany`, 1.0 s opening 8 connections; `walk_probe`
+  5.28 s (two arms) and `cost_probe` 3.40 s (two arms) are the probe's own bounded synthetic `INSERT ... SELECT` (about 50 MB written per
+  arm, temp store in RAM and on disk), fixed by the probe's constants. A deadline would cut the measurement the member exists to take.
+  Not measured: either member on an encrypted store by RC2, or on a second box.
 ---
 
 ## 2. The rows
