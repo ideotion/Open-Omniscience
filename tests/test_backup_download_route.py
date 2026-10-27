@@ -242,9 +242,18 @@ def test_the_snapshot_is_written_beside_the_database_and_removed_when_the_respon
     assert {"articles", "sources"} <= names
 
 
-def test_an_encrypted_store_is_refused_and_leaves_nothing(client, data_dir, monkeypatch):
+@pytest.mark.parametrize("header_ttl_s", [5.0, 0.0], ids=["cache_warm", "cache_expired_inside_the_request"])
+def test_an_encrypted_store_is_refused_and_leaves_nothing(client, data_dir, monkeypatch, header_ttl_s):
+    """The route's own refusal. The lock middleware must not be the one to answer, so the state it reads is pinned unlocked: the
+    middleware reads the store header through a cache with a 5 s life (``connect.main_header_state``), and left to read the patched
+    ``is_encrypted_file`` it answers 503 "locked" as soon as its entry has expired, which a 5 s life makes a matter of load (it did
+    in two runs of this file on a busy machine, and the entry it left stayed in the cache for the next ten tests). With a life of 0
+    every request is that case."""
+    import src.api.unlock as unlock
     import src.database.connect as connect
 
+    monkeypatch.setattr(connect, "_HEADER_TTL_S", header_ttl_s)
+    monkeypatch.setattr(unlock, "app_lock_state", lambda: "unlocked-plaintext")
     monkeypatch.setattr(connect, "is_encrypted_file", lambda p: True)
     r = client.get("/api/database/backup", headers=OWN_PAGE)
     assert r.status_code == 400
