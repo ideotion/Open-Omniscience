@@ -1738,7 +1738,16 @@ class EthicalFetcher:
                 # 5xx / unexpected -> the host is broken, not speaking -> fail closed.
                 decision = None
                 cause = "server_error"
-        except (requests.RequestException, FetchError):
+        except (requests.RequestException, FetchError) as exc:
+            if _KILL.is_set():
+                # A refusal BY THE SWITCH, or a request cut off by it mid-flight (the socket
+                # guard's OSError arrives here wrapped in a requests error), is not an answer
+                # about the host: cached as "unreachable" it blamed the host for an hour and
+                # the NEXT pass acted on a verdict no request ever produced (R297). Nothing is
+                # cached or persisted, so the next fetch asks again; the refusal says what it was.
+                if isinstance(exc, FetchError):
+                    raise
+                raise FetchFailed("network kill switch is active -- collection stopped by operator") from None
             # network/timeout, an SSRF-blocked redirect target, a redirect to an
             # unsupported scheme, or too many redirects -> cannot safely determine
             # robots -> fail closed.
