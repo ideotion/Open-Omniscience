@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -152,9 +153,20 @@ def test_a_failing_stat_after_the_open_is_a_reading_that_says_so_and_does_not_ra
     def boom(_fd):
         raise OSError(5, f"{MARKER} {path}")
 
-    monkeypatch.setattr(page_reading.os, "fstat", boom)
+    class _OsSeenByPageReading:
+        """``os`` as ``page_reading`` sees it, with ``fstat`` replaced. ``monkeypatch.setattr(page_reading.os, "fstat", ...)`` would
+        replace ``os.fstat`` for the whole process (``page_reading.os`` IS the ``os`` module), so any other caller alive in the window
+        (another thread, a finalizer, a library) would be handed the error meant for ``read_header``."""
+
+        fstat = staticmethod(boom)
+
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+    monkeypatch.setattr(page_reading, "os", _OsSeenByPageReading())
     r = page_reading.read_header(path)
     assert r["state"] == "unreadable" and MARKER not in json.dumps(r) and str(path) not in json.dumps(r)
+    assert os.fstat(0).st_mode, "the stat that was meant for read_header reached the rest of the process (R344)"
 
 
 # --------------------------------------------------------------------------- #
