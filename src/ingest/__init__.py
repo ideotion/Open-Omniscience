@@ -41,6 +41,7 @@ import requests
 
 # Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
 from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,
@@ -927,7 +928,7 @@ class EthicalFetcher:
         this host, or when it declares no sitemaps at all.
         """
         if _KILL.is_set():
-            raise FetchFailed("network kill switch is active -- collection stopped by operator")
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             return []
@@ -1070,7 +1071,7 @@ class EthicalFetcher:
         law) whose bytes the text-decode path would otherwise destroy.
         """
         if _KILL.is_set():
-            raise FetchFailed("network kill switch is active -- collection stopped by operator")
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {url!r}")
@@ -1290,7 +1291,7 @@ class EthicalFetcher:
         if not self._real_session:
             return
         if _KILL.is_set():
-            raise FetchFailed("network kill switch is active -- collection stopped by operator")
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
         if not host:
             raise FetchFailed("missing host")
         host = host.strip("[]")  # IPv6 literal brackets
@@ -1438,7 +1439,7 @@ class EthicalFetcher:
         two moments can no longer disagree.
         """
         if self._real_session and _KILL.is_set():
-            raise FetchFailed("network kill switch is active -- collection stopped by operator")
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
         if proxies is None:
             # The two preflight side doors call this without a mapping. Give them the
             # host's own, as the page and robots paths do, so no request through this
@@ -1747,7 +1748,7 @@ class EthicalFetcher:
                 # cached or persisted, so the next fetch asks again; the refusal says what it was.
                 if isinstance(exc, FetchError):
                     raise
-                raise FetchFailed("network kill switch is active -- collection stopped by operator") from None
+                raise FetchFailed(KILL_SWITCH_REFUSAL) from None
             # network/timeout, an SSRF-blocked redirect target, a redirect to an
             # unsupported scheme, or too many redirects -> cannot safely determine
             # robots -> fail closed.
