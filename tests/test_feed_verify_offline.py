@@ -95,6 +95,33 @@ def test_an_ordinary_failure_still_stores_unreachable_and_an_attempt():
     assert F.load_attempts()[_FEED][-1]["status"] == "unreachable"
 
 
+def test_a_stop_that_cuts_the_robots_read_is_the_switchs_not_the_feeds():
+    """A Stop landing after the fetcher's own switch check but before its robots read reaches verify_feed as the fetcher's
+    ``robots.txt ... could not be determined (unreachable)``: not our sentence, so the anchored match rightly refuses it. The switch
+    read AFTER the failure files nothing, and the feed does not move up the ladder (Opus read of PR 1570)."""
+
+    class _RobotsCut:
+        def fetch(self, url, **_kw):
+            activate_kill_switch()
+            raise FetchFailed(f"robots.txt for {url} could not be determined (unreachable)")
+
+    try:
+        out = F.verify_feed(_RobotsCut(), _FEED)
+    finally:
+        clear_kill_switch()
+    assert out["status"] == "skipped_offline"
+    assert F.load_verdicts() == {} and F.load_attempts() == {}
+
+
+def test_the_same_robots_failure_with_the_switch_clear_is_still_that_feeds_failure():
+    class _RobotsDown:
+        def fetch(self, url, **_kw):
+            raise FetchFailed(f"robots.txt for {url} could not be determined (unreachable)")
+
+    out = F.verify_feed(_RobotsDown(), _FEED)
+    assert out["status"] == "unreachable" and F.load_attempts()[_FEED]
+
+
 def test_the_phrase_inside_a_real_failure_is_still_that_feeds_failure():
     """Control: a server's own words that happen to contain the kill switch's sentence are NOT the person's airplane mode."""
 

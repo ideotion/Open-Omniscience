@@ -531,8 +531,10 @@ def test_preflight_never_reaches_a_source_while_a_window_is_open(guard):
     # records every REAL socket call that was reached, so an empty list is proof
     # none was, not merely proof that no exception escaped.
     assert guard == [], f"a real socket call was reached during a window: {guard}"
-    assert rec["verdict"] == "unreachable"
-    assert "kill switch" in rec.get("robots_error", "")
+    # The refusal is the switch's, not the source's: nobody asked the host, so the verdict is "skipped_offline" (PR 1570), never "unreachable".
+    assert rec["verdict"] == "skipped_offline" and rec["skipped_offline"] is True
+    assert rec["reachable"] is None
+    assert "kill switch" in rec.get("refusal", "")
 
 
 def test_a_bare_socket_on_another_thread_is_refused_while_a_window_is_open(guard):

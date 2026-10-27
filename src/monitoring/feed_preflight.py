@@ -31,6 +31,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
+from src.ingest import kill_switch_active
+from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
 
@@ -66,6 +68,12 @@ def recent_results(limit: int = 1000) -> list[dict]:
         except json.JSONDecodeError:
             continue
     return out
+
+
+_OFFLINE_STOP = (
+    "the network kill switch (airplane mode) is engaged: the remaining hosts were not asked. Nothing was logged, so the feed preflight "
+    "still runs on the next online pass"
+)
 
 
 def _check_host_robots(fetcher, host: str) -> dict:
@@ -107,6 +115,12 @@ def _check_host_robots(fetcher, host: str) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - one host must not stop the sweep
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+            # Never asked: not "unreachable". The sweep stops on it and logs nothing (run_feed_preflight).
+            rec["robots"] = "skipped_offline"
+            rec["skipped_offline"] = True
+            rec["error"] = record_text(exc, limit=200, typed=False)
+            return rec
         rec["robots"] = "unreachable"
         rec["error"] = record_text(exc, limit=200, typed=False)
     return rec
@@ -166,6 +180,10 @@ def run_feed_preflight(
     the host it is on and stop between checks (PRH-23). A stopped run writes NO log
     and reports ``complete: False`` — this log is what :func:`has_run_before` reads,
     so a partial one would mark the feeds "done" with most of them never checked.
+
+    Airplane mode is a stop too, and is named: a host the kill switch refused was never asked, so it is not "unreachable", and a log
+    of refusals would mark the feeds "done" (``complete: False`` with ``skipped_offline``, present only then; the same idiom as the
+    source preflight and the feed verification).
     """
     market, calendar = _feed_targets()
     records: list[dict] = []
@@ -184,6 +202,13 @@ def run_feed_preflight(
                 "the next pass retries the whole set",
             }
         rec = _check_host_robots(fetcher, host)
+        if rec.get("skipped_offline"):
+            return {
+                "hosts": len(hosts),
+                "complete": False,
+                "skipped_offline": len(hosts) - i,
+                "stopped": _OFFLINE_STOP,
+            }
         robots_by_host[host] = rec
         records.append(rec)
         if progress is not None:
@@ -201,10 +226,11 @@ def run_feed_preflight(
             picked.append(t)
         return picked
 
+    calendar_picked, market_picked = _sample(calendar), _sample(market)
     calendar_checked = 0
     if progress is not None:
         progress(len(hosts), len(hosts), "sampling calendar feeds")
-    for t in _sample(calendar):
+    for i, t in enumerate(calendar_picked):
         if should_stop is not None and should_stop():
             return {
                 "hosts": len(hosts),
@@ -215,6 +241,13 @@ def run_feed_preflight(
             from src.events.feeds import verify_feed
 
             verdict = verify_feed(fetcher, t["key"])
+            if verdict.get("status") == "skipped_offline" or (verdict.get("status") == "unreachable" and kill_switch_active()):
+                return {
+                    "hosts": len(hosts),
+                    "complete": False,
+                    "skipped_offline": len(calendar_picked) - i + len(market_picked),  # every sampled feed from here on
+                    "stopped": _OFFLINE_STOP,
+                }
             records.append({**t, **verdict})
             calendar_checked += 1
         except Exception as exc:  # noqa: BLE001
@@ -223,7 +256,7 @@ def run_feed_preflight(
     market_checked = 0
     if progress is not None:
         progress(len(hosts), len(hosts), "sampling market feeds")
-    for t in _sample(market):
+    for i, t in enumerate(market_picked):
         if should_stop is not None and should_stop():
             return {
                 "hosts": len(hosts),
@@ -237,6 +270,13 @@ def run_feed_preflight(
             rec["status"] = "ok" if body.strip() else "empty"
             rec["bytes"] = len(body.encode("utf-8", "ignore"))
         except Exception as exc:  # noqa: BLE001
+            if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+                return {
+                    "hosts": len(hosts),
+                    "complete": False,
+                    "skipped_offline": len(market_picked) - i,
+                    "stopped": _OFFLINE_STOP,
+                }
             rec["status"] = "unreachable"
             rec["error"] = record_text(exc, limit=200, typed=False)
         records.append(rec)

@@ -11,9 +11,9 @@ table is the ruling:
   per-call refusal) and online the person already passed the one consent. What it OWES is the corollary: the refusal must be NAMED, never
   read as a quiet "0 results". That is a behaviour, so each ``named`` row is proved by a real refusal (kill switch engaged, a transport that
   reaches no socket) either in this file or in the test that the row names.
-* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. Three at present (see the rows):
-  the source preflight, the RSS discovery and the topic discovery read the person's airplane mode as the SOURCES being unreachable or having no feed. The two
-  feed-verification rows were gaps until R296 and are ``named`` now.
+* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. None at present (see the rows). The two feed-verification rows were gaps until R296, the
+  source preflight until R313 (G1) and the RSS and topic discovery until R313 (G2): each read the person's airplane mode as a finding about the
+  sources. A gap row is how a NEW such defect is pinned before its fix PR.
 
 DISCOVERY runs the other way, in two steps, and a row records which step finds it (``found``):
 
@@ -213,40 +213,29 @@ EGRESS: tuple[Row, ...] = (
         found="hop",
         why="refuses up front with a 409 that names the kill switch; no button calls it",
     ),
-    Row(("wiki.py", "track_page"), ("trackWikiPage",), "named"),
-    Row(("wiki.py", "track_now"), ("trackWikiNow",), "named"),
-    # --- gap: KNOWN defects, pinned as they behave today (a fix is a visible edit of this table) ----------------------
     Row(
         ("source_management.py", "run_source_preflight"),
         (),
-        "gap",
+        "named",
         found="hop",
-        why=(
-            "pressed in airplane mode it records up to `limit` (default 50) enabled sources as unreachable, OVERWRITES each one's learned "
-            "`robots_allowed` with None, writes the preflight log (which marks the first-run preflight done) and answers with the sources' "
-            "domains under `unreachable`; the refusal is only inside each record's robots_error. No button calls it"
-        ),
+        why="an incomplete sweep (`complete: false`, `skipped_offline`, `stopped` naming the kill switch); nothing logged or changed. No button calls it",
     ),
     Row(
         ("source_management.py", "discover_rss_feeds"),
         (),
-        "gap",
+        "named",
         found="hand",
-        why=(
-            "in airplane mode it answers 200 'Discovered RSS feeds for 0 sources' for sources it never asked about; reached through a "
-            "SourceManager method. No button calls it"
-        ),
+        why="refuses before it asks anyone: `skipped_offline` counts the sources not asked, `message` names the kill switch; reached through a SourceManager method. No button calls it",
     ),
     Row(
         ("source_management.py", "discover_sources_by_topic"),
         (),
-        "gap",
+        "named",
         found="hand",
-        why=(
-            "with the opt-in setting on, in airplane mode it answers 200 'Discovered 0 sources for topic ...' (the kill switch's refusal is "
-            "logged and swallowed by the DuckDuckGo wrapper); reached through a SourceManager method. No button calls it"
-        ),
+        why="behind the opt-in setting (403 first); then refuses before the search: `skipped_offline` 1, `message` names the kill switch. No button calls it",
     ),
+    Row(("wiki.py", "track_page"), ("trackWikiPage",), "named"),
+    Row(("wiki.py", "track_now"), ("trackWikiNow",), "named"),
     Row(
         ("stats.py", "refresh_stat_subscriptions"),
         ("refreshStatSubs",),
@@ -255,6 +244,7 @@ EGRESS: tuple[Row, ...] = (
         pinned_by="tests/test_stat_subscriptions.py::test_refresh_is_airplane_gated_no_socket",
         why="the route is a one-line wrapper over refresh_due, which opens no socket offline and counts skipped_offline",
     ),
+    # --- gap: KNOWN defects, pinned as they behave today (a fix is a visible edit of this table): NONE at present ------
 )
 
 
@@ -681,16 +671,6 @@ def _names_airplane_mode(text) -> bool:
     return isinstance(text, str) and ("airplane mode" in text.lower() or _KILL in text.lower())
 
 
-def _top_level_names_it(j: dict) -> bool:
-    """Does the TOP LEVEL of an answer name the refusal: a string field, or a string in a list field? Records nested in a list of objects
-    (a per-source `robots_error`) are deliberately not read: that is exactly where the preflight hides it today."""
-    return any(
-        _names_airplane_mode(v)
-        or (isinstance(v, list) and any(_names_airplane_mode(x) for x in v if isinstance(x, str)))
-        for v in j.values()
-    )
-
-
 # Each probe returns (response, whether it says what the row claims). The predicates read the TOP LEVEL of the answer the button reads,
 # never a string nested somewhere in it: a refusal that is only a field of a per-item record is exactly the shape that hides it.
 
@@ -830,20 +810,29 @@ def _probe_resolve_qid_names(c):
 
 
 def _probe_run_source_preflight(c):
-    """GAP: the manual preflight reads airplane mode as the SOURCES being unreachable (and logs it as a completed sweep)."""
-    _seed_source(c)
+    """The manual preflight stops on the refusal: incomplete, counted, named, and the source is not recorded as unreachable."""
+    from src.database.models import SourceMetadata
+
+    sid = _seed_source(c)
+    with c.sessionmaker() as s:
+        s.add(SourceMetadata(source_id=sid, robots_allowed=False))
+        s.commit()
     r = c.post("/api/sources/preflight?limit=5", headers=_H)
     j = r.json()
+    with c.sessionmaker() as s:
+        kept = s.query(SourceMetadata).filter_by(source_id=sid).one().robots_allowed is False
     return r, (
         r.status_code == 200
-        and j.get("unreachable") == ["consent-probe.test"]
-        and "skipped_offline" not in j
-        and not _top_level_names_it(j)
+        and kept  # the learned robots verdict survives the refusal
+        and j.get("complete") is False
+        and j.get("skipped_offline") == 1
+        and _names_airplane_mode(j.get("stopped"))
+        and "unreachable" not in j
     )
 
 
 def _probe_discover_rss_feeds(c):
-    """GAP: a source with no feed is 'checked' and reported as having none, while nothing was asked of its host."""
+    """A source with no feed is NOT reported as having none while nothing was asked of its host: the route refuses and counts."""
     from src.database.models import Source
 
     with c.sessionmaker() as s:
@@ -853,15 +842,14 @@ def _probe_discover_rss_feeds(c):
     j = r.json()
     return r, (
         r.status_code == 200
-        and j.get("total_checked") == 1
-        and j.get("with_rss_found") == 0
-        and "skipped_offline" not in j
-        and not _names_airplane_mode(r.text)
+        and j.get("total_checked") == 0
+        and j.get("skipped_offline") == 1
+        and _names_airplane_mode(j.get("message"))
     )
 
 
 def _probe_discover_sources_by_topic(c):
-    """GAP: with the opt-in setting on, the search fails on the kill switch inside the wrapper, which swallows it into an empty list."""
+    """With the opt-in setting on, the search is refused before it is made, not answered as an empty result."""
     from unittest import mock
 
     with mock.patch(
@@ -873,8 +861,8 @@ def _probe_discover_sources_by_topic(c):
     return r, (
         r.status_code == 200
         and j.get("count") == 0
-        and "skipped_offline" not in j
-        and not _names_airplane_mode(r.text)
+        and j.get("skipped_offline") == 1
+        and _names_airplane_mode(j.get("message"))
     )
 
 

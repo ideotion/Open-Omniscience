@@ -152,7 +152,11 @@ def run_source_preflight(
     from src.monitoring.preflight import preflight_sources
 
     summary = preflight_sources(db, limit=limit)
-    db.commit()
+    # All-or-nothing, as the first-run job does: an incomplete sweep (airplane mode refused it) leaves no metadata edit behind.
+    if summary.get("complete"):
+        db.commit()
+    else:
+        db.rollback()
     return summary
 
 
@@ -1633,6 +1637,12 @@ def batch_set_group_rate_limit(
 # ==================== SOURCE DISCOVERY ENDPOINTS ====================
 
 
+_DISCOVERY_OFFLINE = (
+    "The network kill switch (airplane mode) is engaged: nothing was asked, so this is not a finding that there is nothing to find. "
+    "Turn the network on and run it again."
+)
+
+
 @router.post("/discover/rss", response_model=dict)
 @limiter.limit("20/hour")
 def discover_rss_feeds(
@@ -1648,20 +1658,38 @@ def discover_rss_feeds(
     - source_ids: Optional list of source IDs to check. If None, checks all sources without RSS URLs.
     - timeout: Request timeout in seconds
     """
+    from src.ingest import kill_switch_active
+
     logger.info(f"Discover RSS feeds request: source_ids={source_ids}")
 
     with SourceManager(session=db) as manager:
+        if kill_switch_active():
+            # Airplane mode: nobody was asked, so no source "has no feed" (it used to answer 200 "0 sources" for sources it never
+            # asked about). ``skipped_offline`` is present only when the kill switch caused it (R296/R313).
+            not_asked = len(manager.rss_discovery_candidates(source_ids))
+            return {
+                "total_checked": 0,
+                "with_rss_found": 0,
+                "results": [],
+                **({"skipped_offline": not_asked} if not_asked else {}),  # the verify_due_feeds idiom: only when non-zero
+                "message": _DISCOVERY_OFFLINE,
+            }
         results = manager.discover_rss_feeds(source_ids, timeout=timeout)
 
         # Count how many got RSS feeds
         with_rss = len([r for r in results if r.get("rss_url")])
 
-        return {
+        out = {
             "total_checked": len(results),
             "with_rss_found": with_rss,
             "results": results,
             "message": f"Discovered RSS feeds for {with_rss} sources",
         }
+        if kill_switch_active():
+            # Engaged DURING the run (the Stop button): the sources after that point were refused, not found to have no feed.
+            out["stopped_by_kill_switch"] = True
+            out["message"] += f". {_DISCOVERY_OFFLINE}"
+        return out
 
 
 @router.post("/discover/topic", response_model=dict)
@@ -1698,12 +1726,27 @@ def discover_sources_by_topic(
             ),
         )
 
+    from src.ingest import kill_switch_active
+
     logger.info(f"Discover sources by topic: {topic}")
+
+    if kill_switch_active():
+        # The search was refused, not empty: the DuckDuckGo wrapper swallows the refusal into [] and this used to answer 200
+        # "Discovered 0 sources". ``skipped_offline`` is present only when the kill switch caused it (R296/R313).
+        return {
+            "topic": topic,
+            "max_sources": max_sources,
+            "region": region,
+            "sources": [],
+            "count": 0,
+            "skipped_offline": 1,
+            "message": _DISCOVERY_OFFLINE,
+        }
 
     with SourceManager(session=db) as manager:
         sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
 
-        return {
+        out = {
             "topic": topic,
             "max_sources": max_sources,
             "region": region,
@@ -1711,6 +1754,10 @@ def discover_sources_by_topic(
             "count": len(sources),
             "message": f"Discovered {len(sources)} sources for topic '{topic}'",
         }
+        if kill_switch_active():
+            out["stopped_by_kill_switch"] = True
+            out["message"] += f". {_DISCOVERY_OFFLINE}"
+        return out
 
 
 @router.post("/discover/add", response_model=dict)
