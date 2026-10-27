@@ -563,8 +563,8 @@ def _void_built_epoch(con) -> None:
 
     try:
         columnar._set_meta(con, "keyword_daily.built_epoch", -1)
-    except Exception:  # noqa: BLE001 - the library replacement is the failure being reported; this is its repair
-        _LOG.warning("rollup serve: could not void the persisted rollup's built epoch", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - the library replacement is the failure being reported; this is its repair
+        log_failure(_LOG, "rollup serve: could not void the persisted rollup's built epoch", exc, level=logging.WARNING)
 
 
 def _refresh_persisted_build() -> bool | None:
