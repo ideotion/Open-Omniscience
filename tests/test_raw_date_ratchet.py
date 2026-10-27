@@ -73,7 +73,7 @@ def _counts():
     for p in _files():
         n = len(_PATTERN.findall(p.read_text(encoding="utf-8")))
         if n:
-            out[p.name] = n
+            out[p.relative_to(_STATIC).as_posix()] = n
     return out
 
 
