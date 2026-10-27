@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-27,analytics/columnar,The rollup canary's interrupt timer carries a name (F4),shipped,F4; PR pending,src/analytics/columnar.py;tests/test_canary_thread_names.py,"serve_canary started a bare threading.Timer for the interrupt, which a side-effect monitor saw as an unnamed Thread-N; it is now rollup-canary-timer beside rollup-canary-peak. tests/test_canary_thread_names.py reads the threads alive while the canary's query runs and fails on main."
