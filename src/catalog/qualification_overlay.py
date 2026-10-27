@@ -52,8 +52,6 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 from src.catalog.qualification import (
     CRITERIA_VERSION,
     CURATED_CRITERIA_VERSION,
@@ -68,6 +66,7 @@ from src.catalog.qualification import (
     record_admission,
 )
 from src.monitoring.secret_scrub import log_failure
+from src.utils.safe_yaml import load_safe_yaml
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -109,12 +108,24 @@ def load_overlay(path: Path | None = None) -> dict[str, dict]:
     Malformed rows are SKIPPED and counted in the log, never guessed at: this file decides
     what a fresh install collects, so a row it cannot read must not become a verdict."""
     p = path or DEFAULT_OVERLAY_PATH
+    return _verdicts_of(_read_document(p), p)
+
+
+def _read_document(p: Path):
+    """The overlay file parsed ONCE: the document, ``{}`` for an empty file, or ``None`` when it is absent or unreadable
+    (a broken overlay must never block boot, so the failure is logged here and nothing is raised)."""
     if not p.exists():
-        return {}
+        return None
     try:
-        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return load_safe_yaml(p.read_text(encoding="utf-8")) or {}
     except Exception as exc:  # noqa: BLE001 - a broken overlay must never block boot
         log_failure(_LOG, f"could not read the qualification overlay at {p}", exc, level=logging.WARNING)
+        return None
+
+
+def _verdicts_of(raw, p: Path) -> dict[str, dict]:
+    """``load_overlay``'s row reading, on a document already parsed by :func:`_read_document`."""
+    if raw is None:
         return {}
     rows = raw.get("verdicts") if isinstance(raw, dict) else None
     if not isinstance(rows, list):
@@ -413,21 +424,17 @@ def overlay_status(session: Session, *, path: Path | None = None) -> dict:
     from src.database.models import Source
 
     p = path or DEFAULT_OVERLAY_PATH
-    overlay = load_overlay(p)
+    document = _read_document(p)  # parsed once: the rows and the header both come from this one document
+    overlay = _verdicts_of(document, p)
     file_info: dict = {
         "path": str(p),
         "exists": p.exists(),
         "size_bytes": p.stat().st_size if p.exists() else None,
         "generated_at": None,
     }
-    if p.exists():
-        try:
-            raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-            if isinstance(raw, dict):
-                stamp = raw.get("generated_at")
-                file_info["generated_at"] = str(stamp) if stamp else None
-        except Exception:  # noqa: BLE001 - a header we cannot read is not a failure
-            file_info["generated_at"] = None
+    if isinstance(document, dict):
+        stamp = document.get("generated_at")
+        file_info["generated_at"] = str(stamp) if stamp else None
 
     shipped = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     for entry in overlay.values():
