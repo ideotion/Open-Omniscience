@@ -684,12 +684,13 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
         store_dir = _store_dir()
         path = store_dir / _STORE_FILENAME
         encryption_key = ""  # derived below; named so that a failure's text is scrubbed of it as well as of the passphrase
+        attached = None  # the persisted connection once attached: a failure after that point must close it, not leave it holding the file
         try:
             store_dir.mkdir(parents=True, exist_ok=True)
             # Prove encryption on a throwaway probe before trusting the real file.
             if encryption_gate(store_dir / ".oo_columnar_probe.duckdb"):
                 encryption_key = _derive_key(passphrase, _store_salt(path))
-                con = _attach_persisted(path, encryption_key)
+                con = attached = _attach_persisted(path, encryption_key)
                 marker = read_store_meta(con)
                 if marker is None:
                     ensure_store_meta(con)  # a fresh store: adopt the current marker
@@ -697,8 +698,9 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
                     # Incompatible DuckDB format / read-model schema -> drop + rebuild
                     # (the store is a disposable cache; the canonical store is the truth).
                     con.close()
+                    attached = None
                     path.unlink(missing_ok=True)
-                    con = _attach_persisted(path, encryption_key)
+                    con = attached = _attach_persisted(path, encryption_key)
                     ensure_store_meta(con)
                     _LOG.info("columnar engine: rebuilt persisted store (was %s)", marker)
                 _LOG.info("columnar engine: persisted encrypted store at %s", path)
@@ -707,6 +709,9 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
             _LOG.warning("columnar engine: encryption gate failed; using in-memory store")
         except Exception as exc:  # noqa: BLE001 - any failure -> drop the disposable file, in-memory
             fallback = "persisted-open-failed"
+            if attached is not None:
+                with contextlib.suppress(Exception):  # closing what failed to open must not hide why it failed, and the unlink below needs the handle gone
+                    attached.close()
             try:
                 path.unlink(missing_ok=True)
             except OSError:

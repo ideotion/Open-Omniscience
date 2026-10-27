@@ -96,6 +96,32 @@ def test_a_persisted_open_that_raises_is_a_reported_fallback_and_never_carries_t
         opened.con.close()
 
 
+@pytest.mark.parametrize("raiser", ["read_store_meta", "ensure_store_meta"])
+def test_a_persisted_connection_is_closed_when_the_open_fails_after_the_attach(monkeypatch, raiser):
+    """The attach succeeded and a later step raised: the fallback used to leave that connection open, holding the file and its memory."""
+    attached = _Con()
+    monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
+    monkeypatch.setattr(columnar, "encryption_gate", lambda _p: True)
+    monkeypatch.setattr(columnar, "_attach_persisted", lambda _path, _key: attached)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("engine words that must not be kept")
+
+    if raiser == "read_store_meta":
+        monkeypatch.setattr(columnar, "read_store_meta", boom)
+    else:
+        monkeypatch.setattr(columnar, "read_store_meta", lambda _con: None)
+        real_ensure = columnar.ensure_store_meta
+        monkeypatch.setattr(columnar, "ensure_store_meta", lambda con: boom() if con is attached else real_ensure(con))
+    opened = columnar.open_store("pw")
+    try:
+        assert opened.kind == "memory" and opened.fallback_reason == "persisted-open-failed"
+        assert attached.closed, "the persisted connection that was attached before the failure was left open"
+        assert opened.con is not attached
+    finally:
+        opened.con.close()
+
+
 def test_a_persisted_open_that_succeeds_is_persisted_with_no_fallback_reason(monkeypatch):
     import duckdb
 

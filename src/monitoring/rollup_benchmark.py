@@ -82,6 +82,11 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
     Returns a self-describing payload: corpus context, the one-time build cost, a parity
     check, and per-window live-vs-rollup timings with the speedup. Falls back honestly if
     duckdb is unavailable.
+
+    DECLINES (``declined: true``, the verdict's ``reason`` and ``source``, nothing built) when a start-time guard of the served rollup build
+    refuses it -- an import's exclusive window, the boot warm-up, the memory guard, a stop or failure hold, a killed earlier build, an unaffordable
+    start -- or when a rollup build is already running. The benchmark builds the same whole-corpus in-memory rollup the serve does (R278, #1310).
+    The per-batch memory-guard poll inside the build is the serve's alone; the DuckDB limit of the budget bounds this build.
     """
     from src.analytics import columnar
 
@@ -89,6 +94,30 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
     if not columnar.duckdb_available():
         return {"available": False,
                 "reason": "duckdb not installed (the optional [columnar] extra)"}
+
+    # -- the same start-time guards the served build meets (R278, #1310) ---------------------------------------- #
+    # This builds the whole-corpus rollup in memory, the build that crashed the app in #1310; it met no verdict. Now it meets the ones the serve's
+    # build meets, judged as the in-memory build it is, and it holds the build lock so a served build cannot run beside it.
+    from src.analytics import rollup_serve
+
+    if not rollup_serve._BUILD_LOCK.acquire(blocking=False):
+        return {"available": False, "declined": True, "reason": "build-running",
+                "note": "A rollup build is running; the benchmark builds one too and never runs beside it. Try again when it has finished."}
+    try:
+        return _run_guarded(session, repeats, columnar)
+    finally:
+        rollup_serve._BUILD_LOCK.release()
+
+
+def _run_guarded(session: Session, repeats: int, columnar) -> dict:
+    from src.analytics import rollup_serve
+
+    with rollup_serve.inmemory_view():
+        skip, source = rollup_serve.first_start_decline()
+    if skip:
+        # Declined, not failed: nothing was built. The record is the verdict's own (its reason, readings and detail), with the verdict named.
+        return {"available": False, "declined": True, "reason": skip.get("reason") or "declined", "source": source, "detail": skip,
+                "note": "Not run: the same check that stops the served rollup build refused it. Nothing was built."}
 
     # -- corpus context (so the numbers are interpretable) ------------------------------- #
     from sqlalchemy import func

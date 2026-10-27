@@ -197,6 +197,21 @@ def _persist_passphrase() -> str | None:
 _PERSISTED_FELL_BACK: dict = {"why": None}
 
 
+#: Per-thread: a caller that builds an IN-MEMORY rollup of its own (the benchmark) asks the start-time verdicts about THAT build, not about the
+#: store the app serves from. Set only by :func:`inmemory_view`; never read across threads.
+_STORE_VIEW = threading.local()
+
+
+@contextlib.contextmanager
+def inmemory_view():
+    """Within this block, on THIS thread, the start-time verdicts judge an in-memory build (``_persisted_serve_active()`` is False)."""
+    _STORE_VIEW.inmemory = True
+    try:
+        yield
+    finally:
+        _STORE_VIEW.inmemory = False
+
+
 def _persisted_serve_active() -> bool:
     """True when the served rollup should use the PERSISTED encrypted DuckDB store (D1): the
     secure crypto backend is bundled+verified (``secure_crypto_available``) AND the corpus
@@ -206,6 +221,8 @@ def _persisted_serve_active() -> bool:
     bundled, so this returns False and the serve stays in-memory (byte-unchanged)."""
     from src.analytics import columnar
 
+    if getattr(_STORE_VIEW, "inmemory", False):
+        return False  # a caller building in memory (inmemory_view): the verdicts judge that build
     if _PERSISTED_FELL_BACK["why"] is not None:
         return False  # the opener already fell back to memory in this process: the served store is the in-memory one, with the in-memory holds
     return bool(_persist_passphrase()) and columnar.secure_crypto_available()
@@ -1214,6 +1231,22 @@ def build_now_and_wait() -> str:
 _LAST_OUTCOME: dict = {"value": "built"}
 
 
+def first_start_decline() -> tuple[dict | None, str | None]:
+    """The start-time verdicts, in order; the FIRST that fires is returned as ``(record, source)``, else ``(None, None)``. Nothing is recorded: the
+    dispatcher records its own declines, and a caller that builds in memory outside the serve (the benchmark) reports its own."""
+    from src.analytics.serve_gate import exclusive_verdict
+
+    for name, verdict in (
+        ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
+        ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
+        ("affordability", _affordability_verdict),
+    ):
+        skip = verdict()
+        if skip:
+            return skip, name
+    return None, None
+
+
 def _build_and_swap() -> str:
     """Background (re)build dispatcher: the PERSISTED store when D1 is active, else the
     in-memory store. Always releases the build lock; a failure never crashes the app.
@@ -1236,21 +1269,9 @@ def _build_and_swap() -> str:
         # than whichever check happens to be listed last. S6.1 (2026-09-03) added the
         # exclusive one: this build is kicked from a SERVE, so it never met the collection
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
-        from src.analytics.serve_gate import exclusive_verdict
-
         def _decline_for_skip() -> bool:
             """Run the verdicts in order; the first that fires is recorded as the decline. True when one did."""
-            skip: dict | None = None
-            source: str | None = None
-            for name, verdict in (
-                ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
-                ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
-                ("affordability", _affordability_verdict),
-            ):
-                skip = verdict()
-                if skip:
-                    source = name
-                    break
+            skip, source = first_start_decline()
             if not skip:
                 return False
             with _LOCK:
