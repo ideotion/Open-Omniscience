@@ -390,6 +390,8 @@ def backfill_baseline_tags(session: Session, *, limit: int | None = None) -> dic
     same bundled baseline — never invents a tag; counts only, no score."""
     scanned = tagged_keywords = tags_added = 0
     after_id = 0
+    if limit is not None and limit < 0:
+        limit = None  # as before: ``q.limit(-1)`` is no limit in SQLite
     while True:
         take = min(_BASELINE_BACKFILL_CHUNK, limit - scanned) if limit else _BASELINE_BACKFILL_CHUNK
         if take <= 0:

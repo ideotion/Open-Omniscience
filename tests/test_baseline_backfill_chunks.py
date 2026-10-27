@@ -94,3 +94,8 @@ def test_the_table_is_read_as_three_columns_ordered_by_id_with_a_limit(db, monke
         for wide in ("keywords.term,", "frequency", "relevance_score", "created_at", "mention_count"):
             assert wide not in head, f"the backfill reads {wide}, which the match does not use"
         assert "ORDER BY keywords.id" in q and "LIMIT" in q
+
+
+def test_a_negative_limit_still_means_no_limit(db, monkeypatch):
+    monkeypatch.setattr(store, "_BASELINE_BACKFILL_CHUNK", 3, raising=False)
+    assert backfill_baseline_tags(db, limit=-1) == _reference(db, None)
