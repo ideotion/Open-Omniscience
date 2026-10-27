@@ -19,7 +19,6 @@ underlying scan.
 from __future__ import annotations
 
 import threading
-import time
 
 import pytest
 from fastapi import HTTPException
@@ -30,6 +29,7 @@ from src.api import heavy
 from src.api import integrity as intg
 from src.api.heavy import run_heavy
 from src.database.maintenance import StatementTimeout
+from tests.wallclock_helpers import HANG_GUARD_S, watch_flight_followers
 
 
 @pytest.fixture(autouse=True)
@@ -136,8 +136,9 @@ def test_duplicate_actors_requests_are_single_flighted_to_one_scan(monkeypatch):
     # A generous follower wait so the follower reliably parks in fl.event.wait to SHARE
     # (never a spurious 429), and the leader is held until the follower is registered — so
     # this DETERMINISTICALLY exercises the follow path, never a leader-retires-first race.
-    monkeypatch.setenv("OO_HEAVY_FOLLOWER_WAIT_S", "3")
+    monkeypatch.setenv("OO_HEAVY_FOLLOWER_WAIT_S", str(3 * HANG_GUARD_S))
     heavy._reset_for_tests()
+    parked = watch_flight_followers(monkeypatch, heavy)
 
     calls = [0]
     leader_in = threading.Event()
@@ -146,7 +147,7 @@ def test_duplicate_actors_requests_are_single_flighted_to_one_scan(monkeypatch):
     def _slow_status(session, days):
         calls[0] += 1
         leader_in.set()
-        release.wait(3)  # stays parked (holding the flight) until the follower is registered
+        release.wait(2 * HANG_GUARD_S)  # stays parked (holding the flight) until the follower is waiting on it
         return {"actors": [], "days": days}
 
     monkeypatch.setattr(intg.collapse_mod, "collapse_status", _slow_status)
@@ -156,7 +157,7 @@ def test_duplicate_actors_requests_are_single_flighted_to_one_scan(monkeypatch):
     res: dict = {}
     t_lead = threading.Thread(target=lambda: res.__setitem__("lead", intg.get_actors(days=14, db=db)))
     t_lead.start()
-    assert leader_in.wait(2), "leader scan never started"
+    assert leader_in.wait(HANG_GUARD_S), "leader scan never started"
 
     follower_started = threading.Event()
 
@@ -168,13 +169,13 @@ def test_duplicate_actors_requests_are_single_flighted_to_one_scan(monkeypatch):
     t_follow.start()
     # The leader cannot retire the flight while `release` is unset, so once the follower
     # thread is running it finds the live flight and parks in fl.event.wait to share. The
-    # head start (≪ the 3s follower wait) guarantees it is parked before we let the leader
-    # finish — deterministic, never a leader-retires-first race.
-    assert follower_started.wait(2)
-    time.sleep(0.2)
+    # leader is let go when the follower is OBSERVED waiting on the flight, not after a head start
+    # (a follower that arrives after the flight ended runs a scan of its own).
+    assert follower_started.wait(HANG_GUARD_S)
+    assert parked.wait(HANG_GUARD_S), "the follower never reached the live flight"
     release.set()
-    t_lead.join(3)
-    t_follow.join(3)
+    t_lead.join(HANG_GUARD_S)
+    t_follow.join(HANG_GUARD_S)
 
     assert res.get("lead") == res.get("follow") == {"actors": [], "days": 14}
     assert calls[0] == 1, "single-flight must collapse the duplicate coordination scan to ONE"

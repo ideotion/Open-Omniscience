@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import inspect
 import random
-import time
 
 import pytest
 
@@ -39,6 +38,7 @@ from src.utils.markup_blocks import (
     sub_anchored,
 )
 from src.wiki.corpus import _REF_OPEN_ANCHOR, _WIKI_BLOCKS, _WIKI_SUBS, plain_from_wikitext
+from tests.wallclock_helpers import CPU_CLOCK
 
 _ATOMS = [
     "ab", " ", "\n", "\t", "<", ">", "/", "[", "]", "|", "{", "}", "=", "'",
@@ -247,18 +247,19 @@ def test_the_cliff_is_gone_on_every_one_of_the_measured_shapes(unit) -> None:
     """The property, end to end: LINEAR in the input.
 
     A ratio rather than a wall-clock ceiling, because a shared runner's absolute
-    numbers are noise and the shape of the curve is the finding. Before this slice
+    numbers are noise and the shape of the curve is the finding, timed on the
+    thread's own CPU clock, which a pause or a busy runner does not advance. Before this slice
     the worst of these ran 14.891 s -> 59.282 s for a 2x input; after, 0.0069 s ->
     0.0137 s.
     """
     small = unit * (50_000 // len(unit))
     big = unit * (200_000 // len(unit))
-    t0 = time.perf_counter()
+    t0 = CPU_CLOCK()
     plain_from_wikitext(small)
-    t_small = max(time.perf_counter() - t0, 1e-4)
-    t0 = time.perf_counter()
+    t_small = max(CPU_CLOCK() - t0, 1e-4)
+    t0 = CPU_CLOCK()
     plain_from_wikitext(big)
-    t_big = time.perf_counter() - t0
+    t_big = CPU_CLOCK() - t0
     ratio = t_big / t_small
     assert ratio < 12, f"{unit!r}: 4x the input cost {ratio:.1f}x the time"
 

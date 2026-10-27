@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-26,static,Raw-date ratchet scans every served script and page,shipped,PR #1520,tests/test_raw_date_ratchet.py,"The item 46 ratchet now scans every js and html file under src/static (vendor excluded), not only app-*.js; nothing new was caught and a coverage test stops the scan shrinking."

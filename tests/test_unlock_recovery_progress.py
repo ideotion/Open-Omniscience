@@ -33,6 +33,7 @@ import pytest
 from src.api import startup_status as ss
 from src.monitoring import forensics
 from tests.js_source_helper import function_source, page_source
+from tests.wallclock_helpers import CheckpointTimeoutWatch, call_on_thread
 
 _ROOT = Path(__file__).resolve().parents[1]
 _GIB = 1024**3
@@ -465,14 +466,12 @@ def test_the_verify_connection_is_checkpointed_through_execute_before_it_closes(
     assert order[5][1] == 0, f"{order[5][1]} bytes of log were still there when close() ran"
 
 
-def test_a_reader_holding_the_log_does_not_make_the_unlock_wait(crashed_store):
+def test_a_reader_holding_the_log_does_not_make_the_unlock_wait(crashed_store, monkeypatch):
     """Opus read of #1293: the verify connection inherits connect()'s 30 s busy timeout, and a
     TRUNCATE checkpoint with ANOTHER connection holding a read snapshot waits all of it while
     holding the WAL write lock (measured 30.12 s; the old close() skipped the checkpoint in
     0.00 s). A second process on the file, or a POST /unlock on an app that is already unlocked,
     reaches this. The checkpoint now returns busy at once and close() does what it always did."""
-    import time
-
     db, wal = crashed_store
     from src.api.unlock import PassphraseBody, unlock
     from src.database import connect as connect_mod
@@ -482,10 +481,17 @@ def test_a_reader_holding_the_log_does_not_make_the_unlock_wait(crashed_store):
         reader.execute("BEGIN")
         before = reader.execute("SELECT count(*) FROM t").fetchone()[0]
         assert before > 0
-        t0 = time.monotonic()
-        unlock(PassphraseBody(passphrase=_KEY))
-        waited = time.monotonic() - t0
-        assert waited < 10.0, f"the unlock waited {waited:.1f} s for a reader (busy_timeout is 30 s)"
+        # the reader keeps its snapshot until the block ends, so an unlock that comes back is one that did not wait for it: one that did
+        # would take the 30 s busy timeout, past the guard. One that waited less (10 s) would come back too, so the busy timeout in force
+        # when the write-back checkpoint ran is read as well.
+        import src.api.unlock as unlock_mod
+
+        timeouts: list[int] = []
+        real_close = unlock_mod._close_after_checkpoint
+        monkeypatch.setattr(unlock_mod, "_close_after_checkpoint", lambda conn, passphrase: real_close(CheckpointTimeoutWatch(conn, timeouts), passphrase))
+        came_back, _ = call_on_thread(unlock, PassphraseBody(passphrase=_KEY))
+        assert came_back, "the unlock waited for a reader (busy_timeout is 30 s)"
+        assert timeouts == [0], f"the write-back checkpoint ran with the busy timeout at {timeouts} ms: it must be 0, or it waits for the reader"
         # the reader's snapshot and the data are untouched
         assert reader.execute("SELECT count(*) FROM t").fetchone()[0] == before
     finally:

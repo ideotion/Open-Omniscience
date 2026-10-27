@@ -42,6 +42,7 @@ import pytest
 import src.ingest.extract as extract_mod
 from src.ingest import lock_stats
 from src.ingest.extract import extract_article
+from tests.wallclock_helpers import wait_until
 
 _WAIT = 10.0
 _PAGE = "<p>" + "x" * 40 + "</p>"
@@ -223,6 +224,7 @@ def test_differences_of_readings_match_an_independent_log_under_eight_threads_an
         w.start()
     for w in workers:
         w.join(_WAIT * 3)
+    wait_until(lambda: len(samples) > 20)  # the sampler has taken enough readings: waited for, not a count the hammers' running time allowed
     stop.set()
     sampler.join(_WAIT)
     samples.append(lock_stats.live_reading())

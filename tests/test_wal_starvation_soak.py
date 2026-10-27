@@ -498,8 +498,16 @@ def test_an_attempt_that_finishes_after_the_scan_is_not_evidence_and_its_bytes_a
     v = _round_verdict(r)
     assert v["allowed"]["in_flight"] == r["writer_bytes_per_s"] * r["longest_attempt_in_scan_s"], v
     # Slow attempts give the byte check no room to fail: the allowance reaches what the writer could have written, and the round
-    # says so instead of passing a check it could not have failed.
-    assert not v["bytes_conclusive"], (r, v)
+    # says so instead of passing a check it could not have failed. That holds while the writer runs at its usual rate; a writer starved
+    # of CPU (a loaded runner) writes less, the allowance no longer reaches what it could have written, and the check CAN fail. Then
+    # the claim of this test does not apply to the round: the accounting above held, the byte check ran and did not fail, and the
+    # round is skipped, not passed as a proof that slow attempts leave the check no room.
+    assert v["red_bytes"] == [], (r, v)
+    if v["bytes_conclusive"]:
+        pytest.skip(
+            f"a writer at {r['writer_bytes_per_s']:.0f} B/s leaves the byte check able to fail with a {r['longest_attempt_in_scan_s']:.2f} s attempt "
+            "(allowed < possible); it did not, and the accounting above held, so this round cannot say slow attempts leave it no room"
+        )
     print(f"SOAK slow-attempt round INCONCLUSIVE FOR THE BYTE BOUND: allowed {v['allowed']['total']:.0f} B, possible {r['bytes_possible']} B")
 
 
@@ -564,6 +572,13 @@ def test_a_round_is_inconclusive_exactly_when_it_could_not_have_failed():
     # slow attempts: the allowance already covers everything the writer could have written -> neither red nor a pass of the byte check
     slow = _round_verdict(base | {"longest_attempt_in_scan_s": 0.6, "wal_bytes_during_window": 9_000_000})
     assert not slow["bytes_conclusive"] and slow["red"] == [], slow
+    # ...but only while the writer runs at its usual rate: one starved of CPU (a loaded runner measured 0.4 to 0.7 MB/s against 12.5) could
+    # have written far less, the same slow attempt no longer reaches that, and the byte check CAN fail (here it does not)
+    starved = _round_verdict(base | {"writer_bytes_per_s": 650_000.0, "bytes_possible": 9_780_000, "longest_attempt_in_scan_s": 0.6,
+                                     "wal_bytes_during_window": 3_000_000})
+    assert starved["bytes_conclusive"] and starved["red"] == [], starved
+    assert _round_verdict(base | {"writer_bytes_per_s": 650_000.0, "bytes_possible": 9_780_000, "longest_attempt_in_scan_s": 0.6,
+                                  "wal_bytes_during_window": 9_000_000})["red_bytes"], "a starved writer's log over the allowance is red"
     # no clear checkpoint in the scan although enough attempts answered in it: red (the fix failed)
     judged = _round_verdict(base | {"in_scan_success": False})
     assert judged["red"] == ["no checkpoint finished inside the scan with its busy flag clear"] and judged["property_conclusive"], judged

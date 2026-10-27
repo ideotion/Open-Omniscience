@@ -161,8 +161,8 @@ def serve_enabled() -> bool:
         return False
     from src.analytics import columnar
 
-    if not columnar.duckdb_available():
-        return False
+    if not columnar.duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
+        return False  # the engine itself is off (``columnar.open_store`` answers "off"): a build could only report "built" with no rollup
     if serve_mode() == "forced-on":
         return True
     # S1.1: below the RAM floor the in-memory rollup is OFF BY DEFAULT. It is a
@@ -191,6 +191,12 @@ def _persist_passphrase() -> str | None:
         return None
 
 
+#: Set (to the code) when a persisted open fell back to memory (``_PERSISTED_FALLBACK_WHY``): from then on THIS process serves from the in-memory
+#: store and keeps its holds, so a failing persisted open is not retried by every kick and an in-memory stop is not invisible to a verdict that
+#: still believed the persisted store was active. A restart tries the persisted open once more.
+_PERSISTED_FELL_BACK: dict = {"why": None}
+
+
 def _persisted_serve_active() -> bool:
     """True when the served rollup should use the PERSISTED encrypted DuckDB store (D1): the
     secure crypto backend is bundled+verified (``secure_crypto_available``) AND the corpus
@@ -200,6 +206,8 @@ def _persisted_serve_active() -> bool:
     bundled, so this returns False and the serve stays in-memory (byte-unchanged)."""
     from src.analytics import columnar
 
+    if _PERSISTED_FELL_BACK["why"] is not None:
+        return False  # the opener already fell back to memory in this process: the served store is the in-memory one, with the in-memory holds
     return bool(_persist_passphrase()) and columnar.secure_crypto_available()
 
 
@@ -224,6 +232,8 @@ def status() -> dict:
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
         "store": "persisted" if persisted else "memory",  # D1: persisted encrypted vs in-memory
+        # Why the persisted store is not the one served although it is configured (a code, set for the life of the process); None otherwise.
+        "persisted_fallback": _PERSISTED_FELL_BACK["why"],
         "built": con is not None,
         "built_at": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
@@ -373,7 +383,7 @@ def _build_inmemory_and_swap() -> dict | None:
         raise
     if con is None:
         _remove_spill(spill)
-        return None
+        return {"reason": ENGINE_OFF, "at": time.time()}  # NOT None: None means "built and swapped in" (the engine is off, nothing was built)
     r = _readings()
     ok = False
     _progress_begin()
@@ -481,10 +491,24 @@ def columnar_batch_mb() -> float:
     return columnar.BUILD_BATCH_ROWS * _CHUNK_ROW_BYTES / (1024 * 1024)
 
 
+#: The decline codes that mean "a store was opened, but in memory": the dispatcher builds in memory in the same kick (``columnar.OpenedStore.fallback_reason``).
+_PERSISTED_FALLBACK_WHY = frozenset({"encryption-gate-failed", "persisted-open-failed"})
+
+#: Why the last persisted refresh declined (a code from ``columnar.OpenedStore`` or "no-passphrase"/"no-secure-backend"/"engine-off"); read and
+#: cleared by the dispatcher, which puts it in ``last_skip``. A code, never an exception's text.
+_PERSISTED_DECLINE: dict = {"why": None}
+
+
+def _persisted_declined(why: str) -> bool:
+    _PERSISTED_DECLINE["why"] = why
+    return False
+
+
 def _refresh_persisted_build() -> bool | None:
-    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined before opening the store -- the
-    passphrase or the secure backend is gone since the dispatcher chose this path, or the engine gave no connection at all -- so nothing was refreshed
-    and the caller must not report a build nor release a hold; any other return means the refresh ran.
+    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined: the
+    passphrase or the secure backend is gone since the dispatcher chose this path, the engine is off, or the opener handed back an in-memory store
+    instead of the persisted one (``_PERSISTED_DECLINE`` says which) -- so nothing was refreshed and the caller must not report a build nor release
+    a hold; any other return means the refresh ran.
 
     A SINGLE connection is held for the process -- the columnar store's ATTACH open REJECTS a
     second in-process handle to the same file ("Unique file handle conflict"), so the in-memory
@@ -508,15 +532,26 @@ def _refresh_persisted_build() -> bool | None:
         con = _STATE["con"] if _STATE["persisted"] else None
     opened_now = con is None
     if opened_now:
-        # The dispatcher chose this path a moment ago; the passphrase is read ONCE here and the connect is not made without it, because
-        # ``columnar.connect`` given no passphrase (or no secure backend) hands back an IN-MEMORY connection, which this function would then
-        # record as the persisted store (``_STATE["persisted"] = True``) and report as built.
+        # The dispatcher chose this path a moment ago. The passphrase is read ONCE here and nothing is opened without it: ``columnar.open_store``
+        # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
         passphrase = _persist_passphrase()
-        if not passphrase or not columnar.secure_crypto_available():
-            return False  # gone since the verdict: the next kick takes the in-memory path (``_persisted_serve_active`` reads the same two things)
-        con = columnar.connect(passphrase=passphrase)  # opens the persisted file
+        if not passphrase:
+            return _persisted_declined("no-passphrase")  # gone since the verdict: declined; the next verdict re-reads the setting
+        if not columnar.secure_crypto_available():
+            return _persisted_declined("no-secure-backend")
+        opened = columnar.open_store(passphrase)  # opens the persisted file; the opener REPORTS which store it opened
+        con = opened.con
+        if opened.kind != "persisted":
+            # An in-memory store was handed back (the encryption gate failed, or the persisted open raised) or the engine is off: not the store
+            # this function maintains, so it is closed, not recorded, and the call declines.
+            if con is not None:
+                try:
+                    con.close()
+                except Exception:  # noqa: BLE001 - closing a store that is not wanted must not turn a decline into a failure
+                    pass
+            return _persisted_declined(opened.fallback_reason or "engine-off")
     if con is None:
-        return False  # the engine itself is off (``OO_COLUMNAR=0``, or DuckDB missing)
+        return _persisted_declined("engine-off")  # a store cached in ``_STATE`` is never None here; this narrows the type and refuses the impossible
     try:
         with session_scope() as s:
             token = serve_gate.change_token(s)
@@ -682,6 +717,9 @@ _COUNT_MIN_INTERVAL_S = 60.0
 #: The reasons of a hold released by what changes the WALL (a larger limit, offload allowed, a smaller corpus, another version): the build ran into the
 #: engine's limit, or ended in an error of its own (R172). One rule for both, so a build that fails is not started again by the very next request.
 _WALL_REASONS = ("duckdb-limit", "build-failed")
+
+#: The in-memory build's answer when the engine is off (``OO_COLUMNAR=0``): a setting, not a stop, so no hold is kept for it.
+ENGINE_OFF = "engine-off"
 
 #: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
 #: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
@@ -1200,18 +1238,21 @@ def _build_and_swap() -> str:
         # pause and would happily rebuild a whole-corpus rollup underneath a restore.
         from src.analytics.serve_gate import exclusive_verdict
 
-        skip: dict | None = None
-        source: str | None = None
-        for name, verdict in (
-            ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
-            ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
-            ("affordability", _affordability_verdict),
-        ):
-            skip = verdict()
-            if skip:
-                source = name
-                break
-        if skip:
+        def _decline_for_skip() -> bool:
+            """Run the verdicts in order; the first that fires is recorded as the decline. True when one did."""
+            skip: dict | None = None
+            source: str | None = None
+            for name, verdict in (
+                ("exclusive", exclusive_verdict), ("boot-order", _boot_order_verdict), ("memory", _memory_verdict),
+                ("stopped", _stopped_build_verdict), ("last-build", _last_build_verdict),
+                ("affordability", _affordability_verdict),
+            ):
+                skip = verdict()
+                if skip:
+                    source = name
+                    break
+            if not skip:
+                return False
             with _LOCK:
                 _STATE["last_skip"] = {**skip, "source": source}
             if source is not None and source not in _TRANSIENT_VERDICTS:
@@ -1220,21 +1261,41 @@ def _build_and_swap() -> str:
                 "rollup serve: build skipped (%s)",
                 skip.get("guard_reason") or skip.get("reason") or "mem-low",
             )
+            return True
+
+        if _decline_for_skip():
             outcome = "declined"
             return outcome
         ran = True
         persisted_run = _persisted_serve_active()
         if persisted_run:
             if _refresh_persisted_build() is False:
-                # The refresh declined before opening the store (the passphrase or the secure backend went away between the verdict and here, so
-                # the next kick takes the in-memory path): no build ran, so this is neither "built" nor the end of a failure run -- a hold an
-                # earlier failed refresh kept stands.
+                # The refresh declined before it could maintain the persisted store: no persisted build ran, so this is neither "built" nor the
+                # end of a failure run -- a hold an earlier failed refresh kept stands.
+                why, _PERSISTED_DECLINE["why"] = _PERSISTED_DECLINE["why"], None
                 with _LOCK:
-                    _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted"}
-                ran = False
-                outcome = "declined"
-                return outcome
-        else:
+                    _STATE["last_skip"] = {"reason": "persisted-unavailable", "at": time.time(), "source": "persisted",
+                                           **({"why": why} if why else {})}
+                if why in _PERSISTED_FALLBACK_WHY:
+                    # The opener fell back to memory (the encryption gate failed, or the persisted open raised): the in-memory build below serves in
+                    # this same kick, so a persisted store that cannot open does not leave the keyword rollup unserved. The build that runs is an
+                    # in-memory one, so a failure or stop it hits keeps the in-memory hold; the latch makes the later verdicts read that hold.
+                    _PERSISTED_FELL_BACK["why"] = why
+                    persisted_run = False
+                    # The start-time verdicts above ran while the persisted store was active, and three of them (stopped, last-build,
+                    # affordability) stand aside for it: the in-memory build must pass them too, now that it is the build that runs. They are the
+                    # guards that keep a build the machine cannot afford, or one a killed build already showed it cannot finish, from starting.
+                    ran = False  # a verdict that raises here is no build that failed (as in the first pass): it keeps no hold
+                    if _decline_for_skip():
+                        outcome = "declined"
+                        return outcome
+                    ran = True
+                else:
+                    # No passphrase, no secure backend or the engine is off: nothing to build in memory for the persisted path this kick.
+                    ran = False
+                    outcome = "declined"
+                    return outcome
+        if not persisted_run:
             stopped = _build_inmemory_and_swap()
             from src.analytics import rollup_marker
 
@@ -1242,6 +1303,13 @@ def _build_and_swap() -> str:
                 # R183: another server's build is running. Not a stop: no hold is kept (it would refuse real builds after that server is done), no build ran.
                 with _LOCK:
                     _STATE["last_skip"] = {**stopped, "source": "last-build"}
+                ran = False
+                outcome = "declined"
+                return outcome
+            if stopped is not None and stopped.get("reason") == ENGINE_OFF:
+                # The engine is off: no build ran and none can. A setting is not a stop, so no hold is kept (it would outlive the setting).
+                with _LOCK:
+                    _STATE["last_skip"] = {**stopped, "source": "engine"}
                 ran = False
                 outcome = "declined"
                 return outcome

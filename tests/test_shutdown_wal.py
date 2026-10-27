@@ -39,11 +39,10 @@ from src.database import library_generation as lg
 from src.database import session as session_mod
 from src.database import shutdown_checkpoint as sc
 from src.monitoring import forensics, storage_events
+from tests.wallclock_helpers import CheckpointTimeoutWatch, call_on_thread
 
 _KEY = "a throwaway passphrase for the shutdown write-back test"
 _TARGET = 1024 * 1024  # a log this big is a few hundred commits; the field's was 1.41 GB, the harness's 300 MiB
-#: far under the 30 s busy timeout the connection factory gives a connection, which is what a step that WAITED for the reader would cost
-_NOT_THE_FACTORY_TIMEOUT_S = 5.0
 
 
 class Store:
@@ -164,17 +163,24 @@ def test_the_step_writes_the_log_back_with_an_idle_straggler_and_the_disposal_th
     assert kw["outcome"] == "done" and kw["wal_before"] == before and kw["wal_after"] == 0
 
 
-def test_a_reader_whose_snapshot_predates_the_log_makes_the_step_say_busy_at_once_with_only_its_own_frames_written_back(store, journal):
+def test_a_reader_whose_snapshot_predates_the_log_makes_the_step_say_busy_at_once_with_only_its_own_frames_written_back(store, journal, monkeypatch):
     """SHAPE A. The reader began before the writes, so only the frames up to its mark are safe to copy: the answer is instant, the checkpointed
     count is far under the log's, and the log is as it was."""
     store.grow_log()  # the pinning reader IS the straggler, inside its read, and its snapshot is older than every frame
     before = store.wal_bytes()
     assert before >= _TARGET
-    began = time.monotonic()
-    out = sc.checkpoint_before_dispose(store.db)
-    waited = time.monotonic() - began
+    # the reader keeps its snapshot until the fixture ends it, so the step coming back at all is the step NOT waiting for it: a step that waited
+    # would take the factory's 30 s busy timeout, past the guard. A step that waited less (10 s) would come back too, so the busy timeout in
+    # force when the checkpoint ran is read as well.
+    import src.database.connect as dbc
+
+    timeouts: list[int] = []
+    real_connect = dbc.connect
+    monkeypatch.setattr(dbc, "connect", lambda *a, **kw: CheckpointTimeoutWatch(real_connect(*a, **kw), timeouts))
+    came_back, out = call_on_thread(sc.checkpoint_before_dispose, store.db)
+    assert came_back, "the step waited for a reader: it must not wait for one"
+    assert timeouts == [0], f"the checkpoint ran with the busy timeout at {timeouts} ms: it must be 0, or it waits for the reader"
     assert out["outcome"] == "busy" and out["truncate"][0] != 0, out
-    assert waited < _NOT_THE_FACTORY_TIMEOUT_S, f"the step waited {waited:.1f} s for a reader: it must not wait for one"
     assert out["truncate"][1] > out["truncate"][2], f"frames were written back though the reader's snapshot predates them: {out['truncate']}"
     assert out["copied_all"] is False, out
     assert store.wal_bytes() == before, "a busy checkpoint wrote something back or truncated"

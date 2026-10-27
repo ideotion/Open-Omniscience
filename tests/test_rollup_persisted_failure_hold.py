@@ -192,13 +192,13 @@ def test_a_refresh_that_ran_is_still_built(monkeypatch):
 
 
 def test_the_real_refresh_does_not_open_a_store_without_the_passphrase_or_the_secure_backend(monkeypatch):
-    """``columnar.connect`` given no passphrase returns an in-memory connection: recorded as the persisted store, it would be reported as built."""
+    """``columnar.open_store`` given no passphrase returns an in-memory store: recorded as the persisted store, it would be reported as built."""
     from src.analytics import columnar
 
-    def connect(**_kw):
-        raise AssertionError("connect was called although the passphrase is gone")
+    def open_store(*_a, **_kw):
+        raise AssertionError("the store was opened although the passphrase is gone")
 
-    monkeypatch.setattr(columnar, "connect", connect)
+    monkeypatch.setattr(columnar, "open_store", open_store)
     monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
     monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: None)
     assert rollup_serve._refresh_persisted_build() is False
@@ -213,5 +213,5 @@ def test_an_engine_that_gives_no_connection_declines_too(monkeypatch):
 
     monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
     monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: "pw")
-    monkeypatch.setattr(columnar, "connect", lambda **_kw: None)
+    monkeypatch.setattr(columnar, "open_store", lambda *_a, **_kw: columnar.OpenedStore(None, "off"))
     assert rollup_serve._refresh_persisted_build() is False

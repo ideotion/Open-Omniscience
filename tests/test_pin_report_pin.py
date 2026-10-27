@@ -11,7 +11,6 @@ the report gives the figure as a measurement and the holders as candidates, the 
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -21,9 +20,10 @@ from sqlalchemy.pool import QueuePool
 from src.database import pool_watch, writer
 from src.scheduler import storage_guard
 from src.scheduler.hygiene import checkpoint_wal
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 
-def _wal_engine(tmp_path, *, with_pause: bool = False):
+def _wal_engine(tmp_path):
     db = tmp_path / "pin.db"
     eng = create_engine(f"sqlite:///{db}", future=True)
 
@@ -33,8 +33,6 @@ def _wal_engine(tmp_path, *, with_pause: bool = False):
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA wal_autocheckpoint=0")
         cur.close()
-        if with_pause:
-            dbapi.create_function("pause", 1, lambda s: time.sleep(s) or 1)
 
     return db, eng
 
@@ -201,16 +199,30 @@ def test_a_real_second_checkpointer_gives_the_busy_answer_and_the_guard_does_not
     for _ in range(200):
         w.execute("INSERT INTO t VALUES (randomblob(2000))")
     other = sqlite3.connect(p, isolation_level=None, check_same_thread=False)
-    other.execute("PRAGMA busy_timeout=4000")
-    th = threading.Thread(target=lambda: other.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone())
+    other.execute("PRAGMA busy_timeout=30000")  # it waits for the reader until the reader is closed below, not for a time
+    stop = threading.Event()
+
+    def second_checkpointer():
+        # A checkpoint that finds the checkpoint lock taken answers busy at once, and the probe below takes it for a moment on every look: so
+        # this asks again until it is the one that holds the lock and waits for the reader (the call then does not return until the reader goes)
+        while not stop.is_set():
+            if other.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[1] >= 0:
+                return
+            stop.wait(0.001)
+
+    th = threading.Thread(target=second_checkpointer)
     th.start()
-    time.sleep(0.4)  # 'other' holds the checkpoint lock while it waits for the reader
+    probe = sqlite3.connect(p, isolation_level=None)
     try:
+        # 'other' holds the checkpoint lock while it waits for the reader: SQLite says so to anyone who asks, with ``(1, -1, -1)``
+        assert wait_until(lambda: probe.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()[1] < 0), "'other' never took the checkpoint lock"
         eng = create_engine(f"sqlite:///{p}")
         rec = checkpoint_wal(engine=eng, force=True, gate_timeout_s=5, passive_without_gate=True)
     finally:
-        th.join(10)
-        reader.close()
+        stop.set()
+        probe.close()
+        reader.close()  # lets 'other' finish its wait
+        th.join(HANG_GUARD_S)
         other.close()
         w.close()
     assert rec is not None and rec["passive"]["busy"] == 1 and rec["passive"]["log_frames"] < 0, rec
@@ -300,7 +312,7 @@ def test_a_thread_in_a_commit_ranks_with_the_statements_and_a_gone_thread_has_no
 
 
 def test_the_phases_of_real_threads_rank_the_one_inside_a_statement_first(tmp_path):
-    db, eng = _wal_engine(tmp_path, with_pause=True)
+    db, eng = _wal_engine(tmp_path)
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TABLE t(id INTEGER PRIMARY KEY, b BLOB)")
     release = threading.Event()
@@ -309,20 +321,21 @@ def test_the_phases_of_real_threads_rank_the_one_inside_a_statement_first(tmp_pa
 
     def idle():
         idle_up.set()
-        release.wait(10)
+        release.wait(HANG_GUARD_S)
 
     def in_statement():
         with eng.connect() as c:
-            stmt_up.set()
-            c.exec_driver_sql("SELECT pause(2)").fetchall()
+            # a SQL function that tells the test it is running and stays in the statement until the test lets it go: the thread is inside
+            # the driver's execute for exactly as long as the test needs, however long a loaded runner takes to get here
+            c.connection.dbapi_connection.create_function("hold", 0, lambda: stmt_up.set() or release.wait(HANG_GUARD_S) or 1)
+            c.exec_driver_sql("SELECT hold()").fetchall()
 
     t_idle = threading.Thread(target=idle, name="pin-idle")
     t_stmt = threading.Thread(target=in_statement, name="pin-statement")
     t_idle.start()
-    assert idle_up.wait(5)
+    assert idle_up.wait(HANG_GUARD_S)
     t_stmt.start()
-    assert stmt_up.wait(5)
-    time.sleep(0.4)  # into the statement
+    assert stmt_up.wait(HANG_GUARD_S), "the statement is running"
     pool_watch.register(eng)
     try:
         import unittest.mock as mock
@@ -336,8 +349,8 @@ def test_the_phases_of_real_threads_rank_the_one_inside_a_statement_first(tmp_pa
         assert [(h["thread"], h["phase"]) for h in rep["holders"]] == [("pin-statement", "execute"), ("pin-idle", "python")]
     finally:
         release.set()
-        t_idle.join(10)
-        t_stmt.join(15)
+        t_idle.join(HANG_GUARD_S)
+        t_stmt.join(HANG_GUARD_S)
         eng.dispose()
 
 

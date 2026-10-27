@@ -10,7 +10,9 @@ push a heavy snapshot out, and it never walks the heap.
 
 from __future__ import annotations
 
+import builtins
 import gc
+import io
 import json
 import os
 import sys
@@ -22,6 +24,7 @@ import pytest
 
 from src.monitoring import forensics, session_history, session_hwm
 from tests import previous_identity
+from tests.wallclock_helpers import HANG_GUARD_S
 
 TOTAL = 5000.0
 FLOOR, SHARE = 256.0, 85.0
@@ -299,6 +302,25 @@ def test_cpu_is_read_from_the_threads_own_kernel_clock_so_it_never_waits_for_the
         t.start()
     opened = []
     monkeypatch.setattr(session_hwm.Path, "read_bytes", lambda self: opened.append(str(self)) or b"")
+
+    def watching(real):
+        def spy(file, *args, **kwargs):
+            if str(file).startswith("/proc"):
+                opened.append(str(file))
+            return real(file, *args, **kwargs)
+
+        return spy
+
+    # every other way into /proc is recorded too (a plain open, the os-level open, psutil's thread scan), passing through to the real call
+    monkeypatch.setattr(builtins, "open", watching(builtins.open))
+    monkeypatch.setattr(io, "open", watching(io.open))
+    monkeypatch.setattr(os, "open", watching(os.open))
+    try:
+        import psutil
+    except ImportError:  # no psutil: that route does not exist to take
+        psutil = None
+    if psutil is not None:
+        monkeypatch.setattr(psutil.Process, "threads", lambda self: opened.append("psutil.Process.threads") or [])
     if hasattr(real_time, "pthread_getcpuclockid"):
 
         def must_not_be_called(ident):
@@ -306,18 +328,22 @@ def test_cpu_is_read_from_the_threads_own_kernel_clock_so_it_never_waits_for_the
 
         monkeypatch.setattr(real_time, "pthread_getcpuclockid", must_not_be_called)
     try:
-        real_time.sleep(0.2)
         tids = [t.native_id for t in busy]
-        t0 = real_time.perf_counter()
-        got = session_hwm._thread_cpu(tids)
-        took = real_time.perf_counter() - t0
+        # every thread must have run long enough to show a hundredth of a second (the figure is rounded to it): waited for, under a guard, not slept for
+        deadline = real_time.monotonic() + HANG_GUARD_S
+        while True:
+            got = session_hwm._thread_cpu(tids)
+            if (set(got) == set(tids) and all(v > 0 for v in got.values())) or real_time.monotonic() > deadline:
+                break
+            real_time.sleep(0.02)
     finally:
         stop.set()
         for t in busy:
             t.join(5)
     assert set(got) == set(tids) and all(v > 0 for v in got.values()), got
+    # THE ORDER, not a duration: a read that went through /proc (or psutil) waits a switch interval behind each busy thread; every way into /proc
+    # is recorded above, so the clock answering for every thread and nothing opened is "never waits for the GIL"
     assert opened == [], "no /proc file is read while the thread clock answers"
-    assert took < 0.5, f"{took:.3f} s under eight busy threads"
 
 
 @LINUX

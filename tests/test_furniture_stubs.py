@@ -324,18 +324,17 @@ def test_closer_stripping_cost_grows_linearly_with_whitespace():
     """The closers regex once backtracked cubically, and its first replacement was quadratic. Compare
     10k with 160k whitespace on the same run, best of 3 each: linear is ~16x, quadratic ~256x, cubic
     ~4096x, so a 64x bound separates them with margin and needs no wall-clock limit (measured: 160k
-    takes ~1.3 ms)."""
-    import time
-
+    takes ~1.3 ms). Timed on the thread's own CPU clock, which a pause or a busy runner does not advance."""
     from src.ingest.furniture import _without_closers
+    from tests.wallclock_helpers import CPU_CLOCK
 
     def best(n):
         runs = []
         for _ in range(3):
             text = " " * n + "x"
-            t = time.perf_counter()
+            t = CPU_CLOCK()
             _without_closers(text)
-            runs.append(time.perf_counter() - t)
+            runs.append(CPU_CLOCK() - t)
         return max(min(runs), 1e-7)
 
     assert best(160_000) / best(10_000) < 64

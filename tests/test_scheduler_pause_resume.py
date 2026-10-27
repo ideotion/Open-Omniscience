@@ -13,10 +13,12 @@ PAUSE call's own return value, never unconditional).
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
 from src.scheduler.runner import BackgroundScheduler
+from tests.wallclock_helpers import HANG_GUARD_S, quiet_pass_tail
 
 
 class _FakeSettings:
@@ -32,6 +34,13 @@ class _FakeSettings:
 @pytest.fixture(autouse=True)
 def _isolate_data_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _quiet_pass_tail(monkeypatch):
+    """A stop is answered after the pass the loop is in has ended, tail included, and a started loop is a thread that can be in it: the real work
+    every pass ends with (a collection of the whole process heap, a WAL checkpoint through the write gate) is out of the order these tests assert."""
+    quiet_pass_tail(monkeypatch)
 
 
 @pytest.fixture(autouse=True)
@@ -58,6 +67,8 @@ def _running_scheduler() -> BackgroundScheduler:
 
     sch = BackgroundScheduler(run_once_fn=run_once, settings_provider=lambda: _FakeSettings())
     sch._continuous_gap_s = 0.05
+    sch._maint_interval_s = 1e9  # the off-peak maintenance a first pass is followed by is seconds of real work: not what these tests are about
+    sch._last_maint = time.monotonic()
     assert sch.start() is True
     return sch
 
@@ -68,7 +79,7 @@ def test_pause_stops_a_running_scheduler_and_reports_it_was_running(monkeypatch)
     sch = _running_scheduler()
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
     try:
-        was_paused = runner_mod.pause_for_exclusive_operation(timeout=5.0)
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
         assert was_paused is True
         assert sch.is_running() is False
     finally:
@@ -107,7 +118,7 @@ def test_pause_then_resume_round_trips_back_to_running(monkeypatch):
     sch = _running_scheduler()
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
     try:
-        was_paused = runner_mod.pause_for_exclusive_operation(timeout=5.0)
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
         assert sch.is_running() is False
         runner_mod.resume_after_exclusive_operation(was_paused)
         assert sch.is_running() is True
@@ -125,7 +136,7 @@ def test_resume_after_a_genuine_pause_survives_a_finally_block_pattern(monkeypat
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
     was_paused = False
     try:
-        was_paused = runner_mod.pause_for_exclusive_operation(timeout=5.0)
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
         assert sch.is_running() is False
         raise RuntimeError("simulated restore failure")
     except RuntimeError:
@@ -323,7 +334,7 @@ def test_pause_then_resume_round_trip_releases_the_hold(monkeypatch):
     sch = _running_scheduler()
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
     try:
-        was_paused = runner_mod.pause_for_exclusive_operation(timeout=5.0)
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
         assert sch.run_now() is False, "blocked for the whole duration of the exclusive operation"
         runner_mod.resume_after_exclusive_operation(was_paused)
         assert sch.is_running() is True

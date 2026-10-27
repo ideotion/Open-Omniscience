@@ -32,6 +32,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, rollup_marker, rollup_serve
 from src.database.models import Base
+from tests.wallclock_helpers import wait_until
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -1122,16 +1123,22 @@ def test_the_slow_step_watch_warns_once_then_only_when_progress_has_stopped(monk
         rollup_serve, "build_progress",
         lambda: {"stage": "keywords", "rows_done": 7_000, "rows_per_s": 500, "idle_s": state["idle"], "running_s": 9.0},
     )
+    def spoken() -> list[str]:
+        return [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
+
     with caplog.at_level(logging.WARNING, logger=bs._LOG.name):
         watch = bs._SlowWatch("rollup", "the re-index")
         watch.start()
-        threading.Event().wait(0.4)  # several intervals; the build keeps moving (idle_s stays 0)
-        moving = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
+        # what the watch said is WAITED FOR, observed, where this used to sleep a fixed time and count: the first warning, then several
+        # intervals in which a watch that re-armed on a moving build would speak again (the build keeps moving: idle_s stays 0)
+        assert wait_until(lambda: len(spoken()) >= 1), "the watch never spoke"
+        threading.Event().wait(0.4)
+        moving = spoken()
         state["idle"] = 999.0  # ... and now it has not moved for longer than the limit
-        threading.Event().wait(0.3)
+        assert wait_until(lambda: any("no progress" in m for m in spoken())), "the watch never said the build had stopped moving"
         watch.cancel()
     assert len(moving) == 1 and "still running" in moving[0] and "7,000 rows at 500 rows/s" in moving[0]
-    stuck = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name and "no progress" in r.getMessage()]
+    stuck = [m for m in spoken() if "no progress" in m]
     assert stuck and "999 s" in stuck[0] and "the re-index waiting behind it" in stuck[0]
     ours = lambda: [r for r in caplog.records if r.name == bs._LOG.name]  # noqa: E731
     after = len(ours())
@@ -1150,16 +1157,21 @@ def test_a_long_aggregate_statement_is_not_called_stuck_and_a_step_without_a_cha
         rollup_serve, "build_progress",
         lambda: {"stage": "aggregate", "rows_done": 9_000, "idle_s": 999.0, "running_s": 1000.0},
     )
+    def spoken() -> list[str]:
+        return [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
+
     with caplog.at_level(logging.WARNING, logger=bs._LOG.name):
         watch = bs._SlowWatch("rollup", "the re-index")
         watch.start()
-        threading.Event().wait(0.3)
+        assert wait_until(lambda: any("aggregate statement" in m for m in spoken())), "the watch never named the aggregate statement"
+        threading.Event().wait(0.3)  # several intervals more: "never says no progress" is a negative, so the watch must keep re-arming meanwhile
         watch.cancel()
         other = bs._SlowWatch("warm-cache", "the re-index")
         other.start()
-        threading.Event().wait(0.3)
+        assert wait_until(lambda: any("boot step warm-cache" in m for m in spoken())), "the step with no channel never warned"
+        threading.Event().wait(0.3)  # several intervals more: "one warning" is a count that must not grow, so the wait is the point
         other.cancel()
-    msgs = [r.getMessage() for r in caplog.records if r.name == bs._LOG.name]
+    msgs = spoken()
     assert any("aggregate statement" in m and "999 s" in m for m in msgs)
     assert not any("made no progress" in m for m in msgs), "a statement that cannot report is not a stuck build"
     assert sum("boot step warm-cache" in m for m in msgs) == 1, "no channel, no re-arm: one warning"

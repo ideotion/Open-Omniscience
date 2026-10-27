@@ -62,13 +62,13 @@ _LISTED: dict[str, tuple[frozenset[str], str]] = {
     "src/ingest/pipeline.py::ingest_source": (frozenset({"script", "dev-tool"}), "src/testing/collect_soak.py and the collection bench script, harnesses that run one pass and exit"),
     "src/monitoring/expedition.py::_memory": (frozenset({"script"}), "scripts/country_migration_evidence.py's p0 step (build_p0_report, session_forensics, expedition.digest), an operator evidence tool that ends on the interrupt"),
     "src/monitoring/swap.py::swap_readings": (frozenset({"script", "dev-tool"}), "the collection bench script and the soak harness reach it through MemoryGuard.poll (observe, release_residents); both are dev tools that end on the interrupt. (scripts/fault_harness.py is NOT a third entry: its proc.poll() is subprocess.Popen.poll, a by-name collision that the bench's script token already hides)"),
-    "src/monitoring/vitals_history.py::start": (frozenset({"event-loop"}), "session_history.start_liveness calls it through an import alias (_vitals_start) from the lifespan (event loop, R165)"),
+    "src/monitoring/vitals_history.py::start": (frozenset({"event-loop"}), "the lifespan calls forensics.record_session_start -> session_history.record_boot -> start_liveness, which calls it through an import alias (_vitals_start) (event loop, R165)"),
     "src/monitoring/forensics.py::_filesystem_type": (frozenset({"script", "event-loop"}), "the lifespan's data_dir_persistence (event loop, R165) and the migration evidence script"),
     "src/monitoring/secret_scrub.py::scrubbed_copy": (frozenset({"script"}), "the migration evidence and scale bench scripts (dev tools)"),
     "src/osm/history.py::ingest_history": (frozenset({"script"}), "scripts/osm_history_ingest.py, an operator tool that ingests one history file and exits"),
-    "src/osm/pbf.py::_records": (frozenset({"script"}), "scripts/build_admin_boundaries.py reads a .pbf through the reader and exits"),
+    "src/osm/pbf.py::_records": (frozenset({"script"}), "scripts/build_admin_boundaries.py, scripts/osm_history_ingest.py (ingest_history) and scripts/osm_ingest.py (ingest_country) read a .pbf through the reader and exit"),
     "src/osm/places.py::build_search_index": (frozenset({"script"}), "scripts/osm_ingest.py, an operator tool that ingests one country and exits"),
-    "src/osm/reader.py::available_memory_bytes": (frozenset({"script"}), "scripts/osm_ingest.py (as above)"),
+    "src/osm/reader.py::available_memory_bytes": (frozenset({"script"}), "scripts/osm_ingest.py (as above) and scripts/osm_reference_run.py (the reference-VM run, gate item 8), operator tools that run once and exit"),
     "src/osm/view.py::build_view_index": (frozenset({"script"}), "scripts/osm_ingest.py (as above)"),
 }
 

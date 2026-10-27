@@ -28,6 +28,7 @@ from src.database import connect as connect_mod
 from src.database import corpus_lease, encrypt_tool
 from src.scheduler import runner
 from src.scheduler.storage_guard import GIB, StorageGuard
+from tests.wallclock_helpers import call_on_thread
 
 _KEY = "a-long-enough-passphrase-for-the-test-9Q"
 
@@ -161,10 +162,11 @@ def test_work_that_does_not_end_is_a_named_refusal_and_nothing_is_touched(monkey
     monkeypatch.setattr(unlock_mod, "ENCRYPT_QUIESCE_S", 0.3)
     called: list = []
     monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: called.append(1) or {})
-    t0 = time.monotonic()
+    # the lease is held until this block ends, so a route that answers inside it was ended by ENCRYPT_QUIESCE_S; one that waited for the lease
+    # never answers, and the guard says so
     with corpus_lease.corpus_lease("storage-guard-drain"), pytest.raises(HTTPException) as err:
-        unlock_mod.encrypt_db(_body())
-    assert time.monotonic() - t0 < 3.0, "the wait is bounded by ENCRYPT_QUIESCE_S, not by anything else"
+        came_back, _ = call_on_thread(unlock_mod.encrypt_db, _body())
+        assert came_back, "the wait is bounded by ENCRYPT_QUIESCE_S, not by anything else"
     assert err.value.status_code == 409
     assert "storage-guard-drain" in err.value.detail and "nothing was encrypted" in err.value.detail
     assert _KEY not in err.value.detail

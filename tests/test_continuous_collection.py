@@ -14,6 +14,7 @@ Group B slice 1 (SCRAPING_AUTOMATION_PLAN Step 5; maintainer 2026-06-13):
 from __future__ import annotations
 
 import random
+import threading
 import time
 
 from src.scheduler.runner import BackgroundScheduler, round_robin_interleave
@@ -73,13 +74,38 @@ _HANG_GUARD_S = 30.0
 
 def _later_passes_margin_s(first_pass_s: float) -> float:
     """What the passes after the first are allowed: ten times what the first took (a runner as loaded as the first pass
-    showed, ten times over) and never under 5 s, the fixed wait this replaces."""
-    return max(5.0, 10.0 * first_pass_s)
+    showed, ten times over) and never under the hang guard. The 5 s floor this had was a measurement of an idle machine: a
+    process stopped and continued at random for a few seconds in all (a collection pause, a stolen CPU slice) ran the first pass
+    in a moment and then starved the loop of the two after it. The wait costs a passing run nothing, since the polling below
+    leaves the moment the passes are counted."""
+    return max(_HANG_GUARD_S, 10.0 * first_pass_s)
+
+
+#: The waits the loop makes while the memory or the storage guard holds it are not gaps between passes; they get values no gap has, and the
+#: recorded waits are read without them, so a runner under memory pressure reads the same as an idle one.
+_MEM_POLL_S, _STORAGE_POLL_S = 7.25, 3.75
+
+
+def _gaps(stop: _RecordingStop) -> list[float | None]:
+    return [w for w in stop.waits if w not in (_MEM_POLL_S, _STORAGE_POLL_S)]
+
+
+class _RecordingStop(threading.Event):
+    """The scheduler's stop event, recording every wait the loop asks it for: the gap the loop sleeps between passes is what the tests below
+    read, as the number it asked for, where a stopwatch around a pass would read the machine's pauses as well."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waits: list[float | None] = []
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waits.append(timeout)
+        return super().wait(timeout)
 
 
 def test_the_margin_for_the_later_passes_scales_with_the_measured_first_pass():
-    assert _later_passes_margin_s(0.0) == 5.0 and _later_passes_margin_s(0.4) == 5.0  # a quick runner keeps the old wait
-    assert _later_passes_margin_s(2.0) == 20.0 and _later_passes_margin_s(6.0) == 60.0  # a loaded one gets more, in proportion
+    assert _later_passes_margin_s(0.0) == _HANG_GUARD_S and _later_passes_margin_s(0.4) == _HANG_GUARD_S  # a quick runner keeps the guard
+    assert _later_passes_margin_s(6.0) == 60.0 and _later_passes_margin_s(9.0) == 90.0  # a loaded one gets more, in proportion
 
 
 def test_continuous_mode_runs_passes_back_to_back():
@@ -94,6 +120,8 @@ def test_continuous_mode_runs_passes_back_to_back():
         settings_provider=lambda: SchedulerSettings(continuous=True, interval_minutes=60),
     )
     sched._continuous_gap_s = 0.01  # tiny gap so the test sees many passes fast
+    sched._stop = stop = _RecordingStop()
+    sched._mem_pause_poll_s, sched._storage_pause_poll_s = _MEM_POLL_S, _STORAGE_POLL_S
     # The loop's first idle window runs REAL off-peak maintenance (seconds on a busy database): throttle it as if it had
     # just run, so the 5 s below measure the passes and not the maintenance.
     sched._maint_interval_s = 1e9
@@ -113,24 +141,46 @@ def test_continuous_mode_runs_passes_back_to_back():
             time.sleep(0.02)
         # Continuous: it kept going (>1 pass) despite interval_minutes=60.
         assert calls["n"] >= 3
+        # ...with only the short gap between passes: the loop asked to wait the 0.01 s it was given, never the hour of interval_minutes
+        # nor a floor of its own, however long the machine took to answer. (The passes counted above are within a guard, which a gap of a
+        # few seconds would also meet; the gap itself is read here.)
+        gaps = _gaps(stop)
+        assert gaps and set(gaps) == {0.01}, f"the gaps the loop asked for between passes: {sorted(set(gaps), key=str)}"
     finally:
         sched.stop()
 
 
 def test_legacy_interval_mode_runs_once_then_waits():
     calls = {"n": 0}
+    stop = _RecordingStop()
+    waits_before_first_pass: list[list[float | None]] = []
+
+    def fake_run():
+        waits_before_first_pass.append(_gaps(stop))
+        calls["n"] += 1
+        return {"ok": True}
 
     sched = BackgroundScheduler(
-        run_once_fn=lambda: calls.__setitem__("n", calls["n"] + 1) or {"ok": True},
+        run_once_fn=fake_run,
         # continuous=False restores the old cadence: one pass, then a long idle.
         settings_provider=lambda: SchedulerSettings(continuous=False, interval_minutes=60),
     )
+    sched._stop = stop
+    sched._mem_pause_poll_s, sched._storage_pause_poll_s = _MEM_POLL_S, _STORAGE_POLL_S
+    sched._maint_interval_s = 1e9  # the idle window's off-peak maintenance is not what this reads
+    sched._last_maint = time.monotonic()
     try:
         assert sched.start() is True
-        deadline = time.time() + 2
-        while calls["n"] < 1 and time.time() < deadline:
+        deadline = time.monotonic() + _HANG_GUARD_S
+        while calls["n"] < 1 and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert calls["n"] == 1  # the immediate first run
+        assert calls["n"] == 1  # the first run
+        assert waits_before_first_pass[0] == [], "the first run is immediate: the loop waited before it"
+        # ...then the loop idles interval_minutes: the wait it asks for is the hour, observed, not inferred from a quiet half second
+        deadline = time.monotonic() + _HANG_GUARD_S
+        while 3600.0 not in stop.waits and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert 3600.0 in stop.waits, f"the loop asked to wait {stop.waits}, not interval_minutes"
         time.sleep(0.5)
         assert calls["n"] == 1  # still 1 — it is idling interval_minutes, not looping
     finally:

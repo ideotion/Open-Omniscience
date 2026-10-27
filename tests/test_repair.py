@@ -776,7 +776,7 @@ def test_a_checkpoint_another_connection_holds_the_lock_for_is_measured_as_not_r
         holder.commit()  # a frame the reader's snapshot does not include: a truncate has to wait for the reader
 
         def checkpoint() -> None:
-            other.execute("PRAGMA busy_timeout=6000")
+            other.execute("PRAGMA busy_timeout=60000")  # a hang guard: the reader's close below ends the wait, nothing else does
             started.set()
             try:
                 other.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -785,13 +785,28 @@ def test_a_checkpoint_another_connection_holds_the_lock_for_is_measured_as_not_r
 
         thread = threading.Thread(target=checkpoint, daemon=True)
         thread.start()
-        assert started.wait(5)
-        time.sleep(0.5)
+        assert started.wait(20)
+        # The premise is OBSERVED, not slept for: a TRUNCATE checkpoint takes the log's writer lock before it waits for the reader,
+        # so a writer that may not wait cannot begin once the checkpoint is waiting. (A fixed half-second let a paused thread
+        # reach its checkpoint after the probe's own, which then folded and read as no other holder.)
+        prober = sqlite3.connect(live, timeout=0, check_same_thread=False, isolation_level=None)
+        try:
+            deadline = time.monotonic() + 20
+            while True:
+                try:
+                    prober.execute("BEGIN IMMEDIATE")
+                except sqlite3.OperationalError:
+                    break  # the writer lock is held: the other checkpoint is inside its wait for the reader
+                prober.execute("ROLLBACK")
+                assert time.monotonic() < deadline, "the other checkpoint never reached its wait for the reader"
+                time.sleep(0.01)
+        finally:
+            prober.close()
         assert not finished.is_set(), "the premise failed: the other checkpoint did not wait for the reader"
         assert watch.fold(100) is None, "a checkpoint that could not take the checkpoint lock was read as a fold"
     finally:
         reader.close()  # lets the other checkpoint finish
-        finished.wait(10)
+        finished.wait(30)
         other.close()
         watch.close()
         holder.close()
