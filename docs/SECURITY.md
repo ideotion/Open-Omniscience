@@ -405,13 +405,15 @@ down is a RECORD of that date and carries its own disposition table.)*
   is refused (403). A `Host` header that does not name this loopback API is refused (421, a
   DNS-rebinding guard); `OO_ALLOWED_HOSTS` (comma-separated hostnames, no port; an IPv6 literal is written with its brackets, as `[fe80::1]`) is the escape
   hatch for serving the app under another name and widens both checks; every non-Swagger
-  response carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
-  `frame-ancestors 'none'`. CORS ships `allow_credentials=False`.
+  response that reaches the header step carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
+  `frame-ancestors 'none'`. The one exception is the Origin check's own 403 (a short JSON body), which is returned before the header step and
+  carries none of them (measured 27 Oct, audit 0.5.0 read of the origin ratchet). CORS ships `allow_credentials=False`.
 - **What stands between a cross-site page and a state-changing request (stated 2026-10-26, audit 0.5.0
   item 35).** Three layers, in the order a request meets them. (1) The `Origin` / `Referer` check
-  above is the OUTER middleware, so it runs first: a foreign host or port, or an `Origin: null`, is
-  refused (403) before the `Host` guard is reached, and a state-changing request that carries
-  neither header passes, which is what a command-line client sends. (2) The `Host` allow-set refuses
+  above is the outermost of the three, so it runs before the `Host` guard: a foreign host or port, or an `Origin: null`, is
+  refused (403) before the `Host` guard is reached. It is not the first middleware a request meets: the lock gate (a locked store answers 503
+  before any Origin check, measured on 312 of 317 operations), the request monitor and GZip sit outside it (stack read from `app.user_middleware`, 27 Oct). A state-changing request that
+  carries neither header passes, which is what a command-line client sends. (2) The `Host` allow-set refuses
   a DNS-rebinding name (421); it is the only stop for a request that carries no `Origin` and no
   `Referer`, and for a `GET`. (3) For a route that REQUIRES a JSON body, FastAPI answers 422 to a body
   that is not typed as JSON: `text/plain`, form and multipart bodies have been refused since long
@@ -496,7 +498,7 @@ ethical-fetch path and the evidence-verification guarantees above.
 > | S-003 | CSRF on no-body POSTs | **Closed.** A middleware refuses any state-changing method whose `Origin`/`Referer` does not name this server, host and port (403). A separate `Host`-header guard refuses a DNS-rebinding host with 421. | `src/api/main.py::csrf_and_security_headers` |
 > | S-004 | CSV formula injection | **Closed.** Exported cells beginning `= + - @` or a control char are prefixed with `'`. | `src/utils/security.py::csv_safe_cell`, `tests/test_security_hardening.py` |
 > | S-005 | `javascript:` URI in an `href` | **Closed.** A strict http(s) scheme allowlist runs on every ingested URL rendered as a link, server-side and in the reader. | `src/utils/security.py::safe_href` (call sites: `src/api/main.py`, `src/api/law.py`, `src/services/duckduckgo.py`) |
-> | S-006 | No CSP / security headers | **Closed, including the residual (2026-09-28).** `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with `frame-ancestors 'none'` ship on every non-Swagger response. The residual (NET-04) was `script-src 'unsafe-inline'`, held there by 656 inline `on*=` handlers and six inline `<script>` blocks. 0.5 row I (Q1127 = a) retired all of them: handlers became `data-on-*` bindings that `/static/oo-on.js` parses against an allowlist and never evaluates, and each inline block became a file. `script-src` is now `'self'` alone, so no nonce was needed. `style-src` keeps `'unsafe-inline'`, which was not ruled. | `src/api/main.py::_CSP`, `tests/test_inline_handler_ratchet.py`, `tests/test_security_hardening.py::test_script_src_allows_no_inline_script` |
+> | S-006 | No CSP / security headers | **Closed, including the residual (2026-09-28).** `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with `frame-ancestors 'none'` ship on every non-Swagger response that reaches the header step (the Origin check's own 403 does not, see the line above). The residual (NET-04) was `script-src 'unsafe-inline'`, held there by 656 inline `on*=` handlers and six inline `<script>` blocks. 0.5 row I (Q1127 = a) retired all of them: handlers became `data-on-*` bindings that `/static/oo-on.js` parses against an allowlist and never evaluates, and each inline block became a file. `script-src` is now `'self'` alone, so no nonce was needed. `style-src` keeps `'unsafe-inline'`, which was not ruled. | `src/api/main.py::_CSP`, `tests/test_inline_handler_ratchet.py`, `tests/test_security_hardening.py::test_script_src_allows_no_inline_script` |
 > | S-007 | CORS `allow_credentials=True` | **Closed.** The app passes `allow_credentials=False`. (`src/config/settings.py` still declares a `cors_allow_credentials` default of `True`; nothing reads it — recorded here rather than changed, because removing a config field is a surface change, not a security fix.) | `src/api/main.py` CORS middleware |
 > | S-008 | XXE (residual) | **Posture asserted.** Both untrusted-XML readers parse through `defusedxml`. | `src/wiki/dumpread.py`, `src/ingest/sitemap.py` |
 > | S-011 | At-rest file permissions | **Closed at the level that bounds access.** The whole data dir is `chmod 0700` on creation, which is what stops another local user reading the corpus, keys and custody log; individual files keep their umask mode inside it. Best-effort and POSIX-only by design — full at-rest encryption remains the host's job (Qubes/LUKS), as the report itself says. | `src/paths.py::_ensure` |
