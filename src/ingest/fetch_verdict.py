@@ -45,16 +45,21 @@ _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
 #      class a caller prefixed ("FetchFailed: ...");
 #   2. the socket guard's refusal (``airplane.py``, an ``AirplaneModeError``), bare, or as ``requests`` wraps it when the switch is engaged
 #      AFTER the fetcher's own check passed: "request error for <url>: ...Failed to establish a new connection: airplane mode is engaged: ...".
-#      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words).
+#      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words);
+#   3. the same guard sentence under OUR resolver wrapper (``EthicalFetcher._resolve_cached``), when the switch is engaged between the
+#      pre-fetch check and the lookup: "cannot resolve host '<host>': airplane mode is engaged: refusing a network connection ...". The host
+#      is the only part another party shapes, and a host cannot hold whitespace (a parser mismatch is refused before any lookup), so it cannot
+#      carry the ": airplane mode ..." tail; a gaierror's own text ("[Errno -2] ...") between the two never matches.
 _OFFLINE_RE = re.compile(
     r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
-    r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection",
+    r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
+    r"|^\s*cannot resolve host (?:'[^'\s]*'|\"[^\"\s]*\"): airplane mode is engaged: refusing a network connection",
     re.IGNORECASE | re.DOTALL,
 )
 
 
 def is_kill_switch_refusal(text: str | None) -> bool:
-    """True when ``text`` IS one of our two refusal sentences (see above). One definition for every caller that must tell the person's
+    """True when ``text`` IS one of our refusal sentences (see above). One definition for every caller that must tell the person's
     own airplane mode apart from a host's failure; a phrase search over the text is not an equivalent."""
     return text is not None and _OFFLINE_RE.match(text) is not None
 

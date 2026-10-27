@@ -53,6 +53,16 @@ from src.ingest.fetch_verdict import (
             "HTTP 502 for https://h.test/a: Failed to establish a new connection: airplane mode is engaged: refusing a network connection",
             "http_5xx",
         ),
+        # The same guard sentence under OUR resolver wrapper (R300), and the controls that must stay a DNS failure or an HTTP error.
+        (
+            "cannot resolve host 'h.test': airplane mode is engaged: refusing a network connection to 'h.test'. No packet leaves the machine while offline",
+            "offline",
+        ),
+        ("cannot resolve host 'h.test': [Errno -2] airplane mode is engaged: refusing a network connection to 'h.test'", "dns"),
+        (
+            "HTTP 502 for https://h.test/a (server said: cannot resolve host 'x': airplane mode is engaged: refusing a network connection)",
+            "http_5xx",
+        ),
         ("HTTP 403 for https://reuters.com/x", "http_403"),
         ("HTTP 401 for https://x", "http_401"),
         ("HTTP 429 for https://x", "http_429"),

@@ -32,6 +32,13 @@ def test_our_own_sentences_are_refusals(text):
         "HTTP 503 for https://h.test/a (server said: " + _SOCKET + ")",
         "redirect to unsupported URL: 'ftp://h.test/" + _BARE + "'",
         "the kill switch of the CDN fired",
+        # The resolver wrapper's own shape (R300): anything between the host and our sentence, a lookalike, or the whole wrapped text quoted
+        # INSIDE another failure is not a refusal.
+        "cannot resolve host 'h.test': [Errno -2] Name or service not known",
+        "cannot resolve host 'h.test': [Errno -2] airplane mode is engaged: refusing a network connection to 'h.test'",
+        "cannot resolve host 'a b': airplane mode is engaged: refusing a network connection to 'a b'",
+        "HTTP 503 for https://h.test/a (server said: cannot resolve host 'h.test': " + _SOCKET + ")",
+        "redirect to unsupported URL: 'ftp://h.test/cannot resolve host 'x': " + _SOCKET + "'",
     ],
 )
 def test_the_same_words_inside_a_remote_partys_text_are_not(text):
@@ -119,3 +126,28 @@ def test_the_health_summary_counts_only_a_real_refusal_as_refused(monkeypatch, t
         app.dependency_overrides.clear()
         engine.dispose()
     assert body["checked"] == 2 and body["summary"] == {"refused_by_kill_switch": 1, "down": 1}
+
+
+def test_the_resolver_wrapped_refusal_is_built_by_the_real_resolve_path_and_recognised():
+    """Drift pin (R300): the text is what ``EthicalFetcher._resolve_cached`` really raises when the switch is engaged BETWEEN the pre-fetch
+    check and the lookup (the guard's own ``AirplaneModeError``, wrapped by OUR "cannot resolve host" sentence), not a hand-copied string.
+    It must read as the person's airplane mode and not as a DNS failure of the host."""
+    from src.ingest import EthicalFetcher
+    from src.ingest.airplane import install_airplane_socket_guard, uninstall_airplane_socket_guard
+    from src.ingest.fetch_verdict import classify_fetch_failure
+
+    was = kill_switch_active()
+    install_airplane_socket_guard()
+    activate_kill_switch()
+    try:
+        fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0)
+        with pytest.raises(FetchFailed) as caught:
+            fetcher._resolve_cached("h.test")
+    finally:
+        (activate_kill_switch if was else clear_kill_switch)()
+        uninstall_airplane_socket_guard()
+    text = str(caught.value)
+    assert text.startswith("cannot resolve host 'h.test': airplane mode is engaged"), text
+    assert is_kill_switch_refusal(text)
+    assert classify_fetch_failure(text) == "offline"
+    assert classify_fetch_failure("cannot resolve host 'h.test': [Errno -2] Name or service not known") == "dns"
