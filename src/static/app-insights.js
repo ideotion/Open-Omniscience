@@ -1149,6 +1149,15 @@
       } catch (e) { if (st) st.textContent = t("Could not resolve places:") + " " + e.message; }
     }
 
+    // Is this error the kill switch's refusal of the Wikidata fetch? A 409 from that route IS (it answers 409 and nothing else), and so is a
+    // message that STARTS with our own sentence; a phrase anywhere in the text is not (a 502 that echoed a remote page, a redirect text
+    // quoting the words: the same anchoring R298 gave the Python side, found by the read of #1546).
+    function _wikidataRefusedByAirplaneMode(e) {
+      if (!e) return false;
+      if (e.status === 409) return true;
+      return /^\s*(?:network refused:\s*)?airplane mode is engaged\b/i.test(String(e.message));
+    }
+
     async function entitySpineFetch() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -1173,7 +1182,7 @@
         loadEntitySpine();
       } catch (e) {
         // A 409 is the kill switch, and it is NAMED as such (invariant #14e's corollary).
-        const msg = (e && (e.status === 409 || /airplane mode/i.test(String(e.message))))
+        const msg = _wikidataRefusedByAirplaneMode(e)
           ? t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.")
           : t("Wikidata fetch failed:") + " " + e.message;
         if (st) st.textContent = msg;
