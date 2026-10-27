@@ -1,4 +1,4 @@
-## 2026-10-27 — `swap_window`'s docstring now says the hold has no time bound and why, what IS bounded, and how long the one data-dependent term (the last close's write-back inside `dispose_engine()`) measured (coordinator item 3 of 18:39Z, ruling R326 option A; comment-only; A-029 unchanged)
+## 2026-10-27 — `swap_window`'s docstring now says the hold has no time bound and why, what IS bounded, and how long the one data-dependent term (the last close's write-back inside `dispose_engine()`) measured (coordinator item 3 of 18:39Z, ruling R326 option A; comment-only; A-029 unchanged) (PR #1580)
 
 **The question (A-029, R306 (1), R311).** Is the swap window's hold bounded, and should it be? `WINDOW_WAIT_S` = 60 s bounds only the wait; the restore and repair file steps share `_SWAP_HANDLE_WAIT_S` = 300 s; the encrypt body (`disk_changing`, two unlinks, one `os.replace`) has no budget; connection opens behind the window wait in steps of `_RECHECK_S` = 1 s for as long as it is held.
 
