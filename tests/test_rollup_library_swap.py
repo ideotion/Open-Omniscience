@@ -6,7 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 THE DEFECT (item 1 of the 0.5.1 follow-ons; reproduced 2026-10-27 with ``/mnt/project-files/keyword-lane/swap-midbuild-repro.py``). A restore, a
 repair or an encryption in place swaps the corpus file under the generation guard (``library_generation.swap_window``), which refuses every
 connection made before it. A rollup build holds one session for its whole run and takes no corpus lease, so the swap does not wait for it: the
-swap returned in 0.00 s with the build in flight, the build's next statement raised ``StaleLibraryError`` and the dispatcher kept a
+swap returned in 0.00 s with the build in flight, the build's next statement (on a connection it still held across the swap) raised ``StaleLibraryError`` and the dispatcher kept a
 ``build-failed`` hold. The hold read the epoch and the mention count AFTER the swap, so they were the NEW corpus's, and the wall-branch release
 (a larger limit, offload newly allowed, a materially smaller corpus) cannot fire for a restored corpus of the same size: the keyword rollup stayed
 off until the app was restarted, for a reason that was not about the corpus it would read now.
@@ -15,6 +15,10 @@ WHAT THIS FILE HOLDS. (1) A REAL swap through the generation guard raises someth
 exception the guard raises and not to a copy of its name. (2) The dispatcher, handed that same real exception, keeps no hold for it, says why in ``last_decline``, and the next
 request builds. (3) Any other error still holds (the R172 tests stay the authority on that; one case is repeated here so a recogniser that
 accepts everything fails in this file).
+
+WHAT IT DOES NOT COVER. A build commits between batches, which hands its connection back to the pool; the guard's checkout refusal is answered by the pool
+with a fresh connection on the NEW file, silently, so a swap that lands between two batches or in the DuckDB-only aggregate stage raises nothing and is not
+this file's subject (the Opus read of #1547 measured it: select, commit, swap, select on one ORM session returns the new file's row).
 """
 
 from __future__ import annotations
