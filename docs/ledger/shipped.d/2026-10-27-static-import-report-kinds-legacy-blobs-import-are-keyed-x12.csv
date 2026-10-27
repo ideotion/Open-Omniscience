@@ -1,2 +1,0 @@
-date,area,item,status,refs,key_paths,summary
-2026-10-27,static,"Import-report kinds (legacy, blobs, import) are keyed x12; kwKindLabel ignores inherited names",shipped,PR #1540,src/static/locales/*.json; src/static/app-corpus.js; tests/test_raw_token_labels.py,Three import-report kind words had no locale key and read in English in every language; keyed x12 with a test tied to the queue's own KINDS; kwKindLabel no longer maps an inherited property name.
