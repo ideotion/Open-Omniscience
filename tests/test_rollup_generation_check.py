@@ -10,7 +10,7 @@ DuckDB-only aggregate stage, where no SQLite connection is held at all) raised n
 mentions staged from the old one, and the mixed rollup was swapped in.
 
 THE FIX. ``_build_inmemory_and_swap`` reads ``library_generation.current()`` before its session reads a row; the build's per-batch hook compares it
-with the guard's own ``valid`` (under its shared level, so a swap window that is open and then refused is waited out, not mistaken for a swap) first thing, at every stage boundary the build crosses (after each batch of mentions, when the aggregate begins and
+with the guard's own ``valid`` first thing, WITHOUT waiting (a build parked behind a swap window holds its file handle), at every stage boundary the build crosses (after each batch of mentions, when the aggregate begins and
 after each shard of it, when the keywords stage begins and ends), and once more before the finished rollup is swapped in. A mismatch raises
 ``StaleLibraryError``, which #1547's branch already turns into "no hold, the next request rebuilds".
 
@@ -202,37 +202,42 @@ def _hook_in_a_thread(hook):
     return result, returned, thread
 
 
-def test_a_boundary_reached_inside_a_swap_window_that_is_then_refused_carries_on(world, tmp_path):
-    """While a window is open the generation is already moved: a bare comparison would stop the build for a swap that never happens."""
+def test_a_boundary_inside_an_open_swap_window_stops_at_once_and_never_waits_for_it(world, tmp_path):
+    """The comparison must not park the build behind the window: it holds a pooled SQLite connection there (before the batch's commit, and
+    through the aggregate stage), and ``swap_in_corpus`` waits for file handles after ``disk_changing`` (Windows). The cost is chosen and
+    stated: a window that is then REFUSED before it touches anything stops the build for a swap that did not happen (no hold, a rebuild)."""
     hook = rollup_serve._make_on_batch(gen.current())
     new = tmp_path / "never-moved.db"
     _store(new, "NEW")
     opened, release, done, holder, problems = _open_window_in_a_thread(new, replace=False)
-    assert opened.wait(10)
-    result, returned, runner = _hook_in_a_thread(hook)
-    assert not returned.wait(0.3), "the boundary did not wait for the window: it answered from a generation that is moving"
-    release.set()
-    assert returned.wait(10) and done.wait(10)
-    runner.join(10)
-    holder.join(10)
+    try:
+        assert opened.wait(10)
+        result, returned, runner = _hook_in_a_thread(hook)
+        assert returned.wait(5), "the boundary waited for the window: a build parked there keeps its file handle open"
+        runner.join(10)
+        assert len(result) == 1 and isinstance(result[0], gen.StaleLibraryError), result
+    finally:
+        release.set()
+        assert done.wait(10)
+        holder.join(10)
     assert not problems
-    assert result == [None], f"the build was stopped for a swap that did not happen: {result}"
+    assert _raised(hook, "mentions", 3) is None, "once the refused window has closed the build's generation is valid again"
 
 
-def test_a_boundary_reached_inside_a_swap_window_that_replaces_the_file_is_refused(world, tmp_path):
+def test_a_boundary_after_a_swap_window_that_replaced_the_file_is_refused(world, tmp_path):
     hook = rollup_serve._make_on_batch(gen.current())
     new = tmp_path / "new.db"
     _store(new, "NEW")
     opened, release, done, holder, problems = _open_window_in_a_thread(new, replace=True)
-    assert opened.wait(10)
-    result, returned, runner = _hook_in_a_thread(hook)
-    assert not returned.wait(0.3)
-    release.set()
-    assert returned.wait(10) and done.wait(10)
-    runner.join(10)
-    holder.join(10)
+    try:
+        assert opened.wait(10)
+        assert isinstance(_raised(hook, "mentions", 2), gen.StaleLibraryError), "inside the window"
+    finally:
+        release.set()
+        assert done.wait(10)
+        holder.join(10)
     assert not problems
-    assert len(result) == 1 and isinstance(result[0], gen.StaleLibraryError), result
+    assert isinstance(_raised(hook, "mentions", 3), gen.StaleLibraryError), "after the window"
 
 
 class _Con:

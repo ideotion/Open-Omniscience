@@ -1161,17 +1161,15 @@ def _require_library_unchanged(stamp: int | None) -> None:
     refusal the dispatcher already handles (``_library_replaced``). The stamp is compared with the guard's own ``valid`` (not a copy of
     its rule): a swap that did not happen and changed nothing on disk gives the old generation back, and the build goes on.
 
-    The comparison is made under the guard's shared level (``connecting``), as the build's own checkout is: while a swap WINDOW is open the
-    generation is already moved (``bump`` runs first), so a bare comparison would refuse a build for a swap that is later refused before it
-    touches anything. Taking the level waits for the window to close, exactly as a connection opened in that window would, and the answer is
-    then the library's: no window can open while this thread holds the level."""
+    The comparison NEVER WAITS. While a swap window is open the generation is already moved (``bump`` runs first), so a build that reaches a
+    boundary inside a window that is then refused before it touches anything is stopped for a swap that did not happen: no hold, a rebuild on
+    the next request. Waiting for the window to close (``connecting()``) would answer that exactly, but the hook runs with the build's session
+    still holding a pooled SQLite connection (before the batch's commit, and through the whole aggregate stage), and ``swap_in_corpus`` waits
+    for file handles after ``disk_changing`` (Windows): a build parked behind the window with its handle open would make the restore fail. A
+    refused build closes its session and frees the handle, which is what the swap waits for."""
     from src.database import library_generation
 
-    if stamp is None:
-        return
-    with library_generation.connecting():
-        replaced = not library_generation.valid(stamp)
-    if replaced:
+    if stamp is not None and not library_generation.valid(stamp):
         raise library_generation.StaleLibraryError("the library file was replaced under the rollup build")
 
 
