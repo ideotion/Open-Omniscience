@@ -34,6 +34,7 @@ from src.api import diagnostics_plan as _plan
 from src.api import diagnostics_slots as _slots
 from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.api.country_wire import to_wire
+from src.api.cross_site import refuse_cross_site_get
 from src.database.country_form import order_key
 from src.database.derived_views import KeywordMentionRead
 from src.database.maintenance import (
@@ -233,7 +234,7 @@ def _scheduler_section(slim: bool) -> dict:
     return {"status": status, "recent_runs": recent_runs(30)}
 
 
-@router.get("/debug-bundle")
+@router.get("/debug-bundle", dependencies=[Depends(refuse_cross_site_get)])
 def debug_bundle(
     db: Session = Depends(read_only_db), slim: bool = Query(False)
 ) -> JSONResponse:
@@ -3151,7 +3152,7 @@ def _write_all_diagnostics_zip(
 
 
 
-@router.get("/all")
+@router.get("/all", dependencies=[Depends(refuse_cross_site_get)])
 def all_diagnostics(
     profile: str = Query("full", description="full | light"),
     db: Session = Depends(get_db),

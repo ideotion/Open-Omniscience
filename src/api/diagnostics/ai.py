@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
+from src.api.cross_site import refuse_cross_site_get
 from src.database.session import get_db
 
 from ._base import router
@@ -120,7 +121,7 @@ def qualification_assist_last(source_id: int | None = Query(None)) -> JSONRespon
     return JSONResponse(last_qualification_assist_report(source_id=source_id))
 
 
-@router.get("/qualification-assist-selftest")
+@router.get("/qualification-assist-selftest", dependencies=[Depends(refuse_cross_site_get)])
 def qualification_assist_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the qualification-assist self-test -- the measure-before-trust GATE
     before any real run, mirroring ``/keyword-triage-selftest``/``/source-tags-

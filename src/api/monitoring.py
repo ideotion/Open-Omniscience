@@ -14,17 +14,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from src.api.cross_site import refuse_cross_site_get
 from src.api.ingestion import get_fetcher
 from src.database.models import Source
 from src.database.session import get_db
-from src.ingest import EthicalFetcher
+from src.ingest import EthicalFetcher, kill_switch_active
 from src.monitoring.anomaly import volume_anomalies
 from src.monitoring.health import check_source
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
 
-@router.get("/health")
+@router.get("/health", dependencies=[Depends(refuse_cross_site_get)])
 def sources_health(
     limit: int = Query(25, ge=1, le=200, description="Max sources to probe in one call"),
     db: Session = Depends(get_db),
@@ -44,7 +45,15 @@ def sources_health(
         .all()
     )
     results = [check_source(s, fetcher=fetcher).to_dict() for s in sources]
-    summary = Counter(r["status"] for r in results)
+    # A probe the network kill switch refused never reached the host: counting it as "down" blames the source for the person's
+    # own setting (the per-source detail already names the switch, so the count has to as well).
+    stopped = kill_switch_active()
+    summary = Counter(
+        "refused_by_kill_switch"
+        if stopped and r["status"] == "down" and "kill switch" in (r.get("detail") or "")
+        else r["status"]
+        for r in results
+    )
     return {"checked": len(results), "limit": limit, "summary": dict(summary), "sources": results}
 
 

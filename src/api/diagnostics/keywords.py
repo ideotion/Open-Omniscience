@@ -71,6 +71,7 @@ from src.analytics.keyword_log_scan import (
 )
 from src.analytics.upload_parts import UPLOAD_PART_BYTES, sha256_file
 from src.api.country_wire import CountryWireResponse as JSONResponse
+from src.api.cross_site import refuse_cross_site_get
 from src.database.maintenance import (
     StatementTimeout,
     raise_if_memory_short,
@@ -1302,7 +1303,7 @@ def keyword_log(
     )
 
 
-@router.get("/keyword-selftest")
+@router.get("/keyword-selftest", dependencies=[Depends(refuse_cross_site_get)])
 def keyword_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the keyword pre-selection challenge harness (Who vs WHO + language tweaks).
 

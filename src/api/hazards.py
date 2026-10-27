@@ -13,8 +13,9 @@ docs/FUTURE_DEVELOPMENTS.md).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from src.api.cross_site import refuse_cross_site_get
 from src.monitoring.secret_scrub import record_text
 from src.safety.fetcher import following_fetcher
 
@@ -73,7 +74,7 @@ def fetch_hazards(
     return items, failures
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(refuse_cross_site_get)])
 def list_hazards(
     source: str = Query("all", description="usgs | gdacs | all"),
     min_magnitude: float | None = Query(None, description="USGS: drop quakes below this magnitude"),
