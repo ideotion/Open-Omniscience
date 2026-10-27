@@ -1,4 +1,4 @@
-## 2026-10-27 — a writer parked behind the swap window: forced, bounded, ruled out for the shipped app, pinned by an order test (coordinator item 2 of 20:42Z; follows PR #1580; test and ledger only)
+## 2026-10-27 — a writer parked behind the swap window: forced, bounded, ruled out for the shipped app, pinned by an order test (coordinator item 2 of 20:42Z; ruled R338; follows PR #1580; test and ledger only) (PR #1594)
 
 **The question.** The repair's data-version read runs INSIDE the swap window (`_Probe.moved()`: `BEGIN IMMEDIATE` on a connection with a 30 s busy timeout) while every new connection waits behind the window in `connecting()` with no timeout. Can a writer hold SQLite's write lock while parked there?
 
