@@ -20,7 +20,7 @@ def refuse_cross_site_get(request: Request) -> None:
     * ``Sec-Fetch-Site`` when sent: ``same-origin`` and ``none`` (a typed address or a bookmark) pass; ``same-site`` and
       ``cross-site`` do not.
     * ``Origin``, else ``Referer``, when sent: judged by the POST middleware's own ``_foreign_origin`` (scheme-default ports
-      normalised, so ``Host: oo.lan:443`` with ``Origin: https://oo.lan`` is the same server; the hostname must be one the app
+      normalised, so a proxy's ``Host: NAME:443`` with ``Origin: https://NAME`` is the same server; the hostname must be one the app
       serves; ``Origin: null`` is refused).
     * None sent: a command line, a script, or a navigation from the app's own page (``Referrer-Policy: no-referrer``). Allowed.
 
