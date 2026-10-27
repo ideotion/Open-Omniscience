@@ -36,6 +36,14 @@ YAML_LOADER = SAFE_YAML_LOADERS[0]
 MAX_NESTING = 256
 
 
+# What the pure path says for a RecursionError. INFERRED, not known: a RecursionError carries no depth, so it can be this document or a
+# caller whose stack was already deep, and the message names both rather than claiming the first.
+PURE_RECURSION_MESSAGE = (
+    "the document nests too deeply, or the caller's stack was already deep "
+    "(inferred: the pure loader reports both as RecursionError)"
+)
+
+
 class YAMLDepthError(yaml.YAMLError):
     """A document nests deeper than :data:`MAX_NESTING`. A ``yaml.YAMLError``, so every caller that already refuses a malformed
     document refuses this one the same way. The message carries no text of the document."""
@@ -84,6 +92,6 @@ def load_safe_yaml(text: str):
         return loader.get_single_data()
     except RecursionError:
         # the pure loader's own limit (about 500 levels), not the bound above: said without a number
-        raise YAMLDepthError("the document nests too deeply to read") from None
+        raise YAMLDepthError(PURE_RECURSION_MESSAGE) from None
     finally:
         loader.dispose()

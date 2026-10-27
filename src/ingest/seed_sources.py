@@ -41,7 +41,7 @@ from src.ingest.seed_plan import (
     plan_registration,
     split_tags,
 )
-from src.utils.safe_yaml import SAFE_YAML_LOADERS, YAML_LOADER, YAMLDepthError, refuse_if_too_deep
+from src.utils.safe_yaml import SAFE_YAML_LOADERS, YAML_LOADER, PURE_RECURSION_MESSAGE, YAMLDepthError, refuse_if_too_deep
 
 #: What a seed run reports. Mostly counts, plus a short list of examples for the
 #: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.
@@ -126,7 +126,7 @@ def _load_safe_yaml(text: str):
         with _gc_paused():
             return loader.get_single_data()
     except RecursionError:  # the pure loader's own limit: the same error the shared loader raises for it
-        raise YAMLDepthError("the document nests too deeply to read") from None
+        raise YAMLDepthError(PURE_RECURSION_MESSAGE) from None
     finally:
         loader.dispose()
 
