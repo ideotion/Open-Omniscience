@@ -836,7 +836,8 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     comparison: that is a decision, not a measured necessity, and it is left as it was. What was measured
     (2026-10-27): ``count(1) FROM articles`` is a scan of a covering index (which one is the planner's choice;
     on the measured store it was ``idx_article_created_at``, about four times the pages of the smallest
-    candidate, so the figure is conservative) and ``count(*)`` took 0.25 s cold on 1,000,000 articles. LIMITS of that figure: one
+    candidate at 100,000 articles, so the figure is conservative) and took 0.24 to 0.33 s cold on 1,000,000
+    articles (five cold runs, median 0.29 s). LIMITS of that figure: one
     machine, an encrypted (SQLCipher) store on a virtual disk reading 1.3 GB/s, synthetic Latin
     text of 1.3 KB per article, nothing above 1 M, the cost follows the NUMBER of articles and not their
     text, and the plan is the planner's choice, not a promise (``tests/test_fts_status.py`` pins that it is a
@@ -1225,8 +1226,9 @@ def fts_status(session: Session) -> dict:
         the progress-handler deadline can never interrupt (measured: the handler was consulted 0 times, against 30
         for ``count(1)`` over the same covering index), so only ``count(1)`` keeps ``count_status: timed_out``
         reachable. Measured 2026-10-27 on 1,000,000 articles: 9.6 to 11.9 s cold for the FTS statement (a table scan,
-        which follows the article TEXT, and 3 to 5 s from its 15 s deadline) against about 0.25 s cold for this count
-        (which follows the NUMBER of articles; ``count(*)`` measured, ``count(1)`` re-measured, see the PR). LIMITS:
+        which follows the article TEXT, and 3 to 5 s from its 15 s deadline) against 0.24 to 0.33 s cold for this count (five
+        cold runs, median 0.29 s; it follows the NUMBER of articles; warm it is a row loop of 16 to 24 ms where
+        ``count(*)`` is 1 ms: the price of being interruptible). LIMITS:
         one machine, an encrypted store on a virtual disk reading 1.3 GB/s, synthetic Latin text of 1.3 KB per
         article, nothing above 1 M. The old statement also read every article row, so a damaged ``articles`` page
         surfaced here as an ``error``; this one reads one index and does not (``PRAGMA integrity_check`` and the
