@@ -102,12 +102,18 @@ _AMBIENT_FILES = frozenset(
 # (src/analytics/rollup_marker.py) while it runs. Which GET's time window sees the thread or the marker depends on which request asked first
 # and on the build's own timing, so a per-route line would name a different innocent route on every run: these are ambient, and only on an
 # install that has duckdb. Without it the builds never start, and the Core/no-columnar profile keeps the stricter premise that a GET starts
-# no rollup thread and writes no marker (a build thread there is a failure, not an allowance).
+# no rollup thread and writes no marker (a build thread there is a failure, not an allowance). The allowance goes by NAME, not by origin:
+# GET /api/diagnostics/rollup-benchmark writes the same marker itself during its request, and that is allowed on duckdb too (the walk
+# cannot see it either way, the marker being created and removed inside the request). The gate is the app's own "duckdb imports";
+# OO_COLUMNAR=0 and the serve switches turn builds off on a duckdb install, which only makes this more permissive, never wrongly red.
 def _columnar_installed() -> bool:
-    return importlib.util.find_spec("duckdb") is not None
+    from src.analytics.columnar import duckdb_available
+
+    return duckdb_available()
 
 
-_COLUMNAR_FILES = frozenset({"rollup_build.json", "rollup_build.json.lock"})
+# rollup_stopped.json (src/analytics/rollup_hold.py) is the same build's record that the memory guard stopped it or it failed.
+_COLUMNAR_FILES = frozenset({"rollup_build.json", "rollup_build.json.lock", "rollup_stopped.json"})
 _COLUMNAR_THREAD = re.compile(r"rollup-build|map-rollup-build|rollup-canary-peak")
 
 # The main database file (and its WAL) is touched by a checkpoint or a connection close without any write statement, so a file change
@@ -281,7 +287,8 @@ class _Monitor:
             # threading.Timer, so it carries the anonymous name Thread-N and no table can name it. Skipped here by the function that
             # starts it, and ONLY while unnamed; once it is named (like its sibling rollup-canary-peak) this exception goes.
             canary_timer = thread.name.startswith("Thread-") and any(f.name == "serve_canary" for f in frames)
-            if "limits/storage/memory" not in stack.replace("\\", "/") and not canary_timer:  # the rate limiter's own expiry timer
+            limiter_timer = "limits/storage/memory" in stack.replace("\\", "/")  # the rate limiter's own expiry timer
+            if not limiter_timer and not canary_timer:
                 monitor.threads.append(thread.name)
             return real_start(thread, *a, **k)
 
@@ -628,10 +635,26 @@ def test_the_canary_timer_exception_is_only_for_an_unnamed_thread_started_by_ser
 
     with _Monitor([tmp_path]) as mon:
         serve_canary()
-    assert mon.threads == ["rollup-canary-peak"], mon.threads
+    # a build still running from an earlier walk may start its own named threads inside this window, so assert on the unnamed ones
+    assert "rollup-canary-peak" in mon.threads and not [n for n in mon.threads if n.startswith("Thread-")], mon.threads
     with _Monitor([tmp_path]) as mon:
         somewhere_else()
-    assert len(mon.threads) == 1 and mon.threads[0].startswith("Thread-"), mon.threads
+    assert [n for n in mon.threads if n.startswith("Thread-")], mon.threads
+
+
+def test_the_rollup_allowance_holds_only_where_duckdb_imports(monkeypatch):
+    """The allow-list is gated on duckdb being importable; deleting the gate must fail here, since CI's main lane has no duckdb and
+    the columnar lane does not run this file."""
+    import tests.test_get_routes_side_effects as me
+
+    mon = _Monitor([])
+    mon.files, mon.threads = {"rollup_build.json", "rollup_stopped.json"}, ["rollup-build", "map-rollup-build", "rollup-canary-peak"]
+    seen = {"/api/bulletin/editions": mon}
+    monkeypatch.setattr(me, "_columnar_installed", lambda: True)
+    assert _file_and_thread_problems(seen, {}) == []
+    monkeypatch.setattr(me, "_columnar_installed", lambda: False)
+    got = _file_and_thread_problems(seen, {})
+    assert {n for _r, _k, n in got} == {"rollup_build.json", "rollup_stopped.json", "rollup-build", "map-rollup-build", "rollup-canary-peak"}, got
 
 
 def test_the_monitors_see_every_socket_call_they_patch(tmp_path):
