@@ -215,7 +215,9 @@ _FIGURES_TTL_S = 60
 #: The statement deadline of the background keyword-mentions count, in seconds. It protects the pooled connection and the read
 #: snapshot the count holds (an open read pins the WAL from checkpointing), not the request, which no longer waits on it. The
 #: count measured 55 s and 182 s on the same 12 M-row field corpus under different load (diagnostics of 2026-10-16), so the
-#: default is 300 s, 1.6 times the worst measured. ``OO_FIGURES_COUNT_DEADLINE_S`` changes it; 0 disables it.
+#: default is 300 s, 1.6 times the worst measured. ``OO_FIGURES_COUNT_DEADLINE_S`` changes it; 0 disables it. THE FIGURES ABOVE WERE
+#: MEASURED ON THE BARE ``count(*)`` this count used until 2026-10-27, which the deadline could not stop (one VM opcode); the statement is
+#: ``count(id)`` now, which the deadline stops, and no figure has been taken on it at that size (superseded, pending).
 _FIGURES_COUNT_DEADLINE_S = 300.0
 
 #: How long a count that failed is NOT retried, in seconds: 900 s is three deadlines, so a corpus whose count cannot finish holds
@@ -361,7 +363,11 @@ def _mentions_count(db: Session) -> int:
 
     from src.database.derived_views import KeywordMentionRead
 
-    return int(db.execute(select(func.count()).select_from(KeywordMentionRead)).scalar() or 0)
+    # ``count(id)``, NOT a bare ``count(*)``: SQLite runs a bare count as ONE virtual-machine opcode, and ``statement_deadline`` is a
+    # progress handler asked once per 20,000 opcodes, so the deadline around this call stopped nothing (ran whole under a millionth
+    # of a second over 1,240,657 mentions, handler asked 0 times; ``count(id)`` raised the typed timeout, asked 186 times). ``id`` is the
+    # primary key, never NULL, so the number is the same. tests/test_deadline_bound_statements.py pins the bound.
+    return int(db.execute(select(func.count(KeywordMentionRead.id))).scalar() or 0)
 
 
 def _compute_figures(db: Session, now: datetime) -> dict:

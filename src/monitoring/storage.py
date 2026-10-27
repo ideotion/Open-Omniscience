@@ -295,6 +295,9 @@ def storage_composition(session: Session) -> dict[str, Any]:
 
     # The dbstat walk itself — aggregated form first (one row per btree; far fewer rows),
     # the GROUP BY fallback for older SQLite, and an honest unavailable block otherwise.
+    # THE DEADLINE CANNOT STOP THE AGGREGATED FORM: it walks a whole b-tree inside ONE ``xNext`` (plain stdlib SQLite 3.45.1: 555 ms free,
+    # 545 ms under a 1e-6 s deadline, handler asked 0 times), while the GROUP BY form loops and stops (681 ms free, 1.5 ms). Neither
+    # qualified sqlcipher3 build has dbstat at all, so on an encrypted store this block is the unavailable branch below.
     per_btree: dict[str, tuple[int, int]] = {}
     try:
         with statement_deadline(session):
@@ -399,17 +402,24 @@ def _scalar(session: Session, sql: str, params: dict | None = None):
 def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, Any] | None:
     """How much of the file is article text, sampled — for builds without dbstat.
 
+    Both qualified sqlcipher3 builds (0.6.2 and 0.6.4) lack dbstat, so this is the encrypted store's normal path, not a fallback.
+
     Also answers D45's own question (how many article rows sit above the WAL-page cliff,
-    and whether ingest stores the text twice, raw AND compressed). Read-only, bounded by
-    the statement deadline; None when the articles table is unreadable, an honest
-    ``aborted`` block on a deadline."""
+    and whether ingest stores the text twice, raw AND compressed). Read-only; None when the
+    articles table is unreadable, an honest ``aborted`` block on a deadline. WHAT THE
+    DEADLINE BOUNDS: the article count (``count(1)``, a loop; a bare ``count(*)`` is one VM
+    opcode the progress handler is never asked inside) and nothing after it. The reads that
+    follow are at most 400 short statements (the exact branch reads at most 400 rows): the
+    handler's 20,000 opcodes accumulate across the statements of a connection, and 400
+    statements ran whole under a 1e-6 s deadline (49 ms, plain SQLite 3.45.1), so that part
+    is bounded by its own count, not by the deadline."""
     try:
         with statement_deadline(session):
             lo = _scalar(session, "SELECT min(id) FROM articles")
             hi = _scalar(session, "SELECT max(id) FROM articles")
             if lo is None or hi is None:
                 return {"articles": 0, "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES)}
-            n_articles = int(_scalar(session, "SELECT count(*) FROM articles") or 0)
+            n_articles = int(_scalar(session, "SELECT count(1) FROM articles") or 0)  # count(1) loops; a bare count(*) cannot be stopped
             lo, hi = int(lo), int(hi)
             exact = n_articles <= _ESTIMATE_PROBES
             payloads: list[int] = []
