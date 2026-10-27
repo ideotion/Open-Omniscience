@@ -171,3 +171,33 @@ def test_the_check_button_in_node():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "feed_verify_offline_node_test.js: OK" in proc.stdout
+
+
+def test_the_socket_guards_refusal_as_requests_really_wraps_it_is_recognised_whole(monkeypatch):
+    """Drift pin (found by the read of this change): the text is built by the REAL ``AirplaneModeError`` through REAL requests/urllib3, for a
+    realistic directory URL, so it is longer than the 300 characters a record keeps. Classifying the cut text read it as a host failure."""
+    import requests
+    import urllib3.util.connection as uc
+
+    from src.ingest.airplane import AirplaneModeError
+
+    def refuse(*_a, **_k):
+        raise AirplaneModeError(
+            "airplane mode is engaged: refusing a network connection to 'worldpublicholiday.com'. No packet leaves the machine while offline"
+        )
+
+    monkeypatch.setattr(uc, "create_connection", refuse)
+    url = F.feed_by_id(_FEED)[1]["url"]
+    with pytest.raises(requests.RequestException) as caught:
+        requests.get(url, timeout=2)
+    wrapped = f"request error for {url}: {caught.value}"
+    assert len(wrapped) > 300  # the premise: a cut at 300 would lose the sentence
+
+    class _Wrapped:
+        def fetch(self, _url, **_kw):
+            raise FetchFailed(wrapped)
+
+    out = F.verify_feed(_Wrapped(), _FEED)
+    assert out["status"] == "skipped_offline"
+    assert len(out["error"]) <= 300
+    assert F.load_verdicts() == {} and F.load_attempts() == {}

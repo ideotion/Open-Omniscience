@@ -457,8 +457,11 @@ def verify_feed(fetcher, feed_id: str) -> dict:
     except Exception as exc:  # noqa: BLE001 - the verdict IS the error report
         from src.ingest.fetch_verdict import classify_fetch_failure
 
-        text = record_text(exc, limit=300)
-        if classify_fetch_failure(text) == "offline":
+        # Classify the WHOLE scrubbed text and cut only what is stored: the socket guard's sentence, as requests wraps it, ends past
+        # 300 characters for a realistic URL, and a cut text reads as a host failure.
+        full = record_text(exc)
+        text = full[:300]
+        if classify_fetch_failure(full) == "offline":
             # The network kill switch refused the fetch: nothing was asked of the host, so there is no verdict about it. Storing
             # "unreachable" would blame the feed for the person's own airplane mode AND move it up the re-check ladder (a month per
             # rung); the feed stays exactly as eligible as it was, and the caller is told why nothing was checked.
