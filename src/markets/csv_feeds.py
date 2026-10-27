@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import CommodityPrice
 from src.database.write import run_write_with_retry
-from src.ingest import EthicalFetcher, FetchError
+from src.ingest import EthicalFetcher, FetchError, kill_switch_active
 from src.markets.extract import parse_number
 from src.monitoring.secret_scrub import record_text
 
@@ -189,6 +189,9 @@ class FeedImportResult:
         }
 
 
+_OFFLINE = ("offline", "the network kill switch is engaged — go online first", False)
+
+
 def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
     """(verdict, honest note, retryable) for a fetch failure.
 
@@ -218,7 +221,7 @@ def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
     from src.ingest.fetch_verdict import is_kill_switch_refusal
 
     if is_kill_switch_refusal(record_text(exc, typed=False)):
-        return ("offline", "the network kill switch is engaged — go online first", False)
+        return _OFFLINE
     if "http 404" in low or "http 410" in low:
         return (
             "dead-series",
@@ -271,6 +274,14 @@ def import_feed(
             break
         except Exception as exc:  # noqa: BLE001 - any fetch failure is a feed problem, not a crash
             verdict, note, retryable = classify_fetch_failure(exc)
+            if verdict != "offline" and verdict != "robots-disallowed" and kill_switch_active():
+                # A failed fetch while the switch is engaged is the switch's, whatever shape the error took: the raw requests error
+                # of a Stop that landed mid-request (``HTTPSConnectionPool(...)``, or through an HTTP proxy ``request error for <url>:
+                # ('Connection aborted.', AirplaneModeError(...))``) is not OUR sentence at the start, so the anchored match above
+                # rightly refuses it (R298) and the failure would be filed as the feed's own, then retried after a sleep. Read the
+                # switch after the check instead (R320). A genuine failure coinciding with a Stop is reported offline: the
+                # feed is simply tried again on the next online pass. A robots DISALLOW was a real answer, so it stays.
+                verdict, note, retryable = _OFFLINE
             # ONE bounded feed-level retry for transient verdicts, on top of
             # the fetcher's own backoff (a different moment often means a
             # different Tor circuit). Policy verdicts are never retried.
