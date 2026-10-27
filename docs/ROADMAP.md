@@ -267,8 +267,8 @@ old order was set by a ceiling premise that no longer holds.
   database's volume, and, since 2026-10-06, the memory the rebuilt copy is held in); nothing yet points at the wired incremental
   pass from the compaction tool. ⬜
 - **The FTS hash-sharding prototype — a costed operator job, not a caveat.** MEASURED 1,925 B of
-  FTS5 index per synthetic document at 2,692 docs/s ⇒ **89.6 GiB and 5.2 h per arm at 50 M**
-  (179.3 GiB / 10.3 h at 100 M); a single-vs-sharded comparison needs two arms. Treat 89.6 GiB as
+  FTS5 index per synthetic document at 2,692 docs/s (300,000 synthetic documents, setup in `docs/design/STORAGE_5TB_REFRESH_2026-09-07.md` §5.1) ⇒ **89.6 GiB and 5.2 h per arm at 50 M**
+  (179.3 GiB / 10.3 h at 100 M) **[EXTRAPOLATION: the 50 M and 100 M rows are arithmetic from the measured per-document figures]**; a single-vs-sharded comparison needs two arms. Treat 89.6 GiB as
   an upper bound and measure the real corpus's index-bytes-per-article first. What it still has to
   answer is the SCALE half — query-latency knee, merge behaviour, tombstone accumulation. What it
   no longer has to answer: recall (100%, structural) and the rank divergence (per-shard thinness,
