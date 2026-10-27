@@ -61,6 +61,17 @@ logger = setup_logging("source_manager")
 from src.services.duckduckgo import DuckDuckGoSearch
 
 
+def _tags_csv(value, default):
+    """A catalog entry's ``tags`` as the comma-joined string the column holds: the shipped ``configs/sources.yml`` writes a YAML LIST
+    (``[news, general]``), and binding a list to the column made the import route fail on its first row (R330). A string passes through; an
+    absent key keeps ``default``."""
+    if value is None:
+        return default
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(t).strip() for t in value if str(t).strip())
+    return value
+
+
 class SourceManager:
     """
     Comprehensive source management class for Open Omniscience.
@@ -1076,7 +1087,7 @@ class SourceManager:
                 existing.rate_limit_ms = source_data.get("rate_limit_ms", existing.rate_limit_ms)
                 existing.enabled = source_data.get("enabled", existing.enabled)
                 existing.priority = source_data.get("priority", existing.priority)
-                existing.tags = source_data.get("tags", existing.tags)
+                existing.tags = _tags_csv(source_data.get("tags"), existing.tags)
                 updated += 1
             else:
                 # Create new source
@@ -1087,7 +1098,7 @@ class SourceManager:
                     rate_limit_ms=source_data.get("rate_limit_ms", 2000),
                     enabled=source_data.get("enabled", True),
                     priority=source_data.get("priority", 2),
-                    tags=source_data.get("tags", ""),
+                    tags=_tags_csv(source_data.get("tags"), ""),
                 )
                 added += 1
 
