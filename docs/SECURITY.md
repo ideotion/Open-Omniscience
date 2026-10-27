@@ -407,6 +407,33 @@ down is a RECORD of that date and carries its own disposition table.)*
   hatch for serving the app under another name and widens both checks; every non-Swagger
   response carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
   `frame-ancestors 'none'`. CORS ships `allow_credentials=False`.
+- **What stands between a cross-site page and a state-changing request (stated 2026-10-26, audit 0.5.0
+  item 35).** Three layers, in the order a request meets them. (1) The `Origin` / `Referer` check
+  above is the OUTER middleware, so it runs first: a foreign host or port, or an `Origin: null`, is
+  refused (403) before the `Host` guard is reached, and a state-changing request that carries
+  neither header passes, which is what a command-line client sends. (2) The `Host` allow-set refuses
+  a DNS-rebinding name (421); it is the only stop for a request that carries no `Origin` and no
+  `Referer`, and for a `GET`. (3) For a route that REQUIRES a JSON body, FastAPI answers 422 to a body
+  that is not typed as JSON: `text/plain`, form and multipart bodies have been refused since long
+  before the floor (only `application/json` and `+json` are parsed as JSON), and `strict_content_type`
+  (on by default since 0.132.0; `pyproject.toml` floors fastapi at 0.133.0, the first release that
+  resolves with this app's starlette floor; registry entry `fastapi-strict-content-type`) adds the
+  one case they let through, a body with NO Content-Type, which a `fetch` given a Blob can send
+  without a preflight. Layer 3 is a property of the installed dependency, pinned by
+  `tests/test_security_hardening.py`; the lock pins 0.138.0, and an install that resolves live gets
+  the newest release. **Layer 3 covers about half of the state-changing routes:** of 317 `POST`,
+  `PUT`, `PATCH` and `DELETE` operations in the OpenAPI schema on 2026-10-26, 148 take no body and 11
+  an optional one (measured the same day: a `text/plain` body sent to `POST /api/geo/downloads/pause?key=zz`
+  or to `POST /api/ai/detect-language` reaches the handler and answers 200), and six API modules
+  read a raw body, form or upload (`commodity`, `verification`, `claims`, `source_io`,
+  `diagnostics/qualification_merge`, `ingestion`); on all of those only layers 1 and 2 stand.
+  **What none of them covers:** a `GET` route with a side effect, and a browser that sends no `Origin`
+  and no `Referer` (legacy only). The known side-effect `GET`s are partly closed:
+  `/api/database/backup` refuses a foreign page for itself (`_refuse_cross_site` in
+  `src/api/database.py`: Host, then `Sec-Fetch-Site`, then `Origin` / `Referer`; its own stated limit
+  is a browser that sends none of the three), and `/api/geo/downloads/size` is a proposal in the
+  0.5.0 audit record. A `Sec-Fetch-Site` check in the MIDDLEWARE for every state-changing request is
+  not built, because nothing has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
   cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
   encryption remains the host's job (Qubes/LUKS) — this bounds a shared host, not a seized one.
