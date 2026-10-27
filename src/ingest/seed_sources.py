@@ -41,7 +41,13 @@ from src.ingest.seed_plan import (
     plan_registration,
     split_tags,
 )
-from src.utils.safe_yaml import SAFE_YAML_LOADERS, YAML_LOADER, PURE_RECURSION_MESSAGE, YAMLDepthError, refuse_if_too_deep
+from src.utils.safe_yaml import (
+    PURE_RECURSION_MESSAGE,
+    SAFE_YAML_LOADERS,
+    YAML_LOADER,
+    YAMLDepthError,
+    refuse_if_too_deep,
+)
 
 #: What a seed run reports. Mostly counts, plus a short list of examples for the
 #: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.

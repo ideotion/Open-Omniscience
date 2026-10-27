@@ -104,6 +104,8 @@ def test_the_unguarded_libyaml_loader_really_does_crash_on_this_input():
     done = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=120)
     # not "died by signal": Windows reports a stack overflow as the positive code 0xC00000FD
     assert done.returncode != 0, "libyaml no longer crashes on deep nesting: the guard's premise changed; re-measure the bound"
+    # ... and not by an ordinary Python exception (exit 1 with a traceback): that would be the library fixing itself
+    assert "Traceback" not in done.stderr, "libyaml now raises on deep nesting instead of crashing: re-measure the bound"
 
 
 def test_the_shared_module_still_imports_nothing_of_the_project():
