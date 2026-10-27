@@ -763,9 +763,9 @@ def keyword_log(
             # batch (measured 26 s of the 32 s encrypted-profile wall time). Held as flat
             # arrays, not dicts: see ArticleMaps.
             maps = ArticleMaps(db, check)
-            src_articles: dict[int, int] = dict(
-                db.execute(text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")).fetchall()
-            )
+            src_articles: dict[int, int] = {
+                sid: n for sid, n in db.execute(text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")).fetchall()
+            }
 
             # Page-aware per-language quota. The JSON path keeps the classic top-
             # _MAX_KEYWORDS_PER_LANG cap (lo=0); the ZIP path can raise per_lang and
@@ -855,11 +855,12 @@ def keyword_log(
             sids = sorted({s["source_id"] for s in suspects})
             if sids:
                 marks = ",".join(str(int(i)) for i in sids)
-                src_names = dict(
-                    db.execute(
+                src_names = {
+                    sid: name
+                    for sid, name in db.execute(
                         text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
                     ).fetchall()
-                )
+                }
             per_source_concentration = [
                 {
                     "term": suspect_meta.get(s["keyword_id"], ("?",))[0],
