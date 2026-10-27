@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import Row, func
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 from starlette.concurrency import run_in_threadpool
@@ -50,7 +50,17 @@ def _display_name(country: str | None) -> str | None:
     return country_display_name(country)
 
 
-def _source_to_row(s: Source) -> dict:
+#: The Source columns :func:`_source_to_row` reads, in its order. The export asks the database for exactly these columns (``GET /export.csv``), never the
+#: whole entity: the catalogue is 86,000 rows on the field corpus and the row has 24 columns of which the CSV carries 12
+#: (tests/test_source_export_columns.py pins the names to what the builder reads).
+_EXPORT_COLUMNS = (
+    Source.name, Source.domain, Source.rss_url, Source.source_type, Source.country, Source.language,
+    Source.region, Source.tags, Source.priority, Source.rate_limit_ms, Source.enabled, Source.reliability_score,
+)
+_EXPORT_ATTRS = tuple(c.key for c in _EXPORT_COLUMNS)
+
+
+def _source_to_row(s: Source | Row) -> dict:  # a Source, or a row of the _EXPORT_COLUMNS: only attributes are read
     return {
         "name": s.name,
         "domain": s.domain,
@@ -231,7 +241,8 @@ def columns() -> dict:
 @router.get("/export.csv")
 def export_csv(db: Session = Depends(get_db)) -> StreamingResponse:
     """Download the entire source catalog as CSV (round-trips with import)."""
-    rows = [_source_to_row(s) for s in db.query(Source).filter(not_a_stand_in_source()).order_by(Source.name).all()]
+    # Columns, not entities: the same twelve values per row, no ORM instance built for 86,000 sources to write twelve of their 24 columns.
+    rows = [_source_to_row(s) for s in db.query(*_EXPORT_COLUMNS).filter(not_a_stand_in_source()).order_by(Source.name, Source.id).all()]
     csv_text = write_csv(rows)
     return StreamingResponse(
         iter([csv_text]),
