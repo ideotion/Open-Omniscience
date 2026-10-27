@@ -154,6 +154,12 @@ def test_the_benchmarks_live_side_stops_at_the_same_bound():
 def test_run_rollup_benchmark_reports_the_bound_and_compares_bounded(monkeypatch):
     from sqlalchemy.orm import sessionmaker
 
+    from src.analytics import rollup_serve
+
+    # This test is about the bound, not the start-time guards (those read the runner's memory and any hold file other tests leave behind; they are
+    # pinned in tests/test_rollup_benchmark_guard.py).
+    monkeypatch.setattr(rollup_serve, "first_start_decline", lambda: (None, None))
+
     from src.analytics.extract import BaselineExtractor
     from src.analytics.store import index_article
     from src.database.models import Article, Base, Keyword, KeywordMention, Source

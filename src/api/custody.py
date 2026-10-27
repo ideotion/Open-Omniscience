@@ -11,9 +11,10 @@ standalone scripts/verify_custody.py.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import CustodyAction, CustodyLog, verify_export
 from src.custody.settings import (
@@ -66,7 +67,7 @@ def list_providers() -> dict:
     return {"providers": available_providers()}
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(refuse_cross_site_get)])
 def export(item_id: str | None = None) -> dict:
     """Export an offline-verifiable custody bundle (optionally for one item)."""
     log = _log()

@@ -41,6 +41,15 @@ def _no_score(obj, path=""):
             _no_score(v, f"{path}[{i}]")
 
 
+@pytest.fixture(autouse=True)
+def _guards_pass(monkeypatch):
+    """These tests are about the instrument's shape and parity; the start-time guards read the machine's memory, which a loaded runner may not have.
+    The guards' own behaviour is pinned in tests/test_rollup_benchmark_guard.py."""
+    from src.analytics import rollup_serve
+
+    monkeypatch.setattr(rollup_serve, "first_start_decline", lambda: (None, None))
+
+
 @pytest.fixture()
 def session():
     e = create_engine("sqlite:///:memory:", future=True,

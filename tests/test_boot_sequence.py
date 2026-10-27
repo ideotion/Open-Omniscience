@@ -255,14 +255,19 @@ def test_build_now_and_wait_waits_for_a_build_already_running_instead_of_startin
 
     started: list[int] = []
     got: list[str] = []
-    monkeypatch.setattr(rollup_serve, "_build_and_swap", lambda: started.append(1))
+    def fake_build():
+        started.append(1)
+        rollup_serve._BUILD_LOCK.release()  # the real one releases in its finally; a leaked lock would hang every later test
+
+    monkeypatch.setattr(rollup_serve, "_build_and_swap", fake_build)
     monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "built")
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     done = threading.Event()
-    t = threading.Thread(target=lambda: (got.append(rollup_serve.build_now_and_wait()), done.set()))
+    t = threading.Thread(target=lambda: (got.append(rollup_serve.build_now_and_wait()), done.set()), daemon=True)
     t.start()
     assert not done.wait(0.2), "it returned while a build still held the lock"
     rollup_serve._LAST_OUTCOME["value"] = "declined"  # what the running build records before it releases
+    rollup_serve._BUILD_GEN["n"] += 1  # ... and counts itself ended, which is how a waiter tells a served build from a benchmark's release
     rollup_serve._BUILD_LOCK.release()
     assert done.wait(5)
     t.join(5)
@@ -281,7 +286,10 @@ def test_a_waiter_is_told_the_outcome_of_the_real_build_it_waited_for(monkeypatc
     inside = threading.Event()
     go = threading.Event()
 
+    calls: list[int] = []
+
     def held_verdict():
+        calls.append(1)
         inside.set()
         assert go.wait(5)
         return {"reason": "exclusive"}  # the build declines once released
@@ -293,7 +301,7 @@ def test_a_waiter_is_told_the_outcome_of_the_real_build_it_waited_for(monkeypatc
     builder.start()
     assert inside.wait(5)
     got: list[str] = []
-    waiter = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+    waiter = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()), daemon=True)
     waiter.start()
     try:
         waiter.join(0.3)
@@ -303,6 +311,7 @@ def test_a_waiter_is_told_the_outcome_of_the_real_build_it_waited_for(monkeypatc
         builder.join(5)
         waiter.join(5)
     assert got == ["declined"], "the waiter read a stale outcome instead of the build it waited for"
+    assert calls == [1], "the waiter ran a second build instead of reporting the one it waited for (the served build's generation bump is missing)"
 
 
 class _SpyLock:

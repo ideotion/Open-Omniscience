@@ -17,6 +17,7 @@ The renderers are driven in node (``tests/maintenance_node_test.js``).
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -98,3 +99,18 @@ def test_the_doc_names_the_panel():
     doc = (_ROOT / "docs" / "QUALIFICATION.md").read_text(encoding="utf-8")
     assert "Settings → Advanced → Maintenance" in doc
     assert "tests/test_maintenance_panel.py" in doc
+
+
+def test_no_raw_job_state_word_is_printed():
+    """F1 (R289): the state line passes the job's state through t() (measured in an Arabic page: it read
+    "الحالة: done"). A state with no word here is shown as sent, by ``_maintStateLabel`` only."""
+    src = (_STATIC / "app-maintenance.js").read_text(encoding="utf-8")
+    assert "String(st.state)" not in src, "the state line must go through _maintStateLabel"
+    assert "_maintStateLabel(st.state, t)" in src
+    assert "esc(d.method)" not in src and "esc(data.method)" not in src, "method sentences go through _maintMethodHtml"
+    assert "esc(String(st.error))" not in src, "a failed run's error text is labelled by _maintServerTextHtml"
+    for locale_file in sorted((_STATIC / "locales").glob("*.json")):
+        lang = locale_file.stem
+        loc = json.loads(locale_file.read_text(encoding="utf-8"))
+        for key in ("running", "paused", "done", "error", "cancelled", "Server text, in English"):
+            assert loc.get(key), (lang, key)

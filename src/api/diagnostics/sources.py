@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
+from src.api.cross_site import refuse_cross_site_get
 from src.database.session import get_db
 
 from ._base import router
@@ -188,7 +189,7 @@ def source_qualification_export(
     return JSONResponse(report, headers=headers)
 
 
-@router.get("/source-audit-selftest")
+@router.get("/source-audit-selftest", dependencies=[Depends(refuse_cross_site_get)])
 def source_audit_selftest(download: bool = Query(False)) -> JSONResponse:
     """Prove the auditor's PURE mechanism (flag_criteria / derive_status / should_auto_demote /
     region self-audit) — no DB, no network, no score. The load-bearing checks: the extraction-failure

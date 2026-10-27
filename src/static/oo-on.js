@@ -164,8 +164,9 @@
   // familySplit came to be listed: none has a verb in its name, and the first three cancel a running job when pressed again.
   // Limits: a gesture is not the same as meaning to press THAT control (an injected overlay or
   // accesskey turns a person's next click into a trusted click on it), and markup that brings its own
-  // panel for a field-reading handler is only stopped by that handler's prompt. The generalised
-  // per-event allowlist (A-023/A-024) is the real fix and stays a proposal.
+  // panel for a field-reading handler is only stopped by that handler's prompt. The per-event table
+  // (EVENT_ACTIONS, below) now closes the zero-click path for EVERY name; making every event a trusted one
+  // and deleting this list (A-024 stage 2) stays a proposal.
   const GESTURE_ONLY = new Set([
     "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
     "excludeKeyword", "familyResetGroup", "familySplit", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched",
@@ -179,6 +180,11 @@
   }
 
   function run(c, el, ev) {
+    const row = EVENT_ACTIONS[ev && ev.type];
+    if (!row || !row.has(c.name)) {
+      console.warn(`data-on: ${c.name} is not bound to a ${ev && ev.type} event in the markup, so it does not run for one`);
+      return undefined;
+    }
     if (GESTURE_ONLY.has(c.name) && !isUserGesture(ev)) {
       console.warn(`data-on: ${c.name} runs only for a person's own click or Enter/Space`);
       return undefined;
@@ -356,6 +362,121 @@
   ];
   for (const name of OO_ACTIONS) ACTIONS[name] = null;
 
+  // WHICH EVENT may call WHICH name (audit A-023/A-024, stage 1). OO_ACTIONS above says which names a binding may
+  // call at all; this says on which event type, and it is DERIVED from the markup: the names each `data-on-<event>`
+  // attribute in the tree calls, no more. A name runs only when the event's row lists it, and an event type with no
+  // row runs nothing (33 of the 38 EVENTS: an injected `<img src=x data-on-error="addSource()">` is a zero-click call
+  // of any listed name without this, and a name bound to `click` cannot be reached through an injected `change`).
+  // tests/test_oo_on_event_table.py holds the table equal to the markup both ways, with zero slack, and prints the
+  // literal to paste (`python -m tests.test_oo_on_event_table`); tests/oo_on_event_table_node_test.js runs every
+  // (event type, name) pair through the real dispatcher. NOT solved here, and stated: an event the browser itself
+  // fires after a script's `el.click()` (a checkbox's `change`) is trusted, so that chain stays shut only through
+  // CLICK_IDS; a binding an attacker injected that the person then CLICKS is a trusted click on any name the click
+  // row lists (GESTURE_ONLY and each name's own confirm stand behind that); the trust rule for every event
+  // (stage 2) is a proposal.
+  const EVENT_ACTION_NAMES = {
+    change: [
+      "_anSortChanged", "_synthCount", "anRelUpdateSel", "anTrendPick", "applySrcFilters", "batchToggle",
+      "bulletinToggleSection", "bulletinToggleStory", "cardSetEnabled", "conjScope", "importAnnotations",
+      "loadAlternates", "loadCitedSources", "loadFamilies", "loadGovAggregate", "loadGovCountry", "loadGovMap",
+      "loadHomeLatest", "loadHomeRecentList", "loadLawChanges", "loadWikiChanges", "loadWikiTC", "lunarSyncDirection",
+      "mmReload", "mmWindowChange", "onFetchModeChange", "onUninstallMode", "ooClearValue", "qualSaveScope",
+      "qualSaveToggle", "reloadBatchPicker", "renderAgenda", "renderFeedDir", "renderGovCompare", "renderGovGroup",
+      "renderGovMap", "saveAiSweepMembership", "saveDiscoveryExternal", "saveDraftItemNote", "saveDraftTitle",
+      "saveImportCheckpointK", "setActiveModel", "setAiBackend", "setAllowImpracticalHw", "setRerunGuide",
+      "srcMselChanged", "trustAuthor", "updateSourceEnabled", "updateSourcePriority",
+    ],
+    click: [
+      "_anActivate", "_anArtGo", "_anClearSense", "_anCloseTab", "_anFormCounts", "_anPickSense", "_anSetCap",
+      "_anSetExpand", "_anSetGroupByLang", "_anSetProvenance", "_anSortBy", "_anToggleArtFacetChip",
+      "_anToggleKwSort", "_conceptDrillCountry", "_feedExpand", "_feedSetOrder", "_libSetWindow", "_lvlCrumbFire",
+      "_ooMapSignalAt", "_srcTrailToggleClass", "_synthCopy", "_synthExport", "_synthRenderSelect", "_synthRun",
+      "_synthSelectAll", "_uxImBackground", "_uxImRun", "_uxImScan", "_uxImStop", "_uxImVerify", "_uxPauseResume",
+      "_uxRun", "addAnnotation", "addMarketRule", "addSource", "addToDraft", "addWikiPage", "agExcludeBulk",
+      "agExcludeClear", "agNavShift", "agNavToday", "agOpenMonth", "agOpenMonthYear", "agOpenYear", "agPickDate",
+      "agSetCat", "agShowDay", "agToggleExclude", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct",
+      "altDiscardBatch", "altMore", "anApplyArticlesFilter", "anFillTentative", "anMMset", "anMMtoggleBig",
+      "anParams", "anSelectLens", "anTrendPick", "anTrendSetMode", "anchorRoot", "appShutdown", "applySrcFilters",
+      "batchSelectAll", "branchByFacet", "branchFromOrigin", "branchFromRelated", "branchSelectedRelated",
+      "bulkJobCancel", "bulkJobClearDone", "bulkLlm", "bulkLlmRun", "bulkLlmStop", "bulkPanelHide", "bulletinDelete",
+      "bulletinDownloadBundle", "bulletinGenerate", "bulletinNarrate", "bulletinOpen", "bulletinOpenFile",
+      "bulletinPublish", "bulletinReview", "cancelP0Validation", "cancelPull", "candidateAct", "cardCollapse",
+      "cardResetTunable", "cardWeatherFetch", "carouselGo", "carouselStep", "carouselToggle", "chartSymbol",
+      "cleanupKeywords", "clearDraft", "clearIdxCompare", "clearSrcFilters", "closeDraft", "closePalette",
+      "collapseAction", "collectToggle", "conjCombine", "conjContrast", "conjOpenCombined", "conjSearchNear",
+      "copyDraft", "copyLlmPrompt", "createSuperGroup", "createWatch", "custodyGapCheck", "custodyGapRecord",
+      "deleteDump", "deleteMarketRule", "deleteOsm", "deleteSource", "deleteStatSub", "deleteSuperGroup",
+      "deleteWatch", "deleteWikiPage", "disableUnmanagedLanguages", "discoverSources", "discoverWorld", "dismissCard",
+      "dismissRetiredMode", "doSearch", "downloadBackupFirst", "downloadDiagnosticsVolumes", "downloadKeywordParts",
+      "dumpFtsBuild", "dumpFtsCancel", "dumpFtsClear", "dumpFtsOpen", "dumpFtsSearch", "dumpReadPage", "dumpReadView",
+      "dumpSearchTitles", "editWatch", "encryptCorpus", "enlargeHomeTrend", "enlargeLibMetric",
+      "enlargeLibQualification", "enlargeTrend", "enrichSourceTypes", "enrichSources", "evaluateWatches",
+      "excludeKeyword", "expandCitedSource", "exploreTerm", "exportAnnotations", "exportCustody", "exportDraft",
+      "exportEvidence", "exportMethods", "exportResults", "familyMerge", "familyResetGroup", "familySplit",
+      "feedAction", "feedClearSeen", "feedReshuffle", "fetchStatFigure", "folderImportAction", "goldBuilderGrade",
+      "goldBuilderLoad", "goldBuilderSave", "govLoadStandard", "govShowLaw", "govToggleAllAggregates",
+      "importCustomFeed", "importFeed", "importIcsFile", "importIcsUrl", "importNewsletters", "importPdfFolder",
+      "importPdfs", "importSources", "indexDetail", "ingestBatch", "ingestSource", "ingestStatSources", "ingestUrl",
+      "installDefaultModel", "installOneModel", "installVllm", "jobCancel", "jobMove", "jobResume", "kbReset",
+      "kxAddTag", "kxBackfill", "kxHide", "kxRemoveTag", "kxShowTag", "kxToggleTags", "launchOllama",
+      "lawAddDocument", "lawSeed", "lawSetWatched", "lawSummarize", "lawTrack", "leadFlipFrom", "livingShowDiff",
+      "loadActors", "loadChronology", "loadCitedSources", "loadConvergences", "loadCountryForm", "loadFamilies",
+      "loadFamilyCuration", "loadFeed", "loadIndicesData", "loadKeywordExplorer", "loadLaw", "loadLemmaPreview",
+      "loadLivingStream", "loadLunar", "loadMap", "loadMarketData", "loadPatternsGate", "loadProfile",
+      "loadRevisionAnomalies", "loadRingGaps", "loadSessionForensics", "loadStatFigures", "loadSuperGroups",
+      "loadSupergroupCuration", "loadTagCoverage", "loadTrends", "loadWikiChanges", "loadWikiTC", "lookupAnnotations",
+      "lunarTestTerm", "maintAction", "maintLoadFurniture", "maintStart", "mbAnchorGrade", "mbAnchorKind",
+      "mbAnchorsLoad", "mbAnchorsSave", "mbBuildBatch", "mbRun", "migrateOllamaStore", "mmExpand", "mmLevel",
+      "mmView", "ooBodyClass", "ooClickId", "ooCloseDialog", "ooFolderPicker", "ooFolderPickerUse",
+      "ooMapCloseDetail", "ooOpenUrl", "ooPrevent", "ooPreventStop", "ooSetValue", "ooStop", "openAnalysisFor",
+      "openAnalysisForIds", "openCardCorpus", "openCardCorpusQuery", "openChannelCorpus", "openConceptMap",
+      "openConjunctionLensChannel", "openCorpus", "openDoc", "openDraft", "openGuide", "openIdxComparison",
+      "openInsightsTrends", "openLinkPreview", "openOsmObjectCard", "openPalette", "openPlaceCard",
+      "openSettingsAgenda", "openSettingsOsm", "openSourcesForKeyword", "openSupergroup", "openTaskManager",
+      "openTour", "openUnifiedExport", "openUnifiedImport", "openWikiTC", "openWorldMapAt", "openWorldMapHazards",
+      "osmCountAdmin1", "osmHistoryDownload", "osmHistoryReadSize", "osmMove", "osmPickAdd", "osmPickAddCode",
+      "osmPickRemove", "overlayAdopt", "overlayExport", "overlayMerge", "overlayRevert", "panicWipe", "partsSaveFrom",
+      "partsSaveNext", "partsSaveRest", "pauseDump", "pauseOsm", "pickLang", "pickTerm", "prepareOllamaInstall",
+      "previewTargets", "promoteCitedSources", "pullMailbox", "pullModelFromBox", "qualifyAssist",
+      "qualifyBulkCancel", "qualifyBulkStart", "recheckOllama", "refreshDumpSizes", "refreshStatSubs",
+      "releaseRunCancel", "releaseRunCollect", "releaseRunResume", "releaseRunStart", "releaseRunStatus",
+      "removeAnnotation", "removeAuthor", "removeDraftItem", "removeImportedNewsletters", "removeModel",
+      "removeUserCalendar", "renderAgenda", "renderGovGroup", "renderStatChart", "renderStatMap",
+      "renderStorageFootprint", "resetCustomPromptForm", "resetLlmPrompt", "resetMap", "resetUi", "resumeOsm",
+      "retryFailedFeeds", "revertAllCollapse", "ringLoadStart", "runAiCheck", "runAiSetup", "runAllDiagnostics",
+      "runFixity", "runIrEval", "runMarketRule", "runOllamaInstall", "runP0Validation", "runPerceptionEvalLive",
+      "runSeriesCorpus", "saveCardSettings", "saveCustody", "saveCustomPrompt", "saveFetchMode", "saveKeywordFilter",
+      "saveLaneBudget", "saveLlmBehaviour", "saveScheduler", "saveSettings", "schedulerRunNow", "schedulerStart",
+      "schedulerStop", "secureErase", "seedDefaults", "selectConceptBucket", "selectConceptGroup", "selectHomeFamily",
+      "setAccent", "setActiveModel", "setDensity", "setFace", "setSidebar", "setSrcSort", "setTheme", "setTrendLens",
+      "sgAddMemberFrom", "sgAddRingFrom", "sgRemoveMember", "showGovLens", "showTab", "srcFilterTag",
+      "srcJumpToDomain", "srcPage", "startDump", "startFolderImport", "startOsmDownload", "startPlanetDownload",
+      "stopVllm", "storageGuardResume", "summarize", "synthesizeResults", "tmapFindCoverage", "toggleAiCoordinator",
+      "toggleCalSub", "toggleIdxCompare", "toggleIndexTag", "toggleKeywordTriage", "toggleLangMenu",
+      "toggleMktConfig", "toggleNetwork", "togglePerceptionExtract", "toggleRateMode", "toggleSidebar",
+      "toggleSourceTags", "toggleSourceTrail", "toggleStatSub", "toggleVitals", "toggleWatch", "trackWikiNow",
+      "trackWikiPage", "translateArticle", "triangulateStatSeries", "unattendedLog", "unattendedStart",
+      "unattendedStop", "undoNewsletterAttach", "uninstallAi", "uninstallApp", "vacuumNow", "verifyChain",
+      "viewChain", "viewKeywordGrowth", "viewWikiDiff", "wikiLaneClick", "zoomMap",
+    ],
+    input: [
+      "anMMsetScale", "filterConceptBrowse", "filterDoc", "loadBuiltinStoplist", "loadWikiChanges", "mmReload",
+      "reloadBatchPicker", "renderCoverageTable", "renderFeedDir", "renderPalette", "renderWikiLanguages",
+      "schedSpeedLabel",
+    ],
+    keydown: [
+      "applySrcFilters", "conjCombine", "conjContrast", "createSuperGroup", "dumpFtsSearch", "dumpReadPage",
+      "exploreTerm", "filterDoc", "goldBuilderKey", "leadFlipKeyFrom", "loadCitedSources", "loadConvergences",
+      "loadProfile", "lookupAnnotations", "lunarTestTerm", "mbAnchorKey", "ooClearValue", "ooPrevent", "openPalette",
+      "openTaskManager", "palKey", "pickLang", "pullModelFromBox", "sgAddMember", "sgAddRing", "vitalsKey",
+    ],
+    toggle: [
+      "onAiActivityToggle",
+    ],
+  };
+  const EVENT_ACTIONS = Object.create(null);
+  for (const [type, names] of Object.entries(EVENT_ACTION_NAMES)) EVENT_ACTIONS[type] = new Set(names);
+
   const CLICK_IDS = new Set(["anno-import"]);
   const SET_VALUE_IDS = new Set(["agenda-tag", "dumpread-title"]);
 
@@ -397,5 +518,5 @@
   const root = document.documentElement;
   for (const type of EVENTS) root.addEventListener(type, onEvent, true);
 
-  window.ooOn = {parse, EVENTS, ACTIONS, OO_ACTIONS, CLICK_IDS, SET_VALUE_IDS, GESTURE_ONLY};
+  window.ooOn = {parse, EVENTS, ACTIONS, OO_ACTIONS, EVENT_ACTIONS, CLICK_IDS, SET_VALUE_IDS, GESTURE_ONLY};
 })();
