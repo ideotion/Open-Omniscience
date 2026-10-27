@@ -35,15 +35,14 @@ import logging
 import math
 import os
 import re
-import threading
 import time
-from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger(__name__)
 
@@ -298,66 +297,19 @@ def _read_state() -> dict[str, Any] | None:
         return None
 
 
-# Said once per process: ``psutil`` (a core dependency, so only a broken install lacks it) could not be imported, and a leftover copy of the sentinel was left in place.
-_LIVENESS_UNAVAILABLE_LOGGED = False
-
-
-def _remove_dead_state_copies(path: Path) -> None:
-    """Remove the copies a killed process left beside the sentinel (``<name>.<pid>.<thread>.part``) once that process is gone.
-    A pid that a live process now holds keeps its copy until that one ends; with no way to tell live from dead nothing is removed
-    (said once in the log, never raised). ``psutil`` is only imported when there is a copy of another process to judge, so a start
-    with nothing left over pays nothing."""
-    global _LIVENESS_UNAVAILABLE_LOGGED
-    prefix = path.name + "."
-    try:
-        theirs = []
-        for child in path.parent.iterdir():
-            if child.name.startswith(prefix) and child.name.endswith(".part"):
-                pid_text = child.name[len(prefix) :].split(".", 1)[0]
-                if pid_text.isdigit() and int(pid_text) != os.getpid():
-                    theirs.append((child, int(pid_text)))
-        if theirs:
-            try:
-                import psutil
-            except ImportError:
-                if not _LIVENESS_UNAVAILABLE_LOGGED:
-                    _LIVENESS_UNAVAILABLE_LOGGED = True
-                    _LOG.warning(
-                        "psutil could not be imported, so a leftover copy of session_state.json cannot be told live from dead and is left in place"
-                    )
-                return
-            for child, pid in theirs:
-                if not psutil.pid_exists(pid):
-                    child.unlink(missing_ok=True)
-    except OSError:
-        return  # a copy that cannot be removed is left; it must never stop the write
-
-
 def _write_state(state: dict[str, Any]) -> None:
-    """Persist the sentinel: written to a copy beside it and swapped in whole.
+    """Persist the sentinel through the house helper: a copy named for the process and the thread, swapped in whole.
 
-    Servers can share a data folder (R176), and the copy used to have ONE name, so two of them writing at once wrote the same file:
-    the first swap moved the other's half-written copy into place (a torn sentinel changes the next boot's verdict) or left the
-    second nothing to swap (its state was lost, with a warning). The copy is now named for the process and the thread, so two writers
-    never share one file; it is synced before the swap and removed if the swap fails. The last swap wins, as it did. A copy a killed
-    process left is removed by the next write once that process is gone."""
-    part = None
+    Servers can share a data folder (R176), and the copy used to have ONE name (``session_state.json.tmp``), so two of them writing at
+    once wrote the same file: the first swap moved the other's half-written copy into place (a torn sentinel changes the next boot's
+    verdict) or left the second nothing to swap (its state was lost, with a warning). ``atomic_replace`` gives each writer its own copy,
+    removes it if the swap fails and sweeps a dead process's copies. The last swap wins, as it did. ``fsync=False``: the sentinel is
+    rewritten at every lifecycle step, a sync here could block the shutdown path on a wedged device, and the write before this change
+    was not synced either."""
     try:
-        path = _state_path()
-        _remove_dead_state_copies(path)
-        part = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.part")
-        with part.open("w", encoding="utf-8") as fh:
-            fh.write(json.dumps(state, indent=1))
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(part, path)
-        part = None
+        atomic_replace(_state_path(), json.dumps(state, indent=1), fsync=False)
     except OSError as exc:
         log_failure(_LOG, "could not persist session_state.json", exc, level=logging.WARNING)
-    finally:
-        if part is not None:
-            with suppress(OSError):
-                part.unlink()
 
 
 def take_boot_wal_reading() -> None:

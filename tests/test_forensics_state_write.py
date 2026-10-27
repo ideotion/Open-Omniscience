@@ -5,7 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 ``session_state.json`` is the clean-shutdown sentinel the NEXT boot reads to say how this session ended. Its writer swapped ONE fixed
 copy name (``session_state.json.tmp``) into place, so two servers on one data folder (R176) wrote the same file: the first swap moved
 the other's half-written copy into place, or left the second writer with nothing to swap (its state was lost, with a warning). The
-copy is now named for the process and the thread, synced, and swapped in whole (the R175 shape of ``collect_perf._trim_jsonl``).
+writer now goes through the house helper ``src.safety.file_lock.atomic_replace`` (a copy named for the process and the thread, removed
+if the swap fails, a dead process's copies swept), with ``fsync=False`` because the write before this change was not synced either.
 
 The race test runs the second writer in ANOTHER THREAD on purpose: the copy's name carries the thread, so a nested call from the same
 thread would reuse the first writer's name and collide with itself, which no real second writer does. The kill tests run the write in a
@@ -65,7 +66,7 @@ def _state(tmp_path: Path) -> Path:
 
 
 def _parts(tmp_path: Path) -> list[str]:
-    return sorted(p.name for p in tmp_path.iterdir() if p.name.endswith((".part", ".tmp")))
+    return sorted(p.name for p in tmp_path.iterdir() if ".tmp" in p.name)
 
 
 def _killed_write(tmp_path: Path, where: str, limit: int = 0) -> None:
@@ -204,13 +205,13 @@ def test_a_refused_swap_leaves_the_old_sentinel_whole_and_no_copy(tmp_path, monk
     assert [r for r in caplog.records if "could not persist" in r.getMessage()]
 
 
-def test_the_copy_is_synced_before_it_is_swapped_in(tmp_path, monkeypatch):
-    order: list[str] = []
-    real_fsync, real_replace = os.fsync, os.replace
-    monkeypatch.setattr(os, "fsync", lambda fd: (order.append("fsync"), real_fsync(fd))[1])
-    monkeypatch.setattr(os, "replace", lambda a, b: (order.append("replace"), real_replace(a, b))[1])
+def test_the_sentinel_is_not_synced(tmp_path, monkeypatch):
+    """It is rewritten at every lifecycle step, a sync could block the shutdown path on a wedged device, and the writer this one
+    replaced did not sync either: the choice (``fsync=False``) is pinned so a later change to the helper's default does not make it."""
+    synced: list[int] = []
+    monkeypatch.setattr(os, "fsync", lambda fd: synced.append(fd))
     forensics._write_state(_NEW)
-    assert order == ["fsync", "replace"]
+    assert synced == [] and forensics._read_state() == _NEW
 
 
 def test_the_copy_is_named_for_the_process_and_the_thread(tmp_path, monkeypatch):
@@ -228,54 +229,20 @@ def test_the_copy_is_named_for_the_process_and_the_thread(tmp_path, monkeypatch)
     worker.start()
     worker.join()
     assert len(names) == 2 and names[0] != names[1]
-    assert all(n.startswith(f"session_state.json.{os.getpid()}.") and n.endswith(".part") for n in names)
+    assert all(n.startswith(f"session_state.json.tmp.{os.getpid()}.") for n in names)
 
 
-def test_only_a_copy_whose_process_is_gone_is_removed(tmp_path):
+def test_without_psutil_the_write_still_happens_and_a_leftover_copy_is_left_in_place(tmp_path, monkeypatch):
+    """psutil is a core dependency, so only a broken install lacks it. The helper's sweep cannot tell live from dead there ("unknown is
+    not dead"), removes nothing and does not break the write: the sentinel still lands."""
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()
-    live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    try:
-        dead_copy = tmp_path / f"session_state.json.{gone.pid}.1.part"
-        live_copy = tmp_path / f"session_state.json.{live.pid}.1.part"
-        not_a_pid = tmp_path / "session_state.json.notes.part"
-        other_file = tmp_path / f"other.json.{gone.pid}.1.part"
-        for p in (dead_copy, live_copy, not_a_pid, other_file):
-            p.write_text("x", encoding="utf-8")
-        forensics._write_state(_NEW)
-        assert not dead_copy.exists()
-        assert live_copy.exists() and not_a_pid.exists() and other_file.exists()
-    finally:
-        live.kill()
-        live.wait()
-
-
-def test_with_no_way_to_tell_live_from_dead_nothing_is_removed(tmp_path, monkeypatch):
-    gone = subprocess.Popen([sys.executable, "-c", "pass"])
-    gone.wait()
-    orphan = tmp_path / f"session_state.json.{gone.pid}.1.part"
+    orphan = tmp_path / f"session_state.json.tmp.{gone.pid}.1"
     orphan.write_text("x", encoding="utf-8")
     monkeypatch.setitem(sys.modules, "psutil", None)  # `import psutil` raises ImportError
     forensics._write_state(_NEW)
     assert orphan.exists(), "unknown is not dead"
     assert forensics._read_state() == _NEW, "and the write still happens"
-
-
-def test_the_missing_liveness_check_is_said_once_and_never_raises(tmp_path, monkeypatch, caplog):
-    """psutil is a core dependency, so only a broken install lacks it; the sentinel must still be written, the other process's copy
-    left in place, and the log must say so ONCE (not on every write: the sentinel is written at every lifecycle step)."""
-    gone = subprocess.Popen([sys.executable, "-c", "pass"])
-    gone.wait()
-    orphan = tmp_path / f"session_state.json.{gone.pid}.1.part"
-    orphan.write_text("x", encoding="utf-8")
-    monkeypatch.setitem(sys.modules, "psutil", None)
-    monkeypatch.setattr(forensics, "_LIVENESS_UNAVAILABLE_LOGGED", False)
-    with caplog.at_level(logging.WARNING):
-        forensics._write_state(_OLD)
-        forensics._write_state(_NEW)
-    said = [r for r in caplog.records if "psutil" in r.getMessage()]
-    assert len(said) == 1, [r.getMessage() for r in said]
-    assert orphan.exists() and forensics._read_state() == _NEW
 
 
 def test_a_state_that_cannot_be_serialised_leaves_no_copy_behind(tmp_path):
