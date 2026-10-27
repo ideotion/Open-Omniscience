@@ -134,6 +134,8 @@ def advance_backfill(
 
     Skips honestly (named in the returned dict) when: the budget is 0 (the
     off switch, ``archive_backfill_per_pass=0``) or airplane mode is engaged.
+    A Stop that lands INSIDE the tick is named by ``skipped_offline: 1`` -- present only when the switch held something back
+    (the enumeration, or the URLs from the one it cut on), the idiom of ``ingest_source`` and ``track_watched``.
     Best-effort by contract -- the caller wraps this so a failure never breaks
     a scrape. ``ingest_fn``/``discover_fn`` are test seams (default to the real
     ``ingest_url``/``_enumerate``).
@@ -147,6 +149,7 @@ def advance_backfill(
 
     from src.database.models import Source
     from src.database.stand_in import not_a_stand_in_source
+    from src.ingest.pipeline import IngestResult
 
     ingest = ingest_fn or _real_ingest
     discover = discover_fn or _enumerate
@@ -183,6 +186,13 @@ def advance_backfill(
         except Exception as exc:  # noqa: BLE001 - one source's enumeration failure must not abort the queue
             log_failure(_LOG, f"archive backfill: sitemap enumeration failed for {source.domain!r}", exc, level=logging.WARNING)
             urls = []
+        if kill_switch_active():
+            # A Stop inside the enumeration (up to two robots reads and up to 5 sitemaps, 50 with the full history) makes its
+            # answer the person's setting, not the site's, empty or part-read: recorded as done it would end this source's
+            # history for good (``enqueue_source`` refuses a done source), and a part-read list would be walked as if it were
+            # the whole archive. Nothing is saved here, so the entry is still at the head of the queue in the file and the
+            # next tick enumerates again.
+            return {"enabled": True, "source_id": sid, "skipped_offline": 1}
         if not urls:
             done.append(sid)
             state["done_sources"] = done
@@ -210,8 +220,10 @@ def advance_backfill(
     cursor = int(active["cursor"])
     tally: dict[str, int] = dict(active.get("tally", {}))
     attempted = 0
+    held_back = False
     for url in active_urls[cursor : cursor + per_pass]:
         if kill_switch_active():
+            held_back = True
             break  # airplane mid-tick -- progress already made this loop is kept
         try:
             outcome = ingest(session, source, url, fetcher=fetcher)
@@ -227,6 +239,12 @@ def advance_backfill(
             # silently cascades every remaining url in the batch to "error"
             # too (transversal audit 09, 2026-07-25).
             session.rollback()
+        if kill_switch_active() and key in (IngestResult.FETCH_FAILED.value, "error"):
+            # A Stop inside this URL's flight: the failure is the person's setting, not the page's, so it is neither tallied nor
+            # passed over -- the cursor stays on it and the next tick asks again (the check at the head of the loop covers the
+            # URLs after it). A URL that finished (stored, duplicate, blocked) before the Stop keeps its place in the count.
+            held_back = True
+            break
         tally[key] = tally.get(key, 0) + 1
         attempted += 1
     cursor += attempted
@@ -239,10 +257,13 @@ def advance_backfill(
     else:
         state["active"] = {**active, "cursor": cursor, "tally": tally}
     _save_state(state, state_path)
-    return {
+    out = {
         "enabled": True, "source_id": sid, "attempted": attempted,
         "cursor": cursor, "total": len(active_urls), "tally": tally, "done": done_now,
     }
+    if held_back:
+        out["skipped_offline"] = 1
+    return out
 
 
 def _real_ingest(session, source, url, *, fetcher):

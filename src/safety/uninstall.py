@@ -293,7 +293,7 @@ def _default_arm_shutdown(delay: float = 2.0) -> None:
         _close_db_quietly()
         _LOG.warning("uninstall: stopping the server (SIGTERM to self)")
         os.kill(os.getpid(), signal.SIGTERM)
-    threading.Thread(target=_stop, daemon=True).start()
+    threading.Thread(target=_stop, name="oo-uninstall", daemon=True).start()
 
 
 def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: bool = False,
