@@ -24,6 +24,7 @@ import requests
 from urllib3.util import parse_url
 
 from src.ingest import DEFAULT_USER_AGENT, BlockedTarget, EthicalFetcher, kill_switch_active
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.monitoring.secret_scrub import record_text
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
 
@@ -238,9 +239,7 @@ class GuardedSession(requests.Session):
             from src.ingest.egress_window import egress_permitted, socket_exemption
 
             if not egress_permitted(self.egress_purpose):
-                raise NetworkBlocked(
-                    "network kill switch is active -- collection stopped by operator"
-                )
+                raise NetworkBlocked(KILL_SWITCH_REFUSAL)
             # The kill switch is engaged and a live window covers this session's
             # purpose, so THIS request is the consented egress -- and it is the
             # only thing the socket-level airplane backstop should stand aside

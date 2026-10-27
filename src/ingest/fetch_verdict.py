@@ -39,10 +39,16 @@ FETCH_FAIL_REASONS = (
 )
 
 _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
+# THE KILL SWITCH'S REFUSAL SENTENCE, defined once (R317). Every site that raises it says it by this name (``src/ingest/__init__.py``,
+# ``src/safety/fetcher.py``), and the first alternative of ``_OFFLINE_RE`` below is built from its opening words, so a rewording moves the
+# writers and the reader together instead of leaving the reader matching a sentence nobody raises any more. A reader anchors on the HEAD (the
+# words before " -- "), which is also what a caller that appends its own detail to the sentence still starts with.
+KILL_SWITCH_REFUSAL_HEAD = "network kill switch is active"
+KILL_SWITCH_REFUSAL = f"{KILL_SWITCH_REFUSAL_HEAD} -- collection stopped by operator"
 # OUR OWN SENTENCES, recognised at the START of the text, never as a phrase anywhere in it (R298): the same words can appear INSIDE another
 # failure's text (a redirect target, a status line a server wrote, a URL), and that failure is the host's, not the person's airplane mode.
-#   1. the kill switch's refusal, raised verbatim in ``src/ingest/__init__.py`` and ``src/safety/fetcher.py``, optionally led by an exception
-#      class a caller prefixed ("FetchFailed: ...");
+#   1. the kill switch's refusal (``KILL_SWITCH_REFUSAL`` above), raised in ``src/ingest/__init__.py`` and ``src/safety/fetcher.py``, optionally
+#      led by an exception class a caller prefixed ("FetchFailed: ...");
 #   2. the socket guard's refusal (``airplane.py``, an ``AirplaneModeError``), bare, or as ``requests`` wraps it when the switch is engaged
 #      AFTER the fetcher's own check passed: "request error for <url>: ...Failed to establish a new connection: airplane mode is engaged: ...".
 #      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words);
@@ -53,7 +59,7 @@ _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
 #      so a host that tries to close the quote early and continue in our words is refused, and a host holding both quote kinds fails SAFE
 #      (read as ``dns``). A gaierror's own text ("[Errno -2] ...") between the two never matches.
 _OFFLINE_RE = re.compile(
-    r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
+    r"^\s*(?:[\w.]+:\s*)?(?:" + re.escape(KILL_SWITCH_REFUSAL_HEAD) + r"|airplane mode is engaged: refusing a network connection)\b"
     r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
     r"|^\s*cannot resolve host (?:'[^'\s\\]*'|\"[^\"\s\\]*\"): airplane mode is engaged: refusing a network connection",
     re.IGNORECASE | re.DOTALL,

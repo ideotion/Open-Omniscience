@@ -36,9 +36,6 @@ _LOG = logging.getLogger(__name__)
 
 _MIN_TEXT = 200  # below this we treat extraction as failed, not a real document
 _MAX_DIFF_LINES = 4000  # cap stored diff size (bounded, like the crawler)
-# The fetcher's refusal under the kill switch (src/ingest/__init__.py raises it at four sites). A fetch
-# error is "a refusal that made no request" only when its text STARTS with this sentence.
-_KILL_SWITCH_REFUSAL = "network kill switch is active"
 # ``session.info`` key: ``(document id, the attempt's own time)`` of the document whose fetch last returned a result
 # (see ``_back_off_after_crash``).
 _FETCHED_KEY = "oo.law.track.fetched_document_id"
@@ -303,6 +300,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     ingested into the corpus through the one ``index_article`` hook.
     """
     from src.ingest import CrawlDelayDeferred, FetchError, kill_switch_active
+    from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL_HEAD
 
     now = datetime.now(UTC)
     # A marker belongs to ONE attempt: cleared before anything that can fail, so no earlier fetch (a real failed request
@@ -335,8 +333,10 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         # does the fetcher's own refusal sentence (the switch may have been cleared again by now). That
         # sentence is matched at the START of the text, never as a substring: a real failure's text carries
         # a URL, a redirect target or a server's status line, and a gazette whose address says "kill switch"
-        # must not read as a refusal that made no request (R293 read 2).
-        offline = record_text(exc).startswith(_KILL_SWITCH_REFUSAL)
+        # must not read as a refusal that made no request (R293 read 2). The words are the fetcher's own
+        # (``KILL_SWITCH_REFUSAL``, raised by name at every site); a fetch error is "a refusal that made no
+        # request" only when its text STARTS with the head of that sentence.
+        offline = record_text(exc).startswith(KILL_SWITCH_REFUSAL_HEAD)
         if offline or kill_switch_active():
             doc.last_checked_at = prior_checked_at
         doc.last_status = f"fetch error: {record_text(exc)}"
