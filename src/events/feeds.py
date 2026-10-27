@@ -455,13 +455,17 @@ def verify_feed(fetcher, feed_id: str) -> dict:
         verdict["status"] = "ok" if events else ("not_ical" if text else "empty")
         verdict["events"] = len(events)
     except Exception as exc:  # noqa: BLE001 - the verdict IS the error report
+        from src.ingest import kill_switch_active
         from src.ingest.fetch_verdict import classify_fetch_failure
 
         # Classify the WHOLE scrubbed text and cut only what is stored: the socket guard's sentence, as requests wraps it, ends past
         # 300 characters for a realistic URL, and a cut text reads as a host failure.
         full = record_text(exc)
         text = full[:300]
-        if classify_fetch_failure(full) == "offline":
+        # OR the switch is engaged now: a Stop that lands mid-fetch reaches here in shapes the anchored sentence match rightly refuses
+        # (a robots read the refusal cut is "robots.txt ... could not be determined (unreachable)"), and a feed filed as unreachable
+        # under the person's own Stop moves up the ladder. The cost is a genuine failure coinciding with a Stop going unrecorded (R320).
+        if classify_fetch_failure(full) == "offline" or kill_switch_active():
             # The network kill switch refused the fetch: nothing was asked of the host, so there is no verdict about it. Storing
             # "unreachable" would blame the feed for the person's own airplane mode AND move it up the re-check ladder (a month per
             # rung); the feed stays exactly as eligible as it was, and the caller is told why nothing was checked.

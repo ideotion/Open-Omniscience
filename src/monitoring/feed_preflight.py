@@ -241,7 +241,7 @@ def run_feed_preflight(
             from src.events.feeds import verify_feed
 
             verdict = verify_feed(fetcher, t["key"])
-            if verdict.get("status") == "skipped_offline" or (verdict.get("status") != "ok" and kill_switch_active()):
+            if verdict.get("status") == "skipped_offline" or (verdict.get("status") == "unreachable" and kill_switch_active()):
                 return {
                     "hosts": len(hosts),
                     "complete": False,

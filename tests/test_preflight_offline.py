@@ -137,12 +137,13 @@ def test_the_feed_preflight_stops_on_the_refusal_and_logs_nothing():
     assert "robots_denied" not in summary and "log" not in summary
 
 
-def test_an_offline_first_run_job_leaves_the_preflight_pending():
+def test_an_offline_first_run_job_leaves_the_preflight_pending(monkeypatch):
     """The headline: neither half stamps, so the next ONLINE pass still runs the first-run preflight. (The job reads through its OWN
     session, so the source it must meet is committed and removed again.)"""
     from src.database.session import session_scope
     from src.monitoring import preflight_job
 
+    monkeypatch.setattr("src.events.feeds.verify_feed", lambda *_a, **_k: {"status": "skipped_offline"})
     init_db()
     with session_scope() as s:
         src = Source(name="Offline job probe", domain=f"job-{uuid.uuid4().hex[:8]}.example", language="en", enabled=True)
@@ -287,11 +288,29 @@ def _feed_fetcher_and_stub(monkeypatch, *, calendar_status: str, market_cut: boo
     return fetcher
 
 
+def _distinct_hosts(targets):
+    return len({t["host"] for t in targets if t["host"]})
+
+
 def test_the_calendar_sample_stops_on_a_skipped_offline_verdict_and_counts_what_was_not_asked(monkeypatch):
     fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="skipped_offline", market_cut=False)
-    summary = feed_preflight.run_feed_preflight(fetcher)
-    assert summary["complete"] is False and summary["skipped_offline"] >= 2, "every sampled feed from the cut on was not asked"
+    market, calendar = feed_preflight._feed_targets()
+    summary = feed_preflight.run_feed_preflight(fetcher, sample_per_provider=1)  # one sampled feed per host: the count is known
+    # cut at the FIRST calendar feed: every sampled calendar feed and every sampled market feed was not asked
+    assert summary["complete"] is False
+    assert summary["skipped_offline"] == _distinct_hosts(calendar) + _distinct_hosts(market)
     assert not feed_preflight.has_run_before()
+
+
+def test_a_completed_calendar_answer_is_kept_even_if_the_stop_lands_right_after_it(monkeypatch):
+    """Only a FAILED check is read as the switch's: a feed that really answered ``not_ical`` is saved by verify_feed and must not be
+    discarded by the preflight as if nothing had been asked."""
+    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="not_ical", market_cut=False, engage_on_calendar=True)
+    try:
+        summary = feed_preflight.run_feed_preflight(fetcher)
+    finally:
+        clear_kill_switch()
+    assert summary["complete"] is True and feed_preflight.has_run_before()
 
 
 def test_the_calendar_sample_discards_a_failure_that_coincides_with_a_stop(monkeypatch):
@@ -309,13 +328,30 @@ def test_the_calendar_sample_keeps_an_ordinary_failure_when_the_switch_is_clear(
     assert summary["complete"] is True and feed_preflight.has_run_before()
 
 
+def _picked(targets, cap=3):
+    """The feeds the sample takes with every robots read answering: the first ``cap`` per host, in catalogue order."""
+    per_host: dict[str, int] = {}
+    out = []
+    for t in targets:
+        if per_host.get(t["host"], 0) < cap:
+            per_host[t["host"]] = per_host.get(t["host"], 0) + 1
+            out.append(t)
+    return out
+
+
 def test_the_market_sample_stops_when_a_stop_cuts_its_fetch(monkeypatch):
-    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="ok", market_cut=True)
+    """The cut lands on the SECOND sampled market feed, so the count (the cut feed and every one after it) differs from 1 and from the
+    whole sample."""
+    market, _calendar = feed_preflight._feed_targets()
+    picked = _picked(market)
+    assert len(picked) >= 3
+    fetcher = _feed_fetcher_and_stub(monkeypatch, calendar_status="ok", market_cut=False)
+    fetcher._last = picked[1]["url"]
     try:
         summary = feed_preflight.run_feed_preflight(fetcher)
     finally:
         clear_kill_switch()
-    assert summary["complete"] is False and summary["skipped_offline"] >= 1
+    assert summary["complete"] is False and summary["skipped_offline"] == len(picked) - 1
     assert not feed_preflight.has_run_before()
 
 
@@ -356,8 +392,11 @@ def _learned(ids):
         return [s.query(SourceMetadata).filter_by(source_id=i).one().robots_allowed for i in ids]
 
 
-def test_the_first_run_job_rolls_back_source_a_when_source_b_is_refused():
+def test_the_first_run_job_rolls_back_source_a_when_source_b_is_refused(monkeypatch):
     from src.monitoring import preflight_job
+
+    # the feed half runs after the source half: keep its verify_feed from saving calendar verdicts into the shared store
+    monkeypatch.setattr("src.events.feeds.verify_feed", lambda *_a, **_k: {"status": "skipped_offline"})
 
     ids, domains = _two_committed_sources()
 
