@@ -1118,9 +1118,23 @@ class EthicalFetcher:
         fetch_token = activity_monitor.fetch_started(url)
         try:
             attempt = 0
+            transient: Exception | None = None
+            response = final_url = None
             while True:
-                self._respect_rate_limit(parsed.netloc, host_key)
-                transient: Exception | None = None
+                try:
+                    self._respect_rate_limit(parsed.netloc, host_key)
+                except CrawlDelayDeferred:
+                    # The first attempt deferred: no request was made, a true deferral. A RETRY that defers
+                    # follows a request that WAS made and failed (a 5xx, a 429, a timeout) on a host whose
+                    # Crawl-delay exceeds the inline wait: the failure in hand is the honest answer, not a
+                    # deferral (a caller counting it as one gave the failed request no back-off). The host's
+                    # next-allowed-at was persisted before the raise, so the next pass still waits.
+                    if attempt == 0:
+                        raise
+                    if transient is not None:
+                        raise transient from None
+                    break  # a retryable status: handled below, as when the retries run out
+                transient = None
                 response = final_url = None
                 try:
                     response, final_url = self._http_get(

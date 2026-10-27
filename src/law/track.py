@@ -21,6 +21,7 @@ import hashlib
 import logging
 import re
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from src.database.models import LawDocument, LawRevision
 from src.database.write import is_integrity_error
@@ -33,6 +34,9 @@ _LOG = logging.getLogger(__name__)
 
 _MIN_TEXT = 200  # below this we treat extraction as failed, not a real document
 _MAX_DIFF_LINES = 4000  # cap stored diff size (bounded, like the crawler)
+# The fetcher's refusal under the kill switch (src/ingest/__init__.py raises it at four sites). A fetch
+# error is "a refusal that made no request" only when its text STARTS with this sentence.
+_KILL_SWITCH_REFUSAL = "network kill switch is active"
 _WS_RE = re.compile(r"[ \t]+")
 
 
@@ -293,10 +297,15 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     model (a law = an Article + a linked revision/audit trail). The text is then
     ingested into the corpus through the one ``index_article`` hook.
     """
-    from src.ingest import FetchError
-    from src.ingest.fetch_verdict import classify_fetch_failure
+    from src.ingest import CrawlDelayDeferred, FetchError, kill_switch_active
 
     now = datetime.now(UTC)
+    # ``last_checked_at`` says a check HAPPENED; ``last_status`` says how the latest ATTEMPT ended.
+    # The two part company when no request was made (the kill switch refused it, or the host's
+    # own Crawl-delay put the fetch off): the attempt is recorded in the status, but stamping the
+    # time would read as a check on every surface that shows it, and the 24 h gate in
+    # ``auto_track_due`` would then keep the document away for a day (R293).
+    prior_checked_at = doc.last_checked_at
     doc.last_checked_at = now
     try:
         # require_html=False so an official-gazette PDF is not rejected up front;
@@ -304,14 +313,33 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         # destroys them). Both are additive — a fetcher double without keep_bytes
         # simply won't set raw_content, and the HTML path is unchanged.
         result = fetcher.fetch(doc.url, require_html=False, keep_bytes=True)
+    # BEFORE FetchError, which it inherits from: a deferral is not a failure (S04-13 S2, Q1013 = a).
+    except CrawlDelayDeferred as exc:
+        doc.last_checked_at = prior_checked_at
+        # Main's wording on purpose: ``_verdict_of`` (src/api/law.py) badges "fetch error..." as an error and
+        # "deferred..." as "other", and a ``deferred`` verdict needs a chrome label (x12 locales) first.
+        doc.last_status = f"fetch error: {record_text(exc)}"
+        session.commit()
+        return {"document_id": doc.id, "status": "deferred", "detail": record_text(exc)}
     except FetchError as exc:
+        # A real failed request keeps its stamp (a back-off); a refusal by the switch made none. The switch
+        # decides (a request already in flight when Stop was pressed fails with its own wording), and so
+        # does the fetcher's own refusal sentence (the switch may have been cleared again by now). That
+        # sentence is matched at the START of the text, never as a substring: a real failure's text carries
+        # a URL, a redirect target or a server's status line, and a gazette whose address says "kill switch"
+        # must not read as a refusal that made no request (R293 read 2).
+        offline = record_text(exc).startswith(_KILL_SWITCH_REFUSAL)
+        if offline or kill_switch_active():
+            doc.last_checked_at = prior_checked_at
         doc.last_status = f"fetch error: {record_text(exc)}"
         session.commit()
         out = {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
-        if classify_fetch_failure(record_text(exc)) == "offline":
+        if offline:
             out["offline"] = True  # the kill switch refused it: not the document's failure (the tallies count it apart)
         return out
     except Exception as exc:  # noqa: BLE001 - record, never crash the batch
+        if kill_switch_active():  # the socket-level airplane guard raises an OSError, not a FetchError
+            doc.last_checked_at = prior_checked_at
         doc.last_status = f"error: {record_text(exc)}"
         session.commit()
         return {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
@@ -586,7 +614,12 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
 
     ``skipped_offline`` is present ONLY when the kill switch (airplane mode) refused at least one document. Those documents
     still count in ``documents`` and ``errors`` exactly as before (the old fields are unchanged); the extra key is what lets
-    a caller say "nothing was fetched" instead of "23 errors" (invariant #14e's corollary).
+    a caller say "nothing was fetched" instead of "23 errors" (invariant #14e's corollary). It counts the refusals whose text
+    is the fetcher's own sentence for it; a request already in flight when Stop was pressed fails with its own wording and is
+    counted under ``errors`` (its time is still given back, because the switch is active).
+
+    ``deferred`` follows the same convention (R293): present ONLY when the host's own Crawl-delay put at least one document
+    off. A deferral is neither an error nor a document attempted, so it is in neither ``errors`` nor ``documents``.
     """
     from src.database.query import capped
 
@@ -611,8 +644,9 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
             session.rollback()  # clear a poisoned transaction so it can't roll back the batch
             tally["errors"] += 1
             continue
-        tally["documents"] += 1
         status = res.get("status")
+        if status != "deferred":  # "documents" = documents attempted; a deferral made no attempt and has its own key
+            tally["documents"] += 1
         if status == "baseline":
             tally["baselines"] += 1
         elif status == "changed":
@@ -625,6 +659,8 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
                 tally["skipped_offline"] = tally.get("skipped_offline", 0) + 1
         elif status == "unchanged":
             tally["unchanged"] += 1
+        elif status == "deferred":
+            tally["deferred"] = tally.get("deferred", 0) + 1
     return tally
 
 
@@ -652,7 +688,8 @@ def auto_track_due(
     (field test 2026-06-22, #18: the World-law tab was empty because law is only tracked
     in mode=="law", never in the default rss pass).
 
-    Mirrors the calendar/markets auto-load: at most ``batch`` documents per call, chosen
+    Mirrors the calendar/markets auto-load: at most ``batch`` documents ASKED per call (a host that
+    defers is asked once and its documents are passed over without spending the batch, R293), chosen
     ROUND-ROBIN by least-recently-checked (never-checked first), and a document checked
     within ``min_interval_hours`` is skipped — so legal sites are polled politely over
     successive passes (per-host politeness + robots fail-closed + the kill switch all ride
@@ -676,24 +713,44 @@ def auto_track_due(
     )
     due_total = q.count()
     # least-recently-checked first; NULLs (never checked) sort first so a fresh corpus
-    # builds its baselines before re-checking anything.
-    docs = (
+    # builds its baselines before re-checking anything. Ids and URLs only: the budget below is
+    # spent on documents that were ASKED, so the walk may pass over more than ``batch`` of them.
+    candidates = (
         q.order_by(LawDocument.last_checked_at.is_(None).desc(), LawDocument.last_checked_at.asc())
-        .limit(max(0, batch))
+        .with_entities(LawDocument.id, LawDocument.url)
         .all()
     )
     tally = {"documents": 0, "baselines": 0, "changed": 0, "flagged": 0,
              "errors": 0, "unchanged": 0, "due": due_total}
-    for doc in docs:
+    asked = 0
+    deferred_hosts: set[str] = set()
+    for doc_id, url in candidates:
+        if asked >= max(0, batch):
+            break
+        # A deferral keeps the document's check time (R293), so it stays at the head of this order. If
+        # it also spent the batch, a host with a long Crawl-delay would fill every pass and the hosts
+        # behind it would never be reached. The host is asked once per pass; its other documents wait.
         try:
+            host = urlsplit(url or "").netloc.lower()
+        except ValueError:  # a malformed URL (an unbalanced bracket): track_document records it as one error
+            host = ""
+        if host and host in deferred_hosts:
+            continue
+        try:
+            doc = session.get(LawDocument, doc_id)  # inside the guard: a locked database is one error, not a dead pass
             res = track_document(session, fetcher, doc, extractor=extractor)
         except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
-            log_failure(_LOG, f"law auto-track: document {doc.id} failed", exc, level=logging.WARNING)
+            log_failure(_LOG, f"law auto-track: document {doc_id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned txn so one dup can't roll back the WHOLE pass
             tally["errors"] += 1
+            asked += 1
             continue
-        tally["documents"] += 1
         status = res.get("status")
+        if status == "deferred":
+            deferred_hosts.add(host)
+        else:
+            tally["documents"] += 1  # "documents" = documents attempted (<= batch); a deferral has its own key
+            asked += 1
         if status == "baseline":
             tally["baselines"] += 1
         elif status == "changed":
@@ -706,4 +763,6 @@ def auto_track_due(
                 tally["skipped_offline"] = tally.get("skipped_offline", 0) + 1
         elif status == "unchanged":
             tally["unchanged"] += 1
+        elif status == "deferred":
+            tally["deferred"] = tally.get("deferred", 0) + 1
     return tally
