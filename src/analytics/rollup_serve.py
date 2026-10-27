@@ -207,8 +207,8 @@ def inmemory_view():
     """Within this block, on THIS thread, the start-time verdicts judge an in-memory build (``_persisted_serve_active()`` is False). Nests: leaving
     an inner block restores the outer one's setting."""
     prev = getattr(_STORE_VIEW, "inmemory", False)
-    _STORE_VIEW.inmemory = True
     try:
+        _STORE_VIEW.inmemory = True
         yield
     finally:
         _STORE_VIEW.inmemory = prev
