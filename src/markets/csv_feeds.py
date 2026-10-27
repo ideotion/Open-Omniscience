@@ -189,6 +189,8 @@ class FeedImportResult:
         }
 
 
+# verdicts that quote an answer the host really gave, which a Stop (a cut connection) cannot have produced
+_HOST_ANSWERS = frozenset({"offline", "robots-disallowed", "dead-series", "http-error"})
 _OFFLINE = ("offline", "the network kill switch is engaged — go online first", False)
 
 
@@ -250,10 +252,12 @@ def classify_failed_check(exc: Exception) -> tuple[str, str, bool]:
     switch's, whatever shape the error took. A Stop that lands inside a request arrives as the raw requests error (``HTTPSConnectionPool(...)``,
     or through an HTTP proxy ``request error for <url>: ('Connection aborted.', AirplaneModeError(...))``), which is not OUR sentence at the
     start, so the anchored match in ``classify_fetch_failure`` rightly refuses it (R298) and the failure would be filed as the feed's own, then
-    retried after a sleep. The cost: a genuine failure coinciding with a Stop is reported offline, and the feed is simply tried again on the
-    next online pass. A robots DISALLOW was a real answer read before the Stop, so it stays. Every fetch-classifying caller uses this one."""
+    retried after a sleep. The cost: a genuine transport failure coinciding with a Stop is reported offline, and the feed is simply tried again
+    on the next online pass. What stays is every verdict that carries an ANSWER the host really gave before the Stop: a robots disallow and an
+    HTTP status (a dead series, an upstream error), because a Stop cuts a connection and can never produce a status line. Used by the two
+    fetch-classifying callers of this module (the market feeds and the weather slice); the collector classifies with ``fetch_verdict``."""
     verdict, note, retryable = classify_fetch_failure(exc)
-    if verdict not in ("offline", "robots-disallowed") and kill_switch_active():
+    if verdict not in _HOST_ANSWERS and kill_switch_active():
         return _OFFLINE
     return verdict, note, retryable
 

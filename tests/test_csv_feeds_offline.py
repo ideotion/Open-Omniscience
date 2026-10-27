@@ -159,3 +159,20 @@ def test_the_same_weather_failure_with_the_switch_clear_is_still_the_archives(
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     out = _slice(_Fetcher(FetchFailed(_proxy_shape())))
     assert out["verdict"] == "refused" and out["retryable"] is True
+
+
+@pytest.mark.parametrize(
+    ("text", "verdict"),
+    [
+        ("HTTP 404 for " + _URL, "dead-series"),
+        ("HTTP 403 for " + _URL, "http-error"),
+        ("HTTP 503 for " + _URL, "http-error"),
+    ],
+)
+def test_an_http_status_the_host_really_gave_is_kept_even_if_a_stop_lands_right_after_it(
+    session, slept, text, verdict
+):
+    """A Stop cuts a connection; it cannot produce a status line, so a status is the host's answer (Opus read of PR 1582)."""
+    with _switch(True):
+        out = _import(session, _Fetcher(FetchFailed(text)))
+    assert out.verdict == verdict
