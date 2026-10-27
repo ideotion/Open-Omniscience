@@ -16,6 +16,7 @@ outcome it recorded.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -25,6 +26,7 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Base, LawDocument, LawRevision
 from src.ingest import CrawlDelayDeferred, FetchFailed, FetchResult, clear_kill_switch
 from src.law import track as track_mod
+from src.law.model import mint_lane_key
 from src.law.track import _FETCHED_KEY, _back_off_after_crash, auto_track_due, track_watched
 
 _BODY = " ".join(
@@ -324,8 +326,9 @@ def test_with_a_batch_of_three_the_healthy_document_behind_two_crashers_is_reach
 
 
 def test_one_unreadable_row_after_a_commit_is_one_counted_error_not_a_dead_manual_pass(db, monkeypatch):
-    """track_watched takes the document's id without a query: after a commit the documents are expired, and reading an
-    attribute then goes to the database, where a one-off failure used to escape the loop (and fail POST /api/law/track)."""
+    """track_watched takes the document's id without a query: after a commit the documents are expired, and an attribute
+    read then goes to the database, where a one-off failure would escape the loop (and fail POST /api/law/track). The
+    first head of this PR read ``doc.id`` there; main never did."""
     _doc(db, "healthy-a", days_ago=5)
     second = _doc(db, "healthy-b", days_ago=3)
     before = second.last_checked_at
@@ -349,3 +352,91 @@ def test_one_unreadable_row_after_a_commit_is_one_counted_error_not_a_dead_manua
     assert out["errors"] == 1 and out["baselines"] == 1, out
     db.refresh(second)
     assert second.last_checked_at == before, "no request was made for it: not a check"
+
+
+class _Fails503:
+    def fetch(self, url, **_kw):
+        raise FetchFailed("HTTP 503 Service Unavailable")
+
+
+def test_a_failed_request_between_two_attempts_does_not_let_the_first_ones_marker_vouch(db, monkeypatch):
+    """One session, one document: a good fetch (marker), then a real failed request (it commits a NEW check time and
+    leaves the marker alone), then a Crawl-delay deferral whose commit fails. No request was made on the third
+    attempt, so it is not a check, whatever the first attempt's marker says."""
+    doc = _doc(db, "healthy1", days_ago=3)
+    track_watched(db, _Serves())
+    track_watched(db, _Fails503())
+    db.refresh(doc)
+    checked, status = doc.last_checked_at, doc.last_status
+    assert status.startswith("fetch error: HTTP 503")
+    real_commit, calls = db.commit, {"n": 0}
+
+    def commit():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", commit)
+    out = track_watched(db, _Defers())
+    assert out["errors"] == 1, out
+    db.refresh(doc)
+    assert doc.last_checked_at == checked and doc.last_status == status
+
+
+def test_a_marker_from_an_earlier_attempt_never_vouches_whatever_its_time(db, monkeypatch):
+    """The marker belongs to one attempt: track_document clears it first. Seeded with a time LATER than the document's
+    committed one (a clock that stepped back), it would otherwise read as "nothing newer is committed" and stamp."""
+    doc = _doc(db, "slow", days_ago=3)
+    before = doc.last_checked_at
+    db.info[_FETCHED_KEY] = (doc.id, datetime.now(UTC) + timedelta(days=30))
+    real_commit, calls = db.commit, {"n": 0}
+
+    def commit():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", commit)
+    out = track_watched(db, _Defers())
+    assert out["errors"] == 1, out
+    db.refresh(doc)
+    assert doc.last_checked_at == before and doc.last_status == "unchanged"
+
+
+def test_a_newer_check_committed_by_another_session_is_not_overwritten(db):
+    """The helper stamps only when no check at or after the attempt's start is committed: a manual run (another
+    session) that finished while this attempt was crashing keeps its outcome."""
+    doc = _doc(db, "healthy1", days_ago=3)
+    started = datetime.now(UTC)
+    doc.last_checked_at = started + timedelta(minutes=5)  # committed by the other session after this attempt began
+    doc.last_status = "changed (+12 bytes)"
+    db.commit()
+    db.info[_FETCHED_KEY] = (doc.id, started)
+    _back_off_after_crash(db, doc.id, RuntimeError("extractor crashed"))
+    db.refresh(doc)
+    assert doc.last_status == "changed (+12 bytes)"
+
+
+def test_a_baseline_found_already_recorded_keeps_that_outcome_when_the_indexing_then_crashes(db, monkeypatch):
+    """The duplicate-baseline path rolls back and RE-STAMPS the check before it commits ("baseline already recorded");
+    the late-crash no-op relies on that committed time, so a crash in the indexing after it must not overwrite it."""
+    doc = _doc(db, "healthy1", days_ago=None)
+    result = FetchResult(requested_url=doc.url, final_url=doc.url, status_code=200, content=_GOOD,
+                         content_type="text/html", fetched_at=datetime.now(UTC))
+    text, _reason, _parsed = track_mod._document_text(result, retrieved_on=datetime.now(UTC).date().isoformat())
+    h = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    db.add(LawRevision(document_id=doc.id, observed_at=datetime.now(UTC), content_hash=h, size=len(text), delta_bytes=0,
+                       full_text=text, flagged=False, diff_basis="first", valid_on_dating="observed", lane_key=mint_lane_key()))
+    db.commit()
+
+    def boom(*a, **kw):
+        raise RuntimeError("lane db unavailable")
+
+    monkeypatch.setattr(track_mod, "_ingest_to_corpus", boom)
+    out = track_watched(db, _Serves())
+    assert out["errors"] == 1, out
+    db.refresh(doc)
+    assert doc.last_status == "baseline already recorded", doc.last_status
+    assert doc.last_checked_at is not None

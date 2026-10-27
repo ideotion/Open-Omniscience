@@ -311,6 +311,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     # time would read as a check on every surface that shows it, and the 24 h gate in
     # ``auto_track_due`` would then keep the document away for a day (R293).
     prior_checked_at = doc.last_checked_at
+    session.info.pop(_FETCHED_KEY, None)  # a marker belongs to ONE attempt: no earlier fetch may vouch for this one
     doc.last_checked_at = now
     try:
         # require_html=False so an official-gazette PDF is not rejected up front;
@@ -631,9 +632,10 @@ def _back_off_after_crash(session, doc_id, exc) -> None:
     24 h back-off, and (measured) two such documents at the head of a batch of two kept a healthy one from
     ever being reached. Stamp it the way a failed request is stamped. Only when ``track_document`` got a result
     from the fetch: an exception from anywhere else (the document's own read, the commit of a deferral or of a
-    kill-switch refusal) made no request, and stamping it would be the lie R293 removed. And only when that
-    attempt left nothing committed: a crash AFTER the attempt's own commit (the corpus indexing, the lane row)
-    leaves its outcome, "baseline captured" or "changed", standing, and its stamp is already in the database.
+    kill-switch refusal) made no request, and stamping it would be the lie R293 removed. And only when no check
+    at or after this attempt's start is committed: a crash AFTER the attempt's own commit (the corpus indexing, the
+    lane row) leaves its outcome, "baseline captured" or "changed", standing, and so does a newer check another
+    session committed meanwhile.
     Never raises: a database that is itself failing leaves the document where it was, and the pass goes on."""
     marker = session.info.pop(_FETCHED_KEY, None)
     if not marker or marker[0] != doc_id:
@@ -642,8 +644,8 @@ def _back_off_after_crash(session, doc_id, exc) -> None:
         doc = session.get(LawDocument, doc_id)
         if doc is None:
             return
-        if doc.last_checked_at is not None and _naive_utc(doc.last_checked_at) == _naive_utc(marker[1]):
-            return  # the attempt committed its own stamp and outcome before it raised: they stand
+        if doc.last_checked_at is not None and _naive_utc(doc.last_checked_at) >= _naive_utc(marker[1]):
+            return  # a check at or after this attempt's start is committed (its own, or a newer one): its outcome stands
         doc.last_checked_at = datetime.now(UTC)
         doc.last_status = f"error: {record_text(exc)}"
         session.commit()
