@@ -68,14 +68,15 @@ def refuse_if_too_deep(text: str) -> None:
     loader = YAML_LOADER(text)
     try:
         depth = 0
-        while loader.check_event():
+        # the guard-clause loop form (src/utils/interrupts.py): the last statement is not a bare ``if``, so the back-edge stays inside the
+        # ``try``/``finally``; the bound is checked at the top, which still stops a 100,000-deep document at 257 events
+        while True:
+            if not loader.check_event():
+                break
+            if depth > MAX_NESTING:
+                raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels")
             event = loader.get_event()
-            if isinstance(event, _OPENERS):
-                depth += 1
-                if depth > MAX_NESTING:
-                    raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels")
-            elif isinstance(event, _CLOSERS):
-                depth -= 1
+            depth += int(isinstance(event, _OPENERS)) - int(isinstance(event, _CLOSERS))
     finally:
         loader.dispose()
 

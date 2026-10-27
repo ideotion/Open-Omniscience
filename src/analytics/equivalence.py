@@ -137,8 +137,8 @@ def _read_yaml(path: Path) -> dict:
         return load_safe_yaml(path.read_text("utf-8")) or {}
     except YAMLDepthError as exc:
         # Named, not silent: a ring file nested past the bound (a restored backup writes this file unparsed) is refused, and
-        # which file says where to look. The message carries no text of the file.
-        _LOG.warning("ring file %s is refused and its rings are not read: %s", path.name, exc)
+        # which file says where to look. The class name alone is logged (the sink guards), never the exception.
+        _LOG.warning("ring file %s is nested too deeply and its rings are not read (%s)", path.name, type(exc).__name__)
         return {}
     except (OSError, yaml.YAMLError):
         return {}

@@ -39,7 +39,7 @@ def test_ring_loading_and_an_index_pass_complete_with_a_logged_refusal_naming_th
     assert rings, "the shipped rings must still load beside a refused local file"
     assert all(r.id != "x" for r in rings)
     refusals = [r.getMessage() for r in caplog.records if "keyword_rings_local.yml" in r.getMessage()]
-    assert refusals and "refused" in refusals[0] and "nests deeper than" in refusals[0]
+    assert refusals and "nested too deeply" in refusals[0] and "YAMLDepthError" in refusals[0]
     assert "[[[" not in refusals[0]  # the message names the file and carries no text of it
     eq._index()
     eq._multi_index()
