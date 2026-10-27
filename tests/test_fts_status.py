@@ -8,10 +8,11 @@ presence comes from sqlite_master (authoritative, the same source schema-drift r
 two can't disagree), the row COUNT is best-effort with an honest status, and a post-crash
 MALFORMED index is detected as unhealthy (a re-index heals it) rather than misread as absent.
 
-Since 0.5.1 the row COUNT is the articles' (``SELECT count(*) FROM articles``, a covering-index scan), not
+Since 0.5.1 the row COUNT is the articles' (``SELECT count(1) FROM articles``, a covering-index scan), not
 ``count(*) FROM article_fts`` (a table scan of every article row for an external-content index): the same number,
-measured at 0.2 to 0.3 s cold against 9.6 to 11.9 s at 1,000,000 articles (the tests below name where it is compared and where its
-plan is pinned).
+measured at 0.2 to 0.3 s cold against 9.6 to 11.9 s at 1,000,000 articles on a store whose indexes agree with their table (the tests
+below name where it is compared, where its plan is pinned and where its interruptibility is: ``count(1)``, not ``count(*)``, which
+SQLite runs as one opcode that the deadline's progress handler never sees).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -32,6 +33,9 @@ from src.database import damage
 from src.database.fts import ensure_fts, fts_status
 from src.database.maintenance import StatementTimeout
 from src.database.models import Article, Base, Source
+
+#: The statement behind ``rows``. ``count(1)`` and not ``count(*)``: a bare ``count(*)`` is one opcode that the deadline cannot interrupt.
+_ARTICLES_COUNT = "count(1) FROM articles"
 
 
 def _corpus(with_fts: bool = True):
@@ -72,12 +76,12 @@ def test_absent_reported_honestly_when_no_fts_table():
 def test_slow_count_is_present_not_absent():
     """The exact bug: the row COUNT times out on a large store -> present STAYS true (from
     the schema), rows=None with count_status=timed_out — NEVER 'absent'. (The count is the articles' since 0.5.1:
-    ``SELECT count(*) FROM articles``, no longer ``count(*) FROM article_fts``; the shape of the answer is unchanged.)"""
+    ``SELECT count(1) FROM articles``, no longer ``count(*) FROM article_fts``; the shape of the answer is unchanged.)"""
     s = _corpus()
     orig = s.execute
 
     def fake(stmt, *a, **k):
-        if "count(*) FROM articles" in str(stmt):
+        if _ARTICLES_COUNT in str(stmt):
             raise StatementTimeout("simulated slow count")
         return orig(stmt, *a, **k)
 
@@ -132,7 +136,7 @@ def _driver_failure(line: str, code: int, name: str) -> Exception:
             "the health probe, an I/O error", id="health-io",
         ),
         pytest.param(
-            "count(*) FROM articles", "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
+            _ARTICLES_COUNT, "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
             "the row count", id="count-io",
         ),
         pytest.param(
@@ -189,8 +193,8 @@ def test_integrity_and_schema_drift_agree_even_when_the_count_times_out():
 
     def fake(stmt, *a, **k):
         # Reproduce the field condition: the row COUNT is too slow and aborts. Since 0.5.1 that is the articles' count,
-        # and the integrity report takes one of its own (the ``delta``'s) beside the status's: both abort here.
-        if "count(*) FROM articles" in str(stmt):
+        # and the integrity report takes one of its own (the ``delta``'s, a bare ``count(*)``) beside the status's: both abort here.
+        if _ARTICLES_COUNT in str(stmt) or "count(*) FROM articles" in str(stmt):
             raise StatementTimeout("simulated slow count")
         return orig(stmt, *a, **k)
 
@@ -440,7 +444,7 @@ def test_a_failure_of_the_population_does_not_replace_the_error_an_earlier_step_
         text_of = str(stmt)
         if "count(*) FROM article_fts_docsize" in text_of:
             raise _driver_failure("disk I/O error MARKER-IO", 10, "SQLITE_IOERR")
-        if "count(*) FROM articles" in text_of:
+        if _ARTICLES_COUNT in text_of:
             raise RuntimeError("the articles' count failed")
         return orig(stmt, *a, **k)
 
@@ -455,14 +459,14 @@ def test_a_failure_of_the_population_does_not_replace_the_error_an_earlier_step_
     (lambda s: _add_an_article_the_index_never_sees(s), "partial (inferred)", "PartialIndex"),
 ])
 def test_a_verdict_does_not_replace_the_error_the_count_named_and_still_refuses_the_healthy_verdict(damage_the_index, state, label):
-    """A torn copy is where a corruption error on the articles' count is likely: the class the count named stays the one named (and
+    """A damaged page of the index the count walks is where a corruption error on the articles' count is likely: the class the count named stays the one named (and
     ``count_status`` says it failed), while ``index_state`` and ``healthy`` carry the verdict. The fixed label is only for a clean count."""
     s = _corpus()
     damage_the_index(s)
     orig = s.execute
 
     def fake(stmt, *a, **k):
-        if "count(*) FROM articles" in str(stmt):
+        if _ARTICLES_COUNT in str(stmt):
             raise _driver_failure("database disk image is malformed MARKER-PAGE", 11, "SQLITE_CORRUPT")
         return orig(stmt, *a, **k)
 
@@ -521,9 +525,9 @@ def test_no_index_and_no_backend_leave_the_population_unasked():
 def test_a_prefix_index_over_many_articles_is_named_partial_and_the_articles_are_counted_once_by_the_covering_index():
     """Export's construction (a front part of the articles indexed, the rest not), at test size. The reads are the articles' count (``rows``),
     the two highest ids and the index's own count. Statements are taken at the cursor, not at ``session.execute``, so any route to the
-    engine is seen: ``count(*) FROM articles`` runs exactly once (it was refused outright until 0.5.1, when the premise that it is a
+    engine is seen: ``count(1) FROM articles`` runs exactly once (it was refused outright until 0.5.1, when the premise that it is a
     corpus scan was withdrawn, and it is now what the figure is read from), its plan is the covering-index scan (the 0.25 s cold figure
-    rests on it: ``count(content)``, a ``WHERE`` or ``NOT INDEXED`` would read every article row and turn this red), and nothing counts
+    rests on it: ``count(content)`` or ``NOT INDEXED`` would read every article row and turn the plan red, a ``WHERE`` keeps a covering plan and is caught by the exact text), and nothing counts
     ``article_fts`` itself, the statement it replaced."""
     import re
 
@@ -562,7 +566,7 @@ def test_a_prefix_index_over_many_articles_is_named_partial_and_the_articles_are
     counting_articles = re.compile(r"count\(\s*(\*|1)?\s*\)\s+from\s+articles\b", re.IGNORECASE)
     counts = [x for x in statements if counting_articles.search(x)]
     assert len(counts) == 1, counts
-    assert " ".join(counts[0].split()) == "SELECT count(*) FROM articles", "the plain count, nothing that reads a column"
+    assert " ".join(counts[0].split()) == "SELECT count(1) FROM articles", "the plain count, nothing that reads a column"
     plan = " ".join(str(row[-1]) for row in s.execute(text("EXPLAIN QUERY PLAN " + counts[0])).fetchall())
     assert "COVERING INDEX" in plan, plan
     counting_the_index = re.compile(r"count\(\s*(\*|1)?\s*\)\s+from\s+article_fts\b", re.IGNORECASE)
@@ -623,7 +627,7 @@ def test_a_partial_index_still_reads_partial_inferred_whether_or_not_the_article
         orig = s.execute
 
         def fake(stmt, *a, **k):
-            if "count(*) FROM articles" in str(stmt):
+            if _ARTICLES_COUNT in str(stmt):
                 raise StatementTimeout("simulated slow count")
             return orig(stmt, *a, **k)
 
@@ -637,34 +641,80 @@ def test_a_partial_index_still_reads_partial_inferred_whether_or_not_the_article
         assert st["rows"] == 2 and st["count_status"] == "ok"
 
 
-def test_the_articles_count_runs_inside_a_deadline_of_its_own(monkeypatch):
-    """Bounded: the count behind ``rows`` is read inside ``statement_deadline`` (the count's 15 s), not bare. It is the statement whose
-    timeout ``count_status: timed_out`` reports, so a count that lost its block would hang a diagnostics request instead of saying so."""
+def test_the_articles_count_runs_inside_the_count_deadline_and_not_the_probe_one(monkeypatch):
+    """Lexical, and of the VALUE: the count behind ``rows`` is read inside a ``statement_deadline`` block (not bare) given
+    ``_fts_count_deadline_s()`` (not the 5 s probe deadline, not a number that never fires). That the block can actually STOP the
+    statement is the next test's: this one cannot see it."""
+    from src.database import fts as fts_module
     from src.database import maintenance
 
+    monkeypatch.setattr(fts_module, "_fts_count_deadline_s", lambda: 7.25)
     s = _corpus()
-    depth = {"open": 0}
-    seen: list[int] = []
+    open_blocks: list[float] = []
+    seen: list[list[float]] = []
     real_deadline = maintenance.statement_deadline
 
     @contextlib.contextmanager
     def watching(session, seconds):
-        depth["open"] += 1
+        open_blocks.append(seconds)
         try:
             with real_deadline(session, seconds=seconds):
                 yield
         finally:
-            depth["open"] -= 1
+            open_blocks.pop()
 
     orig = s.execute
 
     def fake(stmt, *a, **k):
-        if "count(*) FROM articles" in str(stmt):
-            seen.append(depth["open"])
+        if _ARTICLES_COUNT in str(stmt):
+            seen.append(list(open_blocks))
         return orig(stmt, *a, **k)
 
     monkeypatch.setattr(maintenance, "statement_deadline", watching)
     s.execute = fake  # type: ignore[method-assign]
     st = fts_status(s)
     assert st["rows"] == 1 and st["count_status"] == "ok"
-    assert seen == [1], seen
+    assert seen == [[7.25]], seen
+
+
+def test_the_articles_count_is_a_row_loop_so_the_deadline_can_stop_it():
+    """``statement_deadline`` is a progress handler, and SQLite consults it only in a loop. A bare ``count(*)`` is ONE opcode: measured
+    over a covering index, the handler was consulted 0 times where ``count(1)`` over the same index looped 30 times (200,000 articles),
+    and a 0.5 s deadline around ``count(*)`` over 6,000,000 rows returned after 0.74 s with no StatementTimeout. A block around it would
+    bound nothing, and ``count_status: timed_out`` could not come from a real count. So the statement the code issued (taken at the
+    cursor, not typed here) is run again under a handler that asks to be consulted at every step, and it must be."""
+    from sqlalchemy import event
+
+    s = _corpus()
+    for i in range(2, 8):
+        s.add(Article(
+            url=f"u{i}", canonical_url=f"u{i}", source_id=1, title=f"Story {i}", content=f"story number {i}",
+            hash=f"h{i}", language="en", created_at=datetime.now(UTC),
+        ))
+    s.commit()
+    statements: list[str] = []
+    engine = s.get_bind()
+
+    def spy(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", spy)
+    try:
+        assert fts_status(s)["rows"] == 7
+    finally:
+        event.remove(engine, "before_cursor_execute", spy)
+    counts = [x for x in statements if _ARTICLES_COUNT in x]
+    assert len(counts) == 1, counts
+    raw = s.connection().connection.dbapi_connection
+    consulted: list[int] = []
+
+    def handler():
+        consulted.append(1)
+        return 0  # never abort: only whether SQLite asked
+
+    raw.set_progress_handler(handler, 1)
+    try:
+        assert s.execute(text(counts[0])).scalar() == 7
+    finally:
+        raw.set_progress_handler(None, 0)
+    assert consulted, "the deadline's progress handler was never consulted while the count ran: the block around it bounds nothing"

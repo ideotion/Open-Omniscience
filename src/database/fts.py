@@ -834,12 +834,13 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one. The way to see a partial one
     whole is to compare the indexed-row count against the article count, and the boot makes no such
     comparison: that is a decision, not a measured necessity, and it is left as it was. What was measured
-    (2026-10-27): ``count(*) FROM articles`` is a scan of the smallest covering index
-    (``idx_article_created_at``) and took 0.25 s cold on 1,000,000 articles. LIMITS of that figure: one
-    machine, an encrypted (SQLCipher) store on a virtual disk much faster than a laptop's, synthetic Latin
+    (2026-10-27): ``count(1) FROM articles`` is a scan of a covering index (which one is the planner's choice;
+    on the measured store it was ``idx_article_created_at``, about four times the pages of the smallest
+    candidate, so the figure is conservative) and ``count(*)`` took 0.25 s cold on 1,000,000 articles. LIMITS of that figure: one
+    machine, an encrypted (SQLCipher) store on a virtual disk reading 1.3 GB/s, synthetic Latin
     text of 1.3 KB per article, nothing above 1 M, the cost follows the NUMBER of articles and not their
-    text, and the plan is the planner's choice, not a promise (``tests/test_fts_status.py`` pins it on the
-    real schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on
+    text, and the plan is the planner's choice, not a promise (``tests/test_fts_status.py`` pins that it is a
+    covering-index scan on the real schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on
     the current schema and what it timed is not recorded: do not build on it. A
     partial/corrupt index is UNREACHABLE via normal operation anyway (ingest is an atomic
     INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
@@ -1182,7 +1183,9 @@ def _fts_probe_deadline_s() -> float:
 
 def _fts_count_deadline_s() -> float:
     """Deadline for each count ``fts_status`` takes, the articles' and the index's own population
-    (OO_FTS_COUNT_DEADLINE_S, default 15s)."""
+    (OO_FTS_COUNT_DEADLINE_S, default 15s). The deadline is a progress handler, which SQLite consults only
+    in a row loop: it stops ``count(1)`` (step 3) and cannot stop a bare ``count(*)`` (step 4's shadow-table
+    count), which is one opcode, bounded only by the size of the table it walks."""
     try:
         return max(0.5, float(_os.getenv("OO_FTS_COUNT_DEADLINE_S", "15")))
     except (TypeError, ValueError):
@@ -1211,18 +1214,26 @@ def fts_status(session: Session) -> dict:
         asked for); ``None`` = present but could not confirm (the probe timed out). ALSO ``False``
         over an EMPTY or a PARTIAL index (``index_state``): see ``indexed_documents`` for why this probe
         alone cannot say it.
-      * ``rows``         — the count of ``articles`` rows (``SELECT count(*) FROM articles``, a scan of the smallest
-        covering index), or ``None`` when the count timed out / errored (``count_status`` says which) — NEVER
+      * ``rows``         — the count of ``articles`` rows (``SELECT count(1) FROM articles``, a scan of a covering index the
+        planner picks), or ``None`` when the count timed out / errored (``count_status`` says which) — NEVER
         conflated with absence. It is the figure FTS5's own ``count(*) FROM article_fts`` returned until 0.5.1: that
-        statement reads every row of the content table, ``articles``, for this external-content table, so it is the
-        same number (``tests/test_fts_status.py`` compares them over a full, a shrunken, an emptied and a partial
-        index). Measured 2026-10-27 on 1,000,000 articles: 9.6 to 11.9 s cold for the FTS statement (a table scan,
-        which follows the article TEXT, and 3 to 5 s from its 15 s deadline) against 0.25 s cold for this count
-        (which follows the NUMBER of articles). LIMITS: one machine, an encrypted store on a virtual disk much
-        faster than a laptop's, synthetic Latin text of 1.3 KB per article, nothing above 1 M. ``rows`` is the
-        content table's count, NOT the index's size: ``indexed_documents`` is, and the probe is answered from the
-        content table too, so both read healthy and full over an index that holds no document (measured: after
-        ``'delete-all'`` the probe said healthy and ``rows`` equalled the articles).
+        statement reads every row of the content table, ``articles``, for this external-content table, so on a store
+        whose indexes agree with their table (``PRAGMA integrity_check``) it is the same number
+        (``tests/test_fts_status.py`` compares them over a full, a shrunken, an emptied and a partial index; an index
+        missing entries is not covered: the new count would read it short, and ``quick_check`` does not see that
+        either). It is ``count(1)`` and not ``count(*)`` on purpose: SQLite runs a bare ``count(*)`` as ONE opcode that
+        the progress-handler deadline can never interrupt (measured: the handler was consulted 0 times, against 30
+        for ``count(1)`` over the same covering index), so only ``count(1)`` keeps ``count_status: timed_out``
+        reachable. Measured 2026-10-27 on 1,000,000 articles: 9.6 to 11.9 s cold for the FTS statement (a table scan,
+        which follows the article TEXT, and 3 to 5 s from its 15 s deadline) against about 0.25 s cold for this count
+        (which follows the NUMBER of articles; ``count(*)`` measured, ``count(1)`` re-measured, see the PR). LIMITS:
+        one machine, an encrypted store on a virtual disk reading 1.3 GB/s, synthetic Latin text of 1.3 KB per
+        article, nothing above 1 M. The old statement also read every article row, so a damaged ``articles`` page
+        surfaced here as an ``error``; this one reads one index and does not (``PRAGMA integrity_check`` and the
+        foreign-key check read the table), while damage to a page of the index it reads now shows as an ``error`` in
+        this block. ``rows`` is the content table's count, NOT the index's size: ``indexed_documents`` is, and the
+        probe is answered from the content table too, so both read healthy and full over an index that holds no
+        document (measured: after ``'delete-all'`` the probe said healthy and ``rows`` equalled the articles).
       * ``count_status`` — ok | timed_out | error | skipped.
       * ``indexed_documents`` — the documents the index itself holds: ``COUNT(*)`` of its shadow table
         ``article_fts_docsize`` (one row per indexed document; ``backup/merge.py``'s restore probe reads it for
@@ -1303,11 +1314,13 @@ def fts_status(session: Session) -> dict:
         return out  # damaged -> don't attempt the heavier COUNT; re-index heals
 
     # 3) ROWS: the articles' count (best-effort; a slow COUNT is reported as timed_out, never "absent"). It is the number
-    #    ``count(*) FROM article_fts`` gave for this external-content table, taken from the covering index instead of by
-    #    reading every article row (0.25 s against 9.6 to 11.9 s cold at 1 M articles; limits in the docstring).
+    #    ``count(*) FROM article_fts`` gave for this external-content table, taken from a covering index instead of by
+    #    reading every article row (about 0.25 s against 9.6 to 11.9 s cold at 1 M articles; limits in the docstring).
+    #    ``count(1)``, not ``count(*)``: a bare ``count(*)`` is one opcode and the deadline's progress handler is never
+    #    consulted while it runs, so the block around it would bound nothing (tests/test_fts_status.py pins this).
     try:
         with statement_deadline(session, seconds=_fts_count_deadline_s()):
-            n = session.execute(text("SELECT count(*) FROM articles")).scalar()
+            n = session.execute(text("SELECT count(1) FROM articles")).scalar()
         out["rows"] = int(n) if n is not None else 0
         out["count_status"] = "ok"
     except StatementTimeout:
@@ -1323,7 +1336,8 @@ def fts_status(session: Session) -> dict:
     #    read snapshot, so no ingest or delete can fall between them. Separate reads cannot be ordered safely: ids are
     #    reused (no AUTOINCREMENT), so after the top articles are deleted a new article takes the same id and an
     #    id read afterwards looks like a document the index never saw. Two O(1) id lookups and one scan of the small
-    #    shadow table, inside one bounded block; the verdict is applied only when the statement has come back, so a
+    #    shadow table, inside one deadline block (which cannot stop that count, a bare ``count(*)``: it is bounded by the shadow
+    #    table's size, one short row per article, 61 to 82 ms cold at 1 M); the verdict is applied only when the statement has come back, so a
     #    timeout or an error states nothing.
     try:
         with statement_deadline(session, seconds=_fts_count_deadline_s()):
