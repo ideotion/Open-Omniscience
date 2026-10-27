@@ -11,14 +11,34 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import threading
 import time
 
 import pytest
 
 pytest.importorskip("duckdb")
 
-from src.analytics import columnar, rollup_serve  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+
+from src.analytics import columnar, rollup_marker, rollup_serve  # noqa: E402
+from src.database.models import Base  # noqa: E402
 from src.monitoring.rollup_benchmark import run_rollup_benchmark  # noqa: E402
+
+
+@pytest.fixture()
+def empty_session():
+    """A real, empty corpus: the guard tests must fail on the patched builder (``never``), not on a missing session."""
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    yield s
+    s.close()
+
+
+class _Con:
+    def close(self):
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +49,7 @@ def _isolated(monkeypatch, tmp_path):
     rollup_serve._STATE.update(con=None, stopped=None, failures=0, failure_class=None, last_outcome=None, last_decline=None,
                                last_skip=None, persisted=False, built_at=0.0, bind=None)
     monkeypatch.setattr(rollup_serve, "_HOLD_LOOKED", True)
+    rollup_serve._PERSISTED_FELL_BACK["why"] = None
     for name in ("_boot_order_verdict", "_memory_verdict", "_last_build_verdict", "_affordability_verdict"):
         monkeypatch.setattr(rollup_serve, name, lambda: None)
     monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: None)
@@ -42,11 +63,11 @@ def _isolated(monkeypatch, tmp_path):
     rollup_serve._STATE.update(keep)
 
 
-def test_a_seeded_in_memory_stop_hold_makes_the_benchmark_decline_and_build_nothing(monkeypatch):
+def test_a_seeded_in_memory_stop_hold_makes_the_benchmark_decline_and_build_nothing(monkeypatch, empty_session):
     monkeypatch.setattr(rollup_serve, "_stopped_build_verdict", rollup_serve._stopped_build_verdict)  # the real one
     monkeypatch.setattr(rollup_serve, "_duckdb_limit_mb", lambda: 500.0)
     rollup_serve._STATE["stopped"] = {"reason": "duckdb-limit", "at": time.time(), "duckdb_limit_mb": 500.0, "epoch": 1}
-    out = run_rollup_benchmark(session=None, repeats=1)  # type: ignore[arg-type]  # a declined run never touches the session
+    out = run_rollup_benchmark(empty_session, repeats=1)
     assert out["available"] is False and out["declined"] is True
     assert out["reason"] == "duckdb-limit" and out["source"] == "stopped"
     assert rollup_serve._STATE["last_skip"] is None, "a benchmark's refusal is not the serve's decline"
@@ -54,40 +75,40 @@ def test_a_seeded_in_memory_stop_hold_makes_the_benchmark_decline_and_build_noth
 
 @pytest.mark.parametrize("verdict,source", [("_affordability_verdict", "affordability"), ("_last_build_verdict", "last-build"),
                                             ("_memory_verdict", "memory"), ("_boot_order_verdict", "boot-order")])
-def test_each_start_time_verdict_declines_the_benchmark_with_its_own_reason(monkeypatch, verdict, source):
+def test_each_start_time_verdict_declines_the_benchmark_with_its_own_reason(monkeypatch, empty_session, verdict, source):
     monkeypatch.setattr(rollup_serve, verdict, lambda: {"reason": "mem-short", "at": 1.0})
-    out = run_rollup_benchmark(session=None, repeats=1)  # type: ignore[arg-type]
+    out = run_rollup_benchmark(empty_session, repeats=1)
     assert (out["declined"], out["reason"], out["source"]) == (True, "mem-short", source)
 
 
-def test_the_exclusive_window_declines_the_benchmark(monkeypatch):
+def test_the_exclusive_window_declines_the_benchmark(monkeypatch, empty_session):
     monkeypatch.setattr("src.analytics.serve_gate.exclusive_verdict", lambda: {"reason": "exclusive-window", "at": 1.0})
-    out = run_rollup_benchmark(session=None, repeats=1)  # type: ignore[arg-type]
+    out = run_rollup_benchmark(empty_session, repeats=1)
     assert out["declined"] is True and out["source"] == "exclusive"
 
 
-def test_a_running_rollup_build_makes_the_benchmark_decline(monkeypatch):
+def test_a_running_rollup_build_makes_the_benchmark_decline(monkeypatch, empty_session):
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False)
     try:
-        out = run_rollup_benchmark(session=None, repeats=1)  # type: ignore[arg-type]
+        out = run_rollup_benchmark(empty_session, repeats=1)
         assert out["declined"] is True and out["reason"] == "build-running"
     finally:
         rollup_serve._BUILD_LOCK.release()
 
 
-def test_the_benchmark_releases_the_build_lock_after_a_decline_and_after_an_error(monkeypatch):
+def test_the_benchmark_releases_the_build_lock_after_a_decline_and_after_an_error(monkeypatch, empty_session):
     monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: {"reason": "mem-low", "at": 1.0})
-    assert run_rollup_benchmark(session=None, repeats=1)["declined"] is True  # type: ignore[arg-type]
+    assert run_rollup_benchmark(empty_session, repeats=1)["declined"] is True
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False), "a decline left the build lock held"
     rollup_serve._BUILD_LOCK.release()
     monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
-    with pytest.raises(AttributeError):  # session None: the run gets past the verdicts and fails on its first query
-        run_rollup_benchmark(session=None, repeats=1)  # type: ignore[arg-type]
+    with pytest.raises(AssertionError):  # the verdicts pass, so the run reaches the (patched) builder, which raises
+        run_rollup_benchmark(empty_session, repeats=1)
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False), "an error left the build lock held"
     rollup_serve._BUILD_LOCK.release()
 
 
-def test_the_benchmark_judges_the_in_memory_build_even_when_the_persisted_store_is_active(monkeypatch):
+def test_the_benchmark_judges_the_in_memory_build_even_when_the_persisted_store_is_active(monkeypatch, empty_session):
     """The affordability and killed-build verdicts stand aside for a persisted store; the benchmark always builds in memory, so it must not."""
     monkeypatch.setattr(rollup_serve, "_persisted_serve_active", rollup_serve._persisted_serve_active)  # the real one, which reads the setting
     monkeypatch.setattr(rollup_serve, "_persist_passphrase", lambda: "pw")
@@ -100,6 +121,93 @@ def test_the_benchmark_judges_the_in_memory_build_even_when_the_persisted_store_
         return {"reason": "mem-short", "at": 1.0}
 
     monkeypatch.setattr(rollup_serve, "_affordability_verdict", afford)
-    out = run_rollup_benchmark(session=None, repeats=1)  # type: ignore[arg-type]
+    out = run_rollup_benchmark(empty_session, repeats=1)
     assert out["declined"] is True and seen == [False], "the verdict was asked about the persisted store"
     assert rollup_serve._persisted_serve_active() is True, "the view leaked past the benchmark"
+
+
+def _arm_builder(monkeypatch, seen: dict, *, raises: bool = True):
+    """Replace the engine with a stand-in that records what the kill marker looks like while the build runs."""
+    monkeypatch.setattr(columnar, "connect", lambda *a, **k: _Con())
+
+    def build(con, session, on_batch=None, **_k):
+        seen["marker_during"] = rollup_marker.read()
+        on_batch("mentions", 5)
+        seen["stage_after_batch"] = (rollup_marker.read() or {}).get("stage")
+        if raises:
+            raise RuntimeError("the build died")
+        return {"keyword_daily_rows": 0, "streamed_mentions": 0}
+
+    monkeypatch.setattr(columnar, "build_keyword_daily", build)
+
+
+def test_the_kill_marker_is_written_around_the_benchmark_build_and_cleared_after_an_error(monkeypatch, empty_session):
+    """A benchmark killed mid-build (the #1310 end) must leave the record the next start's last-build verdict reads."""
+    seen: dict = {}
+    _arm_builder(monkeypatch, seen)
+    with pytest.raises(RuntimeError):
+        run_rollup_benchmark(empty_session, repeats=1)
+    assert seen["marker_during"] is not None, "no in-progress marker was written while the benchmark built"
+    assert seen["stage_after_batch"] == "mentions", "the marker's stage was not kept current by the build's batch hook"
+    assert rollup_marker.read() is None, "the marker was left behind by a build that ended in a path Python saw"
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False), "an error left the build lock held"
+    rollup_serve._BUILD_LOCK.release()
+
+
+def test_another_servers_running_build_declines_the_benchmark(monkeypatch, empty_session):
+    monkeypatch.setattr(rollup_marker, "begin", lambda **_k: False)
+    out = run_rollup_benchmark(empty_session, repeats=1)
+    assert (out["declined"], out["reason"], out["source"]) == (True, rollup_marker.ELSEWHERE, "last-build")
+
+
+def test_the_status_does_not_call_a_running_benchmark_a_rebuild():
+    with rollup_serve.benchmark_slot() as held:
+        assert held is True
+        st = rollup_serve.status()
+        assert st["building"] is False and st["benchmark_running"] is True
+        assert rollup_serve._BUILD_LOCK.locked()
+    assert rollup_serve.status()["benchmark_running"] is False
+
+
+def test_a_boot_wait_for_a_served_build_is_not_satisfied_by_a_benchmark_releasing_the_lock(monkeypatch):
+    """``build_now_and_wait`` used to return the previous build's outcome when the lock it waited for was a benchmark's: the boot step then read
+    "built" for a rollup nothing built."""
+    ours: list = []
+
+    def fake_build():
+        ours.append(1)
+        rollup_serve._BUILD_LOCK.release()  # the real one releases in its finally
+        return "built-by-us"
+
+    monkeypatch.setattr(rollup_serve, "_build_and_swap", fake_build)
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "stale-previous-outcome")
+    got: list = []
+    with rollup_serve.benchmark_slot():
+        t = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+        t.start()
+        time.sleep(0.2)  # the waiter is blocked on the benchmark's lock
+        assert not got
+    t.join(5)
+    assert got == ["built-by-us"] and ours == [1], f"the wait returned {got!r} without running a served build"
+
+
+def test_a_served_build_that_ends_while_a_boot_wait_waits_still_gives_its_outcome(monkeypatch):
+    monkeypatch.setitem(rollup_serve._LAST_OUTCOME, "value", "declined")
+    got: list = []
+    assert rollup_serve._BUILD_LOCK.acquire(blocking=False)  # stands for a running served build
+    t = threading.Thread(target=lambda: got.append(rollup_serve.build_now_and_wait()))
+    t.start()
+    time.sleep(0.2)
+    rollup_serve._BUILD_GEN["n"] += 1  # the served build's finally does this while it still holds the lock
+    rollup_serve._BUILD_LOCK.release()
+    t.join(5)
+    assert got == ["declined"]
+
+
+def test_inmemory_view_nests_and_restores_the_outer_setting():
+    assert getattr(rollup_serve._STORE_VIEW, "inmemory", False) is False
+    with rollup_serve.inmemory_view():
+        with rollup_serve.inmemory_view():
+            pass
+        assert rollup_serve._STORE_VIEW.inmemory is True, "the inner exit cleared the outer view"
+    assert rollup_serve._STORE_VIEW.inmemory is False

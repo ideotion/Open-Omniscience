@@ -122,6 +122,22 @@ def test_a_persisted_connection_is_closed_when_the_open_fails_after_the_attach(m
         opened.con.close()
 
 
+@pytest.mark.parametrize("failing", ["ATTACH", "USE"])
+def test_the_attach_closes_its_own_connection_when_a_statement_fails(monkeypatch, tmp_path, failing):
+    """``_attach_persisted`` opened a connection and, if the ATTACH or the USE raised, let it go unclosed: the caller never received it."""
+
+    class Con(_Con):
+        def execute(self, sql, *_a):
+            if sql.startswith(failing):
+                raise RuntimeError("engine words")
+
+    con = Con()
+    monkeypatch.setattr(columnar, "_persisted_connection", lambda: con)
+    with pytest.raises(RuntimeError):
+        columnar._attach_persisted(tmp_path / "store.duckdb", "00ff")
+    assert con.closed, "the connection that failed to attach was left open"
+
+
 def test_a_persisted_open_that_succeeds_is_persisted_with_no_fallback_reason(monkeypatch):
     import duckdb
 

@@ -204,12 +204,34 @@ _STORE_VIEW = threading.local()
 
 @contextlib.contextmanager
 def inmemory_view():
-    """Within this block, on THIS thread, the start-time verdicts judge an in-memory build (``_persisted_serve_active()`` is False)."""
+    """Within this block, on THIS thread, the start-time verdicts judge an in-memory build (``_persisted_serve_active()`` is False). Nests: leaving
+    an inner block restores the outer one's setting."""
+    prev = getattr(_STORE_VIEW, "inmemory", False)
     _STORE_VIEW.inmemory = True
     try:
         yield
     finally:
-        _STORE_VIEW.inmemory = False
+        _STORE_VIEW.inmemory = prev
+
+
+#: True while a BENCHMARK (not a served build) holds ``_BUILD_LOCK``: the status must not call that a rebuild, and nothing that waits on the lock for
+#: a served build may take its release for one (see ``_BUILD_GEN``).
+_BENCHMARK: dict = {"running": False}
+
+
+@contextlib.contextmanager
+def benchmark_slot():
+    """Yield True when ``_BUILD_LOCK`` was free and is now held by a benchmark (released on the way out, whatever happens); False, holding nothing,
+    when a build is running. The lock is the serve's own, so a served build and a benchmark never run beside each other."""
+    if not _BUILD_LOCK.acquire(blocking=False):
+        yield False
+        return
+    _BENCHMARK["running"] = True
+    try:
+        yield True
+    finally:
+        _BENCHMARK["running"] = False
+        _BUILD_LOCK.release()
 
 
 def _persisted_serve_active() -> bool:
@@ -256,7 +278,8 @@ def status() -> dict:
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
         ),
         "keyword_daily_rows": rows,
-        "building": _BUILD_LOCK.locked(),
+        "building": _BUILD_LOCK.locked() and not _BENCHMARK["running"],
+        "benchmark_running": _BENCHMARK["running"],  # the rollup benchmark holds the build lock: no served build is running and none follows from it
         "build_progress": build_progress(),
         # P1.10 change gate: rebuild on CHANGE (epoch / mention tail), not on a timer. (The constant ``refresh: "change-gated"`` that stood
         # here is gone: it was the same string in every report, and R172 needed the bytes. The refresh is change-gated, always.)
@@ -1220,10 +1243,19 @@ def build_now_and_wait() -> str:
     ``done`` for a build that declined or failed. That wait is real (the call blocks on the lock until the
     running build ends), and the one caller, ``boot_sequence._rollup_first_build``, acts on the outcome it
     returns; nothing relies on a rollup existing merely because this returned."""
-    if not _BUILD_LOCK.acquire(blocking=False):
+    while True:
+        if _BUILD_LOCK.acquire(blocking=False):
+            return _build_and_swap()  # releases _BUILD_LOCK
+        gen = _BUILD_GEN["n"]
         with _BUILD_LOCK:  # the running build releases it in its own finally
-            return _LAST_OUTCOME["value"]
-    return _build_and_swap()  # releases _BUILD_LOCK
+            if _BUILD_GEN["n"] != gen:
+                return _LAST_OUTCOME["value"]  # a served build ended while this waited: its outcome
+        # the holder was not a served build (the rollup benchmark): its release says nothing about a build, so take the lock for our own
+
+
+# Counts the served builds that have ended (bumped while ``_BUILD_LOCK`` is still held). A waiter that sees it unchanged after the lock came free
+# waited for something that was not a served build, and ``_LAST_OUTCOME`` is not the outcome of anything it waited for.
+_BUILD_GEN: dict = {"n": 0}
 
 
 # The outcome of the build that last released _BUILD_LOCK. It is written while the lock is still
@@ -1252,8 +1284,9 @@ def _build_and_swap() -> str:
     in-memory store. Always releases the build lock; a failure never crashes the app.
 
     S3.5: declines while the memory guard is engaged. This is the AUTO-ON path only --
-    an operator asking for a build explicitly (the rollup benchmark calls
-    ``columnar.build_keyword_daily`` directly) is never refused. Skipping leaves the
+    a build called directly (``columnar.build_keyword_daily``, as an operator script does) is
+    never refused here; the rollup benchmark asks the same start-time verdicts before it builds
+    (R278), through ``first_start_decline``. Skipping leaves the
     previous rollup serving and ``change_pending`` true, so the next check retries; the
     serve also falls back to live queries, so a declined build costs latency, never an
     answer.
@@ -1397,6 +1430,7 @@ def _build_and_swap() -> str:
             with _LOCK:
                 _STATE["last_outcome"] = outcome
                 _STATE.pop("last_outcome_restored", None)
+        _BUILD_GEN["n"] += 1
         _BUILD_LOCK.release()
 
 
@@ -1411,6 +1445,7 @@ def _trigger_build_async() -> None:
         # The thread that would have released the lock never ran: release it here, or every later
         # build (and the boot sequence's wait for this one) blocks on it forever.
         _LAST_OUTCOME["value"] = "failed"
+        _BUILD_GEN["n"] += 1
         _BUILD_LOCK.release()
         log_failure(_LOG, "rollup serve: could not start the build thread", exc, level=logging.WARNING)
 
@@ -1625,7 +1660,7 @@ def basis(_days: int) -> dict:
         persisted = _STATE["persisted"]
     age_s = (time.time() - built_at) if built_at else None
     stale = bool(built_at) and (pending or (age_s is not None and age_s > _BACKSTOP_S))
-    rebuilding = _BUILD_LOCK.locked()
+    rebuilding = _BUILD_LOCK.locked() and not _BENCHMARK["running"]
     store_desc = (
         "the persisted encrypted keyword-daily rollup (D1; survives restarts, refreshed "
         "incrementally)" if persisted else "the in-memory keyword-daily rollup"

@@ -102,9 +102,9 @@ def exclusive_verdict() -> dict | None:
     whose own docstrings already say so: a skip leaves the previous rollup serving with
     ``change_pending`` true, so the next check retries, and the serve falls back to live
     queries -- "a declined build costs latency, never an answer". An operator asking for
-    a build explicitly (the rollup benchmark calls ``columnar.build_keyword_daily``
-    directly) never reaches this gate, which is the same carve-out ``_memory_verdict``
-    makes.
+    a build explicitly through ``columnar.build_keyword_daily`` directly never
+    reaches this gate. (The rollup benchmark used to be the example; since R278 it asks
+    ``rollup_serve.first_start_decline`` -- this gate included -- before it builds.)
 
     NOT extended to the briefing recompute: that one is kicked by a Home POLL, i.e. by a
     person waiting for an answer, and the standing ruling is that user work preempts

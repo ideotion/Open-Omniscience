@@ -752,8 +752,13 @@ def _attach_persisted(path, encryption_key):
     stays a lowercase-hex ``str``, the failure's record takes it out by name beside the passphrase, and nothing holds it
     for the nets that read what the process holds."""
     con = _persisted_connection()  # verified httpfs LOADed; _persisted_config (file access on)
-    con.execute(f"ATTACH {_sql_text(path.as_posix())} AS oo (ENCRYPTION_KEY ?)", [encryption_key])
-    con.execute("USE oo")
+    try:
+        con.execute(f"ATTACH {_sql_text(path.as_posix())} AS oo (ENCRYPTION_KEY ?)", [encryption_key])
+        con.execute("USE oo")
+    except BaseException:
+        with contextlib.suppress(Exception):  # a connection that failed to attach must not be left holding the file (or the memory) it opened
+            con.close()
+        raise
     return con
 
 

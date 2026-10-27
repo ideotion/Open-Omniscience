@@ -183,10 +183,9 @@ def test_the_double_matches_the_real_guards_surface():
         ), f"the double's {name}() no longer matches the real guard's"
 
 
-def test_an_explicit_operator_build_is_never_refused():
-    """The gate is on the AUTO path only. The rollup benchmark calls the builder
-    directly, and an operator who asked for a build must get one — a deliberate
-    action is not something to second-guess on a memory reading."""
+def test_the_builder_itself_never_refuses_and_the_benchmark_asks_the_verdicts_first():
+    """The gate is on the AUTO path only: ``columnar.build_keyword_daily`` carries no verdict of its own. Since R278 the rollup benchmark no longer
+    reaches it unguarded: it asks ``rollup_serve.first_start_decline`` (pinned in tests/test_rollup_benchmark_guard.py) before it builds."""
     import inspect
 
     from src.analytics import columnar
@@ -194,3 +193,4 @@ def test_an_explicit_operator_build_is_never_refused():
 
     assert "_memory_verdict" not in inspect.getsource(columnar.build_keyword_daily)
     assert "build_keyword_daily" in inspect.getsource(rollup_benchmark)
+    assert "first_start_decline" in inspect.getsource(rollup_benchmark)

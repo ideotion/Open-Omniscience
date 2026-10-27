@@ -263,6 +263,7 @@ def test_build_now_and_wait_waits_for_a_build_already_running_instead_of_startin
     t.start()
     assert not done.wait(0.2), "it returned while a build still held the lock"
     rollup_serve._LAST_OUTCOME["value"] = "declined"  # what the running build records before it releases
+    rollup_serve._BUILD_GEN["n"] += 1  # ... and counts itself ended, which is how a waiter tells a served build from a benchmark's release
     rollup_serve._BUILD_LOCK.release()
     assert done.wait(5)
     t.join(5)

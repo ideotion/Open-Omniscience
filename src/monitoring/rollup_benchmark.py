@@ -100,17 +100,15 @@ def run_rollup_benchmark(session: Session, *, repeats: int = 3) -> dict:
     # build meets, judged as the in-memory build it is, and it holds the build lock so a served build cannot run beside it.
     from src.analytics import rollup_serve
 
-    if not rollup_serve._BUILD_LOCK.acquire(blocking=False):
-        return {"available": False, "declined": True, "reason": "build-running",
-                "note": "A rollup build is running; the benchmark builds one too and never runs beside it. Try again when it has finished."}
-    try:
+    with rollup_serve.benchmark_slot() as held:
+        if not held:
+            return {"available": False, "declined": True, "reason": "build-running", "source": "build-lock",
+                    "note": "A rollup build is running; the benchmark builds one too and never runs beside it. Try again when it has finished."}
         return _run_guarded(session, repeats, columnar)
-    finally:
-        rollup_serve._BUILD_LOCK.release()
 
 
 def _run_guarded(session: Session, repeats: int, columnar) -> dict:
-    from src.analytics import rollup_serve
+    from src.analytics import rollup_marker, rollup_serve
 
     with rollup_serve.inmemory_view():
         skip, source = rollup_serve.first_start_decline()
@@ -118,7 +116,27 @@ def _run_guarded(session: Session, repeats: int, columnar) -> dict:
         # Declined, not failed: nothing was built. The record is the verdict's own (its reason, readings and detail), with the verdict named.
         return {"available": False, "declined": True, "reason": skip.get("reason") or "declined", "source": source, "detail": skip,
                 "note": "Not run: the same check that stops the served rollup build refused it. Nothing was built."}
+    # The in-progress marker, as the served build writes it: a benchmark that is killed (the #1310 end) leaves the record the next start's
+    # last-build verdict reads, and another server's served build sees a benchmark running. ``begin`` refuses when another process's build runs.
+    r = rollup_serve._readings()
+    if not rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=columnar.budget_snapshot()["duckdb_limit_mb"]):
+        return {"available": False, "declined": True, "reason": rollup_marker.ELSEWHERE, "source": "last-build",
+                "note": "Not run: another server's rollup build is running. Nothing was built."}
+    try:
+        return _run_built(session, repeats, columnar)
+    finally:
+        rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
 
+
+def _marker_progress(stage: str, rows_done: int) -> None:
+    """The build's per-batch hook for a benchmark: keep the marker's stage and peak current. It is NOT the memory-guard poll (the serve's alone, R280)."""
+    from src.analytics import rollup_marker, rollup_serve
+
+    r = rollup_serve._readings()
+    rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
+
+
+def _run_built(session: Session, repeats: int, columnar) -> dict:
     # -- corpus context (so the numbers are interpretable) ------------------------------- #
     from sqlalchemy import func
 
@@ -137,7 +155,7 @@ def _run_guarded(session: Session, repeats: int, columnar) -> dict:
     if con is None:
         return {"available": False, "reason": "columnar engine unavailable"}
     t0 = time.perf_counter()
-    build = columnar.build_keyword_daily(con, session)
+    build = columnar.build_keyword_daily(con, session, on_batch=_marker_progress)
     build_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
     # -- parity: is the rollup faithful on THIS corpus? ---------------------------------- #
