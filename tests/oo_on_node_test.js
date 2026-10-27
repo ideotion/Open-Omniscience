@@ -34,7 +34,11 @@ console.warn = (e) => errors.push(String(e));
 
 const src = fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8");
 // A test-only name is added to the allowlist the same way a real one is listed.
-eval(src.replace('const OO_ACTIONS = [', 'const OO_ACTIONS = ["probe", "probe2", "probeThrow", "anParams", '));
+// Its events too (the per-event table, A-024 stage 1): the probes run on click and keydown, and on focus (test 4).
+eval(src.replace('const OO_ACTIONS = [', 'const OO_ACTIONS = ["probe", "probe2", "probeThrow", "anParams", ')
+  .replace('const EVENT_ACTION_NAMES = {', 'const EVENT_ACTION_NAMES = {\n    focus: ["probe"],')
+  .replace('    click: [', '    click: ["probe", "probe2", "probeThrow", "anParams",')
+  .replace('    keydown: [', '    keydown: ["probe",'));
 
 global.probe = function (...args) { calls.push({fn: "probe", self: this, args}); };
 global.probe2 = function (...args) { calls.push({fn: "probe2", self: this, args}); };
