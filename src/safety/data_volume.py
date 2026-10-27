@@ -390,7 +390,7 @@ def wait_for_volume(state: dict[str, Any]) -> None:
         server = None   # the port is taken; keep waiting without a page
         _LOG.warning("the data drive at %s is not connected; waiting for it", configured_folder())
     if server is not None:
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever, name="oo-drive-page", daemon=True).start()
         _LOG.warning("the data drive is not connected; see http://%s:%s/", host, port)
     while True:
         if quit_flag.wait(POLL_SECONDS):

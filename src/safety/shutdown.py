@@ -67,7 +67,7 @@ def _default_arm(delay: float) -> None:
         _LOG.warning("shutdown: stopping the server (SIGTERM to self)")
         os.kill(os.getpid(), signal.SIGTERM)
 
-    threading.Thread(target=_stop, daemon=True).start()
+    threading.Thread(target=_stop, name="oo-shutdown", daemon=True).start()
 
 
 def request_shutdown(*, confirm: bool, delay: float = 1.0, _arm=_default_arm) -> dict:
