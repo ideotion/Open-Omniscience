@@ -41,6 +41,16 @@ async function press(err) {
   return st.textContent;
 }
 
+// A background job that ENDS in error after the switch engaged (the route answered 200 and the poll reports the job's own error text).
+async function pressJob(job) {
+  const st = { textContent: "" };
+  const src = [extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
+  const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", src);
+  const run = f(() => st, async () => ({}), async () => true, async () => job, () => {}, () => false, {});
+  await run();
+  return st.textContent;
+}
+
 function http(status, message) {
   const e = new Error(message);
   e.status = status;
@@ -65,5 +75,13 @@ function http(status, message) {
     assert.ok(got.startsWith("Wikidata fetch failed:") && got.endsWith(msg), "a quoted phrase is not a refusal: " + got);
   }
   assert.strictEqual(await press(http(500, "boom")), "Wikidata fetch failed: boom");
+
+  // A job that errors after the switch engaged: the refusal state, not the raw server sentence (R334); any other job error is still an error.
+  for (const msg of ["network refused: airplane mode is engaged", "airplane mode is engaged: refusing a network connection to 'www.wikidata.org'"]) {
+    assert.strictEqual(await pressJob({ state: "error", error: msg }), REFUSED, "a refusal sentence as job.error is the kill switch: " + msg);
+  }
+  assert.strictEqual(await pressJob({ state: "error", error: "HTTP 503 for https://www.wikidata.org/x" }), "Wikidata fetch failed: HTTP 503 for https://www.wikidata.org/x");
+  assert.strictEqual(await pressJob({ state: "error", error: "the page said airplane mode is engaged: refusing" }), "Wikidata fetch failed: the page said airplane mode is engaged: refusing", "a quoted phrase in a job error is not a refusal");
+  assert.strictEqual(await pressJob({ state: "error" }), "Wikidata fetch failed: ", "a job error with no text keeps the old empty tail");
   console.log("wikidata_refusal_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });

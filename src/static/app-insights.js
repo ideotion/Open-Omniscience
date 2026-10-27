@@ -1163,6 +1163,7 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const st = $("es-status");
+      const refusedText = t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.");
       // The ONE consent (invariant #14); its answer is USED.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Fetch Wikidata items for the places and people in your corpus (one request every 10 seconds, over your transport)"))) return;
@@ -1170,7 +1171,11 @@
       try {
         await api("/api/entities/items/fetch", {method: "POST", body: JSON.stringify({consent: true})});
         const job = await pollJobStatus("/api/entities/items/status");
-        if (job.state === "error") { if (st) st.textContent = t("Wikidata fetch failed:") + " " + (job.error || ""); return; }
+        // A job that errors AFTER the switch engaged carries the refusal sentence as its error text: the same reader names it (no status on a job, so the text fallback decides).
+        if (job.state === "error") {
+          if (st) st.textContent = _wikidataRefusedByAirplaneMode({message: job.error}) ? refusedText : t("Wikidata fetch failed:") + " " + (job.error || "");
+          return;
+        }
         if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
         const r = job.result || {};
         if (st) {
@@ -1183,7 +1188,7 @@
       } catch (e) {
         // A 409 is the kill switch, and it is NAMED as such (invariant #14e's corollary).
         const msg = _wikidataRefusedByAirplaneMode(e)
-          ? t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.")
+          ? refusedText
           : t("Wikidata fetch failed:") + " " + e.message;
         if (st) st.textContent = msg;
       }
