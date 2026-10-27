@@ -458,10 +458,11 @@ def test_only_the_listed_routes_open_a_loopback_socket(observed):
     assert not bad, f"these GETs opened a socket and are not in _LOOPBACK_ROUTES (the local model servers): {bad}"
 
 
-def test_every_started_thread_and_written_file_is_accounted_for(observed):
+def _file_and_thread_problems(seen: dict[str, _Monitor], routes: dict[str, tuple[frozenset[str], frozenset[str], str]]) -> list:
+    """(route, 'file'|'thread', name) for every effect no table accounts for; shared with the seeded-data walk."""
     problems = []
-    for path, m in observed.seen.items():
-        files_ok, threads_ok, _reason = _ROUTES.get(path, (frozenset(), frozenset(), ""))
+    for path, m in seen.items():
+        files_ok, threads_ok, _reason = routes.get(path, (frozenset(), frozenset(), ""))
         for name in sorted(n for n in m.files if not _final_names(n) & (_AMBIENT_FILES | files_ok)):
             if _MAIN_DB.fullmatch(name):
                 continue
@@ -472,6 +473,11 @@ def test_every_started_thread_and_written_file_is_accounted_for(observed):
             if any(re.fullmatch(pat.replace("*", ".*"), name) for pat in threads_ok):
                 continue
             problems.append((path, "thread", name))
+    return problems
+
+
+def test_every_started_thread_and_written_file_is_accounted_for(observed):
+    problems = _file_and_thread_problems(observed.seen, _ROUTES)
     assert not problems, (
         "these GETs wrote, changed or removed a file or started a thread that no table accounts for (add a line to _ROUTES with the "
         f"reason, or guard the route): {problems}"
