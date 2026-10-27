@@ -215,8 +215,14 @@ def update_page(
 def track_watched(
     session: Session, client, *, ores_client=None, limit_pages: int = 50, max_new: int = 50
 ) -> dict:
-    """Update all watched pages. Returns an aggregated tally."""
+    """Update all watched pages. Returns an aggregated tally.
+
+    ``skipped_offline`` (pages the kill switch refused) is present ONLY when it is non-zero. A refused page is not
+    counted in ``pages`` and is not logged as a failure: airplane mode is the person's setting, and an all-zero tally
+    that means "nothing was fetched" must be told apart from "nothing changed" (invariant #14e's corollary).
+    """
     from src.database.query import capped
+    from src.safety.fetcher import NetworkBlocked
 
     pages = capped(
         session.query(WikiPage)
@@ -224,7 +230,7 @@ def track_watched(
         .order_by(WikiPage.last_checked_at.is_(None).desc(), WikiPage.last_checked_at.asc()),
         limit_pages,  # 0 = every watched page (no cap)
     ).all()
-    total_new = total_flagged = pages_done = 0
+    total_new = total_flagged = pages_done = skipped_offline = 0
     for page in pages:
         try:
             res = update_page(session, client, page, ores_client=ores_client, max_new=max_new)
@@ -244,5 +250,11 @@ def track_watched(
                     log_failure(_LOG, f"corpus sync failed for {page.title}", exc, level=logging.WARNING)
         except Exception as exc:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
+            if isinstance(exc, NetworkBlocked):
+                skipped_offline += 1
+                continue
             log_failure(_LOG, f"wiki tracking failed for {page.wiki}:{page.title}", exc, level=logging.WARNING)
-    return {"pages": pages_done, "new_revisions": total_new, "flagged": total_flagged}
+    out = {"pages": pages_done, "new_revisions": total_new, "flagged": total_flagged}
+    if skipped_offline:
+        out["skipped_offline"] = skipped_offline
+    return out

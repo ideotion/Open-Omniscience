@@ -1139,7 +1139,12 @@
       const st = $("law-status");
       if (st) st.innerHTML = '<div class="muted">Tracking watched laws — ethical, rate-limited fetch; this can take a moment…</div>';
       try { const r = await api("/api/law/track", {method:"POST"});
-        toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
+        // The kill switch refused it: `documents` and `errors` still count those, so a clean-looking "23 errors" would
+        // blame the documents for the person's own airplane mode (invariant #14e's corollary).
+        const off = r.skipped_offline || 0;
+        if (off && off >= r.documents) toast(_govT("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn");
+        else toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`
+          + (off ? " " + _govTf("{n} not fetched (airplane mode)", {n: off}) : ""));
         loadLaw(); loadLawChanges && loadLawChanges();
       } catch (e) { toast(_failMsg("Tracking failed: {error}", e), "err"); if (st) loadLaw(); }
       finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }

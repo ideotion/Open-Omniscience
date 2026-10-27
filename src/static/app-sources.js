@@ -699,8 +699,10 @@
       } catch (e) { $("imp-result").textContent = ""; toast(_failMsg("Import failed: {error}", e), "err"); }
     }
 
+    // `skipped_offline` is the pipeline saying the kill switch refused the feed (invariant #14e's corollary): the
+    // callers below say it in words, so it is never printed as a count beside the real outcomes.
     function tally(t) {
-      return Object.entries(t).filter(([k,v]) => v > 0)
+      return Object.entries(t).filter(([k,v]) => v > 0 && k !== "skipped_offline")
         .map(([k,v]) => `${esc(k)}: ${v}`).join(", ") || "nothing new";
     }
 
@@ -711,6 +713,10 @@
       $("ingest-result").textContent = "Fetching feed… (rate-limited, may take a moment)";
       try {
         const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
+        if (r.tally && r.tally.skipped_offline) {   // refused by airplane mode: a clean zero would read as "the feed is quiet"
+          const msg = t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.");
+          $("ingest-result").textContent = msg; toast(msg, "warn"); return;
+        }
         $("ingest-result").textContent = t("Feed result —") + " " + tally(r.tally);
         toast("Ingest complete."); doSearch({refresh: true});
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
@@ -868,14 +874,25 @@
       btn.disabled = true;
       $("bi-status").textContent = `Fetching ${ids.length} feed(s)… (ethical & rate-limited; may take a while)`;
       $("bi-results").innerHTML = "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
       try {
         const r = await api("/api/sources/ingest-batch", {method: "POST", body: JSON.stringify({source_ids: ids})});
-        $("bi-status").textContent = `Done: ${r.ingested}/${r.requested} fetched · ${tally(r.aggregate)}`;
+        // A feed the kill switch refused still counts in `ingested` (it ran through the pipeline) with an all-zero
+        // tally; `skipped_offline` is what says it was not fetched (invariant #14e's corollary).
+        const off = (r.aggregate && r.aggregate.skipped_offline) || 0;
+        const allOff = off > 0 && off >= r.ingested;
+        $("bi-status").textContent = allOff
+          ? t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
+          : `Done: ${r.ingested - off}/${r.requested} fetched` + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
         $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
           r.results.map(x => `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
-            `<td>${x.status === "ok" ? tally(x.tally)
+            `<td>${x.status === "ok"
+              ? ((x.tally && x.tally.skipped_offline) ? `<span class="pill warn">${esc(t("Not fetched (airplane mode)"))}</span>` : tally(x.tally))
               : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
           `</table>`;
+        if (allOff) { toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); return; }
         toast("Batch ingest complete."); doSearch({refresh: true});
       } catch (e) { $("bi-status").textContent = ""; toast(_failMsg("Batch ingest failed: {error}", e), "err"); }
       finally { btn.disabled = false; }

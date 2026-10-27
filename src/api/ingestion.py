@@ -119,6 +119,10 @@ def ingest_batch_endpoint(
     off an unbounded crawl; sources without a feed are skipped with a clear status.
     Synchronous (runs in the threadpool); a queued/background variant is a future
     step for very large batches.
+
+    Airplane mode: a feed the kill switch refused still runs through the pipeline, so it counts in
+    ``ingested`` and its tally is all zeros; what tells it apart is ``skipped_offline: 1`` in that tally,
+    summed into ``aggregate`` (absent when nothing was refused). The picker reads it to say "not fetched".
     """
     ids = list(dict.fromkeys(req.source_ids))[:50]  # de-dup, cap
     if not ids:
