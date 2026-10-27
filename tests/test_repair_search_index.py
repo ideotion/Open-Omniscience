@@ -436,7 +436,7 @@ def test_an_emptied_index_whose_rebuild_dies_after_some_batches_is_empty_and_the
 
 @pytest.mark.xfail(
     strict=True,
-    reason="a boot reads ANY docsize row as 'settled' (an exact count of the articles is the 74 s cold scan fts.py refuses at boot), so a prefix "
+    reason="a boot reads ANY docsize row as 'settled' (the boot compares no counts: see the SCOPE paragraph of ensure_fts), so a prefix "
     "index (some rows, not all) is skipped and nothing repairs it; fts_status names it instead (the next test). Flips when a boot repairs one.",
 )
 def test_a_prefix_index_is_not_read_as_settled_by_a_boot():

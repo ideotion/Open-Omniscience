@@ -8,6 +8,11 @@ presence comes from sqlite_master (authoritative, the same source schema-drift r
 two can't disagree), the row COUNT is best-effort with an honest status, and a post-crash
 MALFORMED index is detected as unhealthy (a re-index heals it) rather than misread as absent.
 
+Since 0.5.1 the row COUNT is the articles' (``SELECT count(*) FROM articles``, a covering-index scan), not
+``count(*) FROM article_fts`` (a table scan of every article row for an external-content index): the same number,
+measured at 0.2 to 0.3 s cold against 9.6 to 11.9 s at 1,000,000 articles (the tests below name where it is compared and where its
+plan is pinned).
+
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
@@ -65,14 +70,15 @@ def test_absent_reported_honestly_when_no_fts_table():
 
 
 def test_slow_count_is_present_not_absent():
-    """The exact bug: the row COUNT times out on a large index -> present STAYS true (from
-    the schema), rows=None with count_status=timed_out — NEVER 'absent'."""
+    """The exact bug: the row COUNT times out on a large store -> present STAYS true (from
+    the schema), rows=None with count_status=timed_out — NEVER 'absent'. (The count is the articles' since 0.5.1:
+    ``SELECT count(*) FROM articles``, no longer ``count(*) FROM article_fts``; the shape of the answer is unchanged.)"""
     s = _corpus()
     orig = s.execute
 
     def fake(stmt, *a, **k):
-        if "count(*) FROM article_fts" in str(stmt):
-            raise StatementTimeout("simulated slow FTS count")
+        if "count(*) FROM articles" in str(stmt):
+            raise StatementTimeout("simulated slow count")
         return orig(stmt, *a, **k)
 
     s.execute = fake  # type: ignore[method-assign]
@@ -126,7 +132,7 @@ def _driver_failure(line: str, code: int, name: str) -> Exception:
             "the health probe, an I/O error", id="health-io",
         ),
         pytest.param(
-            "count(*) FROM article_fts", "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
+            "count(*) FROM articles", "disk I/O error MARKER-IO", 10, "SQLITE_IOERR", "OperationalError: SQLITE_IOERR",
             "the row count", id="count-io",
         ),
         pytest.param(
@@ -182,9 +188,10 @@ def test_integrity_and_schema_drift_agree_even_when_the_count_times_out():
     orig = s.execute
 
     def fake(stmt, *a, **k):
-        # Reproduce the field condition: the FTS row COUNT is too slow and aborts.
-        if "count(*) FROM article_fts" in str(stmt):
-            raise StatementTimeout("simulated slow FTS count")
+        # Reproduce the field condition: the row COUNT is too slow and aborts. Since 0.5.1 that is the articles' count,
+        # and the integrity report takes one of its own (the ``delta``'s) beside the status's: both abort here.
+        if "count(*) FROM articles" in str(stmt):
+            raise StatementTimeout("simulated slow count")
         return orig(stmt, *a, **k)
 
     s.execute = fake  # type: ignore[method-assign]
@@ -196,6 +203,10 @@ def test_integrity_and_schema_drift_agree_even_when_the_count_times_out():
     assert ci["fts"]["present"] == sd["fts_present"], "the two probes must never disagree"
     # The count could not complete, but that is disclosed as a status, not conflated with absence.
     assert ci["fts"]["fts_rows"] is None and ci["fts"]["count_status"] == "timed_out"
+    # ... and the delta, which needs the articles' count, says nothing instead of a number built on a missing one;
+    # the index's own population (a different statement) is still had.
+    assert ci["fts"]["articles"] is None and ci["fts"]["delta"] is None
+    assert ci["fts"]["indexed_status"] == "ok" and ci["fts"]["indexed_documents"] == 1
 
 
 def test_integrity_reports_a_genuinely_absent_index():
@@ -429,8 +440,8 @@ def test_a_failure_of_the_population_does_not_replace_the_error_an_earlier_step_
         text_of = str(stmt)
         if "count(*) FROM article_fts_docsize" in text_of:
             raise _driver_failure("disk I/O error MARKER-IO", 10, "SQLITE_IOERR")
-        if "count(*) FROM article_fts" in text_of:
-            raise RuntimeError("the content count failed")
+        if "count(*) FROM articles" in text_of:
+            raise RuntimeError("the articles' count failed")
         return orig(stmt, *a, **k)
 
     s.execute = fake  # type: ignore[method-assign]
@@ -444,14 +455,14 @@ def test_a_failure_of_the_population_does_not_replace_the_error_an_earlier_step_
     (lambda s: _add_an_article_the_index_never_sees(s), "partial (inferred)", "PartialIndex"),
 ])
 def test_a_verdict_does_not_replace_the_error_the_count_named_and_still_refuses_the_healthy_verdict(damage_the_index, state, label):
-    """A torn copy is where a corruption error on the content count is likely: the class the count named stays the one named (and
+    """A torn copy is where a corruption error on the articles' count is likely: the class the count named stays the one named (and
     ``count_status`` says it failed), while ``index_state`` and ``healthy`` carry the verdict. The fixed label is only for a clean count."""
     s = _corpus()
     damage_the_index(s)
     orig = s.execute
 
     def fake(stmt, *a, **k):
-        if "count(*) FROM article_fts" in str(stmt) and "docsize" not in str(stmt):
+        if "count(*) FROM articles" in str(stmt):
             raise _driver_failure("database disk image is malformed MARKER-PAGE", 11, "SQLITE_CORRUPT")
         return orig(stmt, *a, **k)
 
@@ -507,10 +518,13 @@ def test_no_index_and_no_backend_leave_the_population_unasked():
 # ------- a prefix index, at test size ------- #
 
 
-def test_a_prefix_index_over_many_articles_is_named_partial_and_no_article_is_counted():
-    """Export's construction (a front part of the articles indexed, the rest not), at test size: the reads are the two highest ids and the
-    index's own count; ``count(*) FROM articles`` (the 74 s cold scan the boot refuses) is never run, whichever way it is spelled, on any
-    route to the engine (the statements are taken at the cursor, not at ``session.execute``)."""
+def test_a_prefix_index_over_many_articles_is_named_partial_and_the_articles_are_counted_once_by_the_covering_index():
+    """Export's construction (a front part of the articles indexed, the rest not), at test size. The reads are the articles' count (``rows``),
+    the two highest ids and the index's own count. Statements are taken at the cursor, not at ``session.execute``, so any route to the
+    engine is seen: ``count(*) FROM articles`` runs exactly once (it was refused outright until 0.5.1, when the premise that it is a
+    corpus scan was withdrawn, and it is now what the figure is read from), its plan is the covering-index scan (the 0.25 s cold figure
+    rests on it: ``count(content)``, a ``WHERE`` or ``NOT INDEXED`` would read every article row and turn this red), and nothing counts
+    ``article_fts`` itself, the statement it replaced."""
     import re
 
     from sqlalchemy import event
@@ -543,6 +557,114 @@ def test_a_prefix_index_over_many_articles_is_named_partial_and_no_article_is_co
         event.remove(engine, "before_cursor_execute", spy)
     assert st["indexed_documents"] == 10 and st["index_state"] == "partial (inferred)" and st["healthy"] is False, st
     assert st["error"] == "PartialIndex"
+    assert st["rows"] == 20 and st["count_status"] == "ok", "rows is the articles' count: 20, beside the 10 documents the index holds"
     assert any("article_fts_docsize" in x for x in statements), "the spy saw the population read: it is listening"
     counting_articles = re.compile(r"count\(\s*(\*|1)?\s*\)\s+from\s+articles\b", re.IGNORECASE)
-    assert not [x for x in statements if counting_articles.search(x)], "the corpus scan the boot refuses must not run"
+    counts = [x for x in statements if counting_articles.search(x)]
+    assert len(counts) == 1, counts
+    assert " ".join(counts[0].split()) == "SELECT count(*) FROM articles", "the plain count, nothing that reads a column"
+    plan = " ".join(str(row[-1]) for row in s.execute(text("EXPLAIN QUERY PLAN " + counts[0])).fetchall())
+    assert "COVERING INDEX" in plan, plan
+    counting_the_index = re.compile(r"count\(\s*(\*|1)?\s*\)\s+from\s+article_fts\b", re.IGNORECASE)
+    assert not [x for x in statements if counting_the_index.search(x)], "the count of the full-text table (a read of every article row) must not run"
+
+
+def _a_store_in(shape: str):
+    """A store with the index in one of four states; the first article is the base fixture's."""
+    s = _corpus()
+    if shape == "partial":
+        _add_an_article_the_index_never_sees(s)
+        return s
+    for i in (2, 3, 4):
+        s.add(Article(
+            url=f"u{i}", canonical_url=f"u{i}", source_id=1, title=f"Story {i}", content=f"story number {i}",
+            hash=f"h{i}", language="en", created_at=datetime.now(UTC),
+        ))
+    s.commit()
+    if shape == "shrunken":  # two deletes (their index rows go with them), then an ingest that takes a freed id again
+        s.execute(text("DELETE FROM articles WHERE id IN (2, 4)"))
+        s.commit()
+        s.add(Article(
+            url="u5", canonical_url="u5", source_id=1, title="Fifth", content="fifth article",
+            hash="h5", language="en", created_at=datetime.now(UTC),
+        ))
+        s.commit()
+    elif shape == "emptied":
+        _empty_the_index(s)
+    return s
+
+
+@pytest.mark.parametrize("shape, state", [
+    ("full", "ends-agree"),
+    ("shrunken", "ends-agree"),
+    ("emptied", "empty"),
+    ("partial", "partial (inferred)"),
+])
+def test_rows_is_the_figure_the_full_text_count_gave_over_a_full_a_shrunken_an_emptied_and_a_partial_index(shape, state):
+    """The 0.5.1 change swaps the statement behind ``rows`` and must not change the number: for an external-content table
+    ``count(*) FROM article_fts`` reads the content table, so it equals the articles' count whatever the index holds. Both are
+    run on the same store and compared with what ``fts_status`` reports."""
+    s = _a_store_in(shape)
+    old_way = s.execute(text("SELECT count(*) FROM article_fts")).scalar()
+    articles = s.execute(text("SELECT count(*) FROM articles")).scalar()
+    st = fts_status(s)
+    assert st["rows"] == old_way == articles, (shape, st["rows"], old_way, articles)
+    assert st["count_status"] == "ok" and st["index_state"] == state
+    assert st["rows"] > 0, "a count of zero would make the equality a tautology"
+
+
+@pytest.mark.parametrize("the_count_fails", [False, True])
+def test_a_partial_index_still_reads_partial_inferred_whether_or_not_the_articles_count_comes_back(the_count_fails):
+    """The verdict is the ends' (two highest ids and the index's count, one statement), never ``rows``: it is read the same with the
+    count answered (``rows`` 2 beside 1 document) and with the count timed out (``rows`` None, ``count_status`` timed_out)."""
+    s = _corpus()
+    _add_an_article_the_index_never_sees(s)
+    if the_count_fails:
+        orig = s.execute
+
+        def fake(stmt, *a, **k):
+            if "count(*) FROM articles" in str(stmt):
+                raise StatementTimeout("simulated slow count")
+            return orig(stmt, *a, **k)
+
+        s.execute = fake  # type: ignore[method-assign]
+    st = fts_status(s)
+    assert st["index_state"] == "partial (inferred)" and st["indexed_documents"] == 1 and st["indexed_status"] == "ok", st
+    assert st["healthy"] is False and st["error"] == "PartialIndex"
+    if the_count_fails:
+        assert st["rows"] is None and st["count_status"] == "timed_out"
+    else:
+        assert st["rows"] == 2 and st["count_status"] == "ok"
+
+
+def test_the_articles_count_runs_inside_a_deadline_of_its_own(monkeypatch):
+    """Bounded: the count behind ``rows`` is read inside ``statement_deadline`` (the count's 15 s), not bare. It is the statement whose
+    timeout ``count_status: timed_out`` reports, so a count that lost its block would hang a diagnostics request instead of saying so."""
+    from src.database import maintenance
+
+    s = _corpus()
+    depth = {"open": 0}
+    seen: list[int] = []
+    real_deadline = maintenance.statement_deadline
+
+    @contextlib.contextmanager
+    def watching(session, seconds):
+        depth["open"] += 1
+        try:
+            with real_deadline(session, seconds=seconds):
+                yield
+        finally:
+            depth["open"] -= 1
+
+    orig = s.execute
+
+    def fake(stmt, *a, **k):
+        if "count(*) FROM articles" in str(stmt):
+            seen.append(depth["open"])
+        return orig(stmt, *a, **k)
+
+    monkeypatch.setattr(maintenance, "statement_deadline", watching)
+    s.execute = fake  # type: ignore[method-assign]
+    st = fts_status(s)
+    assert st["rows"] == 1 and st["count_status"] == "ok"
+    assert seen == [1], seen

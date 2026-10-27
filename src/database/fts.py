@@ -829,20 +829,26 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     and is reported in the log rather than in this value so every existing caller and
     assertion on it keeps reading the same three words.
 
-    SCOPE OF THE BOOT SELF-HEAL (measured, deliberate): the boot path self-heals only a
+    SCOPE OF THE BOOT SELF-HEAL (deliberate): the boot path self-heals only a
     fully-EMPTY index (docsize == 0 while articles exist) — an O(1) probe. It does NOT try to
-    detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one, because the only
-    way to detect partialness is to compare the indexed-row count against the article count,
-    and ``count(*) FROM articles`` was measured at 74 s cold on a 2.7 GB encrypted corpus (a
-    codec-heavy scan) — reintroducing the very corpus-scaled boot cost this fix removes. A
+    detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one. The way to see a partial one
+    whole is to compare the indexed-row count against the article count, and the boot makes no such
+    comparison: that is a decision, not a measured necessity, and it is left as it was. What was measured
+    (2026-10-27): ``count(*) FROM articles`` is a scan of the smallest covering index
+    (``idx_article_created_at``) and took 0.25 s cold on 1,000,000 articles. LIMITS of that figure: one
+    machine, an encrypted (SQLCipher) store on a virtual disk much faster than a laptop's, synthetic Latin
+    text of 1.3 KB per article, nothing above 1 M, the cost follows the NUMBER of articles and not their
+    text, and the plan is the planner's choice, not a promise (``tests/test_fts_status.py`` pins it on the
+    real schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on
+    the current schema and what it timed is not recorded: do not build on it. A
     partial/corrupt index is UNREACHABLE via normal operation anyway (ingest is an atomic
     INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
     re-index never touches article content) — it can arise only from external file corruption
     (e.g. a torn filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job:
     it reports a damaged index, an EMPTY one and, while no article has been ingested since, a PARTIAL one whose
-    TAIL is missing (``indexed_documents`` / ``index_state``; the probe and the count it also runs read the content
+    TAIL is missing (``indexed_documents`` / ``index_state``; the probe it also runs reads the content
     table and cannot see them), and the explicit re-index job heals it (``rebuild="always"``). It repairs nothing
-    and counts no article: the boot refusal above stands.
+    and is operator-initiated: it never runs at boot, and the boot refusal above stands.
 
     No-op for non-SQLite engines (PostgreSQL would use its own tsvector path).
     Safe to call repeatedly; called from ``init_db``.
@@ -1175,7 +1181,7 @@ def _fts_probe_deadline_s() -> float:
 
 
 def _fts_count_deadline_s() -> float:
-    """Deadline for the (potentially slow, index-enumerating) FTS row COUNT
+    """Deadline for each count ``fts_status`` takes, the articles' and the index's own population
     (OO_FTS_COUNT_DEADLINE_S, default 15s)."""
     try:
         return max(0.5, float(_os.getenv("OO_FTS_COUNT_DEADLINE_S", "15")))
@@ -1188,7 +1194,7 @@ def fts_status(session: Session) -> dict:
 
     PRESENCE is read from ``sqlite_master`` — the authoritative table list, a metadata read
     that never scans and never trips the statement deadline — NOT from a ``COUNT(*)`` over
-    the external-content FTS5 index (which enumerates the whole index, can hit the deadline,
+    the external-content FTS5 index (which reads every row of the content table, can hit the deadline,
     and was then MISREAD as "table absent", contradicting the schema-drift probe that reads
     the same list). So the two probes can no longer disagree silently: both derive presence
     from the schema.
@@ -1205,12 +1211,18 @@ def fts_status(session: Session) -> dict:
         asked for); ``None`` = present but could not confirm (the probe timed out). ALSO ``False``
         over an EMPTY or a PARTIAL index (``index_state``): see ``indexed_documents`` for why this probe
         alone cannot say it.
-      * ``rows``         — the row count FTS5 answers, or ``None`` when the count timed out /
-        errored (``count_status`` says which) — NEVER conflated with absence. ``article_fts`` is an
-        EXTERNAL-CONTENT table, so this probe and this count are answered from the content table
-        (``articles``), not from the index: they read healthy and full over an index that holds no
-        document (measured: after ``'delete-all'`` the probe said healthy and ``rows`` equalled the
-        articles). ``rows`` is NOT the index's size; ``indexed_documents`` is.
+      * ``rows``         — the count of ``articles`` rows (``SELECT count(*) FROM articles``, a scan of the smallest
+        covering index), or ``None`` when the count timed out / errored (``count_status`` says which) — NEVER
+        conflated with absence. It is the figure FTS5's own ``count(*) FROM article_fts`` returned until 0.5.1: that
+        statement reads every row of the content table, ``articles``, for this external-content table, so it is the
+        same number (``tests/test_fts_status.py`` compares them over a full, a shrunken, an emptied and a partial
+        index). Measured 2026-10-27 on 1,000,000 articles: 9.6 to 11.9 s cold for the FTS statement (a table scan,
+        which follows the article TEXT, and 3 to 5 s from its 15 s deadline) against 0.25 s cold for this count
+        (which follows the NUMBER of articles). LIMITS: one machine, an encrypted store on a virtual disk much
+        faster than a laptop's, synthetic Latin text of 1.3 KB per article, nothing above 1 M. ``rows`` is the
+        content table's count, NOT the index's size: ``indexed_documents`` is, and the probe is answered from the
+        content table too, so both read healthy and full over an index that holds no document (measured: after
+        ``'delete-all'`` the probe said healthy and ``rows`` equalled the articles).
       * ``count_status`` — ok | timed_out | error | skipped.
       * ``indexed_documents`` — the documents the index itself holds: ``COUNT(*)`` of its shadow table
         ``article_fts_docsize`` (one row per indexed document; ``backup/merge.py``'s restore probe reads it for
@@ -1218,7 +1230,7 @@ def fts_status(session: Session) -> dict:
       * ``indexed_status`` — ok | timed_out | error | skipped | ``unprobeable`` (an index built without the
         shadow table, ``columnsize=0``, has no cheap population count; nothing is rebuilt on that account).
       * ``index_state``  — what the index's ENDS say (the two highest ids and the index's own count, read in one statement;
-        no count of articles): ``"empty"`` when
+        that statement counts no article): ``"empty"`` when
         it holds no document while ``articles`` holds a row (the state ``ensure_fts`` heals at the next start);
         ``"partial (inferred)"`` when its highest document id is below the highest article id (a tail of the
         articles is not indexed: a torn file copy or a hand-made restore, since no app writer leaves one; INFERRED
@@ -1227,8 +1239,8 @@ def fts_status(session: Session) -> dict:
         that holds documents beyond the highest article id all read this way. A partial index stops reading
         ``"partial (inferred)"`` at the NEXT INGEST (the new article is indexed by its trigger, the missing tail becomes
         a hole in the middle, and the ends agree again); only a count comparison or a walk key by key sees a
-        hole, and the count of ``articles`` is the 74 s cold scan the boot refuses, so a caller that has its own bounded
-        count compares it to ``indexed_documents``, as ``monitoring.integrity`` does. ``None`` when unknown. An index
+        hole: ``rows`` (the articles' count) against ``indexed_documents`` is that comparison, which
+        ``monitoring.integrity`` makes as its ``delta`` from its own count of the articles. ``None`` when unknown. An index
         read while ``ensure_fts`` is building it on a store that already has articles (boot, ``init_db``) reads empty
         until the first build is done.
       * ``error``        — what failed when unhealthy / the count failed: the DRIVER's class and a fixed label
@@ -1290,10 +1302,12 @@ def fts_status(session: Session) -> dict:
         out["count_status"] = "error"
         return out  # damaged -> don't attempt the heavier COUNT; re-index heals
 
-    # 3) ROWS (best-effort; a slow COUNT is reported as timed_out, never "absent").
+    # 3) ROWS: the articles' count (best-effort; a slow COUNT is reported as timed_out, never "absent"). It is the number
+    #    ``count(*) FROM article_fts`` gave for this external-content table, taken from the covering index instead of by
+    #    reading every article row (0.25 s against 9.6 to 11.9 s cold at 1 M articles; limits in the docstring).
     try:
         with statement_deadline(session, seconds=_fts_count_deadline_s()):
-            n = session.execute(text("SELECT count(*) FROM article_fts")).scalar()
+            n = session.execute(text("SELECT count(*) FROM articles")).scalar()
         out["rows"] = int(n) if n is not None else 0
         out["count_status"] = "ok"
     except StatementTimeout:
