@@ -21,6 +21,7 @@ from src.database.models import Base
 from src.ingest import (
     FetchFailed,
     RobotsDisallowed,
+    RobotsUnavailable,
     activate_kill_switch,
     clear_kill_switch,
     kill_switch_active,
@@ -176,3 +177,20 @@ def test_an_http_status_the_host_really_gave_is_kept_even_if_a_stop_lands_right_
     with _switch(True):
         out = _import(session, _Fetcher(FetchFailed(text)))
     assert out.verdict == verdict
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        FetchFailed("read timed out for " + _URL),
+        RobotsUnavailable("robots.txt for " + _URL + " could not be determined (unreachable)"),
+    ],
+)
+def test_a_timeout_or_an_unreadable_robots_while_the_switch_is_engaged_is_the_switchs(
+    session, slept, exc
+):
+    """The two verdicts a Stop most often cuts into (a read that times out; the robots read itself) are not kept as the host's (Opus read of PR 1582)."""
+    with _switch(True):
+        f = _Fetcher(exc)
+        out = _import(session, f)
+    assert out.verdict == "offline" and out.retryable is False and f.calls == 1 and slept == []
