@@ -153,6 +153,21 @@ def active_staging(path: Path | str) -> Iterator[None]:
             _ACTIVE_STAGING.discard(key)
 
 
+def register_active_staging(path: Path | str) -> None:
+    """Mark ``path`` as a live job's staging until :func:`unregister_active_staging`, for a job whose life does not fit one ``with`` block
+    (the backup route's snapshot directory is made in a request thread and removed when the response ends, on another)."""
+    key = str(Path(path).resolve())
+    with _ACTIVE_LOCK:
+        _ACTIVE_STAGING.add(key)
+
+
+def unregister_active_staging(path: Path | str) -> None:
+    """Undo :func:`register_active_staging`. Idempotent."""
+    key = str(Path(path).resolve())
+    with _ACTIVE_LOCK:
+        _ACTIVE_STAGING.discard(key)
+
+
 def is_active_staging(path: Path | str) -> bool:
     """True when ``path`` is (or lives inside) a registered live job's staging."""
     s = str(Path(path).resolve())
@@ -160,7 +175,13 @@ def is_active_staging(path: Path | str) -> bool:
         return any(s == a or s.startswith(a + os.sep) for a in _ACTIVE_STAGING)
 
 
-_TEMP_DIR_PREFIXES = (".bak-build-", ".restore-")
+#: ``.oo-backup-`` is the directory the ``GET /api/database/backup`` route writes its plaintext snapshot into (``src.api.database``,
+#: whose ``_BACKUP_DIR_PREFIX`` must stay in this tuple: a test pins it). It is swept here as well as by the route, because the route
+#: sweeps only when someone asks for the next backup, and a snapshot a KILL left (SIGKILL, power; an exit hook runs nothing then)
+#: is a full plaintext copy of the corpus that would otherwise stay until then (0.5.1 item 40).
+_TEMP_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-backup-")
+#: The dirs whose owner writes a marker (:func:`write_owner_marker`), so a dead owner's leftover is told from a live job's at once.
+_OWNER_MARKED_PREFIXES = (".bak-build-", ".oo-backup-")
 _TEMP_FILE_SUFFIXES = (".oopart", ".reassembling")
 _OWNER_MARKER = ".owner.json"
 _DESTS_FILE = "backup-temp-dests.json"
@@ -176,12 +197,13 @@ def _machine_tag() -> str | None:
     return _process_owner.machine_tag()
 
 
-def _write_owner_marker(staging: Path) -> None:
+def write_owner_marker(staging: Path) -> None:
     """Record WHICH process made this staging dir (pid + its start time), so a sweep can tell
     a dead owner's leftover from a live job's dir without waiting a day. A backup that made a
     temporary copy of the corpus and then crashed left 8 to 40 GB on the user's drive, and the
     24 h age rule meant a retry within a day was refused for lack of the very space it held.
-    Best-effort: a dir without a marker keeps the age rule."""
+    Written for a streamed backup's ``.bak-build-*`` dir and for the snapshot route's ``.oo-backup-*``
+    dir (0.5.1 item 40). Best-effort: a dir without a marker keeps the age rule."""
     try:
         from src.safety.file_lock import atomic_replace
 
@@ -306,12 +328,12 @@ def sweep_remembered_destinations_in_background() -> threading.Thread | None:
 
 def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -> int:
     """Remove ORPHANED backup/restore temps under ``root`` (non-recursive):
-    ``.bak-build-*`` / ``.restore-*`` staging dirs and ``*.oopart`` /
-    ``*.reassembling`` files older than ``max_age_hours``. A LIVE job's paths are
-    protected twice over — the active-staging registry and the age guard (a dir
-    being written has a fresh mtime). A ``.bak-build-*`` dir that carries an owner marker
-    is judged by its OWNER instead: a dead owner's leftover goes at once whatever its age,
-    a live owner's dir stays. Never touches volumes, manifests or the
+    ``.bak-build-*`` / ``.restore-*`` staging dirs, the backup route's ``.oo-backup-*``
+    snapshot dirs, and ``*.oopart`` / ``*.reassembling`` files older than ``max_age_hours``.
+    A LIVE job's paths are protected twice over — the active-staging registry and the age
+    guard (a dir being written has a fresh mtime). A ``.bak-build-*`` or ``.oo-backup-*`` dir
+    that carries an owner marker is judged by its OWNER instead: a dead owner's leftover goes
+    at once whatever its age, a live owner's dir stays. Never touches volumes, manifests or the
     resume log (``volumes.building.json``). Returns the number removed."""
     rootp = Path(root)
     if not rootp.is_dir():
@@ -327,7 +349,7 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
             if is_active_staging(p):
                 continue
             if p.is_dir() and p.name.startswith(_TEMP_DIR_PREFIXES):
-                owner = _owner_state(p) if p.name.startswith(".bak-build-") else "unknown"
+                owner = _owner_state(p) if p.name.startswith(_OWNER_MARKED_PREFIXES) else "unknown"
                 if owner == "alive":
                     continue
                 if owner == "dead":
@@ -1468,7 +1490,7 @@ def write_stream_backup(
 
     tmp_dir = dest / f".bak-build-{secrets.token_hex(6)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    _write_owner_marker(tmp_dir)  # a crash's leftover is told from a live job's dir by its owner
+    write_owner_marker(tmp_dir)  # a crash's leftover is told from a live job's dir by its owner
     gate_held_s = 0.0
     with active_staging(tmp_dir):
         try:

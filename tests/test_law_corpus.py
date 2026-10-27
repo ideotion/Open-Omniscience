@@ -17,7 +17,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -234,6 +234,203 @@ def test_existing_article_heals_its_language_on_a_re_ingest(db):
     assert res["status"] == "unchanged"
     db.refresh(art)
     assert art.language == "fr"  # healed even though the text itself never changed
+
+
+def _law_doc_with_text(db, **kw) -> LawDocument:
+    doc = LawDocument(jurisdiction="uk", title="Test Act", url="https://law.example/heal", latest_text=_BODY, **kw)
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+def _stamps(db, art, column) -> set:
+    return {v for (v,) in db.query(column).filter(KeywordMention.article_id == art.id)}
+
+
+@pytest.fixture()
+def deduces_english(monkeypatch):
+    """A law indexed before its catalogue stated a language carries the DEDUCED one on its mentions. The deduction is
+    `py3langid`'s (the `[analysis]` extra), which a core install does not have: there the same law is stamped NULL (unknown,
+    never a silent "en"), so a test that starts from "the mentions say en" has to pin the deduction rather than lean on
+    which extras the lane installed (the Core-only lane found it). The heal under test is the same either way."""
+    monkeypatch.setattr("src.analytics.langdetect.detect_language", lambda *_a, **_k: "en")
+
+
+def _indexed_while_carrying_a_poll_date(db, doc, when: datetime) -> Article:
+    """The state the heal exists for: a law article indexed while its `published_at` was still
+    the date WE polled the page (the pre-2026-08-07 behaviour), so its mentions carry that day."""
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.store import index_article
+    from src.law.corpus import upsert_law_corpus_article
+
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    art.published_at = when
+    db.commit()
+    index_article(db, art, extractor=BaselineExtractor())
+    return art
+
+
+def test_the_publication_date_heal_re_stamps_the_mentions_it_moved(db):
+    """0.5.1 item 39: the heal cleared `published_at` and committed, but the mentions keep the
+    day stamped when they were indexed, so the article sat in one period by its own clock
+    (`published_at or created_at`) and in another by every reader of `observed_on`."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    art = _indexed_while_carrying_a_poll_date(db, doc, datetime(2020, 5, 1))
+    assert _stamps(db, art, KeywordMention.observed_on) == {date(2020, 5, 1)}  # the state under repair
+
+    res = upsert_law_corpus_article(db, doc=doc)  # same text: the heal path
+
+    assert res["status"] == "unchanged"  # the text did not change; the stamps were redone
+    assert res["healed"] is True
+    assert res["mentions"] > 0
+    db.refresh(art)
+    assert art.published_at is None
+    assert _stamps(db, art, KeywordMention.observed_on) == {art.created_at.date()}
+
+
+def test_the_language_heal_re_stamps_the_mention_language(db, deduces_english):
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert _stamps(db, art, KeywordMention.language) == {"en"}  # indexed before the catalog stated one: the deduced language
+
+    doc.language = "fr"
+    db.commit()
+    res = upsert_law_corpus_article(db, doc=doc)
+
+    assert res["healed"] is True
+    assert _stamps(db, art, KeywordMention.language) == {"fr"}
+
+
+def test_an_article_with_nothing_to_heal_is_not_re_indexed(db, monkeypatch):
+    """The re-index is for a heal only: the steady state (the same text, nothing to correct) must
+    not pay an extraction per law on every pass."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+
+    def no_index(*_a, **_k):
+        raise AssertionError("an unchanged, already healed law article was re-indexed")
+
+    monkeypatch.setattr("src.analytics.store.index_article", no_index)
+    res = upsert_law_corpus_article(db, doc=doc)
+    assert res["status"] == "unchanged" and "healed" not in res
+
+
+def test_a_failed_re_index_leaves_the_heal_to_be_done_again(db, monkeypatch):
+    """The heal and its re-index commit together. Were the column committed first, a re-index
+    that failed (a lock, a full disk) would leave the next call nothing to heal, and the poll
+    date would stay stamped on the mentions for good."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    art = _indexed_while_carrying_a_poll_date(db, doc, datetime(2020, 5, 1))
+
+    real = __import__("src.analytics.store", fromlist=["index_article"]).index_article
+
+    def boom(*_a, **_k):
+        raise RuntimeError("index_article exploded")
+
+    monkeypatch.setattr("src.analytics.store.index_article", boom)
+    with pytest.raises(RuntimeError, match="exploded"):
+        upsert_law_corpus_article(db, doc=doc)
+    db.rollback()  # what sync_watched_laws does with a failed document
+    db.refresh(art)
+    assert art.published_at == datetime(2020, 5, 1)  # not committed alone
+    assert _stamps(db, art, KeywordMention.observed_on) == {date(2020, 5, 1)}
+
+    monkeypatch.setattr("src.analytics.store.index_article", real)
+    res = upsert_law_corpus_article(db, doc=doc)  # the next call
+    assert res["healed"] is True
+    db.refresh(art)
+    assert _stamps(db, art, KeywordMention.observed_on) == {art.created_at.date()}
+
+
+def test_a_heal_that_re_stamped_mentions_bumps_the_corpus_epoch_and_a_steady_state_does_not(db):
+    """The re-index rewrites changed mention rows in place under their old ids (a heal moves them to another day), which the
+    columnar rollup's id-watermark merge cannot see; the epoch is what makes it rebuild (`corpus_epoch`)."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    _indexed_while_carrying_a_poll_date(db, doc, datetime(2020, 5, 1))
+    before = get_corpus_epoch(db)
+
+    assert upsert_law_corpus_article(db, doc=doc)["healed"] is True
+    assert get_corpus_epoch(db) == before + 1
+
+    assert "healed" not in upsert_law_corpus_article(db, doc=doc)  # nothing left to heal
+    assert get_corpus_epoch(db) == before + 1, "a pass with nothing to heal must not force a rebuild of the rollup"
+
+
+def _catalog_stating_french(tmp_path: Path) -> tuple[Path, Path]:
+    catalog = tmp_path / "cat.yml"
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: uk, title: Test Act, url: 'https://law.example/heal', language: fr, country: gb}\n",
+        encoding="utf-8",
+    )
+    return catalog, tmp_path / "no-such-generated.yml"
+
+
+def test_the_catalog_language_heal_re_stamps_the_mention_language_of_the_article_it_healed(db, tmp_path, deduces_english):
+    """`register_documents` heals the linked article's language itself, because the tracker no longer re-syncs an unchanged
+    document; without a re-index the article read French and its mentions English (0.5.1 item 39)."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.law.catalog import register_documents
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.language is None and _stamps(db, art, KeywordMention.language) == {"en"}
+    before = get_corpus_epoch(db)
+
+    catalog, no_gen = _catalog_stating_french(tmp_path)
+    out = register_documents(db, path=catalog, generated_path=no_gen)
+
+    assert out["healed_language"] == 1
+    db.refresh(art)
+    assert art.language == "fr"
+    assert _stamps(db, art, KeywordMention.language) == {"fr"}
+    assert get_corpus_epoch(db) == before + 1
+    assert register_documents(db, path=catalog, generated_path=no_gen)["healed_language"] == 0
+    assert get_corpus_epoch(db) == before + 1, "the second registration found nothing to heal"
+
+
+def test_a_failed_re_index_after_the_catalog_language_heal_never_breaks_the_registration(
+    db, tmp_path, monkeypatch, caplog, deduces_english
+):
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.law.catalog import register_documents
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = _law_doc_with_text(db)
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    before = get_corpus_epoch(db)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("index_article exploded")
+
+    monkeypatch.setattr("src.analytics.store.index_article", boom)
+    catalog, no_gen = _catalog_stating_french(tmp_path)
+    with caplog.at_level("WARNING"):
+        out = register_documents(db, path=catalog, generated_path=no_gen)  # a boot path: must return
+
+    assert out["healed_language"] == 1
+    db.refresh(art)
+    assert art.language == "fr"  # the registration's own commit stands
+    assert _stamps(db, art, KeywordMention.language) == {"en"}  # and the stamps keep the old value, named in the log
+    assert any("re-index of a language-healed law article failed" in r.getMessage() for r in caplog.records)
+    assert get_corpus_epoch(db) == before, "nothing was re-stamped, so nothing is owed a rebuild"
 
 
 def test_unchanged_refetch_does_not_duplicate_the_article(db):

@@ -92,6 +92,33 @@ def _law_text(doc: LawDocument) -> str | None:
     return doc.latest_text or doc.baseline_text
 
 
+def _index_corpus_article(session: Session, art: Article, extractor) -> dict:
+    """Index one law article through THE hook (commits, with whatever the caller left pending)."""
+    if extractor is None:
+        from src.analytics.extract import BaselineExtractor
+
+        extractor = BaselineExtractor()
+    from src.analytics.store import index_article
+
+    return index_article(session, art, extractor=extractor)
+
+
+def reindex_healed_article(session: Session, art: Article, extractor=None, *, bump: bool = True) -> dict:
+    """Re-index a law article whose stamped fields were just healed, then tell the disposable rollup (0.5.1 item 39).
+
+    A language or publication date is STAMPED onto the article's mentions when it is indexed, so a heal that stopped at the
+    article's column left every mention carrying the old value. ``index_article`` rewrites changed mention rows in place under their
+    old ids (a heal MOVES them to another day), which the columnar rollup's id-watermark merge cannot see (``corpus_epoch``): the
+    epoch is bumped after the re-index has committed, so a rebuild that starts before it cannot read the old stamps and then be
+    trusted. ``bump=False`` leaves it to a caller that heals many articles and bumps once (best-effort by its own contract)."""
+    tally = _index_corpus_article(session, art, extractor)
+    if bump:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(session, reason="law_corpus_heal")
+    return tally
+
+
 def upsert_law_corpus_article(
     session: Session, *, doc: LawDocument, extractor=None
 ) -> dict:
@@ -141,9 +168,24 @@ def upsert_law_corpus_article(
         if art.published_at is not None:
             art.published_at = None  # clear a poll date previously stored as a pub date
             healed = True
-        if healed:
-            session.commit()
-        return {"document_id": doc.id, "status": "unchanged", "article_id": art.id}
+        if not healed:
+            return {"document_id": doc.id, "status": "unchanged", "article_id": art.id}
+        # Both healed fields are STAMPED onto the article's mentions when it is indexed
+        # (observed_on from `published_at or created_at`, the mention language from the
+        # article's), so a heal that stopped at the column left every mention carrying the
+        # poll date this branch exists to remove, and the article in one period by its
+        # clock and in another by its mentions (0.5.1 item 39). The re-index and the heal
+        # commit TOGETHER: committing the column first would make a failed re-index
+        # unrepeatable, because the next call finds nothing left to heal. The status
+        # stays "unchanged" (the text did); `healed` says the stamps were redone.
+        tally = reindex_healed_article(session, art, extractor)
+        return {
+            "document_id": doc.id,
+            "status": "unchanged",
+            "article_id": art.id,
+            "healed": True,
+            "mentions": tally.get("mentions", 0),
+        }
     else:
         art.content = text
         art.hash = content_hash
@@ -173,13 +215,7 @@ def upsert_law_corpus_article(
             "article_id": existing.id if existing else None,
         }
 
-    if extractor is None:
-        from src.analytics.extract import BaselineExtractor
-
-        extractor = BaselineExtractor()
-    from src.analytics.store import index_article
-
-    tally = index_article(session, art, extractor=extractor)
+    tally = _index_corpus_article(session, art, extractor)
     return {
         "document_id": doc.id,
         "status": "created" if created else "updated",

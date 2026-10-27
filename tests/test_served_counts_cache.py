@@ -29,7 +29,7 @@ from sqlalchemy.orm import sessionmaker
 from src.api import database as dbmod
 from src.api import library as libmod
 from src.api import served_cache
-from src.database.models import Base, Source
+from src.database.models import Article, Base, Source
 from src.database.session import SessionLocal, engine, init_db
 
 
@@ -376,8 +376,32 @@ def test_stats_and_library_overview_share_one_cache_mechanism():
     assert "db:stats" in calls and "library:overview" in calls and "db:figures" in calls, calls
 
 
+_FIGURES_URL = "http://figures-stale.test/1"
+
+
+def _seed_one_article() -> None:
+    """The figures run their count over a corpus that has an article: on an empty one ``_compute_figures_counted`` answers with the
+    cheap figures alone and the payload never carries ``keyword_mentions_state``. The suite's store is shared by the whole process,
+    so this test, run alone or first, found it empty and waited its ten seconds for a field that was never coming (0.5.1 item 43)."""
+    s = SessionLocal()
+    try:
+        if s.query(Article).filter(Article.canonical_url == _FIGURES_URL).count():
+            return
+        src = s.query(Source).filter(Source.domain == "figures-stale.test").first()
+        if src is None:
+            src = Source(name="figures-stale", domain="figures-stale.test")
+            s.add(src)
+            s.flush()
+        s.add(Article(title="t", url=_FIGURES_URL, canonical_url=_FIGURES_URL, source_id=src.id,
+                      content="c", hash="figures-stale-h1", word_count=10))
+        s.commit()
+    finally:
+        s.close()
+
+
 def test_figures_are_served_stale_rather_than_recomputed_inline():
     """The whole-table mentions count is the 43 s query; it must never ride a poll."""
+    _seed_one_article()
     s = SessionLocal()
     try:
         dbmod.library_figures(s)  # cold: answered at once, the count runs in the background

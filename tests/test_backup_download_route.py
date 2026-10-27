@@ -19,9 +19,14 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import inspect
 import os
 import shutil
+import signal
+import socket
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -32,6 +37,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import src.api.database as dbapi
+import src.api.main as main_mod
 import src.backup.sqlite_backup as sb
 from src.api.main import app
 from src.database.session import init_db
@@ -69,8 +75,10 @@ def data_dir():
     for left in d.glob(".oo-backup-*"):
         shutil.rmtree(left, ignore_errors=True)
     dbapi._backup_flight = None
+    dbapi._live_snapshot_dirs.clear()
     yield d
     dbapi._backup_flight = None
+    dbapi._live_snapshot_dirs.clear()
 
 
 @pytest.fixture()
@@ -208,6 +216,7 @@ def test_the_snapshot_is_written_beside_the_database_and_removed_when_the_respon
         assert seen["mode"] == 0o700, "the snapshot directory is the owner's alone"
     assert not dest.parent.exists(), "the snapshot outlived its response"
     assert dbapi._backup_flight is None
+    assert dbapi._live_snapshot_dirs == {}, "the exit hook would still be holding a directory that is gone"
     out = Path(data_dir) / "downloaded-copy.db"
     out.write_bytes(r.content)
     try:
@@ -505,6 +514,417 @@ def test_a_response_whose_scope_is_cancelled_again_and_again_still_removes_the_d
     assert dbapi._backup_flight is None
 
 
+def _app_scope() -> dict:
+    """A GET for the backup as uvicorn hands it to the whole application, from the app's own page."""
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/database/backup",
+        "raw_path": b"/api/database/backup",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"host", b"127.0.0.1:8000"), (b"sec-fetch-site", b"same-origin")],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 8000),
+        "extensions": {},
+    }
+
+
+def _snapshot_that_waits(monkeypatch) -> tuple[threading.Event, threading.Event]:
+    """A snapshot that is still being written until the test lets it finish: (started, finish)."""
+    started, finish = threading.Event(), threading.Event()
+
+    def slow(dest):
+        Path(dest).write_bytes(b"x" * 100)
+        started.set()
+        assert finish.wait(60), "the test never let the snapshot finish"
+
+    monkeypatch.setattr(sb, "backup_to", slow)
+    return started, finish
+
+
+async def _until(condition, seconds: float = 20.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        await asyncio.sleep(0.05)
+    return condition()
+
+
+def test_a_request_cancelled_while_its_snapshot_is_written_still_removes_the_directory_and_frees_the_slot(data_dir, monkeypatch):
+    """0.5.1 item 41, the cancel half. A server shutting down cancels the task of a request whose snapshot a worker thread is still
+    writing, and the thread cannot be stopped. MEASURED to be clean already (anyio holds the cancellation until the thread has
+    returned, the response is then run, cancelled at its first await, and its ``finally`` removes the directory), so this pins a
+    behaviour a dependency could change rather than repairs one. The forced exit, which does leave the directory, is the test
+    after the cancel tests."""
+    started, finish = _snapshot_that_waits(monkeypatch)
+
+    async def run() -> None:
+        async def drop(message):
+            return None
+
+        task = asyncio.create_task(app(_app_scope(), _receive, drop))
+        try:
+            assert await _until(started.is_set), "the snapshot never started"
+            assert _left_over(data_dir) != [] and dbapi._backup_flight is not None
+            assert [d.name for d in dbapi._live_snapshot_dirs] == _left_over(data_dir), "the route did not register its directory for the exit hook"
+            task.cancel()  # the single, native cancellation uvicorn's shutdown applies to its request tasks
+            finish.set()  # the thread cannot be stopped; it finishes, and only then does the cancellation land
+            await asyncio.wait({task}, timeout=20)
+            assert task.done(), "the cancelled request did not end"
+        finally:
+            finish.set()
+        assert await _until(lambda: _left_over(data_dir) == [] and dbapi._backup_flight is None)
+
+    asyncio.run(run())
+    assert _left_over(data_dir) == [], "the snapshot directory of a cancelled request was left behind"
+    assert dbapi._backup_flight is None, "the claim of a cancelled request was left held"
+
+
+def test_a_request_whose_scope_is_cancelled_while_its_snapshot_is_written_still_removes_the_directory(data_dir, monkeypatch):
+    """The same under a cancel scope (anyio's own cancellation, level-triggered, which also waits for the worker thread and then
+    lands): the response is built and the task is cancelled before it can send a byte. Also a pin; it passes without the exit hook."""
+    import anyio
+
+    started, finish = _snapshot_that_waits(monkeypatch)
+
+    async def run() -> None:
+        async def drop(message):
+            return None
+
+        async def call() -> None:
+            await app(_app_scope(), _receive, drop)
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(call)
+                assert await _until(started.is_set), "the snapshot never started"
+                tg.cancel_scope.cancel()
+                finish.set()
+        finally:
+            finish.set()
+        assert await _until(lambda: _left_over(data_dir) == [] and dbapi._backup_flight is None)
+
+    anyio.run(run)
+    assert _left_over(data_dir) == [], "the snapshot directory of a cancelled request was left behind"
+    assert dbapi._backup_flight is None, "the claim of a cancelled request was left held"
+
+
+def test_the_exit_hook_removes_the_snapshot_directories_this_process_still_holds(data_dir):
+    """0.5.1 item 41, the forced-exit half. With a real uvicorn, a second Ctrl+C while a snapshot was being written closed the loop
+    at once; the interpreter then waited for the worker thread, which finished the copy for a request that no longer existed, and
+    the process exited with the whole corpus in plaintext in ``.oo-backup-*``. The exit hook removes what is still held."""
+    held = data_dir / ".oo-backup-held"
+    held.mkdir()
+    (held / "snapshot.db").write_bytes(b"x" * 1000)
+    with dbapi._BACKUP_LOCK:
+        dbapi._live_snapshot_dirs[held] = os.getpid()
+    dbapi._remove_live_snapshot_dirs()
+    assert not held.exists()
+    assert dbapi._live_snapshot_dirs == {}
+
+
+def test_the_exit_hook_does_not_take_a_directory_another_process_made(data_dir):
+    """A forked child inherits the table of its parent and runs the exit hooks it inherited; the parent's live download is not the
+    child's to remove."""
+    theirs = data_dir / ".oo-backup-theirs"
+    theirs.mkdir()
+    with dbapi._BACKUP_LOCK:
+        dbapi._live_snapshot_dirs[theirs] = os.getpid() + 1
+    dbapi._remove_live_snapshot_dirs()
+    assert theirs.exists()
+
+
+_EXIT_SCRIPT = """
+import os, pathlib, sys, threading, time
+import src.api.database as dbapi
+
+workdir = pathlib.Path(sys.argv[1])
+marker = pathlib.Path(sys.argv[2])
+workdir.mkdir()
+with dbapi._BACKUP_LOCK:
+    dbapi._live_snapshot_dirs[workdir] = os.getpid()
+
+
+def snapshot_that_outlives_the_main_thread():
+    time.sleep(1.0)
+    (workdir / "snapshot.db").write_bytes(b"x" * 1000)  # raises if the exit hook already removed the directory
+    marker.write_text("written")  # outside the directory: only a write that succeeded leaves it
+
+
+threading.Thread(target=snapshot_that_outlives_the_main_thread).start()  # not a daemon: the worker behind a request is not
+print("main thread done", flush=True)
+"""
+
+
+def test_a_process_that_exits_while_a_snapshot_is_still_being_written_leaves_no_directory(tmp_path):
+    """The real interpreter, in its own process: the main thread ends, a non-daemon thread writes the snapshot a second later, and
+    the exit hook runs after Python has joined that thread, so the file it wrote is removed too. The ORDER is what is pinned: a hook
+    that ran before the join would remove the directory first and the thread's write would fail, so the marker the thread leaves
+    outside the directory after its write would be missing (and a traceback would be on stderr)."""
+    workdir = tmp_path / ".oo-backup-exiting"
+    marker = tmp_path / "written"
+    env = {**os.environ, "OO_DATA_DIR": str(tmp_path / "data"), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
+    done = subprocess.run(
+        [sys.executable, "-c", _EXIT_SCRIPT, str(workdir), str(marker)],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert "main thread done" in done.stdout
+    assert "Traceback" not in done.stderr, done.stderr[-2000:]
+    assert marker.exists(), "the exit hook ran before the worker thread was joined: its write found the directory gone"
+    assert not workdir.exists(), "the snapshot a worker thread wrote after the main thread ended was left in the data folder"
+
+
+#: A real uvicorn serving one request that never finishes, with a graceful window of one second, the way ``_serve`` runs it. After
+#: the window uvicorn cancels what is left, puts back the SIGTERM handler it found and raises the signal again; what that does is
+#: what the two tests below measure. The directory stands for a snapshot a worker is still writing (or one a client stopped reading).
+_TERM_SCRIPT = """
+import asyncio, os, pathlib, sys
+import uvicorn
+import src.api.database as dbapi
+
+workdir = pathlib.Path(sys.argv[1])
+if sys.argv[3] in ("install", "install-slow"):
+    print("installed", dbapi.install_stop_signal_cleanup(), flush=True)
+if sys.argv[3] == "install-slow":
+    import shutil, time
+
+    real_rmtree = shutil.rmtree
+
+    def slow_rmtree(*args, **kwargs):  # a removal that takes seconds, as on btrfs, ZFS or a USB disk
+        print("removing", flush=True)
+        time.sleep(3)
+        return real_rmtree(*args, **kwargs)
+
+    shutil.rmtree = slow_rmtree
+workdir.mkdir()
+(workdir / "snapshot.db").write_bytes(b"PLAINTEXT" * 1000)
+with dbapi._BACKUP_LOCK:
+    dbapi._live_snapshot_dirs[workdir] = os.getpid()
+
+
+async def app(scope, receive, send):
+    await asyncio.sleep(120)  # a request still running when the graceful window ends
+
+
+uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[2]), timeout_graceful_shutdown=1, lifespan="off", ws="none", log_level="warning")
+"""
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _wait_for_line(proc, text: str, seconds: float) -> bool:
+    """Read the child's output until ``text`` has arrived (POSIX pipes only). Reads the raw descriptor: ``readline()`` on the text
+    wrapper pulls a whole chunk in, keeps the lines after the first in its own buffer where ``select`` cannot see them, and then
+    waits for an end of file, so the line this waits for was seen only after the process had gone and the test it served passed
+    against a handler without its guard (measured: the mutant passed three runs in five)."""
+    import select
+
+    fd = proc.stdout.fileno()
+    seen = b""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([fd], [], [], 0.5)
+        if ready:
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                return False
+            seen += chunk
+            if text.encode() in seen:
+                return True
+    return False
+
+
+def _sigterm_a_server_past_its_graceful_window(tmp_path: Path, mode: str, *, second_sigterm: bool = False):
+    """Start ``_TERM_SCRIPT`` in its own process, hold one request open, send SIGTERM (and, when asked, a second one while the stop
+    handler is removing the directory); return (exit status, workdir)."""
+    workdir = tmp_path / ".oo-backup-stopping"
+    port = _free_port()
+    env = {**os.environ, "OO_DATA_DIR": str(tmp_path / "data"), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _TERM_SCRIPT, str(workdir), str(port), mode],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 120
+        client_socket = None
+        while time.monotonic() < deadline and client_socket is None:
+            if proc.poll() is not None:
+                raise AssertionError(f"the server ended before it listened: {proc.stdout.read()[-2000:]}")
+            try:
+                client_socket = socket.create_connection(("127.0.0.1", port), timeout=1)
+            except OSError:
+                time.sleep(0.1)
+        assert client_socket is not None, "the server never listened"
+        with client_socket:
+            client_socket.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            time.sleep(0.5)  # the request is in flight (if it were not yet, uvicorn stops at once and the result is the same)
+            proc.send_signal(signal.SIGTERM)
+            if second_sigterm:
+                assert _wait_for_line(proc, "removing", 60), "the stop handler never began its removal"
+                proc.send_signal(signal.SIGTERM)
+            status = proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    return status, workdir
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
+def test_a_sigterm_that_outlasts_the_graceful_window_removes_the_snapshot_directory_and_still_ends_the_process_by_the_signal(tmp_path):
+    """0.5.1 item 41, the SIGTERM half, in a real uvicorn: the in-app power button, SIGHUP (routed onto SIGTERM) and a logout all
+    end this way, and a backup of a big corpus takes longer than the 30 s window. The handler installed before ``uvicorn.run`` is the
+    one uvicorn puts back and re-raises into; it removes the directory and then lets the signal end the process, so the exit status
+    is what it always was."""
+    status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "install")
+    assert status == -signal.SIGTERM, f"the process did not end by the signal it was sent (status {status})"
+    assert not workdir.exists(), "the plaintext snapshot was left in the data folder by a SIGTERM"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
+def test_a_second_sigterm_while_the_handler_is_removing_the_directory_neither_hangs_nor_leaves_it(tmp_path):
+    """The read of the bundle, N3. SIGHUP goes through the graceful path and becomes a SIGTERM to self, and a second ``kill`` is
+    plausible: with a removal that takes seconds, a second SIGTERM used to run the handler again on top of itself, find the table
+    already emptied, and end the process by the signal with the first removal unfinished (the directory left); and one landing while
+    the first holds the (non-reentrant) lock on the main thread blocked for good. The handler ignores the signal first."""
+    status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "install-slow", second_sigterm=True)
+    assert status == -signal.SIGTERM
+    assert not workdir.exists(), "a second SIGTERM during the removal left the plaintext snapshot in the data folder"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a SIGTERM that ends the process by the signal is POSIX behaviour")
+def test_without_the_handler_the_same_sigterm_leaves_the_snapshot_directory(tmp_path):
+    """The premise of the test above, measured instead of assumed: with the default SIGTERM action uvicorn's re-raised signal kills
+    the process at once, with no thread joined and no exit hook run. If this ever fails, uvicorn stopped doing that and the handler
+    may no longer be needed; look before deleting it."""
+    status, workdir = _sigterm_a_server_past_its_graceful_window(tmp_path, "plain")
+    assert status == -signal.SIGTERM
+    assert workdir.exists(), "uvicorn no longer ends a SIGTERM stop by the default action: is install_stop_signal_cleanup still needed?"
+
+
+def test_the_stop_cleanup_takes_sigterm_and_nothing_else():
+    """The read of the bundle, N4. A source scan cannot tell a registration for SIGTERM from one for SIGINT that sits beside it, and a
+    SIGINT handler that restores the default would bring the leak back for Ctrl+C."""
+    watched = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    before = {s: signal.getsignal(s) for s in watched}
+    try:
+        assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
+        assert signal.getsignal(signal.SIGINT) is before[signal.SIGINT]
+        assert signal.getsignal(signal.SIGHUP) is before[signal.SIGHUP]
+        assert signal.getsignal(signal.SIGTERM) is not before[signal.SIGTERM]
+    finally:
+        for s, h in before.items():
+            signal.signal(s, h)
+
+
+def test_the_route_registers_its_directory_as_live_staging_until_the_response_ends(client, data_dir, monkeypatch):
+    """The read of the bundle, N1. The sweeps check the live-staging registry before they read an owner marker. The verdict on a marker
+    compares process start times as wall-clock instants, so a clock step can turn this process's own marker into "dead" (measured with a
+    simulated step); the test writes such a marker and sweeps the data folder while the snapshot is being written."""
+    import json
+
+    from src.backup import stream_backup
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    during: dict = {}
+
+    def spy(dest):
+        workdir = Path(dest).parent
+        (workdir / ".owner.json").write_text(json.dumps({"pid": dead.pid, "started": 1.0}), encoding="utf-8")
+        during["workdir"] = workdir
+        during["verdict"] = stream_backup._owner_state(workdir)
+        during["registered"] = stream_backup.is_active_staging(workdir)
+        stream_backup.sweep_stale_backup_temps(workdir.parent)
+        during["still_there"] = workdir.exists()
+        Path(dest).write_bytes(b"x" * 100)
+
+    monkeypatch.setattr(sb, "backup_to", spy)
+    assert client.get("/api/database/backup", headers=OWN_PAGE).status_code == 200
+    assert during["verdict"] == "dead", "the test did not put the directory in the state it means to protect"
+    assert during["registered"] is True
+    assert during["still_there"] is True, "a sweep of the data folder took the directory of a download in flight"
+    assert not stream_backup.is_active_staging(during["workdir"]), "the registry kept a directory the response had removed"
+    assert _left_over(data_dir) == []
+
+
+def test_the_stop_handler_removes_what_this_process_holds_then_restores_the_default_and_signals_itself(data_dir, monkeypatch):
+    held = data_dir / ".oo-backup-held"
+    held.mkdir()
+    (held / "snapshot.db").write_bytes(b"x" * 1000)
+    theirs = data_dir / ".oo-backup-theirs"
+    theirs.mkdir()
+    with dbapi._BACKUP_LOCK:
+        dbapi._live_snapshot_dirs[held] = os.getpid()
+        dbapi._live_snapshot_dirs[theirs] = os.getpid() + 1
+    installed: dict[int, object] = {}
+    killed: list[tuple[int, int]] = []
+    held_when_ignored: list[bool] = []
+
+    def fake_signal(signum, handler):
+        installed[signum] = handler
+        if handler == signal.SIG_IGN:
+            held_when_ignored.append(held.exists())
+
+    monkeypatch.setattr(dbapi.signal, "signal", fake_signal)
+    monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
+
+    assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
+    handler = installed[signal.SIGTERM]
+    assert callable(handler)
+    handler(signal.SIGTERM, None)
+
+    assert held_when_ignored == [True], "a second SIGTERM must be ignored from before the removal begins"
+    assert not held.exists()
+    assert theirs.exists(), "a directory another process made is not this process's to remove"
+    assert installed[signal.SIGTERM] == signal.SIG_DFL, "the default action must be back before the signal is sent"
+    assert killed == [(os.getpid(), signal.SIGTERM)]
+
+
+def test_the_stop_handler_still_signals_when_the_removal_fails(data_dir, monkeypatch):
+    installed: dict[int, object] = {}
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(dbapi.signal, "signal", lambda signum, handler: installed.__setitem__(signum, handler))
+    monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
+
+    def broken():
+        raise RuntimeError("the removal broke")
+
+    monkeypatch.setattr(dbapi, "_remove_live_snapshot_dirs", broken)
+    dbapi.install_stop_signal_cleanup()
+    with pytest.raises(RuntimeError):
+        installed[signal.SIGTERM](signal.SIGTERM, None)
+    assert killed == [(os.getpid(), signal.SIGTERM)], "a failed removal must not keep the process from ending"
+
+
+def test_the_server_start_installs_the_stop_handler_before_uvicorn_runs():
+    source = inspect.getsource(main_mod._serve)
+    assert "install_stop_signal_cleanup()" in source
+    assert source.index("install_stop_signal_cleanup()") < source.index("uvicorn.run("), (
+        "uvicorn puts back the handler it found: the cleanup must stand there when uvicorn.run begins"
+    )
+
+
 def test_the_removal_does_not_run_on_the_event_loop(data_dir, monkeypatch):
     """Deleting a corpus-sized file can take seconds on some file systems; the old BackgroundTask ran it in the threadpool."""
     workdir, resp = _snapshot_response(data_dir)
@@ -523,6 +943,111 @@ def test_the_removal_does_not_run_on_the_event_loop(data_dir, monkeypatch):
     asyncio.run(resp(_SCOPE, _receive, ok))
     assert where == [False], "the removal ran on the event loop's thread"
     assert not workdir.exists()
+
+
+def test_the_route_marks_its_snapshot_directory_with_the_process_that_made_it(client, data_dir, monkeypatch):
+    """0.5.1 item 40. The marker is what lets the next start tell a dead server's snapshot from another live server's (R176); it is
+    written before the snapshot, so a kill after the marker write leaves it (a kill between the directory and the marker leaves an unmarked directory, which keeps the 24 h age rule)."""
+    import json
+
+    import psutil
+
+    seen: dict = {}
+
+    def spy(dest):
+        seen["marker"] = json.loads((Path(dest).parent / ".owner.json").read_text(encoding="utf-8"))
+        Path(dest).write_bytes(b"x" * 100)
+
+    monkeypatch.setattr(sb, "backup_to", spy)
+    assert client.get("/api/database/backup", headers=OWN_PAGE).status_code == 200
+    assert seen["marker"]["pid"] == os.getpid()
+    assert seen["marker"]["started"] == round(psutil.Process().create_time(), 3)
+    assert _left_over(data_dir) == []
+
+
+def test_the_prefix_the_route_writes_is_the_prefix_the_boot_sweep_removes():
+    """Two files spell one directory name. A rename in the route that left the sweep behind would make the snapshot of a killed
+    server survive until the next backup again, silently."""
+    from src.backup import stream_backup
+
+    assert dbapi._BACKUP_DIR_PREFIX in stream_backup._TEMP_DIR_PREFIXES
+    assert dbapi._BACKUP_DIR_PREFIX in stream_backup._OWNER_MARKED_PREFIXES
+
+
+_KILL_SCRIPT = """
+import pathlib, sys, time
+from starlette.requests import Request
+import src.api.database as dbapi
+import src.backup.sqlite_backup as sb
+from src.database.session import init_db
+
+init_db()
+
+
+def slow(dest):
+    pathlib.Path(dest).write_bytes(b"PLAINTEXT" * 1000)  # a partial copy of the corpus, on disk
+    print("writing", flush=True)
+    time.sleep(120)  # a snapshot of a big corpus takes minutes; the test kills the process here
+
+
+sb.backup_to = slow
+request = Request(
+    {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/database/backup",
+        "query_string": b"",
+        "headers": [(b"host", b"127.0.0.1"), (b"sec-fetch-site", b"same-origin")],
+    }
+)
+dbapi.download_backup(request)
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGKILL is POSIX")
+def test_a_server_killed_while_its_snapshot_is_written_leaves_a_directory_the_next_start_removes_at_once(tmp_path):
+    """0.5.1 item 40, in a real process. SIGKILL (or the power) runs no exit hook and no signal handler, so the plaintext copy of
+    the corpus is on disk when the next server starts. Before this change the boot sweep did not know the directory at all. The
+    control is the point: the directory is young, so the 24 h age rule alone keeps it, and only the marker of a process that is
+    gone makes the sweep take it at once."""
+    from src.backup import stream_backup
+
+    data = tmp_path / "data"
+    env = {**os.environ, "OO_DATA_DIR": str(data), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _KILL_SCRIPT],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 180
+        line = ""
+        while time.monotonic() < deadline and "writing" not in line:
+            line = proc.stdout.readline()
+            if not line and proc.poll() is not None:
+                raise AssertionError(f"the server ended before it wrote: {proc.stdout.read()[-2000:]}")
+        assert "writing" in line, "the snapshot was never started"
+        proc.kill()
+        assert proc.wait(timeout=60) == -signal.SIGKILL
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    (left,) = sorted(data.glob(".oo-backup-*"))
+    assert (left / "snapshot.db").exists(), "the kill did not leave the copy (the test measures nothing)"
+    marker = left / ".owner.json"
+    assert marker.exists(), "the route wrote no owner marker"
+    kept = marker.read_bytes()
+    marker.unlink()
+    assert stream_backup.sweep_stale_backup_temps(data) == 0 and left.exists(), "control: with no marker the age rule keeps a young directory"
+    marker.write_bytes(kept)
+    assert stream_backup.sweep_stale_backup_temps(data) == 1
+    assert not left.exists(), "the directory of a process that is gone stayed"
 
 
 def test_a_crashed_servers_leftovers_are_swept_but_a_younger_directory_and_other_files_are_not(client, data_dir):

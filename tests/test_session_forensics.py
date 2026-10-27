@@ -406,6 +406,28 @@ def test_a_real_orphan_is_still_reported_as_one(tmp_path, monkeypatch):
     assert inv["totals"]["pre_restore_snapshot_bytes"] == 500
 
 
+def test_a_snapshot_the_backup_route_left_is_listed_as_a_plaintext_copy_of_the_corpus(dd):
+    """0.5.1 item 40. ``GET /api/database/backup`` writes ``.oo-backup-*/snapshot.db``, a full plaintext copy of the corpus; a kill
+    (SIGKILL, power) runs no exit hook, so the copy can be on disk at the next start. The inventory used to call the directory
+    "other" bytes and print "orphaned staging: none found" beside it."""
+    left = dd / ".oo-backup-killed"
+    left.mkdir()
+    (left / "snapshot.db").write_bytes(b"s" * 4000)
+    (left / ".owner.json").write_text("{}", encoding="utf-8")
+    inv = forensics.data_dir_inventory()
+    listed = {s["name"]: s for s in inv["suspect_staging"]}
+    assert listed[".oo-backup-killed"]["plaintext_snapshot"] is True
+    assert inv["totals"]["orphaned_staging_bytes"] == 4000 + len("{}")
+    assert inv["totals"]["other_bytes"] == 0
+
+
+def test_the_forensics_staging_list_names_the_prefix_the_route_writes():
+    """The two spell one directory name; a rename in the route that left this list behind would make the copy invisible again."""
+    import src.api.database as dbapi
+
+    assert dbapi._BACKUP_DIR_PREFIX in forensics._STAGING_DIR_PREFIXES
+
+
 def test_time_into_the_pass_is_unknown_not_zero_when_a_timestamp_cannot_be_read():
     """``ts`` minus ``pass_id``: a tick written by an older build, a cut line or a naive/aware mix is ``None``, never ``0``."""
     f = forensics._seconds_between

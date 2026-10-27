@@ -111,8 +111,8 @@ def _period_article_ids(session, period: Period) -> array:
     ``ix_article_observed`` is ``coalesce(published_at, created_at)`` (``_CLOCK`` is written exactly as it defines it), which is
     how ``period.py`` defines the period. The read this replaced chose MENTION rows by their ``observed_on``, the date
     ``store.py`` stamps from that clock when the article is indexed (``(published_at or created_at).date()``); the two agree
-    unless the article's clock moved after it was indexed (the law corpus's heal clears ``published_at`` without re-indexing) or
-    the mention carries no date. For those articles this read follows the ARTICLE's clock: it keeps the article in the period its
+    unless the article's clock moved after it was indexed (the law corpus's heal cleared ``published_at`` without re-indexing until
+    0.5.1 item 39, and a store that ran it keeps the stale stamps) or the mention carries no date. For those articles this read follows the ARTICLE's clock: it keeps the article in the period its
     clock names, with all of its mentions, where the old read followed each mention's stamped date. That is a stated difference
     of audit 0.5.0 A-003, with the orphan one (mention rows whose article row is gone were counted, and are not now). An index
     range over the clock reads no article row page; a stand-in (the placeholder a salvage copy writes for a lost article) is left

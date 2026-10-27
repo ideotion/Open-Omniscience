@@ -105,15 +105,28 @@ def test_an_entry_can_hold_its_own_longer_window_so_a_recorded_failure_is_not_re
     assert len(calls) == 1, "a failure inside its window was retried"
 
 
+_COLD_URL = "http://cold.test/1"
+
+
 def _seed_article():
+    """THIS file's own article, carrying a word count.
+
+    The suite's database is one store for the whole process, and earlier files leave articles in it (measured 2026-10-26 in the
+    first 59 files of one shard's order: 32 articles, none with a ``word_count``, when this file's first test starts). "The table
+    is not empty" therefore says nothing about the row these tests read: the old early return seeded nothing, ``avg_word_count``
+    (an average over the non-NULL counts) came back None, and the first failure left a background count running that the next
+    test then waited behind (0.5.1 item 43).
+    """
     s = SessionLocal()
     try:
-        if s.query(Article).count():
+        if s.query(Article).filter(Article.canonical_url == _COLD_URL).count():
             return
-        src = Source(name="cold-src", domain="cold.test")
-        s.add(src)
-        s.flush()
-        s.add(Article(title="t", url="http://cold.test/1", canonical_url="http://cold.test/1", source_id=src.id,
+        src = s.query(Source).filter(Source.domain == "cold.test").first()
+        if src is None:
+            src = Source(name="cold-src", domain="cold.test")
+            s.add(src)
+            s.flush()
+        s.add(Article(title="t", url=_COLD_URL, canonical_url=_COLD_URL, source_id=src.id,
                       content="c", hash="cold-h1", word_count=10))
         s.commit()
     finally:
@@ -141,6 +154,8 @@ def test_the_figures_route_answers_cold_without_the_count_and_then_carries_it(mo
         assert _wait(lambda: (_entry("db:figures") or {}).get("payload", {}).get("keyword_mentions_state") == "counted")
         done = dbmod.library_figures(s)
     finally:
+        release.set()  # a failed assertion above must not leave the count waiting behind the next test's
+        _wait(lambda: not served_cache._build_lock("db:figures").locked())  # and its stored entry must land before the teardown clears
         s.close()
     assert seen and seen[0] != threading.get_ident(), "the count ran on the request thread"
     assert done["keyword_mentions"] == 12 and done["keyword_mentions_state"] == "counted"

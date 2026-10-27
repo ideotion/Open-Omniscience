@@ -3802,6 +3802,11 @@ def _serve() -> None:
             host,
         )
     install_signal_handlers()
+    # uvicorn ends a SIGTERM stop by putting the handler it found back and raising the signal again; with the default one the
+    # process dies at once, past a snapshot still being written (0.5.1 item 41). Installed before uvicorn.run so it is the one put back.
+    from src.api.database import install_stop_signal_cleanup
+
+    install_stop_signal_cleanup()
     # A graceful-shutdown deadline (S0.2). Without one, uvicorn waits indefinitely for
     # in-flight requests -- and this app has requests that legitimately run for
     # minutes (a cold alerts compute measured 558 s in the field). A logout SIGTERM

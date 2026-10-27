@@ -14,9 +14,11 @@ commodity table yet) gets an honest, smaller picture rather than a crash.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import os
 import shutil
+import signal
 import tempfile
 import threading
 import time
@@ -33,6 +35,7 @@ from starlette.concurrency import run_in_threadpool
 from src.api import served_cache
 from src.database.session import engine, get_db
 from src.monitoring.secret_scrub import http_detail
+from src.utils.interrupts import kept_items
 
 router = APIRouter(prefix="/api/database", tags=["database"])
 
@@ -619,6 +622,13 @@ _BACKUP_LOCK = threading.Lock()
 #: request holds: only the request whose token is recorded can free the claim, so a download that outlives its claim (taken over
 #: after :data:`_BACKUP_STALE_AFTER_S`) cannot free the takeover's.
 _backup_flight: tuple[object, float] | None = None
+#: The snapshot directories this process has made and not yet removed, with the pid that made them (guarded by
+#: :data:`_BACKUP_LOCK`). A process that STOPS while a worker thread is still writing a snapshot has no task left to remove the
+#: directory when the thread ends, and two stops do that: uvicorn's second Ctrl+C closes the loop at once and the interpreter then
+#: waits for the thread (removed by :func:`_remove_live_snapshot_dirs` at exit), and a SIGTERM that outlasts the graceful window
+#: ends the process by the signal itself, which runs no exit hook (removed by :func:`install_stop_signal_cleanup`'s handler, just
+#: before the signal does its work). A kill (SIGKILL, power) runs nothing; the sweeps cover that.
+_live_snapshot_dirs: dict[Path, int] = {}
 
 
 def _refuse_cross_site(request: Request) -> None:
@@ -695,9 +705,71 @@ def _release_backup_slot(token: object, workdir: Path | None) -> None:
     global _backup_flight
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
+        from src.backup.stream_backup import unregister_active_staging
+
+        unregister_active_staging(workdir)
     with _BACKUP_LOCK:
+        if workdir is not None:
+            _live_snapshot_dirs.pop(workdir, None)
         if _backup_flight is not None and _backup_flight[0] is token:
             _backup_flight = None
+
+
+def _remove_live_snapshot_dirs() -> None:
+    """At interpreter exit, remove the snapshot directories this process made and still holds (0.5.1 item 41). Never raises.
+
+    Python joins its non-daemon threads BEFORE it runs the exit hooks, so a worker thread that was still writing a snapshot when a
+    forced stop closed the loop has finished by now, and the file it wrote is what this removes. Only the pid that made a directory
+    removes it: a forked child that inherited the table must not take its parent's live download."""
+    me = os.getpid()
+    with _BACKUP_LOCK:
+        # kept_items, not a filtered comprehension: this runs as an exit hook and inside the SIGTERM handler, and a comprehension's back-edge
+        # under a `with` is outside the lock's exception-table entry (src/utils/interrupts.py; tests/test_loop_heads_reach.py)
+        mine = list(kept_items(_live_snapshot_dirs, lambda _path, pid: pid == me))
+        for path in mine:
+            del _live_snapshot_dirs[path]
+    for path in mine:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+atexit.register(_remove_live_snapshot_dirs)
+
+
+def install_stop_signal_cleanup() -> list[str]:
+    """Remove this process's snapshot directories before a SIGTERM ends it (0.5.1 item 41, the second half). Returns the names installed.
+
+    uvicorn handles SIGTERM itself while it runs: it stops accepting, waits up to ``timeout_graceful_shutdown`` for the requests in
+    flight and cancels what is left. Then, as it returns, it puts back the handlers it found and RAISES the signal again, so that the
+    process ends the way a SIGTERM ends it. That is the in-app power button (``request_shutdown``), SIGHUP (routed onto SIGTERM by
+    ``install_signal_handlers``) and a logout. The handler that is put back is whatever stood there when ``uvicorn.run`` began; with
+    the default one the process dies on the spot, with no thread joined and no exit hook run, and a snapshot that was still being
+    written (or finished and not yet read by a client that stopped) stays behind as a plaintext copy of the corpus (measured on the
+    real app under a real uvicorn, 30 s window: rc -15, the whole file left).
+
+    So this must run BEFORE ``uvicorn.run``: its handler removes the directories this process holds and then restores the default
+    action and sends the signal to itself, which ends the process exactly as before (same exit status), only with the copy gone. A
+    worker thread still writing into the removed directory writes to an unlinked file that the process's end frees. SIGINT needs
+    nothing: uvicorn re-raises it as a ``KeyboardInterrupt`` and the interpreter then runs :func:`_remove_live_snapshot_dirs`.
+    """
+    installed: list[str] = []
+
+    def _remove_then_die(signum, _frame):  # pragma: no cover - driven by a real signal; a real process pins it
+        # A second SIGTERM must not run this handler again on top of itself: during the removal (seconds on some file systems) it would
+        # find the table already emptied and kill the process with the directory still there, and while this one holds _BACKUP_LOCK
+        # (not reentrant, and this is the main thread) it would block for good. Measured by the read of item 41.
+        signal.signal(signum, signal.SIG_IGN)
+        try:
+            _remove_live_snapshot_dirs()
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _remove_then_die)
+        installed.append("SIGTERM")
+    except (ValueError, OSError):  # not the main thread, or no such signal here
+        pass
+    return installed
 
 
 def _sweep_stale_snapshots(data_dir: Path) -> None:
@@ -752,7 +824,11 @@ def download_backup(request: Request) -> FileResponse:
     from another site (:func:`_refuse_cross_site`), made one at a time (:func:`_claim_backup_slot`), and not started when the
     data volume has less free space than the file and its log, the most a snapshot can write (507, with both figures; a figure
     that cannot be read is not a refusal, and the response says it was not checked). The directory is removed when the
-    response ends, and a leftover from a crashed server older than a day is removed by the next request.
+    response ends (a process that is stopped while a snapshot is still being written removes it as it stops: at interpreter exit,
+    :func:`_remove_live_snapshot_dirs`, and before a SIGTERM that outlasts the graceful window ends it, :func:`install_stop_signal_cleanup`),
+    and a leftover from a crashed server older than a day is removed by the next request. A KILL (SIGKILL, the power) runs nothing, so
+    the directory carries an owner marker (:func:`src.backup.stream_backup.write_owner_marker`): the boot sweep removes a dead
+    owner's directory at the next start at once, and one with no marker only by the age rule.
     """
     from src.backup.sqlite_backup import BackupError, backup_to, live_db_path
     from src.database.connect import is_encrypted_file
@@ -795,6 +871,18 @@ def download_backup(request: Request) -> FileResponse:
                     ),
                 )
         workdir = Path(tempfile.mkdtemp(prefix=_BACKUP_DIR_PREFIX, dir=data_dir))
+        with _BACKUP_LOCK:
+            _live_snapshot_dirs[workdir] = os.getpid()
+        # Whose directory this is, for the boot sweep: a KILL (SIGKILL, power) runs no exit hook, and the leftover is a full plaintext
+        # copy of the corpus. With the marker the next start removes a dead owner's directory at once; without it (the write is
+        # best-effort) the sweep falls back to the 24 h age rule, as it always did (0.5.1 item 40).
+        from src.backup.stream_backup import register_active_staging, write_owner_marker
+
+        write_owner_marker(workdir)
+        # And registered as a live job's staging, which the sweeps check BEFORE they read any marker: the verdict on a marker compares
+        # process start times as wall-clock instants, and a clock step while a download is in flight would otherwise let this process's
+        # own maintenance sweep take the directory from under its client (found by the read of item 40, measured).
+        register_active_staging(workdir)
         snapshot = workdir / "snapshot.db"
         try:
             backup_to(snapshot)

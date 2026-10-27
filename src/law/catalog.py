@@ -15,6 +15,7 @@ appears only for a real official URL, and text is only ever stored from a real f
 from __future__ import annotations
 
 import copy
+import logging
 from pathlib import Path
 
 import yaml
@@ -23,6 +24,9 @@ from sqlalchemy.orm import Session
 from src.catalog.countries import config_country
 from src.database.models import LawDocument
 from src.ingest.seed_sources import SeedResult, _load_safe_yaml, _parsed_catalogue
+from src.monitoring.secret_scrub import log_failure
+
+_LOG = logging.getLogger(__name__)
 
 LEGAL_CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
 # The parallel-internet-session enrichment file (maintainer-ruled 2026-07-17; contract +
@@ -423,6 +427,7 @@ def register_documents(
     existing_rows = {(law_jurisdiction(row.jurisdiction), row.url): row for row in session.query(LawDocument).all()}
     created = 0
     healed = 0
+    relanguaged: list = []  # the corpus articles whose language was just set: their mentions carry the old one until re-indexed
     for d in docs:
         key = (d["jurisdiction"], d["url"])
         row = existing_rows.get(key)
@@ -456,6 +461,7 @@ def register_documents(
                     )
                     if art is not None and art.language != row.language:
                         art.language = row.language
+                        relanguaged.append(art)
             continue
         row = LawDocument(
             jurisdiction=d["jurisdiction"],
@@ -477,4 +483,29 @@ def register_documents(
         created += 1
     if created or healed:
         session.commit()
+    if relanguaged:
+        _reindex_relanguaged(session, relanguaged)
     return {"created": created, "total": len(docs), "healed_language": healed}
+
+
+def _reindex_relanguaged(session: Session, articles: list) -> None:
+    """Re-stamp the mention language of the corpus articles whose language :func:`register_documents` just healed (0.5.1 item 39).
+
+    The article's language is stamped onto its mentions when it is indexed, and this heal is the one that reaches an article the
+    tracker no longer re-syncs, so without a re-index the article read one language and its mentions another. Runs after the
+    registration has committed and never raises into it (this is a boot path): an article that fails to re-index is named in the
+    log and keeps the old stamps, and nothing re-heals it by itself, because the document row now states the language."""
+    from src.law.corpus import reindex_healed_article
+
+    done = 0
+    for art in articles:
+        try:
+            reindex_healed_article(session, art, bump=False)
+            done += 1
+        except Exception as exc:  # noqa: BLE001 - one article must not stop the registration, or the boot behind it
+            session.rollback()
+            log_failure(_LOG, f"re-index of a language-healed law article failed (article {getattr(art, 'id', None)})", exc, level=logging.WARNING)
+    if done:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(session, reason="law_catalog_language_heal")

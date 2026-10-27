@@ -81,17 +81,17 @@ _DISMISSED: dict[str, tuple[frozenset[str], str, str]] = {
         "forensics.pages_state_before_open calls read_header of monitoring/page_reading.py; osm/pbf.py defines a read_header too, and the graph cannot tell them apart",
     ),
     "src/wiki/dump_index.py::build_index": (
-        frozenset({"script", "dev-tool", "main:src/monitoring/release_run_fresh_restore.py::main"}),
+        frozenset({"script", "dev-tool", "event-loop", "main:src/api/main.py::main", "main:src/monitoring/release_run_fresh_restore.py::main"}),
         "build_index",
-        "scripts/collect_throughput_bench.py reaches catalog/cities.py::cached_index, which calls ITS OWN build_index; wiki/dump_index.py defines one too",
+        "scripts/collect_throughput_bench.py reaches catalog/cities.py::cached_index, which calls ITS OWN build_index; wiki/dump_index.py defines one too. Since 0.5.1 item 39 the law catalogue seed re-indexes the articles whose language it set (src/law/catalog.py -> index_article), which reaches the same cached_index from the lifespan (event-loop) and from main()",
     ),
     "src/wiki/dumpread.py::_read_stream_block": (
-        frozenset({"script", "dev-tool", "main:src/monitoring/release_run_fresh_restore.py::main"}),
+        frozenset({"script", "dev-tool", "event-loop", "main:src/api/main.py::main", "main:src/monitoring/release_run_fresh_restore.py::main"}),
         "build_index",
         "only wiki/dump_index.build_index calls it (through iter_pages), and that is reached by the name collision above",
     ),
     "src/wiki/dumpread.py::iter_pages": (
-        frozenset({"script", "dev-tool", "main:src/monitoring/release_run_fresh_restore.py::main"}),
+        frozenset({"script", "dev-tool", "event-loop", "main:src/api/main.py::main", "main:src/monitoring/release_run_fresh_restore.py::main"}),
         "build_index",
         "only wiki/dump_index.build_index calls it, and that is reached by the name collision above",
     ),
