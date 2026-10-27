@@ -152,7 +152,11 @@ def run_source_preflight(
     from src.monitoring.preflight import preflight_sources
 
     summary = preflight_sources(db, limit=limit)
-    db.commit()
+    # All-or-nothing, as the first-run job does: an incomplete sweep (airplane mode refused it) leaves no metadata edit behind.
+    if summary.get("complete"):
+        db.commit()
+    else:
+        db.rollback()
     return summary
 
 

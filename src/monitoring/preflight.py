@@ -29,6 +29,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
+from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
@@ -44,6 +45,18 @@ def _log_path() -> Path:
 
 def has_run_before() -> bool:
     return _log_path().exists()
+
+
+def _skipped_offline(rec: dict, refusal: str) -> dict:
+    """The record of a source nobody asked: airplane mode refused the check, so the source's reachability and robots are UNKNOWN, which
+    is a different fact from unreachable (the same idiom as feed verification: ``skipped_offline``, present only when the kill switch
+    caused it)."""
+    rec["verdict"] = "skipped_offline"
+    rec["robots"] = "skipped_offline"
+    rec["reachable"] = None
+    rec["skipped_offline"] = True
+    rec["refusal"] = refusal
+    return rec
 
 
 def _check_one(fetcher, source) -> dict:
@@ -77,6 +90,8 @@ def _check_one(fetcher, source) -> dict:
     try:
         fetcher._guard_target(urlparse(base).hostname)
     except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
+        if is_kill_switch_refusal(record_text(exc)):  # classified on the WHOLE scrubbed text, before any cut (R298)
+            return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
         rec["reachable"] = False
@@ -105,6 +120,8 @@ def _check_one(fetcher, source) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - per-source problems must not stop the sweep
+        if is_kill_switch_refusal(record_text(exc)):  # classified on the WHOLE scrubbed text, before any cut (R298)
+            return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
 
@@ -117,6 +134,8 @@ def _check_one(fetcher, source) -> dict:
         rec["homepage_status"] = resp.status_code
         rec["reachable"] = 200 <= resp.status_code < 400
     except Exception as exc:  # noqa: BLE001
+        if is_kill_switch_refusal(record_text(exc)):  # classified on the WHOLE scrubbed text, before any cut (R298)
+            return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["reachable"] = False
         rec["homepage_error"] = record_text(exc, limit=200, typed=False)
 
@@ -173,6 +192,10 @@ def preflight_sources(
     over Tor, and with no progress a first launch looks stalled). ``should_stop()`` is
     consulted between sources.
 
+    AIRPLANE MODE IS A STOP TOO, and is named as one: a source the kill switch refused was never asked, so it is not "unreachable" and
+    its learned ``robots_allowed`` is not overwritten with NULL. The sweep reports ``complete: False`` and ``skipped_offline`` (present
+    only then) and the caller rolls back (``skipped_offline`` the same additive idiom as feed verification).
+
     ALL-OR-NOTHING on a stop, deliberately: the log is what :func:`has_run_before`
     reads, so writing a partial log would mark the preflight "done" with most sources
     unchecked and nothing would ever go back for them. A stopped run writes NO log and
@@ -195,6 +218,7 @@ def preflight_sources(
     )
     records = []
     complete = True
+    refused: dict | None = None
     # robots.txt and the homepage are the OUTLET's: its feeds share the verdict, so the host is asked once per
     # sweep (row J, D1) and every feed row still gets its own record and its own metadata.
     by_outlet: dict[str, dict] = {}
@@ -208,10 +232,22 @@ def preflight_sources(
             by_outlet[src.domain] = rec
         else:
             rec = {**first, "source_id": src.id}
+        if rec.get("skipped_offline"):
+            # The kill switch refuses every host the same way: stop asking, and stop here with NOTHING written (below).
+            refused = rec
+            break
         _apply_to_metadata(session, src, rec)
         records.append(rec)
         if progress is not None:
             progress(i + 1, len(sources), rec.get("domain") or "")
+    if refused is not None:
+        return {
+            "checked": len(records),
+            "complete": False,
+            "skipped_offline": len(sources) - len(records),
+            "stopped": "the network kill switch (airplane mode) is engaged: the remaining sources were not asked. Nothing was logged "
+            "or changed, so no source is marked unreachable and the first-run preflight still runs on the next online pass",
+        }
     if not complete:
         return {
             "checked": len(records),

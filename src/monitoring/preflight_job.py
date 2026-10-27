@@ -139,7 +139,13 @@ def kick(fetcher: Any = None) -> dict | None:
             return None
         # Gate the entry point, not just the loop (the 2026-07-24 lesson; S6.1 relearned
         # it for the rollup builds). A declined kick logs nothing, so the next pass runs.
+        from src.ingest import kill_switch_active
         from src.scheduler.runner import exclusive_window_open
+
+        # Gate the entry on the switch too (R313 G1): every host would be refused, and the run would end incomplete having asked nobody.
+        if kill_switch_active():
+            _LOG.info("first-run preflight: declined, the network kill switch (airplane mode) is engaged")
+            return None
 
         if exclusive_window_open():
             _LOG.info("first-run preflight: declined, an exclusive operation holds the machine")
