@@ -6,8 +6,6 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
-
 from fastapi import HTTPException, Request
 
 
@@ -21,15 +19,17 @@ def refuse_cross_site_get(request: Request) -> None:
     * ``Host``: one of the names the app's DNS-rebinding guard serves (loopback names, the test client's, ``OO_ALLOWED_HOSTS``).
     * ``Sec-Fetch-Site`` when sent: ``same-origin`` and ``none`` (a typed address or a bookmark) pass; ``same-site`` and
       ``cross-site`` do not.
-    * ``Origin``, else ``Referer``, when sent: its host and port must be the request's own ``Host``; ``Origin: null`` is refused.
+    * ``Origin``, else ``Referer``, when sent: judged by the POST middleware's own ``_foreign_origin`` (scheme-default ports
+      normalised, so ``Host: oo.lan:443`` with ``Origin: https://oo.lan`` is the same server; the hostname must be one the app
+      serves; ``Origin: null`` is refused).
     * None sent: a command line, a script, or a navigation from the app's own page (``Referrer-Policy: no-referrer``). Allowed.
 
     **The stated limit:** a browser that sends no Fetch Metadata (Firefox before 90, Safari before 16.4, an old webview) and any
     browser asked for a name that is not a potentially trustworthy address send none of the three for a referrer-less
-    ``<img>``, so that request is served; the page still cannot read the answer. Same shape as the backup route's own check
-    (``src/api/database.py``), whose private copy is to be pointed here later.
+    ``<img>``, so that request is served; the page still cannot read the answer. Same checks as the backup route's own copy
+    (``src/api/database.py``), which compares Origin to Host as raw strings and is to be pointed here later.
     """
-    from src.api.main import _allowed_hosts, _host_without_port
+    from src.api.main import _allowed_hosts, _foreign_origin, _host_without_port
 
     refusal = HTTPException(
         status_code=403,
@@ -45,9 +45,5 @@ def refuse_cross_site_get(request: Request) -> None:
         sent = request.headers.get("referer")
     if sent is None:
         return
-    try:
-        netloc = urlsplit(sent).netloc.lower()
-    except ValueError:
-        raise refusal from None
-    if not netloc or netloc != request.headers.get("host", "").strip().lower():
+    if _foreign_origin(request, sent):
         raise refusal

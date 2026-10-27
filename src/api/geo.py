@@ -13,9 +13,10 @@ the Wikipedia dumps) is a follow-up slice.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from src.api.cross_site import refuse_cross_site_get
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/geo", tags=["geo"])
@@ -85,7 +86,7 @@ def osm_download_start(payload: StartRegion) -> dict:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
 
-@router.get("/downloads/size")
+@router.get("/downloads/size", dependencies=[Depends(refuse_cross_site_get)])
 def osm_download_size(code: str = Query(..., description="a catalogued download code")) -> dict:
     """Read the mirror's EXACT size for one download before it starts (S05-04 S4, Q814 = b).
 

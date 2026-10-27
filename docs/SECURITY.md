@@ -430,12 +430,19 @@ down is a RECORD of that date and carries its own disposition table.)*
   read a raw body, form or upload (`commodity`, `verification`, `claims`, `source_io`,
   `diagnostics/qualification_merge`, `ingestion`); on all of those only layers 1 and 2 stand.
   **What none of them covers:** a `GET` route with a side effect, and a browser that sends no `Origin`
-  and no `Referer` (legacy only). The known side-effect `GET`s are partly closed:
-  `/api/database/backup` refuses a foreign page for itself (`_refuse_cross_site` in
-  `src/api/database.py`: Host, then `Sec-Fetch-Site`, then `Origin` / `Referer`; its own stated limit
-  is a browser that sends none of the three), and `/api/geo/downloads/size` is a proposal in the
-  0.5.0 audit record. A `Sec-Fetch-Site` check in the MIDDLEWARE for every state-changing request is
-  not built, because nothing has found a request that passes layers 1 and 2 and should not.
+  and no `Referer` (legacy only). The known side-effect `GET`s are closed by one dependency,
+  `refuse_cross_site_get` (`src/api/cross_site.py`: Host, then `Sec-Fetch-Site`, then `Origin` /
+  `Referer` judged by the middleware's own `_foreign_origin`, so default ports are normalised):
+  the heavy diagnostics (benchmarks, `rollup-benchmark`, `/all`, `/debug-bundle`, the selftests,
+  `recursive-loop`), the egress reads (`/api/hazards`, `/api/monitoring/health`,
+  `/api/wiki/dumps/probe` and `/sizes`, `/api/geo/downloads/size`) and the exports that mint a signing
+  key (`/api/custody/export`, `/api/annotations/export`) answer a foreign page 403 before their
+  handler runs. `/api/database/backup` carries its own earlier copy (`_refuse_cross_site` in
+  `src/api/database.py`). The stated limit of both is a browser that sends none of the three
+  (Firefox before 90, Safari before 16.4, an `OO_ALLOWED_HOSTS` name over plain HTTP): that request is
+  served, and the page still cannot read the answer. Making these routes `POST` is a proposal. A
+  `Sec-Fetch-Site` check in the MIDDLEWARE for every state-changing request is not built, because
+  nothing has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
   cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
   encryption remains the host's job (Qubes/LUKS) — this bounds a shared host, not a seized one.
