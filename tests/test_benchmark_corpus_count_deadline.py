@@ -2,7 +2,7 @@
 
 ``statement_deadline`` (src/database/maintenance.py) is a SQLite progress handler asked once per 20,000 virtual-machine opcodes. A bare
 ``SELECT COUNT(*)`` with no ``WHERE`` is nine opcodes in all and the whole b-tree walk happens inside one of them, so the handler is never asked
-while it runs: it ran whole under a millionth of a second over 1,240,657 mentions. ``benchmark.json`` is a member of the all-diagnostics bundle
+while it runs: it ran whole under a 1e-6 s deadline over 1,240,657 mentions. ``benchmark.json`` is a member of the all-diagnostics bundle
 (``src/api/diagnostics/bundle.py``), which wraps every database-touching member in ``statement_deadline(db, <300 s>)``, and ``run_benchmark``
 itself reads ``deadline_left_s``; the count in ``_store_and_corpus`` (S4 of the WAL lane's deadline-bound sweep, found by RC2 while building S3)
 sat in that block unstoppable. ``count(1)`` loops (about three opcodes per row) and is stopped.

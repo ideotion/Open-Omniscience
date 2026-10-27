@@ -6,7 +6,7 @@ never asked while it runs and the deadline around it bounds nothing; ``count(1)`
 stopped. The deadline-bound sweep (wal-lane/deadline-bound-sweep-2026-10-27.md; S1, S2) found two such counts:
 
 * the Library figures' ``keyword_mentions`` count (src/api/database.py), whose 300 s deadline is documented as protecting the pooled
-  connection and the read snapshot the count holds; it ran whole under a millionth of a second over 1,240,657 mentions;
+  connection and the read snapshot the count holds; it ran whole under a 1e-6 s deadline over 1,240,657 mentions;
 * ``content_share_estimate`` (src/monitoring/storage.py), the encrypted store's normal path (neither qualified sqlcipher3 build has dbstat),
   whose docstring said it was bounded by the statement deadline.
 

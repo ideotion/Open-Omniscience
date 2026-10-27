@@ -295,8 +295,9 @@ def storage_composition(session: Session) -> dict[str, Any]:
 
     # The dbstat walk itself — aggregated form first (one row per btree; far fewer rows),
     # the GROUP BY fallback for older SQLite, and an honest unavailable block otherwise.
-    # THE DEADLINE CANNOT STOP THE AGGREGATED FORM: it walks a whole b-tree inside ONE ``xNext`` (plain stdlib SQLite 3.45.1: 555 ms free,
-    # 545 ms under a 1e-6 s deadline, handler asked 0 times), while the GROUP BY form loops and stops (681 ms free, 1.5 ms). Neither
+    # THE DEADLINE CANNOT STOP THE AGGREGATED FORM: it walks a whole b-tree inside ONE ``xNext`` (plain stdlib SQLite 3.45.1, a 975 MiB
+    # synthetic store, warm: 555 ms free, 545 ms under a 1e-6 s deadline, handler asked 0 times), while the GROUP BY form loops and stops
+    # (681 ms free, 1.5 ms, same store). Neither
     # qualified sqlcipher3 build has dbstat at all, so on an encrypted store this block is the unavailable branch below.
     per_btree: dict[str, tuple[int, int]] = {}
     try:
@@ -409,10 +410,12 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
     articles table is unreadable, an honest ``aborted`` block on a deadline. WHAT THE
     DEADLINE BOUNDS: the article count (``count(1)``, a loop; a bare ``count(*)`` is one VM
     opcode the progress handler is never asked inside) and nothing after it. The reads that
-    follow are at most 400 short statements (the exact branch reads at most 400 rows): the
-    handler's 20,000 opcodes accumulate across the statements of a connection, and 400
-    statements ran whole under a 1e-6 s deadline (49 ms, plain SQLite 3.45.1), so that part
-    is bounded by its own count, not by the deadline."""
+    follow are at most 400 runs of ONE short statement (the exact branch is one streaming read
+    of at most 400 rows): the handler's 20,000-opcode counter belongs to a PREPARED STATEMENT,
+    which re-running one SQL text carries across runs (the driver hands back the cached
+    statement) and distinct texts never add up. 400 runs of such a probe (about 18 opcodes each,
+    a 5,000-row scratch table, plain SQLite 3.45.1) ran whole under a 1e-6 s deadline in 49 ms
+    and 4,000 raised, so that part is bounded by its own count, not by the deadline."""
     try:
         with statement_deadline(session):
             lo = _scalar(session, "SELECT min(id) FROM articles")
