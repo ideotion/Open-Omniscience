@@ -16,8 +16,8 @@ move the pin AND say below which kind it is. What the pinned remainder is (read,
 * STANDING ALONE in its own node, so the walker translates it when the key exists: app-map.js (dump status pill),
   app-sources.js (``x.status`` pill), investigate.js (a table cell).
 * AN IDENTIFIER OR USER-DEFINED OPEN SET, so it is shown as sent on purpose: app-map.js ``e.kind`` (a Wikimedia
-  dump file name), reader.js (AI keyword kind, set by a custom prompt), app-home.js (annotation and claim kinds,
-  free text), app-insights.js (``data-kind`` attributes, never drawn), ooversions.js (a CSS class).
+  dump file name), reader.js (AI keyword kind, set by a custom prompt), app-home.js (annotation and claim kinds: the
+  server accepts any string, the UI's own select offers six that could be mapped later), app-insights.js (``data-kind`` attributes, never drawn), ooversions.js (a CSS class).
 * OTHER LANES' FILES, NOT CLASSIFIED HERE: app-backup.js, app-diagnostics.js (``st.state`` at one site joins other
   parts), app-settings.js, taskmanager.js. They are pinned so that they cannot grow, not declared correct.
 """
