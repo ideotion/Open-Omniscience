@@ -146,7 +146,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   at that point, so the old behaviour was a wrong message and a wrong record, not data loss. Test: `tests/test_hold_writes_taken.py`.
 - **14. A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
   only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
-  bodies have one version. Owner: RC2 (`R272`; the check is `src/database/source_identity.py:319-322`, which skips an existing trigger by name).
+  bodies have one version. Owner: RC2 (`R272`; the check is `src/database/source_identity.py:319-322`, which skips an existing trigger by name); fix in draft PR #1519 (not merged).
 - **15. The all-history top-terms query on the shipped code** (PR #1467): the built-path runs at 20 M and 24 M were made on the first
   version of the change, which a container restart lost, and the query was rebuilt from the same source and not re-run on it; the
   28 M built-code cell was lost to container recycles three times, and at 28 M only the standalone run of the same shape answered
@@ -195,7 +195,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **28. Persistent-OOM double run**: under a persistent out-of-memory one request can start the rollup build twice; a stated limit, the
   fix is 0.5.1. **Done (PR #1510, then PR #1515, `R267`):** one build attempt per request under a persistent out-of-memory, and the persisted refresh declines (returns False before it connects) when the passphrase or the secure backend is gone, instead of recording an in-memory store as persisted. The two siblings the read found (an in-memory fallback recorded as persisted, `OO_COLUMNAR=0` read as built) are the keyword lane's follow-on (`R268`, `R269`, `R271`, `R275`, draft PR #1518).
 - **29. The FTS settle-it check**: there is no check yet that the full-text index settled after an interrupted repair; deferred.
-- **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3344-3349`): measured by the OSM lane on 86,000 synthetic sources, entities cost 2.7 to 4.4 s and a 184 MB peak against 0.65 to 0.73 s and 46 MB for the 8 columns the route uses; the column projection (same dict, same bytes) is the OSM lane's bundle (`R274`), with an independent re-measure before it merges.
+- **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3344-3349`): measured by the OSM lane on 86,000 synthetic sources, entities cost 2.7 to 4.4 s and a 184 MB peak against 0.65 to 0.73 s and 46 MB for the 8 columns the route uses; the column projection (same dict, same bytes) is the OSM lane's bundle (`R274`), with an independent re-measure before it merges (PR pending).
 - **31. A declined rollup spawns a build thread on every served read** (audit A-026, `src/analytics/rollup_serve.py:1469` and `:1503`): needs the
   mem-low measurement before any change.
 - **32. The «130 GB corpus» label on the full-text rebuild timing** (audit A-027, `src/database/fts.py:807, 990`, `OPEN_QUEUE.md:619`):
