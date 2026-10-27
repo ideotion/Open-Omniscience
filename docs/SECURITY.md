@@ -436,9 +436,10 @@ down is a RECORD of that date and carries its own disposition table.)*
   the heavy diagnostics (`performance`, the benchmarks, `llm-bench`, `llm-throughput`, `rollup-benchmark`,
   `/all`, `/debug-bundle`, the selftests, `recursive-loop`), the egress reads (`/api/hazards`, `/api/monitoring/health`,
   `/api/wiki/dumps/probe` and `/sizes`, `/api/geo/downloads/size`) and the exports that mint a signing
-  key (`/api/custody/export`, `/api/annotations/export`) answer a foreign page 403 before their
-  handler runs. `/api/database/backup` carries its own earlier copy (`_refuse_cross_site` in
-  `src/api/database.py`). The stated limit of both is a browser that sends none of the three
+  key (`/api/custody/export`, `/api/annotations/export`), and the three downloads that append to the
+  diagnostics run log (`/all-job/download`, `/all-job/volumes/{name}`, `/keywords/parts/{set_id}/{name}`),
+  answer a foreign page 403 before their handler runs. `/api/database/backup` has its own guard (`_refuse_cross_site` in
+  `src/api/database.py`) with the same checks, judging Origin through the same `_foreign_origin`. The stated limit of both is a browser that sends none of the three
   (Firefox before 90, Safari before 16.4, an `OO_ALLOWED_HOSTS` name over plain HTTP): that request is
   served, and the page still cannot read the answer. Behind a TLS-terminating proxy the app must see
   `https` (the proxy forwards `X-Forwarded-Proto` from loopback) or the proxy must put the port in `Host`, or an

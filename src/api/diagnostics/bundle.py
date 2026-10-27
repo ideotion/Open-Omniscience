@@ -3689,7 +3689,7 @@ def _newest_all_diagnostics_archive() -> pathlib.Path | None:
         return None
 
 
-@router.get("/all-job/download")
+@router.get("/all-job/download", dependencies=[Depends(refuse_cross_site_get)])
 def all_diagnostics_job_download() -> FileResponse:
     """Serve the finished background all-diagnostics archive (D2). 404 until a build has
     completed successfully (run ``/all-job`` first).
@@ -4043,7 +4043,7 @@ def all_diagnostics_volumes() -> JSONResponse:
     })
 
 
-@router.get("/all-job/volumes/{name}")
+@router.get("/all-job/volumes/{name}", dependencies=[Depends(refuse_cross_site_get)])
 def all_diagnostics_volume_download(name: str) -> FileResponse:
     """Serve ONE file of the current set by name: a volume, or the manifest zip that lists them.
 

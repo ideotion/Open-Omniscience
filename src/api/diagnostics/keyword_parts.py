@@ -16,10 +16,11 @@ import contextlib
 import json
 import os
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from src.analytics.keyword_log_export import PARTS_DIR_PREFIX
+from src.api.cross_site import refuse_cross_site_get
 from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.monitoring import diagnostics_runs as _diag_runs
 
@@ -55,7 +56,7 @@ def keyword_parts_latest() -> JSONResponse:
     return JSONResponse(listing)
 
 
-@router.get("/keywords/parts/{set_id}/{name}")
+@router.get("/keywords/parts/{set_id}/{name}", dependencies=[Depends(refuse_cross_site_get)])
 def keyword_part_download(set_id: str, name: str) -> FileResponse:
     """One file of a set built by ``/keywords?format=parts``, by name. The set and the name are
     checked against the listing written when the set was built, so nothing outside it is

@@ -26,8 +26,8 @@ def refuse_cross_site_get(request: Request) -> None:
 
     **The stated limit:** a browser that sends no Fetch Metadata (Firefox before 90, Safari before 16.4, an old webview) and any
     browser asked for a name that is not a potentially trustworthy address send none of the three for a referrer-less
-    ``<img>``, so that request is served; the page still cannot read the answer. Same checks as the backup route's own copy
-    (``src/api/database.py``), which compares Origin to Host as raw strings and is to be pointed here later.
+    ``<img>``, so that request is served; the page still cannot read the answer. Same checks as the backup route's own guard
+    (``src/api/database.py``), which judges Origin through the same ``_foreign_origin`` this guard uses.
     """
     from src.api.main import _allowed_hosts, _foreign_origin, _host_without_port
 

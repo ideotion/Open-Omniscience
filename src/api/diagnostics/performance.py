@@ -96,8 +96,9 @@ def performance_report(
         "articles": int(db.query(func.count(Article.id)).scalar() or 0),
         "sources": int(db.query(func.count(Source.id)).scalar() or 0),
         "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
+        # COUNT(1), not COUNT(*): a bare count(*) is one opcode, so the member deadline's progress handler is never asked while it runs
         "keyword_mentions": int(
-            db.execute(text("SELECT COUNT(*) FROM keyword_mentions")).scalar() or 0
+            db.execute(text("SELECT COUNT(1) FROM keyword_mentions")).scalar() or 0
         ),
     }
 

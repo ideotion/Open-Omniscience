@@ -48,6 +48,10 @@ GUARDED = [
     ("src.api.custody", "/api/custody/export"),
     ("src.api.annotations", "/api/annotations/export"),
     ("src.api.geo", "/api/geo/downloads/size"),
+    # served_file_response appends to diagnostics/runs.jsonl (+ .lock); the volume route also makes a directory, the parts route touches its set
+    ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/download"),
+    ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/volumes/{name}"),
+    ("src.api.diagnostics.keyword_parts", "/api/diagnostics/keywords/parts/{set_id}/{name}"),
 ]
 
 
@@ -232,3 +236,60 @@ def test_the_osm_size_read_makes_no_head_for_a_foreign_page_and_one_for_the_own_
     assert foreign.status_code == 403 and no_metadata.status_code == 403
     assert heads == ["planet", "planet"]
     assert own.status_code == 200 and script.status_code == 200
+
+
+# --- F3: the three GETs that append to diagnostics/runs.jsonl (found by tests/test_get_routes_side_effects_with_data.py) -------------------
+# serving a diagnostics file writes a begin and an end line (+ the .lock) through ``served_file_response``; a refusal that runs before
+# the handler leaves the log as it was. An unguarded route with nothing planted answers 404 BEFORE it writes, so each case plants the file
+# and first proves, with a same-origin request, that the route WOULD have written.
+
+
+def _plant(route: str, monkeypatch: pytest.MonkeyPatch, tmp_path) -> str:
+    import json
+
+    from src.api import diagnostics_volumes as dvol
+    from src.api.diagnostics import bundle as b
+    from src.api.diagnostics import keyword_parts as kp
+
+    if route == "all-job":
+        zip_path = tmp_path / "oo-all-diagnostics-20261027-000000.zip"
+        zip_path.write_bytes(b"PK" + b"1" * 50)
+        monkeypatch.setattr(b, "_newest_all_diagnostics_archive", lambda: zip_path)
+        return "/api/diagnostics/all-job/download"
+    if route == "volume":
+        out = tmp_path / "vols"
+        out.mkdir()
+        (out / "set-part-1.zip").write_bytes(b"PK" + b"1" * 50)
+        monkeypatch.setattr(b, "_all_diagnostics_volumes_dir", lambda: out)
+        monkeypatch.setattr(dvol, "load_manifest", lambda _p: {"volumes": [{"name": "set-part-1.zip"}], "manifest_files": []})
+        return "/api/diagnostics/all-job/volumes/set-part-1.zip"
+    root = tmp_path / "parts"
+    folder = root / "oo-keyword-parts-abc123"
+    folder.mkdir(parents=True)
+    (folder / "part-0001.zip").write_bytes(b"PK" + b"2" * 80)
+    (folder / "set.json").write_text(json.dumps({"files": [{"name": "part-0001.zip"}]}), encoding="utf-8")
+    monkeypatch.setattr(kp, "_parts_root", lambda: root)
+    return "/api/diagnostics/keywords/parts/oo-keyword-parts-abc123/part-0001.zip"
+
+
+@pytest.mark.parametrize("route", ["all-job", "volume", "parts"])
+def test_a_foreign_request_leaves_runs_jsonl_as_it_was(route: str, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from src.api.main import app
+    from src.monitoring import diagnostics_runs as runs
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    runs.reset_for_tests()
+    try:
+        url = _plant(route, monkeypatch, tmp_path)
+        log_dir = tmp_path / "data" / "diagnostics"
+        with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+            own = client.get(url, headers={"Sec-Fetch-Site": "same-origin"})
+            assert own.status_code == 200
+            assert (log_dir / "runs.jsonl").is_file(), "the control did not write: this test would pass on an unguarded route"
+            before = (log_dir / "runs.jsonl").read_bytes()
+            for headers in ({"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}):
+                refused = client.get(url, headers=headers)
+                assert refused.status_code == 403
+        assert (log_dir / "runs.jsonl").read_bytes() == before
+    finally:
+        runs.reset_for_tests()
