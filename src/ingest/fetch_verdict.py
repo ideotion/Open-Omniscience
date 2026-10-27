@@ -39,6 +39,24 @@ FETCH_FAIL_REASONS = (
 )
 
 _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
+# OUR OWN SENTENCES, recognised at the START of the text, never as a phrase anywhere in it (R298): the same words can appear INSIDE another
+# failure's text (a redirect target, a status line a server wrote, a URL), and that failure is the host's, not the person's airplane mode.
+#   1. the kill switch's refusal, raised verbatim in ``src/ingest/__init__.py`` and ``src/safety/fetcher.py``, optionally led by an exception
+#      class a caller prefixed ("FetchFailed: ...");
+#   2. the socket guard's refusal (``airplane.py``, an ``AirplaneModeError``), bare, or as ``requests`` wraps it when the switch is engaged
+#      AFTER the fetcher's own check passed: "request error for <url>: ...Failed to establish a new connection: airplane mode is engaged: ...".
+#      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words).
+_OFFLINE_RE = re.compile(
+    r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
+    r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def is_kill_switch_refusal(text: str | None) -> bool:
+    """True when ``text`` IS one of our two refusal sentences (see above). One definition for every caller that must tell the person's
+    own airplane mode apart from a host's failure; a phrase search over the text is not an equivalent."""
+    return bool(text) and _OFFLINE_RE.match(text) is not None
 
 
 def classify_fetch_failure(detail: str | None) -> str:
@@ -51,7 +69,7 @@ def classify_fetch_failure(detail: str | None) -> str:
         return "other"
     d = detail.lower()
 
-    if "kill switch" in d:
+    if is_kill_switch_refusal(detail):
         return "offline"
 
     m = _HTTP_RE.search(detail)

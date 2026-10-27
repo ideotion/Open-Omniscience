@@ -441,7 +441,9 @@ def _fetch_text(fetcher, url: str) -> str:
 
 
 def verify_feed(fetcher, feed_id: str) -> dict:
-    """Fetch one feed and record an honest verdict (reachable? real iCal? stale year?)."""
+    """Fetch one feed and record an honest verdict (reachable? real iCal? stale year?).
+
+    A fetch the kill switch refused returns ``{"status": "skipped_offline", ...}`` and records NOTHING (no verdict, no ladder attempt)."""
     hit = feed_by_id(feed_id)
     if hit is None:
         raise KeyError(f"unknown feed id: {feed_id}")
@@ -453,8 +455,16 @@ def verify_feed(fetcher, feed_id: str) -> dict:
         verdict["status"] = "ok" if events else ("not_ical" if text else "empty")
         verdict["events"] = len(events)
     except Exception as exc:  # noqa: BLE001 - the verdict IS the error report
+        from src.ingest.fetch_verdict import classify_fetch_failure
+
+        text = record_text(exc, limit=300)
+        if classify_fetch_failure(text) == "offline":
+            # The network kill switch refused the fetch: nothing was asked of the host, so there is no verdict about it. Storing
+            # "unreachable" would blame the feed for the person's own airplane mode AND move it up the re-check ladder (a month per
+            # rung); the feed stays exactly as eligible as it was, and the caller is told why nothing was checked.
+            return {"checked_at": verdict["checked_at"], "status": "skipped_offline", "error": text}
         verdict["status"] = "unreachable"
-        verdict["error"] = record_text(exc, limit=300)
+        verdict["error"] = text
     pinned = feed.get("year_pinned")
     if pinned and int(pinned) < date.today().year:
         verdict["stale_year"] = int(pinned)
@@ -483,7 +493,7 @@ def verify_due_feeds(fetcher, *, batch: int = 5) -> dict:
     """
     ids = [f["id"] for fam in load_families() for f in fam["feeds"]]
     picked = select_feeds_to_verify(ids, load_attempts(), now=datetime.now(UTC), limit=batch)
-    ok = failed = 0
+    ok = failed = skipped_offline = 0
     for fid in picked:
         try:
             verdict = verify_feed(fetcher, fid)
@@ -497,9 +507,14 @@ def verify_due_feeds(fetcher, *, batch: int = 5) -> dict:
             continue
         if verdict.get("status") == "ok":
             ok += 1
+        elif verdict.get("status") == "skipped_offline":
+            skipped_offline += 1  # refused by the kill switch: neither checked nor failed
         else:
             failed += 1
-    return {"checked": len(picked), "ok": ok, "failed": failed, "due_pool": len(ids)}
+    out = {"checked": len(picked) - skipped_offline, "ok": ok, "failed": failed, "due_pool": len(ids)}
+    if skipped_offline:
+        out["skipped_offline"] = skipped_offline  # present ONLY when the kill switch caused it
+    return out
 
 
 def verification_status() -> dict:

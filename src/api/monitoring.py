@@ -19,6 +19,7 @@ from src.api.ingestion import get_fetcher
 from src.database.models import Source
 from src.database.session import get_db
 from src.ingest import EthicalFetcher, kill_switch_active
+from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.anomaly import volume_anomalies
 from src.monitoring.health import check_source
 
@@ -50,7 +51,7 @@ def sources_health(
     stopped = kill_switch_active()
     summary = Counter(
         "refused_by_kill_switch"
-        if stopped and r["status"] == "down" and "kill switch" in (r.get("detail") or "")
+        if stopped and r["status"] == "down" and is_kill_switch_refusal(r.get("detail"))
         else r["status"]
         for r in results
     )
