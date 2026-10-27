@@ -2301,8 +2301,17 @@
       if (out) {
         const held = st && st.user_batch && st.user_batch.held;
         const parts = [];
-        if (running) parts.push(esc(st.detail || t("running")));
-        else if (st && st.state && st.state !== "idle") parts.push(esc(st.state));
+        // The job's state is one of a closed list (src/jobs/background.py: idle | running | done | cancelled | error), printed
+        // through t() word by word so a literal t("...") reaches the string scan; a word outside the list prints as sent.
+        const stateWord = { done: t("done"), cancelled: t("cancelled"), error: t("error") };
+        // While a user's batch holds the model the worker's own line reads "paused — <who> is running" in English only, and the
+        // pill below says the same in the page's language, so the line is left out then rather than printed twice.
+        // Any other line is the worker's: its keyed frame (detail_i18n / detail_vars) is how it reaches the page's language.
+        if (running) {
+          if (!held) parts.push(esc(st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("running")));
+        } else if (st && st.state && st.state !== "idle") {
+          parts.push(esc(Object.prototype.hasOwnProperty.call(stateWord, st.state) ? stateWord[st.state] : st.state));
+        }
         // The pause is stated, never left looking like a stall (ruling 13).
         if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
         out.innerHTML = parts.join(" · ");
