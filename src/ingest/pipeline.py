@@ -519,11 +519,11 @@ def ingest_source(
 ) -> dict[str, int]:
     """Ingest a source's RSS/Atom feed (the feed is fetched through the ethical path).
 
-    Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline``
-    is present ONLY when the kill switch (airplane mode) refused something: 1 for the feed fetch itself, or, for a Stop pressed mid-feed, the
-    number of entries that were never asked for. So an all-zero tally
+    Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline: 1``
+    is present ONLY when the kill switch (airplane mode) refused the feed fetch, so an all-zero tally
     that means "nothing was fetched" is told apart from one that means "the feed had nothing new".
-    The key is absent otherwise (no permanent zero line) and every other key is unchanged.
+    The key is absent otherwise (no permanent zero line) and every other key is unchanged. ``stopped_unwalked`` is present ONLY when a Stop
+    ended the walk of the feed's entries: how many entries were left, never asked for.
     """
     # STAGED is transient by contract (resolved at flush) — it must never
     # appear as a permanent zero line in a user-facing tally.
@@ -589,9 +589,10 @@ def ingest_source(
         for done, link in enumerate(links):
             if kill_switch_active():
                 stopped = True
-                # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one, but they are COUNTED
-                # (``skipped_offline``, as the feed-GET refusal and the wiki and law trackers do), so the stop stays visible in the tally
-                tally["skipped_offline"] = tally.get("skipped_offline", 0) + (len(links) - done)
+                # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one, but they are COUNTED, so
+                # the stop stays visible in the tally. NOT under ``skipped_offline``: that key counts FEEDS the Stop refused (the Sources UI
+                # reads it as "nothing was fetched"), and some of these entries would have been answered as duplicates without a request.
+                tally["stopped_unwalked"] = len(links) - done
                 break
             outcome = ingest_url(session, source, link, fetcher=fetcher, batch=batch)
             if outcome.result is IngestResult.STAGED:

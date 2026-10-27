@@ -255,7 +255,8 @@ def test_a_stop_mid_feed_stores_no_validator_climbs_no_backoff_and_asks_no_more_
         assert st is None, f"a Stop created a feed state: etag={st.etag!r}"
     assert {u for u, _ in calls if "/story-" in u} == {f"https://{FEED_HOST}/story-1"}, "the entries after the Stop were walked through a refusal"
     assert tally["fetch_failed"] == 1 and kill_switch_active()
-    assert tally.get("skipped_offline") == 2, "the two entries never asked for are not visible in the tally"
+    assert tally.get("stopped_unwalked") == 2, "the two entries never asked for are not visible in the tally"
+    assert "skipped_offline" not in tally, "the entries were counted as refused FEEDS: the Sources UI reads that key as 'nothing was fetched'"
     if seeded:
         clear_kill_switch()
         assert feed_is_due(st), "the stopped feed would not be taken again by the scheduler"
