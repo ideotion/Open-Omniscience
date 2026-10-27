@@ -2005,7 +2005,7 @@ def _upsert_keyword_meta(con, session, keyword_ids: list[int]) -> int:
     return added
 
 
-def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 50_000) -> dict:
+def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 50_000, on_batch=None) -> dict:
     """Bring ``keyword_daily`` up to date. FULL rebuild when the corpus epoch changed since
     the last build (a re-index / prune / restore happened) or there is no usable prior build;
     otherwise an INCREMENTAL merge of the new mention tail.
@@ -2019,6 +2019,11 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     (mentions summed; per-day distinct articles summed, disjoint from existing days by the
     unique-pair invariant). Undated tail rows are skipped but the watermark still advances
     past them (never re-scanned).
+
+    ``on_batch(stage, rows_done)`` is the caller's hook, the one :func:`build_keyword_daily` takes: after every batch of the tail
+    (``"mentions"``) and once before the merge begins (``"aggregate"``), so a caller that compares the library's generation there stops
+    the refresh BEFORE anything is merged (the merge is not transactional: a stop after its first statement and before the watermark moves
+    would be added twice by the next refresh). A raise there drops the stage table and propagates. The full path passes it on.
     """
     ensure_store_meta(con)
     built_epoch = _get_meta(con, "keyword_daily.built_epoch")
@@ -2029,7 +2034,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         or int(built_epoch) != int(corpus_epoch)
     )
     if needs_full:
-        tally = build_keyword_daily(con, session, batch_size=batch_size)
+        tally = build_keyword_daily(con, session, batch_size=batch_size, on_batch=on_batch)
         _set_meta(con, "keyword_daily.built_epoch", int(corpus_epoch))
         return {"mode": "full", "corpus_epoch": int(corpus_epoch), **tally}
 
@@ -2082,9 +2087,21 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
     streamed_any = False
+    streamed_rows = 0
     max_streamed_id = last_id
     cursor_ts: str | None = None  # None == "before the first row" (no lower bound yet)
     cursor_id = last_id
+
+    def _hook(stage: str) -> None:
+        if on_batch is None:
+            return
+        try:
+            on_batch(stage, streamed_rows)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                con.execute("DROP TABLE IF EXISTS keyword_daily_stage")
+            raise
+
     while True:
         base = (
             "SELECT id, keyword_id, observed_on, count, article_id, created_at "
@@ -2112,6 +2129,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         if not chunk:
             break
         streamed_any = True
+        streamed_rows += len(chunk)
         dated_rows = [
             (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
             for r in chunk if r[2] is not None
@@ -2128,11 +2146,13 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         # Release the transaction this batch's read opened before the next
         # (already-closed) batch query -- the keyset-pagination fix.
         session.commit()
+        _hook("mentions")
 
     if not streamed_any:
         con.execute("DROP TABLE keyword_daily_stage")
         return {"mode": "incremental", "merged_days": 0, "new_keywords": 0,
                 "last_mention_id": last_id, "corpus_epoch": int(corpus_epoch)}
+    _hook("aggregate")  # the last point before the merge writes: nothing is merged yet
 
     con.execute(
         "CREATE OR REPLACE TABLE keyword_daily_tail AS "

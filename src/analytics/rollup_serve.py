@@ -575,6 +575,7 @@ def _refresh_persisted_build() -> bool | None:
     serve during the very first build falls back to live (never an empty half-built table)."""
     from src.analytics import columnar, serve_gate
     from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.database import library_generation
     from src.database.session import session_scope
 
     with _LOCK:
@@ -602,11 +603,17 @@ def _refresh_persisted_build() -> bool | None:
     if con is None:
         return _persisted_declined("engine-off")  # a store cached in ``_STATE`` is never None here; this narrows the type and refuses the impossible
     try:
+        # The library's generation, read before the refresh's session reads a row (``_require_library_unchanged``): a swap that lands later
+        # stops the refresh at its next batch, before the merge, and again before the store is recorded as serving.
+        stamp = library_generation.current()
         with session_scope() as s:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
-                columnar.refresh_keyword_daily(con, s, corpus_epoch=epoch)
+                columnar.refresh_keyword_daily(
+                    con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
+                )
+                _require_library_unchanged(stamp)  # the merge ran for a while: a store no corpus produced is never recorded as serving
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
                 _STATE["con"] = con
                 _STATE["persisted"] = True
