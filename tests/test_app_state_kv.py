@@ -245,6 +245,7 @@ def test_a_reader_polling_the_store_while_the_stand_in_is_written_cannot_leave_n
     A leftover thread from an earlier test follows the lazy ``data_dir()`` into the next test's directory (CI 2026-10-27 found a
     ``briefing_cache.json`` there) and reads settings while the second process writes the file: that read is allowed to see no value, and
     the test's own read afterwards must still find the one the stand-in committed. Needs no leftover thread to run: it brings its own."""
+    import contextlib
     import threading
 
     stop = threading.Event()
@@ -252,10 +253,8 @@ def test_a_reader_polling_the_store_while_the_stand_in_is_written_cannot_leave_n
     def poll() -> None:
         while not stop.is_set():
             for key in ("settings.app", "settings.other"):
-                try:
+                with contextlib.suppress(kv_store.KvReadError):
                     kv_store.kv_get_json_checked(key)
-                except kv_store.KvReadError:
-                    pass
 
     failures = []
     for i in range(_POLLED_ROUNDS):
