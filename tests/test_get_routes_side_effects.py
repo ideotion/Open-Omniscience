@@ -119,9 +119,12 @@ _COLUMNAR_THREAD = re.compile(r"rollup-build|map-rollup-build|rollup-canary-peak
 # The main database file (and its WAL) is touched by a checkpoint or a connection close without any write statement, so a file change
 # is not evidence of a write: the SQL monitor is the write detector.
 _MAIN_DB = re.compile(r"open_omniscience\.db(-wal|-shm)?")
-# Threads the server itself runs: its worker pool, the boot sequence, the poll refresher and the served caches that several routes share
+# oo-boot-slow-watch is the boot sequence's watchdog Timer (SLOW_STEP_S = 300 s): one thread starts at the beginning of EVERY boot step
+# (re-armed after 300 s only for the rollup step) and it protects the slow-step warning. Both walks set OO_NO_SCHEDULER=1, so no boot
+# sequence runs inside a walk and it was never seen on a route; the row is defensive, for a walk against a fully booted server.
+# Threads the server itself runs: its worker pool, the boot sequence and its slow-step watchdog, the poll refresher and the served caches that several routes share
 # (derived data, rebuilt from what is stored).
-_AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|alerts-poll-refresh|served-cache-.*")
+_AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|oo-boot-slow-watch|alerts-poll-refresh|served-cache-.*")
 
 # Route -> (files it may create or change, thread names it may start, reason). A route can appear only if the effect was
 # MEASURED on 2026-10-27; the reason says why it is acceptable or names the finding that routes it.
@@ -636,8 +639,26 @@ def test_an_unnamed_thread_started_by_serve_canary_is_recorded(tmp_path):
 
     with _Monitor([tmp_path]) as mon:
         serve_canary()
-    # the started threads' OWN names, so an unrelated bare Thread-N (the boot-sequence timer) cannot satisfy it
+    # the started threads' OWN names, so an unrelated bare Thread-N cannot satisfy it
     assert started[0].startswith("Thread-") and started[0] in mon.threads and "rollup-canary-timer" in mon.threads, (started, mon.threads)
+
+
+def test_the_boot_sequence_slow_step_timer_is_named_and_ambient(tmp_path):
+    """The boot sequence arms a 300 s watchdog Timer per step and re-arms it while a step is slow (``boot_sequence._SlowWatch``). It was an
+    anonymous ``Thread-N``, and one starts at the beginning of every boot step, so a walk against a booted server would have put an
+    unattributable thread on an innocent route (the same class as finding F4; both CI walks set OO_NO_SCHEDULER=1, so none was ever seen
+    there). It carries a name now, and the name is one of the server's own ambient threads."""
+    from src.api import boot_sequence
+
+    watch = boot_sequence._SlowWatch("probe", "nothing")
+    try:
+        with _Monitor([tmp_path]) as mon:
+            watch.start()
+    finally:
+        watch.cancel()
+    name = watch._timer.name  # the watchdog's OWN thread, not whatever else started in the window
+    assert not name.startswith("Thread-") and name in mon.threads, (name, mon.threads)
+    assert _AMBIENT_THREAD.fullmatch(name), name
 
 
 def test_the_rollup_allowance_holds_only_where_duckdb_imports(monkeypatch):
