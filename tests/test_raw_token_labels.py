@@ -89,6 +89,25 @@ def test_every_word_the_maps_use_has_a_translation_in_all_twelve_locales():
             assert loc.get(key), (f.stem, key)
 
 
+def test_every_import_report_kind_has_a_translation_in_all_twelve_locales():
+    """app-backup.js prints an import-history row's ``kind`` alone in a node, so the i18n walker translates it only
+    if the word is a locale key (R291). That ``kind`` is the PREFIX OF THE REPORT'S FILE NAME
+    (``import_reports.list_import_reports``: ``p.stem.split("-", 1)[0]``), and the prefix is the first argument
+    of every ``persist_import_report("<kind>", ...)`` call. It is NOT the import queue's ``KINDS`` (corpus, legacy,
+    blobs, newsletters), which never become a file-name prefix (found by the Opus read of #1540)."""
+    seen = set()
+    for p in (_ROOT / "src").rglob("*.py"):
+        text = p.read_text(encoding="utf-8")
+        seen.update(re.findall(r"""persist_import_report\(\s*["']([a-z]+)["']""", text))
+    assert seen == {"restore", "newsletter", "incomplete"}, (
+        "a new import-report writer appeared: key its kind in all 12 locales and add it here. Found: " f"{sorted(seen)}"
+    )
+    for f in sorted((_STATIC / "locales").glob("*.json")):
+        loc = json.loads(f.read_text(encoding="utf-8"))
+        for key in sorted(seen):
+            assert loc.get(key), (f.stem, key)
+
+
 def test_the_label_functions_behave():
     proc = subprocess.run(
         ["node", str(_ROOT / "tests" / "raw_token_labels_node_test.js")], capture_output=True, text=True, check=False

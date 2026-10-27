@@ -1131,7 +1131,7 @@
     function kwKindLabel(kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const L = {term: "Term", person: "Person", org: "Organisation", location: "Place", entity: "Entity"};
-      return L[kind] ? t(L[kind]) : String(kind || "");
+      return Object.prototype.hasOwnProperty.call(L, kind) ? t(L[kind]) : String(kind || "");
     }
 
     // Whether the label draws a tier tag at all (a term in the reader's own language, or
