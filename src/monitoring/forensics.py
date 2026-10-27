@@ -42,6 +42,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
+from src.safety.file_lock import atomic_replace
 
 _LOG = logging.getLogger(__name__)
 
@@ -297,10 +298,16 @@ def _read_state() -> dict[str, Any] | None:
 
 
 def _write_state(state: dict[str, Any]) -> None:
+    """Persist the sentinel through the house helper: a copy named for the process and the thread, swapped in whole.
+
+    Servers can share a data folder (R176), and the copy used to have ONE name (``session_state.json.tmp``), so two of them writing at
+    once wrote the same file: the first swap moved the other's half-written copy into place (a torn sentinel changes the next boot's
+    verdict) or left the second nothing to swap (its state was lost, with a warning). ``atomic_replace`` gives each writer its own copy,
+    removes it if the swap fails and sweeps a dead process's copies. The last swap wins, as it did. ``fsync=False``: the sentinel is
+    rewritten at every lifecycle step, a sync here could block the shutdown path on a wedged device, and the write before this change
+    was not synced either."""
     try:
-        tmp = _state_path().with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-        os.replace(tmp, _state_path())
+        atomic_replace(_state_path(), json.dumps(state, indent=1), fsync=False)
     except OSError as exc:
         log_failure(_LOG, "could not persist session_state.json", exc, level=logging.WARNING)
 

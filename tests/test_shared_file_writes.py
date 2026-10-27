@@ -87,7 +87,6 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/monitoring/collect_perf.py": (2, "export"),
     "src/monitoring/feed_preflight.py": (1, "rc2"),
     "src/monitoring/field_test.py": (1, "rc2"),
-    "src/monitoring/forensics.py": (2, "rc2"),
     "src/monitoring/kpi.py": (4, "rc2"),
     "src/monitoring/p0_validation.py": (2, "rc2"),
     "src/monitoring/preflight.py": (1, "rc2"),
