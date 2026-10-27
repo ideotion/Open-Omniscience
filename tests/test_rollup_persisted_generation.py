@@ -146,7 +146,7 @@ def test_the_full_path_passes_the_hook_to_the_build(ctx, world):
     assert columnar._get_meta(con, "keyword_daily.built_epoch") is None, "a refused full build was recorded as built"
 
 
-def _persisted(monkeypatch, refresh):
+def _persisted(monkeypatch, refresh, con=None):
     """``_refresh_persisted_build`` with the store, the session and the epoch stubbed; ``refresh`` stands in for the refresh."""
     from contextlib import contextmanager
 
@@ -171,7 +171,7 @@ def _persisted(monkeypatch, refresh):
     def scope():
         yield _S()
 
-    con = _Con()
+    con = con if con is not None else _Con()
     state = dict(rollup_serve._STATE, con=con, persisted=True, token=None, rows=None, built_at=None, bind=None, pending=True)
     monkeypatch.setattr(rollup_serve, "_STATE", state)
     monkeypatch.setattr(columnar, "refresh_keyword_daily", refresh)
@@ -207,3 +207,46 @@ def test_the_persisted_dispatcher_path_without_a_swap_records_the_store(monkeypa
     state = _persisted(monkeypatch, refresh)
     assert rollup_serve._refresh_persisted_build() is True
     assert state["token"] == (7, 1000) and state["pending"] is False
+
+
+@pytest.mark.parametrize("where", ["in-the-hook", "after-the-refresh"])
+def test_a_failed_final_comparison_voids_the_built_epoch_and_a_stop_before_the_merge_does_not(monkeypatch, world, where):
+    # The merge ran when only the FINAL comparison fails, so the built epoch no longer vouches for the tables: the next refresh must be a full
+    # rebuild even though the epochs are equal. A stop in the hook is before the merge: nothing changed, so the epoch stands.
+    con = columnar.connect(passphrase=None)
+    columnar.ensure_store_meta(con)
+    columnar._set_meta(con, "keyword_daily.built_epoch", 1)
+
+    def refresh(con, s, *, corpus_epoch, on_batch=None, **_k):
+        if where == "in-the-hook":
+            world.swap()
+            on_batch("mentions", 10)
+        else:
+            on_batch("aggregate", 10)
+            world.swap()
+        return {"mode": "incremental"}
+
+    _persisted(monkeypatch, refresh, con=con)
+    with pytest.raises(gen.StaleLibraryError):
+        rollup_serve._refresh_persisted_build()
+    expected = "1" if where == "in-the-hook" else "-1"
+    assert columnar._get_meta(con, "keyword_daily.built_epoch") == expected
+
+
+def test_a_voided_built_epoch_makes_the_next_refresh_a_full_rebuild_at_an_equal_epoch(ctx):
+    session, ex = ctx
+    _index(session, ex, "2024-03-01", "The federal budget gripped the Senate.")
+    con = columnar.connect(passphrase=None)
+    assert columnar.refresh_keyword_daily(con, session, corpus_epoch=1)["mode"] == "full"
+    assert columnar.refresh_keyword_daily(con, session, corpus_epoch=1)["mode"] == "incremental"
+    rollup_serve._void_built_epoch(con)
+    assert columnar.refresh_keyword_daily(con, session, corpus_epoch=1)["mode"] == "full"
+    assert _counts(con) == _counts(_fresh_full(session))
+
+
+def test_voiding_the_built_epoch_never_hides_the_stop_that_called_it():
+    class _Broken:
+        def execute(self, *_a, **_k):
+            raise RuntimeError("store closed")
+
+    rollup_serve._void_built_epoch(_Broken())  # logged, not raised

@@ -553,6 +553,20 @@ def _persisted_declined(why: str) -> bool:
     return False
 
 
+def _void_built_epoch(con) -> None:
+    """Make the persisted store's next refresh a full rebuild: ``-1`` is no corpus epoch, so ``refresh_keyword_daily`` finds it unequal.
+
+    Called only when the final comparison of a refresh that ran its merge fails; a stop BEFORE the merge changed nothing and clears nothing. A
+    failure here is logged, not raised: the stop that called it is the error the caller must see.
+    """
+    from src.analytics import columnar
+
+    try:
+        columnar._set_meta(con, "keyword_daily.built_epoch", -1)
+    except Exception:  # noqa: BLE001 - the library replacement is the failure being reported; this is its repair
+        _LOG.warning("rollup serve: could not void the persisted rollup's built epoch", exc_info=True)
+
+
 def _refresh_persisted_build() -> bool | None:
     """Refresh the PERSISTED encrypted rollup store (D1) and serve from it. Returns ``False`` ONLY when it declined: the
     passphrase or the secure backend is gone since the dispatcher chose this path, the engine is off, or the opener handed back an in-memory store
@@ -614,8 +628,13 @@ def _refresh_persisted_build() -> bool | None:
                     con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
                 )
                 # the merge ran for a while: the store is not RECORDED as serving. A cached connection is the one the refresh just changed, so it
-                # keeps serving those tables; the untouched token makes the next gate check refresh it, which repairs nothing when the epochs are equal.
-                _require_library_unchanged(stamp)
+                # keeps serving those tables; the untouched token makes the next gate check refresh it, and that refresh must be a FULL one, since an
+                # equal epoch would make it an incremental merge that never revisits what the new file's rows changed: the built epoch is voided.
+                try:
+                    _require_library_unchanged(stamp)
+                except library_generation.StaleLibraryError:
+                    _void_built_epoch(con)
+                    raise
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
                 _STATE["con"] = con
                 _STATE["persisted"] = True
