@@ -372,7 +372,7 @@ def tags_for_keyword(session: Session, normalized: str) -> dict[str, list[str]]:
 #: operator action with no bound, and reading the table as entities held every keyword of it at once: on 1,500,000 seeded keywords 33.8 s and
 #: 2,951 MB of Python allocation (3,272 MB of resident growth) against 3.7 s and 12.5 MB as these columns in chunks. A chunk is the unit, not the
 #: table's row count, which is the quantity nobody bounds: 20,000 rows of the widest shape the columns allow (a 10-character language and a
-#: 255-character term) peak at 11.8-12.0 MB of Python allocation, about 600 B a row, whatever the table holds. No clock decides where a chunk ends.
+#: 255-character term) peak at 11.8-12.0 MB of Python allocation, about 600 B a row, whatever the table holds (the READ side: the new tags stay pending in the session until the one commit, autoflush being off, so memory still grows with the tags added, as it did). No clock decides where a chunk ends.
 #: STATED LIMIT: the chunks are id-ordered with a cursor, so a keyword inserted with an id BELOW the cursor between two chunks is not seen until the
 #: next run (idempotent, so the cost is one run). The app's own inserts take the next autoincrement id, always above every existing one; only an
 #: insert with an explicit id (a merge import) can land below it.

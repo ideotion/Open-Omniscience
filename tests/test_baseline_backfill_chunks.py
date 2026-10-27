@@ -3,10 +3,10 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-It used to iterate ``session.query(Keyword)``: every keyword of the table as an entity at once (on 1,500,000 seeded keywords 35-40 s and 3,272 MB of
-resident growth, against 3.3-3.6 s and 312 MB for the columns in chunks; ``keyword-lane/entity-load-sweep-part2-2026-10-27.md``). This file pins what
+It used to iterate ``session.query(Keyword)``: every keyword of the table as an entity at once (on 1,500,000 seeded keywords, same store, shipped statements:
+33.8 s and 2,951 MB of Python allocation against 3.7 s and 12.5 MB for the columns in chunks; ``keyword-lane/entity-load-sweep-part2-2026-10-27.md``). This file pins what
 the chunking must not change (the tags written, the ``limit``, a second run adding nothing, a match on either side of a chunk edge) and the statements
-that make the memory flat (three columns, ordered by id, a LIMIT on every read of the table), so a revert fails on the statement and not on a stopwatch.
+that bound the read (three columns, ordered by id, a LIMIT on every read of the table), so a revert fails on the statement and not on a stopwatch.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def test_the_tags_written_do_not_depend_on_where_the_chunks_end(db, monkeypatch,
 
 
 @pytest.mark.parametrize("limit", [1, 3, 4, 7, 10, 50])
-def test_limit_still_means_the_first_n_keywords_by_id(db, monkeypatch, limit):
+def test_limit_means_the_first_n_keywords_by_id(db, monkeypatch, limit):
     monkeypatch.setattr(store, "_BASELINE_BACKFILL_CHUNK", 3, raising=False)
     assert backfill_baseline_tags(db, limit=limit) == _reference(db, limit)
 

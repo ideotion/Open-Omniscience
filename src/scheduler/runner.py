@@ -436,8 +436,10 @@ def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
         feed_ids = [s.id for s in sources if getattr(s, "rss_url", None)]
         if not feed_ids:
             return sources, 0
-        # ``skip_until`` is the one column ``feed_is_due`` reads: not the entity (the validators are the wide part). The pass-level session
-        # shares no identity map with the workers' own sessions, and FeedFetchState has no relationship or load listener, so no side effect is lost.
+        # ``skip_until`` is the one column ``feed_is_due`` reads: not the entity (the validators are the wide part). The entity load only filled
+        # this session's identity map. The pool workers use sessions of their own; the sequential path runs ``_process_source`` on this session, where
+        # ``session.get(FeedFetchState, ...)`` now issues its SELECT instead of being served from the map (``expire_on_commit`` refreshed those
+        # entities after the first commit anyway, so the read is no staler). FeedFetchState has no relationship or load listener.
         states = {
             st.source_id: st
             for st in session.query(FeedFetchState.source_id, FeedFetchState.skip_until).filter(

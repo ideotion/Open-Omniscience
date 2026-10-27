@@ -92,8 +92,8 @@ def tag_coverage(
 
     # One row per RSS source that has ever been fetched.
     # The four columns the loop below reads, not the entity: the validators (etag, last_modified) are strings of up to 512 and 128
-    # characters a row and this panel reads neither. 86,000 feed states: 0.8-1.1 s and 141 MB of Python allocation as entities against
-    # 0.2 s and 34 MB as columns (keyword-lane/entity-load-sweep-part2-2026-10-27.md).
+    # characters a row and this panel reads neither. 86,000 feed states, same seeded store and shipped statements: 1,216-1,312 ms and 152.5 MB of
+    # Python allocation as entities against 548-571 ms and 47.9 MB as columns (keyword-lane/entity-load-sweep-part2-2026-10-27.md, re-measured).
     states: dict[int, Row] = {
         st.source_id: st
         for st in session.query(

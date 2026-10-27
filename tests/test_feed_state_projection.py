@@ -4,13 +4,14 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 ``FeedFetchState`` carries two wide opaque strings (``etag`` up to 512, ``last_modified`` up to 128) that no reader of the whole table needs. Loading
-86,000 states as entities (the Coverage subtab, and the collector's due-feed filter on every pass over every feed) cost 0.8-1.1 s and 141 MB of Python
-allocation against 0.2 s and 34 MB as the four columns the loop reads (``keyword-lane/entity-load-sweep-part2-2026-10-27.md``). The answers are
+86,000 states as entities (the Coverage subtab, and the collector's due-feed filter on every pass over every feed) cost 1,216-1,312 ms and 152.5 MB of
+Python allocation against 548-571 ms and 47.9 MB as the four columns the loop reads (same seeded store, shipped statements; ``keyword-lane/entity-load-sweep-part2-2026-10-27.md``). The answers are
 pinned equal to what the entity path gave, and the statements are pinned to leave the validators out: a revert to ``query(FeedFetchState)`` fails here
 on the statement and not on a stopwatch.
 
-WHAT ELSE THE ENTITY LOAD DID, and why nothing is lost: it put the rows in the pass-level session's identity map. The workers fetch through their own
-sessions (``session_scope()`` per worker in the runner), ``FeedFetchState`` has no relationship and no mapper-level load listener (the mapper
+WHAT ELSE THE ENTITY LOAD DID, and why nothing is lost: it put the rows in the pass-level session's identity map. The pool workers fetch through their own
+sessions (``session_scope()`` per worker in the runner); the sequential path runs on the pass session, where ``session.get(FeedFetchState, ...)`` now issues
+its SELECT instead of being served from the map (``expire_on_commit`` refreshed those entities after the first commit anyway), ``FeedFetchState`` has no relationship and no mapper-level load listener (the mapper
 listeners of ``models.py`` are on ``Source`` and ``Article`` inserts and updates), and the session-level listeners (``do_orm_execute``,
 ``before_flush``, ``after_begin``) fire for a column query the same as for an entity query.
 """
@@ -108,3 +109,32 @@ def test_the_coverage_loop_reads_four_columns_and_gives_the_same_buckets(db):
     assert totals["reached"] == 5 and totals["never_reached"] == 1
     assert totals["backed_off"] == 1
     assert totals["status"]["error"] == 1
+
+
+def test_the_language_equilibrium_filter_answers_the_same_from_the_projection_the_runner_reads(db):
+    """runner.py reads (source_id, last_checked_at) for the equilibrium filter; ``equilibrium_filter`` takes the date with ``getattr(st, ..., None)``,
+    so a projection that dropped the column would count every source as never fetched and defer nothing, silently."""
+    import inspect
+    import random
+
+    from src.scheduler import runner
+    from src.scheduler.equilibrium import equilibrium_filter
+
+    sources = _seed(db)
+    for s in sources:
+        s.language = "en"
+    db.commit()
+    assert "session.query(FeedFetchState.source_id, FeedFetchState.last_checked_at)" in inspect.getsource(runner), (
+        "the equilibrium block's projection changed: update this test with it"
+    )
+    projected = {st.source_id: st for st in db.query(FeedFetchState.source_id, FeedFetchState.last_checked_at)}
+    entities = {st.source_id: st for st in db.query(FeedFetchState)}
+    pace = {"en": 0.0}  # a language over its share: every re-check inside the freshness cap is deferred
+
+    def run(states):
+        return equilibrium_filter(sources, pace=pace, fetch_state=states, now=_NOW, rng=random.Random(0))
+
+    kept_p, deferred_p = run(projected)
+    kept_e, deferred_e = run(entities)
+    assert deferred_p == deferred_e > 0, "no source was deferred: the test no longer reaches the date"
+    assert [s.id for s in kept_p] == [s.id for s in kept_e]
