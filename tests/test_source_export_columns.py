@@ -5,8 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 THE DEFECT (entity-load sweep of ``src/api``, 2026-10-27; the A-025 class, ``GET /api/sources`` being the first, #1522). The export
 loaded every ``Source`` as a mapped instance to read twelve of its columns: 86,000 instances on the field catalogue. Measured on
-86,000 synthetic sources with nothing else running, three runs of the same GET: 3.0 to 4.7 s on the entity path against 1.7 to
-2.3 s on the columns, body byte-identical (10,084,877 bytes, one sha256).
+86,000 synthetic sources with nothing else running: 2.7 to 4.7 s before and 1.7 to 2.3 s after (min to max over five GETs per run; five runs each side, two in the measuring process that seeded and three in a second process that did not), body byte-identical (10,084,877 bytes, one sha256). The export also
+orders by `(name, id)` so that sources sharing a name come out in a defined order.
 
 WHAT THIS FILE HOLDS. (1) The column tuple cannot drift from the row builder: a recording stand-in is handed to
 ``_source_to_row`` and the attributes it read are the tuple, in order, so a thirteenth value added to the builder without the tuple
@@ -22,7 +22,7 @@ import pytest
 
 
 class _Recorder:
-    """Answers every attribute with a distinct value and remembers the order they were asked in."""
+    """Answers every attribute with None and remembers the order they were asked in."""
 
     def __init__(self):
         self.asked: list[str] = []
@@ -70,6 +70,7 @@ def client(tmp_path):
                    tags="news,eu", priority=2, rate_limit_ms=1500, enabled=True, reliability_score=7, source_type="rss"),
             Source(name="Bulk", domain="bulk.test", country="WLD", tags='say "hi", ok', enabled=False),
             Source(name="Nowhere", domain="nowhere.test", country=None),
+            Source(name="Alpha", domain="alpha-twin.test", country="de"),  # a duplicate name: the export order must be defined for ties
             Source(name="Zürich Zeitung — «ö»", domain="zz.test", country="ch", language="de", region="eu"),
         ])
         s.commit()
@@ -103,7 +104,7 @@ def test_the_body_is_the_entity_paths_body(client):
     assert r.status_code == 200
 
     with Sess() as s:
-        want = write_csv([_source_to_row(x) for x in s.query(Source).filter(not_a_stand_in_source()).order_by(Source.name).all()])
+        want = write_csv([_source_to_row(x) for x in s.query(Source).filter(not_a_stand_in_source()).order_by(Source.name, Source.id).all()])
     assert r.text == want
     assert r.text.count("\n") >= 5, "the catalogue the test seeded did not reach the export"
 

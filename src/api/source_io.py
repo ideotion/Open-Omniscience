@@ -242,7 +242,7 @@ def export_csv(db: Session = Depends(get_db)) -> StreamingResponse:
     """Download the entire source catalog as CSV (round-trips with import)."""
     # Columns, not entities: the same twelve values per row, no ORM instance built for 86,000 sources to write twelve of their 24 columns.
     cols = [getattr(Source, a) for a in _EXPORT_ATTRS]
-    rows = [_source_to_row(s) for s in db.query(*cols).filter(not_a_stand_in_source()).order_by(Source.name).all()]
+    rows = [_source_to_row(s) for s in db.query(*cols).filter(not_a_stand_in_source()).order_by(Source.name, Source.id).all()]
     csv_text = write_csv(rows)
     return StreamingResponse(
         iter([csv_text]),
