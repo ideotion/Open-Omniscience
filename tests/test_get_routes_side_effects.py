@@ -114,7 +114,7 @@ def _columnar_installed() -> bool:
 
 # rollup_stopped.json (src/analytics/rollup_hold.py) is the same build's record that the memory guard stopped it or it failed.
 _COLUMNAR_FILES = frozenset({"rollup_build.json", "rollup_build.json.lock", "rollup_stopped.json"})
-_COLUMNAR_THREAD = re.compile(r"rollup-build|map-rollup-build|rollup-canary-peak")
+_COLUMNAR_THREAD = re.compile(r"rollup-build|map-rollup-build|rollup-canary-peak|rollup-canary-timer")
 
 # The main database file (and its WAL) is touched by a checkpoint or a connection close without any write statement, so a file change
 # is not evidence of a write: the SQL monitor is the write detector.
@@ -283,12 +283,8 @@ class _Monitor:
         def start(thread, *a, **k):  # noqa: ANN001
             frames = traceback.extract_stack(limit=12)
             stack = "".join(f.filename for f in frames)
-            # FINDING F4 (routed to keyword, which owns src/analytics/columnar.py): the rollup canary's interrupt timer is a bare
-            # threading.Timer, so it carries the anonymous name Thread-N and no table can name it. Skipped here by the function that
-            # starts it, and ONLY while unnamed; once it is named (like its sibling rollup-canary-peak) this exception goes.
-            canary_timer = thread.name.startswith("Thread-") and any(f.name == "serve_canary" for f in frames)
             limiter_timer = "limits/storage/memory" in stack.replace("\\", "/")  # the rate limiter's own expiry timer
-            if not limiter_timer and not canary_timer:
+            if not limiter_timer:
                 monitor.threads.append(thread.name)
             return real_start(thread, *a, **k)
 
@@ -625,21 +621,23 @@ def test_the_monitors_see_a_get_that_reaches_the_network_when_the_switch_is_off(
     assert {"earthquake.usgs.gov", "www.gdacs.org"} <= set(mon.lookups), mon.lookups
 
 
-def test_the_canary_timer_exception_is_only_for_an_unnamed_thread_started_by_serve_canary(tmp_path):
-    def serve_canary():
-        threading.Thread(target=lambda: None).start()  # unnamed, from the one function the exception names
-        threading.Thread(target=lambda: None, name="rollup-canary-peak").start()  # named: still recorded
+def test_an_unnamed_thread_started_by_serve_canary_is_recorded(tmp_path):
+    """Finding F4 is fixed (#1556 names the canary's interrupt timer), so the monitor no longer skips an unnamed thread started from
+    ``serve_canary``: a bare ``Thread-N`` from there is recorded like any other, and a named one is recorded under its name."""
 
-    def somewhere_else():
-        threading.Thread(target=lambda: None).start()
+    started: list[str] = []
+
+    def serve_canary():
+        bare = threading.Thread(target=lambda: None)  # unnamed again: must be seen
+        bare.start()
+        named = threading.Thread(target=lambda: None, name="rollup-canary-timer")
+        named.start()
+        started.extend([bare.name, named.name])
 
     with _Monitor([tmp_path]) as mon:
         serve_canary()
-    # a build still running from an earlier walk may start its own named threads inside this window, so assert on the unnamed ones
-    assert "rollup-canary-peak" in mon.threads and not [n for n in mon.threads if n.startswith("Thread-")], mon.threads
-    with _Monitor([tmp_path]) as mon:
-        somewhere_else()
-    assert [n for n in mon.threads if n.startswith("Thread-")], mon.threads
+    # the started threads' OWN names, so an unrelated bare Thread-N (the boot-sequence timer) cannot satisfy it
+    assert started[0].startswith("Thread-") and started[0] in mon.threads and "rollup-canary-timer" in mon.threads, (started, mon.threads)
 
 
 def test_the_rollup_allowance_holds_only_where_duckdb_imports(monkeypatch):
@@ -648,13 +646,13 @@ def test_the_rollup_allowance_holds_only_where_duckdb_imports(monkeypatch):
     import tests.test_get_routes_side_effects as me
 
     mon = _Monitor([])
-    mon.files, mon.threads = {"rollup_build.json", "rollup_stopped.json"}, ["rollup-build", "map-rollup-build", "rollup-canary-peak"]
+    mon.files, mon.threads = {"rollup_build.json", "rollup_stopped.json"}, ["rollup-build", "map-rollup-build", "rollup-canary-peak", "rollup-canary-timer"]
     seen = {"/api/bulletin/editions": mon}
     monkeypatch.setattr(me, "_columnar_installed", lambda: True)
     assert _file_and_thread_problems(seen, {}) == []
     monkeypatch.setattr(me, "_columnar_installed", lambda: False)
     got = _file_and_thread_problems(seen, {})
-    assert {n for _r, _k, n in got} == {"rollup_build.json", "rollup_stopped.json", "rollup-build", "map-rollup-build", "rollup-canary-peak"}, got
+    assert {n for _r, _k, n in got} == {"rollup_build.json", "rollup_stopped.json", "rollup-build", "map-rollup-build", "rollup-canary-peak", "rollup-canary-timer"}, got
 
 
 def test_the_monitors_see_every_socket_call_they_patch(tmp_path):
