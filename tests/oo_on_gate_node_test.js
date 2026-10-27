@@ -98,10 +98,12 @@ for (const call of NAMES) {
   ran.length = 0;
   fire("click", el({ "data-on-click": call }), { isTrusted: true });
   assert.strictEqual(ran.length, 1, name + " refused a real click");
+  // Enter or Space on a focused button arrives as a CLICK; no markup binds a gesture-only name to a keydown (the per-event
+  // table has no keydown entry for one, A-024 stage 1), so a keydown binding on it is refused like any other event.
   ran.length = 0;
   fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: "Enter" });
   fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: " " });
-  assert.strictEqual(ran.length, 2, name + " refused Enter/Space");
+  assert.strictEqual(ran.length, 0, name + " ran for a keydown that no markup binds");
 
   ran.length = 0;
   for (const type of ["error", "load", "toggle", "focus", "mouseover", "change", "input"]) {
@@ -113,10 +115,15 @@ for (const call of NAMES) {
   fire("keydown", el({ "data-on-keydown": call }), { isTrusted: false, key: "Enter" });
   assert.deepStrictEqual(ran, [], name + " ran for something that is not a person's gesture: " + ran);
 }
-// A name that is not gesture-only is unaffected (it confirms inside, or is not destructive).
+// A name that is not gesture-only still runs for the event the markup binds it to (it confirms inside, or is not
+// destructive) ...
 ran.length = 0;
-fire("error", el({ "data-on-error": "deleteSource(1)" }));
-assert.strictEqual(ran.length, 1, "a name outside the gesture set kept working");
+fire("click", el({ "data-on-click": "deleteSource(1)" }), { isTrusted: true });
+assert.strictEqual(ran.length, 1, "a name outside the gesture set kept working for its click");
+// ... and, since A-024 stage 1, NOT for an injected error/load/toggle: this used to assert that it ran.
+ran.length = 0;
+for (const type of ["error", "load", "toggle", "focus", "mouseover"]) fire(type, el({ ["data-on-" + type]: "deleteSource(1)" }));
+assert.strictEqual(ran.length, 0, "a name outside the gesture set ran for an event no markup binds it to");
 
 // 3. The set the dispatcher holds is the set this test names.
 assert.deepStrictEqual(Array.from(window.ooOn.GESTURE_ONLY).sort(), [...GESTURE].sort());
