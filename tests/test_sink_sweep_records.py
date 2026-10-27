@@ -221,7 +221,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('DamageRegistry._job_main', 'self._write_error = failure_label(exc)'): 1,
     },
     'src/database/fts.py': {
-        ('fts_status', 'out["error"] = failure_text(exc)'): 3,
+        ('fts_status', 'out["error"] = failure_text(exc)'): 4,
     },
     'src/database/fts_norm.py': {
         ('_normalize_sql', 'named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "word-segmentation"'): 3,

@@ -36,9 +36,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from src.database import damage, fts, repair, salvage, verify
 from src.database.damage import FILE_CORPUS, DamageRegistry
+from src.database.models import Article, Base, Source
 
 from . import damaged_store_helpers as H
 
@@ -345,3 +349,110 @@ def test_a_cut_before_the_swap_carries_the_index_figure_and_the_resumed_file_has
         "the file swapped in does not hold an index of exactly its articles and the documents the record counted"
     )
     assert reg.repairs()[-1]["search_index"] == doc["search_index"], "the record does not state the index the file was swapped in with"
+
+
+# --------------------------------------------------------------------------- #
+#  The Export lane's check of the same question, in-process (its draft: export-lane/fts-settle, 2026-10-27)
+# --------------------------------------------------------------------------- #
+# The tests above kill or stop a repair; these die INSIDE ``rebuild_index`` of the live file's own paths (the "always" rebuild and the
+# empty-heal), after the 'delete-all' and after batches have been written (``_index_rows`` raises on its third call; the raise stands for
+# the kill, and the same states were measured with 14 real SIGKILLs on a 40,000-article store). The two existing tests of a rebuild that
+# dies (test_fts_tokenizer_rebuild.py) raise BEFORE ``rebuild_index`` writes anything, so a ``rebuild_index`` that committed per batch
+# passes them; it fails these. Mutant, measured: ``commit()`` after each ``_index_rows`` call leaves the index at 10 of 40 in both.
+_EXPORT_ARTICLES = 40
+
+
+def _export_store():
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    Base.metadata.create_all(eng)
+    fts.ensure_fts(eng)
+    with sessionmaker(bind=eng, future=True)() as s:
+        s.add(Source(name="S", domain="x.test"))
+        s.commit()
+        for i in range(_EXPORT_ARTICLES):
+            s.add(Article(url=f"u{i}", canonical_url=f"u{i}", source_id=1, title=f"Story {i}", content=f"election token{i}x", hash=f"h{i}", language="en"))
+        s.commit()
+    return eng
+
+
+def _export_indexed(eng) -> int:
+    with eng.connect() as c:
+        return c.execute(text("SELECT count(*) FROM article_fts_docsize")).scalar()
+
+
+def _export_findable(eng) -> int:
+    with eng.connect() as c:
+        return sum(
+            1 for i in range(_EXPORT_ARTICLES)
+            if c.execute(text("SELECT rowid FROM article_fts WHERE article_fts MATCH :q"), {"q": f"token{i}x"}).fetchall()
+        )
+
+
+def _die_on_the_third_batch(monkeypatch):
+    monkeypatch.setattr(fts, "_REBUILD_BATCH", 5)
+    real, calls = fts._index_rows, {"n": 0}
+
+    def dying(con, rows, caps):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("the process died here")
+        return real(con, rows, caps)
+
+    monkeypatch.setattr(fts, "_index_rows", dying)
+    return real
+
+
+def _prefix_index(eng) -> None:
+    """The state no app writer leaves (measured) but a torn file copy or a hand-made restore can: the first half of the articles indexed."""
+    with eng.begin() as c:
+        c.execute(text("INSERT INTO article_fts(article_fts) VALUES ('delete-all')"))
+        c.execute(text("DELETE FROM article_fts_norm"))
+        fts.index_articles(c, list(range(1, _EXPORT_ARTICLES // 2 + 1)))
+
+
+def test_a_full_rebuild_that_dies_after_some_batches_leaves_the_whole_old_index(monkeypatch):
+    eng = _export_store()
+    assert _export_indexed(eng) == _EXPORT_ARTICLES
+    real = _die_on_the_third_batch(monkeypatch)
+    with pytest.raises(RuntimeError):
+        fts.ensure_fts(eng, rebuild="always")
+    monkeypatch.setattr(fts, "_index_rows", real)
+    assert (_export_indexed(eng), _export_findable(eng)) == (_EXPORT_ARTICLES, _EXPORT_ARTICLES), "neither a prefix of the rebuild nor an empty index"
+    assert fts.ensure_fts(eng) == "skipped"
+
+
+def test_an_emptied_index_whose_rebuild_dies_after_some_batches_is_empty_and_the_next_boot_fills_it(monkeypatch):
+    eng = _export_store()
+    with eng.begin() as c:
+        c.execute(text("INSERT INTO article_fts(article_fts) VALUES ('delete-all')"))  # the "rare interrupted past rebuild" state
+    real = _die_on_the_third_batch(monkeypatch)
+    with pytest.raises(RuntimeError):
+        fts.ensure_fts(eng)  # auto: an empty index while articles exist -> a rebuild, which dies
+    monkeypatch.setattr(fts, "_index_rows", real)
+    assert (_export_indexed(eng), _export_findable(eng)) == (0, 0), "the rebuild's own writes were rolled back with it: no prefix is left"
+    assert fts.ensure_fts(eng) == "rebuilt"
+    assert (_export_indexed(eng), _export_findable(eng)) == (_EXPORT_ARTICLES, _EXPORT_ARTICLES)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a boot reads ANY docsize row as 'settled' (an exact count of the articles is the 74 s cold scan fts.py refuses at boot), so a prefix "
+    "index (some rows, not all) is skipped and nothing repairs it; fts_status names it instead (the next test). Flips when a boot repairs one.",
+)
+def test_a_prefix_index_is_not_read_as_settled_by_a_boot():
+    eng = _export_store()
+    _prefix_index(eng)
+    assert _export_indexed(eng) == _EXPORT_ARTICLES // 2
+    assert fts.ensure_fts(eng) == "rebuilt"
+
+
+def test_a_prefix_index_that_a_boot_reads_as_settled_is_named_partial_inferred_by_fts_status():
+    """What the xfail above cannot say: the diagnostic does. The ends (the highest document id against the highest article id) differ, so the
+    state is named and refuses the healthy verdict; nothing is counted or repaired, and the boot still skips it."""
+    eng = _export_store()
+    _prefix_index(eng)
+    with sessionmaker(bind=eng, future=True)() as s:
+        st = fts.fts_status(s)
+    assert st["indexed_documents"] == _EXPORT_ARTICLES // 2 and st["rows"] == _EXPORT_ARTICLES, "rows reads the content table: it cannot show it"
+    assert st["index_state"] == "partial (inferred)" and st["healthy"] is False and st["error"] == "PartialIndex"
+    assert fts.ensure_fts(eng) == "skipped", "the boot's refusal to count the articles stands"

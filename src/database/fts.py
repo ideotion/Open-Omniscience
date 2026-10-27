@@ -839,8 +839,10 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
     re-index never touches article content) — it can arise only from external file corruption
     (e.g. a torn filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job:
-    it reports a damaged/incomplete index and the explicit re-index job heals it
-    (``rebuild="always"``).
+    it reports a damaged index, an EMPTY one and, while no article has been ingested since, a PARTIAL one whose
+    TAIL is missing (``indexed_documents`` / ``index_state``; the probe and the count it also runs read the content
+    table and cannot see them), and the explicit re-index job heals it (``rebuild="always"``). It repairs nothing
+    and counts no article: the boot refusal above stands.
 
     No-op for non-SQLite engines (PostgreSQL would use its own tsvector path).
     Safe to call repeatedly; called from ``init_db``.
@@ -1200,13 +1202,40 @@ def fts_status(session: Session) -> dict:
       * ``healthy``      — a cheap bounded probe (``SELECT rowid ... LIMIT 1``) ran without a
         corruption error. ``False`` = the index exists but is DAMAGED (a post-crash malformed
         FTS index — a re-index / ``ensure_fts`` rebuild heals it, the actionable verdict D4
-        asked for); ``None`` = present but could not confirm (the probe timed out).
-      * ``rows``         — the indexed-row count, or ``None`` when the count timed out /
-        errored (``count_status`` says which) — NEVER conflated with absence.
+        asked for); ``None`` = present but could not confirm (the probe timed out). ALSO ``False``
+        over an EMPTY or a PARTIAL index (``index_state``): see ``indexed_documents`` for why this probe
+        alone cannot say it.
+      * ``rows``         — the row count FTS5 answers, or ``None`` when the count timed out /
+        errored (``count_status`` says which) — NEVER conflated with absence. ``article_fts`` is an
+        EXTERNAL-CONTENT table, so this probe and this count are answered from the content table
+        (``articles``), not from the index: they read healthy and full over an index that holds no
+        document (measured: after ``'delete-all'`` the probe said healthy and ``rows`` equalled the
+        articles). ``rows`` is NOT the index's size; ``indexed_documents`` is.
       * ``count_status`` — ok | timed_out | error | skipped.
+      * ``indexed_documents`` — the documents the index itself holds: ``COUNT(*)`` of its shadow table
+        ``article_fts_docsize`` (one row per indexed document; ``backup/merge.py``'s restore probe reads it for
+        the same reason), or ``None`` when it could not be had (``indexed_status`` says why).
+      * ``indexed_status`` — ok | timed_out | error | skipped | ``unprobeable`` (an index built without the
+        shadow table, ``columnsize=0``, has no cheap population count; nothing is rebuilt on that account).
+      * ``index_state``  — what the index's ENDS say (the two highest ids and the index's own count, read in one statement;
+        no count of articles): ``"empty"`` when
+        it holds no document while ``articles`` holds a row (the state ``ensure_fts`` heals at the next start);
+        ``"partial (inferred)"`` when its highest document id is below the highest article id (a tail of the
+        articles is not indexed: a torn file copy or a hand-made restore, since no app writer leaves one; INFERRED
+        from two ends, so how many documents are missing is unknown); ``"ends-agree"`` when neither was seen, which
+        is NOT a proof of completeness and not agreement either: a hole in the middle, a missing head and an index
+        that holds documents beyond the highest article id all read this way. A partial index stops reading
+        ``"partial (inferred)"`` at the NEXT INGEST (the new article is indexed by its trigger, the missing tail becomes
+        a hole in the middle, and the ends agree again); only a count comparison or a walk key by key sees a
+        hole, and the count of ``articles`` is the 74 s cold scan the boot refuses, so a caller that has its own bounded
+        count compares it to ``indexed_documents``, as ``monitoring.integrity`` does. ``None`` when unknown. An index
+        read while ``ensure_fts`` is building it on a store that already has articles (boot, ``init_db``) reads empty
+        until the first build is done.
       * ``error``        — what failed when unhealthy / the count failed: the DRIVER's class and a fixed label
         (:func:`src.database.damage.failure_text`), never the engine's own message (the integrity report that
-        carries this rides the diagnostics bundle).
+        carries this rides the diagnostics bundle); ``"EmptyIndex"`` or ``"PartialIndex"`` over an empty or a partial one
+        (fixed labels), unless the count had already named a failure: the first failure stays the one named, and
+        ``index_state`` carries the verdict.
 
     Callers should run this OUTSIDE any enclosing ``statement_deadline`` block: it manages its
     own bounded deadlines, and nesting the progress-handler-based deadline would clobber the
@@ -1220,11 +1249,13 @@ def fts_status(session: Session) -> dict:
         return {
             "supported": False, "present": None, "healthy": None, "rows": None,
             "count_status": "skipped", "error": None,
+            "indexed_documents": None, "indexed_status": "skipped", "index_state": None,
         }
 
     out: dict = {
         "supported": True, "present": False, "healthy": None, "rows": None,
         "count_status": "skipped", "error": None,
+        "indexed_documents": None, "indexed_status": "skipped", "index_state": None,
     }
 
     # 1) PRESENCE via sqlite_master (fast, authoritative, deadline-proof — a virtual table is
@@ -1270,6 +1301,42 @@ def fts_status(session: Session) -> dict:
     except Exception as exc:  # noqa: BLE001 - count failure is disclosed, presence stands
         out["count_status"] = "error"
         out["error"] = failure_text(exc)
+
+    # 4) THE INDEX'S OWN POPULATION. Steps 2 and 3 are answered from ``articles`` (see ``rows``), so neither
+    #    can see an index that holds nothing or only a front part of the articles; the shadow table
+    #    ``article_fts_docsize`` is the index's own record, one row per indexed document. The three numbers (the
+    #    articles' top id, the index's count and the index's top id) are taken in ONE statement: one statement is one
+    #    read snapshot, so no ingest or delete can fall between them. Separate reads cannot be ordered safely: ids are
+    #    reused (no AUTOINCREMENT), so after the top articles are deleted a new article takes the same id and an
+    #    id read afterwards looks like a document the index never saw. Two O(1) id lookups and one scan of the small
+    #    shadow table, inside one bounded block; the verdict is applied only when the statement has come back, so a
+    #    timeout or an error states nothing.
+    try:
+        with statement_deadline(session, seconds=_fts_count_deadline_s()):
+            if session.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='article_fts_docsize'")
+            ).fetchone() is None:
+                out["indexed_status"] = "unprobeable"
+            else:
+                top, n, last = session.execute(text(
+                    "SELECT (SELECT max(id) FROM articles), (SELECT count(*) FROM article_fts_docsize), "
+                    "(SELECT max(id) FROM article_fts_docsize)"
+                )).one()
+                state, label = "ends-agree", None
+                if top is not None and (last is None or last < top):  # (no article: nothing to index)
+                    state, label = ("empty", "EmptyIndex") if not n else ("partial (inferred)", "PartialIndex")
+                out["indexed_documents"], out["index_state"] = int(n), state
+                if label is not None:
+                    out["healthy"] = False
+                    if out["error"] is None:  # a failure step 3 already named stays the one named
+                        out["error"] = label
+                out["indexed_status"] = "ok"
+    except StatementTimeout:
+        out["indexed_status"], out["indexed_documents"], out["index_state"] = "timed_out", None, None
+    except Exception as exc:  # noqa: BLE001 - the population is disclosed as a status, presence stands
+        out["indexed_status"], out["indexed_documents"], out["index_state"] = "error", None, None
+        if out["error"] is None:  # an earlier step's failure stays the one named
+            out["error"] = failure_text(exc)
     return out
 
 
