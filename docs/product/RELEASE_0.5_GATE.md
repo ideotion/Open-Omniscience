@@ -140,10 +140,13 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   stderr-filter summary-row exposure (the 17 Oct hand figure, 0 to 9 ms idle over 22 launches, kept no table and is superseded; MEASURED 26 Oct by `scripts/launcher_stderr_exposure.py`, 100 launches per mode on 4 cores with gawk 5.2.1, raw table `rc-diagnostics/launcher-stderr-exposure-2026-10-26.jsonl` in the project folder: idle 0 to 18.65 ms, median 0; with 8 busy processes beside it 0 to 55.27 ms, median 9.2; no summary row went missing in 200 launches. Not measured: mawk, macOS, a slower disk).
 - **13. `hold_writes` and a second restore**: it raises a plain `RuntimeError` ("settings writes are already held") when a second hold
   is requested, and `_carry_and_swap` does not map it, so two restores reaching the swap together would end as a failed restore, not
-  a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out.
+  a refusal. Older than PR #1457. Not checked whether the import queue's exclusive window rules the case out. **Done (PR #1513, `R256`/`R257`):**
+  `KvHoldTaken(RuntimeError)` in `src/config/kv_store.py` is raised for the second hold and `_carry_and_swap` maps it to a `RestoreRefused` (400,
+  with its siblings), so two restores reaching the swap together end as a refusal with a named reason; nothing had been written to the corpus
+  at that point, so the old behaviour was a wrong message and a wrong record, not data loss. Test: `tests/test_hold_writes_taken.py`.
 - **14. A trigger's body cannot be upgraded under its name** (PR #1461, the final read's F2): the outlet triggers are installed by name
   only, so the first change to a body needs a stored-SQL comparison like `src/database/fts.py`'s. No store is affected today, the
-  bodies have one version.
+  bodies have one version. Owner: RC2 (`R272`; the check is `src/database/source_identity.py:319-322`, which skips an existing trigger by name).
 - **15. The all-history top-terms query on the shipped code** (PR #1467): the built-path runs at 20 M and 24 M were made on the first
   version of the change, which a container restart lost, and the query was rebuilt from the same source and not re-run on it; the
   28 M built-code cell was lost to container recycles three times, and at 28 M only the standalone run of the same shape answered
@@ -190,11 +193,10 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **27. Lease heartbeat**: the several-servers-per-data-folder leases (`R176`) have no heartbeat yet; the plan is
   `rc-diagnostics/plan-r183-leases-2026-10-26.md` in the project folder; deferred. **Stays a proposal (`R255`):** no code in 0.5.1 unless a real «held for ever» report arrives; the proposal text is in `audit-0.5.0/inputs/open-items.md` («0.5.1 item 27 proposal»).
 - **28. Persistent-OOM double run**: under a persistent out-of-memory one request can start the rollup build twice; a stated limit, the
-  fix is 0.5.1.
+  fix is 0.5.1. **Done (PR #1510, then PR #1515, `R267`):** one build attempt per request under a persistent out-of-memory, and the persisted refresh declines (returns False before it connects) when the passphrase or the secure backend is gone, instead of recording an in-memory store as persisted. The two siblings the read found (an in-memory fallback recorded as persisted, `OO_COLUMNAR=0` read as built) are the keyword lane's follow-on (`R268`, `R269`, `R271`, `R275`, draft PR #1518).
 - **29. The FTS settle-it check**: there is no check yet that the full-text index settled after an interrupted repair; deferred.
-- **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3275-3297`): its cost at the
-  field catalogue (86k sources) is not measured; measure first, then a column projection that keeps what callers of the full form see.
-- **31. A declined rollup spawns a build thread on every served read** (audit A-026, `src/analytics/rollup_serve.py:1421`): needs the
+- **30. `GET /api/sources` builds full ORM entities to project three fields** (audit A-025, `src/api/main.py:3344-3349`): measured by the OSM lane on 86,000 synthetic sources, entities cost 2.7 to 4.4 s and a 184 MB peak against 0.65 to 0.73 s and 46 MB for the 8 columns the route uses; the column projection (same dict, same bytes) is the OSM lane's bundle (`R274`), with an independent re-measure before it merges.
+- **31. A declined rollup spawns a build thread on every served read** (audit A-026, `src/analytics/rollup_serve.py:1469` and `:1503`): needs the
   mem-low measurement before any change.
 - **32. The «130 GB corpus» label on the full-text rebuild timing** (audit A-027, `src/database/fts.py:807, 990`, `OPEN_QUEUE.md:619`):
   reworded, no longer a claim. The 981 to 1,645 s of 2026-07-09 is a record of the P0.4 unlock as a whole, with no split by phase, so the
@@ -205,11 +207,12 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   estimate wording in row B4 were reworded in PR #1506. What stays unknown, and is stated: how long a rebuild alone takes on a real corpus
   (§1c item 7 measures it).
 - **33. Fixed-name `.tmp` writers of files two servers share** (audit A-031, `src/monitoring/forensics.py:295`): already allowlisted with
-  owner lanes; `session_state.json` is the one whose torn write changes the next boot's verdict.
-- **34. The launcher's «0 to 9 ms idle over 22 launches»** (audit A-034, item 12 above): RC2's own list is its only source, no raw timing
-  table is in the tree; RC2 states it as inferred or commits the table.
-- **35. Request-origin defence** (a proposal, not a defect): the Origin/Sec-Fetch check is the only cross-site request defence, and no
-  content-type middleware exists anywhere.
+  owner lanes; `session_state.json` is the one whose torn write changes the next boot's verdict. Owner: Export, a follow-on bundle after PR #1511 (`R266`).
+- **34. The launcher's «0 to 9 ms idle over 22 launches»** (audit A-034, item 12 above): RC2's own list was its only source. **Done (PR #1504,
+  merged `17a9bfb83`):** the exposure was measured on 26 Oct by `scripts/launcher_stderr_exposure.py` (100 launches per mode), the raw table is
+  `rc-diagnostics/launcher-stderr-exposure-2026-10-26.jsonl` and item 12's line quotes it; the 17 Oct hand figure is superseded.
+- **35. Request-origin defence** (a proposal, not a defect): the Origin/Sec-Fetch check was the only cross-site request defence, and no
+  content-type middleware exists. **Done (PR #1517, `R263`, `R270`):** `docs/SECURITY.md` states the three layers (Host allow-set 421, Origin host and port 403, FastAPI's `strict_content_type` 422) and what none covers; `pyproject.toml` floors fastapi at 0.133.0 with registry entry `fastapi-strict-content-type` (0.132.0, where the check arrived, requires starlette below 1.0 and cannot be installed beside this repo's starlette floor), a coupling test and a hardening test. Measured premise, narrower than proposed: on 0.131.0 a body typed `text/plain` or form data already answers 422, and only a body with no `Content-Type` reaches the handler. Options 3 and 4 (a `Sec-Fetch-Site` check, an own middleware) are not built.
 - **36. A multi-round `.eml` import that fails midway** (audit A-006's fix, PR #1486): earlier rounds stay committed and the reply is a
   500 with no tally. The same was already true of the 200-row commits inside `ingest_emails`; a re-import is idempotent because
   duplicates are caught. 0.5.1 decides whether the reply should carry the partial tally. **Done as a stated limit (PR #1509, `R252`, 0.5.1 item 36):** `tests/test_newsletter_import_partial.py` fixes what is true today (the earlier round stays stored, the reply is a 500 naming the storage failure with no tally, a re-import stores only what is missing); a partial tally in the reply stays a decision for whoever edits those tests.
@@ -218,14 +221,18 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   scan memo cannot answer with pre-wipe data. Done in PR #1496 (keyword lane).
 - **39. The law corpus heal and the article-date rule**: `src/law/corpus.py` heal clears `published_at` without re-indexing, so the
   article-date rule (`coalesce(published_at, created_at)`) can move an article between periods; the heal must re-index or keep the
-  date; 0.5.1 (Export lane, which owns the date rule). Fix in draft PR #1511 (not merged).
+  date; 0.5.1 (Export lane, which owns the date rule). **Done (PR #1511, merged `26ce1da6a`):** the heal re-indexes.
 - **40. Boot sweeps and the `.oo-backup-` prefix**: the boot sweeps in `stream_backup` and `forensics` do not know the `.oo-backup-`
-  prefix, so a snapshot left by a crash survives until the next backup-route call; 0.5.1 (Export lane). Fix in draft PR #1511 (not merged).
-- **41. A FORCED exit during a long snapshot** (a second Ctrl+C while the snapshot thread runs) leaves the plaintext
-  `.oo-backup-*/snapshot.db` until the next route call, at least 24 h later. This item first read «a graceful-shutdown cancel»: that was
-  half wrong, since measurement shows a cancel in the middle of a snapshot is already clean (the staging directory is removed); the leak
-  is the forced exit. 0.5.1 (Export lane): an exit hook and a pid table in the
-  backup route, in draft PR #1511 (not merged), with item 40's boot sweep as the second line.
+  prefix, so a snapshot left by a crash survives until the next backup-route call; 0.5.1 (Export lane). **Done (PR #1511, merged `26ce1da6a`):** the boot sweep removes the copy of a dead owner (see item 41).
+- **41. A FORCED exit during a long snapshot** leaves the plaintext `.oo-backup-*/snapshot.db`. This item first read «a graceful-shutdown
+  cancel»: that was half wrong. **Measured by the Export lane:** a cancel in the middle of a snapshot is already clean (the staging
+  directory is removed); a double SIGINT (a second Ctrl+C while the snapshot thread runs) left the plaintext copy, and so did a SIGTERM
+  past the 30 s window; a kill leaves it until the next start. **Done (PR #1511, merged `26ce1da6a`):** an `atexit` hook removes the
+  double-SIGINT case, `install_stop_signal_cleanup()` removes the SIGTERM case, and the boot sweep (item 40) removes the copy of a dead
+  owner. The limits are in that PR's body; one is stated here: the dead-or-alive verdict of the owner marker follows the wall clock, so a
+  clock step of a second or more can make a live owner look dead for another server's boot sweep on the same folder (closed for this
+  process's own sweeps by registering the route's directory as live staging). That `process_owner` clock-step hole is a proposal only
+  (`audit-0.5.0/inputs/open-items.md`, «0.5.1 process_owner clock-step proposal»), no code.
 - **42. The backup route and a client that goes away** (a stated limit, R235): `GET /api/database/backup` keeps streaming after the client
   disconnects when Starlette is at the 1.5 to 1.7 floor; measured on a 20 GB sparse snapshot, 1.7.0 had not released after 60 s, 1.8.0
   released in 0.02 s and 1.10.0 in 0.03 s, so the limit holds only for that floor. Raising the floor to 1.8.0 is a version-coupling
@@ -234,7 +241,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
 - **43. `tests/test_figures_cold_start.py` fails after the 58 files before it in the API shard** (Export lane, 0.5.1): its two tests (a cold
   route answers without the count and then carries it; a count past its deadline is a named failure held for its window) fail only when
   run after the 58 files that precede them in the API shard, and pass alone; identical on main before #1487. An order dependence on
-  main, not bisected. Cause measured since (article rows without a `word_count` from another test's seed); fix in draft PR #1511 (not merged), test-only.
+  main, not bisected. **Done (PR #1511, merged `26ce1da6a`, test-only):** the cause was measured, the figures test returned early on a non-empty shared store and now seeds its own row.
 - **44. A Thorough diagnostics build has no scan budget**: it runs 16 scans of up to 300 s each, so by the deadlines alone it can hold
   the collection pause for up to 80 minutes (a ceiling from the constants, not an observation). Observed: 53.5 minutes of build, 50.7 of
   them paused, at 12 M mentions on a 2-core machine (the user's 0.4.0 zip of 2026-10-16); 145 s and 246 s on a 4-vCPU lab at 1.56 M and
@@ -246,10 +253,9 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   figure is applied to DuckDB as `f"{n}MB"` (`src/analytics/columnar.py`) and compared in `rollup_serve.py`'s affordability check with
   `avail_mb`, which is mebibytes (`psutil` bytes / 1024^2). The two differ by 4.9 %, in the safe direction (the check overstates what the build
   can take). Left as it is; any new reader of the field should treat it as MB (10^6 bytes).
-- **46. A right-to-left date reordered outside the keyed card frames** (qual lane, 0.5.1, proposal ACCEPTED `R258`/`R259`): `app-home.js` lines 367, 674 and 881 feed
+- **46. A right-to-left date reordered outside the keyed card frames** (qual lane, 0.5.1, `R258`/`R259`): `app-home.js` lines 367, 674 and 881 feed
   meta lines, and about 40 `slice(0, 10)` sites in `app-analysis`, `app-corpus` and the claim code interpolate a raw ISO date after an Arabic
-  name. Accepted as a call-site `ooIsoDate()` helper that isolates the date under RTL plus a zero-slack ratchet over the sites, built as one
-  qualification PR after the open PRs on its files merge (the sweep table is `qual-lane/item46-raw-date-sweep-2026-10-26.md`). Item 22's fix
+  name. Accepted as a call-site `ooIsoDate()` helper that isolates the date under RTL plus a zero-slack ratchet over the sites, **Done for the shipped slice (PR #1516, merged `f12cb4028`):** ten JS files, the `ooIsoDate` helper and a raw-date ratchet; draft PR #1520 (test-only) widens the ratchet over every `src/static` file. The remaining RTL number shapes are a separate sweep: 11 measured defects (a leading «+N» chip, a dash range after translated text) go in one qual PR (`R277`), a trailing percent beside text is a typography question for a native Arabic reader and is not swept (`R276`). The sweep table is `qual-lane/item46-raw-date-sweep-2026-10-26.md`. Item 22's fix
   (PR #1498) covered the keyed card frame point only.
 ---
 
