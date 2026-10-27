@@ -13,7 +13,7 @@ network kill switch engaged (the state the app boots in), while the monitors rec
 * a socket connect, ``connect_ex`` or UDP ``sendto``, and a DNS lookup (``getaddrinfo``, ``gethostbyname``, ``gethostbyname_ex``): blocked
   and recorded, loopback told apart from the rest,
 * a thread started (the rate limiter's own expiry timer, found by its stack, is not counted),
-* a program started (only three local queries are listed),
+* a program started (only four local queries are listed),
 * a file created, changed or REMOVED under the data directories,
 * a write statement through the app's engine (INSERT, UPDATE, DELETE, REPLACE, DDL, a ``WITH ... DELETE``, a ``PRAGMA x = y``), and
 * a change to the main database file as seen by a SECOND connection (``PRAGMA data_version``), which also catches a write that does not
@@ -498,11 +498,12 @@ def test_no_get_changes_the_main_database_file(observed):
     )
 
 
-# Programs a GET may start, by basename, with the reason. Measured on 2026-10-27: about 30 GETs start one of these three.
+# Programs a GET may start, by basename, with the reason. Measured on 2026-10-27: about 30 GETs start one of the first three; sudo shows only where the host has it and the process is not root (the Linux CI runner).
 _PROGRAMS_ALLOWED = {
     "nvidia-smi": "reads the GPU's name and memory (the /api/llm/*, /api/bulletin/* and diagnostics routes); a local query, no network",
     "uname": "reads the processor name; a local query",
     "xdg-user-dir": "reads the user's folders; a local query",
+    "sudo": "/api/llm/install/status asks `sudo -n true` (src/llm/installer.py can_run_unattended): non-interactive, never prompts, runs `true`; it decides whether the UI offers the installer",
 }
 
 
@@ -600,7 +601,7 @@ def test_the_monitors_see_a_thread_a_file_a_removal_and_a_write(tmp_path):
 
     from src.database import session as dbsession
 
-    (tmp_path / "doomed.txt").write_text("x")
+    (tmp_path / "doomed.txt").write_text("x", encoding="utf-8")
     db = tmp_path / "probe.db"
     sqlite3.connect(db).close()
     watcher = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
@@ -610,7 +611,7 @@ def test_the_monitors_see_a_thread_a_file_a_removal_and_a_write(tmp_path):
         t.start()
         t.join()
         _thread.start_new_thread(lambda: None, ())
-        (tmp_path / "probe.txt").write_text("x")
+        (tmp_path / "probe.txt").write_text("x", encoding="utf-8")
         (tmp_path / "doomed.txt").unlink()
         with dbsession.engine.connect() as conn:  # a TEMP table: nothing outlives the connection
             conn.execute(text("CREATE TEMP TABLE oo_monitor_probe (x INTEGER)"))
