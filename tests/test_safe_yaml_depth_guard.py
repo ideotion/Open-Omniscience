@@ -130,3 +130,13 @@ def test_the_catalogue_loader_goes_through_the_guard_too(loader, monkeypatch):
     assert seed_sources._load_safe_yaml("sources:\n  - name: A\n    domain: a.example\n") == {
         "sources": [{"name": "A", "domain": "a.example"}]
     }
+
+
+@pytest.mark.skipif(not hasattr(yaml, "CSafeLoader"), reason="the bound is libyaml's")
+def test_a_truncated_document_past_the_bound_is_still_named_too_deep(monkeypatch):
+    # the 257th opener is the last thing the parser can read: the bound is checked at each opener, so the refusal is the depth one,
+    # not whatever the parser raises on the next event
+    monkeypatch.setattr(safe_yaml, "YAML_LOADER", yaml.CSafeLoader)
+    for text in ("[" * (MAX_NESTING + 1), "[" * (MAX_NESTING + 1) + "}"):
+        with pytest.raises(YAMLDepthError):
+            load_safe_yaml(text)

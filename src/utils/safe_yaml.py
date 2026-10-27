@@ -58,6 +58,11 @@ def _uses_libyaml() -> bool:
     return c_loader is not None and issubclass(YAML_LOADER, c_loader)
 
 
+def _require_within_bound(depth: int) -> None:
+    if depth > MAX_NESTING:
+        raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels")
+
+
 def refuse_if_too_deep(text: str) -> None:
     """Count nesting from libyaml's EVENT stream before anything is composed (the parser is a heap-allocated state machine and
     does not recurse); raise as soon as the bound is passed, so a 100,000-deep document costs 257 events. A no-op on the pure
@@ -68,15 +73,15 @@ def refuse_if_too_deep(text: str) -> None:
     loader = YAML_LOADER(text)
     try:
         depth = 0
-        # the guard-clause loop form (src/utils/interrupts.py): the last statement is not a bare ``if``, so the back-edge stays inside the
-        # ``try``/``finally``; the bound is checked at the top, which still stops a 100,000-deep document at 257 events
+        # the guard-clause loop form (src/utils/interrupts.py): the last statement is a call, not a bare ``if``, so the back-edge stays
+        # inside the ``try``/``finally``. The bound is checked right after each opener, so a document whose 257th opener is also the
+        # last thing the parser can read is still refused as too deep, not as malformed
         while True:
             if not loader.check_event():
                 break
-            if depth > MAX_NESTING:
-                raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels")
             event = loader.get_event()
             depth += int(isinstance(event, _OPENERS)) - int(isinstance(event, _CLOSERS))
+            _require_within_bound(depth)
     finally:
         loader.dispose()
 
