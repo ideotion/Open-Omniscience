@@ -305,13 +305,15 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     from src.ingest import CrawlDelayDeferred, FetchError, kill_switch_active
 
     now = datetime.now(UTC)
+    # A marker belongs to ONE attempt: cleared before anything that can fail, so no earlier fetch (a real failed request
+    # commits a NEW time and leaves the marker alone) may vouch for this one (R294).
+    session.info.pop(_FETCHED_KEY, None)
     # ``last_checked_at`` says a check HAPPENED; ``last_status`` says how the latest ATTEMPT ended.
     # The two part company when no request was made (the kill switch refused it, or the host's
     # own Crawl-delay put the fetch off): the attempt is recorded in the status, but stamping the
     # time would read as a check on every surface that shows it, and the 24 h gate in
     # ``auto_track_due`` would then keep the document away for a day (R293).
     prior_checked_at = doc.last_checked_at
-    session.info.pop(_FETCHED_KEY, None)  # a marker belongs to ONE attempt: no earlier fetch may vouch for this one
     doc.last_checked_at = now
     try:
         # require_html=False so an official-gazette PDF is not rejected up front;

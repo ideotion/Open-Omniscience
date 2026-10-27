@@ -386,10 +386,12 @@ def test_a_failed_request_between_two_attempts_does_not_let_the_first_ones_marke
 
 def test_a_marker_from_an_earlier_attempt_never_vouches_whatever_its_time(db, monkeypatch):
     """The marker belongs to one attempt: track_document clears it first. Seeded with a time LATER than the document's
-    committed one (a clock that stepped back), it would otherwise read as "nothing newer is committed" and stamp."""
+    committed one but not in the future (an earlier attempt after which the clock stepped back and a failed request
+    committed an earlier time), it would otherwise read as "nothing at or after it is committed" and stamp. A helper
+    that merely ignored future-dated markers would not be enough, so the seed is a day ago, not a month ahead."""
     doc = _doc(db, "slow", days_ago=3)
     before = doc.last_checked_at
-    db.info[_FETCHED_KEY] = (doc.id, datetime.now(UTC) + timedelta(days=30))
+    db.info[_FETCHED_KEY] = (doc.id, datetime.now(UTC) - timedelta(days=1))
     real_commit, calls = db.commit, {"n": 0}
 
     def commit():
