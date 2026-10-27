@@ -32,6 +32,32 @@ def _db(tmp_path):
     return tmp_path / "open_omniscience.db"
 
 
+#: The stand-in for "the previous session's last connection was never closed": a process that commits a store in WAL mode and dies
+#: without closing (``os._exit``), leaving ``-wal`` and ``-shm`` behind. The table and the row are ONE transaction on purpose: stdlib
+#: sqlite3 commits a ``CREATE TABLE`` by itself, and a reader in this process that met the file between that commit and the insert
+#: read "no row" and cached it (``kv_get_json_checked`` fills the cache with an absent value), which then answered the test's own read.
+_LEFTOVER_WAL_STAND_IN = (
+    "import sqlite3,os,sys\n"
+    "c=sqlite3.connect(sys.argv[1],isolation_level=None)\n"
+    "c.execute('PRAGMA journal_mode=WAL')\n"
+    "c.execute('BEGIN')\n"
+    "c.execute('CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)')\n"
+    "c.execute(\"INSERT INTO app_state VALUES ('settings.app','{\\\"theme\\\": \\\"dark\\\"}','x')\")\n"
+    "c.execute('COMMIT')\n"
+    "os._exit(0)\n"
+)
+
+
+def _leave_a_wal(db) -> None:
+    """Write the stand-in store, then drop what a reader in this process cached while the file was being written: the cache is
+    single-process by contract, and this writer is a second process."""
+    import subprocess
+    import sys
+
+    subprocess.run([sys.executable, "-c", _LEFTOVER_WAL_STAND_IN, str(db)], check=True)
+    kv_store.kv_invalidate()
+
+
 # --------------------------------------------------------------------------- #
 # The generic kv primitive
 # --------------------------------------------------------------------------- #
@@ -180,20 +206,9 @@ def test_a_read_leaves_a_leftover_wal_byte_for_byte_and_still_reads_the_value(tm
     """MUTATION TARGET: ``read_only=True`` in ``kv_get_json``. The last connection that closes on a file checkpoints a leftover ``-wal``
     into it and deletes it: the one trace that the previous session's last connection was never closed."""
     import hashlib
-    import subprocess
-    import sys
 
     db = _db(tmp_path)
-    code = (
-        "import sqlite3,os,sys\n"
-        "c=sqlite3.connect(sys.argv[1])\n"
-        "c.execute('PRAGMA journal_mode=WAL')\n"
-        "c.execute('CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)')\n"
-        "c.execute(\"INSERT INTO app_state VALUES ('settings.app','{\\\"theme\\\": \\\"dark\\\"}','x')\")\n"
-        "c.commit()\n"
-        "os._exit(0)\n"
-    )
-    subprocess.run([sys.executable, "-c", code, str(db)], check=True)
+    _leave_a_wal(db)
     wal = tmp_path / "open_omniscience.db-wal"
     before = hashlib.sha256(wal.read_bytes()).hexdigest()
     # kv_get_json folds every failed read into None; the checked read says which kind it was, and the files say what the open met.
@@ -216,6 +231,51 @@ def test_a_read_leaves_a_leftover_wal_byte_for_byte_and_still_reads_the_value(tm
                 f"a direct read-only read of the file: {direct}")
     assert got == {"theme": "dark"}, f"{why}; files in the data dir (bytes): {files}; stdlib sqlite {sqlite3.sqlite_version}"
     assert wal.exists() and hashlib.sha256(wal.read_bytes()).hexdigest() == before
+
+
+#: Rounds the next test runs. Against the two-commit stand-in (``CREATE TABLE`` committed by itself, no invalidation) a polling reader
+#: left "no row" in the cache in 119 of 300 and 146 of 400 rounds measured (stdlib sqlite 3.45.1, ``rc-diagnostics/r236/``), so at the
+#: lower 30 percent a round misses it with probability 0.7, and 20 rounds all missing it is 0.7**20 = 0.08 percent: the number is what
+#: keeps a green run against the old stand-in a one-in-a-thousand event, not a habit.
+_POLLED_ROUNDS = 20
+
+
+def test_a_reader_polling_the_store_while_the_stand_in_is_written_cannot_leave_no_value_in_the_cache(tmp_path, monkeypatch):
+    """MUTATION TARGET: ``_LEFTOVER_WAL_STAND_IN`` (the table and the row in separate commits) and the ``kv_invalidate()`` in ``_leave_a_wal``.
+    A leftover thread from an earlier test follows the lazy ``data_dir()`` into the next test's directory (CI 2026-10-27 found a
+    ``briefing_cache.json`` there) and reads settings while the second process writes the file: that read is allowed to see no value, and
+    the test's own read afterwards must still find the one the stand-in committed. Needs no leftover thread to run: it brings its own."""
+    import threading
+
+    stop = threading.Event()
+
+    def poll() -> None:
+        while not stop.is_set():
+            for key in ("settings.app", "settings.other"):
+                try:
+                    kv_store.kv_get_json_checked(key)
+                except kv_store.KvReadError:
+                    pass
+
+    failures = []
+    for i in range(_POLLED_ROUNDS):
+        round_dir = tmp_path / f"round{i}"
+        round_dir.mkdir()
+        monkeypatch.setenv("OO_DATA_DIR", str(round_dir))
+        kv_store.kv_invalidate()
+        stop.clear()
+        poller = threading.Thread(target=poll, name=f"kv-poller-{i}")
+        poller.start()
+        try:
+            _leave_a_wal(_db(round_dir))
+            got = kv_store.kv_get_json_checked("settings.app")
+        finally:
+            stop.set()
+            poller.join(timeout=30)
+        assert not poller.is_alive(), "the poller thread must be joined before the test ends"
+        if got != {"theme": "dark"}:
+            failures.append((i, got))
+    assert not failures, f"{len(failures)} of {_POLLED_ROUNDS} rounds read no value: {failures[:3]}"
 
 
 def test_a_read_of_a_store_that_does_not_exist_creates_nothing(tmp_path):
