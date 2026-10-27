@@ -150,6 +150,7 @@ def test_a_feed_the_kill_switch_refused_says_so_and_changes_no_other_key(db):
         "cannot resolve host 'feed1.test': boom",
         "request error for https://feed1.test/rss: timeout",
         "robots.txt could not be read",
+        "HTTP 503 for https://feed1.test/rss (server said: network kill switch is active)",
     ],
 )
 def test_a_failure_that_is_not_airplane_mode_never_carries_the_key(db, message):

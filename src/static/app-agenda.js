@@ -936,7 +936,12 @@
     }
     async function feedAction(id, action) {
       try {
-        await api(`/api/events/feeds/${encodeURIComponent(id)}/${action}`, {method: "POST"});
+        const r = await api(`/api/events/feeds/${encodeURIComponent(id)}/${action}`, {method: "POST"});
+        if (r && r.skipped_offline) {
+          // The kill switch refused the fetch: no verdict was stored and the feed was not checked, so no "Checked." (invariant #14e).
+          toast(_bulT("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn");
+          return;
+        }
         toast(action === "import" ? "Imported." : "Checked.", "ok");
       } catch (e) { toast(e.message, "err"); }
       loadFeedDir();

@@ -27,6 +27,32 @@ from src.ingest.fetch_verdict import (
     "detail,expected",
     [
         ("network kill switch is active -- collection stopped by operator", "offline"),
+        ("FetchFailed: network kill switch is active -- collection stopped by operator", "offline"),
+        ("  Network Kill Switch is active -- collection stopped by operator", "offline"),
+        # The words INSIDE another failure's text are that failure's, never the person's airplane mode (R296 control cases).
+        ("HTTP 503 for https://h.test/a (server said: network kill switch is active)", "http_5xx"),
+        ("request error for https://h.test/kill switch is active: timed out", "connect"),
+        ("redirect to unsupported URL: 'ftp://h.test/network kill switch is active'", "bad_url"),
+        ("some brand-new error: the kill switch of the CDN fired", "other"),
+        # The socket guard's own sentence (R298): bare, and as requests wraps it when the switch is engaged AFTER the fetcher's check.
+        (
+            "airplane mode is engaged: refusing a network connection to 'h.test'. No packet leaves the machine while offline",
+            "offline",
+        ),
+        (
+            "request error for https://h.test/x: HTTPSConnectionPool(host='h.test', port=443): Max retries exceeded with url: /x "
+            "(Caused by NewConnectionError(\"HTTPSConnection(host='h.test', port=443): Failed to establish a new connection: "
+            "airplane mode is engaged: refusing a network connection to 'h.test'. No packet leaves the machine while offline\"))",
+            "offline",
+        ),
+        (
+            "HTTP 503 for https://h.test/a (server said: airplane mode is engaged: refusing a network connection to 'h.test')",
+            "http_5xx",
+        ),
+        (
+            "HTTP 502 for https://h.test/a: Failed to establish a new connection: airplane mode is engaged: refusing a network connection",
+            "http_5xx",
+        ),
         ("HTTP 403 for https://reuters.com/x", "http_403"),
         ("HTTP 401 for https://x", "http_401"),
         ("HTTP 429 for https://x", "http_429"),
