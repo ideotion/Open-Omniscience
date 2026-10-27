@@ -215,7 +215,9 @@ def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
             "robots.txt could not be determined — fail-closed, not fetched",
             False,
         )
-    if "kill switch" in low:
+    from src.ingest.fetch_verdict import is_kill_switch_refusal
+
+    if is_kill_switch_refusal(record_text(exc, typed=False)):
         return ("offline", "the network kill switch is engaged — go online first", False)
     if "http 404" in low or "http 410" in low:
         return (
@@ -275,7 +277,9 @@ def import_feed(
             if retryable and attempts <= 1:
                 time.sleep(1.5)
                 continue
-            detail = record_text(exc) if isinstance(exc, FetchError) else record_text(exc, typed=True)
+            detail = (
+                record_text(exc) if isinstance(exc, FetchError) else record_text(exc, typed=True)
+            )
             return FeedImportResult(
                 symbol,
                 "fetch_failed",

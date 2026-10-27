@@ -32,6 +32,7 @@ import yaml
 
 from src.catalog.countries import config_country
 from src.monitoring.secret_scrub import log_failure
+from src.utils.safe_yaml import load_safe_yaml
 
 _LOG = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ def _load_file(p: Path) -> list[City]:
     if not p.exists():
         return []
     try:
-        data = yaml.safe_load(p.read_text("utf-8")) or {}
+        data = load_safe_yaml(p.read_text("utf-8")) or {}
     except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
         if p == PLACES_GAZETTEER_PATH:  # a damaged artifact must not take the world file's coverage with it
             log_failure(_LOG, f"{p.name} is unreadable; reading the world gazetteer alone", exc, level=logging.WARNING)
@@ -196,7 +197,7 @@ def _file_vintage(p: Path) -> str | None:
     if not p.exists():
         return None
     try:
-        data = yaml.safe_load(p.read_text("utf-8")) or {}
+        data = load_safe_yaml(p.read_text("utf-8")) or {}
         raw = data.get("as_of") if isinstance(data, dict) else None
         return str(raw) if raw else None
     except (OSError, yaml.YAMLError):

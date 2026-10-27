@@ -39,6 +39,31 @@ FETCH_FAIL_REASONS = (
 )
 
 _HTTP_RE = re.compile(r"\bHTTP (\d{3})\b")
+# OUR OWN SENTENCES, recognised at the START of the text, never as a phrase anywhere in it (R298): the same words can appear INSIDE another
+# failure's text (a redirect target, a status line a server wrote, a URL), and that failure is the host's, not the person's airplane mode.
+#   1. the kill switch's refusal, raised verbatim in ``src/ingest/__init__.py`` and ``src/safety/fetcher.py``, optionally led by an exception
+#      class a caller prefixed ("FetchFailed: ...");
+#   2. the socket guard's refusal (``airplane.py``, an ``AirplaneModeError``), bare, or as ``requests`` wraps it when the switch is engaged
+#      AFTER the fetcher's own check passed: "request error for <url>: ...Failed to establish a new connection: airplane mode is engaged: ...".
+#      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words);
+#   3. the same guard sentence under OUR resolver wrapper (``EthicalFetcher._resolve_cached``), when the switch is engaged between the
+#      pre-fetch check and the lookup: "cannot resolve host '<host>': airplane mode is engaged: refusing a network connection ...". The host
+#      is the only part another party shapes (a redirect's Location, a feed item's link: an IPvFuture "[v1.<anything>]" host reaches a lookup
+#      with spaces, colons and quotes in it), so the token takes NO whitespace and NO backslash: ``repr`` escapes an inner quote with a backslash,
+#      so a host that tries to close the quote early and continue in our words is refused, and a host holding both quote kinds fails SAFE
+#      (read as ``dns``). A gaierror's own text ("[Errno -2] ...") between the two never matches.
+_OFFLINE_RE = re.compile(
+    r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
+    r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
+    r"|^\s*cannot resolve host (?:'[^'\s\\]*'|\"[^\"\s\\]*\"): airplane mode is engaged: refusing a network connection",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def is_kill_switch_refusal(text: str | None) -> bool:
+    """True when ``text`` IS one of our refusal sentences (see above). One definition for every caller that must tell the person's
+    own airplane mode apart from a host's failure; a phrase search over the text is not an equivalent."""
+    return text is not None and _OFFLINE_RE.match(text) is not None
 
 
 def classify_fetch_failure(detail: str | None) -> str:
@@ -51,7 +76,7 @@ def classify_fetch_failure(detail: str | None) -> str:
         return "other"
     d = detail.lower()
 
-    if "kill switch" in d:
+    if is_kill_switch_refusal(detail):
         return "offline"
 
     m = _HTTP_RE.search(detail)

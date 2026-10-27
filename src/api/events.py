@@ -99,13 +99,17 @@ def feed_directory() -> dict:
 
 @router.post("/feeds/{feed_id}/verify")
 def feed_verify(feed_id: str) -> dict:
-    """Fetch ONE feed now and record an honest verdict (operator-initiated)."""
+    """Fetch ONE feed now and record an honest verdict (operator-initiated). A fetch the kill switch refused stores nothing."""
     from src.events.feeds import feed_by_id, verify_feed
     from src.safety.fetcher import make_fetcher
 
     if feed_by_id(feed_id) is None:
         raise HTTPException(status_code=404, detail=f"Unknown feed: {feed_id}")
-    return {"feed": feed_id, "verdict": verify_feed(make_fetcher(), feed_id)}
+    verdict = verify_feed(make_fetcher(), feed_id)
+    body: dict = {"feed": feed_id, "verdict": verdict}
+    if verdict.get("status") == "skipped_offline":
+        body["skipped_offline"] = 1  # the kill switch refused it: no verdict was stored (present ONLY then)
+    return body
 
 
 @router.post("/feeds/{feed_id}/import")
@@ -234,11 +238,16 @@ def feed_verify_batch(limit: int = Query(25, ge=1, le=100)) -> dict:
         if fd["id"] not in verdicts
     ][:limit]
     fetcher = make_fetcher()
-    out = {fid: verify_feed(fetcher, fid) for fid in pending}
+    results = {fid: verify_feed(fetcher, fid) for fid in pending}
+    # A feed the kill switch refused has no verdict (none was stored) and stays unchecked: it is counted apart, not as a result.
+    out = {fid: v for fid, v in results.items() if v.get("status") != "skipped_offline"}
     ok = sum(1 for v in out.values() if v.get("status") == "ok")
-    return {"checked": len(out), "ok": ok, "remaining_unchecked": max(
+    body = {"checked": len(out), "ok": ok, "remaining_unchecked": max(
         0, sum(len(f["feeds"]) for f in load_families()) - len(load_verdicts())
     ), "verdicts": out}
+    if len(results) != len(out):
+        body["skipped_offline"] = len(results) - len(out)  # present ONLY when the kill switch caused it
+    return body
 
 
 @router.get("/astronomy")

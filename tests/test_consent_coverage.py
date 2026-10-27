@@ -11,9 +11,8 @@ table is the ruling:
   per-call refusal) and online the person already passed the one consent. What it OWES is the corollary: the refusal must be NAMED, never
   read as a quiet "0 results". That is a behaviour, so each ``named`` row is proved by a real refusal (kill switch engaged, a transport that
   reaches no socket) either in this file or in the test that the row names.
-* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. Two rows: feed verification reports
-  the person's own airplane mode as the HOST being unreachable (a green "Checked." toast, an ``unreachable`` verdict stored, the feed pushed
-  onto the re-check ladder). It is a clear defect (R189, invariant #14e); its fix is a separate change.
+* ``gap``: a KNOWN defect, pinned as what it does today so that fixing it is a visible edit of this table. NONE at present: the two
+  feed-verification rows were gaps until R296 (verification recorded the refusal as the HOST being unreachable) and are ``named`` now.
 
 DISCOVERY runs the other way. Every ``@router.post|put|delete|patch|get`` handler in ``src/api`` that names a fetch primitive in its body
 (``get_fetcher``, ``make_fetcher``, ``following_fetcher``, ``EthicalFetcher``, ``WikiClient``/``_client``) must be a row, and every row
@@ -86,6 +85,13 @@ EGRESS: tuple[Row, ...] = (
     ),
     # --- named: nothing asked, the refusal is named -------------------------------------------------------------------
     Row(("events.py", "feed_import"), ("feedAction",), "named"),
+    Row(("events.py", "feed_verify"), ("feedAction",), "named"),
+    Row(
+        ("events.py", "feed_verify_batch"),
+        (),
+        "named",
+        why="no button calls it since the manual sweep was retired",
+    ),
     Row(("ingestion.py", "ingest_url_endpoint"), ("ingestUrl",), "named"),
     Row(("ingestion.py", "ingest_source_endpoint"), ("ingestSource",), "named", pinned_by=_SKIPPED),
     Row(("ingestion.py", "ingest_batch_endpoint"), ("ingestBatch",), "named", pinned_by=_SKIPPED),
@@ -112,19 +118,6 @@ EGRESS: tuple[Row, ...] = (
         discovered=False,
         pinned_by="tests/test_stat_subscriptions.py::test_refresh_is_airplane_gated_no_socket",
         why="the route is a one-line wrapper over refresh_due, which opens no socket offline and counts skipped_offline",
-    ),
-    # --- gap: a known defect, pinned as it is so that fixing it is a visible edit of this table -----------------------
-    Row(
-        ("events.py", "feed_verify"),
-        ("feedAction",),
-        "gap",
-        why="offline it stores an `unreachable` verdict and a ladder attempt for a healthy feed; the toast says Checked.",
-    ),
-    Row(
-        ("events.py", "feed_verify_batch"),
-        (),
-        "gap",
-        why="the same, 25 feeds at a time; no button calls it since the manual sweep was retired",
     ),
 )
 
@@ -453,23 +446,20 @@ def _probe_track_now(c):
     return r, r.status_code == 200 and r.json().get("skipped_offline") == 1
 
 
-def _probe_feed_verify_gap(c):
-    """THE DEFECT, as it is today: 200, an `unreachable` verdict (the HOST is blamed), nothing at the top level naming the switch."""
+def _probe_feed_verify(c):
     r = c.post("/api/events/feeds/wph-hol-ad/verify", headers=_H)
     j = r.json()
-    verdict = j.get("verdict") or {}
-    return r, r.status_code == 200 and verdict.get("status") == "unreachable" and not any(
-        _kill(v) for v in j.values() if isinstance(v, str)
-    )
+    return r, r.status_code == 200 and j.get("skipped_offline") == 1 and (
+        j.get("verdict") or {}
+    ).get("status") == "skipped_offline"
 
 
-def _probe_feed_verify_batch_gap(c):
-    r = c.post("/api/events/feeds/verify-batch", headers=_H)
+def _probe_feed_verify_batch(c):
+    r = c.post("/api/events/feeds/verify-batch?limit=2", headers=_H)
     j = r.json()
-    verdicts = j.get("verdicts") or {}
-    return r, r.status_code == 200 and j.get("ok") == 0 and bool(verdicts) and all(
-        v.get("status") == "unreachable" for v in verdicts.values()
-    )
+    return r, r.status_code == 200 and j.get("skipped_offline") == 2 and j.get(
+        "checked"
+    ) == 0 and j.get("verdicts") == {}
 
 
 _PROBES = {
@@ -481,8 +471,8 @@ _PROBES = {
     ("monitoring.py", "sources_health"): _probe_sources_health,
     ("wiki.py", "track_page"): _probe_track_page,
     ("wiki.py", "track_now"): _probe_track_now,
-    ("events.py", "feed_verify"): _probe_feed_verify_gap,
-    ("events.py", "feed_verify_batch"): _probe_feed_verify_batch_gap,
+    ("events.py", "feed_verify"): _probe_feed_verify,
+    ("events.py", "feed_verify_batch"): _probe_feed_verify_batch,
 }
 
 

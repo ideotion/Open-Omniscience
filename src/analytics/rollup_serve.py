@@ -409,6 +409,7 @@ def _build_inmemory_and_swap() -> dict | None:
     STOPPED part-way (the memory guard engaged, or DuckDB reached its own limit with no offload
     allowed): nothing is swapped in and the previous rollup keeps serving."""
     from src.analytics import columnar, rollup_marker, serve_gate
+    from src.database import library_generation
     from src.database.session import session_scope
 
     # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
@@ -430,6 +431,10 @@ def _build_inmemory_and_swap() -> dict | None:
     try:
         if not rollup_marker.begin(rss_mb=r["rss_mb"], avail_mb=r["avail_mb"], limit_mb=snap["duckdb_limit_mb"]):
             return {"reason": rollup_marker.ELSEWHERE, "at": time.time()}  # another server began a build between the check and now (R183)
+        # The library's generation, read from the guard's own source BEFORE the build's session reads a row: a swap that lands
+        # later makes it stale (``_require_library_unchanged``). A swap between this line and the session's first statement
+        # fails the build for nothing, once, and the next request builds.
+        stamp = library_generation.current()
         with session_scope() as s:
             # Token BEFORE the build (conservative: rows landing DURING the build make the
             # recorded token compare "changed" next check -> one extra rebuild, never a
@@ -441,7 +446,7 @@ def _build_inmemory_and_swap() -> dict | None:
             tally: dict = {}
             build_started = time.monotonic()
             try:
-                tally = columnar.build_keyword_daily(con, s, on_batch=_make_on_batch(), snapshot=snap)
+                tally = columnar.build_keyword_daily(con, s, on_batch=_make_on_batch(stamp), snapshot=snap)
             except columnar.BuildDeclined as stop:
                 skip = {"reason": stop.reason, "at": time.time(), **stop.detail}
             except Exception as exc:  # noqa: BLE001
@@ -466,6 +471,9 @@ def _build_inmemory_and_swap() -> dict | None:
                         raise RuntimeError("the serve check found the DuckDB instance unusable")
                     skip = _serve_check_stop(canary) if canary["outcome"] == "out-of-memory" else None
             if skip is not None:
+                # a stop on a library that was replaced under the build is not a wall of the new corpus: its hold would carry the new file's
+                # count beside the old file's epoch. The refusal goes to the dispatcher, which answers it with no hold.
+                _require_library_unchanged(stamp)
                 skip.update({
                     # the limit and the machine total this build ran under, whatever stopped it (R147)
                     "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
@@ -479,6 +487,7 @@ def _build_inmemory_and_swap() -> dict | None:
                 return skip
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+            _require_library_unchanged(stamp)  # the compact and the serve check above ran for a while: a rollup no corpus produced is never swapped in
         ok = True
     finally:
         if not ok:
@@ -1144,14 +1153,38 @@ def build_progress() -> dict | None:
 _LAST_VERDICT_POLL = float("-inf")
 
 
-def _make_on_batch():
-    """The per-batch hook of the build: refresh the in-progress marker, then ask the memory guard."""
+def _require_library_unchanged(stamp: int | None) -> None:
+    """Refuse to go on when the library file was replaced since ``stamp`` (``library_generation.current()`` when the build began).
+
+    A build commits between batches, which hands its connection back to the pool, and the generation guard's checkout refusal is answered
+    by a fresh connection on the NEW file, silently: only this comparison, at each stage boundary, turns a swap that landed there into the
+    refusal the dispatcher already handles (``_library_replaced``). The stamp is compared with the guard's own ``valid`` (not a copy of
+    its rule): a swap that did not happen and changed nothing on disk gives the old generation back, and the build goes on.
+
+    The comparison NEVER WAITS. While a swap window is open the generation is already moved (``bump`` runs first), so a build that reaches a
+    boundary inside a window that is then refused before it touches anything is stopped for a swap that did not happen: no hold, a rebuild on
+    the next request. Waiting for the window to close (``connecting()``) would answer that exactly, but the hook runs with the build's session
+    still holding a pooled SQLite connection (before the batch's commit, and through the whole aggregate stage), and ``swap_in_corpus`` waits
+    for file handles after ``disk_changing`` (Windows): a build parked behind the window with its handle open would make the restore fail. A
+    refused build closes its session and frees the handle, which is what the swap waits for."""
+    from src.database import library_generation
+
+    if stamp is not None and not library_generation.valid(stamp):
+        raise library_generation.StaleLibraryError("the library file was replaced under the rollup build")
+
+
+def _make_on_batch(stamp: int | None = None):
+    """The per-batch hook of the build: check the library is the file the build began on, refresh the in-progress marker, then ask the memory guard.
+
+    It runs after every batch of mentions, when the aggregate begins and after each shard of it, and when the keywords stage begins and ends:
+    the stage boundaries the build crosses (a boundary, not a timer)."""
 
     last_poll = [float("-inf")]  # never a clock-dependent 0.0: a fresh runner's monotonic clock starts near it
 
     def _on_batch(stage: str, rows_done: int) -> None:
         from src.analytics import columnar, rollup_marker
 
+        _require_library_unchanged(stamp)
         _progress_note(stage, rows_done)
         r = _readings()
         rollup_marker.progress(stage, rows_done, rss_mb=r["rss_mb"], avail_mb=r["avail_mb"])
