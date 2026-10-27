@@ -5,4 +5,5 @@
 **Rules.**
 1. Put the comparison (a generation, an epoch, a deadline) at the last boundary BEFORE the first write of a non-transactional sequence, and never inside it. The cost is the width of the sequence, named as a stated limit; the alternative is a stop that corrupts.
 2. A stop before the writes drops what the stopped step staged (here the stage table), so the persisted file does not carry the leftovers of every stopped attempt, and the retry is then compared with a full rebuild in the test: the proof that nothing was added twice.
-3. The hook is the build's own (`on_batch(stage, rows_done)`), passed through the refresh to the full path too: one signature, one comparison, no second path.
+3. Hook only the stages that come BEFORE a replacement goes live: the build's keywords stage runs after the new rollup replaced the old one, so the persisted full path does not forward it (a stop there would serve a rollup with most terms missing).
+4. The hook is the build's own (`on_batch(stage, rows_done)`), passed through the refresh to the full path too: one signature, one comparison, no second path.

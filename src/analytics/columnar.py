@@ -2023,7 +2023,10 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     ``on_batch(stage, rows_done)`` is the caller's hook, the one :func:`build_keyword_daily` takes: after every batch of the tail
     (``"mentions"``) and once before the merge begins (``"aggregate"``), so a caller that compares the library's generation there stops
     the refresh BEFORE anything is merged (the merge is not transactional: a stop after its first statement and before the watermark moves
-    would be added twice by the next refresh). A raise there drops the stage table and propagates. The full path passes it on.
+    would be added twice by the next refresh). A raise there drops the stage table and propagates. The full path passes it on for the stages
+    BEFORE its swap-in only (``"mentions"``, ``"aggregate"``): its ``"keywords"`` stage runs after the new ``keyword_daily`` replaced the old one
+    and while ``keyword_meta`` is being rebuilt, so a stop there would leave a store that is served with most terms missing; that stage is not
+    hooked here (a stated limit, covered by the caller's final comparison before the store is recorded).
     """
     ensure_store_meta(con)
     built_epoch = _get_meta(con, "keyword_daily.built_epoch")
@@ -2034,7 +2037,11 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         or int(built_epoch) != int(corpus_epoch)
     )
     if needs_full:
-        tally = build_keyword_daily(con, session, batch_size=batch_size, on_batch=on_batch)
+        def _before_swap_in(stage: str, rows_done: int) -> None:
+            if on_batch is not None and stage != "keywords":
+                on_batch(stage, rows_done)
+
+        tally = build_keyword_daily(con, session, batch_size=batch_size, on_batch=_before_swap_in)
         _set_meta(con, "keyword_daily.built_epoch", int(corpus_epoch))
         return {"mode": "full", "corpus_epoch": int(corpus_epoch), **tally}
 

@@ -115,6 +115,24 @@ def test_no_swap_means_the_hook_changes_nothing_and_sees_each_boundary(ctx, worl
     assert _counts(con) == _counts(_fresh_full(session))
 
 
+def test_the_full_path_hooks_the_stages_before_its_swap_in_and_not_the_keywords_stage(ctx, world):
+    """A stop in the build's keywords stage would leave the new keyword_daily serving beside a half-rebuilt keyword_meta."""
+    session, ex = ctx
+    _index(session, ex, "2024-03-01", "The federal budget gripped the Senate chamber.")
+    _index(session, ex, "2024-03-02", "Senate leaders argued the federal budget tonight.")
+    con = columnar.connect(passphrase=None)
+    seen: list[str] = []
+
+    def hook(stage: str, rows: int) -> None:
+        seen.append(stage)
+        if stage == "keywords":
+            raise gen.StaleLibraryError("a stop after the swap-in")
+
+    res = columnar.refresh_keyword_daily(con, session, corpus_epoch=1, batch_size=2, on_batch=hook)
+    assert res["mode"] == "full" and "keywords" not in seen and "mentions" in seen
+    assert _counts(con) == _counts(_fresh_full(session)), "the full path was cut short"
+
+
 def test_the_full_path_passes_the_hook_to_the_build(ctx, world):
     session, ex = ctx
     _index(session, ex, "2024-03-01", "The federal budget gripped the Senate chamber.")

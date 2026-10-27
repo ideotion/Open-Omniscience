@@ -613,7 +613,9 @@ def _refresh_persisted_build() -> bool | None:
                 columnar.refresh_keyword_daily(
                     con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
                 )
-                _require_library_unchanged(stamp)  # the merge ran for a while: a store no corpus produced is never recorded as serving
+                # the merge ran for a while: the store is not RECORDED as serving (a cached store that was already serving keeps serving; the
+                # untouched token makes the next gate check refresh it)
+                _require_library_unchanged(stamp)
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
                 _STATE["con"] = con
                 _STATE["persisted"] = True
