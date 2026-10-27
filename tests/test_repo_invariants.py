@@ -6585,7 +6585,7 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # The endpoints exist and are downloadable.
     assert '@router.get("/home-cards")' in diag
     assert "card_click_diagnostics" in diag
-    assert '@router.get("/all")' in diag and "def all_diagnostics(" in diag
+    assert '@router.get("/all", dependencies=[Depends(refuse_cross_site_get)])' in diag and "def all_diagnostics(" in diag
     # The all-bundle gathers the other logs (each wrapped so one failure can't abort it).
     for member in ("debug-bundle.json", "home-cards.json", "keyword-engine.json"):
         assert member in diag
