@@ -1283,6 +1283,21 @@ def first_start_decline() -> tuple[dict | None, str | None]:
     return None, None
 
 
+def _library_replaced(raised: BaseException) -> bool:
+    """True when ``raised``, or an exception it was raised from or while handling, is the generation guard's refusal of a connection that belongs to a corpus file
+    that has since been replaced (``library_generation.StaleLibraryError``)."""
+    from src.database.library_generation import StaleLibraryError
+
+    seen: set[int] = set()
+    cur: BaseException | None = raised
+    while cur is not None and id(cur) not in seen:
+        if isinstance(cur, StaleLibraryError):
+            return True
+        seen.add(id(cur))
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
 def _build_and_swap() -> str:
     """Background (re)build dispatcher: the PERSISTED store when D1 is active, else the
     in-memory store. Always releases the build lock; a failure never crashes the app.
@@ -1423,7 +1438,14 @@ def _build_and_swap() -> str:
         outcome = "failed"
         stage, _LAST_STAGE["value"] = _LAST_STAGE["value"], None
         try:
-            if ran:  # an error in a verdict, before any build started, is no build that failed: it keeps no hold that would refuse real builds
+            if ran and _library_replaced(exc):
+                # A restore, a repair or an encryption in place replaced the corpus file under the build, and its connection was refused: the build did not fail
+                # on anything about the corpus it will read now, which it has never tried. A hold read the NEW corpus's epoch and size at the stop, so no release rule
+                # could fire for a corpus of the same size, and the rollup stayed off until a restart. No hold: the next request rebuilds from the new file.
+                _LOG.info("rollup serve: the library file was replaced under the build; no hold is kept")
+                _note_decline("failed", "build", {"reason": "library-replaced", "at": time.time(), "engine_error_class": "StaleLibraryError",
+                                                  **({"stage": stage} if stage else {})})  # the boot step's row and status() say why there is no rollup
+            elif ran:  # an error in a verdict, before any build started, is no build that failed: it keeps no hold that would refuse real builds
                 _record_failure(type(exc).__name__, stage, persisted_run)  # the class only: the sink sweep's rule
         except Exception as hold_exc:  # noqa: BLE001 - a hold that cannot be kept must not turn a failed build into a crash
             log_failure(_LOG, "rollup serve: could not keep the failure hold", hold_exc, level=logging.WARNING)
