@@ -1036,7 +1036,7 @@
           const ex = (c.members || []).slice(0, 6).map((m) =>
             `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
             + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
-          const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
+          const more = c.size > 6 ? `<li class="muted">${ooLtrIsolate("+" + (c.size - 6))} ${esc(t("more"))}</li>` : "";
           return `<div class="card" style="padding:10px;margin-top:8px">`
             + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
             + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" data-on-change="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`

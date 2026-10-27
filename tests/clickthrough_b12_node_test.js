@@ -215,6 +215,8 @@ async function run() {
       const window = { OOI18N: this.I };
       const OOI18N = this.I;
       ${ESC}
+      const document = {documentElement: {dir: "ltr"}};
+      ${extract("ooLtrIsolate", null, read("app-core.js"))}
       ${extract("_qualTf", null, QUAL)}
       ${extract("_qualTfHtml", null, QUAL)}
       ${extract("_qualShare", null, QUAL)}

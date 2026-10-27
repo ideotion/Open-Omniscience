@@ -84,7 +84,7 @@
         <span title="${esc(why)}"><b>${esc(t(row.label))}</b></span>
         <span>${esc(_qualShare(row))}</span>
         <span class="muted">${esc(row.unit ? t(row.unit) : "")}</span>
-        <span class="hint" title="${esc(t("The safe range. Outside it the value is corrected AND reported — never silently."))}">${t("safe range")} ${row.lo}–${row.hi}</span>
+        <span class="hint" title="${esc(t("The safe range. Outside it the value is corrected AND reported — never silently."))}">${t("safe range")} ${ooLtrIsolate(row.lo + "–" + row.hi)}</span>
       </div>`;
     }
 
