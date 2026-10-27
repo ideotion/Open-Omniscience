@@ -432,11 +432,14 @@ def _load_extra_stopwords_by_language() -> dict[str, frozenset[str]]:
                 # YAMLError, on BOTH loader paths (the pure one used here before raised an uncaught RecursionError at about 500 levels, which
                 # is an import-time crash of the extractor), and the loader class is the one the rings reader and the seeder already use
                 data = load_safe_yaml(path.read_text(encoding="utf-8")) or {}
-            except (OSError, yaml.YAMLError):
+            except (OSError, UnicodeDecodeError, yaml.YAMLError):  # bytes that are not UTF-8 are a malformed file, not an import-time crash
                 continue
             if not isinstance(data, dict):
                 continue  # a list or a scalar at the top is not a stopword file, and would fail on ``.get`` below
-            by_lang[path.stem.lower()] = frozenset(str(w) for w in (data.get("stopwords") or []))
+            words = data.get("stopwords") or []
+            if not isinstance(words, list):
+                continue  # ``stopwords: 42`` would raise on iteration and ``stopwords: abc`` would become the stopwords a, b and c
+            by_lang[path.stem.lower()] = frozenset(str(w) for w in words)
     return by_lang
 
 
