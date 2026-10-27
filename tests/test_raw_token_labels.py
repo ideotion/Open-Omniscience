@@ -18,8 +18,10 @@ move the pin AND say below which kind it is. What the pinned remainder is (read,
 * AN IDENTIFIER OR USER-DEFINED OPEN SET, so it is shown as sent on purpose: app-map.js ``e.kind`` (a Wikimedia
   dump file name), reader.js (AI keyword kind, set by a custom prompt), app-home.js (annotation and claim kinds: the
   server accepts any string, the UI's own select offers six that could be mapped later), app-insights.js (``data-kind`` attributes, never drawn), ooversions.js (a CSS class).
-* OTHER LANES' FILES, NOT CLASSIFIED HERE: app-backup.js, app-diagnostics.js (``st.state`` at one site joins other
-  parts), app-settings.js, taskmanager.js. They are pinned so that they cannot grow, not declared correct.
+* MAPPED THROUGH t() SINCE R291: app-diagnostics.js ``st.state`` of the background-AI line (closed list idle | running | done |
+  cancelled | error, tests/test_ai_coordinator_status_line.py); the two that remain there are open sets (``e.kind`` a dump file
+  kind, ``k.kind`` a keyword kind).
+* OTHER LANES' FILES, NOT CLASSIFIED HERE: app-backup.js, app-settings.js, taskmanager.js. They are pinned so that they cannot grow, not declared correct.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ _STATIC = _ROOT / "src" / "static"
 _RAW = re.compile(r"""esc\(\s*[A-Za-z_][\w.]*\.(?:state|status|kind)\s*\)""")
 
 _PINS = {
-    "app-backup.js": 1, "app-diagnostics.js": 3, "app-home.js": 2, "app-insights.js": 2, "app-map.js": 2,
+    "app-backup.js": 1, "app-diagnostics.js": 2, "app-home.js": 2, "app-insights.js": 2, "app-map.js": 2,
     "app-settings.js": 1, "app-sources.js": 1, "investigate.js": 1, "ooversions.js": 1, "reader.js": 1,
     "taskmanager.js": 2,
 }
