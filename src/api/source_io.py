@@ -50,6 +50,15 @@ def _display_name(country: str | None) -> str | None:
     return country_display_name(country)
 
 
+#: The Source attributes :func:`_source_to_row` reads, in its order. The export asks the database for exactly these columns (``GET /export.csv``), never the
+#: whole entity: the catalogue is 86,000 rows on the field corpus and the row has 24 columns of which the CSV carries 12
+#: (tests/test_source_export_columns.py pins this tuple to what the builder reads).
+_EXPORT_ATTRS = (
+    "name", "domain", "rss_url", "source_type", "country", "language",
+    "region", "tags", "priority", "rate_limit_ms", "enabled", "reliability_score",
+)
+
+
 def _source_to_row(s: Source) -> dict:
     return {
         "name": s.name,
@@ -231,7 +240,9 @@ def columns() -> dict:
 @router.get("/export.csv")
 def export_csv(db: Session = Depends(get_db)) -> StreamingResponse:
     """Download the entire source catalog as CSV (round-trips with import)."""
-    rows = [_source_to_row(s) for s in db.query(Source).filter(not_a_stand_in_source()).order_by(Source.name).all()]
+    # Columns, not entities: the same twelve values per row, no ORM instance built for 86,000 sources to write twelve of their 24 columns.
+    cols = [getattr(Source, a) for a in _EXPORT_ATTRS]
+    rows = [_source_to_row(s) for s in db.query(*cols).filter(not_a_stand_in_source()).order_by(Source.name).all()]
     csv_text = write_csv(rows)
     return StreamingResponse(
         iter([csv_text]),
