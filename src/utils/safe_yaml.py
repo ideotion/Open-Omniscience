@@ -50,9 +50,13 @@ def _uses_libyaml() -> bool:
     return c_loader is not None and issubclass(YAML_LOADER, c_loader)
 
 
-def _refuse_if_too_deep(text: str) -> None:
+def refuse_if_too_deep(text: str) -> None:
     """Count nesting from libyaml's EVENT stream before anything is composed (the parser is a heap-allocated state machine and
-    does not recurse); raise as soon as the bound is passed, so a 100,000-deep document costs 257 events."""
+    does not recurse); raise as soon as the bound is passed, so a 100,000-deep document costs 257 events. A no-op on the pure
+    path, which cannot crash the process (see :func:`load_safe_yaml`). Public for the one caller that keeps its own loader
+    wrapper (``seed_sources``, whose GC pause surrounds the parse)."""
+    if not _uses_libyaml():
+        return
     loader = YAML_LOADER(text)
     try:
         depth = 0
@@ -74,12 +78,12 @@ def load_safe_yaml(text: str):
     Raises :class:`YAMLDepthError` for a too-deep document on BOTH paths: libyaml's is refused past :data:`MAX_NESTING` before it
     is composed (it would crash the process); the pure loader gets no pre-pass (measured: it would add 78% to its parse) and its
     own RecursionError, at about 500 levels, is turned into the same error."""
-    if _uses_libyaml():
-        _refuse_if_too_deep(text)
+    refuse_if_too_deep(text)
     loader = YAML_LOADER(text)
     try:
         return loader.get_single_data()
     except RecursionError:
-        raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels") from None
+        # the pure loader's own limit (about 500 levels), not the bound above: said without a number
+        raise YAMLDepthError("the document nests too deeply to read") from None
     finally:
         loader.dispose()

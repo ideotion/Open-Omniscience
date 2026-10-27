@@ -41,7 +41,7 @@ from src.ingest.seed_plan import (
     plan_registration,
     split_tags,
 )
-from src.utils.safe_yaml import SAFE_YAML_LOADERS, YAML_LOADER
+from src.utils.safe_yaml import SAFE_YAML_LOADERS, YAML_LOADER, YAMLDepthError, refuse_if_too_deep
 
 #: What a seed run reports. Mostly counts, plus a short list of examples for the
 #: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.
@@ -116,11 +116,17 @@ def _load_safe_yaml(text: str):
     else, with no per-call-site ``Loader=`` argument for a later edit to get wrong. Pinned
     by ``test_seed_sources.py``, which asserts the class AND feeds it a
     ``!!python/object/apply`` payload to prove the refusal rather than assume it.
+
+    The depth guard of ``src.utils.safe_yaml`` runs first (a document nested past its bound raises ``YAMLDepthError``, a
+    ``yaml.YAMLError``, before libyaml composes it): this wrapper keeps its own loader and GC pause, and must not bypass it.
     """
+    refuse_if_too_deep(text)
     loader = _YAML_LOADER(text)
     try:
         with _gc_paused():
             return loader.get_single_data()
+    except RecursionError:  # the pure loader's own limit: the same error the shared loader raises for it
+        raise YAMLDepthError("the document nests too deeply to read") from None
     finally:
         loader.dispose()
 

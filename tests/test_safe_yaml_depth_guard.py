@@ -49,7 +49,8 @@ def test_a_100000_deep_document_is_refused_with_the_same_error_on_both_loader_pa
     with pytest.raises(YAMLDepthError) as err:
         load_safe_yaml(make(_DEEP))
     assert isinstance(err.value, yaml.YAMLError)
-    assert str(MAX_NESTING) in str(err.value)
+    # libyaml's refusal names the bound; the pure loader's RecursionError is turned into the error without a number (its own limit)
+    assert (str(MAX_NESTING) in str(err.value)) == (loader is not yaml.SafeLoader)
     assert "x" not in str(err.value).replace("nests deeper than", "")  # no text of the document in the message
 
 
@@ -101,8 +102,8 @@ def test_the_unguarded_libyaml_loader_really_does_crash_on_this_input():
         "yaml.load(t, Loader=yaml.CSafeLoader)\n"
     )
     done = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=120)
+    # not "died by signal": Windows reports a stack overflow as the positive code 0xC00000FD
     assert done.returncode != 0, "libyaml no longer crashes on deep nesting: the guard's premise changed; re-measure the bound"
-    assert done.returncode < 0 or "Fatal" in done.stderr or done.returncode == 139
 
 
 def test_the_shared_module_still_imports_nothing_of_the_project():
@@ -114,3 +115,16 @@ def test_the_shared_module_still_imports_nothing_of_the_project():
                 for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
                 for a in (n.names if isinstance(n, ast.Import) else [None])}
     assert {m for m in imported if m} <= {"__future__", "yaml"}, imported
+
+
+def test_the_catalogue_loader_goes_through_the_guard_too(loader, monkeypatch):
+    # seed_sources keeps its own wrapper (the GC pause) around the parse of the seven boot catalogues; it must not bypass the guard
+    from src.ingest import seed_sources
+
+    if loader is yaml.SafeLoader:  # its module-level copy of the class: without this the pure case would hand libyaml the document
+        monkeypatch.setattr(seed_sources, "_YAML_LOADER", yaml.SafeLoader)
+    with pytest.raises(YAMLDepthError):
+        seed_sources._load_safe_yaml(_seq(_DEEP))
+    assert seed_sources._load_safe_yaml("sources:\n  - name: A\n    domain: a.example\n") == {
+        "sources": [{"name": "A", "domain": "a.example"}]
+    }
