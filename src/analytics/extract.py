@@ -41,6 +41,7 @@ from src.analytics.managed import normalize_lang
 from src.analytics.segmentation import segment
 from src.services.stopwords import stopwords_manager
 from src.utils.markup_blocks import strip_blocks
+from src.utils.safe_yaml import load_safe_yaml
 
 # A word token: starts with a (unicode) letter, may contain letters, marks,
 # apostrophes and hyphens. Digits-only / punctuation tokens are ignored.
@@ -427,9 +428,14 @@ def _load_extra_stopwords_by_language() -> dict[str, frozenset[str]]:
     if _STOPWORDS_EXTRA_DIR.is_dir():
         for path in sorted(_STOPWORDS_EXTRA_DIR.glob("*.yml")):
             try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                # the shared loader (src/utils/safe_yaml.py), not ``yaml.safe_load``: a file nested past its bound raises YAMLDepthError, a
+                # YAMLError, on BOTH loader paths (the pure one used here before raised an uncaught RecursionError at about 500 levels, which
+                # is an import-time crash of the extractor), and the loader class is the one the rings reader and the seeder already use
+                data = load_safe_yaml(path.read_text(encoding="utf-8")) or {}
             except (OSError, yaml.YAMLError):
                 continue
+            if not isinstance(data, dict):
+                continue  # a list or a scalar at the top is not a stopword file, and would fail on ``.get`` below
             by_lang[path.stem.lower()] = frozenset(str(w) for w in (data.get("stopwords") or []))
     return by_lang
 
