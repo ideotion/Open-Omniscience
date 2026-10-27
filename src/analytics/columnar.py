@@ -1757,6 +1757,7 @@ def serve_canary(con, *, today=None, max_s: float = CANARY_MAX_S) -> dict:
 
     poller = threading.Thread(target=_poll, name="rollup-canary-peak", daemon=True)
     timer = threading.Timer(max_s, lambda: con.interrupt())
+    timer.name = "rollup-canary-timer"  # every thread this module starts carries a name: an unnamed one is a Thread-N nobody can attribute
     timer.daemon = True
     started = time.monotonic()
     poller.start()
