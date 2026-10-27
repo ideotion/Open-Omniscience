@@ -27,6 +27,7 @@ threads, files and sockets, not a subprocess.
 
 from __future__ import annotations
 
+import importlib.util
 import ipaddress
 import re
 import socket
@@ -38,8 +39,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 # The number of GET operations the schema listed on 2026-10-27. A floor: new routes are driven by the same loop; fewer means the walk
-# went blind (a framework change in how the schema is built) and every assertion below would loop over nothing.
-_OPERATIONS_FLOOR = 467
+# went blind (a framework change in how the schema is built) and every assertion below would loop over nothing. The Core-only
+# install (no [analysis] extra) mounts 3 fewer GETs, because the commodity, statistical-analysis and article-similarity routes are
+# disabled there: 464, reproduced by blocking numpy/pandas/scipy/sklearn/statsmodels (R283: a floor states both install profiles).
+_OPERATIONS_FLOOR_FULL = 467
+_OPERATIONS_FLOOR_CORE_ONLY = 464
+
+
+def _analysis_extra_installed() -> bool:
+    return all(importlib.util.find_spec(m) is not None for m in ("numpy", "pandas", "scipy", "sklearn", "statsmodels"))
+
+
+_OPERATIONS_FLOOR = _OPERATIONS_FLOOR_FULL if _analysis_extra_installed() else _OPERATIONS_FLOOR_CORE_ONLY
 
 # --------------------------------------------------------------------------------------------------------------- #
 # What a GET may do, with the reason. A file is matched by its NAME (the data directory is the suite's, and a few
