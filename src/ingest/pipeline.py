@@ -20,6 +20,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 import feedparser
+from sqlalchemy import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -731,7 +732,7 @@ def _update_feed_backoff(session: Session, source_id: int, *, reset: bool) -> No
         log_failure(logging.getLogger(__name__), "feed backoff update failed", exc, level=logging.DEBUG)
 
 
-def feed_is_due(state: FeedFetchState | None, *, now: datetime | None = None) -> bool:
+def feed_is_due(state: FeedFetchState | Row | None, *, now: datetime | None = None) -> bool:
     """Return whether a feed should be re-checked THIS pass.
 
     A feed is due unless it carries a ``skip_until`` deadline in the FUTURE (it

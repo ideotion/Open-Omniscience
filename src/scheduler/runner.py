@@ -436,9 +436,11 @@ def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
         feed_ids = [s.id for s in sources if getattr(s, "rss_url", None)]
         if not feed_ids:
             return sources, 0
+        # ``skip_until`` is the one column ``feed_is_due`` reads: not the entity (the validators are the wide part). The pass-level session
+        # shares no identity map with the workers' own sessions, and FeedFetchState has no relationship or load listener, so no side effect is lost.
         states = {
             st.source_id: st
-            for st in session.query(FeedFetchState).filter(
+            for st in session.query(FeedFetchState.source_id, FeedFetchState.skip_until).filter(
                 FeedFetchState.source_id.in_(feed_ids)
             )
         }
@@ -929,7 +931,7 @@ def run_scrape_once(
                 states = (
                     {
                         st.source_id: st
-                        for st in session.query(FeedFetchState).filter(
+                        for st in session.query(FeedFetchState.source_id, FeedFetchState.last_checked_at).filter(
                             FeedFetchState.source_id.in_(feed_ids)
                         )
                     }
