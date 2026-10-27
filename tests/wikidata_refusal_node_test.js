@@ -30,6 +30,7 @@ function extract(name) {
   return APP.slice(at, j);
 }
 
+const REAL_JOB_ERROR = "AirplaneRefusal: network refused: airplane mode is engaged (the Wikidata item fetch makes no request while the kill switch is on)";
 const REFUSED = "Refused: airplane mode is on. Turn the network on to fetch Wikidata items.";
 
 async function press(err) {
@@ -77,11 +78,16 @@ function http(status, message) {
   assert.strictEqual(await press(http(500, "boom")), "Wikidata fetch failed: boom");
 
   // A job that errors after the switch engaged: the refusal state, not the raw server sentence (R334); any other job error is still an error.
-  for (const msg of ["network refused: airplane mode is engaged", "airplane mode is engaged: refusing a network connection to 'www.wikidata.org'"]) {
+  // The strings a job REALLY carries: ``record_text(exc, typed=True)`` puts the class in front (tests/test_wikidata_refusal_toast.py pins the first against the live constant).
+  for (const msg of [REAL_JOB_ERROR, "AirplaneModeError: airplane mode is engaged: refusing a network connection to 'www.wikidata.org'", "network refused: airplane mode is engaged", "airplane mode is engaged: refusing a network connection to 'www.wikidata.org'"]) {
     assert.strictEqual(await pressJob({ state: "error", error: msg }), REFUSED, "a refusal sentence as job.error is the kill switch: " + msg);
   }
   assert.strictEqual(await pressJob({ state: "error", error: "HTTP 503 for https://www.wikidata.org/x" }), "Wikidata fetch failed: HTTP 503 for https://www.wikidata.org/x");
   assert.strictEqual(await pressJob({ state: "error", error: "the page said airplane mode is engaged: refusing" }), "Wikidata fetch failed: the page said airplane mode is engaged: refusing", "a quoted phrase in a job error is not a refusal");
+  // A class name other than ours in front does not make a quoted phrase a refusal.
+  for (const msg of ["HTTPError: airplane mode is engaged: refusing", "ValueError: network refused: airplane mode is engaged"]) {
+    assert.strictEqual(await pressJob({ state: "error", error: msg }), "Wikidata fetch failed: " + msg, "another class in front is that failure: " + msg);
+  }
   assert.strictEqual(await pressJob({ state: "error" }), "Wikidata fetch failed: ", "a job error with no text keeps the old empty tail");
   console.log("wikidata_refusal_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });

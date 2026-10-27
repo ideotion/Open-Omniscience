@@ -64,7 +64,7 @@ from src.services.duckduckgo import DuckDuckGoSearch
 def _tags_csv(value, default):
     """A catalog entry's ``tags`` as the comma-joined string the column holds: the shipped ``configs/sources.yml`` writes a YAML LIST
     (``[news, general]``), and binding a list to the column made the import route fail on its first row (R330). A string passes through; an
-    absent key keeps ``default``."""
+    absent key OR a present-but-null one keeps ``default`` (before, a null ``tags`` stored ``None``; an empty list stores ``""``)."""
     if value is None:
         return default
     if isinstance(value, (list, tuple)):

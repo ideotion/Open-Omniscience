@@ -1173,7 +1173,9 @@
         const job = await pollJobStatus("/api/entities/items/status");
         // A job that errors AFTER the switch engaged carries the refusal sentence as its error text: the same reader names it (no status on a job, so the text fallback decides).
         if (job.state === "error") {
-          if (st) st.textContent = _wikidataRefusedByAirplaneMode({message: job.error}) ? refusedText : t("Wikidata fetch failed:") + " " + (job.error || "");
+          // The job's error is ``record_text(exc, typed=True)``, so it STARTS with the exception class (``AirplaneRefusal: network refused: airplane mode is engaged (...)``): only those two refusal classes are taken off the front, so the reader's anchor still rejects a phrase quoted inside another failure.
+          const refusal = String(job.error == null ? "" : job.error).replace(/^\s*(?:AirplaneRefusal|AirplaneModeError):\s*/, "");
+          if (st) st.textContent = _wikidataRefusedByAirplaneMode({message: refusal}) ? refusedText : t("Wikidata fetch failed:") + " " + (job.error || "");
           return;
         }
         if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
