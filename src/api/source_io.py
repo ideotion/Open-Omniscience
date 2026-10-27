@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import Row, func
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 from starlette.concurrency import run_in_threadpool
@@ -60,7 +60,7 @@ _EXPORT_COLUMNS = (
 _EXPORT_ATTRS = tuple(c.key for c in _EXPORT_COLUMNS)
 
 
-def _source_to_row(s: Source) -> dict:
+def _source_to_row(s: Source | Row) -> dict:  # a Source, or a row of the _EXPORT_COLUMNS: only attributes are read
     return {
         "name": s.name,
         "domain": s.domain,
