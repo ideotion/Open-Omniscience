@@ -56,7 +56,7 @@ _OFFLINE_RE = re.compile(
 def is_kill_switch_refusal(text: str | None) -> bool:
     """True when ``text`` IS one of our two refusal sentences (see above). One definition for every caller that must tell the person's
     own airplane mode apart from a host's failure; a phrase search over the text is not an equivalent."""
-    return bool(text) and _OFFLINE_RE.match(text) is not None
+    return text is not None and _OFFLINE_RE.match(text) is not None
 
 
 def classify_fetch_failure(detail: str | None) -> str:
