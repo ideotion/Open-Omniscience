@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _HARNESS = textwrap.dedent(
     """
-    import os, sqlite3, sys, tempfile
-    d = tempfile.mkdtemp()
+    import os, sqlite3, sys
+    d = sys.argv[3]
     os.environ.update(OO_DATA_DIR=d, OO_NO_SCHEDULER="1", OO_DB_PLAINTEXT="1", DATABASE_URL=f"sqlite:///{d}/s.db")
     sys.path.insert(0, sys.argv[2])
     from sqlalchemy import text
@@ -50,17 +50,17 @@ _HARNESS = textwrap.dedent(
 )
 
 
-def _run(mode: str) -> str:
+def _run(mode: str, store_dir: Path) -> str:
     done = subprocess.run(
-        [sys.executable, "-c", _HARNESS, mode, str(ROOT)], capture_output=True, text=True, timeout=300, cwd=ROOT, check=False
+        [sys.executable, "-c", _HARNESS, mode, str(ROOT), str(store_dir)], capture_output=True, text=True, timeout=300, cwd=ROOT, check=False
     )
     assert done.returncode == 0, done.stderr[-2000:]
     return done.stdout.strip().splitlines()[-1]
 
 
-def test_the_report_count_is_stopped_by_the_deadline() -> None:
-    assert _run("report") == "TIMEOUT"
+def test_the_report_count_is_stopped_by_the_deadline(tmp_path: Path) -> None:
+    assert _run("report", tmp_path) == "TIMEOUT"
 
 
-def test_a_bare_count_star_is_not_stopped_by_the_same_deadline() -> None:
-    assert _run("bare") == "RETURNED"
+def test_a_bare_count_star_is_not_stopped_by_the_same_deadline(tmp_path: Path) -> None:
+    assert _run("bare", tmp_path) == "RETURNED"
