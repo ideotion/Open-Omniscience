@@ -36,7 +36,7 @@ function extractConst(name) {
   return APP.slice(at, APP.indexOf(";\n", at) + 1);
 }
 
-const NAMES = ["ooLabelHtml", "_maintStateLabel", "_maintMethodHtml", "_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
+const NAMES = ["ooLabelHtml", "_maintStateLabel", "_maintServerTextHtml", "_maintMethodHtml", "_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
   "maintRawIdsHtml", "maintFurnitureHtml", "maintStartUrl"];
 const src = "const window = {};\n" + extractConst("esc") + "\n" +
   "function fmtNum(v) { return String(v); }\n" +
@@ -96,6 +96,12 @@ for (const state of ["running", "paused", "done", "error", "cancelled"]) {
 assert.ok(visible(R.maintRunHtml({ state: "queued-by-a-newer-server", dry_run: true }, tr, tf)).includes("queued-by-a-newer-server"),
   "a state this panel has no word for is shown as the job sent it");
 assert.ok(!visible(R.maintRunHtml({ state: "toString", dry_run: true }, tr, tf)).includes("function"), "an inherited property name is not a state word");
+
+// the progress frame carries its own words, and a failed run's error text is labelled like a method
+const ph = R.maintRunHtml({ state: "done", dry_run: true, articles_total: 200, articles_done: 50, error: "boom <b>" }, tr, tf);
+assert.ok(visible(ph).includes("T[{done} of {total} articles read]".replace("{done}", "50").replace("{total}", "200")) || visible(ph).includes("50 of 200"), "progress line drawn: " + ph);
+assert.ok(ph.includes('class="card-caveat"') && /card-caveat">[^]*lang="en" dir="ltr">boom &lt;b&gt;/.test(ph), "the error text is its own LTR English span, escaped: " + ph);
+assert.ok(visible(ph).includes("T[Server text, in English]"), "and says so: " + ph);
 
 // -- the server's English sentences are labelled as such (F2, R289) ----------------------
 const METHOD = "the candidates with the smallest hash of (signal, id)";

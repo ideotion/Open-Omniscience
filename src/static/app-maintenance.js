@@ -55,8 +55,11 @@
     // A "method" sentence the server wrote. It arrives in English whatever the page's language, so it
     // is shown as sent, in its own left-to-right span, behind a small visible label saying so. The
     // real fix, the API returning a method key the client translates, is a proposal (R289).
+    function _maintServerTextHtml(text, t) {
+      return ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(text)}</span>`);
+    }
     function _maintMethodHtml(text, t) {
-      return `<div class="hint">${ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(text)}</span>`)}</div>`;
+      return `<div class="hint">${_maintServerTextHtml(text, t)}</div>`;
     }
 
     function maintRunHtml(st, t, tf) {
@@ -71,7 +74,7 @@
       const prog = (typeof st.articles_total === "number" && st.articles_total > 0)
         ? ` · ${esc(tf(t("{done} of {total} articles read"), { done: fmtNum(st.articles_done || 0), total: fmtNum(st.articles_total) }))}`
         : "";
-      const err = st.error ? `<div class="card-caveat">${esc(String(st.error))}</div>` : "";
+      const err = st.error ? `<div class="card-caveat">${_maintServerTextHtml(String(st.error), t)}</div>` : "";
       return `<div><b>${esc(t("State"))}:</b> ${esc(_maintStateLabel(st.state, t))}${prog}</div>`
         + `<div class="hint">${esc(crit)}</div>${err}`;
     }

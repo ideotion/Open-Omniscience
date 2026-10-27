@@ -108,7 +108,9 @@ def test_no_raw_job_state_word_is_printed():
     assert "String(st.state)" not in src, "the state line must go through _maintStateLabel"
     assert "_maintStateLabel(st.state, t)" in src
     assert "esc(d.method)" not in src and "esc(data.method)" not in src, "method sentences go through _maintMethodHtml"
-    for lang in ("en", "ar", "zh"):
-        loc = json.loads((_STATIC / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+    assert "esc(String(st.error))" not in src, "a failed run's error text is labelled by _maintServerTextHtml"
+    for locale_file in sorted((_STATIC / "locales").glob("*.json")):
+        lang = locale_file.stem
+        loc = json.loads(locale_file.read_text(encoding="utf-8"))
         for key in ("running", "paused", "done", "error", "cancelled", "Server text, in English"):
             assert loc.get(key), (lang, key)
