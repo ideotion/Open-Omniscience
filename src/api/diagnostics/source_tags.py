@@ -16,11 +16,12 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from fastapi import HTTPException, Query
+from fastapi import Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
+from src.api.cross_site import refuse_cross_site_get
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring.secret_scrub import http_detail
 
@@ -173,7 +174,7 @@ def source_tags_download() -> Response:
     )
 
 
-@router.get("/source-tags-selftest")
+@router.get("/source-tags-selftest", dependencies=[Depends(refuse_cross_site_get)])
 def source_tags_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the LLM source-tag-assignment self-test -- the measure-before-trust GATE
     before any real run, mirroring ``/keyword-triage-selftest`` exactly. Proves the
