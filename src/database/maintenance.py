@@ -1928,6 +1928,30 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     both with a typed :class:`MemoryShort`. The stop rides the deadline, so a disabled
     deadline disables it too. It sees what grows while SQLite is producing rows, which is
     where a whole-table ``.all()`` grows; Python work after the last row is outside it.
+
+    WHAT IT DOES NOT BOUND. The handler is asked once per 20,000 VM opcodes of ONE prepared
+    statement: re-running one SQL text carries the counter from run to run, and distinct texts
+    never add up. So it cannot stop (a) statements that each end under 20,000 opcodes, however
+    many distinct ones run in a row (20,000 of them ran whole under a deadline of a millionth
+    of a second, in 1.8 s), (b) a statement whose work is ONE opcode (a bare ``count(*)``, the
+    aggregated ``dbstat``, an integrity-check page walk) or (c) Python between statements. A
+    loop that must honour the deadline asks :func:`deadline_expired` between iterations, as
+    ``keyword_write_cost._sample_rows`` does. The handler is also armed on THIS session's
+    connection only: a block that opens its own (the app-state KV store, the keyword export's
+    read snapshot) is not seen.
+
+    HOW MUCH, measured 2026-10-27 by forcing every block in ``src/`` to a millionth of a second
+    and timing how long it then stayed open (what is left is what the deadline cannot stop).
+    The number of distinct texts in a block is fixed by the code and the schema, not by the
+    data, and no block in ``src/`` is held open by (a): the largest is the diagnostics
+    bundle's schema-drift member, 285 texts (63 tables, 182 indexes). On plain SQLite 3.45.1,
+    warm, 300,000 articles and 848,841 mentions (794 MiB), that member ran whole in 0.25 s and
+    the 32 database-touching bundle members each returned within 0.87 s, against up to 14.1 s
+    as shipped. On SQLCipher 4.12.0, cold, 300,000 articles and 9,900,000 mentions
+    (3,220 MiB): the same 285 texts in 0.45 s, every member within 0.92 s. The long stretches
+    that remain are (b) and (c) and are listed, with their sizes and the blocks this recording
+    could not see, in
+    docs/ledger/lessons.d/2026-10-27-blocks-of-short-statements-timed-at-a-forced-deadline.md.
     """
     limit = _deadline_seconds() if seconds is None else seconds
     if not limit or limit <= 0:
