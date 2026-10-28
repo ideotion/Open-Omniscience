@@ -155,7 +155,7 @@ def test_a_state_save_that_fails_after_a_download_failure_leaves_nothing_to_chai
 
     monkeypatch.setattr(m, "_save", _full_disk)
     res = m._download(entry)  # raises nothing: there is no exception left to print
-    assert len(saves) == 2, "the transfer must fail first and the save after it second, or this is not the case described"
+    assert len(saves) == 2, "one save inside the download and one after its failure; a dropped or extra save changes the case described"
     assert res.status == "error" and "the transfer said" in res.error and HELD not in res.error
     assert "could not be saved" in caplog.text and "OSM region download failed for europe" in caplog.text
     assert HELD not in caplog.text
