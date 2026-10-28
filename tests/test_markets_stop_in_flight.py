@@ -71,6 +71,7 @@ def _sess():
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr("src.markets.csv_feeds.time.sleep", lambda s: None)  # the feed-level retry pause is not what these tests are about
     yield
     clear_kill_switch()
 
@@ -117,16 +118,30 @@ def test_pass_the_hosts_own_answer_is_still_the_hosts_when_the_stop_lands_with_i
     assert tally == {"checked": 2, "imported": 1, "fresh": 0, "failed": 1}
 
 
-def test_pass_a_stop_inside_the_only_feed_is_no_failure_by_the_except_branch_alone(catalog, monkeypatch):
-    """The except branch: ``import_feed`` raising out of the loop body with the switch engaged (a store error) is the Stop's, so the one-feed pass ends there."""
+def test_pass_a_stop_inside_the_only_feed_is_no_failure_by_the_except_branch_alone(monkeypatch, caplog):
+    """The except branch: ``import_feed`` raising out of the loop body with the switch engaged (a store error) is the Stop's, so a one-feed pass ends there. The failure is
+    still logged and the session still rolled back (a failed transaction must not reach the lane's next step); only the count and the failure tally are the Stop's."""
+    one = _feeds(1)
+    monkeypatch.setattr("src.markets.feed_catalog.load_feeds", lambda path=None: one)
+    monkeypatch.setattr("src.markets.feed_catalog.load_index_feeds", lambda path=None: [])
+    calls: list[str] = []
 
     def _raises(session, **kw):
+        calls.append(kw["symbol"])
         activate_kill_switch()
         raise RuntimeError("store error")
 
     monkeypatch.setattr("src.markets.csv_feeds.import_feed", _raises)
-    tally = pipeline.import_due_feeds(_sess(), fetcher=_Fetcher(), now=TODAY)
-    assert tally["failed"] == 0 and tally["imported"] == 0
+    s = _sess()
+    rolled: list[bool] = []
+    real = s.rollback
+    monkeypatch.setattr(s, "rollback", lambda: (rolled.append(True), real())[1])
+    with caplog.at_level("WARNING"):
+        tally = pipeline.import_due_feeds(s, fetcher=_Fetcher(), now=TODAY)
+    assert calls == ["S1"]
+    assert tally == {"checked": 0, "imported": 0, "fresh": 0, "failed": 0}
+    assert rolled == [True], "the session is rolled back before the pass ends"
+    assert "market feed f1 import failed" in caplog.text, "a real exception during a Stop is not made to disappear"
 
 
 # ---- the import-all route -----------------------------------------------------------------------------------------------------------------------------------

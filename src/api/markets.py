@@ -277,7 +277,7 @@ def import_all_feeds(
     disallows" ≠ "dead series" ≠ "unreachable") rather than aborting the
     batch, so a single retired series doesn't block the rest. A Stop does end it:
     the feed the Stop cut and the ones after it are not results and not failures;
-    ``skipped_offline`` (present only then) says how many were not asked (R377).
+    ``skipped_offline`` (present only then) says how many were not answered (R377).
     """
     from src.ingest import kill_switch_active
     from src.markets.csv_feeds import import_feed
@@ -288,7 +288,7 @@ def import_all_feeds(
     results, imported, failed, skipped_offline = [], 0, 0, 0
     for i, feed in enumerate(todo):
         if kill_switch_active():
-            # A Stop: the feeds not yet asked for are neither results nor failures, and the response says how many were not asked (R377).
+            # A Stop: the feeds not yet asked for are neither results nor failures, and the response says how many were not answered (R377).
             skipped_offline = len(todo) - i
             break
         try:
@@ -306,8 +306,8 @@ def import_all_feeds(
             )
             if r.verdict == "offline":
                 # ``import_feed`` reads the switch after the failed check (R320) and files it ``offline`` whatever shape the error took (a Stop inside
-                # the request arrives as the raw requests error, which no sentence match recognises, R298): nothing was asked of the host, so this
-                # feed is not a result and not a failure; it counts with the ones not asked. Host answers (robots, an HTTP status) keep their own
+                # the request arrives as the raw requests error, which no sentence match recognises, R298): the host did not answer, so this
+                # feed is not a result and not a failure; it counts with the ones not answered. Host answers (robots, an HTTP status) keep their own
                 # verdict and stay failures. The cost is a genuine failure coinciding with a Stop going unrecorded (R320).
                 skipped_offline = len(todo) - i
                 break

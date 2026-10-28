@@ -214,19 +214,19 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
             )
             if getattr(result, "verdict", "") == "offline":
                 # ``import_feed`` reads the switch after the failed check (R320) and files it ``offline`` whatever shape the error took (a Stop inside
-                # the request arrives as the raw requests error, which no sentence match recognises, R298): nothing was asked of the host, so this feed
-                # is not a failure and not a check either. The next online pass asks it first. Host answers (robots, an HTTP status) keep their own
+                # the request arrives as the raw requests error, which no sentence match recognises, R298): the host did not answer, so this feed
+                # is not a failure and not a check either, and it stays as due as it was (an earlier feed that failed with a host answer is asked before it). Host answers (robots, an HTTP status) keep their own
                 # verdict and stay failures. The cost is a genuine failure coinciding with a Stop going unrecorded (R320). No new tally key: a Stop
                 # is not an outcome.
                 tally["checked"] -= 1
                 break
             tally["imported" if getattr(result, "status", "") == "imported" else "failed"] += 1
         except Exception as exc:  # noqa: BLE001 - one feed must not abort the markets pass
+            log_failure(_LOG, f"market feed {feed.key} import failed", exc, level=logging.WARNING)
+            session.rollback()
             if kill_switch_active():
                 tally["checked"] -= 1
                 break  # the Stop cut this feed's check in whatever shape the error took (R320); it is not a failure
-            log_failure(_LOG, f"market feed {feed.key} import failed", exc, level=logging.WARNING)
-            session.rollback()
             tally["failed"] += 1
     return tally
 

@@ -417,8 +417,16 @@
     function _renderFeedVerdicts(elId, r, category) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $(elId); if (!el) return;
+      // A Stop ends the batch: the feeds it cut or never reached are not in `results`, so a partial load must say how many (invariant #14e's
+      // corollary; the key is the one the law tracker already uses, x12).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const off = r.skipped_offline || 0;
+      const offLine = off
+        ? `<div><span class="pill warn">offline</span> <span class="muted">${esc(tf("{n} not fetched (airplane mode)", {n: fmtNum(off, 0)}))}</span></div>`
+        : "";
       const fails = (r.results || []).filter(x => x.status !== "imported");
-      if (!fails.length) { el.innerHTML = ""; return; }
+      if (!fails.length) { el.innerHTML = offLine; return; }
       const rows = fails.map(x =>
         `<div><span class="pill warn">${esc(x.verdict || x.status)}</span> <b>${esc(x.symbol || x.key)}</b>` +
         ` <span class="muted">— ${esc(x.verdict_note || x.detail || "")}</span></div>`).join("");
@@ -427,7 +435,7 @@
         ? `<button class="secondary tiny" style="margin-top:4px" data-on-click="retryFailedFeeds(${esc(JSON.stringify(category||""))}, ${esc(JSON.stringify(retry.join(",")))}, ${esc(JSON.stringify(elId))})">` +
           esc(t("Retry failed feeds")) + ` (${retry.length})</button>`
         : "";
-      el.innerHTML = rows + btn;
+      el.innerHTML = offLine + rows + btn;
     }
     async function retryFailedFeeds(category, keys, elId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
