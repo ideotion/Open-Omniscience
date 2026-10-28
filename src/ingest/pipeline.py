@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import feedparser
 from sqlalchemy import Row
@@ -455,6 +455,7 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
     """
     article_id: int | None = None
     log_touched = False
+    owed: dict[str, Any] = {}
     try:
         from src.custody.settings import load_settings
 
@@ -486,6 +487,9 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             "canonical_url": article.canonical_url,
             "source_id": article.source_id,
         }
+        # What the ingest HAS read is queued with the id if the write fails: the drain then binds the late entry to these bytes,
+        # not to whatever hash the row holds by then. When the read above is the failure, ``owed`` stays empty and the drain reads the row.
+        owed = {"item_hash": item_hash, **metadata}
         log_touched = True
         if batch is None:
             with CustodyLog() as log:
@@ -507,7 +511,7 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
         if article_id is not None:
             from src.custody.pending import note_failed
 
-            note_failed(article_id, error=record_text(exc, typed=True))
+            note_failed(article_id, error=record_text(exc, typed=True), **owed)
 
 
 #: The reasons ``classify_fetch_failure`` gives for something a Stop cannot produce: the kill switch acts at name resolution and connect, so a

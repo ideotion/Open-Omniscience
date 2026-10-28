@@ -637,7 +637,7 @@ def test_a_failed_custody_write_is_queued_and_written_late_at_the_pass_end(custo
     assert len(late) == 1
     meta = late[0].metadata
     assert meta["late"] is True and meta["stored_by"] and meta["recorded_late_at"] and "QueuePool" in meta["late_reason"]
-    assert late[0].item_hash == "hash-0", "the hash was read back from the stored row"
+    assert late[0].item_hash == "hash-0", "the hash the ingest read, queued with the id"
     assert [e.metadata.get("late") for e in _entries(f"article:{b.id}")] == [None]
     assert pending.late_count() == 1
 
