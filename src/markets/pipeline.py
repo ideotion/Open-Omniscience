@@ -26,6 +26,7 @@ from src.ingest import (
     FetchError,
     RobotsDisallowed,
     RobotsUnavailable,
+    kill_switch_active,
 )
 from src.ingest.pipeline import IngestResult, store_fetched
 from src.markets.extract import extract_price
@@ -173,7 +174,8 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
     point; a monthly OECD share-price index (``unit='idx'``) is due >25 days after.
     A feed with no data yet is always due (first fetch). The kill switch + robots +
     transport come from the EthicalFetcher; one feed's failure never aborts the
-    batch. Counts only — no score."""
+    batch, but a Stop does end it: the feed the Stop cut and the ones after it are neither
+    checked nor failed (R377). Counts only — no score."""
     from datetime import date as _date
 
     from sqlalchemy import func
@@ -185,6 +187,8 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
     today = now or _date.today()
     tally = {"checked": 0, "imported": 0, "fresh": 0, "failed": 0}
     for feed in (*load_feeds(), *load_index_feeds()):
+        if kill_switch_active():
+            break  # a Stop: the feeds not yet asked for are neither checked nor failed, and stay exactly as due as they were (R377)
         tally["checked"] += 1
         threshold = 25 if feed.unit == "idx" else 1  # OECD monthly vs daily named/commodity
         latest = (
@@ -208,8 +212,19 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
                 market=feed.market,
                 source=f"feed:{feed.key}",
             )
+            if getattr(result, "verdict", "") == "offline":
+                # ``import_feed`` reads the switch after the failed check (R320) and files it ``offline`` whatever shape the error took (a Stop inside
+                # the request arrives as the raw requests error, which no sentence match recognises, R298): nothing was asked of the host, so this feed
+                # is not a failure and not a check either. The next online pass asks it first. Host answers (robots, an HTTP status) keep their own
+                # verdict and stay failures. The cost is a genuine failure coinciding with a Stop going unrecorded (R320). No new tally key: a Stop
+                # is not an outcome.
+                tally["checked"] -= 1
+                break
             tally["imported" if getattr(result, "status", "") == "imported" else "failed"] += 1
         except Exception as exc:  # noqa: BLE001 - one feed must not abort the markets pass
+            if kill_switch_active():
+                tally["checked"] -= 1
+                break  # the Stop cut this feed's check in whatever shape the error took (R320); it is not a failure
             log_failure(_LOG, f"market feed {feed.key} import failed", exc, level=logging.WARNING)
             session.rollback()
             tally["failed"] += 1
