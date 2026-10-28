@@ -19,6 +19,7 @@ import pytest
 from sqlalchemy import create_engine, event, text
 
 from src.database import library_generation as gen
+from tests.os_scope import scope_os
 
 
 def _store(path: Path) -> None:
@@ -614,7 +615,7 @@ def test_a_replace_that_could_not_be_made_after_the_log_names_were_removed_refus
     def refuse(src, dst):
         raise OSError(errno.EROFS, "read-only file system")  # not a lock: not retried
 
-    monkeypatch.setattr(merge.os, "replace", refuse)
+    scope_os(monkeypatch, merge, replace=refuse)
     try:
         conn = engine.connect()
         conn.execute(text("SELECT 1")).scalar()
@@ -651,7 +652,7 @@ def test_a_replace_that_could_not_be_made_leaves_a_connection_of_the_window_s_ow
     def refuse(src, dst):
         raise OSError(errno.EROFS, "read-only file system")
 
-    monkeypatch.setattr(merge.os, "replace", refuse)
+    scope_os(monkeypatch, merge, replace=refuse)
     with pytest.raises(OSError):
         merge.swap_in_corpus(working, live, check=check)
     assert stamps and stamps[0] is not None and not gen.valid(stamps[0])

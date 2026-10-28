@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 
 from src.llm import vllm_lifecycle as V
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 
 class FakeCtx:
@@ -1191,9 +1193,9 @@ def test_the_journal_trim_is_atomic(monkeypatch):
         calls.append((src, dst))
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr(V.os, "replace", _boom)
+    scope_os(monkeypatch, file_lock, replace=_boom)
     V.record_install_attempt(version="9.9", phase="pip", outcome="error", error="boom")
-    monkeypatch.setattr(V.os, "replace", real_replace)
+    scope_os(monkeypatch, file_lock, replace=real_replace)
     assert calls, "the trim must go through os.replace, not a truncating write"
     # The prior history survived the failed trim, and the temp is not orphaned.
     assert len(V.install_history()) >= V._ATTEMPTS_CAP

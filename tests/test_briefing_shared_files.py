@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 from src.briefing import dismiss_reasons, draft, service
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 
 @pytest.fixture
@@ -67,6 +69,6 @@ def test_two_processes_recording_reasons_lose_no_reason(dd):
 def test_the_cache_is_replaced_through_a_unique_temp(dd, monkeypatch):
     seen: list[str] = []
     real = os.replace
-    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
     service._write_cache({"cards": []})
     assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen

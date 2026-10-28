@@ -18,6 +18,7 @@ from sqlalchemy import create_engine
 
 from src.backup import country_migration as cm
 from src.database import country_form as cf
+from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -476,7 +477,7 @@ def test_a_file_that_appears_between_the_check_and_the_publish_is_not_replaced(t
             dest.write_bytes(b"theirs")
         return real(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(cm.os, "link", late)
+    scope_os(monkeypatch, cm, link=late)
     con = _live(a)
     try:
         with pytest.raises(cm.MigrationRefused, match="already a file"):
@@ -501,7 +502,7 @@ def test_a_file_system_without_hard_links_still_publishes_the_copy_and_still_ref
             dest.write_bytes(b"theirs")
         raise OSError(errno.EPERM, "no hard links here")
 
-    monkeypatch.setattr(cm.os, "link", link)
+    scope_os(monkeypatch, cm, link=link)
     con = _live(a)
     try:
         info = cm.take_verified_backup(con, a, dest)
@@ -807,7 +808,7 @@ def test_the_refusal_for_a_resume_does_not_tell_the_operator_to_pass_a_backup_fo
     def broken(path, *args, **kwargs):
         raise PermissionError(13, "no")
 
-    monkeypatch.setattr(cm.os, "stat", broken)
+    scope_os(monkeypatch, cm, stat=broken)
     with pytest.raises(cm.MigrationRefused) as caught:
         cm._path_exists(tmp_path / "x", follow=True, hint="Put the safety copy back where the journal says it was.")
     assert "PermissionError" in str(caught.value) and "Put the safety copy back" in str(caught.value)
@@ -844,8 +845,8 @@ def test_a_copy_that_cannot_be_published_under_its_final_name_is_refused_by_clas
     def no_replace(src, dst, *args, **kwargs):
         raise OSError(errno.EXDEV, "cross-device")
 
-    monkeypatch.setattr(cm.os, "link", no_link)
-    monkeypatch.setattr(cm.os, "replace", no_replace)
+    scope_os(monkeypatch, cm, link=no_link)
+    scope_os(monkeypatch, cm, replace=no_replace)
     con = _live(a)
     try:
         with pytest.raises(cm.MigrationRefused) as caught:
@@ -877,7 +878,7 @@ def test_a_failed_existence_check_in_the_fallback_still_leaves_no_partial(tmp_pa
     def unanswerable(path, *args, **kwargs):
         raise cm.MigrationRefused("cannot tell whether the copy's final name is taken (OSError)")
 
-    monkeypatch.setattr(cm.os, "link", no_link)
+    scope_os(monkeypatch, cm, link=no_link)
     monkeypatch.setattr(cm, "_path_exists", unanswerable)
     con = _live(a)
     try:

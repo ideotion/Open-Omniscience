@@ -22,6 +22,8 @@ from datetime import datetime
 import pytest
 
 from src.monitoring import vitals_history as v
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 HOUR0 = 1_699_999_200  # an exact hour boundary (a multiple of 3600), and so of 300 and 60
 COL = {name: i for i, name in enumerate(v.COLUMNS)}
@@ -550,7 +552,7 @@ def test_a_failing_reading_never_raises_into_the_tick_and_the_member_still_serve
 
 def test_a_flush_that_cannot_write_never_raises(hist, monkeypatch):
     _ticks(hist, HOUR0, 30, rss=1.0)
-    monkeypatch.setattr(v.os, "replace", lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk full")))
+    scope_os(monkeypatch, file_lock, replace=lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk full")))
     v.flush()  # no exception
     assert _member()["fine"]  # and the in-memory history is intact
 
@@ -559,7 +561,7 @@ def test_the_flush_is_atomic_and_throttled_to_the_interval(hist, monkeypatch):
     path = v._path()
     replaced: list[tuple[str, str]] = []
     real_replace = v.os.replace
-    monkeypatch.setattr(v.os, "replace", lambda a, b: replaced.append((str(a), str(b))) or real_replace(a, b))
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: replaced.append((str(a), str(b))) or real_replace(a, b))
     v.tick(now=float(HOUR0))  # the first tick writes the file: a new session is on disk at once
     assert len(replaced) == 1 and replaced[0][1] == str(path)  # written aside, then swapped in
     assert replaced[0][0].startswith(f"{path}.tmp.{v.os.getpid()}."), "the temp is named for the process and the thread (R176)"
@@ -1175,7 +1177,7 @@ def test_a_failed_flush_is_retried_in_a_minute_not_on_every_tick(hist, monkeypat
         attempts.append(1)
         raise OSError("disk full")
 
-    monkeypatch.setattr(v.os, "replace", full)
+    scope_os(monkeypatch, file_lock, replace=full)
     for k in range(10):
         v.tick(now=float(HOUR0 + 5 * k))
     assert len(attempts) == 1 and _member()["errors"]["flush_failures"] == 1
@@ -1269,7 +1271,7 @@ def test_a_failed_flush_is_counted_and_named_in_the_member_without_a_path(hist, 
     def full(*_a, **_k):
         raise OSError(28, "No space left on device", "/home/someone/Open-Omniscience/data/diagnostics/x.tmp")
 
-    monkeypatch.setattr(v.os, "replace", full)
+    scope_os(monkeypatch, file_lock, replace=full)
     _ticks(hist, HOUR0, 10, rss=1.0)
     errors = _member()["errors"]
     assert errors["flush_failures"] == 1

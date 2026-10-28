@@ -42,6 +42,7 @@ import pytest
 
 from src.monitoring import core_guard as G
 from tests.js_source_helper import python_function_source
+from tests.os_scope import scope_os
 
 #: The real function, taken at collection (see the module docstring).
 _ENGAGE = G.engage
@@ -552,7 +553,7 @@ def test_the_lister_opens_nothing_and_reads_no_content(machine, monkeypatch, tmp
 
     monkeypatch.setattr(builtins, "open", refuse)
     monkeypatch.setattr(io, "open", refuse)
-    monkeypatch.setattr(os, "open", refuse)
+    scope_os(monkeypatch, G, open=refuse)
     got = G.list_core_dumps({"data directory": data})
     assert [d["name"] for d in got["dumps"]] == ["core"]
 
@@ -567,7 +568,7 @@ def test_a_directory_that_cannot_be_listed_is_not_readable_and_never_empty(machi
             raise PermissionError(13, "Permission denied")
         return real(path)
 
-    monkeypatch.setattr(os, "scandir", scandir)
+    scope_os(monkeypatch, G, scandir=scandir)
     got = G.list_core_dumps({"data directory": data})
     place = next(p for p in got["places"] if p["where"] == "data directory")
     assert place == {"where": "data directory", "readable": False, "files": 0, "bytes": 0}

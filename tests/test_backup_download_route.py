@@ -41,6 +41,7 @@ import src.api.main as main_mod
 import src.backup.sqlite_backup as sb
 from src.api.main import app
 from src.database.session import init_db
+from tests.os_scope import scope_os
 
 OWN_PAGE = {"Sec-Fetch-Site": "same-origin", "Origin": "http://testserver"}
 FOREIGN = [
@@ -905,7 +906,7 @@ def test_the_stop_handler_removes_what_this_process_holds_then_restores_the_defa
             held_when_ignored.append(held.exists())
 
     monkeypatch.setattr(dbapi.signal, "signal", fake_signal)
-    monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
+    scope_os(monkeypatch, dbapi, kill=lambda pid, signum: killed.append((pid, signum)))
 
     assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
     handler = installed[signal.SIGTERM]
@@ -923,7 +924,7 @@ def test_the_stop_handler_still_signals_when_the_removal_fails(data_dir, monkeyp
     installed: dict[int, object] = {}
     killed: list[tuple[int, int]] = []
     monkeypatch.setattr(dbapi.signal, "signal", lambda signum, handler: installed.__setitem__(signum, handler))
-    monkeypatch.setattr(dbapi.os, "kill", lambda pid, signum: killed.append((pid, signum)))
+    scope_os(monkeypatch, dbapi, kill=lambda pid, signum: killed.append((pid, signum)))
 
     def broken():
         raise RuntimeError("the removal broke")

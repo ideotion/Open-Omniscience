@@ -22,6 +22,7 @@ import json
 import pytest
 
 from src.jobs import progress_state as PS
+from tests.os_scope import scope_os
 
 
 def test_load_missing_file_returns_empty_dict(tmp_path):
@@ -71,7 +72,7 @@ def test_save_is_atomic_tmp_file_fully_written_before_the_swap(tmp_path, monkeyp
         seen["tmp_existed"] = (tmp_path / "state.json.tmp").exists()
         return real_replace(src, dst)
 
-    monkeypatch.setattr(PS.os, "replace", spy)
+    scope_os(monkeypatch, PS, replace=spy)
     PS.save_progress_state({"cursor": "new"}, p)
     assert seen.get("tmp_existed") is True
     assert PS.load_progress_state(p) == {"cursor": "new"}
@@ -88,7 +89,7 @@ def test_save_cleans_up_tmp_file_even_when_replace_raises(tmp_path, monkeypatch)
     def boom(src, dst):
         raise OSError("simulated replace failure")
 
-    monkeypatch.setattr(PS.os, "replace", boom)
+    scope_os(monkeypatch, PS, replace=boom)
 
     with pytest.raises(OSError):
         PS.save_progress_state({"cursor": "new"}, p)

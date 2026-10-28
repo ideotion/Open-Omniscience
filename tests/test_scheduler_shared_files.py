@@ -15,7 +15,9 @@ from pathlib import Path
 
 import pytest
 
+from src.safety import file_lock
 from src.scheduler import capacity, memstop, pass_journal
+from tests.os_scope import scope_os
 
 
 @pytest.fixture
@@ -49,7 +51,7 @@ def test_a_pass_journal_trim_never_loses_a_line_another_process_appends(dd, monk
 def _spy_replace(monkeypatch):
     seen: list[str] = []
     real = os.replace
-    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
     return seen
 
 

@@ -32,6 +32,7 @@ import pytest
 
 from src.analytics import columnar
 from src.monitoring.secret_scrub import REDACTED
+from tests.os_scope import scope_os
 
 PASS = "kQ7!vLm-the-columnar-passphrase"
 
@@ -119,7 +120,7 @@ def test_a_write_that_fails_leaves_the_old_sidecar_whole_and_no_temp_file(tmp_pa
     def broken(src, dst):
         raise OSError("the replace failed")
 
-    monkeypatch.setattr(columnar.os, "replace", broken)
+    scope_os(monkeypatch, columnar, replace=broken)
     with pytest.raises(OSError, match="the replace failed"):
         columnar._write_kdf_sidecar(sidecar, os.urandom(columnar._KDF_SALT_BYTES))
     monkeypatch.undo()

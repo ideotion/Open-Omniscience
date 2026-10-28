@@ -24,6 +24,8 @@ from __future__ import annotations
 import pytest
 
 from src.monitoring import expedition
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 
 @pytest.fixture()
@@ -196,7 +198,7 @@ def test_the_log_is_replaced_through_a_unique_temp(dd, monkeypatch):
 
     seen = []
     real = os.replace
-    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
     expedition._write({"k": 1})
     assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen
     assert not list(dd.glob("*.tmp*"))

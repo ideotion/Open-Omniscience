@@ -23,6 +23,7 @@ from scripts import osm_reference_run as CLI
 from src.monitoring import secret_scrub as SS
 from src.osm import reference_run as R
 from tests._osm_lane_helpers import FIXTURE, HAVE_OSMIUM, ROOT
+from tests.os_scope import scope_os
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the reference run is Linux-only")
 
@@ -1149,7 +1150,7 @@ def test_the_exit_code_survives_a_closed_terminal(tmp_path, monkeypatch):
 
     monkeypatch.setattr("builtins.print", _dead)
     redirected = []
-    monkeypatch.setattr(os, "dup2", lambda *a: redirected.append(a))  # the real one would clobber pytest's capture
+    scope_os(monkeypatch, CLI, dup2=lambda *a: redirected.append(a))  # the real one would clobber pytest's capture
     assert CLI.main(["--extract", str(_extract(tmp_path)), "--country", "ZZ", "--workdir", str(tmp_path / "w")]) == 3
     assert redirected, "stdout was not pointed at nowhere, so its failed buffer would turn the exit code into 120"
 

@@ -189,3 +189,73 @@ def test_a_thread_that_outlives_the_bound_is_blamed_on_the_test_that_left_it_and
     finally:
         release.set()
         t.join(HANG_GUARD_S)
+
+
+class _NotYetRunning:
+    """A thread ``start()`` has been called on that has not run its first instruction: ``threading.enumerate()`` lists it, ``ident`` is ``None``
+    for the first ``polls_until_started`` reads, and it cannot be joined until it has one."""
+
+    name = _BRIEFING_THREAD_NAMES[0]
+
+    def __init__(self, polls_until_started):
+        self._left, self.joined = polls_until_started, False
+
+    @property
+    def ident(self):
+        if self._left > 0:
+            self._left -= 1
+            return None
+        return 77
+
+    def join(self, timeout=None):
+        self.joined = True
+
+    def is_alive(self):
+        return False
+
+
+class _ThreadingListing:
+    """``threading`` as ``tests.conftest`` sees it, with ``enumerate`` answering a fixed list (a copy bound to the one name the quiesce reads)."""
+
+    def __init__(self, listed):
+        self._listed = listed
+
+    def enumerate(self):  # noqa: A003 - the name under test
+        return list(self._listed)
+
+    def __getattr__(self, name):
+        return getattr(threading, name)
+
+
+def test_the_quiesce_waits_for_a_thread_that_has_not_run_its_first_instruction_and_then_joins_it(monkeypatch):
+    """Review note 2 of #1596: a thread with no ident yet used to be skipped, so a rebuild started a moment before the teardown ran into the next test."""
+    import tests.conftest as conftest_module
+
+    t = _NotYetRunning(polls_until_started=3)
+    monkeypatch.setattr(conftest_module, "threading", _ThreadingListing([t]))
+    _quiesce_briefing_threads("tests/x.py::limbo", timeout=10)
+    assert t.joined, "a thread that was about to run was not joined"
+
+
+def test_a_thread_that_never_gets_an_ident_inside_the_bound_is_reported_not_skipped(monkeypatch):
+    import tests.conftest as conftest_module
+
+    t = _NotYetRunning(polls_until_started=10**9)
+    monkeypatch.setattr(conftest_module, "threading", _ThreadingListing([t]))
+    with pytest.raises(AssertionError, match="tests/x.py::stuck"):
+        _quiesce_briefing_threads("tests/x.py::stuck", timeout=0.1)
+    assert not t.joined, "an unstarted thread cannot be joined"
+
+
+@pytest.mark.parametrize("paused", [False, True], ids=["ran", "paused-by-the-log-latch"])
+def test_the_run_ends_with_the_pin_reset_in_the_context_it_ran_in(monkeypatch, tmp_path, fresh_state, paused):
+    """Review note 1 of #1596: nothing failed when the reset in ``_bg_refresh``'s ``finally`` was removed. Called directly (not in its own thread) the
+    pin is visible to this context, so a pin that outlives the run (a pooled worker's next task would inherit it) shows here, on both exits: a rebuild
+    that ran, and the early return the write-ahead-log latch takes."""
+    monkeypatch.setattr(service, "_log_pinned", lambda: paused)
+    monkeypatch.setattr(service, "refresh_briefing", lambda session, on_progress=None: None)
+    monkeypatch.setattr("src.api.insights.warm_cache", lambda session: None)
+    monkeypatch.setattr("src.analytics.watches.evaluate_watches", lambda session: None)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    service._bg_refresh(tmp_path / "pinned.json")
+    assert service._run_cache_path.get() is None, "the pin outlived the run that set it"

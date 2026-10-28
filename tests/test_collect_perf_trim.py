@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import collect_perf
+from tests.os_scope import scope_os
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CAP = collect_perf._CAP_LINES
@@ -128,7 +129,7 @@ def test_a_refused_swap_leaves_the_old_log_whole_and_no_copy(tmp_path, monkeypat
     def refuse(*_a, **_k):
         raise PermissionError("the log is held open")  # Windows, when another handle has it
 
-    monkeypatch.setattr(os, "replace", refuse)
+    scope_os(monkeypatch, collect_perf, replace=refuse)
     collect_perf._trim_jsonl()  # logs at debug level, never raises
     assert path.read_bytes() == before and _parts(tmp_path) == []
 
@@ -137,8 +138,8 @@ def test_the_copy_is_synced_before_it_is_swapped_in(tmp_path, monkeypatch):
     _write_log(tmp_path, _CAP + 50)
     order: list[str] = []
     real_fsync, real_replace = os.fsync, os.replace
-    monkeypatch.setattr(os, "fsync", lambda fd: (order.append("fsync"), real_fsync(fd))[1])
-    monkeypatch.setattr(os, "replace", lambda a, b: (order.append("replace"), real_replace(a, b))[1])
+    scope_os(monkeypatch, collect_perf, fsync=lambda fd: (order.append("fsync"), real_fsync(fd))[1])
+    scope_os(monkeypatch, collect_perf, replace=lambda a, b: (order.append("replace"), real_replace(a, b))[1])
     collect_perf._trim_jsonl()
     assert order == ["fsync", "replace"]
 
@@ -153,7 +154,7 @@ def test_the_copy_is_named_for_the_process_and_the_thread(tmp_path, monkeypatch)
         names.append(Path(a).name)
         real_replace(a, b)
 
-    monkeypatch.setattr(os, "replace", spy)
+    scope_os(monkeypatch, collect_perf, replace=spy)
     collect_perf._trim_jsonl()
     _write_log(tmp_path, _CAP + 50)
     worker = threading.Thread(target=collect_perf._trim_jsonl)

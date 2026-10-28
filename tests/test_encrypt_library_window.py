@@ -26,6 +26,7 @@ from sqlalchemy.pool import QueuePool
 
 from src.database import encrypt_tool, library_generation, writer
 from src.database.connect import connect, is_encrypted_file
+from tests.os_scope import scope_os
 from tests.test_gate_connection_order import _factory
 
 _KEY = "a-long-enough-passphrase-for-the-test-9Q"
@@ -122,7 +123,7 @@ def test_the_swap_is_inside_the_window_and_announces_the_log_names_it_is_about_t
 
     monkeypatch.setattr(library_generation, "swap_window", window)
     monkeypatch.setattr(library_generation, "disk_changing", lambda: order.append("disk_changing"))
-    monkeypatch.setattr(encrypt_tool.os, "replace", lambda a, b: order.append("replace") or real_replace(a, b))
+    scope_os(monkeypatch, encrypt_tool, replace=lambda a, b: order.append("replace") or real_replace(a, b))
     encrypt_tool.encrypt_database(p, _KEY, library=True)
     assert order == ["open", "disk_changing", "replace", "close"], order
     order.clear()
@@ -159,7 +160,7 @@ def test_a_replace_that_fails_after_the_log_names_went_does_not_revive_the_earli
     eng = _engine(p)
     conn = eng.connect()
     conn.execute(text("SELECT count(*) FROM notes")).scalar()
-    monkeypatch.setattr(encrypt_tool.os, "replace", lambda a, b: (_ for _ in ()).throw(OSError(13, "denied")))
+    scope_os(monkeypatch, encrypt_tool, replace=lambda a, b: (_ for _ in ()).throw(OSError(13, "denied")))
     with pytest.raises(OSError):
         encrypt_tool.encrypt_database(p, _KEY, library=True)
     with pytest.raises(Exception) as caught:  # noqa: B017 - SQLAlchemy may wrap the refusal; the class name is checked below

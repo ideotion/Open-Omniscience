@@ -35,6 +35,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from src.monitoring import holder_state
 from src.monitoring import storage_events as se
+from tests.os_scope import scope_os
 from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
 
 MARKER = "MARKER-passphrase-4711-correct-horse"
@@ -95,7 +96,7 @@ def _on_journal_replace(monkeypatch, journal, fn):
     def routed(a, b):
         return fn(a, b) if str(b) == str(journal) else real(a, b)
 
-    monkeypatch.setattr(se.os, "replace", routed)
+    scope_os(monkeypatch, se, replace=routed)
 
 
 def _wait_until(pred, timeout: float = HANG_GUARD_S) -> bool:  # a hang guard: a condition that holds returns at once
@@ -904,7 +905,7 @@ def test_a_flush_retries_a_write_the_writer_could_not_make(journal, monkeypatch)
     _on_journal_replace(monkeypatch, journal, full_disk)
     se.record("guard", {"n": 1})
     assert _wait_until(lambda: se._WRITE_FAILURES >= 1)
-    monkeypatch.setattr(se.os, "replace", real)
+    scope_os(monkeypatch, se, replace=real)
     se.flush()
     assert json.loads(journal.read_text(encoding="utf-8"))["kinds"]["guard"]["total"] == 1
 

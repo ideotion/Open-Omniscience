@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.os_scope import scope_os
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -370,7 +372,7 @@ def test_os_replace_failing_after_the_temp_write_leaves_the_archive_untouched(tr
     def boom(src, dst):
         raise OSError("replace failed")
 
-    monkeypatch.setattr(ledger_fold.os, "replace", boom)
+    scope_os(monkeypatch, ledger_fold, replace=boom)
     with pytest.raises(OSError):
         ledger_fold.main(["fold"])
     assert (led / "LESSONS.md").read_bytes() == before, "the archive is whole: the write goes to a temp file first"

@@ -22,6 +22,7 @@ import pytest
 from src.safety import file_lock
 from src.safety.file_lock import atomic_replace, locked_append, temp_name
 from src.safety.file_lock import file_lock as lock
+from tests.os_scope import scope_os
 
 # the folder's flush is not attempted on Windows (``_flush_directory`` returns early and counts the skip), so a test that expects a folder
 # event or a reason other than "this build does not flush a folder on windows" has nothing to observe there
@@ -168,7 +169,7 @@ def test_a_failed_replace_leaves_the_old_file_whole_and_no_temp(tmp_path, monkey
     def boom(a, b):
         raise OSError("disk")
 
-    monkeypatch.setattr(file_lock.os, "replace", boom)
+    scope_os(monkeypatch, file_lock, replace=boom)
     with pytest.raises(OSError):
         atomic_replace(target, "new")
     assert target.read_text(encoding="utf-8") == "old"
@@ -201,7 +202,7 @@ def test_locked_append_writes_the_text(tmp_path):
 
 def test_fsync_can_be_skipped_and_the_sweep_is_throttled(tmp_path, monkeypatch):
     synced, swept = [], []
-    monkeypatch.setattr(file_lock.os, "fsync", lambda fd: synced.append(fd))
+    scope_os(monkeypatch, file_lock, fsync=lambda fd: synced.append(fd))
     monkeypatch.setattr(file_lock, "sweep_dead_temps", lambda p: swept.append(p))
     f = tmp_path / "state.json"
     atomic_replace(f, "a", fsync=False, sweep_every_s=300.0)
@@ -395,7 +396,7 @@ def test_a_failed_fsync_keeps_the_old_file_and_removes_the_temp_but_a_filesystem
     def eio(fd):
         raise OSError(errno.EIO, "input/output error")
 
-    monkeypatch.setattr(file_lock.os, "fsync", eio)
+    scope_os(monkeypatch, file_lock, fsync=eio)
     with pytest.raises(OSError):
         atomic_replace(target, "new")
     assert target.read_text(encoding="utf-8") == "good", "data that never reached the disk was renamed over the good file"
@@ -404,7 +405,7 @@ def test_a_failed_fsync_keeps_the_old_file_and_removes_the_temp_but_a_filesystem
     def einval(fd):
         raise OSError(errno.EINVAL, "no fsync here")
 
-    monkeypatch.setattr(file_lock.os, "fsync", einval)
+    scope_os(monkeypatch, file_lock, fsync=einval)
     atomic_replace(target, "new")
     assert target.read_text(encoding="utf-8") == "new"
 
@@ -413,7 +414,7 @@ def test_a_failed_fsync_keeps_the_old_file_and_removes_the_temp_but_a_filesystem
         def none_here(fd, code=code):
             raise OSError(code, "no fsync here")
 
-        monkeypatch.setattr(file_lock.os, "fsync", none_here)
+        scope_os(monkeypatch, file_lock, fsync=none_here)
         atomic_replace(target, f"written-{code}")
         assert target.read_text(encoding="utf-8") == f"written-{code}"
 
@@ -440,8 +441,8 @@ def _recording_fsync(monkeypatch, *, on_folder=None):
         events.append(("replace",))
         real_replace(src, dst)
 
-    monkeypatch.setattr(file_lock.os, "fsync", fsync)
-    monkeypatch.setattr(file_lock.os, "replace", replace)
+    scope_os(monkeypatch, file_lock, fsync=fsync)
+    scope_os(monkeypatch, file_lock, replace=replace)
     return events
 
 
@@ -490,7 +491,7 @@ def test_a_folder_that_cannot_be_opened_is_skipped_with_the_cause_named(tmp_path
             raise PermissionError(errno.EACCES, "no")
         return real_open(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr(file_lock.os, "open", deny_folders)
+    scope_os(monkeypatch, file_lock, open=deny_folders)
     monkeypatch.setattr(file_lock, "_DIR_FLUSH_SKIPPED", {})
     target = tmp_path / "state.json"
     atomic_replace(target, "new")
@@ -542,7 +543,7 @@ def test_an_interrupt_in_the_folder_flush_closes_the_folder_it_opened(tmp_path, 
         closed.append(fd)
         real_close(fd)
 
-    monkeypatch.setattr(os, "close", recording_close)
+    scope_os(monkeypatch, file_lock, close=recording_close)
     with pytest.raises(KeyboardInterrupt):
         atomic_replace(tmp_path / "state.json", "new")
     assert len(seen) == 1

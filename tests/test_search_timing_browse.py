@@ -34,6 +34,7 @@ from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
 from src.monitoring import search_timing, unlock_marker
 from src.monitoring.search_timing import _FakeClock, _walk_no_score
+from tests.os_scope import scope_os
 
 main = pytest.importorskip("src.api.main")  # CI/venv with crypto; skips on a bare sandbox
 
@@ -892,7 +893,7 @@ def test_a_cut_that_fails_leaves_the_old_log_whole_and_no_part_file_behind(tmp_p
     def disk_full(src, dst):
         raise OSError("no space left on device")
 
-    monkeypatch.setattr(search_timing.os, "replace", disk_full)
+    scope_os(monkeypatch, search_timing, replace=disk_full)
     search_timing._trim_jsonl("text")
     assert path.read_text("utf-8") == whole, "the old log is untouched"
     assert not path.with_name(path.name + ".part").exists(), "the half-made copy is removed"
@@ -951,7 +952,7 @@ def test_a_swap_a_program_holding_the_file_open_refused_is_tried_again_when_the_
             raise PermissionError(13, "The process cannot access the file because it is being used")
         return real_replace(src, dst)
 
-    monkeypatch.setattr(search_timing.os, "replace", held_open)
+    scope_os(monkeypatch, search_timing, replace=held_open)
     search_timing.append_search_timing(_record("text"))  # a process's first append: a cut is due, refused
     assert len(_lines(path)) == 7, "nothing lost, nothing cut"
     assert not path.with_name(path.name + ".part").exists()

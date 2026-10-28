@@ -6,11 +6,12 @@ that the record read back is bounded, allow-listed and its own session's."""
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
+from src.safety import file_lock
 from src.scheduler import memstop
+from tests.os_scope import scope_os
 
 PASS = "Zq7!stop-key'Nm4"
 DECISION = {"due": True, "window_s": 300.0, "floor_mb": 64.0, "samples": 200, "span_s": 299.0, "low_share": 1.0,
@@ -174,7 +175,7 @@ def test_huge_or_odd_identity_values_are_not_carried(stop):
 
 def test_a_record_that_cannot_be_written_is_a_logged_step_not_a_stop(stop, monkeypatch):
     calls, _d, data = stop
-    monkeypatch.setattr(os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    scope_os(monkeypatch, file_lock, replace=lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
     memstop.execute(DECISION, _Guard())
     assert not (data / "memory_stop.json").exists() and "shutdown" in calls
 
