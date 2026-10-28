@@ -24,3 +24,17 @@ def test_the_wikidata_refusal_toast_in_node():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "wikidata_refusal_node_test.js: OK" in proc.stdout
+
+
+def test_the_job_error_text_the_node_test_uses_is_what_a_real_job_carries():
+    """R334's read: a job's error is ``record_text(exc, typed=True)``, which puts the class name in front, so the JS reader must be shown THAT text
+    (the refusal as a bare sentence is what the 409 branch gets, never what a job holds). The string in the node test is pinned to the live constant."""
+    from src.entities.items import REFUSAL, AirplaneRefusal
+    from src.monitoring.secret_scrub import record_text
+
+    real = record_text(AirplaneRefusal(REFUSAL), limit=300, typed=True)
+    assert real.startswith("AirplaneRefusal: network refused: airplane mode is engaged")
+    node = (_ROOT / "tests" / "wikidata_refusal_node_test.js").read_text(encoding="utf-8")
+    assert real in node, (
+        "update REAL_JOB_ERROR in wikidata_refusal_node_test.js to the text a job really carries"
+    )

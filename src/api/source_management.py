@@ -30,7 +30,6 @@ Author: Ideotion
 
 import logging
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -41,6 +40,7 @@ from sqlalchemy.orm import Session
 from src.database.session import get_db
 from src.database.source_manager import SourceManager
 from src.monitoring.secret_scrub import http_detail, log_failure
+from src.paths import repo_root
 
 # Import logging config
 from src.utils.logging_config import setup_logging
@@ -1802,8 +1802,10 @@ def import_sources(request: Request, db: Session = Depends(get_db)):
     """
     logger.info("Import sources from YAML")
 
-    # For now, use the existing sources.yml file
-    yaml_path = Path(__file__).parent.parent.parent.parent / "configs" / "sources.yml"
+    # For now, use the existing sources.yml file. ``configs/`` is a SIBLING of the ``src`` package (the repo root in a checkout, site-packages in a
+    # wheel: pyproject ships it as a top-level package), so the root is ``repo_root()`` (``src/paths.py``). The route used to climb four directories
+    # from ``src/api/``, which lands ABOVE the repo root, and answered 500 (FileNotFoundError) on every install.
+    yaml_path = repo_root() / "configs" / "sources.yml"
 
     with SourceManager(session=db) as manager:
         result = manager.import_sources_from_yaml(str(yaml_path))
