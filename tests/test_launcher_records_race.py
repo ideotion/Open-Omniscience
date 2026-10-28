@@ -141,12 +141,59 @@ def _exits_round(tmp: Path, n: int, **kw) -> tuple[list[int], Path]:
     return [_pid(pf) for _, pf in procs], f
 
 
-def _assert_all_present(pids: list[int], f: Path, what: str) -> None:
-    rows, torn = _rows(f)
-    missing = [p for p in pids if p not in {r.get("pid") for r in rows}]
-    assert not missing, f"{what}: {len(missing)} of {len(pids)} rows lost ({len(rows)} lines left, {torn} torn)"
+#: WHAT THIS BOUND PROTECTS: the wait for a row that a launcher handed to its deferred writer. A launcher that cannot get the lock inside
+#: ``OO_REC_LOCK_WAIT_MS`` (100) defers the row to a detached child (``OO_REC_LOCK_FOREVER=1``) that writes it AFTER the launcher has exited
+#: (R174, by design), so a look taken at the launcher's exit can honestly miss a row that arrives moments later. Measured (R335, probe in
+#: /mnt/project-files/audit-0.5.0/inputs/r335-launcher-race/): with the wait forced to 1 ms, 4 to 8 of 8 rows were present at exit (mkdir lock 4-7, flock 6-8) and 8 of 8
+#: within 0.1 s. The bound is far above that and exists only so a row that NEVER arrives (a child that hung or died) fails the test, with the wait named.
+DEFERRED_ROW_WAIT_S = 30.0
+
+
+def _assert_all_present(pids: list[int], f: Path, what: str, wait_s: float = DEFERRED_ROW_WAIT_S) -> None:
+    """Every launcher's row is in ``f``, none is torn, and the trim ran. Polls up to ``wait_s`` for rows still on their way from a deferred writer."""
+    start = time.monotonic()
+    end = start + wait_s
+    while True:
+        rows, torn = _rows(f)
+        missing = [p for p in pids if p not in {r.get("pid") for r in rows}]
+        if not missing or time.monotonic() >= end:
+            break
+        time.sleep(0.05)
+    waited = time.monotonic() - start
+    assert not missing, f"{what}: {len(missing)} of {len(pids)} rows lost ({len(rows)} lines left, {torn} torn; waited {waited:.1f} s)"
     assert not torn, f"{what}: {torn} torn lines"
     assert len(rows) <= 40, f"{what}: the trim did not run ({len(rows)} lines)"
+
+
+def test_a_row_that_arrives_after_the_look_is_waited_for(tmp_path):
+    """R336, red before: the helper looked once at the launcher's exit, so a row its deferred writer appended 0.4 s later failed the test."""
+    import threading
+
+    f = tmp_path / "launcher_exits.jsonl"
+    _seed(f, 5)
+    pids = [111, 222]
+    f.write_text(f.read_text(encoding="utf-8") + json.dumps({"schema": "exit", "pid": 111}) + "\n", encoding="utf-8")
+
+    def late() -> None:
+        time.sleep(0.4)
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"schema": "exit", "pid": 222}) + "\n")
+
+    t = threading.Thread(target=late, name="late-row-writer")
+    t.start()
+    try:
+        _assert_all_present(pids, f, "late", wait_s=10)
+    finally:
+        t.join()
+
+
+def test_a_row_that_never_arrives_still_fails_naming_the_rows_and_the_wait(tmp_path):
+    f = tmp_path / "launcher_exits.jsonl"
+    _seed(f, 5)
+    with pytest.raises(AssertionError) as err:
+        _assert_all_present([333], f, "never", wait_s=0.3)
+    msg = str(err.value)
+    assert "never: 1 of 1 rows lost" in msg and "waited 0." in msg, msg
 
 
 @posix_only
