@@ -1,4 +1,4 @@
-## 2026-10-28 — A replacement of an `os` function belongs to the module under test, not to the process; a scoped patch can pass without ever being used, so count its calls once (R351, after R344/R350)
+## 2026-10-28 — A replacement of an `os` function belongs to the module under test, not to the process; a scoped patch can pass without ever being used, so count its calls once (R351, after R344/R350; PR #1602)
 
 **What was found.**
 1. **`monkeypatch.setattr(module.os, "replace", f)` is a process-wide patch.** `module.os` IS the `os` module. The 2026-10-27 lesson named the class (R344/R350: pytest 9.2.0 calls `os.fstat` at the end of every test phase and met a test's process-wide `os.fstat` patch) and listed 45 files as the scope of a sweep. This is the sweep: about 120 call sites in 47 test files now replace the name the module under test reads, through one helper, `tests/os_scope.py` (`scope_os(monkeypatch, module, replace=f)`; `hide_os(monkeypatch, module, "statvfs")` for a name the platform lacks). A second `scope_os` on the same module adds to the first one's namespace; `monkeypatch` puts the real module back at teardown.
