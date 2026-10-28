@@ -327,8 +327,8 @@ jobs:
       - name: Test (pytest)
         run: python -m pytest -q
 
-      # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the end of the job log and
-      # to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
+      # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the log straight after the
+      # suite (the tail of a red run's log) and to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
       # two runs that disagree could be compared only through sibling jobs (R349: a green and a red job differed by one pytest minor, released
       # between them). Straight after the suite and BEFORE the steps below install bandit and pip-audit into this same environment, so the list
       # is the test environment and not the audit's. A report only: it pins nothing and changes no result.

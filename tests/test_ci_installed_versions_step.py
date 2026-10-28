@@ -9,11 +9,13 @@ job, and the versions are printed by the install step, at the HEAD of a log that
 available (``get_job_logs``) returns the last 5000 lines, so the install output was out of reach and the cause had to be rebuilt from three
 sibling jobs that happened to be short. The versions are therefore printed again at the END, by a step that runs whatever the tests did.
 
-What this pins, for the two jobs that run the whole suite (``test`` and ``core-only``):
+What this pins, for the two jobs R364 names (``test`` and ``core-only``; the ``portability`` job runs the whole suite as well, as an observation lane
+with ``continue-on-error``, and is not covered):
 
 * the step exists once and says ``if: always()``: a red pytest step skips every later step that has no condition, which is the whole point;
-* it runs ``python -m pip list --format=freeze`` (not ``pip freeze``, whose editable-install line is a path on the runner) and writes the
-  result to ``$GITHUB_STEP_SUMMARY`` as well as to the log;
+* it runs ``python -m pip list --format=freeze`` (not ``pip freeze``, whose editable-install line carries the repository URL and the commit and
+  which leaves pip itself out) and ``tee``s the result into ``$GITHUB_STEP_SUMMARY``, so it is in the log as well as in the summary: a plain
+  redirect would take the list out of the log, the one copy ``get_job_logs`` can read;
 * it comes straight after the pytest step and before any later ``pip install`` step: in ``test`` the bandit and pip-audit steps install their
   own packages, and a list taken after them is not the environment the tests ran in.
 
@@ -31,11 +33,12 @@ import yaml
 _ROOT = Path(__file__).resolve().parents[1]
 _CI = _ROOT / ".github" / "workflows" / "ci.yml"
 
-#: The jobs that run the whole suite; the others run a named subset and are not where an environment change is first seen.
+#: The jobs R364 names. The other lanes run a named subset, except ``portability`` (macOS, observation only), which is left out on purpose.
 _JOBS = ("test", "core-only")
 _STEP_PREFIX = "Installed versions"
 _COMMAND = "python -m pip list --format=freeze"
 _SUMMARY = "$GITHUB_STEP_SUMMARY"
+_TEE = f'tee -a "{_SUMMARY}"'
 
 
 def _workflow() -> dict:
@@ -59,8 +62,8 @@ def _problems(job_name: str, job: dict) -> list[str]:
         found.append(f"{job_name}: the step must say `if: always()` (a red pytest step skips an unconditional step), it says {step.get('if')!r}")
     if _COMMAND not in _runs(step):
         found.append(f"{job_name}: the step must run `{_COMMAND}`")
-    if _SUMMARY not in _runs(step):
-        found.append(f"{job_name}: the step must also write to {_SUMMARY}")
+    if _TEE not in _runs(step):
+        found.append(f"{job_name}: the step must `{_TEE}`: to the log as well as to the summary, not a redirect that takes it out of the log")
     pytest_steps = [i for i, s in enumerate(steps) if "pytest" in _runs(s) and i != at]
     if not pytest_steps:
         found.append(f"{job_name}: no pytest step found, so there is nothing to report the environment of")
@@ -78,34 +81,42 @@ def test_the_job_reports_its_installed_versions_after_pytest_on_red_as_well_as_g
 # --- the guard proves itself: one property removed per mutant, and the checker names it ---------------------------------------------------------
 
 
-def _mutants(job_name: str) -> dict[str, dict]:
+def _mutants(job_name: str) -> dict[str, tuple[dict, str]]:
+    """label -> (the job with one property removed, the sentence the checker must say about it)."""
     base = _workflow()["jobs"][job_name]
-    out: dict[str, dict] = {}
+    out: dict[str, tuple[dict, str]] = {}
 
-    def mutated(edit) -> dict:
+    def mutated(edit, says: str) -> tuple[dict, str]:
         job = copy.deepcopy(base)
         steps = job["steps"]
         at = next(i for i, s in enumerate(steps) if str(s.get("name") or "").startswith(_STEP_PREFIX))
         edit(steps, at)
-        return job
+        return job, says
 
-    out["no `if: always()`"] = mutated(lambda steps, at: steps[at].pop("if"))
-    out["`if: failure()` only"] = mutated(lambda steps, at: steps[at].__setitem__("if", "failure()"))
-    out["`pip freeze` instead of `pip list --format=freeze`"] = mutated(
-        lambda steps, at: steps[at].__setitem__("run", _runs(steps[at]).replace(_COMMAND, "python -m pip freeze"))
+    def rewrite(old: str, new: str):
+        return lambda steps, at: steps[at].__setitem__("run", _runs(steps[at]).replace(old, new))
+
+    last_pytest = lambda steps: max(i for i, s in enumerate(steps) if "pytest" in _runs(s))  # noqa: E731
+    out["no `if: always()`"] = mutated(lambda steps, at: steps[at].pop("if"), "must say `if: always()`")
+    out["`if: failure()` only"] = mutated(lambda steps, at: steps[at].__setitem__("if", "failure()"), "must say `if: always()`")
+    out["`pip freeze` instead of `pip list --format=freeze`"] = mutated(rewrite(_COMMAND, "python -m pip freeze"), f"must run `{_COMMAND}`")
+    out["a redirect to the summary instead of `tee` (the list leaves the log)"] = mutated(
+        rewrite(f"| {_TEE}", f">> \"{_SUMMARY}\""), "to the log as well as to the summary"
     )
-    out["not written to the step summary"] = mutated(
-        lambda steps, at: steps[at].__setitem__("run", _runs(steps[at]).replace(_SUMMARY, "/dev/null"))
+    out["not written to the step summary at all"] = mutated(rewrite(_SUMMARY, "/dev/null"), "to the log as well as to the summary")
+    out["the step is missing"] = mutated(lambda steps, at: steps.pop(at), "expected exactly one step")
+    out["the step comes before pytest"] = mutated(
+        lambda steps, at: steps.insert(last_pytest(steps), steps.pop(at)), "straight after the last pytest step"
     )
-    out["the step is missing"] = mutated(lambda steps, at: steps.pop(at))
-    out["the step comes before pytest"] = mutated(lambda steps, at: steps.insert(max(i for i, s in enumerate(steps) if "pytest" in _runs(s)), steps.pop(at)))
     out["a step between pytest and the report (a later `pip install` would change the list)"] = mutated(
-        lambda steps, at: steps.insert(at, {"name": "Install a scanner", "run": "python -m pip install bandit==1.9.4"})
+        lambda steps, at: steps.insert(at, {"name": "Install a scanner", "run": "python -m pip install bandit==1.9.4"}),
+        "straight after the last pytest step",
     )
     return out
 
 
 @pytest.mark.parametrize("job_name", _JOBS)
 def test_every_mutant_of_the_step_is_named_by_the_checker(job_name):
-    for label, job in _mutants(job_name).items():
-        assert _problems(job_name, job), f"{job_name}: the checker let this pass: {label}"
+    for label, (job, says) in _mutants(job_name).items():
+        found = _problems(job_name, job)
+        assert any(says in problem for problem in found), f"{job_name}: {label}: expected a problem saying {says!r}, got {found}"
