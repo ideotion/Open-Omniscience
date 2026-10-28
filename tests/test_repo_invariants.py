@@ -8751,7 +8751,9 @@ def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     async_body = _py_function_source(runner, "_refresh_briefing_async")
     assert "acquire(blocking=False)" in async_body
     assert 'tasks.register("briefing"' in async_body
-    assert "threading.Thread(" in async_body and ".start()" in async_body
+    # The thread is built here and started through ``_start_detached``, which frees the lock when the start itself fails.
+    assert "threading.Thread(" in async_body and "_start_detached(self._briefing_thread, self._briefing_bg_lock" in async_body
+    assert ".start()" in _py_function_source(runner, "_start_detached")
 
     # _default_run_once's OWN body: it calls the async kickoff, and never calls
     # refresh_briefing directly (the old synchronous inline call site is gone).

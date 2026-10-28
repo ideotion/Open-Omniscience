@@ -2401,7 +2401,7 @@ class BackgroundScheduler:
         self._briefing_thread = threading.Thread(
             target=_run, daemon=True, name="oo-briefing-bg"
         )
-        self._briefing_thread.start()
+        self._start_detached(self._briefing_thread, self._briefing_bg_lock, "background briefing refresh")
 
     def whole_corpus_work_running(self) -> bool:
         """True while the pass-tail briefing refresh or the heavy-tail housekeeping holds its lock.
@@ -2498,7 +2498,36 @@ class BackgroundScheduler:
         self._lane_thread = threading.Thread(
             target=_run, daemon=True, name="oo-housekeeping-lane"
         )
-        self._lane_thread.start()
+        self._start_detached(self._lane_thread, self._lane_lock, "housekeeping lane")
+
+    @staticmethod
+    def _start_detached(thread: threading.Thread, lock: threading.Lock, what: str) -> None:
+        """Start a pass-tail thread whose ``_run`` releases ``lock`` when it ends, or, when the thread cannot be started, release it here.
+
+        ``Thread.start()`` raises ``RuntimeError`` ("can't start new thread") when the process is out of threads, before the target has run:
+        the lock the caller took would then be held for the life of the process, every later pass would skip this launch as "still
+        running", and ``whole_corpus_work_running`` would read true forever. A thread that never got an ident never ran, so its ``finally`` will
+        never release; one that did run releases for itself, and releasing again here would raise. A launch is best-effort, so the failure is
+        logged and the pass goes on (the launch is due again at the next pass)."""
+        try:
+            thread.start()
+        except Exception as exc:  # noqa: BLE001 - a background launch must never crash the pass tail
+            log_failure(_LOG, f"{what} not started: its thread could not be started", exc, level=logging.WARNING)
+            if thread.ident is None:
+                lock.release()
+
+    def _held_back(self, launch: str, held: list[str]) -> bool:
+        """Is this detached launch of the pass tail held back by an exclusive operation? The hold winds a pass down but a pass's tail
+        still ran whole, and four of its steps start threads or jobs that OUTLIVE the pass (the first-run preflight job, the housekeeping lane,
+        the langdetect job, the briefing refresh): they would run on into the restore's working-copy span, past the wait that sees only the
+        pass's own thread. Held back, each is simply due again at the next pass (every one re-evaluates its own condition), so nothing is
+        lost; the hold only (a plain Stop keeps today's behaviour: it trips the kill switch, which the lane already honours). Check-then-act:
+        a hold claimed between this read and the launch still lets that one launch through, which is the same window the pass thread itself
+        has before it reads the stop."""
+        if not self.holds_exclusive():
+            return False
+        held.append(launch)
+        return True
 
     def _default_run_once(self) -> dict:
 
@@ -2511,6 +2540,7 @@ class BackgroundScheduler:
         # Same identity CollectionMonitor stamps on its samples, so the pass-tail
         # journal (S0.5) and the collector ring join on one key.
         _pass_id = run_started.isoformat(timespec="seconds")
+        held: list[str] = []  # the detached launches an exclusive hold kept this tail from starting (see _held_back)
         with session_scope() as session:
             # COLLECT ARTICLES FIRST (maintainer 2026-06-18: "it took 3-5 minutes
             # to get the first article"). The first-run source/feed preflight, the
@@ -2568,7 +2598,7 @@ class BackgroundScheduler:
             with _tail_phase("first-run-preflight", pass_id=_pass_id):
                 from src.monitoring import preflight_job
 
-                started_pf = preflight_job.kick(fetcher)
+                started_pf = None if self._held_back("first-run-preflight", held) else preflight_job.kick(fetcher)
                 if started_pf is not None:
                     _activity("first-run-preflight")
                     _LOG.info("first-run preflight: started as job %s", preflight_job.JOB_KIND)
@@ -2586,7 +2616,8 @@ class BackgroundScheduler:
             # auto_track_law) are honoured inside the lane's own pending-kinds
             # check (_lane_pending_kinds), not here.
             with _tail_phase("lane-kick", pass_id=_pass_id):
-                self._kick_housekeeping_lane()
+                if not self._held_back("housekeeping-lane", held):
+                    self._kick_housekeeping_lane()
             # Field-test instrumentation (live-test cycles): exercise every fetch
             # surface once and log verbatim outcomes for the maintainer's debug
             # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag
@@ -2660,7 +2691,7 @@ class BackgroundScheduler:
             try:
                 from src.api.ai import advance_langdetect_auto_start
 
-                _ld = advance_langdetect_auto_start(session)
+                _ld = {} if self._held_back("langdetect-auto", held) else advance_langdetect_auto_start(session)
                 if _ld.get("enabled"):
                     result["langdetect_auto"] = _ld
                     if not _ld.get("skipped"):  # it started the job; a skip did nothing
@@ -2703,7 +2734,11 @@ class BackgroundScheduler:
             # tracked as its own task-manager entry, not a scheduler phase, since it
             # can now genuinely outlive this pass).
             with _tail_phase("briefing-refresh-kick", pass_id=_pass_id):
-                self._refresh_briefing_async()
+                if not self._held_back("briefing-refresh", held):
+                    self._refresh_briefing_async()
+            if held:
+                result["held_back_by_exclusive_operation"] = held
+                _LOG.info("pass tail: %s not started, an exclusive operation holds the machine (due again next pass)", ", ".join(held))
             return result
 
     # -- introspection ----------------------------------------------------- #
