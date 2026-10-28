@@ -554,7 +554,7 @@ def _persisted_declined(why: str) -> bool:
 
 
 def _void_built_epoch(con) -> None:
-    """Make the persisted store's next refresh a full rebuild: ``-1`` is no corpus epoch, so ``refresh_keyword_daily`` finds it unequal.
+    """Make the persisted store's next refresh a full rebuild: ``columnar.VOIDED_BUILT_EPOCH`` is no corpus epoch, so ``refresh_keyword_daily`` finds it unequal.
 
     Called only when the final comparison of a refresh that ran its merge fails; a stop BEFORE the merge changed nothing and clears nothing. A
     failure here is logged, not raised: the stop that called it is the error the caller must see.
@@ -562,7 +562,7 @@ def _void_built_epoch(con) -> None:
     from src.analytics import columnar
 
     try:
-        columnar._set_meta(con, "keyword_daily.built_epoch", -1)
+        columnar._set_meta(con, "keyword_daily.built_epoch", columnar.VOIDED_BUILT_EPOCH)
     except Exception as exc:  # noqa: BLE001 - the library replacement is the failure being reported; this is its repair
         log_failure(_LOG, "rollup serve: could not void the persisted rollup's built epoch", exc, level=logging.WARNING)
 

@@ -229,7 +229,7 @@ def test_a_failed_final_comparison_voids_the_built_epoch_and_a_stop_before_the_m
     _persisted(monkeypatch, refresh, con=con)
     with pytest.raises(gen.StaleLibraryError):
         rollup_serve._refresh_persisted_build()
-    expected = "1" if where == "in-the-hook" else "-1"
+    expected = "1" if where == "in-the-hook" else str(columnar.VOIDED_BUILT_EPOCH)
     assert columnar._get_meta(con, "keyword_daily.built_epoch") == expected
 
 
